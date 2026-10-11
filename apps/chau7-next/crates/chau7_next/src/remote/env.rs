@@ -15,7 +15,9 @@ use super::host::{HostEnv, LastCommandInfo, PaneInfo, TabInfo, TabKey};
 use super::snapshot;
 use crate::pane::PaneTree;
 use crate::terminal::session::TerminalSession;
+use crate::terminal::view::TerminalView;
 use crate::workspace::{AppData, Workspace};
+use chau7_next_core::remote::key_input::{InputStep, RemoteKey, key_steps, text_steps};
 
 /// Lines of a pane given to the prompt detector (it reads the last 80).
 const PROMPT_LINES: i32 = 80;
@@ -49,6 +51,76 @@ impl<'a> GpuiEnv<'a> {
             cache: None,
             now: Utc::now(),
         }
+    }
+
+    fn input_view(&mut self, key: TabKey, pane_id: Option<u64>) -> Option<Entity<TerminalView>> {
+        let tab = self.tab(key)?;
+        let session = if let Some(pane) = pane_id {
+            tab.sessions.iter().find(|(id, _)| *id == pane)?.1.clone()
+        } else {
+            tab.sessions.get(tab.main)?.1.clone()
+        };
+        let panes = tab.panes.clone();
+        let session_id = session.read(self.cx).id;
+        panes
+            .read(self.cx)
+            .views()
+            .into_iter()
+            .find(|view| view.read(self.cx).session.read(self.cx).id == session_id)
+    }
+    fn dispatch_steps(&mut self, view: Entity<TerminalView>, steps: Vec<InputStep>) -> bool {
+        if steps.is_empty() {
+            return false;
+        }
+        let session_id = view.read(self.cx).session.read(self.cx).id;
+        let weak = view.downgrade();
+        let mut steps = steps.into_iter().peekable();
+        while steps.peek().is_some_and(|step| step.delay_ms == 0) {
+            let step = steps.next().unwrap();
+            view.update(self.cx, |view, cx| {
+                view.write_without_broadcast(&step.bytes, cx)
+            });
+        }
+        let rest: Vec<InputStep> = steps.collect();
+        if !rest.is_empty() {
+            self.cx
+                .spawn(async move |cx| {
+                    for step in rest {
+                        if step.delay_ms > 0 {
+                            cx.background_executor()
+                                .timer(std::time::Duration::from_millis(step.delay_ms))
+                                .await;
+                        }
+                        let Ok(written) = weak.update(cx, |view, cx| {
+                            if view.session.read(cx).id != session_id {
+                                return false;
+                            }
+                            view.write_without_broadcast(&step.bytes, cx);
+                            true
+                        }) else {
+                            break;
+                        };
+                        if !written {
+                            break;
+                        }
+                    }
+                })
+                .detach();
+        }
+        self.cache = None;
+        true
+    }
+    fn send_text(&mut self, key: TabKey, pane: Option<u64>, text: &str) -> bool {
+        let Some(view) = self.input_view(key, pane) else {
+            return false;
+        };
+        let session = view.read(self.cx).session.read(self.cx);
+        let codex = session
+            .shell()
+            .effective_provider()
+            .is_some_and(|provider| provider.eq_ignore_ascii_case("codex"));
+        let steps = text_steps(text, codex, session.is_bracketed_paste());
+        self.dispatch_steps(view, steps)
     }
 
     fn date_of(&self, instant: Instant) -> DateTime<Utc> {
@@ -214,13 +286,17 @@ impl HostEnv for GpuiEnv<'_> {
     }
 
     fn write_input(&mut self, key: TabKey, text: &str) -> bool {
-        let Some(panes) = self.tab(key).map(|t| t.panes.clone()) else {
+        self.send_text(key, None, text)
+    }
+    fn write_pane_input(&mut self, key: TabKey, pane: u64, text: &str) -> bool {
+        self.send_text(key, Some(pane), text)
+    }
+    fn write_keys(&mut self, key: TabKey, pane: Option<u64>, keys: &[RemoteKey]) -> bool {
+        let Some(view) = self.input_view(key, pane) else {
             return false;
         };
-        PaneTree::send_input(&panes, text.as_bytes(), self.cx);
-        // The tabs read before the input are stale now.
-        self.cache = None;
-        true
+        let app_cursor = view.read(self.cx).session.read(self.cx).is_app_cursor();
+        self.dispatch_steps(view, key_steps(keys, app_cursor))
     }
 
     fn clear_persistent_style(&mut self, key: TabKey) {

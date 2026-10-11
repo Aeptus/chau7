@@ -17,6 +17,7 @@ icon_assets!(pub ExtraIcons, [
     Book,
     BrushCleaning,
     ChartColumn,
+    Circle,
     CircleArrowDown,
     CircleArrowUp,
     ClipboardCopy,
@@ -34,6 +35,8 @@ icon_assets!(pub ExtraIcons, [
     ListChecks,
     ListEnd,
     ListPlus,
+    Lock,
+    LockOpen,
     Maximize2,
     MessageSquareWarning,
     Pencil,
@@ -53,6 +56,7 @@ icon_assets!(pub ExtraIcons, [
     Terminal,
     TextCursorInput,
     TextSearch,
+    Wrench,
     X,
     ZoomIn,
     ZoomOut,
@@ -82,6 +86,22 @@ impl AssetSource for AppAssets {
 mod tests {
     use super::*;
 
+    #[test]
+    fn every_dashboard_timeline_icon_is_embedded() {
+        for icon in [
+            gpui_kit::assets::IconName::Wrench,
+            gpui_kit::assets::IconName::Check,
+            gpui_kit::assets::IconName::Play,
+            gpui_kit::assets::IconName::Square,
+            gpui_kit::assets::IconName::Lock,
+            gpui_kit::assets::IconName::LockOpen,
+            gpui_kit::assets::IconName::RefreshCw,
+            gpui_kit::assets::IconName::Circle,
+        ] {
+            let path = icon.path();
+            assert!(AppAssets.load(&path).unwrap().is_some(), "{path}");
+        }
+    }
     #[test]
     fn extra_and_default_icons_load() {
         let extra = gpui_kit::assets::IconName::Scissors.path();

@@ -165,7 +165,7 @@ mod tests {
         };
         let dir = std::env::temp_dir().join(format!("next-relay-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&dir).unwrap();
-        let file = dir.join("credentials.json");
+        let file = dir.join("credential-fixture");
         std::fs::write(&file, serde_json::to_vec(&bundle()).unwrap()).unwrap();
         for mode in [0o600, 0o400] {
             std::fs::set_permissions(&file, std::fs::Permissions::from_mode(mode)).unwrap();

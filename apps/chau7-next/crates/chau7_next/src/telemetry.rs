@@ -39,6 +39,19 @@ const REPAIR_LIMIT: i64 = 500;
 const PTY_LOG_DRAIN: std::time::Duration = std::time::Duration::from_millis(500);
 
 struct TelemetryGlobal(Arc<TelemetryRecorder>);
+struct LiveTranscriptsGlobal(Arc<LiveTranscripts>);
+impl Global for LiveTranscriptsGlobal {}
+
+pub fn register_live_log(tab: &str, path: Option<PathBuf>, cx: &App) {
+    if let Some(cache) = cx.try_global::<LiveTranscriptsGlobal>() {
+        let mut paths = cache.0.paths.lock();
+        if let Some(path) = path {
+            paths.insert(tab.into(), path);
+        } else {
+            paths.remove(tab);
+        }
+    }
+}
 struct PromptTimings(Mutex<chau7_next_core::telemetry::latency::PromptTiming>);
 impl Global for PromptTimings {}
 struct TokenRates(Arc<Mutex<chau7_next_core::telemetry::token_rate::TokenRateStore>>);
@@ -94,6 +107,9 @@ impl Global for TelemetryGlobal {}
 /// Open the store (Chau7 Next's own file) and set up the recorder.
 pub fn init(cx: &mut App) {
     cx.set_global(PromptTimings(Mutex::new(Default::default())));
+    cx.set_global(LiveTranscriptsGlobal(Arc::new(LiveTranscripts::new(
+        cx.global::<AppData>().root.home().to_owned(),
+    ))));
     usage::init(cx);
     let root = cx.global::<AppData>().root.clone();
     let store = Arc::new(TelemetryStore::open(&root.telemetry_db()));
@@ -273,6 +289,7 @@ pub fn run_ended(
     if let Some(timing) = cx.try_global::<PromptTimings>() {
         timing.0.lock().clear(tab_id);
     }
+    register_live_log(tab_id, None, cx);
     let Some(run) = recorder.run_ended(tab_id, exit_status.map(i64::from)) else {
         return;
     };
@@ -346,7 +363,10 @@ pub fn connect(cx: &mut App) {
     let store = recorder.store().clone();
 
     // MCP-009 to MCP-016, MCP-039.
-    mcp_sources::set_telemetry(Arc::new(McpTelemetry(recorder.clone())));
+    mcp_sources::set_telemetry(Arc::new(McpTelemetry(
+        recorder.clone(),
+        cx.global::<LiveTranscriptsGlobal>().0.clone(),
+    )));
 
     // REP-009, REP-010, OVL-061.
     let repo_store = store.clone();
@@ -460,74 +480,162 @@ fn analytics_data(cx: &App) -> AnalyticsData {
     data
 }
 
+/// Bounded, off-UI live transcript reads. Keys use run identity so a new
+/// invocation in the same tab cannot inherit an earlier run's cached content.
+struct LiveTranscripts {
+    home: PathBuf,
+    paths: Mutex<std::collections::HashMap<String, PathBuf>>,
+    cache: Mutex<std::collections::HashMap<String, (std::time::Instant, Vec<TelemetryTurn>)>>,
+}
+impl LiveTranscripts {
+    fn new(home: PathBuf) -> Self {
+        Self {
+            home,
+            paths: Mutex::new(Default::default()),
+            cache: Mutex::new(Default::default()),
+        }
+    }
+    fn turns(&self, run: &TelemetryRun) -> Vec<TelemetryTurn> {
+        use chau7_next_core::telemetry::query_projection::{
+            bounded_file_tail, codex_live_turns, pty_live_turns,
+        };
+        let now = std::time::Instant::now();
+        if let Some((at, turns)) = self.cache.lock().get(&run.id)
+            && now.duration_since(*at) < std::time::Duration::from_secs(5)
+        {
+            return turns.clone();
+        }
+        let mut turns = Vec::new();
+        if run.provider.to_lowercase().contains("codex")
+            && let Some(session) = &run.session_id
+            && let Some(text) =
+                bounded_file_tail(&self.home.join(".codex/history.jsonl"), 1_024_000)
+        {
+            turns = codex_live_turns(&text, session, run);
+        }
+        if turns.is_empty()
+            && let Some(tab) = &run.tab_id
+        {
+            let path = self.paths.lock().get(tab).cloned();
+            if let Some(text) = path.and_then(|p| bounded_file_tail(&p, 1_024_000)) {
+                turns = pty_live_turns(&text, run);
+            }
+        }
+        let mut cache = self.cache.lock();
+        cache.retain(|_, (at, _)| now.duration_since(*at) < std::time::Duration::from_secs(5));
+        if cache.len() >= 128
+            && let Some(oldest) = cache
+                .iter()
+                .min_by_key(|(_, (at, _))| *at)
+                .map(|(id, _)| id.clone())
+        {
+            cache.remove(&oldest);
+        }
+        cache.insert(run.id.clone(), (now, turns.clone()));
+        turns
+    }
+}
+
 /// The store as the MCP tools read it (from their own threads).
-struct McpTelemetry(Arc<TelemetryRecorder>);
+struct McpTelemetry(Arc<TelemetryRecorder>, Arc<LiveTranscripts>);
 
 impl mcp_sources::TelemetrySource for McpTelemetry {
     fn run(&self, run_id: &str) -> Option<TelemetryRun> {
-        self.0.store().get_run(run_id).or_else(|| {
-            self.0
-                .all_active_runs()
-                .into_iter()
-                .find(|r| r.id == run_id)
-        })
+        use chau7_next_core::telemetry::query_projection::with_proxy_metrics;
+        let stored = self.0.store().get_run(run_id);
+        self.0
+            .all_active_runs()
+            .into_iter()
+            .find(|r| r.id == run_id)
+            .map(|live| with_proxy_metrics(live, stored.clone()))
+            .or(stored)
     }
     fn runs(&self, filter: &TelemetryRunFilter) -> Vec<TelemetryRun> {
+        use chau7_next_core::telemetry::query_projection::{
+            MAX_STORE_SCAN, matches_filter, merge_runs, query_window,
+        };
+        let (offset, limit) = query_window(filter);
+        if limit == 0 {
+            return Vec::new();
+        }
         let active: Vec<_> = self
             .active_runs()
             .into_iter()
-            .filter(|r| {
-                filter
-                    .session_id
-                    .as_ref()
-                    .is_none_or(|id| r.session_id.as_ref() == Some(id))
-                    && filter
-                        .repo_path
-                        .as_ref()
-                        .is_none_or(|p| r.repo_path.as_ref() == Some(p))
-                    && filter.provider.as_ref().is_none_or(|p| &r.provider == p)
-                    && filter.after.is_none_or(|at| r.started_at >= at)
-                    && filter.before.is_none_or(|at| r.started_at <= at)
-            })
+            .filter(|r| matches_filter(r, filter))
             .collect();
-        let offset = filter.offset.unwrap_or(0).max(0) as usize;
-        let limit = filter.limit.map(|n| n.max(0) as usize);
         let mut stored_filter = filter.clone();
         stored_filter.offset = None;
-        stored_filter.limit = limit.map(|n| n.saturating_add(offset).min(i64::MAX as usize) as i64);
-        chau7_next_core::telemetry::query_projection::merge_runs(
+        stored_filter.limit = Some(
+            limit
+                .saturating_add(offset)
+                .saturating_add(active.len())
+                .min(MAX_STORE_SCAN) as i64,
+        );
+        merge_runs(
             active,
             self.0.store().list_runs(&stored_filter),
             offset,
-            limit,
+            Some(limit),
         )
     }
     fn tool_calls(&self, run_id: &str) -> Vec<TelemetryToolCall> {
         self.0.store().get_tool_calls(run_id)
     }
     fn turns(&self, run_id: &str) -> Vec<TelemetryTurn> {
-        self.0.store().get_turns(run_id)
+        let stored = self.0.store().get_turns(run_id);
+        if !stored.is_empty() {
+            return stored;
+        }
+        self.0
+            .all_active_runs()
+            .into_iter()
+            .find(|r| r.id == run_id)
+            .map(|r| self.1.turns(&r))
+            .unwrap_or_default()
     }
     fn set_tags(&self, run_id: &str, tags: &[String]) {
         self.0.tag_run(run_id, tags);
     }
     fn latest_run_for_repo(&self, repo_path: &str, provider: Option<&str>) -> Option<TelemetryRun> {
-        self.0.store().latest_run_for_repo(repo_path, provider)
+        self.runs(&TelemetryRunFilter {
+            repo_path: Some(repo_path.into()),
+            provider: provider.map(str::to_owned),
+            limit: Some(1),
+            ..Default::default()
+        })
+        .into_iter()
+        .next()
     }
     fn sessions(&self, repo_path: Option<&str>) -> Vec<Map<String, Value>> {
-        self.0.store().list_sessions(repo_path)
+        use chau7_next_core::telemetry::query_projection::{MAX_STORE_SCAN, project_sessions};
+        let rows = self.0.store().list_sessions(repo_path);
+        let active: Vec<_> = self
+            .active_runs()
+            .into_iter()
+            .filter(|r| repo_path.is_none_or(|p| r.repo_path.as_deref() == Some(p)))
+            .collect();
+        let stored = self.0.store().list_runs(&TelemetryRunFilter {
+            repo_path: repo_path.map(str::to_owned),
+            limit: Some(rows.len().saturating_mul(2).clamp(100, MAX_STORE_SCAN) as i64),
+            ..Default::default()
+        });
+        project_sessions(rows, &active, &stored, false)
     }
     fn active_runs(&self) -> Vec<TelemetryRun> {
         self.0
             .all_active_runs()
             .into_iter()
-            .map(|r| self.0.store().get_run(&r.id).unwrap_or(r))
+            .map(|r| {
+                let stored = self.0.store().get_run(&r.id);
+                chau7_next_core::telemetry::query_projection::with_proxy_metrics(r, stored)
+            })
             .collect()
     }
     fn active_run_for_tab(&self, tab_id: &str) -> Option<TelemetryRun> {
-        self.0
-            .active_run_for_tab(tab_id)
-            .map(|r| self.0.store().get_run(&r.id).unwrap_or(r))
+        self.0.active_run_for_tab(tab_id).map(|r| {
+            let stored = self.0.store().get_run(&r.id);
+            chau7_next_core::telemetry::query_projection::with_proxy_metrics(r, stored)
+        })
     }
 }
 
@@ -577,5 +685,92 @@ impl crate::data_explorer::ExplorerSource for ExplorerData {
     }
     fn command_count(&self) -> i64 {
         self.history(|h| h.total_count())
+    }
+}
+
+#[cfg(test)]
+mod query_tests {
+    use super::*;
+    use crate::mcp::sources::TelemetrySource;
+
+    fn source() -> McpTelemetry {
+        McpTelemetry(
+            Arc::new(TelemetryRecorder::new(
+                Arc::new(TelemetryStore::in_memory()),
+                vec![],
+            )),
+            Arc::new(LiveTranscripts::new(PathBuf::from("/unused-test-home"))),
+        )
+    }
+    #[test]
+    fn current_snapshot_and_sql_pagination_do_not_duplicate_runs() {
+        let source = source();
+        let live_id =
+            source
+                .0
+                .run_started("TAB", "claude", "/repo", Some("/repo"), Some("session"));
+        let mut stale = source.0.store().get_run(&live_id).unwrap();
+        stale.ended_at = Some(chrono::Utc::now());
+        source.0.store().rewrite_completed_run(&stale, &[], &[]);
+        assert!(source.run(&live_id).unwrap().ended_at.is_none());
+        assert!(source.active_run_for_tab("TAB").unwrap().ended_at.is_none());
+        for n in 0..4 {
+            let mut stored = TelemetryRun::new("claude", "/repo");
+            stored.repo_path = Some("/repo".into());
+            stored.parent_run_id = Some("parent".into());
+            stored.started_at -= chrono::Duration::seconds(n + 1);
+            source.0.store().insert_run(&stored);
+        }
+        let rows = source.runs(&TelemetryRunFilter {
+            limit: Some(2),
+            offset: Some(1),
+            ..Default::default()
+        });
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.id != live_id));
+        assert_ne!(rows[0].id, rows[1].id);
+        assert_eq!(
+            source.latest_run_for_repo("/repo", None).unwrap().id,
+            live_id
+        );
+        assert_eq!(
+            source
+                .runs(&TelemetryRunFilter {
+                    parent_run_id: Some("parent".into()),
+                    ..Default::default()
+                })
+                .len(),
+            4
+        );
+        let sessions = source.sessions(None);
+        assert_eq!(sessions[0]["active_run_count"], 1);
+        assert_eq!(sessions[0]["latest_run_state"], "active");
+    }
+    #[test]
+    fn transcript_cache_expires_and_never_crosses_run_identity() {
+        let source = source();
+        let dir = std::env::temp_dir().join(format!("chau7-next-query-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("one-pty.log");
+        std::fs::write(&path, "first run").unwrap();
+        let id = source.0.run_started("TAB", "claude", "/repo", None, None);
+        source.1.paths.lock().insert("TAB".into(), path.clone());
+        assert_eq!(source.turns(&id)[0].content.as_deref(), Some("first run"));
+        std::fs::write(&path, "changed output").unwrap();
+        assert_eq!(source.turns(&id)[0].content.as_deref(), Some("first run"));
+        source.1.cache.lock().get_mut(&id).unwrap().0 -= std::time::Duration::from_secs(6);
+        assert_eq!(
+            source.turns(&id)[0].content.as_deref(),
+            Some("changed output")
+        );
+        source.0.run_ended("TAB", Some(0));
+        assert!(source.turns(&id).is_empty());
+        let next = source.0.run_started("TAB", "claude", "/repo", None, None);
+        std::fs::write(&path, "second run").unwrap();
+        assert_eq!(
+            source.turns(&next)[0].content.as_deref(),
+            Some("second run")
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -476,6 +476,9 @@ impl PaneTree {
             SidePaneEvent::PreviewFile(path) => {
                 self.open_file_preview(Some(path.clone()), None, window, cx)
             }
+            SidePaneEvent::OpenEditor(path) => {
+                self.open_file_in_editor(path.clone(), None, window, cx);
+            }
             SidePaneEvent::Changed => cx.notify(),
         }
     }
