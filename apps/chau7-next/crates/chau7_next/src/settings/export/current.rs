@@ -32,6 +32,10 @@ macro_rules! bool_fields {
         $visit!("enableLigatures", $settings.appearance.ligatures);
         $visit!("isAutoTabThemeEnabled", $settings.tabs.auto_tab_theme);
         $visit!("showTabIcons", $settings.tabs.show_icons);
+        $visit!(
+            "showProviderHealthBorder",
+            $settings.tabs.show_provider_health_border
+        );
         $visit!("showTabPath", $settings.tabs.show_path);
         $visit!("showTabGitIndicator", $settings.tabs.show_git_indicator);
         $visit!("showTabCTOIndicator", $settings.tabs.show_cto_indicator);
