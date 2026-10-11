@@ -137,7 +137,7 @@ pub fn encode(
         }
         Key::Special(code) => {
             let is_escape = code == 27;
-            if !all && !(is_escape && disambiguate) && (bits == 0 || !disambiguate) {
+            if !(all || is_escape && disambiguate || disambiguate && bits != 0) {
                 return legacy(event);
             }
             (code, 'u', None)
