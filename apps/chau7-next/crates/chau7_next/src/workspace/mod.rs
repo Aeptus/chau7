@@ -50,7 +50,7 @@ mod shell_loading;
 mod tab_bar_view;
 mod tasks;
 mod timeline;
-mod widgets;
+pub(crate) mod widgets;
 mod window;
 mod window_actions;
 

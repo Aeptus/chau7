@@ -1125,3 +1125,159 @@ mod tests {
         assert_eq!(live_state("exited", false), State::Stopped);
     }
 }
+
+/// Stable, repository-scoped presentation of a real runtime journal event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimelineEntry {
+    pub id: String,
+    pub seq: u64,
+    pub timestamp: DateTime<Utc>,
+    pub session_id: String,
+    pub backend: String,
+    pub event_type: String,
+    pub message: String,
+    pub icon: TimelineIcon,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimelineIcon {
+    Tool,
+    Result,
+    Started,
+    Completed,
+    ApprovalNeeded,
+    ApprovalResolved,
+    StateChanged,
+    Other,
+}
+impl TimelineIcon {
+    pub fn for_event(event_type: &str) -> Self {
+        match event_type {
+            "tool_use" => Self::Tool,
+            "tool_result" => Self::Result,
+            "turn_started" => Self::Started,
+            "turn_completed" => Self::Completed,
+            "approval_needed" => Self::ApprovalNeeded,
+            "approval_resolved" => Self::ApprovalResolved,
+            "state_changed" => Self::StateChanged,
+            _ => Self::Other,
+        }
+    }
+}
+/// Swift retains at most 200 entries; newest first, with stable session:seq IDs.
+pub fn build_timeline(
+    events: impl IntoIterator<Item = (String, RuntimeEvent)>,
+) -> Vec<TimelineEntry> {
+    let mut entries: Vec<_> = events
+        .into_iter()
+        .map(|(backend, event)| {
+            let message = event
+                .data
+                .get("tool")
+                .or_else(|| event.data.get("summary"))
+                .or_else(|| event.data.get("args_summary"))
+                .or_else(|| event.data.get("message"))
+                .cloned()
+                .unwrap_or_else(|| event.event_type.clone());
+            TimelineEntry {
+                id: format!("{}:{}", event.session_id, event.seq),
+                seq: event.seq,
+                timestamp: event.timestamp,
+                session_id: event.session_id,
+                backend,
+                icon: TimelineIcon::for_event(&event.event_type),
+                event_type: event.event_type,
+                message,
+            }
+        })
+        .collect();
+    entries.sort_by(|a, b| {
+        b.timestamp
+            .cmp(&a.timestamp)
+            .then(b.seq.cmp(&a.seq))
+            .then(a.session_id.cmp(&b.session_id))
+    });
+    let mut seen = HashSet::new();
+    entries.retain(|entry| seen.insert(entry.id.clone()));
+    entries.truncate(200);
+    entries
+}
+#[cfg(test)]
+mod timeline_tests {
+    use super::*;
+    fn event(session: &str, seq: u64, seconds: i64, kind: &str) -> RuntimeEvent {
+        RuntimeEvent {
+            seq,
+            session_id: session.into(),
+            turn_id: None,
+            timestamp: DateTime::from_timestamp(seconds, 0).unwrap(),
+            event_type: kind.into(),
+            data: HashMap::new(),
+        }
+    }
+    #[test]
+    fn session_sequence_identity_survives_refresh_and_same_sequence_in_another_session() {
+        let a = event("first", 1, 1, "turn_started");
+        let b = event("second", 1, 2, "approval_needed");
+        let entries = build_timeline(vec![
+            ("Claude".into(), a.clone()),
+            ("Codex".into(), b.clone()),
+            ("Claude".into(), a),
+        ]);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].id, "second:1");
+        assert_eq!(entries[1].id, "first:1");
+        assert_eq!(entries[0].backend, "Codex");
+        assert_eq!(entries[0].icon, TimelineIcon::ApprovalNeeded);
+        assert_eq!(
+            build_timeline(vec![("Codex".into(), b)])[0].id,
+            entries[0].id
+        );
+    }
+    #[test]
+    fn timeline_is_bounded_newest_first_and_uses_actual_message_evidence() {
+        let events = (0..250).map(|seq| {
+            (
+                "Claude".into(),
+                event("session", seq, seq as i64, "tool_use"),
+            )
+        });
+        let entries = build_timeline(events);
+        assert_eq!(entries.len(), 200);
+        assert_eq!(entries[0].id, "session:249");
+        assert_eq!(entries[199].id, "session:50");
+        let mut e = event("s", 1, 1, "tool_result");
+        e.data.insert("summary".into(), "actual summary".into());
+        assert_eq!(
+            build_timeline(vec![("Codex".into(), e.clone())])[0].message,
+            "actual summary"
+        );
+        e.data.insert("tool".into(), "Read".into());
+        assert_eq!(build_timeline(vec![("Codex".into(), e)])[0].message, "Read");
+    }
+    #[test]
+    fn equal_timestamp_orders_numeric_sequences_before_session_tie_break() {
+        let entries = build_timeline(vec![
+            ("Claude".into(), event("s", 9, 1, "tool_use")),
+            ("Claude".into(), event("s", 10, 1, "tool_result")),
+        ]);
+        assert_eq!(
+            entries.iter().map(|e| e.seq).collect::<Vec<_>>(),
+            vec![10, 9]
+        );
+    }
+    #[test]
+    fn icons_match_current_state_tool_and_approval_categories() {
+        for (kind, icon) in [
+            ("tool_use", TimelineIcon::Tool),
+            ("tool_result", TimelineIcon::Result),
+            ("turn_started", TimelineIcon::Started),
+            ("turn_completed", TimelineIcon::Completed),
+            ("approval_needed", TimelineIcon::ApprovalNeeded),
+            ("approval_resolved", TimelineIcon::ApprovalResolved),
+            ("state_changed", TimelineIcon::StateChanged),
+            ("unknown", TimelineIcon::Other),
+        ] {
+            assert_eq!(TimelineIcon::for_event(kind), icon);
+        }
+    }
+}
