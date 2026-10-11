@@ -272,7 +272,8 @@ fn ai_group(ctx: &SectionContext) -> gpui::Div {
             chrome,
             move |v, cx| edit_rules(cx, |r| r.trigger_state.set_group_enabled(v, &gid, &ty)),
         );
-        let extra = (overrides > 0).then(|| format!("{overrides} override(s)"));
+        let extra = (overrides > 0)
+            .then(|| crate::l10n::count("notifications.overrideCount", "%d overrides", overrides));
         block = block.child(trigger_row(
             ctx,
             &info.id,

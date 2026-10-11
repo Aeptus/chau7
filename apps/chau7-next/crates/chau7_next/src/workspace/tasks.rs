@@ -9,6 +9,7 @@
 //! - the "Task Complete?" panel: calls, tokens, cost, duration, tokens
 //!   saved, an optional note, Failed and Success.
 
+use chau7_next_core::l10n::numbers;
 use chrono::Utc;
 use gpui::{Context, Entity, SharedString, Window, div, prelude::*, px};
 use gpui_kit::component::input::{Input, InputState};
@@ -146,7 +147,11 @@ impl Workspace {
                                 .bg(chrome.text_muted.opacity(0.15))
                                 .text_xs()
                                 .text_color(chrome.text_muted)
-                                .child(format!("{}s", remaining / 1000)),
+                                .child(crate::l10n::count(
+                                    "task.candidate.auto_confirm",
+                                    "Auto-confirming in %d seconds",
+                                    remaining / 1000,
+                                )),
                         )
                     })
                     .child(
@@ -183,9 +188,16 @@ impl Workspace {
                 .gap_3()
                 .text_xs()
                 .text_color(chrome.text_muted)
-                .child(format!("\u{2195} {} calls", task.total_api_calls))
-                .child(format!("{} tokens", task.total_tokens))
-                .child(task.formatted_cost())
+                .child(format!(
+                    "\u{2195} {}",
+                    crate::l10n::count("task.calls", "%d calls", task.total_api_calls)
+                ))
+                .child(crate::l10n::count(
+                    "task.tokens",
+                    "%d tokens",
+                    task.total_tokens,
+                ))
+                .child(numbers::cost_precise(task.total_cost_usd))
                 .child(format!("\u{23f1} {}", task.formatted_duration(now)));
             if task.tokens_saved != 0 {
                 stats = stats.child(div().text_color(saved_color).child(format!(
@@ -195,7 +207,11 @@ impl Workspace {
                     } else {
                         "\u{2191}"
                     },
-                    task.formatted_tokens_saved()
+                    format!(
+                        "{}{}",
+                        if task.tokens_saved > 0 { "+" } else { "" },
+                        numbers::integer(task.tokens_saved)
+                    )
                 )));
             }
             let note = self.task_ui.note.clone().filter(|_| self.task_ui.show_note);
@@ -327,21 +343,28 @@ impl Workspace {
                         div()
                             .text_size(px(10.0))
                             .text_color(chrome.text_muted)
-                            .child(chau7_next_core::proxy::format_grouped(task.total_tokens)),
+                            .child(numbers::integer(task.total_tokens)),
                     )
                     .when(task.tokens_saved != 0, |d| {
                         d.child(
                             div()
                                 .text_size(px(10.0))
                                 .text_color(saved_color)
-                                .child(format!("({})", task.formatted_tokens_saved())),
+                                .child(format!(
+                                    "({})",
+                                    format!(
+                                        "{}{}",
+                                        if task.tokens_saved > 0 { "+" } else { "" },
+                                        numbers::integer(task.tokens_saved)
+                                    )
+                                )),
                         )
                     })
                     .child(
                         div()
                             .text_size(px(10.0))
                             .text_color(chrome.text_muted)
-                            .child(task.formatted_cost()),
+                            .child(numbers::cost_precise(task.total_cost_usd)),
                     )
                     .child(
                         div()

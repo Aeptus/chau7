@@ -45,7 +45,11 @@ pub(in super::super) fn section(ctx: &SectionContext) -> gpui::Div {
                     div()
                         .text_sm()
                         .text_color(chrome.text_muted)
-                        .child(format!("{}", ctx.view.mine.user_snippets)),
+                        .child(crate::l10n::count(
+                            "settings.productivity.snippets.count",
+                            "%d snippets",
+                            ctx.view.mine.user_snippets,
+                        )),
                 )
                 .child(
                     small_button("manage-snippets", "Manage Snippets...", chrome)

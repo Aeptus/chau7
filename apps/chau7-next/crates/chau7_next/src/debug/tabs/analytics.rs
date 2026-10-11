@@ -2,15 +2,15 @@
 //! repositories. The data comes from the owners of the stores through
 //! `debug::set_analytics_source`.
 
-use chau7_next_core::debug_console::{
-    AnalyticsData, Tone, format_repo_tokens, relative_time, run_cost_label, success_tone,
-};
+use chau7_next_core::debug_console::{AnalyticsData, Tone, relative_time, success_tone};
 use gpui::{AnyElement, Context, IntoElement, SharedString, div, prelude::*};
 
 use super::tab_label;
 use crate::debug::console::{AnalyticsMode, DebugConsole};
 use crate::debug::{registry, snapshot, ui};
+use crate::l10n::run_cost_label;
 use crate::theme::Chrome;
+use chau7_next_core::l10n::numbers;
 
 fn capitalized(text: &str) -> String {
     let mut chars = text.chars();
@@ -63,13 +63,21 @@ fn proxy_page(data: &AnalyticsData, chrome: Chrome) -> gpui::Div {
                 .flex()
                 .justify_between()
                 .text_xs()
-                .child(format!("Calls: {}", s.call_count))
-                .child(format!("Tokens: {}", s.total_tokens))
-                .child(
-                    div()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .child(format!("Cost: ${:.4}", s.total_cost)),
-                )
+                .child(format!(
+                    "{}: {}",
+                    crate::l10n::tr("Calls"),
+                    numbers::integer(s.call_count)
+                ))
+                .child(format!(
+                    "{}: {}",
+                    crate::l10n::tr("Tokens"),
+                    numbers::integer(s.total_tokens)
+                ))
+                .child(div().font_weight(gpui::FontWeight::BOLD).child(format!(
+                    "{}: {}",
+                    crate::l10n::tr("Cost"),
+                    numbers::cost_precise(s.total_cost)
+                )))
                 .child(
                     div()
                         .text_color(chrome.text_muted)
@@ -86,9 +94,15 @@ fn proxy_page(data: &AnalyticsData, chrome: Chrome) -> gpui::Div {
         providers = providers.child(detail_row(
             capitalized(&stat.provider),
             vec![
-                (format!("{} calls", stat.call_count), None),
-                (format!("{} tokens", stat.total_tokens), None),
-                (format!("${:.4}", stat.total_cost), Some(Tone::Info)),
+                (
+                    crate::l10n::count("task.calls", "%d calls", stat.call_count),
+                    None,
+                ),
+                (
+                    crate::l10n::count("task.tokens", "%d tokens", stat.total_tokens),
+                    None,
+                ),
+                (numbers::cost_precise(stat.total_cost), Some(Tone::Info)),
             ],
             chrome,
         ));
@@ -102,9 +116,15 @@ fn proxy_page(data: &AnalyticsData, chrome: Chrome) -> gpui::Div {
         daily = daily.child(detail_row(
             day.date.clone(),
             vec![
-                (format!("{} calls", day.call_count), None),
-                (format!("{} tokens", day.total_tokens), None),
-                (format!("${:.4}", day.total_cost), Some(Tone::Info)),
+                (
+                    crate::l10n::count("task.calls", "%d calls", day.call_count),
+                    None,
+                ),
+                (
+                    crate::l10n::count("task.tokens", "%d tokens", day.total_tokens),
+                    None,
+                ),
+                (numbers::cost_precise(day.total_cost), Some(Tone::Info)),
             ],
             chrome,
         ));
@@ -118,7 +138,10 @@ fn proxy_page(data: &AnalyticsData, chrome: Chrome) -> gpui::Div {
         recent = recent.child(detail_row(
             format!("{}  {}", call.provider, call.model),
             vec![
-                (format!("{} tokens", call.total_tokens), None),
+                (
+                    crate::l10n::count("task.tokens", "%d tokens", call.total_tokens),
+                    None,
+                ),
                 (call.formatted_cost.clone(), Some(Tone::Info)),
                 (call.formatted_latency.clone(), None),
             ],
@@ -149,7 +172,10 @@ fn runs_page(
         providers = providers.child(detail_row(
             stat.provider.clone(),
             vec![
-                (format!("{} runs", stat.run_count), None),
+                (
+                    crate::l10n::count("explorer.runs.count", "%d runs", stat.run_count),
+                    None,
+                ),
                 (
                     format!("{} billable-ish tokens", stat.total_billable_tokens()),
                     None,
@@ -281,7 +307,11 @@ fn repos_page(data: &AnalyticsData, chrome: Chrome) -> gpui::Div {
                 .child(
                     div()
                         .text_color(chrome.text_muted)
-                        .child(format!("{} cmds", repo.total_commands)),
+                        .child(crate::l10n::count(
+                            "explorer.sessions.cmds",
+                            "%d cmds",
+                            repo.total_commands,
+                        )),
                 )
                 .child(
                     div()
@@ -294,7 +324,11 @@ fn repos_page(data: &AnalyticsData, chrome: Chrome) -> gpui::Div {
             stats = stats.child(
                 div()
                     .text_color(chrome.text_muted)
-                    .child(format!("{} runs", repo.total_runs)),
+                    .child(crate::l10n::count(
+                        "explorer.sessions.runs",
+                        "%d runs",
+                        repo.total_runs,
+                    )),
             );
         }
         if repo.total_tokens > 0 {
@@ -302,7 +336,7 @@ fn repos_page(data: &AnalyticsData, chrome: Chrome) -> gpui::Div {
                 div()
                     .font_family("Menlo")
                     .text_color(ui::tone_color(Tone::Info, chrome))
-                    .child(format_repo_tokens(repo.total_tokens)),
+                    .child(numbers::abbreviated(repo.total_tokens)),
             );
         }
         if repo.total_cost > 0.0 {

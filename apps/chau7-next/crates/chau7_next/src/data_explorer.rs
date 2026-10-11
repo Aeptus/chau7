@@ -335,7 +335,11 @@ impl DataExplorerView {
                     d.child(
                         div()
                             .text_color(chrome.text_muted)
-                            .child(format!("{} cmds", group.total_commands)),
+                            .child(crate::l10n::count(
+                                "explorer.sessions.cmds",
+                                "%d cmds",
+                                group.total_commands,
+                            )),
                     )
                     .child(
                         div()
@@ -348,14 +352,20 @@ impl DataExplorerView {
                 .child(
                     div()
                         .text_color(chrome.text_muted)
-                        .child(format!("{} runs", group.run_count)),
+                        .child(crate::l10n::count(
+                            "explorer.sessions.runs",
+                            "%d runs",
+                            group.run_count,
+                        )),
                 )
                 .when(group.total_tokens > 0, |d| {
                     d.child(
                         div()
                             .font_family("monospace")
                             .text_color(gpui::rgb(0x007aff))
-                            .child(dex::format_tokens(group.total_tokens)),
+                            .child(chau7_next_core::l10n::numbers::abbreviated(
+                                group.total_tokens,
+                            )),
                     )
                 })
                 .when(group.total_cost > 0.0, |d| {
@@ -363,7 +373,7 @@ impl DataExplorerView {
                         div()
                             .font_family("monospace")
                             .text_color(gpui::rgb(0xff9500))
-                            .child(dex::format_cost(group.total_cost)),
+                            .child(chau7_next_core::l10n::numbers::currency(group.total_cost)),
                     )
                 });
             list = list.child(
@@ -468,18 +478,22 @@ impl DataExplorerView {
                                         .child(dex::short_session_id(run)),
                                 )
                                 .when(run.turn_count > 0, |d| {
-                                    d.child(
-                                        div()
-                                            .text_color(chrome.text_muted)
-                                            .child(format!("{} turns", run.turn_count)),
-                                    )
+                                    d.child(div().text_color(chrome.text_muted).child(
+                                        crate::l10n::count(
+                                            "hovercard.turns",
+                                            "%d turns",
+                                            run.turn_count,
+                                        ),
+                                    ))
                                 })
                                 .when(tokens > 0, |d| {
                                     d.child(
                                         div()
                                             .font_family("monospace")
                                             .text_color(gpui::rgb(0x007aff))
-                                            .child(dex::format_tokens(tokens)),
+                                            .child(chau7_next_core::l10n::numbers::abbreviated(
+                                                tokens,
+                                            )),
                                     )
                                 })
                                 .children(run.model.clone().filter(|m| !m.is_empty()).map(|m| {
@@ -506,18 +520,16 @@ impl DataExplorerView {
                         .text_color(chrome.text_muted)
                         .border_b_1()
                         .border_color(chrome.border)
-                        .child(
-                            div()
-                                .font_weight(gpui::FontWeight::MEDIUM)
-                                .child(format!("{} runs", self.runs.len())),
-                        )
+                        .child(div().font_weight(gpui::FontWeight::MEDIUM).child(
+                            crate::l10n::count("explorer.runs.count", "%d runs", self.runs.len()),
+                        ))
                         .child(div().flex_1())
                         .when(with_tokens > 0, |d| {
-                            d.child(
-                                div()
-                                    .opacity(0.7)
-                                    .child(format!("{with_tokens} with token data")),
-                            )
+                            d.child(div().opacity(0.7).child(crate::l10n::count(
+                                "explorer.runs.withTokens",
+                                "%d with token data",
+                                with_tokens,
+                            )))
                         }),
                 )
                 .child(list)
@@ -614,7 +626,11 @@ impl DataExplorerView {
                 div()
                     .text_size(px(11.0))
                     .text_color(chrome.text_muted)
-                    .child(format!("{} total records", self.total_count)),
+                    .child(crate::l10n::count(
+                        "explorer.history.totalRecords",
+                        "%d total records",
+                        self.total_count,
+                    )),
             );
         let body = if self.records.is_empty() {
             empty(
