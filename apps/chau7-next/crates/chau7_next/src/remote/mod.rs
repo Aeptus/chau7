@@ -164,6 +164,19 @@ fn output_batching_enabled() -> bool {
 /// the session parses. Only the selected tab's output is kept. Batches go
 /// out on the remote timer (33 ms) or as soon as 32 KB are pending, which
 /// matches Swift's per-tab batching (50 ms or 256 KB, then the relay limit).
+pub fn ingest_claude_event(
+    event: &chau7_next_core::monitoring::claude_code::ClaudeCodeEvent,
+    tab: Option<u64>,
+    cx: &mut App,
+) {
+    let Some(entity) = handle(cx) else {
+        return;
+    };
+    entity.update(cx, |rc, _| {
+        rc.host.ingest_claude_event(event, tab, chrono::Utc::now())
+    });
+}
+
 pub fn record_output(session: u64, data: &[u8], cx: &mut App) {
     let Some(entity) = handle(cx) else { return };
     let full = entity.update(cx, |rc, _| {

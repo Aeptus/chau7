@@ -49,6 +49,10 @@ pub struct RemoteInteractivePrompt {
     pub options: Vec<RemoteInteractivePromptOption>,
     #[serde(with = "super::apple_date")]
     pub detected_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<uuid::Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_multi_select: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -77,6 +81,8 @@ mod tests {
                 RemoteInteractivePromptOption::new("2", "No", "2\r", true),
             ],
             detected_at: Utc.timestamp_opt(1_742_000_000, 0).unwrap(),
+            pane_id: None,
+            is_multi_select: None,
         }
     }
 
