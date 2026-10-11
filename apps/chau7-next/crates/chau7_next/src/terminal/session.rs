@@ -165,7 +165,7 @@ impl ShellContext for EnvContext {
 pub struct TerminalSession {
     pub id: u64,
     /// This terminal's identity for the analytics proxy and AI run
-    /// telemetry (`tabIdentifier`, `CHAU7_TAB_ID`): a UUID per session.
+    /// telemetry (`tabIdentifier`, `CHAU7_NEXT_TAB_ID`): a UUID per session.
     pub tab_identifier: String,
     term: Arc<RwLock<Chau7Terminal>>,
     memory: Arc<crate::memory_pressure::SessionMemory>,
@@ -204,6 +204,10 @@ pub struct TerminalSession {
     pub exited: Option<Option<i32>>,
     pub last_activity: Instant,
     pub last_command: Option<LastCommand>,
+    /// OSC9 prompt status is metadata, not a second command completion.
+    pub last_prompt_exit_code: Option<i32>,
+    pub last_prompt_exit_at: Option<Instant>,
+    osc9: chau7_next_core::osc9::Parser,
     pub command_running: bool,
     pub started_at: Instant,
     /// Suspend Background Rendering (`paint.rs`, view blink timer): while
@@ -247,6 +251,7 @@ pub struct TerminalSession {
     mouse_reporting_enabled: std::cell::Cell<bool>,
     _pump: Task<()>,
     _ticker: Task<()>,
+    process_subscription: Option<crate::monitoring::process_tree::Subscription>,
 }
 
 impl EventEmitter<SessionEvent> for TerminalSession {}
@@ -356,6 +361,22 @@ impl TerminalSession {
         ));
         // TRM-026: AI CLIs go through the local analytics proxy.
         let tab_identifier = uuid::Uuid::new_v4().to_string().to_uppercase();
+        env.extend([
+            ("CHAU7_NEXT_SESSION_ID".into(), session_id.clone()),
+            ("CHAU7_NEXT_TAB_ID".into(), tab_identifier.clone()),
+            (
+                "CHAU7_NEXT_PROJECT".into(),
+                start_dir.to_string_lossy().into_owned(),
+            ),
+            // Installed Swift hooks must not treat a Next shell as their tab.
+            ("CHAU7_TAB_ID".into(), String::new()),
+            (
+                "CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR".into(),
+                shell_integration::codex_wrapper_dir(&integration_dir)
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        ]);
         if settings.proxy.enabled {
             env.extend(chau7_next_core::proxy::shell_env(
                 settings.proxy.port,
@@ -364,6 +385,12 @@ impl TerminalSession {
                 &tab_identifier,
                 &start_dir.to_string_lossy(),
             ));
+            if settings.proxy.include_openai {
+                env.extend(chau7_next_core::proxy::codex_shell_env(
+                    root,
+                    settings.proxy.port,
+                ));
+            }
         }
         // Token optimization: the wrapper folder in front of PATH, and the
         // variables the wrappers read (`launchPATHValue`, `buildEnvironment`).
@@ -376,6 +403,19 @@ impl TerminalSession {
                 .unwrap_or_default();
             env.retain(|(k, _)| k != "PATH");
             env.extend(crate::cto::shell_environment(&paths, &path, &session_id));
+        }
+        // The owned dispatcher also provides notification capture when
+        // analytics is disabled; Codex's shim transparently passes through.
+        #[cfg(unix)]
+        {
+            let wrapper = shell_integration::codex_wrapper_dir(&integration_dir);
+            let previous = env
+                .iter()
+                .find(|(key, _)| key == "PATH")
+                .map(|(_, value)| value.clone())
+                .unwrap_or_default();
+            env.retain(|(key, _)| key != "PATH");
+            env.push(("PATH".into(), format!("{}:{previous}", wrapper.display())));
         }
         let search_path = env
             .iter()
@@ -621,6 +661,9 @@ impl TerminalSession {
             .map_or(10_000, |settings| settings.terminal.scrollback_lines);
         let memory = crate::memory_pressure::register(id, &term, &root, lines);
         let _ = profile_memory.set(Arc::downgrade(&memory));
+        let process_subscription = (has_pty && pid > 0).then(|| {
+            crate::monitoring::process_tree::subscribe(pid as u32, cx.entity().downgrade(), cx)
+        });
         Self {
             id,
             term,
@@ -650,6 +693,9 @@ impl TerminalSession {
             exited: None,
             last_activity: now,
             last_command: None,
+            last_prompt_exit_code: None,
+            last_prompt_exit_at: None,
+            osc9: Default::default(),
             command_running: false,
             started_at: now,
             render_suspended,
@@ -678,6 +724,7 @@ impl TerminalSession {
             mouse_reporting_enabled: std::cell::Cell::new(false),
             _pump: pump,
             _ticker: ticker,
+            process_subscription,
         }
     }
 
@@ -737,7 +784,7 @@ impl TerminalSession {
             WorkQueue::Main,
         ));
         let started = Instant::now();
-        self.memory.set_tui(self.ai_app.is_some());
+        self.memory.set_tui(self.is_ai_running());
         let mut metadata_changed = self.retry_resize();
         let (grid, cursor, title, closed, events, bell, clipboard, clipboard_load) = {
             let term = self.term.read();
@@ -817,8 +864,12 @@ impl TerminalSession {
         let now = now_secs();
 
         if let Some(title) = title {
-            self.title = Some(title).filter(|t| !t.trim().is_empty());
-            metadata_changed = true;
+            let stable = chau7_next_core::terminal_title::stable_display_title(&title);
+            let next = (!stable.is_empty()).then(|| stable.to_string());
+            if next != self.title {
+                self.title = next;
+                metadata_changed = true;
+            }
         }
 
         // Typed input first (the command line), then the marks, then the
@@ -836,6 +887,7 @@ impl TerminalSession {
                 }
             };
             let prompt = mark == ShellMark::PromptStart;
+            crate::monitoring::process_tree::refresh(cx, mark == ShellMark::CommandStart);
             self.tracker.handle_mark(mark, line, now);
             if prompt {
                 // The first prompt creates the deferred token optimizer flag.
@@ -887,6 +939,7 @@ impl TerminalSession {
         }
         metadata_changed |= self.drain_tracker_events(cx);
         if !output.is_empty() {
+            metadata_changed |= self.handle_osc9(&output, cx);
             crate::telemetry::note_output(&self.tab_identifier, &output, cx);
         }
 
@@ -902,6 +955,8 @@ impl TerminalSession {
         if closed && self.exited.is_none() {
             let code = self.term.read().try_child_exit_code();
             self.exited = Some(code);
+            self.process_subscription.take();
+            self.tracker.update_live_agent(None);
             self.tracker.mark_exited();
             self.tracker.take_events();
             self.command_running = false;
@@ -942,7 +997,7 @@ impl TerminalSession {
         if metadata_changed {
             cx.emit(SessionEvent::MetadataChanged);
         }
-        self.memory.set_tui(self.ai_app.is_some());
+        self.memory.set_tui(self.is_ai_running());
         cx.emit(SessionEvent::Output);
         cx.notify();
         feature_profiler::record(
@@ -1279,6 +1334,91 @@ impl TerminalSession {
             cx.emit(SessionEvent::MetadataChanged);
             cx.notify();
         }
+    }
+
+    fn handle_osc9(&mut self, output: &[u8], cx: &mut Context<Self>) -> bool {
+        use chau7_next_core::osc9::Event;
+        let mut changed = false;
+        for event in self.osc9.ingest(output) {
+            match event {
+                Event::Chau7 { key, value } => match key.as_str() {
+                    "exit" => {
+                        if let Ok(code) = value.parse::<i32>() {
+                            self.last_prompt_exit_code = Some(code);
+                            self.last_prompt_exit_at = Some(Instant::now());
+                            changed = true;
+                        }
+                    }
+                    "repo-root" => {
+                        let previous = self.git_root.as_deref().map(|root| root.to_string_lossy());
+                        let normalized = Path::new(value.trim())
+                            .is_absolute()
+                            .then(|| {
+                                chau7_next_core::repository::known_identity::normalize_root(
+                                    value.trim(),
+                                )
+                            })
+                            .flatten();
+                        if let Some(root) = normalized {
+                            let branch = if previous.as_deref().is_none_or(|old| old == root) {
+                                self.git_branch.clone()
+                            } else {
+                                None
+                            };
+                            if let Some(root) =
+                                crate::repository::report_shell_root(&root, branch.as_deref(), cx)
+                            {
+                                changed |= self.git_root.as_deref() != Some(Path::new(&root));
+                                self.git_root = Some(root.into());
+                                changed |= self.adopt_reported_branch(branch, cx);
+                            }
+                        }
+                    }
+                    "branch" => {
+                        let branch =
+                            chau7_next_core::repository::known_identity::branch_name(Some(&value));
+                        if let Some(root) = &self.git_root {
+                            crate::repository::report_shell_root(
+                                &root.to_string_lossy(),
+                                Some(&value),
+                                cx,
+                            );
+                        }
+                        changed |= self.adopt_reported_branch(branch, cx);
+                    }
+                    _ => {}
+                },
+                Event::Foreign { message } => {
+                    let provider = self.tracker.effective_provider();
+                    if let Some(event) = chau7_next_core::osc9::foreign_event(
+                        &message,
+                        provider.as_deref(),
+                        self.ai_app.as_deref().or(self.tracker.active_app()),
+                        self.tracker.current_directory(),
+                        self.tracker.ai_session_id(),
+                        &chau7_next_core::iso8601::now_iso8601(),
+                    ) {
+                        self.emit_ai(event, true, cx);
+                    }
+                }
+            }
+        }
+        changed
+    }
+
+    fn adopt_reported_branch(&mut self, branch: Option<String>, cx: &mut Context<Self>) -> bool {
+        if self.git_branch == branch {
+            return false;
+        }
+        let events = self
+            .monitor
+            .shell_events
+            .git_branch_changed(branch.as_deref());
+        self.git_branch = branch;
+        for event in events {
+            self.emit_ai(shell_ai_event(event), true, cx);
+        }
+        true
     }
 
     fn emit_ai(&self, event: AiEvent, notify: bool, cx: &mut Context<Self>) {
@@ -1784,7 +1924,7 @@ impl TerminalSession {
     }
 
     pub fn selection_text(&self) -> Option<String> {
-        self.term.read().selection_text().filter(|t| !t.is_empty())
+        clipboard_selection(&self.term.read(), self.tracker.is_ai_running())
     }
 
     pub fn clear_scrollback(&self) {
@@ -1894,7 +2034,7 @@ impl TerminalSession {
             self.poll_interrupt.wake();
             let _ = self.refresh_wake.unbounded_send(RefreshWake::Cadence);
         }
-        self.memory.set_tui(self.ai_app.is_some());
+        self.memory.set_tui(self.is_ai_running());
     }
 
     /// Actual view/window focus supplies interactive state. A zero interval
@@ -1975,9 +2115,39 @@ impl TerminalSession {
         self.tracker.blocks()
     }
 
+    /// Automation must never overwrite a typed fragment or queued restore.
+    pub(crate) fn has_pending_automation_input(&self) -> bool {
+        !self.pending_input.borrow().is_empty()
+            || self.pending_prefill.is_some()
+            || self.tracker.prefill_pending
+            || self.tracker.has_pending_input()
+    }
+
     /// Shell state (AI provider and session id, prompt, integration).
     pub fn shell(&self) -> &ShellSession {
         &self.tracker
+    }
+
+    pub(crate) fn ai_display_app_name(&self) -> Option<String> {
+        self.tracker.ai_display_app_name()
+    }
+    pub(crate) fn is_ai_running(&self) -> bool {
+        self.exited.is_none() && self.tracker.is_ai_running()
+    }
+    pub(crate) fn apply_live_process_snapshot(
+        &mut self,
+        provider: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.close_requested || self.exited.is_some() {
+            return;
+        }
+        if self.tracker.update_live_agent(provider) {
+            self.memory.set_tui(self.is_ai_running());
+            crate::cto::set_ai_active(&self.cto_id, self.is_ai_running());
+            cx.emit(SessionEvent::MetadataChanged);
+            cx.notify();
+        }
     }
 
     /// The tab hosts an agent runtime session: no terminal-prompt
@@ -2001,6 +2171,7 @@ impl TerminalSession {
 
     /// Close the session: `exit`, then signals (TRM-007). Also done on drop.
     pub fn close(&mut self) {
+        self.process_subscription.take();
         if self.close_requested {
             return;
         }
@@ -2011,7 +2182,7 @@ impl TerminalSession {
             CloseMode::AppQuit
         } else {
             CloseMode::Graceful {
-                ai_running: self.ai_app.is_some(),
+                ai_running: self.is_ai_running(),
             }
         };
         if self.exited.is_none() {
@@ -2181,6 +2352,71 @@ pub(crate) fn apply_agent_feedback(event: &AiEvent, cx: &mut gpui::App) {
     }
     for session in sessions {
         session.update(cx, |session, cx| session.handle_agent_feedback(event, cx));
+    }
+}
+
+/// Shared by all UI and MCP selection callers; native selection joins soft wraps.
+fn clipboard_selection(terminal: &Chau7Terminal, live_ai: bool) -> Option<String> {
+    terminal
+        .selection_text()
+        .map(|text| {
+            chau7_next_core::terminal_clipboard::copied_text(
+                &text,
+                live_ai || terminal.is_alt_screen(),
+            )
+            .into_owned()
+        })
+        .filter(|text| !text.is_empty())
+}
+
+#[cfg(test)]
+mod clipboard_tests {
+    use super::*;
+    #[test]
+    fn actual_native_selection_preserves_soft_wrap_spaces_and_trims_padding() {
+        let term = Chau7Terminal::new_headless(5, 2).unwrap();
+        term.inject_output(b"echo hello");
+        term.selection_start(0, 0, 0);
+        term.selection_update(4, 1);
+        let native = term.selection_text().unwrap();
+        assert_eq!(native.trim_end_matches('\n'), "echo hello");
+        assert_eq!(clipboard_selection(&term, false).unwrap(), native);
+        assert_eq!(clipboard_selection(&term, true).unwrap(), "echo hello");
+    }
+    #[test]
+    fn actual_tui_hard_wrapped_path_and_argument_selection() {
+        for (raw, end, expected) in [
+            (
+                &b"cat /tmp/very\r\nlongpath"[..],
+                7,
+                "cat /tmp/verylongpath",
+            ),
+            (&b"echo hello\r\n    --flag"[..], 9, "echo hello --flag"),
+        ] {
+            let term = Chau7Terminal::new_headless(40, 2).unwrap();
+            term.inject_output(raw);
+            term.selection_start(0, 0, 0);
+            term.selection_update(end, 1);
+            assert_eq!(clipboard_selection(&term, true).unwrap(), expected);
+            assert_eq!(
+                clipboard_selection(&term, false).unwrap(),
+                term.selection_text().unwrap()
+            );
+        }
+    }
+    #[test]
+    fn actual_alternate_screen_is_tui_without_detected_ai() {
+        let term = Chau7Terminal::new_headless(40, 2).unwrap();
+        term.inject_output(b"\x1b[?1049hecho hello\r\n    --flag");
+        assert!(term.is_alt_screen());
+        term.selection_start(0, 0, 0);
+        term.selection_update(9, 1);
+        assert_eq!(
+            clipboard_selection(&term, false).unwrap(),
+            "echo hello --flag"
+        );
+        term.selection_clear();
+        assert_eq!(clipboard_selection(&term, false), None);
     }
 }
 

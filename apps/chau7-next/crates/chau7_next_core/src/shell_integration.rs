@@ -12,12 +12,19 @@
 //! Like Swift, each wrapper sources the user's files first, then: cd to the
 //! start directory (`CHAU7_NEXT_START_DIR`, in case the user's config moved
 //! away), runs the "startup command" setting with `eval`
-//! (`CHAU7_NEXT_STARTUP_CMD`), and keeps `ANTHROPIC_EXTRA_HEADERS`
+//! (`CHAU7_NEXT_STARTUP_CMD`), and keeps `ANTHROPIC_CUSTOM_HEADERS`
 //! (`X-Chau7-Session`, `X-Chau7-Tab`, `X-Chau7-Project`) up to date on every
 //! directory change. The zsh wrapper also puts Volta image node toolchains
 //! that ship `codex` ahead of `~/.volta/bin`.
 
 use std::path::{Path, PathBuf};
+
+/// Override Codex's supported base URL while keeping built-in provider/auth.
+pub const CODEX_PROXY_WRAPPER: &str = include_str!("codex_proxy_wrapper.sh");
+
+pub fn codex_wrapper_dir(dir: &Path) -> PathBuf {
+    dir.join("bin")
+}
 
 /// Startup file for zsh, placed in our `ZDOTDIR`. It restores the user's
 /// `ZDOTDIR`, sources their files, then adds the hooks.
@@ -36,6 +43,13 @@ path=("${(s/:/)PATH}")
 for _chau7_next_bin in "$HOME/.volta/tools/image/node/"*"/bin"(N); do
   [ -x "$_chau7_next_bin/codex" ] && path=($_chau7_next_bin $path)
 done
+if [ -n "$CHAU7_CTO_BIN_DIR" ] && [[ ${path[(Ie)$CHAU7_CTO_BIN_DIR]} -gt 0 ]]; then
+  path=("$CHAU7_CTO_BIN_DIR" $path)
+fi
+if [ -n "$CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR" ] && [ -x "$CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR/codex" ]; then
+  path=("$CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR" $path)
+fi
+export CHAU7_TAB_ID=""
 typeset -U path
 export PATH="${(j/:/)path}"
 unset _chau7_next_bin
@@ -50,6 +64,8 @@ _chau7_next_precmd() {
     printf '\e]133;D;%s\a' "$code"
   fi
   unset _chau7_next_ran
+  printf '\e]9;chau7;exit=%s\a' "$code"
+  _chau7_next_update_project
   printf '\e]7;file://%s%s\a' "${HOST:-localhost}" "$PWD"
   printf '\e]133;A\a'
 }
@@ -59,10 +75,29 @@ _chau7_next_preexec() {
   # Command history for Chau7 Next's history search: time, directory, command.
   [ -f "$CHAU7_NEXT_HISTORY_FILE" ] && print -r -- "$EPOCHSECONDS	$PWD	${1//$'\n'/ }" >> "$CHAU7_NEXT_HISTORY_FILE" 2>/dev/null
 }
+if [ "$CHAU7_NEXT_PROXY_CORRELATION_ENABLED" = "1" ]; then
+ export CHAU7_NEXT_ANTHROPIC_HEADERS_BASE="${ANTHROPIC_CUSTOM_HEADERS:-}"
+fi
 _chau7_next_update_project() {
-  local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
-  export CHAU7_PROJECT="${git_root:-$PWD}"
-  export ANTHROPIC_EXTRA_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-},X-Chau7-Tab:${CHAU7_TAB_ID:-},X-Chau7-Project:${CHAU7_PROJECT:-}"
+  local git_data=$(git rev-parse --show-toplevel --abbrev-ref HEAD 2>/dev/null)
+  local git_root="${git_data%%$'\n'*}"
+  local git_branch="${git_data##*$'\n'}"
+  [ -n "$git_root" ] && printf '\e]9;chau7;repo-root=%s\a' "$git_root"
+  [ -n "$git_branch" ] && [ "$git_branch" != "$git_root" ] && printf '\e]9;chau7;branch=%s\a' "$git_branch"
+  export CHAU7_NEXT_PROJECT="${git_root:-$PWD}"
+  if [ "$CHAU7_NEXT_PROXY_CORRELATION_ENABLED" = "1" ]; then
+    local headers="X-Chau7-Session: ${CHAU7_NEXT_SESSION_ID:-}
+X-Chau7-Tab: ${CHAU7_NEXT_TAB_ID:-}
+X-Chau7-Project: ${CHAU7_NEXT_PROJECT:-}"
+    export ANTHROPIC_CUSTOM_HEADERS="${CHAU7_NEXT_ANTHROPIC_HEADERS_BASE:+$CHAU7_NEXT_ANTHROPIC_HEADERS_BASE
+}$headers"
+    if [ -z "${ENABLE_TOOL_SEARCH+x}" ]; then export ENABLE_TOOL_SEARCH=true; fi
+  fi
+  if [ -n "$CHAU7_NEXT_OPENAI_PROXY_BASE_URL" ]; then
+    local project_token
+    project_token=$(printf '%s' "$CHAU7_NEXT_PROJECT" | base64 | tr '+/' '-_' | tr -d '=\n')
+    export OPENAI_BASE_URL="$CHAU7_NEXT_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"
+  fi
 }
 zmodload zsh/datetime 2>/dev/null
 autoload -Uz add-zsh-hook 2>/dev/null
@@ -89,15 +124,41 @@ fi
 pub const BASHRC: &str = r#"# Chau7 Next shell integration (bash). Sources your own files first.
 [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc"
 [ -f "$HOME/.bash_profile" ] && source "$HOME/.bash_profile"
+export CHAU7_TAB_ID=""
+if [ -n "$CHAU7_CTO_BIN_DIR" ]; then
+ case ":$PATH:" in *":$CHAU7_CTO_BIN_DIR:"*) export PATH="$CHAU7_CTO_BIN_DIR:$PATH" ;; esac
+fi
+if [ -n "$CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR" ] && [ -x "$CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR/codex" ]; then
+ export PATH="$CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR:$PATH"
+fi
 if [ -n "$CHAU7_NEXT_START_DIR" ] && [ -d "$CHAU7_NEXT_START_DIR" ]; then
   cd "$CHAU7_NEXT_START_DIR"
 fi
 unset CHAU7_NEXT_START_DIR
+if [ "$CHAU7_NEXT_PROXY_CORRELATION_ENABLED" = "1" ]; then
+ export CHAU7_NEXT_ANTHROPIC_HEADERS_BASE="${ANTHROPIC_CUSTOM_HEADERS:-}"
+fi
 _chau7_next_update_project() {
-  local git_root
-  git_root=$(git rev-parse --show-toplevel 2>/dev/null)
-  export CHAU7_PROJECT="${git_root:-$PWD}"
-  export ANTHROPIC_EXTRA_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-},X-Chau7-Tab:${CHAU7_TAB_ID:-},X-Chau7-Project:${CHAU7_PROJECT:-}"
+  local git_data git_root git_branch
+  git_data=$(git rev-parse --show-toplevel --abbrev-ref HEAD 2>/dev/null)
+  git_root="${git_data%%$'\n'*}"
+  git_branch="${git_data##*$'\n'}"
+  [ -n "$git_root" ] && printf '\e]9;chau7;repo-root=%s\a' "$git_root"
+  [ -n "$git_branch" ] && [ "$git_branch" != "$git_root" ] && printf '\e]9;chau7;branch=%s\a' "$git_branch"
+  export CHAU7_NEXT_PROJECT="${git_root:-$PWD}"
+  if [ "$CHAU7_NEXT_PROXY_CORRELATION_ENABLED" = "1" ]; then
+    local headers="X-Chau7-Session: ${CHAU7_NEXT_SESSION_ID:-}
+X-Chau7-Tab: ${CHAU7_NEXT_TAB_ID:-}
+X-Chau7-Project: ${CHAU7_NEXT_PROJECT:-}"
+    export ANTHROPIC_CUSTOM_HEADERS="${CHAU7_NEXT_ANTHROPIC_HEADERS_BASE:+$CHAU7_NEXT_ANTHROPIC_HEADERS_BASE
+}$headers"
+    if [ -z "${ENABLE_TOOL_SEARCH+x}" ]; then export ENABLE_TOOL_SEARCH=true; fi
+  fi
+  if [ -n "$CHAU7_NEXT_OPENAI_PROXY_BASE_URL" ]; then
+    local project_token
+    project_token=$(printf '%s' "$CHAU7_NEXT_PROJECT" | base64 | tr '+/' '-_' | tr -d '=\n')
+    export OPENAI_BASE_URL="$CHAU7_NEXT_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"
+  fi
 }
 _chau7_next_prompt() {
   local _c7c=$?
@@ -106,16 +167,15 @@ _chau7_next_prompt() {
     [ -f "$CHAU7_NEXT_HISTORY_FILE" ] && printf '%s\t%s\t%s\n' "$(date +%s)" "$PWD" "$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]* *//')" >> "$CHAU7_NEXT_HISTORY_FILE" 2>/dev/null
   fi
   unset _c7r
-  if [ "$_chau7_next_pwd" != "$PWD" ]; then
-    _chau7_next_pwd="$PWD"
-    _chau7_next_update_project
-  fi
+  printf '\e]9;chau7;exit=%s\a' "$_c7c"
+  _chau7_next_update_project
   printf '\e]7;file://%s%s\a' "${HOSTNAME:-localhost}" "$PWD"
   printf '\e]133;A\a'
   return $_c7c
 }
 PROMPT_COMMAND="_chau7_next_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 PS0='${_c7x[$((_c7r=1))]}\e]133;B\a\e]133;C\a'"$PS0"
+_chau7_next_update_project
 if [ -n "$CHAU7_NEXT_STARTUP_CMD" ]; then
   _chau7_next_cmd="$CHAU7_NEXT_STARTUP_CMD"
   unset CHAU7_NEXT_STARTUP_CMD
@@ -133,11 +193,21 @@ else
 end
 set -l _cfg (test -n "$XDG_CONFIG_HOME"; and echo $XDG_CONFIG_HOME; or echo $HOME/.config)
 test -f "$_cfg/fish/config.fish"; and source "$_cfg/fish/config.fish"
+set -gx CHAU7_TAB_ID ""
+if test -n "$CHAU7_CTO_BIN_DIR"; and contains -- "$CHAU7_CTO_BIN_DIR" $PATH
+ set -gx PATH "$CHAU7_CTO_BIN_DIR" $PATH
+end
+if test -n "$CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR"; and test -x "$CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR/codex"
+ set -gx PATH "$CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR" $PATH
+end
 if test -n "$CHAU7_NEXT_START_DIR"; and test -d "$CHAU7_NEXT_START_DIR"
   cd "$CHAU7_NEXT_START_DIR"
 end
 set -e CHAU7_NEXT_START_DIR
 function _chau7_next_prompt --on-event fish_prompt
+  set -l code $status
+  printf '\e]9;chau7;exit=%s\a' $code
+  _chau7_next_update_project
   printf '\e]7;file://%s%s\a' (hostname) "$PWD"
   printf '\e]133;A\a'
 end
@@ -150,14 +220,43 @@ end
 function _chau7_next_postexec --on-event fish_postexec
   printf '\e]133;D;%s\a' $status
 end
+if test "$CHAU7_NEXT_PROXY_CORRELATION_ENABLED" = "1"
+ set -gx CHAU7_NEXT_ANTHROPIC_HEADERS_BASE "$ANTHROPIC_CUSTOM_HEADERS"
+end
 function _chau7_next_update_project --on-variable PWD
-  set -l git_root (git rev-parse --show-toplevel 2>/dev/null)
-  if test -n "$git_root"
-    set -gx CHAU7_PROJECT $git_root
-  else
-    set -gx CHAU7_PROJECT $PWD
+  set -l git_data (git rev-parse --show-toplevel --abbrev-ref HEAD 2>/dev/null)
+  set -l git_root
+  if test (count $git_data) -ge 1
+    set git_root $git_data[1]
+    test -n "$git_root"; and printf '\e]9;chau7;repo-root=%s\a' "$git_root"
   end
-  set -gx ANTHROPIC_EXTRA_HEADERS "X-Chau7-Session:$CHAU7_SESSION_ID,X-Chau7-Tab:$CHAU7_TAB_ID,X-Chau7-Project:$CHAU7_PROJECT"
+  if test (count $git_data) -ge 2
+    set -l git_branch $git_data[2]
+    if test -n "$git_branch"; and test "$git_branch" != "$git_root"
+      printf '\e]9;chau7;branch=%s\a' "$git_branch"
+    end
+  end
+  if test -n "$git_root"
+    set -gx CHAU7_NEXT_PROJECT $git_root
+  else
+    set -gx CHAU7_NEXT_PROJECT $PWD
+  end
+  if test "$CHAU7_NEXT_PROXY_CORRELATION_ENABLED" = "1"
+    set -l headers "X-Chau7-Session: $CHAU7_NEXT_SESSION_ID
+X-Chau7-Tab: $CHAU7_NEXT_TAB_ID
+X-Chau7-Project: $CHAU7_NEXT_PROJECT"
+    if test -n "$CHAU7_NEXT_ANTHROPIC_HEADERS_BASE"
+      set -gx ANTHROPIC_CUSTOM_HEADERS "$CHAU7_NEXT_ANTHROPIC_HEADERS_BASE
+$headers"
+    else
+      set -gx ANTHROPIC_CUSTOM_HEADERS "$headers"
+    end
+    if not set -q ENABLE_TOOL_SEARCH; set -gx ENABLE_TOOL_SEARCH true; end
+  end
+  if test -n "$CHAU7_NEXT_OPENAI_PROXY_BASE_URL"
+    set -l project_token (printf '%s' "$CHAU7_NEXT_PROJECT" | base64 | tr '+/' '-_' | tr -d '=\n')
+    set -gx OPENAI_BASE_URL "$CHAU7_NEXT_OPENAI_PROXY_BASE_URL/_chau7/project/$project_token/v1"
+  end
 end
 _chau7_next_update_project
 if test -n "$CHAU7_NEXT_STARTUP_CMD"
@@ -192,7 +291,21 @@ pub fn install(dir: &Path) -> std::io::Result<()> {
     let fish = fish_config_home(dir).join("fish");
     std::fs::create_dir_all(&fish)?;
     std::fs::write(fish.join("config.fish"), FISH_CONFIG)?;
-    Ok(())
+    let bin = codex_wrapper_dir(dir);
+    std::fs::create_dir_all(&bin)?;
+    let wrapper = bin.join("codex");
+    let temporary = bin.join(format!(".codex-{}", uuid::Uuid::new_v4()));
+    std::fs::write(&temporary, CODEX_PROXY_WRAPPER)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o755))?;
+    }
+    let result = std::fs::rename(&temporary, wrapper);
+    if result.is_err() {
+        let _ = std::fs::remove_file(temporary);
+    }
+    result
 }
 
 fn shell_name(shell_path: &str) -> String {
@@ -552,7 +665,7 @@ mod launch_tests {
             assert!(script.contains("eval"), "{script}");
             assert!(script.contains("133;B"), "{script}");
             assert!(script.contains("CHAU7_NEXT_START_DIR"), "{script}");
-            assert!(script.contains("ANTHROPIC_EXTRA_HEADERS"), "{script}");
+            assert!(script.contains("ANTHROPIC_CUSTOM_HEADERS"), "{script}");
         }
         assert!(ZSHRC.contains(".volta/tools/image/node"));
         // The startup command runs after the user's own config.
@@ -590,5 +703,315 @@ mod launch_tests {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stdout.contains("started-2"), "{stdout} {stderr}");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod codex_proxy_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    struct Fixture {
+        dir: PathBuf,
+        integration: PathBuf,
+        real: PathBuf,
+        local_ca: PathBuf,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let dir =
+                std::env::temp_dir().join(format!("chau7-next-codex-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let dir = std::fs::canonicalize(dir).unwrap();
+            let integration = dir.join("owned shell");
+            let real = dir.join("real tools");
+            std::fs::create_dir_all(&real).unwrap();
+            install(&integration).unwrap();
+            let script = real.join("codex");
+            std::fs::write(
+                &script,
+                r#"#!/bin/sh
+printf '%s\0' "$@" > "$CAPTURE_DIR/args"
+printf '%s' "$CODEX_CA_CERTIFICATE" > "$CAPTURE_DIR/ca"
+printf '%s' "$PATH" > "$CAPTURE_DIR/path"
+printf '%s' "$ANTHROPIC_CUSTOM_HEADERS" > "$CAPTURE_DIR/headers"
+printf '%s' "$OPENAI_BASE_URL" > "$CAPTURE_DIR/base"
+printf '%s' "$CHAU7_TAB_ID" > "$CAPTURE_DIR/legacy"
+"#,
+            )
+            .unwrap();
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let local_ca = dir.join("local.pem");
+            std::fs::write(&local_ca, "next-ca\n").unwrap();
+            Self {
+                dir,
+                integration,
+                real,
+                local_ca,
+            }
+        }
+        fn command(&self) -> std::process::Command {
+            let mut c =
+                std::process::Command::new(codex_wrapper_dir(&self.integration).join("codex"));
+            c.env_clear()
+                .current_dir(&self.dir)
+                .env(
+                    "PATH",
+                    format!(
+                        "{}:{}:/usr/bin:/bin",
+                        codex_wrapper_dir(&self.integration).display(),
+                        self.real.display()
+                    ),
+                )
+                .env("CAPTURE_DIR", &self.dir)
+                .env(
+                    "CHAU7_NEXT_OPENAI_PROXY_BASE_URL",
+                    "https://127.0.0.1:18091",
+                )
+                .env("CHAU7_NEXT_CODEX_CA_CERTIFICATE", &self.local_ca)
+                .env("CHAU7_NEXT_TAB_ID", "../tab with/slashes");
+            c
+        }
+        fn read(&self, name: &str) -> String {
+            std::fs::read_to_string(self.dir.join(name)).unwrap()
+        }
+        fn args(&self) -> Vec<String> {
+            self.read("args")
+                .split('\0')
+                .filter(|v| !v.is_empty())
+                .map(str::to_string)
+                .collect()
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+    #[test]
+    fn native_shells_restore_wrapper_after_user_rc_and_update_correlation() {
+        for shell in ["/bin/bash", "/bin/zsh"] {
+            if !Path::new(shell).is_file() {
+                continue;
+            }
+            let f = Fixture::new();
+            let rc = format!(
+                r#"export PATH="{}:/usr/bin:/bin"
+export ANTHROPIC_CUSTOM_HEADERS='X-User: preserved'
+export CHAU7_TAB_ID='legacy-owner'
+"#,
+                f.real.display()
+            );
+            std::fs::write(f.dir.join(".bashrc"), &rc).unwrap();
+            std::fs::write(f.dir.join(".zshrc"), &rc).unwrap();
+            let mut command = std::process::Command::new(shell);
+            command
+                .env_clear()
+                .current_dir(&f.dir)
+                .env("HOME", &f.dir)
+                .env("CAPTURE_DIR", &f.dir)
+                .env("PATH", "/usr/bin:/bin")
+                .env("CHAU7_NEXT_USER_ZDOTDIR", &f.dir)
+                .env("CHAU7_NEXT_PROXY_CORRELATION_ENABLED", "1")
+                .env("CHAU7_NEXT_SESSION_ID", "session")
+                .env("CHAU7_NEXT_TAB_ID", "tab")
+                .env(
+                    "CHAU7_NEXT_OPENAI_PROXY_BASE_URL",
+                    "https://127.0.0.1:18091",
+                )
+                .env("CHAU7_NEXT_CODEX_CA_CERTIFICATE", &f.local_ca)
+                .env(
+                    "CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR",
+                    codex_wrapper_dir(&f.integration),
+                );
+            if shell.ends_with("bash") {
+                command
+                    .args(["--noprofile", "--rcfile"])
+                    .arg(bashrc_path(&f.integration));
+            } else {
+                command.env("ZDOTDIR", zsh_dir(&f.integration));
+            }
+            let out = command.args(["-i", "-c", "codex resume"]).output().unwrap();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert_eq!(f.args().len(), 3);
+            assert_eq!(f.read("legacy"), "");
+            assert_eq!(
+                f.read("headers"),
+                format!(
+                    "X-User: preserved\nX-Chau7-Session: session\nX-Chau7-Tab: tab\nX-Chau7-Project: {}",
+                    f.dir.display()
+                )
+            );
+            assert_eq!(
+                f.read("base"),
+                format!(
+                    "https://127.0.0.1:18091{}/v1",
+                    crate::proxy::proxy_project_path(&f.dir.to_string_lossy())
+                )
+            );
+            // A shell without enabled analytics leaves the user's headers alone.
+            let out = command
+                .env_remove("CHAU7_NEXT_PROXY_CORRELATION_ENABLED")
+                .env_remove("CHAU7_NEXT_OPENAI_PROXY_BASE_URL")
+                .env_remove("CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR")
+                .output()
+                .unwrap();
+            assert!(out.status.success());
+            assert_eq!(f.read("headers"), "X-User: preserved");
+            assert_eq!(f.args(), ["resume"]);
+        }
+    }
+    #[test]
+    fn codex_wrapper_keeps_subscription_provider_and_literal_arguments() {
+        let f = Fixture::new();
+        let out = f
+            .command()
+            .args([
+                "resume",
+                "quoted \"prompt\"; $(literal)",
+                "--model",
+                "gpt-5",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let args = f.args();
+        assert_eq!(args[0], "-c");
+        assert_eq!(
+            args[1],
+            format!(
+                r#"openai_base_url="https://127.0.0.1:18091{}/v1""#,
+                crate::proxy::proxy_project_path(&f.dir.to_string_lossy())
+            )
+        );
+        assert_eq!(
+            &args[2..],
+            [
+                "resume",
+                "quoted \"prompt\"; $(literal)",
+                "--model",
+                "gpt-5"
+            ]
+        );
+        assert_eq!(f.read("ca"), f.local_ca.to_string_lossy());
+        assert!(
+            !f.read("path").contains(
+                &codex_wrapper_dir(&f.integration)
+                    .to_string_lossy()
+                    .to_string()
+            )
+        );
+        assert!(
+            !args
+                .iter()
+                .any(|arg| arg.contains("model_provider") || arg.contains("auth"))
+        );
+    }
+    #[test]
+    fn codex_wrapper_merges_user_ca_in_private_owned_bundle() {
+        let f = Fixture::new();
+        let user = f.dir.join("user.pem");
+        std::fs::write(&user, "user-ca\n").unwrap();
+        assert!(
+            f.command()
+                .env("CODEX_CA_CERTIFICATE", &user)
+                .arg("login")
+                .status()
+                .unwrap()
+                .success()
+        );
+        let combined = PathBuf::from(f.read("ca"));
+        assert!(combined.starts_with(f.integration.join("codex-ca")));
+        assert_eq!(
+            std::fs::read_to_string(&combined).unwrap(),
+            "user-ca\nnext-ca\n"
+        );
+        assert_eq!(
+            std::fs::metadata(&combined).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(std::fs::read_to_string(user).unwrap(), "user-ca\n");
+    }
+    #[test]
+    fn codex_wrapper_missing_ca_or_untrusted_route_passes_through_unchanged() {
+        for route in [
+            "https://remote.example:18091",
+            "https://127.0.0.1:18091/evil",
+            "https://127.0.0.1:1",
+            "https://127.0.0.1:999999999999999999999999",
+        ] {
+            let f = Fixture::new();
+            assert!(
+                f.command()
+                    .env("CHAU7_NEXT_OPENAI_PROXY_BASE_URL", route)
+                    .args(["login", "--device-auth"])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            assert_eq!(f.args(), ["login", "--device-auth"]);
+        }
+        let f = Fixture::new();
+        assert!(
+            f.command()
+                .env("CHAU7_NEXT_CODEX_CA_CERTIFICATE", f.dir.join("missing"))
+                .arg("resume")
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert_eq!(f.args(), ["resume"]);
+        let f = Fixture::new();
+        assert!(
+            f.command()
+                .env_remove("CHAU7_NEXT_OPENAI_PROXY_BASE_URL")
+                .arg("--version")
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert_eq!(f.args(), ["--version"]);
+    }
+    #[test]
+    fn codex_wrapper_skips_canonical_alias_and_reports_missing_executable() {
+        let f = Fixture::new();
+        let alias = f.dir.join("alias");
+        std::os::unix::fs::symlink(codex_wrapper_dir(&f.integration), &alias).unwrap();
+        assert!(
+            f.command()
+                .env(
+                    "PATH",
+                    format!(
+                        "{}:{}:{}:/usr/bin:/bin",
+                        codex_wrapper_dir(&f.integration).display(),
+                        alias.display(),
+                        f.real.display()
+                    )
+                )
+                .arg("--version")
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert_eq!(f.args().len(), 3);
+        let out = f
+            .command()
+            .env(
+                "PATH",
+                format!(
+                    "{}:/usr/bin:/bin",
+                    codex_wrapper_dir(&f.integration).display()
+                ),
+            )
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(127));
     }
 }

@@ -47,6 +47,7 @@ pub mod app_events;
 pub mod banner;
 pub mod executor;
 pub mod flash;
+pub mod hooks;
 pub mod routing;
 
 use std::collections::{HashMap, VecDeque};
@@ -58,24 +59,23 @@ use chau7_next_core::notifications::action_requirements::partition_by_resolved_t
 use chau7_next_core::notifications::action_support::ExecutionReport;
 use chau7_next_core::notifications::adapters::{self, AcceptedEvent, IngressDecision};
 use chau7_next_core::notifications::delivery::{
-    self, AUTHORITY_RETENTION, Preparation, default_style_action, supplemental_style_action,
+    self, Preparation, default_style_action, supplemental_style_action,
 };
 use chau7_next_core::notifications::history::NotificationHistory;
+use chau7_next_core::notifications::observation::Observation;
 use chau7_next_core::notifications::pipeline::{self, Decision, PipelineInput, RateLimiter};
+use chau7_next_core::notifications::reconciler::{Decision as Reconciliation, Reconciler};
+use chau7_next_core::notifications::repo_muting::{self, RepoMute};
 use chau7_next_core::notifications::schedule::{
     DEFAULT_COALESCING_WINDOW, notification_coalescing_key, notification_rate_limit_key,
 };
+use chau7_next_core::notifications::suppression::{
+    SuppressionCenter, Verdict as SuppressionVerdict,
+};
+use chrono::{DateTime, Utc};
 use gpui::{App, BorrowAppContext, Global};
-use uuid::Uuid;
 
 use crate::settings::Settings;
-
-/// Routing retry delays for authoritative events without a tab.
-const RETRY_DELAYS: [Duration; 3] = [
-    Duration::from_millis(50),
-    Duration::from_millis(150),
-    Duration::from_millis(500),
-];
 
 /// App-wide notification state (`NotificationManager.shared`).
 #[derive(Default)]
@@ -88,8 +88,8 @@ pub struct NotificationCenter {
     pending: HashMap<String, AiEvent>,
     pending_order: Vec<String>,
     flush_scheduled: bool,
-    retry_counts: HashMap<Uuid, usize>,
-    recent_authoritative: HashMap<String, Instant>,
+    reconciler: Reconciler,
+    suppression: SuppressionCenter,
     /// `AppModel.recentEvents`: accepted events, newest last.
     recent: VecDeque<AiEvent>,
     last_refresh: Option<Instant>,
@@ -109,6 +109,7 @@ pub fn init(cx: &mut App) {
     nc.limiter.config = Settings::get(cx).notifications.rules.rate_limit_config;
     banner::request_permission(&mut nc.banner);
     cx.set_global(nc);
+    hooks::init(cx);
     cx.spawn(async move |cx| {
         loop {
             cx.background_executor()
@@ -135,6 +136,7 @@ fn tick(cx: &mut App) {
         let nc = center(cx);
         nc.last_refresh = Some(now);
         banner::refresh(&mut nc.banner);
+        prune_repo_mutes(cx);
     }
     let config = Settings::get(cx).notifications.rules.rate_limit_config;
     let nc = center(cx);
@@ -192,6 +194,20 @@ fn record(event: AiEvent, notify: bool, log_it: bool, cx: &mut App) {
                 event.message
             );
         }
+        let observed_at = Utc::now();
+        let raw_note = center(cx).reconciler.observe_raw(&event, observed_at);
+        if raw_note.is_some() {
+            center(cx).suppression.reopen(&event);
+        }
+        // Raw debug/spine evidence remains visible. This gate precedes every
+        // accepted notification surface and the recent notification feed.
+        if event_is_muted(&event, cx) {
+            log::trace!(
+                "Notification muted for repository: type={}",
+                event.event_type
+            );
+            return;
+        }
         match adapters::ingest(&event) {
             IngressDecision::Drop { reason } => log::trace!(
                 "Notification ingress dropped unified event: {reason} id={} type={} source={}",
@@ -205,8 +221,45 @@ fn record(event: AiEvent, notify: bool, log_it: bool, cx: &mut App) {
                 while nc.recent.len() > 25 {
                     nc.recent.pop_front();
                 }
+                // Accepted events still join the recent feed when delivery is
+                // disabled or reconciled away, matching the canonical engine.
+                let reconciliation = center(cx).reconciler.reconcile(&accepted, observed_at);
                 if notify {
-                    deliver_accepted(accepted, cx);
+                    match reconciliation {
+                        Reconciliation::Emit => {
+                            if Observation::notification(
+                                &accepted.shared_event,
+                                accepted.canonical_event.kind,
+                                observed_at,
+                            )
+                            .is_some_and(|o| o.state.interactive())
+                            {
+                                // Reconciler accepted a real transition/reopen;
+                                // stale post-close/repeat maps cannot block it.
+                                center(cx).suppression.reopen(&accepted.shared_event);
+                            }
+                            let id = accepted.shared_event.id;
+                            deliver_accepted(accepted, cx);
+                            if let Some(note) = raw_note {
+                                center(cx).history.append_note(id, note);
+                            }
+                        }
+                        Reconciliation::Drop { reason } => {
+                            let nc = center(cx);
+                            let canonical = &accepted.canonical_event;
+                            nc.history.begin(
+                                &accepted.shared_event,
+                                Some(canonical.kind.raw_value()),
+                                canonical.raw_type.as_deref(),
+                                canonical.notification_type.as_deref(),
+                            );
+                            nc.history.mark_dropped(
+                                accepted.shared_event.id,
+                                None,
+                                &format!("Session reconciliation: {reason}"),
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -278,6 +331,71 @@ pub fn send_test(cx: &mut App) {
 pub fn request_permission(cx: &mut App) {
     if cx.has_global::<NotificationCenter>() {
         banner::request_permission(&mut center(cx).banner);
+    }
+}
+
+/// Mute status is shared by Settings and repository context menus.
+pub fn repo_is_muted(root: &str, cx: &App) -> bool {
+    repo_muting::is_muted(
+        Some(root),
+        None,
+        &Settings::get(cx).notifications.rules.muted_repos,
+        Utc::now(),
+    )
+}
+
+fn event_is_muted(event: &AiEvent, cx: &App) -> bool {
+    repo_muting::is_muted(
+        event.repo_path.as_deref(),
+        event.directory.as_deref(),
+        &Settings::get(cx).notifications.rules.muted_repos,
+        Utc::now(),
+    )
+}
+
+/// None is an indefinite mute; expiry is exclusive. Config persistence uses
+/// Next's existing global-settings path and never edits repository config.
+pub fn mute_repo(root: &str, until: Option<DateTime<Utc>>, cx: &mut App) {
+    let Some(root) = repo_muting::normalized_root(root) else {
+        return;
+    };
+    let key = root.to_string_lossy().into_owned();
+    crate::settings_window::update(cx, |settings| {
+        repo_muting::prune(&mut settings.notifications.rules.muted_repos, Utc::now());
+        settings.notifications.rules.muted_repos.insert(
+            key,
+            RepoMute {
+                snooze_until: until,
+            },
+        );
+    });
+    cx.refresh_windows();
+}
+
+pub fn unmute_repo(root: &str, cx: &mut App) {
+    let target = repo_muting::normalized_root(root);
+    crate::settings_window::update(cx, |settings| {
+        settings
+            .notifications
+            .rules
+            .muted_repos
+            .retain(|key, _| repo_muting::normalized_root(key) != target);
+    });
+    cx.refresh_windows();
+}
+
+fn prune_repo_mutes(cx: &mut App) {
+    let now = Utc::now();
+    if Settings::get(cx)
+        .notifications
+        .rules
+        .muted_repos
+        .values()
+        .any(|mute| !mute.is_active(now))
+    {
+        crate::settings_window::update(cx, |settings| {
+            repo_muting::prune(&mut settings.notifications.rules.muted_repos, now);
+        });
     }
 }
 
@@ -368,21 +486,32 @@ fn rate_limited(trigger_id: &str, event: &AiEvent, cx: &mut App) -> bool {
     }
     log::info!("Rate limited: {key} for tool={}", event.tool);
     nc.history.mark_rate_limited(event.id, trigger_id);
-    nc.retry_counts.remove(&event.id);
+    nc.suppression.forget_retry(event.id);
     true
 }
 
 /// `processEvent`.
 fn process_event(event: AiEvent, cx: &mut App) {
-    let now = Instant::now();
-    {
+    // A repo may have been muted while this event was coalescing or retrying.
+    if event_is_muted(&event, cx) {
         let nc = center(cx);
-        nc.recent_authoritative
-            .retain(|_, seen| now.saturating_duration_since(*seen) <= AUTHORITY_RETENTION);
-        if nc.retry_counts.len() > 100 {
-            nc.retry_counts.retain(|_, n| *n < RETRY_DELAYS.len());
-        }
+        nc.history
+            .mark_dropped(event.id, None, "Repository notifications are muted");
+        nc.suppression.forget_retry(event.id);
+        return;
     }
+    let now = Utc::now();
+    if !center(cx).reconciler.is_relevant(&event, now) {
+        let nc = center(cx);
+        nc.history.mark_dropped(
+            event.id,
+            None,
+            "Session state superseded this queued notification",
+        );
+        nc.suppression.forget_retry(event.id);
+        return;
+    }
+    center(cx).suppression.prune(now);
     let rules = Settings::get(cx).notifications.rules.clone();
     let preparation = {
         let app: &App = cx;
@@ -410,43 +539,42 @@ fn process_event(event: AiEvent, cx: &mut App) {
     );
     center(cx).history.mark_prepared(&event, &method);
 
-    if delivery::requires_authoritative_routing(&event) {
-        if schedule_retry(&event, cx) {
+    let semantic = delivery::semantic_kind(&event);
+    if delivery::should_clear_persistent_attention_style(&event, semantic)
+        && let Some(tab) = event.tab_id
+    {
+        routing::clear_persistent_style(tab, cx);
+    }
+    center(cx).suppression.register_closed(&event, now);
+    match center(cx).suppression.routing(&event, now) {
+        SuppressionVerdict::Retry { delay, attempt } => {
+            center(cx).history.mark_retry_scheduled(
+                event.id,
+                attempt,
+                "authoritative event missing exact tab route",
+            );
+            schedule_retry(event, delay, cx);
             return;
         }
-        let attempts = center(cx)
-            .retry_counts
-            .get(&event.id)
-            .copied()
-            .unwrap_or(RETRY_DELAYS.len());
-        if delivery::should_drop_after_routing_failure(&event, attempts, RETRY_DELAYS.len()) {
-            let reason =
-                delivery::unresolved_routing_drop_reason(&event, attempts, RETRY_DELAYS.len());
-            log::warn!("{reason} (tool={})", event.tool);
-            let nc = center(cx);
-            nc.history.mark_dropped(event.id, None, &reason);
-            nc.retry_counts.remove(&event.id);
+        SuppressionVerdict::Drop { reason } => {
+            center(cx).history.mark_dropped(event.id, None, &reason);
+            return;
+        }
+        SuppressionVerdict::Pass => {}
+    }
+    let verdicts = [
+        center(cx).suppression.post_close(&event, now),
+        center(cx).suppression.fallback_shadow(&event, now),
+        center(cx).suppression.repeat(&event, now),
+    ];
+    for verdict in verdicts {
+        if let SuppressionVerdict::Drop { reason } = verdict {
+            center(cx).history.mark_dropped(event.id, None, &reason);
+            center(cx).suppression.forget_retry(event.id);
             return;
         }
     }
-
-    if delivery::should_suppress_as_fallback(
-        &event,
-        &center(cx).recent_authoritative,
-        now,
-        AUTHORITY_RETENTION,
-    ) {
-        let reason = "Suppressed fallback event shadowed by authoritative delivery";
-        center(cx).history.mark_dropped(event.id, None, reason);
-        return;
-    }
-    if event.reliability == AiEventReliability::Authoritative {
-        let nc = center(cx);
-        for key in delivery::authority_keys(&event) {
-            nc.recent_authoritative.insert(key, now);
-        }
-        nc.retry_counts.remove(&event.id);
-    }
+    center(cx).suppression.register_authoritative(&event, now);
 
     let is_app_active = cx.active_window().is_some();
     let is_tool_tab_active = routing::is_selected_anywhere(&event.tab_target(), cx);
@@ -472,7 +600,7 @@ fn process_event(event: AiEvent, cx: &mut App) {
             );
             let nc = center(cx);
             nc.history.mark_dropped(event.id, None, &reason);
-            nc.retry_counts.remove(&event.id);
+            nc.suppression.forget_retry(event.id);
         }
         Decision::FireDefault { trigger_id } => {
             let base = base_rate_limit_key(trigger_id.as_deref(), &event);
@@ -499,7 +627,7 @@ fn process_event(event: AiEvent, cx: &mut App) {
                 let reason = "Style-only notification delivery requires explicit tabID";
                 let nc = center(cx);
                 nc.history.mark_dropped(event.id, Some(&base), reason);
-                nc.retry_counts.remove(&event.id);
+                nc.suppression.forget_retry(event.id);
                 return;
             }
             let report = executor::execute(&actions, &event, cx);
@@ -590,33 +718,17 @@ fn finish(
     nc.history
         .mark_actions_executed(event.id, trigger_id, actions, banner, styled);
     nc.history.mark_completed(event.id);
-    nc.retry_counts.remove(&event.id);
+    nc.suppression.register_repeat(event, Utc::now());
+    nc.suppression.forget_retry(event.id);
 }
 
-/// `scheduleRoutingRetryIfNeeded`.
-fn schedule_retry(event: &AiEvent, cx: &mut App) -> bool {
-    let attempts = center(cx).retry_counts.get(&event.id).copied().unwrap_or(0);
-    if attempts >= RETRY_DELAYS.len() || (event.session_id.is_none() && event.directory.is_none()) {
-        return false;
-    }
-    let next = attempts + 1;
-    {
-        let nc = center(cx);
-        nc.retry_counts.insert(event.id, next);
-        nc.history.mark_retry_scheduled(
-            event.id,
-            next,
-            "authoritative event missing exact tab route",
-        );
-    }
-    let delay = RETRY_DELAYS[attempts];
-    let event = event.clone();
+/// Retry a prepared canonical event without repeating ingress/reconciliation.
+fn schedule_retry(event: AiEvent, delay: Duration, cx: &mut App) {
     cx.spawn(async move |cx| {
         cx.background_executor().timer(delay).await;
         cx.update(|cx| enqueue(event, cx));
     })
     .detach();
-    true
 }
 
 /// `showDefaultNotification`: title from the tab title and repo name.

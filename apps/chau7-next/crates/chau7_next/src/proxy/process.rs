@@ -197,6 +197,7 @@ fn forward_lines(stream: impl std::io::Read + Send + 'static, is_stderr: bool) {
         .name("proxy-log".into())
         .spawn(move || {
             for line in BufReader::new(stream).lines().map_while(Result::ok) {
+                crate::incidents::proxy_output(&line);
                 if is_stderr {
                     log::warn!("Proxy stderr: {line}");
                 } else {

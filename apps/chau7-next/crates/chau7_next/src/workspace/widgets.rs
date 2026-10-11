@@ -67,7 +67,7 @@ pub(super) fn modal_width(
     .into_any_element()
 }
 
-pub(super) fn button(
+pub(crate) fn button(
     id: &'static str,
     label: &'static str,
     chrome: Chrome,

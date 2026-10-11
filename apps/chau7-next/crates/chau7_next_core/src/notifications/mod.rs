@@ -28,11 +28,18 @@ pub mod app_events;
 pub mod canonical;
 pub mod delivery;
 pub mod history;
+pub mod hooks;
+pub mod observation;
 pub mod pipeline;
+pub mod reconciler;
+pub mod repo_muting;
 pub mod schedule;
 pub mod settings;
 pub mod shell_events;
+pub mod suppression;
+pub mod surface_routing;
 pub mod tab_resolver;
 pub mod triggers;
+pub mod vocabulary;
 
 pub use crate::ai::event::{AiEvent, AiEventReliability, AiEventSource};

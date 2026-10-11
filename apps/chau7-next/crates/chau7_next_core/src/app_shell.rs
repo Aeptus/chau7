@@ -15,6 +15,14 @@ pub const URL_SCHEME: &str = "chau7-next";
 /// Names are de-duplicated and sorted, empty names dropped
 /// (`applicationShouldTerminate`).
 pub fn quit_confirmation(process_names: &[String]) -> Option<(String, String)> {
+    quit_confirmation_localized(process_names, crate::l10n::Lang::En)
+}
+
+/// Actual UI variant using the current Swift plural table and isolated app name.
+pub fn quit_confirmation_localized(
+    process_names: &[String],
+    lang: crate::l10n::Lang,
+) -> Option<(String, String)> {
     let mut unique: Vec<&str> = process_names
         .iter()
         .map(String::as_str)
@@ -27,11 +35,16 @@ pub fn quit_confirmation(process_names: &[String]) -> Option<(String, String)> {
     }
     let count = unique.len();
     Some((
-        "Quit Chau7 Next?".to_string(),
-        format!(
-            "{count} running process{} will be terminated: {}",
-            if count == 1 { "" } else { "es" },
-            unique.join(", ")
+        crate::l10n::localized(lang, "alert.quit.title", "Quit Chau7?")
+            .replace("Chau7", "Chau7 Next"),
+        crate::l10n::localized_format(
+            lang,
+            "alert.quit.message",
+            "%d running process(es) will be terminated: %@",
+            &[
+                crate::l10n::Arg::Int(count as i64),
+                crate::l10n::Arg::Str(unique.join(", ")),
+            ],
         ),
     ))
 }
@@ -334,6 +347,34 @@ mod tests {
         assert_eq!(detail, "2 running processes will be terminated: sleep, vim");
         let (_, one) = quit_confirmation(&["top".into()]).unwrap();
         assert_eq!(one, "1 running process will be terminated: top");
+    }
+
+    #[test]
+    fn localized_quit_uses_sorted_unique_count_and_preserves_process_text() {
+        for lang in crate::l10n::Lang::ALL {
+            assert_eq!(quit_confirmation_localized(&[], lang), None);
+            for count in [1, 2, 3, 11] {
+                let mut names: Vec<String> = (0..count).map(|n| format!("job-{n}%@")).collect();
+                names.push(names[0].clone());
+                names.push(String::new());
+                let (title, detail) = quit_confirmation_localized(&names, lang).unwrap();
+                names.retain(|s| !s.is_empty());
+                names.sort();
+                names.dedup();
+                let expected = crate::l10n::localized_format(
+                    lang,
+                    "alert.quit.message",
+                    "",
+                    &[
+                        crate::l10n::Arg::Int(count),
+                        crate::l10n::Arg::Str(names.join(", ")),
+                    ],
+                );
+                assert_eq!(detail, expected);
+                assert!(detail.contains("job-0%@"));
+                assert!(title.contains("Chau7 Next"));
+            }
+        }
     }
 
     #[test]

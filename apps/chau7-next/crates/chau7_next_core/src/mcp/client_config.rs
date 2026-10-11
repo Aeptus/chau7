@@ -11,7 +11,7 @@
 //! Chau7 Next writes only its own entry ([`crate::data_root::MCP_SERVER_NAME`],
 //! `chau7-next`) and never the Swift app's `chau7` entry. Everything else in
 //! the files is kept: JSON values (and key order, since the app is built with
-//! serde_json's `preserve_order`; Swift sorted every key), TOML line by line. A file is rewritten only when the entry changes, atomically
+//! serde_json's `preserve_order`; Swift sorted every key), editable TOML syntax. A file is rewritten only when the entry changes, atomically
 //! (temporary file in the same folder, then rename), with the original
 //! permissions, and through symbolic links (dotfile managers). A JSON file
 //! that exists but does not parse as an object is left alone.
@@ -20,6 +20,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
+use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, TableLike, Value as TomlValue};
 
 /// What the configs launch: the bridge binary and its arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,107 +148,148 @@ pub fn merge_json(
 }
 
 /// A TOML basic string.
-fn toml_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04X}", c as u32)),
-            c => out.push(c),
+/// Upsert only the requested Codex server. Parse before editing so quoted or
+/// commented headers, multiline strings/arrays and inline tables cannot be
+/// mistaken for section boundaries. Invalid TOML or server shapes are untouched.
+pub fn merge_codex_toml(content: &str, name: &str, entry: &ServerEntry) -> Option<String> {
+    try_merge_codex_toml(content, name, entry).ok().flatten()
+}
+
+fn try_merge_codex_toml(
+    content: &str,
+    name: &str,
+    entry: &ServerEntry,
+) -> Result<Option<String>, ()> {
+    let mut document = content.parse::<DocumentMut>().map_err(|_| ())?;
+    let servers = document
+        .get("mcp_servers")
+        .map(|item| item.as_table_like().ok_or(()))
+        .transpose()?;
+    let existing = servers.and_then(|servers| servers.get(name));
+    if let Some(server) = existing {
+        let server = server.as_table_like().ok_or(())?;
+        if server.get("command").and_then(Item::as_str) == Some(entry.command.as_str())
+            && server
+                .get("args")
+                .and_then(Item::as_array)
+                .is_some_and(|args| {
+                    args.len() == entry.args.len()
+                        && args
+                            .iter()
+                            .zip(&entry.args)
+                            .all(|(actual, wanted)| actual.as_str() == Some(wanted.as_str()))
+                })
+        {
+            return Ok(None);
         }
     }
-    out.push('"');
-    out
-}
-
-fn toml_array(items: &[String]) -> String {
-    let inner: Vec<String> = items.iter().map(|s| toml_string(s)).collect();
-    format!("[{}]", inner.join(", "))
-}
-
-/// Whether a trimmed line assigns `key` (`key = ...` or `key=...`).
-fn assigns(trimmed: &str, key: &str) -> bool {
-    trimmed.strip_prefix(key).is_some_and(|rest| {
-        rest.starts_with(' ') || rest.starts_with('=') || rest.starts_with('\t')
-    })
-}
-
-/// Set `[mcp_servers.<name>]` in a Codex `config.toml`
-/// (`registerCodex`). When the table exists, its `command` and `args`
-/// lines are replaced (or added at the end of the table); otherwise the
-/// table is inserted before `[features]`, or appended. Other tables, the
-/// Swift app's `[mcp_servers.chau7]` included, are not touched. Returns
-/// `None` when nothing changes.
-pub fn merge_codex_toml(content: &str, name: &str, entry: &ServerEntry) -> Option<String> {
-    let header = format!("[mcp_servers.{name}]");
-    let quoted_header = format!("[mcp_servers.\"{name}\"]");
-    let command_line = format!("command = {}", toml_string(&entry.command));
-    let args_line = format!("args = {}", toml_array(&entry.args));
-    let lines: Vec<&str> = content.split('\n').collect();
-    let start = lines.iter().position(|l| {
-        let t = l.trim();
-        t == header || t == quoted_header
-    });
-    let new_content = match start {
-        Some(start) => {
-            let mut out: Vec<String> = lines[..=start].iter().map(|s| s.to_string()).collect();
-            let mut i = start + 1;
-            let mut wrote_command = false;
-            let mut wrote_args = false;
-            // Lines of our table, up to the next header.
-            while i < lines.len() && !lines[i].trim_start().starts_with('[') {
-                let trimmed = lines[i].trim_start();
-                if assigns(trimmed, "command") {
-                    out.push(command_line.clone());
-                    wrote_command = true;
-                } else if assigns(trimmed, "args") {
-                    out.push(args_line.clone());
-                    wrote_args = true;
-                    // A multi-line array: skip to its closing bracket.
-                    if !trimmed.contains(']') {
-                        while i + 1 < lines.len() && !lines[i].contains(']') {
-                            i += 1;
-                        }
-                    }
-                } else {
-                    out.push(lines[i].to_string());
-                }
-                i += 1;
+    let new_server = existing.is_none();
+    let inline_parent = document
+        .get("mcp_servers")
+        .is_some_and(|item| item.as_inline_table().is_some());
+    let position = if new_server && !inline_parent {
+        let before_features = document
+            .get("features")
+            .and_then(Item::as_table)
+            .and_then(Table::position);
+        let mut max = 0;
+        walk_tables(document.as_table_mut(), &mut |table| {
+            max = max.max(table.position().unwrap_or(0))
+        });
+        let position = before_features.unwrap_or(max.saturating_add(1));
+        walk_tables(document.as_table_mut(), &mut |table| {
+            if let Some(old) = table.position().filter(|old| *old >= position) {
+                table.set_position(old.saturating_add(1));
             }
-            // Missing keys go after the table's last non-blank line.
-            let mut insert_at = out.len();
-            while insert_at > start + 1 && out[insert_at - 1].trim().is_empty() {
-                insert_at -= 1;
-            }
-            if !wrote_args {
-                out.insert(insert_at, args_line.clone());
-            }
-            if !wrote_command {
-                out.insert(insert_at, command_line.clone());
-            }
-            out.extend(lines[i..].iter().map(|s| s.to_string()));
-            out.join("\n")
-        }
-        None => {
-            let section = format!("\n{header}\n{command_line}\n{args_line}\n");
-            let mut text = content.to_string();
-            match text.find("\n[features]") {
-                Some(at) => text.insert_str(at, &section),
-                None => {
-                    if !text.is_empty() && !text.ends_with('\n') {
-                        text.push('\n');
-                    }
-                    text.push_str(&section);
-                }
-            }
-            text
-        }
+        });
+        position
+    } else {
+        0
     };
-    (new_content != content).then_some(new_content)
+    if document.get("mcp_servers").is_none() {
+        let mut servers = Table::new();
+        servers.set_implicit(true);
+        document
+            .as_table_mut()
+            .insert("mcp_servers", Item::Table(servers));
+    }
+    let servers = document
+        .get_mut("mcp_servers")
+        .and_then(Item::as_table_like_mut)
+        .ok_or(())?;
+    if new_server {
+        let server = if inline_parent {
+            Item::Value(TomlValue::InlineTable(InlineTable::new()))
+        } else {
+            let mut table = Table::new();
+            table.set_position(position);
+            table.decor_mut().set_prefix("\n");
+            Item::Table(table)
+        };
+        servers.insert(name, server);
+    }
+    let server = servers
+        .get_mut(name)
+        .and_then(Item::as_table_like_mut)
+        .ok_or(())?;
+    let args = replacement_args(server.get("args").and_then(Item::as_array), &entry.args);
+    replace_owned_value(server, "command", TomlValue::from(entry.command.as_str()));
+    replace_owned_value(server, "args", TomlValue::Array(args));
+    let output = document.to_string();
+    // Defensive shape/layout validation, without logging user config content.
+    output.parse::<DocumentMut>().map_err(|_| ())?;
+    Ok((output != content).then_some(output))
+}
+
+fn walk_tables(table: &mut Table, visit: &mut impl FnMut(&mut Table)) {
+    visit(table);
+    for (_, item) in table.iter_mut() {
+        if let Some(table) = item.as_table_mut() {
+            walk_tables(table, visit);
+        } else if let Some(tables) = item.as_array_of_tables_mut() {
+            for table in tables.iter_mut() {
+                walk_tables(table, visit);
+            }
+        }
+    }
+}
+
+fn replace_owned_value(table: &mut dyn TableLike, key: &str, mut value: TomlValue) {
+    if let Some(previous) = table.get(key).and_then(Item::as_value) {
+        *value.decor_mut() = previous.decor().clone();
+    }
+    table.insert(key, Item::Value(value));
+}
+
+/// Keep argument comments when a previously formatted array contains them.
+/// Old values themselves are always replaced, including obsolete extra args.
+fn replacement_args(previous: Option<&Array>, args: &[String]) -> Array {
+    let previous = previous.filter(|array| array.to_string().contains('#'));
+    let mut array = Array::new();
+    for (index, arg) in args.iter().enumerate() {
+        let mut value = TomlValue::from(arg.as_str());
+        if let Some(previous) = previous.and_then(|array| array.get(index)) {
+            *value.decor_mut() = previous.decor().clone();
+        }
+        array.push_formatted(value);
+    }
+    if let Some(previous) = previous {
+        let mut trailing = String::new();
+        for removed in previous.iter().skip(args.len()) {
+            for decoration in [removed.decor().prefix(), removed.decor().suffix()]
+                .into_iter()
+                .flatten()
+            {
+                if let Some(trivia) = decoration.as_str() {
+                    trailing.push_str(trivia);
+                }
+            }
+        }
+        trailing.push_str(previous.trailing().as_str().unwrap_or_default());
+        array.set_trailing(trailing);
+        array.set_trailing_comma(previous.trailing_comma() && !args.is_empty());
+    }
+    array
 }
 
 /// Write `text` to `path` atomically: a temporary file in the same folder
@@ -331,7 +373,10 @@ pub fn register(client: Client, home: &Path, name: &str, entry: &ServerEntry) ->
                 let Some(content) = existing.as_deref() else {
                     return Outcome::NotInstalled;
                 };
-                merge_codex_toml(content, name, entry)
+                match try_merge_codex_toml(content, name, entry) {
+                    Ok(text) => text,
+                    Err(()) => return Outcome::SkippedInvalid,
+                }
             }
             _ => match merge_json(existing.as_deref(), name, entry) {
                 Ok(text) => text,
@@ -534,7 +579,190 @@ mod tests {
 
     #[test]
     fn toml_strings_are_escaped() {
-        assert_eq!(toml_string(r#"a"b\c"#), r#""a\"b\\c""#);
+        assert_eq!(TomlValue::from(r#"a"b\c"#).to_string(), r#"'a"b\c'"#);
+    }
+
+    fn assert_codex_entry(out: &str, wanted: &ServerEntry) -> DocumentMut {
+        let doc = out
+            .parse::<DocumentMut>()
+            .expect("formatter output must remain valid TOML");
+        let server = doc["mcp_servers"]["chau7-next"].as_table_like().unwrap();
+        assert_eq!(
+            server.get("command").and_then(Item::as_str),
+            Some(wanted.command.as_str())
+        );
+        let args: Vec<_> = server
+            .get("args")
+            .and_then(Item::as_array)
+            .unwrap()
+            .iter()
+            .map(|arg| arg.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            args,
+            wanted.args.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        doc
+    }
+
+    #[test]
+    fn codex_commented_and_quoted_headers_update_once_without_duplicate_tables() {
+        for header in [
+            "[mcp_servers.chau7-next] # own server",
+            "[mcp_servers.\"chau7-next\"] # own server",
+            "[ 'mcp_servers' . 'chau7-next' ] # own server",
+        ] {
+            let text = format!(
+                "# user heading\n{header}\ncommand = '/old' # command note\nargs = [] # args note\nenabled = true\n\n[mcp_servers.chau7] # production\ncommand = '/swift'\n"
+            );
+            let out = merge_codex_toml(&text, "chau7-next", &entry()).unwrap();
+            let doc = assert_codex_entry(&out, &entry());
+            assert_eq!(
+                doc["mcp_servers"]["chau7"]["command"].as_str(),
+                Some("/swift")
+            );
+            for comment in [
+                "# user heading",
+                "# own server",
+                "# command note",
+                "# args note",
+                "# production",
+            ] {
+                assert!(out.contains(comment), "lost {comment}");
+            }
+            assert_eq!(merge_codex_toml(&out, "chau7-next", &entry()), None);
+        }
+    }
+
+    #[test]
+    fn codex_multiline_args_do_not_end_at_brackets_inside_values_or_comments() {
+        let text = r#"[mcp_servers.chau7-next] # own
+command = "/old"
+args = [
+  "] is data", # ] is a comment
+  '''literal
+] and [features] are data''',
+  "obsolete", # preserve this note
+] # closing note
+enabled = true
+
+[mcp_servers.other]
+command = "npx"
+args = ["untouched]", "--flag"] # other note
+"#;
+        let out = merge_codex_toml(text, "chau7-next", &entry()).unwrap();
+        let doc = assert_codex_entry(&out, &entry());
+        assert_eq!(
+            doc["mcp_servers"]["chau7-next"]["enabled"].as_bool(),
+            Some(true)
+        );
+        assert_eq!(
+            doc["mcp_servers"]["other"]["args"][0].as_str(),
+            Some("untouched]")
+        );
+        for comment in [
+            "# own",
+            "# ] is a comment",
+            "# preserve this note",
+            "# closing note",
+            "# other note",
+        ] {
+            assert!(out.contains(comment), "lost {comment}");
+        }
+        assert!(!out.contains("obsolete"));
+        assert_eq!(merge_codex_toml(&out, "chau7-next", &entry()), None);
+    }
+
+    #[test]
+    fn codex_fake_sections_in_multiline_strings_are_not_insertion_points() {
+        let text = "description = '''keep this\n[features]\n[mcp_servers.chau7-next]\ncommand = \"not a config entry\"\n'''\n\n[features] # actual features\nweb_search = true\n";
+        let out = merge_codex_toml(text, "chau7-next", &entry()).unwrap();
+        let doc = assert_codex_entry(&out, &entry());
+        assert!(out.contains("description = '''keep this\n[features]\n[mcp_servers.chau7-next]\ncommand = \"not a config entry\"\n'''"));
+        assert_eq!(doc["features"]["web_search"].as_bool(), Some(true));
+        assert!(out.contains("[features] # actual features"));
+        assert_eq!(merge_codex_toml(&out, "chau7-next", &entry()), None);
+    }
+
+    #[test]
+    fn codex_semantically_current_entry_keeps_its_exact_user_formatting() {
+        let wanted = entry();
+        let text = format!(
+            "[mcp_servers.'chau7-next'] # keep\ncommand='{}'\nargs = [\n '{}', # first\n '{}',\n] # last\n",
+            wanted.command, wanted.args[0], wanted.args[1]
+        );
+        assert_eq!(merge_codex_toml(&text, "chau7-next", &wanted), None);
+    }
+
+    #[test]
+    fn codex_inline_and_dotted_tables_keep_unrelated_fields() {
+        for text in [
+            "mcp_servers = { chau7-next = { command = '/old', args = [], env = { SAFE = 'yes' } }, chau7 = { command = '/swift' } } # keep\nmodel = 'unchanged'\n",
+            "mcp_servers.chau7-next.command = '/old'\nmcp_servers.chau7-next.args = []\nmcp_servers.chau7-next.env.SAFE = 'yes'\nmcp_servers.chau7.command = '/swift'\nmodel = 'unchanged'\n",
+        ] {
+            let out = merge_codex_toml(text, "chau7-next", &entry()).unwrap();
+            let doc = assert_codex_entry(&out, &entry());
+            assert_eq!(
+                doc["mcp_servers"]["chau7-next"]["env"]["SAFE"].as_str(),
+                Some("yes")
+            );
+            assert_eq!(
+                doc["mcp_servers"]["chau7"]["command"].as_str(),
+                Some("/swift")
+            );
+            assert_eq!(merge_codex_toml(&out, "chau7-next", &entry()), None);
+        }
+    }
+
+    #[test]
+    fn codex_argument_count_changes_preserve_comments_and_valid_syntax() {
+        let text = "[mcp_servers.chau7-next]\ncommand = '/old'\nargs = [\n 'first', # first note\n 'second', # second note\n] # outer note\n";
+        for count in 0..5 {
+            let mut wanted = entry();
+            wanted.args = (0..count).map(|i| format!("new-{i}")).collect();
+            let out = merge_codex_toml(text, "chau7-next", &wanted).unwrap();
+            assert_codex_entry(&out, &wanted);
+            for comment in ["# first note", "# second note", "# outer note"] {
+                assert!(
+                    out.contains(comment),
+                    "lost {comment} for {count} arguments"
+                );
+            }
+            assert_eq!(merge_codex_toml(&out, "chau7-next", &wanted), None);
+        }
+    }
+
+    #[test]
+    fn codex_invalid_toml_or_server_shapes_are_refused_without_writing() {
+        let home = temp_home("invalid-codex");
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        let path = home.join(".codex/config.toml");
+        for text in [
+            "model = [",
+            "mcp_servers = false\n",
+            "[mcp_servers]\nchau7-next = false\n",
+            "[mcp_servers.chau7-next]\n[mcp_servers.chau7-next]\n",
+        ] {
+            assert_eq!(merge_codex_toml(text, "chau7-next", &entry()), None);
+            std::fs::write(&path, text).unwrap();
+            assert_eq!(
+                register(Client::Codex, &home, "chau7-next", &entry()),
+                Outcome::SkippedInvalid
+            );
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        }
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn codex_complex_escaped_values_round_trip_as_data() {
+        let wanted = ServerEntry {
+            command: "é /odd\" path\\next\nbridge".into(),
+            args: vec!["] # not a comment".into(), "[not a table]".into()],
+        };
+        let out = merge_codex_toml("model = 'unchanged'\n", "chau7-next", &wanted).unwrap();
+        assert_codex_entry(&out, &wanted);
+        assert_eq!(merge_codex_toml(&out, "chau7-next", &wanted), None);
     }
 
     #[test]

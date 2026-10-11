@@ -69,7 +69,7 @@ struct Flags {
 /// The tailers, moved to a background thread for each poll.
 struct MonitorIo {
     flags: Option<Flags>,
-    claude: Option<FileTailer>,
+    claude: Vec<FileTailer>,
     events: Vec<FileTailer>,
 }
 
@@ -94,8 +94,11 @@ impl MonitorIo {
             tailer
         };
         // The Claude Code hook monitor always runs (`startClaudeCodeMonitor`).
-        if self.claude.is_none() {
-            self.claude = Some(started(root.claude_hook_events_file()));
+        if self.claude.is_empty() || restart {
+            self.claude = vec![
+                started(root.claude_hook_events_file()),
+                started(root.next_claude_hook_events_file()),
+            ];
         }
         self.events = match &flags.events {
             Some(shared) => vec![started(shared.clone()), started(root.ai_events_log())],
@@ -113,8 +116,8 @@ impl MonitorIo {
 
     fn poll(&mut self, tick: u64) -> Batch {
         let mut batch = Batch::default();
-        if let Some(claude) = self.claude.as_mut() {
-            batch.claude = claude.poll();
+        for claude in &mut self.claude {
+            batch.claude.extend(claude.poll());
         }
         if tick.is_multiple_of(2) {
             for tailer in &mut self.events {
@@ -158,7 +161,7 @@ pub fn init(cx: &mut App) {
     cx.spawn(async move |cx| {
         let mut io = MonitorIo {
             flags: None,
-            claude: None,
+            claude: Vec::new(),
             events: Vec::new(),
         };
         let mut tick: u64 = 0;

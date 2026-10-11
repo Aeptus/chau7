@@ -19,30 +19,16 @@ the code.
 | L10-003 | Changing the language refreshes the settings window at once; menus and other views pick it up after a restart | `Localization/Localization.swift` (`refreshToken`, `LocalizedViewModifier`, `languageDidChange`) |  | crates/chau7_next/src/l10n.rs | done |  |
 | L10-004 | Right-to-left layout for Arabic and Hebrew (applied to the settings window and other views using `.localized()`) | `Localization/Localization.swift` (`isRTL`, `layoutDirection`) |  | crates/chau7_next/src/l10n.rs | done |  |
 | L10-005 | Strings missing from a language fall back to the English default from the code | `Localization/Localization.swift` (`localizedString`) |  | crates/chau7_next_core/src/l10n/mod.rs | done |  |
-| L10-006 | Dates, numbers, percentages and file sizes formatted for the chosen language | `Localization/Localization.swift` (`LocalizedFormatters`) |  | crates/chau7_next_core/src/l10n/formatters.rs | done |  |
+| L10-006 | Dates and file sizes follow interface language; integer/decimal/percent/currency follow independent Regional Number Format (L10-009) | `Localization/Localization.swift` (`LocalizedFormatters`) |  | chau7_next_core/src/l10n/formatters.rs; chau7_next_core/src/l10n/numbers.rs | done |  |
 
-| L10-007 | Spanish is selectable and follows System Default language matching with English fallback | `Localization/Localization.swift`; `Resources/es.lproj/Localizable.strings` | LocalizationTests |  | done |  |
-| L10-008 | Plural rules in all language stringsdict tables format counts with locale-specific singular/plural rather than raw English substitutions | `Localization/Localization.swift`; `Resources/*.lproj/Localizable.stringsdict` | LocalizationTests | chau7_next_core/src/l10n/formatters.rs | partial |  |
+| L10-007 | Spanish is selectable and follows System Default language matching with English fallback | `Localization/Localization.swift`; `Resources/es.lproj/Localizable.strings` | LocalizationTests | chau7_next_core/src/l10n/mod.rs; chau7_next_core/src/l10n/strings/es.strings; chau7_next/src/settings_window/general.rs | done |  |
+| L10-008 | Plural rules in all language stringsdict tables format counts with locale-specific singular/plural rather than raw English substitutions | `Localization/Localization.swift`; `Resources/*.lproj/Localizable.stringsdict` | LocalizationTests | chau7_next_core/src/l10n/plural.rs; chau7_next_core/src/app_shell.rs; chau7_next_core/src/command_center.rs; chau7_next/src/app_actions.rs; chau7_next/src/status_bar/mod.rs; chau7_next/src/workspace/menus.rs | done |  |
 
-| L10-009 | Regional Number Format independent from interface language affects integer/decimal/percent/currency, persists and invalidates cached formatters | `Localization/Localization.swift`; `Utilities/RegionalNumberFormat.swift`; `Settings/TerminalBehaviorStore.swift` |  | chau7_next_core/src/l10n/formatters.rs | partial |  |
+| L10-009 | Regional Number Format independent from interface language affects integer/decimal/percent/currency, persists and invalidates cached formatters | `Localization/Localization.swift`; `Utilities/RegionalNumberFormat.swift`; `Settings/TerminalBehaviorStore.swift` |  | chau7_next_core/src/l10n/numbers.rs; chau7_next/src/settings/general.rs; chau7_next/src/settings_window/ai.rs; chau7_next/src/main.rs | done |  |
 
 ## Notes
-
-- String counts (`Localizable.strings`): English 1219 keys; French, Arabic and
-  Hebrew 1216 each. The three keys missing from fr, ar and he are
-  `settings.about.licenseSummary`, `settings.about.openAcknowledgments`,
-  `settings.about.stackSummary` (so `testLocalizationKeyParity` should currently
-  fail). The code references about 1805 distinct keys through `L("...")`, so
-  roughly 590 strings exist only as English defaults in the code.
-- Not everything is localized: the welcome screen, the quit and URL scheme
-  alerts, and several status bar labels are hard coded in English.
-- L10-006: only `LocalizedFormatters.fileSize` has a caller (Debug console);
-  the rest are unused helpers.
-- L10-004: RTL is applied through `.localized()`, used by
-  `SettingsRootView`, `ProfileSelectorBar`, `GeneralSettingsView` and
-  `ProfilesBackupSettingsView`; other windows stay left to right.
-- Chau7 Next is English only and hard codes its strings. A port could reuse the
-  `.strings` files (simple `"key" = "value";` pairs) through a small loader in
-  `chau7_next_core`, keeping the same keys so translations are shared.
-- Resource lookup (`Chau7Resources.bundle`, see `Utilities.md` UTL-013) finds
-  `en.lproj` both in `Chau7.app` and in the SwiftPM build folder.
+- Current Swift Localizable.strings contains 2,748 keys in each of English, French, Spanish, Arabic and Hebrew. Next bundles all five tables and preserves every Swift key/value, checked per key with concise failure messages. Nineteen declared source-default supplemental keys cover current Settings/FDA status text absent from Swift tables; an explicit evidence whitelist rejects any unknown extras. The app source-key scan rejects missing Next English keys.
+- L10-008 is implemented: all 41 current stringsdict entries across five languages use the plural backend. Actual quit alerts, group-close menu and status panel/fallback menu now route counted labels through it. Focused tests cover five locales, complete counts before attention card truncation, duplicate process names and literal format-like text. Full native language acceptance remains on the hand-test checklist.
+- L10-009 is implemented: French/European/US regional choice is independent from app language, defaults to French, persists and applies at startup and live updates. Helpers include currency two-decimal and precise small-cost formatting. Tests compare actual Foundation examples. Next uses fresh policy-based formatting, without Swift's formatter cache architecture.
+- RTL follows the selected Arabic/Hebrew UI language. Native screen/layout acceptance remains separate.
+- Evidence: l10n::tests::{tables_match_the_swift_resources,next_status_defaults_have_current_swift_source_evidence}; app source-key coverage; l10n::numbers::tests::{raw_values_defaults_and_locales_match_swift,foundation_number_and_currency_examples}. The settings/resource checkpoint passes all 20 focused localization tests.

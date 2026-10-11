@@ -2,9 +2,7 @@
 //! selected-surface protection and verified history before ring reduction.
 use crate::workspace::AppData;
 use chau7_next_core::{
-    memory_pressure::{
-        self as policy, FlushKind, FlushRecord, PressureLevel, PressureState, RenderPhase,
-    },
+    memory_pressure::{self as policy, FlushKind, FlushRecord, PressureState, RenderPhase},
     scrollback_cache::{self, ContentKind},
 };
 use chau7_terminal::Chau7Terminal;
@@ -684,6 +682,21 @@ fn reclaim_caches(selected: &HashSet<u64>, pressure: bool, cx: &mut App) {
     if critical {
         service.last_critical_reclaim = Some(Instant::now());
     }
+    if pressure
+        && let Some((_, physical)) = native::footprint()
+        && let Some(resident) = crate::platform::process::own_resident_bytes()
+    {
+        let severity = if service
+            .pressure
+            .lock()
+            .should_shed_best_effort(service.epoch.elapsed())
+        {
+            chau7_next_core::incidents::Severity::Critical
+        } else {
+            chau7_next_core::incidents::Severity::Warning
+        };
+        crate::incidents::memory(severity, resident, physical, reclaimed);
+    }
 }
 /// macOS physical footprint is distinct from resident set. Unsupported systems
 /// return unknown rather than relabeling RSS as a physical-footprint value.
@@ -715,6 +728,7 @@ pub fn diagnostics(cx: &App) -> Value {
 #[cfg(target_os = "macos")]
 mod native {
     use super::*;
+    use chau7_next_core::memory_pressure::PressureLevel;
     use std::ffi::c_void;
     unsafe extern "C" {
         static _dispatch_source_type_memorypressure: u8;

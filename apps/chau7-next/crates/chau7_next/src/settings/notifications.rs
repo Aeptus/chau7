@@ -125,6 +125,16 @@ mod tests {
         s.rules.rate_limit_config.max_per_minute = 9;
         s.shell_events.long_running_threshold_seconds = 120;
         s.app_events.notify_on_tab_open = true;
+        s.rules.muted_repos.insert(
+            "/repo/indefinite".into(),
+            chau7_next_core::notifications::repo_muting::RepoMute::default(),
+        );
+        s.rules.muted_repos.insert(
+            "/repo/snoozed".into(),
+            chau7_next_core::notifications::repo_muting::RepoMute {
+                snooze_until: Some(chrono::DateTime::from_timestamp(1_751_000_000, 0).unwrap()),
+            },
+        );
         s.monitor_ai_events = false;
         s.ai_events_log_path = "/tmp/events.log".into();
         assert_eq!(crate::settings::round_trip(&s), s);

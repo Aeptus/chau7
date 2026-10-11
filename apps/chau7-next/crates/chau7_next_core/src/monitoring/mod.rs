@@ -9,5 +9,6 @@ pub mod codex_sessions;
 pub mod conflicts;
 pub mod dev_server;
 pub mod git;
+pub mod process_tree;
 pub mod shell_events;
 pub mod tailer;

@@ -100,7 +100,7 @@ impl Workspace {
         let session = self.mcp_session(id, cx);
         let session = session.as_ref().map(|s| s.read(cx));
         let mode = token_optimization_mode(cx);
-        let is_ai = session.is_some_and(|s| s.ai_app.is_some());
+        let is_ai = session.is_some_and(|s| s.is_ai_running());
         out.insert("tab_id".into(), json!(uuid_string(meta.uuid)));
         out.insert("title".into(), json!(self.tab_title(id, cx)));
         // The AI CLI's history state wins over the shell's (`effectiveStatus`,
@@ -132,10 +132,14 @@ impl Workspace {
         if let Some(s) = session {
             out.insert("raw_status".into(), json!(s.status().as_str()));
             out.insert("raw_is_at_prompt".into(), json!(s.is_at_prompt()));
-            if let Some(app) = &s.ai_app {
+            if let Some(app) = s.ai_display_app_name() {
                 out.insert("active_app".into(), json!(app));
+            }
+            if let Some(app) = &s.ai_app {
                 out.insert("raw_active_app".into(), json!(app));
             }
+            out.insert("is_ai_running".into(), json!(s.is_ai_running()));
+            out.insert("live_agent_name".into(), json!(s.shell().live_agent_name()));
             if let Some(branch) = &s.git_branch {
                 out.insert("git_branch".into(), json!(branch));
             }
@@ -165,10 +169,29 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Uuid> {
+        self.create_automation_tab(directory, true, window, cx)
+    }
+
+    /// Explicit trusted UI agent launch creates an ordinary tab.
+    pub(crate) fn runtime_create_tab(
+        &mut self,
+        directory: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Uuid> {
+        self.create_automation_tab(directory, false, window, cx)
+    }
+    fn create_automation_tab(
+        &mut self,
+        directory: Option<PathBuf>,
+        controlled: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Uuid> {
         let directory = directory.or_else(|| self.inherited_start_directory(cx));
         let id = self.new_tab_at(directory, false, window, cx);
         let meta = self.state.get_mut(id)?;
-        meta.mcp_controlled = true;
+        meta.mcp_controlled = controlled;
         let group = meta.repo_group_id.clone().or_else(|| meta.git_root.clone());
         meta.repo_group_id = group.clone();
         let uuid = meta.uuid;
@@ -211,7 +234,7 @@ impl Workspace {
         let mode = token_optimization_mode(cx);
         let is_ai = self
             .mcp_session(id, cx)
-            .is_some_and(|s| s.read(cx).ai_app.is_some());
+            .is_some_and(|s| s.read(cx).is_ai_running());
         self.state.get(id)?;
         self.apply_token_opt_override(id, value, true, cx);
         cx.notify();

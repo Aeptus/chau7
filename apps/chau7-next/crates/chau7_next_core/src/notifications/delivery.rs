@@ -186,21 +186,62 @@ pub fn prepare(
     })
 }
 
+/// Derive presentation semantics through the canonical adapter contract,
+/// including source-specific shell/app types absent from raw AI vocabulary.
+pub fn semantic_kind(event: &AiEvent) -> super::canonical::NotificationSemanticKind {
+    use super::{adapters, canonical};
+    let kind = canonical::kind_with_canonical_type(
+        event.raw_type.as_deref(),
+        event.notification_type.as_deref(),
+        Some(&event.event_type),
+    );
+    if kind != canonical::NotificationSemanticKind::Unknown {
+        return kind;
+    }
+    adapters::adapt(event)
+        .canonical_event()
+        .map(|canonical| canonical.kind)
+        .unwrap_or(kind)
+}
+
+/// Current authoritative evidence clears a lingering interactive style when
+/// it no longer describes an active prompt. Tool failures remain stateless
+/// to the reconciler, but still prove the provider is actively working.
+pub fn should_clear_persistent_attention_style(
+    event: &AiEvent,
+    kind: super::canonical::NotificationSemanticKind,
+) -> bool {
+    use super::canonical::{self, NotificationSemanticKind as K};
+    if event.reliability != AiEventReliability::Authoritative {
+        return false;
+    }
+    match kind {
+        K::PermissionRequired | K::WaitingForInput | K::AttentionRequired => false,
+        K::Idle => !canonical::is_input_prompt_like(
+            event.title.as_deref(),
+            &event.message,
+            event.notification_type.as_deref(),
+        ),
+        _ => true,
+    }
+}
+
 // MARK: - Style planner
 
-/// The tab style used when no style action is configured: error, failed and
-/// context limit give "error"; permission and attention give "attention";
-/// finished and idle give "waiting". Cleared after 30 s.
+/// Current vocabulary style with a semantic fallback for normalized aliases.
+/// Defaults have no timer: acknowledgement clears non-persistent styles.
 pub fn default_style_action(event: &AiEvent) -> Option<NotificationActionConfig> {
-    let preset = match event.event_type.to_lowercase().as_str() {
-        "error" | "failed" | "context_limit" => "error",
-        "permission" | "attention_required" => "attention",
-        "finished" | "idle" => "waiting",
-        _ => return None,
-    };
+    use super::vocabulary;
+    let direct = vocabulary::entry(&event.event_type).and_then(|e| e.style);
+    let semantic = semantic_kind(event);
+    let preset = direct.or_else(|| {
+        vocabulary::semantic_trigger(semantic)
+            .and_then(vocabulary::entry)
+            .and_then(|e| e.style)
+    })?;
     Some(
         NotificationActionConfig::new(NotificationActionType::StyleTab)
-            .with_config([("style", preset), ("autoClearSeconds", "30")]),
+            .with_config([("style", preset)]),
     )
 }
 
@@ -490,8 +531,8 @@ mod tests {
         );
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].action_type, NotificationActionType::StyleTab);
-        assert_eq!(actions[0].config_value("style"), Some("waiting"));
-        assert_eq!(actions[0].config_value("autoClearSeconds"), Some("30"));
+        assert_eq!(actions[0].config_value("style"), Some("success"));
+        assert_eq!(actions[0].config_value("autoClearSeconds"), None);
     }
 
     #[test]
@@ -520,6 +561,71 @@ mod tests {
     }
 
     #[test]
+    fn authoritative_clear_preserves_prompts_and_clears_completed_or_working_evidence() {
+        use super::super::canonical::NotificationSemanticKind as K;
+        let mut e = codex("finished");
+        e.reliability = AiEventReliability::Authoritative;
+        for kind in [
+            K::TaskFinished,
+            K::TaskFailed,
+            K::ToolFailed,
+            K::AuthenticationSucceeded,
+            K::Informational,
+        ] {
+            assert!(should_clear_persistent_attention_style(&e, kind));
+        }
+        for kind in [
+            K::PermissionRequired,
+            K::WaitingForInput,
+            K::AttentionRequired,
+        ] {
+            assert!(!should_clear_persistent_attention_style(&e, kind));
+        }
+        e.message = "Waiting for your input".into();
+        assert!(!should_clear_persistent_attention_style(&e, K::Idle));
+        e.message.clear();
+        assert!(should_clear_persistent_attention_style(&e, K::Idle));
+        e.reliability = AiEventReliability::Fallback;
+        assert!(!should_clear_persistent_attention_style(
+            &e,
+            K::TaskFinished
+        ));
+    }
+
+    #[test]
+    fn shell_and_app_specific_semantics_drive_current_presentation_and_queued_state() {
+        use super::super::canonical::NotificationSemanticKind as K;
+        for (kind, semantic, style) in [
+            ("command_finished", K::TaskFinished, "success"),
+            ("command_failed", K::TaskFailed, "error"),
+            ("script_succeeded", K::TaskFinished, "success"),
+            ("script_failed", K::TaskFailed, "error"),
+            ("dev_server_started", K::Informational, "success"),
+        ] {
+            let e = ev(
+                AiEventSource::shell(),
+                kind,
+                AiEventReliability::Authoritative,
+            );
+            assert_eq!(semantic_kind(&e), semantic);
+            assert_eq!(
+                default_style_action(&e).unwrap().config_value("style"),
+                Some(style)
+            );
+        }
+        let e = ev(
+            AiEventSource::app(),
+            "file_conflict",
+            AiEventReliability::Authoritative,
+        );
+        assert_eq!(semantic_kind(&e), K::AttentionRequired);
+        assert_eq!(
+            default_style_action(&e).unwrap().config_value("style"),
+            Some("attention")
+        );
+    }
+
+    #[test]
     fn default_style_presets() {
         let preset = |t: &str| {
             default_style_action(&codex(t)).map(|a| a.config_value("style").unwrap().to_string())
@@ -528,7 +634,16 @@ mod tests {
         assert_eq!(preset("context_limit").as_deref(), Some("error"));
         assert_eq!(preset("attention_required").as_deref(), Some("attention"));
         assert_eq!(preset("idle").as_deref(), Some("waiting"));
-        assert_eq!(preset("waiting_input"), None);
+        assert_eq!(preset("waiting_input").as_deref(), Some("waiting"));
+        assert_eq!(preset("finished").as_deref(), Some("success"));
+        assert_eq!(preset("agent-turn-complete").as_deref(), Some("success"));
+        assert_eq!(preset("tool_failed").as_deref(), Some("error"));
+        assert_eq!(
+            default_style_action(&codex("finished"))
+                .unwrap()
+                .config_value("autoClearSeconds"),
+            None
+        );
         assert_eq!(preset("command_failed"), None);
     }
 }

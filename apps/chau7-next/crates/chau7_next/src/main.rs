@@ -16,6 +16,7 @@ mod data_explorer;
 mod debug;
 mod hang_watchdog;
 mod history;
+mod incidents;
 mod l10n;
 mod logging;
 mod mcp;
@@ -94,6 +95,7 @@ fn main() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
     }
     logging::init(&root);
+    incidents::start(&root);
     platform::oslog::install_feature_intervals();
     logging::ai_pty::purge_large_logs(root.ai_logs_dir());
     protected_paths::init(&root);
@@ -175,6 +177,7 @@ fn main() {
         app_actions::apply_menu_bar_only_mode(cx);
         // MCP server for AI agents (`MCPServerManager.shared.start()`).
         mcp::start(cx);
+        monitoring::aethyme_delivery::start(cx);
         // Agent runtime sessions driven through MCP (`RuntimeSessionManager`).
         runtime::init(cx);
         // Scripting socket, when "Enable Scripting API" is on.
@@ -218,6 +221,8 @@ fn main() {
             save_session(cx, true);
             repository::flush(cx);
             history::recorder::flush_on_quit();
+            monitoring::aethyme_delivery::stop(cx);
+            monitoring::process_tree::stop(cx);
             mcp::stop(cx);
             scripting::stop(cx);
             // Token optimizer: no flags or wrappers outlive the app.
@@ -238,6 +243,7 @@ fn main() {
                 if let Some(worker) = worker {
                     let _ = worker.join();
                 }
+                incidents::shutdown();
             })
         })
         .detach();

@@ -287,7 +287,10 @@ pub fn running_process_names(cx: &App) -> Vec<String> {
 
 /// Cmd+Q: ask first when processes run in any tab, then save and quit.
 pub fn request_quit(cx: &mut App) {
-    let Some((title, detail)) = app_shell::quit_confirmation(&running_process_names(cx)) else {
+    let Some((title, detail)) = app_shell::quit_confirmation_localized(
+        &running_process_names(cx),
+        chau7_next_core::l10n::current(),
+    ) else {
         quit_now(cx);
         return;
     };

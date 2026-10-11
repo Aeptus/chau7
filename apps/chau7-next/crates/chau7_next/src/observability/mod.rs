@@ -6,10 +6,11 @@ use chau7_next_core::events::{
 use futures::{StreamExt, channel::mpsc};
 use gpui::{App, Global};
 use serde_json::{Value, json};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
+use uuid::Uuid;
 
 struct PersistenceState {
     processed: u64,
@@ -64,7 +65,7 @@ struct Observability {
     journal: Journal,
     worker: Option<JoinHandle<()>>,
     events: VecDeque<EventEnvelope>,
-    timers: Arc<Mutex<std::collections::BTreeMap<String, Value>>>,
+    timers: TimerRecords,
 }
 impl Global for Observability {}
 
@@ -240,25 +241,34 @@ pub fn record(event: StructuralEvent, cx: &App) {
             .ingest_structural(event, None, None, None);
     }
 }
+struct TimerRecord {
+    generation: Uuid,
+    payload: Value,
+}
+type TimerRecords = Arc<Mutex<BTreeMap<String, TimerRecord>>>;
+
 /// A real scheduled task owns this guard; cancelling it updates the timer inventory.
 pub struct TimerGuard {
     id: String,
-    timers: Arc<Mutex<std::collections::BTreeMap<String, Value>>>,
+    generation: Uuid,
+    timers: TimerRecords,
     spine: Arc<EventSpine>,
 }
 impl Drop for TimerGuard {
     fn drop(&mut self) {
-        if let Some(timer) = self
-            .timers
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get_mut(&self.id)
-        {
-            timer["active"] = json!(false);
+        let mut timers = self.timers.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(timer) = timers.get_mut(&self.id) else {
+            return;
+        };
+        // A cancelled older task must not deactivate its replacement.
+        if timer.generation != self.generation {
+            return;
         }
+        timer.payload["active"] = json!(false);
         let mut event = StructuralEvent::new("timer_updated", "observability");
         event.detail.insert("timer_id".into(), json!(self.id));
         event.detail.insert("active".into(), json!(false));
+        // Serialize timer mutation and its public spine event together.
         self.spine.ingest_structural(event, None, None, None);
     }
 }
@@ -311,7 +321,7 @@ fn register_task_timer(
 }
 #[derive(Clone)]
 pub struct TimerRegistry {
-    timers: Arc<Mutex<std::collections::BTreeMap<String, Value>>>,
+    timers: TimerRecords,
     spine: Arc<EventSpine>,
 }
 pub fn timer_registry(cx: &App) -> Option<TimerRegistry> {
@@ -331,15 +341,21 @@ impl TimerRegistry {
         queue: &str,
     ) -> TimerGuard {
         let timer = json!({"id":id,"label":label,"kind":kind,"subsystem":subsystem,"queue_label":queue,"interval_ms":interval_ms,"leeway_ms":null,"active":true});
-        self.timers
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(id.into(), timer.clone());
+        let generation = Uuid::new_v4();
+        let mut timers = self.timers.lock().unwrap_or_else(|e| e.into_inner());
+        timers.insert(
+            id.into(),
+            TimerRecord {
+                generation,
+                payload: timer.clone(),
+            },
+        );
         let mut event = StructuralEvent::new("timer_registered", subsystem);
         event.detail.insert("timer".into(), timer);
         self.spine.ingest_structural(event, None, None, None);
         TimerGuard {
             id: id.into(),
+            generation,
             timers: self.timers.clone(),
             spine: self.spine.clone(),
         }
@@ -353,7 +369,7 @@ pub fn timer_inventory(cx: &App) -> Value {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .values()
-        .cloned()
+        .map(|timer| timer.payload.clone())
         .collect::<Vec<_>>();
     json!({"timers":timers,"latest_seq":host.journal.latest_seq(),"coverage":"registered Chau7 Next tasks"})
 }
@@ -467,6 +483,80 @@ pub fn shutdown(cx: &mut App) -> Option<JoinHandle<()>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn timer_registry() -> TimerRegistry {
+        TimerRegistry {
+            timers: Arc::default(),
+            spine: Arc::new(EventSpine::new(128, 0)),
+        }
+    }
+    #[test]
+    fn dropping_replaced_timer_does_not_deactivate_or_emit_for_its_new_owner() {
+        let registry = timer_registry();
+        let first = registry.register("same", "first", "test", 100, "test", "test");
+        let second = registry.register("same", "second", "test", 200, "test", "test");
+        let sequence = registry.spine.latest_cursor();
+        drop(first);
+        {
+            let timers = registry.timers.lock().unwrap();
+            assert_eq!(timers["same"].payload["label"], "second");
+            assert_eq!(timers["same"].payload["interval_ms"], 200);
+            assert_eq!(timers["same"].payload["active"], true);
+            assert!(timers["same"].payload.get("generation").is_none());
+        }
+        assert_eq!(registry.spine.latest_cursor(), sequence);
+        drop(second);
+        assert_eq!(
+            registry.timers.lock().unwrap()["same"].payload["active"],
+            false
+        );
+        assert_eq!(registry.spine.latest_cursor(), sequence + 1);
+    }
+    #[test]
+    fn concurrent_timer_replacements_only_publish_current_owner_cancellation() {
+        let registry = timer_registry();
+        let barrier = Arc::new(std::sync::Barrier::new(8));
+        let workers: Vec<_> = (0..8)
+            .map(|i| {
+                let registry = registry.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let guard = registry.register(
+                        "shared",
+                        &format!("owner-{i}"),
+                        "test",
+                        i + 1,
+                        "test",
+                        "test",
+                    );
+                    barrier.wait();
+                    drop(guard);
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert_eq!(
+            registry.timers.lock().unwrap()["shared"].payload["active"],
+            false
+        );
+        let events = registry.spine.replay(0, 128).envelopes;
+        assert_eq!(events.len(), 9);
+        assert!(
+            events[..8]
+                .iter()
+                .all(|event| event.structural_event().unwrap().event_type == "timer_registered")
+        );
+        assert_eq!(
+            events[8].structural_event().unwrap().event_type,
+            "timer_updated"
+        );
+        assert_eq!(
+            events[8].structural_event().unwrap().detail["active"],
+            false
+        );
+    }
+
     #[test]
     fn repo_query_uses_admitted_stable_identity_filters_and_unicode_limit() {
         let spine = EventSpine::new(16, 0);

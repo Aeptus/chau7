@@ -273,6 +273,9 @@ pub fn inherited_cleanup(vars: &[(String, String)], swift: &SwiftShellPaths) -> 
     if let Some(path) = get("PATH") {
         let cto = swift.cto_bin.to_string_lossy();
         let mut wrappers = vec![cto.trim_end_matches('/').to_string()];
+        if let Some(codex) = get("CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR").filter(|d| !d.is_empty()) {
+            wrappers.push(codex.trim_end_matches('/').to_string());
+        }
         if let Some(codex) = get("CHAU7_CODEX_PROXY_WRAPPER_DIR").filter(|d| !d.is_empty()) {
             wrappers.push(codex.trim_end_matches('/').to_string());
         }
@@ -293,6 +296,17 @@ pub fn inherited_cleanup(vars: &[(String, String)], swift: &SwiftShellPaths) -> 
             changes.push(EnvChange::Remove(key.clone()));
         }
     }
+    for key in [
+        "CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR",
+        "CHAU7_NEXT_OPENAI_PROXY_BASE_URL",
+        "CHAU7_NEXT_CODEX_CA_CERTIFICATE",
+        "CHAU7_NEXT_PROXY_CORRELATION_ENABLED",
+        "CHAU7_NEXT_ANTHROPIC_HEADERS_BASE",
+    ] {
+        if get(key).is_some() {
+            changes.push(EnvChange::Remove(key.into()));
+        }
+    }
     // Per-tab history of the Swift app (exported by its rc wrappers).
     if let Some(histfile) = get("HISTFILE")
         && Path::new(histfile).starts_with(&swift.history_dir)
@@ -304,7 +318,7 @@ pub fn inherited_cleanup(vars: &[(String, String)], swift: &SwiftShellPaths) -> 
     if get("CLAUDECODE").is_some() {
         changes.push(EnvChange::Remove("CLAUDECODE".into()));
     }
-    if get("TERM_PROGRAM") != Some("Chau7") {
+    if !matches!(get("TERM_PROGRAM"), Some("Chau7" | "Chau7Next")) {
         return changes;
     }
     // The Swift app points ZDOTDIR at its own temporary folder and keeps the
@@ -349,7 +363,8 @@ pub fn inherited_cleanup(vars: &[(String, String)], swift: &SwiftShellPaths) -> 
     if let Some(headers) = get("ANTHROPIC_CUSTOM_HEADERS")
         && headers.contains("X-Chau7-")
     {
-        let user = get("CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE")
+        let user = get("CHAU7_NEXT_ANTHROPIC_HEADERS_BASE")
+            .or_else(|| get("CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE"))
             .map(str::to_string)
             .unwrap_or_else(|| {
                 headers
@@ -662,6 +677,45 @@ mod tests {
             "X-Team: a".into()
         )));
         assert!(changes.contains(&EnvChange::Remove("OPENAI_BASE_URL".into())));
+    }
+
+    #[test]
+    fn cleanup_inside_next_removes_owned_proxy_route_and_preserves_user_trust() {
+        let changes = inherited_cleanup(
+            &vars(&[
+                ("TERM_PROGRAM", "Chau7Next"),
+                ("PATH", "/h/owned-shell/bin:/usr/bin"),
+                ("CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR", "/h/owned-shell/bin"),
+                (
+                    "CHAU7_NEXT_OPENAI_PROXY_BASE_URL",
+                    "https://127.0.0.1:18091",
+                ),
+                ("CHAU7_NEXT_CODEX_CA_CERTIFICATE", "/h/owned-ca.pem"),
+                ("CHAU7_NEXT_PROXY_CORRELATION_ENABLED", "1"),
+                ("CHAU7_NEXT_ANTHROPIC_HEADERS_BASE", "X-User: preserved"),
+                (
+                    "ANTHROPIC_CUSTOM_HEADERS",
+                    "X-User: preserved\nX-Chau7-Tab: stale",
+                ),
+                (
+                    "OPENAI_BASE_URL",
+                    "https://127.0.0.1:18091/_chau7/project/x/v1",
+                ),
+                ("CODEX_CA_CERTIFICATE", "/h/user-ca.pem"),
+                ("SSL_CERT_FILE", "/h/ssl.pem"),
+            ]),
+            cto(),
+        );
+        assert!(changes.contains(&EnvChange::Set("PATH".into(), "/usr/bin".into())));
+        assert!(changes.contains(&EnvChange::Set(
+            "ANTHROPIC_CUSTOM_HEADERS".into(),
+            "X-User: preserved".into()
+        )));
+        assert!(changes.contains(&EnvChange::Remove(
+            "CHAU7_NEXT_OPENAI_PROXY_BASE_URL".into()
+        )));
+        assert!(changes.contains(&EnvChange::Remove("OPENAI_BASE_URL".into())));
+        assert!(!changes.iter().any(|c|matches!(c,EnvChange::Remove(key)|EnvChange::Set(key,_) if key=="CODEX_CA_CERTIFICATE"||key=="SSL_CERT_FILE")));
     }
 
     #[test]

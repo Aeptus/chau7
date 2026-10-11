@@ -125,6 +125,18 @@ pub fn save_for(root: &DataRoot, session: &SavedSession, terminating: bool) -> s
     let tmp = root.session_file().with_extension("json.tmp");
     std::fs::write(&tmp, &text)?;
     std::fs::rename(tmp, root.session_file())?;
+    crate::incidents::restore_payload(
+        text.len() as u64,
+        std::collections::BTreeMap::from([(
+            "reason".into(),
+            if terminating {
+                "termination"
+            } else {
+                "autosave"
+            }
+            .into(),
+        )]),
+    );
     if let Err(err) = write_backups(root, &text, terminating.then_some("termination")) {
         log::warn!("tab state backup: {err}");
     }
