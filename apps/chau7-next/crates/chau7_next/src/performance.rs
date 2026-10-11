@@ -87,6 +87,7 @@ pub fn unresponsive_snapshot() -> Value {
     json!({"schema_version":1,"captured_at":chrono::Utc::now().to_rfc3339(),
         "runtime":runtime_info(),"uptime_seconds":identity().started.elapsed().as_secs_f64(),
         "process":process_snapshot(),"partial":true,
+        "hang_watchdog":{"status":"main_thread_unresponsive","render_circuit_breaker_open":crate::hang_watchdog::render_blocked()},
         "error":"main_thread_unresponsive","retryable":true,"timeout_ms":1000,
         "main_thread":{"status":"unresponsive","timer_delay_ms":null,"sample_count":null},
         "window_count":null,"terminal_count":null,"terminals":null,"features":null})
@@ -110,7 +111,7 @@ pub fn capture(cx: &App) -> Value {
     let heartbeat = cx.try_global::<Heartbeat>();
     json!({"schema_version": 1, "captured_at": chrono::Utc::now().to_rfc3339(),
         "runtime": runtime_info(), "uptime_seconds": identity().started.elapsed().as_secs_f64(),
-        "process": process,
+        "process": process, "hang_watchdog":crate::hang_watchdog::snapshot(cx),
         "main_thread": {"timer_delay_ms": heartbeat.and_then(|h| h.last_delay_ms),
             "max_timer_delay_ms": heartbeat.map(|h| h.max_delay_ms),
             "sample_count": heartbeat.map(|h| h.sample_count),

@@ -78,3 +78,32 @@ avoid copying arbitrary log lines into public output.
 This old running package exposes the earlier 30 MCP tools. The new diagnostics
 require a newly built package; source integration alone cannot update a running
 process. Preserve active Next and Swift sessions during installation/testing.
+
+## Main-thread hang diagnostics
+
+A separate monitor checks a main-thread progress token every 250 ms. A confirmed
+stall lasting two seconds opens the terminal paint circuit breaker. PTY parsing,
+input processing and persistence remain active; progress closes the breaker.
+The live performance JSON includes `hang_watchdog` status, transition counts,
+heartbeat interval and the diagnostics directory. MCP timeout snapshots expose
+whether the breaker is open without waiting for the main thread.
+
+On macOS a same-binary helper starts only during a confirmed stall. It captures
+`/usr/bin/sample` for five seconds, with a ten-second helper deadline and an
+8 MiB sample limit. It records heartbeat tokens before and after capture and
+main-thread stack families as evidence, without asserting a deadlock or a cause.
+Sampling has a 60-second cooldown scoped to the app launch. The child retires
+once progress has stayed healthy for two seconds. Shutdown stops the monitor,
+cancels an active diagnostic sample and reaps its child on the quit worker.
+Linux and Windows retain token monitoring and the circuit breaker; the JSON
+explicitly reports that the macOS external sampling helper is unavailable.
+
+Files live in Next's own `reports/hangs/` directory:
+
+- `main-thread-heartbeat.json` while the monitor runs.
+- `latest-transition.json` with the last stall or recovery breadcrumb.
+- `latest-hang.json` and paired `hang-*.json` / `hang-*.sample.txt` captures.
+
+Recognized sample bundles are bounded to 40 bundles, 64 MiB total and seven days.
+Unrelated files are retained. The helper is intercepted before app initialization,
+so it never imports settings, installs integrations or starts a second GUI.
