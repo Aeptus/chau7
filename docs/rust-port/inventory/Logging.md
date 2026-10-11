@@ -42,6 +42,8 @@ The app writes one rolling log file, mirrors category logs to the macOS unified 
 
 | LOG-029 | Incident breadcrumbs bounded store links hangs/recovery/lifecycle to generated issue report and snapshot with recent diagnostic evidence | `Logging/IncidentBreadcrumbStore.swift`; `Logging/BugReportDraft.swift` | IncidentBreadcrumbStoreTests | chau7_next/src/debug/snapshot.rs | partial |  |
 
+| LOG-030 | Log/report retention caps count,total bytes,individual file bytes and age, tracks failures without unbounded repeat logging; directory watch retry survives rotation | `Chau7Core/FileRetentionBudget.swift`; `Chau7Core/LogRetentionPolicy.swift`; `Monitoring/LogFileCompactor.swift`; `Chau7Core/FileObservationRetryPolicy.swift` | FileRetentionBudgetTests; LogRetentionPolicyTests; FileObservationRetryPolicyTests | chau7_next/src/logging/writer.rs; chau7_next/src/monitoring/file_monitor.rs | partial |  |
+
 ## Notes
 
 - Rust (`chau7_next/src/logging/`, `chau7_next_core/src/logging.rs`): a

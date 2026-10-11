@@ -1,0 +1,654 @@
+# official main 7733b1f0c4440c0193915b036c38d5b83f31a1b3; April reference legacy/feat/chau7-next-parity
+source	change_since_april	sha256	explicit_inventory_rows
+apps/chau7-macos/Sources/Chau7/AI/AIAgentLogo.swift	M	fc977c1172b3e6845155e851f482c1ce380c5d852a59ddba76cadb2792602259	AIX-005
+apps/chau7-macos/Sources/Chau7/AI/AITerminalLogSession.swift	M	a20ced111c72d4244b572a57985eb407bd8a08f06a89ec16eef2aa0a82dad305	LOG-026,AIX-009,AIX-010
+apps/chau7-macos/Sources/Chau7/AI/ErrorExplainer.swift	M	123f31acd1189758bac632d5663681b3d13acaa21197c776b0bc7b6552f1e71b	AIX-015
+apps/chau7-macos/Sources/Chau7/AI/ErrorExplanationView.swift	M	96b55363d54da5ef6d5b131992757fe6606e8eaed4ed4100748a95174904c3d9	AIX-016
+apps/chau7-macos/Sources/Chau7/AI/LLMClient.swift	M	30435ba281beed21f009401f726499c0377dc20a742824f0d1d6d75a24fbd0ad	AIX-014
+apps/chau7-macos/Sources/Chau7/Analytics/APIAnalyticsCharts.swift	A	97ff8e5edb3d7f636e606864fde1d441744694671b39ea77bfd70ef99733f0af	ANL-008
+apps/chau7-macos/Sources/Chau7/Analytics/AnalyticsDashboardView.swift	M	d1a200500747296aae5da1074c961b39d7244b8b3f37a646100ff16b68d2f3ae	ANL-001,ANL-002,ANL-008
+apps/chau7-macos/Sources/Chau7/Analytics/TerminalAnalytics.swift	M	f609bc7750f8a92d7327b3fd477995730d55e3233beaa687ce134520119fcd92	ANL-001,ANL-002
+apps/chau7-macos/Sources/Chau7/Analytics/TimelineScrubberView.swift	M	cd6a362fd6304b77d5583c2d2f30a75b89331540cf473c693912581961a1b2ec	HIS-015,ANL-003,ANL-004,ANL-005,ANL-006,ANL-007
+apps/chau7-macos/Sources/Chau7/App/AppConstants.swift	M	ca107229b0ce8da71e303de389303bdbbb76ffdf5d51f22e88bd80e8b557b587	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/App/AppDelegate+AppNap.swift	A	30aad29256ed760428e8dac2acdc47913fbc1b7c795b3cede67cfe775da49b67	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/App/AppDelegate+MenuActions.swift	A	dc80f00f03c6ac47c63ee12975a386547a3e17ec7c517d0042ff5300822774fa	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/App/AppDelegate+MultiWindow.swift	A	08e513d3eb4111e4a3716e177885ac476ceec2ce85248301cd2b39e798644ec0	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/App/AppDelegate+URLScheme.swift	A	ff64c9ef199834a760f9e52429c835cd4cbda92a614bfd471a620cbfe5fe6c34	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/App/AppDelegate.swift	M	fc8ac19ee1cf7729ad6869afe5821ba4571f989b44af30ee78fdc503a5386d12	DBG-025,APP-001,APP-002,APP-003,APP-004,APP-005,APP-006,APP-007,APP-008,APP-010,APP-011,APP-012,APP-013,APP-014,APP-015,APP-016,APP-017,APP-021,APP-022,APP-023,APP-024,APP-025,APP-026,APP-027,APP-028,APP-029,APP-030,APP-032,APP-040,APP-041,APP-042,APP-043,APP-044,APP-045,APP-046,APP-048,APP-054,APP-055,APP-056,APP-058,APP-061,APP-065,APP-067,APP-069,APP-070,APP-071,APP-072,APP-073,APP-075,APP-076,APP-077,SET-023,SNP-037,TOK-019,SPL-020,CMD-008,CMD-010,CMD-021,KBD-007,KBD-009,KBD-024,KBD-028,KBD-030,KBD-031,KBD-035,KBD-036,KBD-039,KBD-043,KBD-044,KBD-051,KBD-064,KBD-065,APR-004,APR-010,APR-011,VWS-001,UTL-005,LOG-027,OVL-039,STB-013,PRX-001,RMT-001
+apps/chau7-macos/Sources/Chau7/App/AppIcon.swift	unchanged	a2bad0ac1efd2c44180ef0e669ad1bb7923397b5b5873bf58369a93dd3068bdd	APP-018
+apps/chau7-macos/Sources/Chau7/App/AppModel.swift	M	388d8ab593788fbd4b3fd421044964bc737fb97b70c57f9e4e1bbd7280b54319	NOT-003,NOT-004,NOT-038,APP-078,APP-079,APP-080,APP-081,APP-082,APP-083,APP-084,SET-072,HIS-012,HIS-014,PRF-008,LOG-007,TEL-003,RUN-023,PRX-010,PRX-019,EVT-006,EVT-009,MON-002,MON-003,MON-006,AIX-011
+apps/chau7-macos/Sources/Chau7/App/AppSignals.swift	A	ea7af2cae80969e7386da9df7d91eaa26d1d785249f7f8e98245967a9e224101	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/App/ApplicationInstanceLock.swift	A	d3d63147763f59422c0cf3d9707e0b8ab4849b707cbedaac697f959b33655428	APP-085
+apps/chau7-macos/Sources/Chau7/App/Chau7App.swift	M	baa3e0488f04cafd1773fe2bced222d4c2454f4c37d90a12fbd0acc24dfb91df	DEX-001,APP-020,APP-030,APP-033,APP-034,APP-035,APP-036,APP-037,APP-038,APP-039,APP-047,APP-049,APP-050,APP-051,APP-052,APP-053,APP-057,APP-059,APP-060,APP-063,APP-064,APP-066,APP-074,SET-023,CLI-003,SPL-010,KBD-022,KBD-023,KBD-024,KBD-025,KBD-026,KBD-027,KBD-028,KBD-029,KBD-032,KBD-033,KBD-034,KBD-037,KBD-038,KBD-040,KBD-041,KBD-042,KBD-043,KBD-046,KBD-047,KBD-048,KBD-049,KBD-050,KBD-051,KBD-052,KBD-053,KBD-054,KBD-055,KBD-056,KBD-057,KBD-058,KBD-059,KBD-060,KBD-061,KBD-062,KBD-063,KBD-064,KBD-065,KBD-066,KBD-067,KBD-068,KBD-069,KBD-070
+apps/chau7-macos/Sources/Chau7/App/Chau7Style.swift	A	08fcdaa61ab85b51d2abb2186fa7c85593b6c51b6e92f8f438dcd5cf09e828f1	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/App/LaunchContinuityTracker.swift	A	1d94307343972c3e9eb23f798327f24d246f84e6b8195d349462015cd41e9c76	APP-085
+apps/chau7-macos/Sources/Chau7/Appearance/AppTheme.swift	M	da322ffb1ca4ddecef7d64d07cbd705a1b89eec808ff70186ab691309f011b24	APR-004
+apps/chau7-macos/Sources/Chau7/Appearance/MinimalMode.swift	M	94605d3a56cb966b1bb7178608965536a0472fe949fa0248bb2a46021d7b33de	SET-060,APR-008
+apps/chau7-macos/Sources/Chau7/Appearance/ProviderColors.swift	A	8b6a9db9c962083c2d56c51a975e12f61de881adf36630f674fc0cf09fe0ef97	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Appearance/StatusBarPanelStyle.swift	A	02177cc130c7e2cb47863167f1be4666fbb543fb4cb74867c04c29c16edbc556	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Appearance/TabColor.swift	unchanged	8bac3d6c3acbe7cd8596aa917e654f601d28344867ff401e3e98fdb08f729058	APR-005,APR-006
+apps/chau7-macos/Sources/Chau7/Appearance/TerminalColorScheme.swift	M	09a36cb71c33e7a7e4ada92a8b9ff273cb5457423428ff40087719cb69522f28	APR-001,APR-002,APR-003
+apps/chau7-macos/Sources/Chau7/Commands/CommandPalette.swift	M	ab15a38f12f5867bbfd7dd05a23441678205ec2144b24e1492cfd13dfde210f9	SNP-014,CMD-001,CMD-002,CMD-003,CMD-004,CMD-005,CMD-006,CMD-007,CMD-008,CMD-009,CMD-010,CMD-011,CMD-012,CMD-013,CMD-014,CMD-015,CMD-016,CMD-017,CMD-018,CMD-019,CMD-020,CMD-021,CMD-022,CMD-023,CMD-024,CMD-025,CMD-026,CMD-027,CMD-028,CMD-029,CMD-030
+apps/chau7-macos/Sources/Chau7/Commands/DangerousCommandGuard.swift	M	4696c1dbd9fe29639eccd00a2bf0d97e2f76edd850c8fdad978bd9beb421ff91	SET-074,CMD-034,CMD-035
+apps/chau7-macos/Sources/Chau7/Commands/PathClickHandler.swift	M	595afaf04d430f76dc237249c9c3a7327511f5832ee607037b2848911e40eacc	CMD-037,CMD-039,CMD-041,UTL-002
+apps/chau7-macos/Sources/Chau7/ControlPlaneService.swift	A	795363508e00fe14ea6503afad738120d955220ad5794258d938e8f704703072	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Dashboard/AgentDashboardModel.swift	A	77d05f205ae2ff847390c3f372d2ed6eb953836b3c32ab402138605b97cd4ea7	DSH-001,DSH-003,DSH-004,DSH-005,DSH-006,DSH-007,DSH-008
+apps/chau7-macos/Sources/Chau7/Dashboard/AgentDashboardSessionController.swift	A	397cde9879ff28c1dddf6fa21489278e41439738c862cc7a4741d13086c5f981	DSH-002
+apps/chau7-macos/Sources/Chau7/Dashboard/AgentDashboardTypes.swift	A	9b9a36079fddd925683b9ac6ac2c24ffa7c953a33fc669b5bf4e5e55076cddf4	DSH-002
+apps/chau7-macos/Sources/Chau7/Dashboard/AgentDashboardView.swift	A	1869ce8114ba47099a1f8483382ced13c7bc723d2fa4ee9e25c01091c5769588	DSH-001,DSH-003,DSH-004,DSH-006,DSH-007,DSH-008
+apps/chau7-macos/Sources/Chau7/DataExplorer/DataExplorerView.swift	unchanged	8c8c01def6661422164f0ca6a086a60e0fb54dfb1048d988a3d914fa9cb3909e	DEX-001
+apps/chau7-macos/Sources/Chau7/DataExplorer/DataExplorerWindow.swift	M	b7df813d5987190b856a23f8a2f0ebb3a6b86f897f727f3554edef3b8cd72e9d	DEX-001
+apps/chau7-macos/Sources/Chau7/DataExplorer/HistoryExplorerView.swift	M	aa523687b53673118e0e44f37a2a1d93904fc0318ef8feee9da28735d18aae3e	DEX-005,HIS-003,HIS-011
+apps/chau7-macos/Sources/Chau7/DataExplorer/RunsExplorerView.swift	M	edf091a8beb42c3e8204391921fe4396dd83fdc611ae0d8b1d203fec262411b9	DEX-003,DEX-004,TEL-012
+apps/chau7-macos/Sources/Chau7/DataExplorer/SessionsExplorerView.swift	M	873788a432375d04d04287d717dd886f32386dc6a21d52af489692e9d83cf712	DEX-002,REP-010,TEL-012
+apps/chau7-macos/Sources/Chau7/Debug/ChangedFilesPanel.swift	M	d458a4a09c9237d67997cf2c9b4cb5ef5d533f30acb20cb4b3632e96719c076d	DBG-025,SPL-023,MON-016
+apps/chau7-macos/Sources/Chau7/Debug/DebugConsoleMemoryTabView.swift	A	5168d0212d1d2d8e527eabad33af07895dc96ff97864ca160f154a365ea8760b	DBG-026
+apps/chau7-macos/Sources/Chau7/Debug/DebugConsoleSurface.swift	A	87c8c860b0dfa7af4bfad41fcc876809e54ba7e3f000e97bf0cedbd4e43deca3	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Debug/DebugConsoleView.swift	M	d9c0025da02dc44b115435982f4ddc73e359b8db1b43787b7d9121ab2ce4fb4e	DBG-001,DBG-002,DBG-003,DBG-004,DBG-005,DBG-006,DBG-007,DBG-008,DBG-009,DBG-010,DBG-011,DBG-012,DBG-013,DBG-014,DBG-015,DBG-016,DBG-017,DBG-018,DBG-019,DBG-020,DBG-021,DBG-022,DBG-023,NOT-035,TEL-014,PRX-020
+apps/chau7-macos/Sources/Chau7/Debug/DebugUsageTabView.swift	A	16e038b315d63c58923d439fab6a50552337ad67766b6abd8db6340da5dbfb2d	DBG-027,USG-004,USG-006
+apps/chau7-macos/Sources/Chau7/Debug/LastCommandInfo.swift	unchanged	dd093493b707988aba39c210d9af63582b5aea24d0aa71690a4cf0083cbbee25	DBG-024
+apps/chau7-macos/Sources/Chau7/Debug/TerminalDiagnostics.swift	A	8cdafb2b31819c682b7f991e43045e4b8fd61cb592ef62172238437977a388c7	DBG-026
+apps/chau7-macos/Sources/Chau7/Debug/TerminalMemoryReport.swift	A	ee425d73316dd8bbcf1676fcc19d3583c500c291d26b2cd5afeb6c08e773b1c0	DBG-026
+apps/chau7-macos/Sources/Chau7/Editor/EditorLanguage.swift	M	4c787cd705a2c9355c3f2478cb9e13b198f771a1ca3a6c4d551945eb7d7e78f1	EDT-004,EDT-005
+apps/chau7-macos/Sources/Chau7/Editor/EditorScrollView.swift	M	5f46142038495eab9f5686f162ef86eac36c7717783fcb7e1829a858d96b9382	EDT-006
+apps/chau7-macos/Sources/Chau7/Editor/EnhancedEditorView.swift	M	e6659749598245eac13a0a718178e566f931afa36bc8ad0f5f8d41b2bb4311a7	EDT-005,EDT-007,EDT-008,EDT-009,EDT-010,EDT-011,EDT-013
+apps/chau7-macos/Sources/Chau7/Editor/MarkdownLiveStyler.swift	A	6ec128db10528ecb47926f56b6c240b6bbca0718dda5cd77f79e88ce82ff484b	EDT-013
+apps/chau7-macos/Sources/Chau7/Editor/SyntaxHighlighter.swift	M	eec6cd0c95402a2e4c7ece9fc2273914a872cd81206f90e6a5e880f789ec7efb	EDT-001,EDT-003
+apps/chau7-macos/Sources/Chau7/Events/AIEventPublishing.swift	A	38e62c6be2b8b1a87602c603a3d794f9b71f4b55f085205fd03b5385a5f5285c	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Events/AppEventEmitter.swift	M	26d2afb05eb640fa770c058bbf90ddd1ba0790de3e544a51ef51119503598a18	NOT-038,EVT-001,EVT-002,EVT-003,EVT-004,EVT-005,EVT-006,EVT-007,EVT-009
+apps/chau7-macos/Sources/Chau7/Events/EventSpineHost.swift	A	dfde25b3fdbc79c19dd0e6fe62fe2d2653025c10cdff7e67235465016bf2e8fe	OBS-001
+apps/chau7-macos/Sources/Chau7/Events/SpineJournalStore.swift	A	b8ec8285195d4e1560d3a8f845c8e8684d78bd194cc9e9c61d7921de105cec45	OBS-002
+apps/chau7-macos/Sources/Chau7/History/FileTailer.swift	M	8e4f0f452e522111a35b1a3229c4a1676360089b409df4d7e1874736126a58d3	HIS-016,AIX-011
+apps/chau7-macos/Sources/Chau7/History/PersistentHistoryStore.swift	M	371029eb15b4eed70cbd9aee329baa5673faf26152de1cb715ee75d9610e5e50	HIS-001,HIS-002,HIS-003,HIS-004,HIS-005,HIS-006,HIS-008,HIS-009
+apps/chau7-macos/Sources/Chau7/History/SessionRecorder.swift	M	439512009cbdb63c06fdb4c7e42c5e6150c5bb31bc37c5607c9fb802b6f4eb2e	HIS-015
+apps/chau7-macos/Sources/Chau7/IPC/UnixSocketListener.swift	A	417a08c16cbf48334201b7a0ce3cfb5a8b727a7f44a508e26a7543c96dabad44	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Infrastructure/Dialogs.swift	A	aaa9dba5f146a010da9e0af41943cfeaed5a7304b9e1ec98324c89c3596ae7f9	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Infrastructure/MainScheduler.swift	A	656159dd4088aebfeb7bae670fc41077a80e50883ec2057b5b18313d322ed51a	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Infrastructure/Polling.swift	A	a8bac313faac852431803965885957b1f9288fe3e511df74bdfa95e9dbebd2b6	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Keyboard/ClipboardHistoryManager.swift	M	c257e4c43c5f1e3cc5a9a51ea69e72dce02cd798803e9d895b6b1b618f7611d9	KBD-001,KBD-002,KBD-003,KBD-004,KBD-005
+apps/chau7-macos/Sources/Chau7/Keyboard/KittyKeyboardHandler.swift	unchanged	66c721098b03bc3d386482e75435124af97b2a22ac4db78061d6a7c4b8d5d460	KBD-016
+apps/chau7-macos/Sources/Chau7/Keyboard/PasteEscaper.swift	unchanged	0d2ae5dea0a6cc581531118742372968514d0b922f87fd38e91d46f62c763c0a	KBD-007
+apps/chau7-macos/Sources/Chau7/Localization/Localization.swift	M	49ee7f70b59d67d96e4c3409b01abe5cb31883a6d4dbf81fb421209896f39c37	NOT-037,L10-001,L10-003,L10-004,L10-005,L10-006,L10-007,L10-008,L10-009
+apps/chau7-macos/Sources/Chau7/Logging/BugReportDialogView.swift	M	a0d579b8fce00b18c2c769b91e27b54de8d67ab223724c4cd5147e2c5f77a089	LOG-020,LOG-021,LOG-023,LOG-024
+apps/chau7-macos/Sources/Chau7/Logging/BugReportDraft.swift	M	9987ef46ab3c05076253006e73eb865156e50ee5ed1ca05031e613b6970260d8	SET-133,LOG-020,LOG-021,LOG-022,LOG-023,LOG-024,LOG-029
+apps/chau7-macos/Sources/Chau7/Logging/BugReportWindowController.swift	M	875a46f0fabf4300f0c0b82629dc1ed15620dcb7c78936fba2b4497d15fe72bb	LOG-018,LOG-020
+apps/chau7-macos/Sources/Chau7/Logging/DebugContext.swift	M	d0e50dc4f7745f2e2d6261127d2c1c52776b598d08a0fede5bd648916fb4971a	LOG-014,LOG-015,LOG-016,LOG-017,LOG-018,LOG-019
+apps/chau7-macos/Sources/Chau7/Logging/IncidentBreadcrumbStore.swift	A	13dceb30066c1045625f00791d43d51574c6c6c9a50c5d19c3e49f577cf95e7c	LOG-029
+apps/chau7-macos/Sources/Chau7/Logging/IssueReportingPrivacyView.swift	M	b4efd435b2574e6213ca5a96c9102e733ccebc1035615a1c1dcea6c62ce6bc03	LOG-025
+apps/chau7-macos/Sources/Chau7/Logging/Log.swift	M	ef2eabb7ab17801570f6bbca8c5c409f17e62a74223d659b357f539917a40071	USG-002,LOG-001,LOG-002,LOG-003,LOG-004,LOG-005,LOG-006,LOG-007
+apps/chau7-macos/Sources/Chau7/Logging/LogEnhanced.swift	M	7928707df90920541042b631be1d4fa86f55a162a31b7e1dbd12cb1df7adff7f	LOG-008,LOG-009,LOG-010,LOG-011,LOG-012,LOG-013
+apps/chau7-macos/Sources/Chau7/MCP/Chau7StateSnapshotService.swift	A	5af85c5d0448bf6e7820a222e6dae59a55cc7df3047e21d3750af6e95d54731e	MCP-054,OBS-005
+apps/chau7-macos/Sources/Chau7/MCP/CodexMCPConfigFormatter.swift	A	1505571dbed97ce78f1cc4061e52e384fb0d5d0adbf47c0a04a5ea3933eee282	MCP-063
+apps/chau7-macos/Sources/Chau7/MCP/MCPApprovalForwarding.swift	A	7b177d4848bc65c9e092e9eb27377cc0cdd5ebc845b2d615ae568238c5d6573c	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/MCP/MCPClientConnections.swift	A	df7c740fe0b677c60e1adef683752131671eeb4ab9f684cecb88554c7e3382c4	MCP-056,OBS-005
+apps/chau7-macos/Sources/Chau7/MCP/MCPCommandApprovalPresentation.swift	A	863a90c7aafb74486a8b2ff90c5b74f2774a335bb97c8d037fcf82d06f621874	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/MCP/MCPCommandFilter.swift	M	b1e6e30a2cc20b1428f3ea43fcedf2775e53bafc74f498fd47f403780c96c452	MCP-040,MCP-041,MCP-042,MCP-043
+apps/chau7-macos/Sources/Chau7/MCP/MCPRepositoryQueryService.swift	A	c2eca0d907739cbae8d88c546550c1e99ef8785f58950aa9d052c12a91c6b2cf	MCP-060
+apps/chau7-macos/Sources/Chau7/MCP/MCPServerManager.swift	M	015b76dc79efecd924231077ceda223f84062bf7e15765dfdb53424850238daa	MCP-001,MCP-004,MCP-005,MCP-006,MCP-007,MCP-008
+apps/chau7-macos/Sources/Chau7/MCP/MCPSession.swift	M	a30bfe52caf9dcfcc039cc1ab970e73a26369b8d57abb094e23fc7d7d36a7360	MCP-002,MCP-009,MCP-031,MCP-039,MCP-053,MCP-054,MCP-055,MCP-056,MCP-057,MCP-058,MCP-059,MCP-060,MCP-061,OBS-005
+apps/chau7-macos/Sources/Chau7/MCP/TelemetryQueryService.swift	M	3426e8266a0ad541c454c7eab092702ac257ce5872237a6b706e3a4d93f3bf1e	MCP-009,MCP-010,MCP-011,MCP-012,MCP-013,MCP-014,MCP-015,MCP-016,TEL-010
+apps/chau7-macos/Sources/Chau7/MCP/TerminalControlService.swift	M	ec4592a761af2b0c0b05e2da5fbcdc6fefa7478247e479cb63dac82d84d09161	TOK-021,MCP-017,MCP-018,MCP-019,MCP-020,MCP-021,MCP-022,MCP-023,MCP-024,MCP-025,MCP-026,MCP-027,MCP-028,MCP-029,MCP-030,MCP-044,MCP-045,MCP-046,MCP-047,MCP-048,MCP-051,MCP-052,MCP-057,MCP-058,MCP-059,RMT-017
+apps/chau7-macos/Sources/Chau7/MCP/WindowModelRegistry.swift	A	f669df702b4f7471430b3553884f55be3d0a39e223827c69f6fc6cf050f1b57c	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Migration/LaunchAtLoginManager.swift	M	14755539d1d400bf41c5b2639d66087eaec629e242e9b55602812f7215d3a0d1	SET-018,MIG-001,MIG-002
+apps/chau7-macos/Sources/Chau7/Migration/TerminalMigrationWizard.swift	M	cb1e85cccf2257c4cfa07966a1f7ba230ec2c4a25498e7764379c6bfbb285a63	MIG-003,MIG-004,MIG-005
+apps/chau7-macos/Sources/Chau7/Migration/TerminalMigrationWizardView.swift	M	ba5dacab62d5459d3ceee96e41dde7f02e6c9effee891d30e64bb1925c7d4dae	MIG-006
+apps/chau7-macos/Sources/Chau7/Monitoring/AethymeDeliveryMonitor.swift	A	4899e15d36456c6da9369983a42e45ba858bb5c1ad4a5c55cf28d879f8eb17ab	MON-022
+apps/chau7-macos/Sources/Chau7/Monitoring/ClaudeCodeEvent.swift	M	069f9c09455c842854f0cf6a67a8ce8fb9925c33ef2ee27d5c40441c70af77e2	MON-001,MON-004
+apps/chau7-macos/Sources/Chau7/Monitoring/ClaudeCodeMonitor.swift	M	9857f97c831db88604517691a3457a9404c28bbc4540b954991e52a2ac889efe	MON-001,MON-002,MON-004
+apps/chau7-macos/Sources/Chau7/Monitoring/ClaudeSessionResolver.swift	A	80226f94fbe34c50ec36796e27ccc18f2876d3d3403b4058bca3ebce2ec069fd	MON-019
+apps/chau7-macos/Sources/Chau7/Monitoring/CodexFeedbackMonitor.swift	A	5042e877849d82297ce515e902476c6814b6e19e5dcb0fe17f8c4f9f1b7c77b5	MON-018
+apps/chau7-macos/Sources/Chau7/Monitoring/CodexSessionResolver.swift	M	928835248c8428b31e1f4d69a509b37931eeb817eca96571413994e04249d515	MON-005,MON-019
+apps/chau7-macos/Sources/Chau7/Monitoring/ConflictDetector.swift	M	61e0d309e6af723583f5b0e6c32291a7718af383a197ab7ad4361878ba78c978	MON-015
+apps/chau7-macos/Sources/Chau7/Monitoring/DevServerMonitor.swift	M	ff4d6eaa489f0b9e706f020e290c314def56f4f55a2dc1f4a147f471f44f25a5	MON-011
+apps/chau7-macos/Sources/Chau7/Monitoring/FileMonitor.swift	M	bd19539cbe083ea383710a9762549c4c4bd86b1aabf97c4298253a824d007668	MON-017
+apps/chau7-macos/Sources/Chau7/Monitoring/FileSystemWatchRegistry.swift	A	b16a5503934d5c5b766c86dd41501328a579eeaf3106a0d76b4ed272e87c8631	MON-021
+apps/chau7-macos/Sources/Chau7/Monitoring/GitDiffTracker.swift	M	5309689ea052c66bfa9f777447e3902f29bf04ece8b30be4a0e6c56f2b652b76	MON-014,MON-016
+apps/chau7-macos/Sources/Chau7/Monitoring/HistoryIdleMonitor.swift	M	b4569d907b1c39fc58dcc01f756c556eb89ecce8fcafa1555f8ff8d13244521b	MON-006
+apps/chau7-macos/Sources/Chau7/Monitoring/HistorySessionAdoption.swift	A	97f6e42d1cb3bc66c495b7a8852b3efd94e8ef0793c8c382b718b787fdd49747	MON-023
+apps/chau7-macos/Sources/Chau7/Monitoring/LogFileCompactor.swift	A	49a0c2e5bd798fc6cd9965c76c5a1c8ca5f36fc62d48e974fe311e573ae647ad	LOG-030,MON-021
+apps/chau7-macos/Sources/Chau7/Monitoring/ProcessResourceMonitor.swift	M	9c0f762c49829403ed529eeae876f74b73e3626647b543dcb9fbf02ecd49ad28	MON-012
+apps/chau7-macos/Sources/Chau7/Monitoring/ProcessTreeSnapshotService.swift	A	83121400c392e0a24faad90484331f6ba3e62126ff5380b392430e3d5afa8e83	MON-020
+apps/chau7-macos/Sources/Chau7/Monitoring/ShellEventDetector.swift	M	f524bf8c7d1a9ba2889c92512285579e283b6827783ab810e93d5b447e9536b6	MON-007,MON-008,MON-009,MON-010
+apps/chau7-macos/Sources/Chau7/Notifications/Handlers/AccessibilityActionHandlers.swift	A	15bbec81120168f9057e4cbc6c5646c09253c0c59159bc4e12207b3d6f14c347	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/Handlers/AutomationActionHandlers.swift	A	b3fbe5a4f5ace2ed32436ce141bfda401244ef78b2b4f94f7f7a70925fbfc6fa	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/Handlers/BasicActionHandlers.swift	A	fbcce9b6bc1e2ee5662ac8544da5049061ee19d3cb420d49c623ffbd58fa19c4	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/Handlers/DevOpsActionHandlers.swift	A	a185d1164c431b576a02d7b94d4bdca55fac75aa6a14c168b7c4f8ddba0f6d0d	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/Handlers/IntegrationActionHandlers.swift	A	8b028901b6dcca96b671af8cd57b3a25d1e04b457bea0e83829c1dbb218d8569	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/Handlers/NotificationActionHandler.swift	A	5f42aaf3c25dfea3640514fd421c53f31b929153b3e8c2b75aa1df83f471a0b3	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/Handlers/NotificationActionRegistry.swift	A	50b3f1d251b0f694cf7b70474d472995f3a6955808062a21d6f3cac6499a85d9	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/Handlers/ProductivityActionHandlers.swift	A	54d9a952d7e7c4ce8bf8d713969203388e6a526eb1502a43111bb308bdc10e4e	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/Handlers/TimeTrackingActionHandler.swift	A	58ed6fa89d42c4eda0559bea1c98cdc48d23abfbb2d46b76509aa1dc5b192d08	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/NotificationActionExecutor.swift	M	0c41e8f95500f6f1f18f9a1bb8abd23cebe6c760578f5b44301e9510b1abacf6	NOT-018,NOT-019,NOT-020,NOT-021,NOT-022,NOT-023,NOT-024,NOT-025,NOT-026,NOT-027,NOT-028,NOT-029,NOT-030,NOT-031,NOT-032,NOT-033,NOT-034
+apps/chau7-macos/Sources/Chau7/Notifications/NotificationActionRuntime.swift	A	7d8bffacc1665235716ccc6b3b33d7123c0085218ee47f5e6abcb1dafae5ec7b	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/NotificationAuthorizationStore.swift	A	ffc9429bd880625218a14505450ddd72e4ad6c0cbdd31cb11f947da2ce3c498a	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/NotificationDeliveryHost.swift	A	37c3c99061a8672e676f27280d9c27a6aba48862be1caa24fc040714af812584	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/NotificationHistory.swift	M	211d0362a7588b5b62c2d91849d9a4aeaba64b372490788aadee85aadbaa97ee	NOT-035
+apps/chau7-macos/Sources/Chau7/Notifications/NotificationManager.swift	M	fe1b7bf4a5822ef71815598b890bb44dd81c7f3f7d41678f00c57ae067f06a58	NOT-001,NOT-002,NOT-005,NOT-012,NOT-014,NOT-017
+apps/chau7-macos/Sources/Chau7/Notifications/NotificationPipeline.swift	M	db86be94b57c632d58aecea398de598554dcc070d6284252c102a659fe1c3746	NOT-008,NOT-009,NOT-010
+apps/chau7-macos/Sources/Chau7/Notifications/NotificationRateLimiter.swift	M	5a6cae2182d091df82294e7b4164783b7f1ac2a51bf2fad49656cc93e69fba9c	NOT-011
+apps/chau7-macos/Sources/Chau7/Notifications/NotificationServices.swift	A	495fe6aa6949e17214651a7f4e4e5cf60e175ee2a9478796c156976940e3eb32	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Notifications/NotificationTriggerLocalization.swift	unchanged	951fa7a302d85c6e5c454a9fd7441d58b48d5111879a1ad7c844c700bc084be3	NOT-037
+apps/chau7-macos/Sources/Chau7/Notifications/StyleTabCoordinator.swift	A	4be4a0bf0547bdbd6b3d977a67e1c3f5a2b4055de3f24b49c546bf647a29f587	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Observability/Chau7ObservabilityService.swift	A	6e9ccf719c17c1ac5ea370fa8a24a4b7bcf3ba542eea6ef3afce24e6d6bdacb3	MCP-055,OBS-003,OBS-004
+apps/chau7-macos/Sources/Chau7/Overlay/AIResumeIdentityResolver.swift	A	040b7aba20cb6f26321e791c66393abb8f02848d1936c31e9aa9cd020da23429	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/BackupResumeMetadata.swift	A	31303db292760e809e0432b57c7b0f1a0202929890048d4d01609375c59384ea	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/BookmarksOverlay.swift	A	66822427f8db37b0571a7f0ac57bdb4130ddaa907b133225053789a4fd179adc	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/Chau7OverlayView.swift	M	885b1e20b9f7ada9ae9a2154d3176bf7fbae52b024b50f4c73bc864c406ffb1c	NOT-043,SNP-001,SNP-003,SNP-004,SNP-005,SNP-006,SNP-019,SNP-026,SNP-027,SNP-036,APR-011,REP-004,OVL-001,OVL-002,OVL-004,OVL-005,OVL-006,OVL-007,OVL-008,OVL-009,OVL-010,OVL-011,OVL-012,OVL-013,OVL-014,OVL-015,OVL-016,OVL-017,OVL-018,OVL-019,OVL-020,OVL-021,OVL-022,OVL-024,OVL-025,OVL-027,OVL-028,OVL-029,OVL-030,OVL-031,OVL-032,OVL-033,OVL-034,OVL-035,OVL-036,OVL-037,OVL-038,OVL-039,OVL-040,OVL-042,OVL-046,OVL-069,OVL-070,OVL-075,OVL-090,OVL-091,OVL-094,OVL-095,OVL-096,OVL-097,OVL-098,OVL-099,OVL-100,OVL-101,OVL-102,OVL-103,OVL-104,OVL-105,OVL-106,OVL-108,OVL-109,OVL-110,PRX-012,PRX-013,MON-011,AIX-004
+apps/chau7-macos/Sources/Chau7/Overlay/ClipboardHistoryOverlay.swift	A	de19a7ff21162819e5f64d8db306352bfec530ee927de7faa500468a6ef1baea	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/FullscreenToolbarController.swift	unchanged	e34813f6b2ca6204df17e4729212b379cc80dd184531f4f97bce8f8d00b9edb3	OVL-003
+apps/chau7-macos/Sources/Chau7/Overlay/IdleTabsChip.swift	M	545087ac22208f5bb25faa1f46757fedc1bc8bcc0ee185b551d2ad2241f80de7	OVL-047,OVL-048,OVL-049
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayColors.swift	A	8ba3864c90f34daee2339140701925b55ef8bb456548dc45a253e78ea8738960	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+AIResumeMetadata.swift	A	0daba3ea19e8002d98181bec05fb0acf1ffb2154943b355f53c94e5b6b44122d	OVL-119
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+AttentionReconciliation.swift	A	7f3c39e6314c8289ed22b83c1addd9e1797a86ede74776b207a855f15a2991db	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+DeferredRestore.swift	A	1cde599a61b087363f02415e356ce5242f4011a55b4c1e613d35a6bcac91ae19	OVL-118
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+Features.swift	A	491c9ab19ab15960489128409adbba6ce849f8da891e43b45d7156c97ec85d79	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+HoverCard.swift	A	0f7ab82bc745066733998d688ef7c0540f24d547cf3d150135ccf78ca432ded5	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+NotificationActions.swift	A	528e0e0af424640d6f8aa2ace2fc2f18884eb3e963f79532e04c7c61ea5cecda	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+OverlayActions.swift	A	3144da412de9a684fd4fc11b7d2868e3e3625bb14071da0190ea9b407d27d65c	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+Refresh.swift	A	0319a5a7c911281020d876c789c6d9fcb197fcd00ab1c3d1c35529c9012534ca	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+RenameSearchClipboard.swift	A	629a72e8f18a3a4cbca4f77c3ab6dd0e75652e3b5b8dab71dee07a36c5f00867	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+RenderSuspension.swift	A	c5d68955d616821294c3126c211faf232307a046d746c585679280aa68cadca4	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+Reordering.swift	A	7e6e45a6961e6a7be4faf0e13e88af2e7f513373bb3dc21a92f0bd323cd1a864	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+RepoGrouping.swift	A	aea869693465bf6c1f63dea462c693f5c9113c8ddac16c4ae075b4836cfaab17	OVL-043,OVL-120
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+RestorePipeline.swift	A	d242279ef89ea60e6597ff50f0ddbd49530ca711ee6ea71f0a76ed4000e4d4d1	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+ResumePrefillDelivery.swift	A	be8235e5c11e049e17c71907e56e303bfb9878b6ca900438ebb06eb42f8117e9	OVL-119
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+RevealLifecycle.swift	A	f70bf29ddda84c7e2686e194ba28ae682c1c9a6b4b57b8e40791783c16b1e39a	OVL-121
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+SessionFinder.swift	M	e5853b880440109fe30a6059623b812d040d881f03bbcf0545bbcba5da94d441	APP-010,TOK-007,OVL-111,OVL-112,OVL-113,OVL-114,OVL-115,AIX-008
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+TabSwitchOptimization.swift	M	f8424e6556c9bb6f6191f631f1418af73e81c0ad9e524b5b8b0d09753d396304	TOK-005,TOK-019,OVL-026,OVL-041,OVL-078,OVL-079,OVL-080,OVL-081,OVL-082,OVL-083,OVL-084,OVL-085,OVL-086,EVT-008,MON-013
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel+Tasks.swift	A	b7a9d7fbc0e9998411edecc377d8227f9859b2de1446542af589a8ad3eeb9087	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayTabsModel.swift	M	9f544ab86a431f1893faf01f762f6dd87635dc8a46cf26f6d49808917bb2599f	DBG-024,NOT-016,NOT-018,NOT-039,APP-008,APP-009,SNP-001,SNP-004,SNP-037,TOK-006,TOK-007,MCP-049,SPL-015,KBD-005,OVL-011,OVL-013,OVL-017,OVL-023,OVL-028,OVL-031,OVL-040,OVL-041,OVL-044,OVL-045,OVL-046,OVL-050,OVL-051,OVL-052,OVL-058,OVL-063,OVL-069,OVL-071,OVL-072,OVL-073,OVL-074,OVL-075,OVL-076,OVL-077,OVL-085,OVL-087,OVL-088,OVL-089,OVL-090,OVL-092,OVL-093,OVL-095,OVL-097,OVL-098,OVL-102,OVL-108,OVL-111,OVL-114,OVL-116,PRX-012,PRX-014,AIX-006
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayWindow.swift	unchanged	57ecd2a8676b82f6ac8b8ce3abfca7835097bfa99f01caed5d82d1e65780dab9	KBD-045,OVL-003,OVL-107
+apps/chau7-macos/Sources/Chau7/Overlay/OverlayWindowFraming.swift	A	edc1a875cbe5e4809ffd31794f9cef0ef5b7d09c26db3822f5897d5a9a634f92	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/SavedTabState+RestoreIndex.swift	A	98e4716106e35e32825f0c79d6fe9b1ff377027ea454f4733ef7b4f80d6dfdd3	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/SnippetsOverlay.swift	A	32a3d3b0c17d66da309e167150bc6e619def792e3f100c1b4671a8e7e8d6b712	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/SwiftUIPreferenceUpdateCoalescer.swift	A	503aab6e6cb0282da580afd9b07cfbd20a42b6104669a67f738ebc761209e7a1	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/TabHoverCard.swift	M	a778fa03e245c80b2b933385a47a40e3e8102d89ab3d37d7a2805e20f1dd406f	DBG-024,TOK-007,TOK-008,REP-004,REP-009,OVL-051,OVL-053,OVL-054,OVL-055,OVL-056,OVL-057,OVL-058,OVL-059,OVL-060,OVL-061,OVL-062,OVL-063,OVL-064,OVL-065,OVL-066,OVL-067,OVL-068,TEL-011,MON-011,MON-012,MON-015,AIX-004
+apps/chau7-macos/Sources/Chau7/Overlay/TabHoverCardAnalyticsModel.swift	A	e946e4c107b7f914481e35389c391397a69f39c345d3e664700a6195f449b03e	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/TabRenderLifecycleController.swift	A	8a633168d93ad42bdc8b2310319ba76da2fe8c522b92bd835469a0464983aecd	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Overlay/TabRestoreBundleStore.swift	A	a1ef406bb2a53a9d2e1a8a3cf4ed84b52f99c095dbd1e2d715e688b6a9046248	OVL-117
+apps/chau7-macos/Sources/Chau7/Overlay/TabStateBackupStore.swift	A	162878688288c67869d326b857270d8f55901bcd08ea4a435e84cd5fd2734296	OVL-117
+apps/chau7-macos/Sources/Chau7/Overlay/TabStripDragCoordinator.swift	A	27632d3bc568a49954ea0a8802c429fb10906d853b7423c8128e4eeca118506d	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Performance/FeatureProfiler.swift	M	604194d09ed412d9b9a5a3336f2b12f0e0f959d939802ded65a9f2a561542959	PRF-009
+apps/chau7-macos/Sources/Chau7/Performance/MainThreadHangRecoveryController.swift	A	2d847577b8e72250533f2ffe59f813e465bde24cfbfad11185e3d866e8a1c18c	PRF-016
+apps/chau7-macos/Sources/Chau7/Performance/MemoryPressureCoordinator.swift	A	00f5cb1d18eee98fc332956638387897ec066fa1e0bdfce5d87ee26e1d3dd217	PRF-017
+apps/chau7-macos/Sources/Chau7/Performance/MemoryPressureResponder.swift	A	a9044687b07bdd057823b4483f90ca4e8d6fe9b29020bc4289f02af75fe3ac37	PRF-017
+apps/chau7-macos/Sources/Chau7/Performance/MetalTerminalRenderer.swift	M	1f3bca96e36c118358a5c4829400d7ae17b962c38f8ade06a4d537fb40a1de95	PRF-001,PRF-003,PRF-007,PRF-013,RBK-035,RBK-061
+apps/chau7-macos/Sources/Chau7/Performance/OptimalMetalView.swift	M	b017d98694b282ef32bb06ef7009079d35f831344050359be67fcc4158e9af8b	PRF-005,PRF-010
+apps/chau7-macos/Sources/Chau7/Performance/PerformanceTelemetryWriter.swift	A	9e1928d3221d9f5006dda06a317fe0189178cbe3741deabb9ae62abdbca7a656	PRF-014
+apps/chau7-macos/Sources/Chau7/Performance/RenderPipelineProfiler.swift	A	f7a9780a909707bc557c14b36ba9122d7ce4ce1a7bd1c5d88fac82ca681d1dd7	PRF-015
+apps/chau7-macos/Sources/Chau7/Performance/RustMetalDisplayCoordinator.swift	M	544898d86d4ede5872bd8aaa7c7225fbf2d4301d7dea850dd387fe89cc2555a5	PRF-001,PRF-002,PRF-004,PRF-006
+apps/chau7-macos/Sources/Chau7/Performance/RustTermBridge.swift	M	6f26849a194888e473e36246f0dabd39dd66a0d25f19a7c687e6ec3951646579	PRF-011,RBK-037
+apps/chau7-macos/Sources/Chau7/Performance/SIMDTerminalParser.swift	M	4448725699186e272b577cd7fc5e87ff5e8443e5432b5ee3af724662beebb285	PRF-012
+apps/chau7-macos/Sources/Chau7/Performance/TerminalMemoryReclaimer.swift	A	9fe32a2861a86078205fb4eb78b6ecefd51bec6b9f350f526158bea2e11d627c	PRF-017
+apps/chau7-macos/Sources/Chau7/Performance/TerminalWorkProfiler.swift	A	b6586cb8aea6c389d4df4d6f41c827a24ccc90af505f96abb4827df82d8c9f0d	PRF-015
+apps/chau7-macos/Sources/Chau7/Performance/TripleBuffering.swift	M	32bfb2228ae693374827c8289b066a77a57d7482d9bf43269f398e0d9af36c9d	PRF-011
+apps/chau7-macos/Sources/Chau7/Performance/WakeupProfiler.swift	A	bee3a01a9f81e0c1d10a0be424adeae1bf2e3c520b1744c954e26ebc02248ce1	PRF-015
+apps/chau7-macos/Sources/Chau7/Profiles/ProfileAutoSwitcher.swift	M	a6f4e5ffebff89e57dfae1b49321eca811777d7b90fb90a992e80d002509b20e	PRO-005
+apps/chau7-macos/Sources/Chau7/Profiles/SSHConnectionManager.swift	M	1f1016a9d55585ca1df588cd466de359f80981d022e3e0089ff6dffa4b4d9f9a	PRO-007,PRO-008,PRO-009,PRO-010,PRO-011,PRO-012,PRO-013,PRO-014,PRO-015,PRO-016,UTL-003
+apps/chau7-macos/Sources/Chau7/Profiles/SharedSSHProfiles.swift	M	3f75d850e75a4d822172bce10ebbcba5f4eb69cda3969321a1d24a95498852e9	PRO-017,PRO-018,PRO-019
+apps/chau7-macos/Sources/Chau7/ProviderStatus/ProviderStatusMonitor.swift	A	2b29c1607e62fe28d12e18c227abe2ebb760938d661f2318e526c75987c9ccd2	USG-008
+apps/chau7-macos/Sources/Chau7/Proxy/APICallEvent.swift	M	ef936b39aeaa37261a2a231b5359132fad19f66c81ff28fef68d22b142146919	PRX-010,PRX-011
+apps/chau7-macos/Sources/Chau7/Proxy/ProxyAnalyticsStore.swift	M	b3489f5104c2f5a5ca72bf39a61a2e4f9dd210c77de5856eb97608e9e126afe1	TEL-017,PRX-020
+apps/chau7-macos/Sources/Chau7/Proxy/ProxyIPCServer.swift	M	c9e240f5eee3a3dc67459d5e43f9e2ce651cfa735729fc96dde3f3217bae20c1	PRX-009,PRX-013
+apps/chau7-macos/Sources/Chau7/Proxy/ProxyManager.swift	M	0610d51666ca17dd2c17814bed38775865eebe8c610f54ccf07d82245c502e16	PRX-001,PRX-002,PRX-003,PRX-004,PRX-005,PRX-008,PRX-019,PRX-021,PRX-022
+apps/chau7-macos/Sources/Chau7/Proxy/TaskAssessmentView.swift	M	a3a5af4083536ea2ae117f5a4720d98b5122c3ff9072d128ea80bad0ee6459bb	PRX-013,PRX-014
+apps/chau7-macos/Sources/Chau7/Proxy/TaskCandidate.swift	M	794e7f45f9ff2c5c8623c86d453d968c5ebb5970466608a010a98f7fa7863254	PRX-012
+apps/chau7-macos/Sources/Chau7/Proxy/TaskCandidateView.swift	M	59c1f05a018a3234634434a8e8e267a58da30140e11325a338207189877d410b	PRX-012
+apps/chau7-macos/Sources/Chau7/Remote/RemoteControlManager.swift	M	dd6da23e9003c338b76247c6366debdb2d38680011d1d5213d75ebc47fa01532	TEL-015,RMT-001,RMT-002,RMT-003,RMT-004,RMT-005,RMT-009,RMT-010,RMT-011,RMT-012,RMT-013,RMT-014,RMT-015,RMT-016,RMT-017,RMT-018,RMT-019,RMT-020,RMT-021,RMT-022,RMT-023,RMT-024,RMT-025,RMT-030
+apps/chau7-macos/Sources/Chau7/Remote/RemoteControlModels.swift	M	0d85977c943108e638b37a474f9928d48c21c8ec29fecd9d3e55d094a02cb26a	RMT-007,RMT-009,RMT-016,RMT-018,RMT-021,RMT-029
+apps/chau7-macos/Sources/Chau7/Remote/RemoteGridSnapshotCoordinator.swift	A	105f16256f39420f968ce583f43f8881b74aedfddc6b677b7edf1762ec7f33b9	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Remote/RemoteGridSnapshotWorker.swift	A	0136f8910ee2bcbb3745c7de62301712cbe3db037fe1e271953532143cf9375c	RMT-031
+apps/chau7-macos/Sources/Chau7/Remote/RemoteIPCServer.swift	M	ab3674b67a2066c573ff0581b5a4b1dd054ebe4081ef2709f2e9e7e52be75ede	RMT-006
+apps/chau7-macos/Sources/Chau7/Remote/RemoteRelayCredentials.swift	A	0eb77d2036c705f655ef37293a5c8c34129914930130f04449e307cd091b9bf9	RMT-030
+apps/chau7-macos/Sources/Chau7/Remote/RemoteTabRegistry.swift	M	95d75801657944c0d3bd16e38ff28c27f98fd006ff2354f916ae7a7157f63b49	RMT-011
+apps/chau7-macos/Sources/Chau7/Remote/RemoteViewerMode.swift	M	1c057f79e87ee41b0a3dd47aaade1c2b12da652ce533e2f8d37765b963b70ece	RMT-027
+apps/chau7-macos/Sources/Chau7/Remote/RemoteViewerStatusView.swift	M	cecd63c9c65dec610f737700259db8a23831b3169fd3eeb5d30b915c899c7eed	RMT-028
+apps/chau7-macos/Sources/Chau7/Remote/TabDirectoryProviding.swift	A	b4f56dcc5e146a7a1f2b23473987adddf9c19bc37bd9fffec265ea6ffae07f73	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Rendering/CommandBlockOverlayView.swift	M	a6ed710536f269551ba17d1729f0a1417a56df2b68143186a46c9f35bd1e6445	RND-007
+apps/chau7-macos/Sources/Chau7/Rendering/InlineImageSupport.swift	M	b70529e52ae5fbf6522a248da477d8970f75145faf96723af9a153a6d34a9cb8	RND-001,RND-002,RND-003,RND-004
+apps/chau7-macos/Sources/Chau7/Rendering/TerminalCursorLineView.swift	unchanged	75a19f055541e17995854414310e24265d6a3c2259c9a57084123cc898cf6377	RND-006
+apps/chau7-macos/Sources/Chau7/Rendering/TerminalHighlightView.swift	M	72cbca2ef281a2cf89ec66977163eb06895e51c5914771ba866cc76479a196c3	RND-005
+apps/chau7-macos/Sources/Chau7/Repository/InjectionRuleStore.swift	A	e038d5b931a57c684312482eb5b73a6e8fe71d2531561d4cf856ef94e9b10f9b	REP-017,PRX-022
+apps/chau7-macos/Sources/Chau7/Repository/KnownRepoIdentityStore.swift	A	d1a16dd00b9b7e282d219605ecf344c3d1c31804eb708d20507b34f0bf3fbcf5	REP-019
+apps/chau7-macos/Sources/Chau7/Repository/PromptInjectionInjector.swift	A	b129a8bb3ccbc828fc9728c30360fedbeb8b4b1c42f1d220a2b9d5b95500b00a	REP-018
+apps/chau7-macos/Sources/Chau7/Repository/RepoMetadata.swift	M	d7ea2277be5178a67465ab802fd029de4d346637615350470b7b78c798ce579e	REP-006
+apps/chau7-macos/Sources/Chau7/Repository/RepoStats.swift	M	8e27c6cd383e79b8803512f8518182dd52760e6c5054bc2206ae732f6b50d355	REP-009,REP-010,TEL-012
+apps/chau7-macos/Sources/Chau7/Repository/RepositoryCache.swift	M	20f9e3c5db6447443e5b4a858975168699294aa7c0edd8c0e87654719132149a	REP-001,REP-002,REP-005,REP-008,UTL-004
+apps/chau7-macos/Sources/Chau7/Repository/RepositoryModel.swift	M	cc59d2316180397e5f2bba1330a9a90760c8f8ffba5ff4f2a952b1aaf9559b48	REP-003,REP-005,REP-006,REP-010
+apps/chau7-macos/Sources/Chau7/Runtime/Backends/ClaudeCodeBackend.swift	M	c688eebf08f07494e7a5412b7c0e87b425c8a17f54937c5c6bbe737b2a12745e	RUN-001
+apps/chau7-macos/Sources/Chau7/Runtime/Backends/CodexBackend.swift	M	d19d4deccdbc0008c80939b268741b967c94dd238675856eb64f2bad126c029c	RUN-002,RUN-032
+apps/chau7-macos/Sources/Chau7/Runtime/Backends/GenericShellBackend.swift	M	02534b3bf77190c0a3ff5cdf0bed020a9fff3d69c9d580ae4e9217d9ea1dcf7a	RUN-003
+apps/chau7-macos/Sources/Chau7/Runtime/IncrementalTranscriptReader.swift	M	97b8a0a02fb1caacb33bc43ea386b27669e2433215834ff19d141418218fc4c9	RUN-018
+apps/chau7-macos/Sources/Chau7/Runtime/RuntimeControlService.swift	M	6c933a45cb4fb4509c91bb43ab8388da8bb900b1d546908849c5d966e01f2fff	MCP-031,MCP-032,MCP-033,MCP-034,MCP-035,MCP-036,MCP-037,MCP-038,MCP-061,RUN-004,RUN-005,RUN-006,RUN-007,RUN-008,RUN-009,RUN-011,RUN-015,RUN-021,RUN-025,RUN-027,RUN-029,RUN-031
+apps/chau7-macos/Sources/Chau7/Runtime/RuntimeSession.swift	M	f3046eb4969fd50b2503a9cdff7f73f9b9e4e1110e5963a67e7479be89dcc366	RUN-010,RUN-011,RUN-015,RUN-017,RUN-024,RUN-026,RUN-028
+apps/chau7-macos/Sources/Chau7/Runtime/RuntimeSessionManager.swift	M	5da0b407ffb9a645844c732a48afe029bdd38d9db4ac460957c8bb2f6524670b	RUN-007,RUN-013,RUN-014,RUN-016,RUN-020,RUN-021,RUN-022,RUN-027,RUN-032
+apps/chau7-macos/Sources/Chau7/RustBackend/BackgroundTerminalDrainService.swift	A	697286bb0ff3ff1d12c290179429b8d4c6742638f289e955555ffd2f5621f209	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/RustBackend/RustAnsiParser.swift	unchanged	33cea92529746aceada44a8b3a442361afad20a0f225df20e184f178c0c7c1d2	RBK-058
+apps/chau7-macos/Sources/Chau7/RustBackend/RustFFITypes.swift	M	8941bb18878411c9e9d0fb7afae1d61f4ec2109017662f8c32310759b314ddfc	APR-007,RBK-007,RBK-034
+apps/chau7-macos/Sources/Chau7/RustBackend/RustTerminalSymbolTable.swift	A	ab06ed0f122676b967ac09868b666cccb385f8ecebf449269c48a77cd8a1ee0b	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/RustBackend/RustTerminalView+Input.swift	A	b2b09137ea8c0822b4e5d3c1cce3fa4d6868f03953ed9fca1abf686e9008b485	RBK-062,TRM-066
+apps/chau7-macos/Sources/Chau7/RustBackend/RustTerminalView+Mouse.swift	A	37db01cadc192d805ea1370fa482b76521342a9a12b4f6b67aa4b8f705fdfb5b	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/RustBackend/RustTerminalView+Rendering.swift	A	84849d32d503c3f8aea40a337abbf59dc72a17b0516bd6bf929e2cfda5964866	PRF-003,RBK-061
+apps/chau7-macos/Sources/Chau7/RustBackend/RustTerminalView+Transcript.swift	A	5d737e257f78c974fa693d4660791cf930c40bc444c71c904f9259643e999e73	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/RustBackend/RustTerminalView+UI.swift	A	02a69be0c7e582f6bf4a8857aee5d57bddb8d9da032ad2fd3b525a605669bb6f	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/RustBackend/RustTerminalView.swift	M	fc8286ffa5bf34a2e979434ad5939abaa9845a3bef99955f53ddbd8ebda4236a	SNP-018,SNP-020,CMD-036,CMD-038,CMD-039,CMD-040,KBD-006,KBD-008,KBD-009,KBD-010,KBD-011,KBD-012,KBD-013,KBD-014,KBD-015,KBD-018,KBD-019,KBD-035,KBD-053,HIS-010,APR-003,APR-012,PRF-004,PRF-005,PRF-008,UTL-001,RBK-001,RBK-002,RBK-003,RBK-004,RBK-005,RBK-006,RBK-007,RBK-008,RBK-009,RBK-010,RBK-011,RBK-012,RBK-013,RBK-014,RBK-015,RBK-016,RBK-017,RBK-018,RBK-019,RBK-020,RBK-021,RBK-022,RBK-023,RBK-024,RBK-025,RBK-026,RBK-027,RBK-028,RBK-029,RBK-030,RBK-031,RBK-032,RBK-033,RBK-034,RBK-035,RBK-037,RBK-038,RBK-039,RBK-040,RBK-041,RBK-042,RBK-043,RBK-044,RBK-045,RBK-046,RBK-047,RBK-048,RBK-049,RBK-050,RBK-051,RBK-052,RBK-053,RBK-054,RBK-055,RBK-056,RBK-057,RBK-060,TRM-017,RND-001,RND-002,RND-006,RMT-013
+apps/chau7-macos/Sources/Chau7/RustBackend/SixelKittyBridge.swift	M	6dd1a21b1216ce5f283335617ddda2cb1b5161a6061ec5f4a285b61298c80e71	SET-078,RBK-056
+apps/chau7-macos/Sources/Chau7/RustBackend/TerminalBackend.swift	A	4dc7d8f781d0c8be4c7c717d508322e177d044a47bf2330276fe98ae80561beb	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/RustBackend/TerminalEventDrain.swift	A	90d8e45e15027adc7c25f17efd41182f9b2f14e8770621d83d655d4d51269e82	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Scripting/ScriptingAPI.swift	M	8bb8053c9229891c9acd827d7be77dbb2f0c67132a8e625213c19963cd2a356a	SCR-001,SCR-003,SCR-004,SCR-005,SCR-006,SCR-007,SCR-008,SCR-009,SCR-010,SCR-011,SCR-012,SCR-013,SCR-014,SCR-015
+apps/chau7-macos/Sources/Chau7/Scripting/ScriptingClientHandler.swift	M	4b99ded3c0253b221221f8e1f5613ff172392e0530f5fce723bafc2edd9f984b	SCR-002
+apps/chau7-macos/Sources/Chau7/Settings/AppChromeSettingsStore.swift	A	eedfe079d4769942481a75a2041057865a1da371fdcf27bc053238817500d601	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Settings/ConfigFileWatcher.swift	M	bd9b161e3fb1a20ed415c61dae54518d024a290f27d13d77ef17258c5006b884	SET-011,SET-013
+apps/chau7-macos/Sources/Chau7/Settings/EditorConfig.swift	M	4b6e8429cfd1a5ab3065db8713f2169dd325634368e6c532b52f417879679ca3	SET-102,EDT-012
+apps/chau7-macos/Sources/Chau7/Settings/FeatureSettings.swift	M	195ad524475493cd18f0522d5b141fac00cd6cffbae106f39cee8525ca92772f	NOT-038,SET-003,SET-008,SET-009,SET-017,SET-023,SET-032,SET-090,SET-122,SET-133,SET-140,SNP-021,SNP-023,TOK-018,TOK-022,L10-002,PRO-001,PRO-002,PRO-003,SPL-008,CMD-032,CMD-033,CMD-037,CMD-042,KBD-020,KBD-045,KBD-050,KBD-052,APR-002,APR-006,APR-007,APR-010,APR-012,APR-013,APR-014,APR-015,APR-016,EDT-002,MIG-001,MIG-002,REP-008,PRX-002,EVT-008,MON-007,MON-009,RMT-002
+apps/chau7-macos/Sources/Chau7/Settings/FullDiskAccessGuard.swift	A	3da9f3e0d35f1b2eda347c9ace8216d2796587882e12ae8e9c1bfc80145b432c	SET-138
+apps/chau7-macos/Sources/Chau7/Settings/KeybindingsManager.swift	M	80d892450887c6f4bfb578ed30abf7afa66d4e78f4bed30c78a5046a7b85b9f3	SET-090,KBD-020,KBD-021
+apps/chau7-macos/Sources/Chau7/Settings/KeyboardShortcuts.swift	M	cd979a58f523e58d6571f3c190246b3ec6f9d28d27e92d234e799866799ab949	SET-135
+apps/chau7-macos/Sources/Chau7/Settings/KeyboardShortcutsEditor.swift	M	bb234076ede15cc590feacc9c6c2b8568d2c0be6591934fd009cece99eadec52	SET-091
+apps/chau7-macos/Sources/Chau7/Settings/MCPRemoteSettingsStore.swift	A	3071524228f36c546ff3f420b840be5b283b238e2c08d398aca82679bd167155	SET-139
+apps/chau7-macos/Sources/Chau7/Settings/NotificationSettingsStore.swift	A	7ab6ed008078303c17f2f8e28a4ce589b806f07d9b746e4d44b88a2129a42ce5	SET-139
+apps/chau7-macos/Sources/Chau7/Settings/PermissionCenterModel.swift	A	193676d6124edf0456da058f6def391c75dd8baa79db3c4e513ed2a58488ff8f	SET-138
+apps/chau7-macos/Sources/Chau7/Settings/ProductivitySettingsStore.swift	A	5439d811175eb9ee31f7f9160f5c9de33350b57c21dce177e8375c6eb8ec8874	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Settings/SettingsComponents.swift	M	202d66834e5031eb24babe6d77fc75704cb13e8bdf855700357ca207d374544f	SET-134
+apps/chau7-macos/Sources/Chau7/Settings/SettingsNavigationModel.swift	A	2290581a997246337459e96767af618bb086c860ba1949f24822809d95a040c8	SET-137
+apps/chau7-macos/Sources/Chau7/Settings/SettingsRootView.swift	A	b9866bd9be9e27e516cc34cd17c30b1596dc90056dc489180fa281432cd398f6	SET-136,SET-137
+apps/chau7-macos/Sources/Chau7/Settings/SettingsSearch.swift	M	5d7b4a851c7b0ef5f6f39ebd6fd8e9ec04011cdc334e3eb6f2a91e56346230c9	SET-001,SET-002,SET-140
+apps/chau7-macos/Sources/Chau7/Settings/ShellSettingsStore.swift	A	3eb67dd480784095e2c11451dfe75c6d80a2fa9f41a93c08484b906e4e3ccb85	SET-139
+apps/chau7-macos/Sources/Chau7/Settings/ShortcutSettingsStore.swift	A	cf7f17ddf44aa8a5389fdc45b7e268aa2806199ac73377fd992abe6c64fdaadd	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Settings/TabDisplaySettingsStore.swift	A	36043ed46c2dbfa9da364c25135f0b08130d3aadfef89716d5794cbb9e7d8e3e	SET-139
+apps/chau7-macos/Sources/Chau7/Settings/TerminalAppearanceStore.swift	A	6b86211551499f91d811d763e19c1dba21a0c7d4ac973743dc35eec8b20a584a	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Settings/TerminalBehaviorStore.swift	A	e1d3528d025eb6c8a99d1a9843c2218d0c1bbe4c95e6fd5c7ab0c26e5f612aad	L10-009
+apps/chau7-macos/Sources/Chau7/Settings/Views/AIIntegrationSettingsView.swift	M	2c703fcb656550f414da80a8473241a1b11a9e5181907399fb65fbc37fa08bce	SET-103
+apps/chau7-macos/Sources/Chau7/Settings/Views/AboutSettingsView.swift	M	e0a8b6f909028a758b78aea310ae1ad7e62bdb38e4b3c0e88b61f2114c77bbac	SET-024
+apps/chau7-macos/Sources/Chau7/Settings/Views/AppearanceSettingsView.swift	M	e356238e3eac42ce7c32c0b4d88f5f1b083d7a4fffa7cf259fe062b66cdb2f1b	SET-030,SET-031
+apps/chau7-macos/Sources/Chau7/Settings/Views/ConfigFileSettingsView.swift	M	ae2287e1c2c8b8e01ae53f1ff080a92a4c74f10a2ca3674b1bfd0860b48ba136	SET-013,SET-014,SET-015,SET-016
+apps/chau7-macos/Sources/Chau7/Settings/Views/DangerousCommandSettingsView.swift	M	f08be7a261fa6ea16855adf3c150d1b9732e9e13c94d096126faa42d4aaa0cc6	SET-074,SET-075,SET-076,SET-077,CMD-032,CMD-033,CMD-035
+apps/chau7-macos/Sources/Chau7/Settings/Views/DisplaySettingsView.swift	M	7fdf60fb81b271ff81b7f5cf5d60c45f99799e25ba82c7eaabba91d335e14d95	SET-035,SET-036,SET-037,SET-038,SET-039,SET-040,EDT-002
+apps/chau7-macos/Sources/Chau7/Settings/Views/EditorSettingsView.swift	M	c01b7ae9d8a4d37c490196af054fce14e50498854de981965bfc018371debfa3	SET-102,EDT-012
+apps/chau7-macos/Sources/Chau7/Settings/Views/FontColorsSettingsView.swift	M	7904e599fc3aba0a4fea108944d2bb4e4a456eeb58b48bf3b8a5724ee3fe5e41	SET-025,SET-026,SET-027,SET-028,SET-029,SET-030,SET-031,SET-033,SET-034,PRF-007
+apps/chau7-macos/Sources/Chau7/Settings/Views/GeneralSettingsView.swift	M	079ec8b1e9d15942566da1b2999170ba01732a2890952e2a4f91fb3edf3730b4	SET-004,SET-018,SET-019,SET-020,SET-021,SET-022,L10-002,MIG-001
+apps/chau7-macos/Sources/Chau7/Settings/Views/GraphicsSettingsView.swift	M	d72463fcc905849ca28c9f89a0d89ee49ea20cbbe2e5b702b25ea8e02148e64c	SET-078,SET-079,SET-080
+apps/chau7-macos/Sources/Chau7/Settings/Views/HistorySettingsView.swift	M	ac091d986817ef3eb6ac8cca15c09443c17292d12a9cec90a19d361b5ec0ecc0	SET-132,HIS-002,HIS-007,HIS-008,HIS-009
+apps/chau7-macos/Sources/Chau7/Settings/Views/HoverCardSettingsView.swift	M	3550093931e4122f195bbc27929065eeba99fd8689e30d7f8274d83f09a612be	SET-058
+apps/chau7-macos/Sources/Chau7/Settings/Views/InputSettingsView.swift	M	e3530e0838255f8d930425bca2c75c6dd25ba106e057a73dc41ebfe0321b333b	SET-081,SET-082,SET-083,SET-084,SET-085,SET-086,SET-087,SET-088,SET-089,SET-090,SET-092
+apps/chau7-macos/Sources/Chau7/Settings/Views/LLMSettingsView.swift	M	37bed602d3d40d17f71d9efca267e88c8b879debfa9f01098fbd1074297f4400	SET-104,SET-105,UTL-003,AIX-012,AIX-013,AIX-017
+apps/chau7-macos/Sources/Chau7/Settings/Views/LogsSettingsView.swift	M	8a72b082134b3f05fe18851acc6384bddf01bb392be23496640220a1ab48bd3e	SET-129,SET-130,SET-131,HIS-012
+apps/chau7-macos/Sources/Chau7/Settings/Views/MCPSettingsView.swift	M	981f45dea6cfbef6ddbb975657ffb4ad999ffeed4754b88a483c61134f14a136	SET-111,SET-112,SET-113,MCP-042,MCP-043,MCP-046,MCP-050
+apps/chau7-macos/Sources/Chau7/Settings/Views/MinimalModeSettingsView.swift	M	5bf9fdf855b6eaf24ef275eccf61ecf660ba5575ea0d81053d75992682aff6c0	SET-060,APR-008
+apps/chau7-macos/Sources/Chau7/Settings/Views/NotificationsSettingsView.swift	M	84928d006ca270d2d76c8b4789ca63859c6eaf6d890afbace2b51387c73491ff	NOT-003,NOT-035,NOT-036,NOT-037,NOT-040,NOT-042,SET-119,SET-120,SET-121,SET-123,SET-124,SET-125,SET-126,SET-127,SET-128,EVT-010
+apps/chau7-macos/Sources/Chau7/Settings/Views/ProductivitySettingsView.swift	M	5466be420de3a8c0748942e8cd627a6f3d362f4e8a9758226dc733dba4bece88	SET-093,SET-094,SET-095,SET-096,SET-097,SET-098,SET-099,SET-100,SET-101,SNP-021,SNP-022,SNP-024,SNP-025,UTL-005
+apps/chau7-macos/Sources/Chau7/Settings/Views/ProfileAutoSwitchSettingsView.swift	M	138a04a6b9c6b1e5470b42101fefaacc9f417582929dec20ca350858658d102b	SET-010,PRO-006
+apps/chau7-macos/Sources/Chau7/Settings/Views/ProfileSelectorBar.swift	M	62408f4b98ebbae5147adf30b28b652748c245463fd35590176c2846919ea536	SET-009,PRO-002
+apps/chau7-macos/Sources/Chau7/Settings/Views/ProfilesBackupSettingsView.swift	M	43a15af3facee199ea639d6e6f23bdedb77d74bfa04aa6c61089904e11676d34	SET-006,SET-007,SET-008,PRO-020
+apps/chau7-macos/Sources/Chau7/Settings/Views/PromptInjectionSettingsView.swift	A	e47b772fbd65719ce3ae43ab24703e54fb4f8165f7cebab9ec61596fc6af2f84	REP-017,PRX-022
+apps/chau7-macos/Sources/Chau7/Settings/Views/ProxySettingsView.swift	M	7ec4e1f85dd80a01fc116cf504b3b9c177cdc2291ffa51d1729e57b29b9a76ae	SET-117,SET-118,PRX-001,PRX-007,PRX-008,PRX-015,PRX-016,PRX-017,PRX-018
+apps/chau7-macos/Sources/Chau7/Settings/Views/RemoteSettingsView.swift	M	60163409ca94c6d308121783be2393cacdd425ab55aff7c6f1f709d932b21cdf	SET-114,SET-115,RMT-001,RMT-007,RMT-008,RMT-009,RMT-010
+apps/chau7-macos/Sources/Chau7/Settings/Views/RepositoriesSettingsView.swift	M	b9a32e219cbaa9c32dd3c09b22453397a2bbe690d4f42a8843b9ef3e21f6542f	SET-059,REP-007
+apps/chau7-macos/Sources/Chau7/Settings/Views/SSHProfilesSettingsView.swift	M	5de863cd5c694de9200a994708dadb2cb23ba17766a4e9c8ec61b7111dc28de7	SET-116,PRO-017,PRO-018
+apps/chau7-macos/Sources/Chau7/Settings/Views/ScrollbackPerfSettingsView.swift	M	1e2c591cb6c86dd7f74b1ffed61cbf682df7f4b731c0a288e296d973339e5416	SET-068,SET-069,SET-070,SET-071,SET-072,SET-073,PRF-002,PRF-008
+apps/chau7-macos/Sources/Chau7/Settings/Views/SettingsPageSummaryView.swift	A	4b88c6f841e023d433484600272ace45e488e782c93d0483c22eb17269df556c	SET-137
+apps/chau7-macos/Sources/Chau7/Settings/Views/ShellSettingsView.swift	M	28fde3c8e846c52ce47e07c8c2c89a441057b806aaf7c1952de7f7ab96d6dced	SET-061,SET-062,SET-063,SET-064,SET-065,SET-066,SET-067
+apps/chau7-macos/Sources/Chau7/Settings/Views/StartHereSettingsView.swift	A	cd445d49c6354212e50ffa19b68d38ef98b5dac6cd93cd4af66575d8e5516f55	SET-136
+apps/chau7-macos/Sources/Chau7/Settings/Views/TabsSettingsView.swift	M	ef6b255be8682d5835f48d005a76eb9312ff5ecfa1e45db0b8832cd5344b25a3	SET-042,SET-043,SET-044,SET-045,SET-046,SET-047,SET-048,SET-049,SET-050,SET-051,SET-052,SET-053,SET-054,SET-055,SET-056,SET-057,TOK-008
+apps/chau7-macos/Sources/Chau7/Settings/Views/TokenOptimizationSettingsView.swift	M	4966ec04181383cbe1c6d4331a493b3a61104f2d6e693d626074ba61841cfbc7	SET-106,SET-107,SET-108,SET-109,SET-110,TOK-001,TOK-013,TOK-014,TOK-015,TOK-016,TOK-017,TOK-018,TOK-020
+apps/chau7-macos/Sources/Chau7/Settings/Views/TriggerActionsSettingsView.swift	M	3980005fd19433da29628e6d15ed7c0ec5b34437b34c99fe256d837305af7a31	SET-122
+apps/chau7-macos/Sources/Chau7/Settings/Views/WindowsSettingsView.swift	M	42d513f9377df8f161a306140608e2d97468fe7bb0f175869c991c526fb57430	SET-041,SPL-008
+apps/chau7-macos/Sources/Chau7/Sidecar/ManagedGoSidecar.swift	A	ada4cf25f97ccb53be403de88985408b66f72c96aad5a613329110f968f29dff	RMT-030
+apps/chau7-macos/Sources/Chau7/Sidecar/RemoteAgentBinaryProvider.swift	A	d34e780c45d7493f1bb5369ed8a1ed7a34a1326f9cb5e689bfa286dcb3d9ce06	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Snippets/SnippetManager.swift	M	3759e2ee82cc6a383330a55680902049741f5e6c192b5902d0b02fc0639ce18b	SNP-002,SNP-006,SNP-007,SNP-008,SNP-009,SNP-010,SNP-011,SNP-012,SNP-013,SNP-014,SNP-015,SNP-016,SNP-017,SNP-018,SNP-019,SNP-026,SNP-027,SNP-031,SNP-032,MON-017
+apps/chau7-macos/Sources/Chau7/Snippets/SnippetsSettingsView.swift	M	8d2e0a446e87b0748b31b0fa30b1774d22f18cb0431a82d771a7013e523ffa2e	SNP-028,SNP-029,SNP-030,SNP-031,SNP-033,SNP-034,SNP-035
+apps/chau7-macos/Sources/Chau7/SplitPanes/DiffViewerPaneView.swift	M	67096b1c6cc70cc4941c3d54ca24a1025b04158722c62d187f9bc49ce4f0ce91	SPL-021,SPL-022
+apps/chau7-macos/Sources/Chau7/SplitPanes/EditorAutoSaver.swift	A	b407dae08233d59a3f03d74143e03f701f04cbc69ae050b063fb5c69850b8c0d	EDT-014
+apps/chau7-macos/Sources/Chau7/SplitPanes/FilePreviewPaneView.swift	M	228a769058c6baa9ccd7698b7f105a8ce8754e927689485955b82fa0737115c7	SPL-018,SPL-019
+apps/chau7-macos/Sources/Chau7/SplitPanes/MarkdownRunbookView.swift	M	d040cfa81f3c6e56b61c139e9e12293df3b60721fa73d46cfb3361ce910ed5f7	SPL-016
+apps/chau7-macos/Sources/Chau7/SplitPanes/PaneCloseConfirmer.swift	A	c17e74b72ad475828cf8dbdcac54e5be74333866ac08ae10288e5f66443dca81	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/SplitPanes/PaneEnvironment.swift	A	7b1f5f4c3a0464745018d3ea79eb8fb91baf3f517e740ff401cb24f10c3f85af	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/SplitPanes/PaneFactoryRegistry.swift	A	a9c146b1fc76576a17f465cf2794dc78359214909458b601e01ee24e79b33aa1	SPL-024
+apps/chau7-macos/Sources/Chau7/SplitPanes/PaneHeaderBar.swift	A	7529be931b848e4296a0ffd8df964da744c44dc0c7c21a1320e346a3691c88cb	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/SplitPanes/PaneNode.swift	A	79170a8d46f8e261f008869a291fac277f18cba77144a3c00af24ad9eaacb19f	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/SplitPanes/RepoBranchState.swift	A	05980cd8fea5b09be8388e548e44b47466dcbcf592fb3ad0982d9ebb36b7b094	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/SplitPanes/RepoCommitDraft.swift	A	37c769d614c17d9e4331709a28e5dd7bb64c2cf050561bbcd2d3d7e94aa7f7d3	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/SplitPanes/RepoCommitDraftStore.swift	A	886277366eac3920f71f699962ac7d147ecf19502f67d4c04dc92fe89d863a3a	REP-012
+apps/chau7-macos/Sources/Chau7/SplitPanes/RepoHistoryState.swift	A	100acea16d35a4888ae8e859bcf3bd9c675369f94a45b94cb7a5796080464860	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/SplitPanes/RepoSessionState.swift	A	ba377e1b38b11a78496f393127732b208bd516172b619eb520250822a7966238	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/SplitPanes/RepoStatusState.swift	A	c30ae97bb16e33fe4288f1c2a4fea95a6a363a6516e5fd7f3ba4f96850a790b8	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/SplitPanes/RepositoryPaneModel.swift	A	51a71509d179dbe6e420cf955cd68fe52e6763d2616afef25a46b51971bdfe5c	REP-011,REP-012,REP-013,REP-014,REP-015,REP-016
+apps/chau7-macos/Sources/Chau7/SplitPanes/RepositoryPaneTypes.swift	A	38a8242ab576194a684d8fa2a943ed7472839b317a0c2a0258d7c3bdf94f06ee	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/SplitPanes/RepositoryPaneView.swift	A	c7a4e3971862af3f965f608cdb15253fbbd71775eb7a8bb9184f10f9660f2b15	SPL-024,REP-011,REP-012,REP-013,REP-014,REP-015,REP-016
+apps/chau7-macos/Sources/Chau7/SplitPanes/RunbookCodeBlockTracker.swift	A	38e0a582b978fe7616550d4968e89074b19b531e43f56347e1d6603200057427	SPL-016,SPL-017
+apps/chau7-macos/Sources/Chau7/SplitPanes/RunbookHost.swift	A	6fc7a9c54f628fa6dd7ebae45793adecb00a030c9598e8c7d83984497523a4dc	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/SplitPanes/SessionFilesTracker.swift	A	cf5061787a78c846829f0d4db8e5306d009d574c5330b19b75174422eabfba60	DSH-005,REP-016
+apps/chau7-macos/Sources/Chau7/SplitPanes/SessionNoteCoordinator.swift	A	1d3ad319aa4aa0f27d74b6dcf18e6df84d5a2b24146f99aca7520ab87690a193	SPL-025
+apps/chau7-macos/Sources/Chau7/SplitPanes/SplitPaneController.swift	M	55631dfa0857792f5fca6327bb6bc670629d32c74c5faae3321e0afa98507ef7	SPL-001,SPL-002,SPL-003,SPL-004,SPL-005,SPL-006,SPL-009,SPL-011,SPL-012,SPL-014,SPL-015,SPL-017,SPL-018,SPL-020,SPL-021,SPL-022,SPL-024,CMD-040,EDT-014,EDT-015
+apps/chau7-macos/Sources/Chau7/SplitPanes/SplitPaneViews.swift	M	7c215e5ddf2e9fd8224c7b9d90cad313c807b718522b60695291361c0b083446	SPL-004,SPL-007,SPL-011,SPL-012,SPL-013,SPL-014,EDT-015
+apps/chau7-macos/Sources/Chau7/Startup/StartupRestoreCoordinator.swift	A	3daf5f4b40c7d83e5b5c59d258b072b05ab3813c208a9e026529989454c1edc5	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/StatusBar/CommandCenterEnvironment.swift	A	5c34aced04135174d43b6865c2ab1a34ef8bdb9f6d7a643fbee9e27491863f2b	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/StatusBar/CommandCenterSessionPresentation.swift	A	553437ca3a381889acd78a337d7248a99f38f4c5484902efd97b385886b3a0c4	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/StatusBar/CommandCenterSessionSummary.swift	A	33a1ceb5e639bea6b4ec82d919af0bdb8d9813e10a600362e9b05bd86357eba4	STB-017
+apps/chau7-macos/Sources/Chau7/StatusBar/CommandCenterTimeline.swift	A	5e4182e82a5ee8fb686e885af243526a6ae65cc921a7c18cc1eadbdfc603e605	STB-017
+apps/chau7-macos/Sources/Chau7/StatusBar/CommandCenterViewModel.swift	A	289d327ac45a5cda8f9ca8d817b4429556713678e1a067bafc96f3187b59a863	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/StatusBar/StatusBarController.swift	M	088f485584e28d6e0c4c26a1d87cdbe5dfc0a46dac4c77f9993026644a00283b	NOT-035,STB-001,STB-002,STB-003,STB-004,STB-005,STB-006,STB-007,STB-008,STB-009,STB-010,STB-011,STB-012
+apps/chau7-macos/Sources/Chau7/StatusBar/StatusBarIconPresenter.swift	A	e7b3f246d6d342d41434d7ab8b6f2b0605a7c2d740306fdba571297ec3c5d9ac	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/StatusBar/StatusBarPanelView.swift	A	e674d353daaf8d4fe290e1e6e7ab3feb3e02cca7d86bf96a70aeacc2e0f1f53a	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Telemetry/LiveTokenRateMonitor.swift	A	564460784c36da2368dea1eccaa0d261a3619822a15d156483f71673c1eedb1b	TEL-017
+apps/chau7-macos/Sources/Chau7/Telemetry/ProviderFamily.swift	A	ccefac03bf2e8d70d17f336fbffe684a4af3789ead1a6f93a54f650fa9385c76	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Telemetry/Providers/ClaudeCodeContentProvider.swift	M	0fd6ca1a9a09bb66eeadf4e0d28c0de303951224bb989f563ef14950dd96cde9	TEL-004,TEL-019
+apps/chau7-macos/Sources/Chau7/Telemetry/Providers/CodexContentProvider.swift	M	ef73c6baa6a24e2fff9ed1585e9b063de6086d2645a5be1635e1ef3a6a972f20	TEL-005,TEL-019
+apps/chau7-macos/Sources/Chau7/Telemetry/TelemetryMaintenance.swift	A	41de41cb9427ef7624536c9cec434fba3c9e868d0d1cc8591df754561d36ec36	TEL-020,TEL-024
+apps/chau7-macos/Sources/Chau7/Telemetry/TelemetryProxyRunReconciler.swift	A	5e9ffc063d9d29155f24c60892f90883684ae5e8b52b773378f2814df0f5dc08	TEL-021
+apps/chau7-macos/Sources/Chau7/Telemetry/TelemetryRecorder.swift	M	14f9c14b21e9ed2bc60403b09372e178300889c455d8576bc773658161de8fad	TEL-001,TEL-002,TEL-003,TEL-006,TEL-009
+apps/chau7-macos/Sources/Chau7/Telemetry/TelemetryRepairService.swift	M	330f52579a5ea1d6c7b773b60ea3bcebbf298e22f4d6c7c69025725b62d3dd1f	TEL-014,TEL-020
+apps/chau7-macos/Sources/Chau7/Telemetry/TelemetryRunLive.swift	A	c7848371c66286e22337d9b1f9ac764a9c7bc138307ad7c873197396dcfc4a79	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Telemetry/TelemetrySchemaMigrator.swift	A	7e27407dfd48c0a0bf35fe838358c5eb4f4ad7a2ca50f50025a34f42d501caa0	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Telemetry/TelemetryStore.swift	M	0cb6c4d721f30d670a3de7912d4b3ad07479ecf94597756f2c8803c7d729cc78	TEL-002,TEL-007,TEL-008,TEL-009,TEL-010,TEL-011,TEL-012,TEL-013,TEL-015,TEL-024
+apps/chau7-macos/Sources/Chau7/Telemetry/TokenRateBadge.swift	A	df2db91b81b6eac7d7dcde94a365cf1308e6da6d54e944e0879eae476c7cf9ce	TEL-016
+apps/chau7-macos/Sources/Chau7/Telemetry/TokenRateStore.swift	A	af98620ed5cd4073671bcc58e58afed9bf235b24220ce27d321e5062a50b98ca	TEL-016,TEL-017
+apps/chau7-macos/Sources/Chau7/Terminal/Rendering/AnsiParser.swift	unchanged	eecba5a9b85ac9dd667815121bb8afacc995bc96b76be8800cf79e79115bc709	RBK-058,TRM-059
+apps/chau7-macos/Sources/Chau7/Terminal/Rendering/TerminalNormalizer.swift	M	6336a10dd43f7d93d92f7922fbd4d437aa2f40190ab76dc93de1dde67b45e621	TRM-060
+apps/chau7-macos/Sources/Chau7/Terminal/Rendering/TerminalOutputCapture.swift	M	48af549d42ce5af7b778fe7874f660fb2aaef5f4c2bd47f26b3c60a94e3c5157	TRM-061,LOG-028
+apps/chau7-macos/Sources/Chau7/Terminal/ScrollbackMemoryManager.swift	A	2932690f9657ca3d5ec300af6b8ff15ca0557377eb7f8f8ce0ec7f2073ba5a42	PRF-017,PRF-018
+apps/chau7-macos/Sources/Chau7/Terminal/Session/BookmarkManager.swift	M	269847e00dc0742758c920bbdc9f1a8c2f3d4de0dd13786e849b6a9ea6fccdb1	TRM-057
+apps/chau7-macos/Sources/Chau7/Terminal/Session/CommandBlockManager.swift	M	34b1ab09709c752326f522172b365a09a589c82f8544727b99f9301455fd783f	TRM-039,MON-014
+apps/chau7-macos/Sources/Chau7/Terminal/Session/CommandHistoryManager.swift	M	e0db8e18ef6917e7ecdf6266e3fad590a81571b9c97dda5d6750addb4cd94c90	KBD-018,HIS-010,TRM-038
+apps/chau7-macos/Sources/Chau7/Terminal/Session/DangerousCommandLineTracker.swift	A	bc6b067a4cdda82a4ad19cf807e1e36a5f791239abb20bd36aaa732e3e0c2cf9	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Terminal/Session/InputLineTracker.swift	unchanged	ccc290cc3af4db7b4fea5f2b7ca15cf25a9c2a530c1d2daf204a0d6dda0f3618	TRM-055
+apps/chau7-macos/Sources/Chau7/Terminal/Session/LineTimestampTracker.swift	M	e05d2552a2bb57c346519833c9907a95dc67d795a1837a343f27d74e114714cc	TRM-058
+apps/chau7-macos/Sources/Chau7/Terminal/Session/ShellLaunchConfigurator.swift	A	88532c97f23f7d95e0e1337ddc3a4278b14fd1c1ed6028af8d0f4420af6032a7	TRM-065,PRX-021
+apps/chau7-macos/Sources/Chau7/Terminal/Session/TerminalSessionModel+CodexFeedback.swift	A	62c6033727e41b14434068c1709bcae21e2a6566b404b0b8b11d476aeaf1b45c	MON-018
+apps/chau7-macos/Sources/Chau7/Terminal/Session/TerminalSessionModel+ProcessMonitor.swift	unchanged	5cfb9a0c4a50036902a7d27c3358c9a0a2ff7d5fb16e7fb7c724f55403c8f646	TRM-048,MON-012
+apps/chau7-macos/Sources/Chau7/Terminal/Session/TerminalSessionModel+Search.swift	M	fbfe066908a1e191566e29d3513c555ccb510f1b499ef94d1a2b6ce02ed7ec7b	EDT-003,TRM-049,TRM-051,TRM-052,TRM-053,TRM-054,RMT-013
+apps/chau7-macos/Sources/Chau7/Terminal/Session/TerminalSessionModel+ShellIntegration.swift	M	dc623079e4c126d271babb6e7d816a832a7c0fcff1f7bf9a30ef82379b7da3c7	TOK-005,TOK-018,CMD-031,TRM-012,TRM-028,TRM-033,TRM-035,TRM-037,TRM-040,TRM-041,TRM-042,TRM-043,TRM-044,TRM-045,TRM-046,TRM-047,TRM-049,TRM-055,TRM-067,LOG-026,TEL-001,RUN-023,RMT-014,AIX-001,AIX-007,AIX-010
+apps/chau7-macos/Sources/Chau7/Terminal/Session/TerminalSessionModel+Telemetry.swift	M	c9a24c731ca383b236d8947c1422ecdacb1756deeb637ab383cc5a56a6097e3c	USG-007,TRM-062
+apps/chau7-macos/Sources/Chau7/Terminal/Session/TerminalSessionModel+TerminalUIState.swift	A	81bcf963976cd4b16e668be20ce5699e0c1e88a8d662fc4839251564d1cef35b	TRM-068
+apps/chau7-macos/Sources/Chau7/Terminal/Session/TerminalSessionModel.swift	M	015aa56bdbcd56b82467d9a9a86650e015339605098d85b4db9a2a4d3d3e7d35	TOK-003,TOK-005,PRO-005,KBD-017,APR-013,REP-003,TRM-001,TRM-002,TRM-003,TRM-004,TRM-006,TRM-007,TRM-008,TRM-009,TRM-010,TRM-011,TRM-012,TRM-013,TRM-014,TRM-015,TRM-019,TRM-020,TRM-021,TRM-022,TRM-023,TRM-024,TRM-025,TRM-026,TRM-027,TRM-028,TRM-029,TRM-030,TRM-031,TRM-032,TRM-033,TRM-034,TRM-036,TRM-050,TRM-063,PRX-006,PRX-007,MON-010,MON-014
+apps/chau7-macos/Sources/Chau7/Terminal/Transcript/TerminalTranscriptCapture.swift	A	f46d97b6719adc9da9a6cc3767c20af30c1ce388bc5bc8bee477fe3eb5358192	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Terminal/Transcript/TerminalTranscriptOverlayController.swift	A	305c2d55020a5dc91a4ca7d575d0b46fc87671416978a0ac1b9f6739f3292545	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Terminal/Views/AnsiLogView.swift	unchanged	8b22cc56898fb2a1b4791ad0842aa56b1d019dea1d78d02be155549afbd29e9f	TRM-059
+apps/chau7-macos/Sources/Chau7/Terminal/Views/TerminalLineView.swift	M	a3bc46d5d2d7d7915c529485649890ed896563bed037d72d89bbfa24dbf41f73	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Terminal/Views/TerminalViewProtocol.swift	M	d9db8bdb6f214192d6f22014e9ed4156a32a1b2d51012dc261d5a618ce583af9	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Terminal/Views/TerminalViewRepresentable.swift	M	f8dcd751977854f71c7248cd0100688640dcee4a27dffbab4d54a274785f5f52	VWS-007,TRM-001,TRM-005,TRM-016,TRM-017,TRM-018,TRM-056,TRM-064
+apps/chau7-macos/Sources/Chau7/TokenOptimization/CTOFlagManager.swift	unchanged	112d1f32dc806508558f606f7660e4329bf7e0e90ce53eae29eae02908ad6a4b	TOK-001,TOK-004
+apps/chau7-macos/Sources/Chau7/TokenOptimization/CTOManager.swift	M	e00732c2683d3360d290cc4f2b38dcf0c96c31926629f70641bc119891135d25	TOK-002,TOK-003,TOK-006,TOK-009,TOK-010,TOK-011,TOK-012,TOK-013,TOK-014,TOK-015,TOK-016,TOK-019,TOK-022,TOK-023
+apps/chau7-macos/Sources/Chau7/TokenOptimization/CTONotifications.swift	M	7544d9d2cacd19805cac70367ebcd040324a759e653645501a6913d973a15728	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/TokenOptimization/CTORuntimeMonitor.swift	M	afd92bb52fd1209608964bdaa4a98cb820974075e547953b1ee53d0d55439af6	TOK-017,TOK-024
+apps/chau7-macos/Sources/Chau7/TokenOptimization/CTOStateFile.swift	A	c165b317cd3891c6c8157e998600c93ee6d7d3bdc2f80fe0de083b0f104a895f	TOK-024
+apps/chau7-macos/Sources/Chau7/Usage/ProviderQuotaSnapshotLog.swift	A	ae1b121cdac209566c28799c70db9bc3d5f6417a70d34ad10623157b4eba46f7	USG-002
+apps/chau7-macos/Sources/Chau7/Usage/UsageMonitor.swift	A	83f7c72ce49fc4a866f84d386cc0f344dbedc5928a103847741478ac589550c0	NOT-041,USG-001,USG-002,USG-003,USG-005
+apps/chau7-macos/Sources/Chau7/Utilities/BoundedArray.swift	unchanged	8f8ebbd29cd4c28e58073d414910e049d4bc0e018a70830a977de806822caf93	UTL-012
+apps/chau7-macos/Sources/Chau7/Utilities/Chau7Error.swift	M	edadb4651176088347b45b1f79955f7d38ce57fb78f2f0d569f9ef449f99ac42	UTL-010,UTL-011
+apps/chau7-macos/Sources/Chau7/Utilities/Chau7Resources.swift	unchanged	0035a24f138e249125b088eff5a31e533daeb8c9325f33e8702832f6a74112cb	UTL-013
+apps/chau7-macos/Sources/Chau7/Utilities/CountFormat.swift	A	b59a3fcc60099ba77b1e431c73a2e10f73c8687266379f1fecc351f18e0b0aa0	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Utilities/KeychainHelper.swift	M	dd10cf6fbb4d401c5b7ebab68df39b1c2f6f0ce19fbaa0ab41ce9cfa1fb91a5e	UTL-003
+apps/chau7-macos/Sources/Chau7/Utilities/MainActorBridge.swift	A	aebfb4adbbd4993f4f44ebff28ea0db0286fb86de60c1411e7fdad2d6016c3b7	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Utilities/ManagedProcess.swift	M	2ad17c7d0df9b5b77e6c91b6326f967fdcf9d0c2ac54afe87d3809f98a146148	UTL-007
+apps/chau7-macos/Sources/Chau7/Utilities/Persist.swift	A	1b374d843c5c4ae962f1e3a6e65a0af983f68552e540a0388552320df219b071	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Utilities/ProcessMemory.swift	A	b9218655be0929e13e6802d718730e333bd7fee347eb206fd05ca01779289cae	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7/Utilities/ProtectedPathPolicy.swift	M	3adf22afdcc0ff1d90bd7602316919f8fc5d70af06ebcac1c41106288e7c8299	REP-002,UTL-004,UTL-005
+apps/chau7-macos/Sources/Chau7/Utilities/RegexPatterns.swift	M	f51a47c936d2173186818b5c9115f5d1e716b3dd976d9d679241cda53c0d07a1	CMD-036,UTL-001,UTL-002
+apps/chau7-macos/Sources/Chau7/Utilities/RegionalNumberFormat.swift	A	fbf65d9e614b5daea48650a556ef0a8ae8f49de3d28d86641d83c9a7ce6668d2	L10-009
+apps/chau7-macos/Sources/Chau7/Utilities/Utilities.swift	M	9b7311e5b48388dfb48b0429b32fe01122230dca2052025927aced0a35fd4c7c	APR-009,UTL-006,UTL-008,UTL-009,UTL-012
+apps/chau7-macos/Sources/Chau7/Views/HelpDocumentation.swift	M	f34707ea442bc0b2bfdd0e153e3db23a4ae377aca333cbd9f7730adea33203d6	VWS-003,VWS-004,VWS-005,VWS-006
+apps/chau7-macos/Sources/Chau7/Views/PowerUserTips.swift	unchanged	9c85ada85eb41e598c39b9bb5f3561245934315647246209fdb81bd30acc8c66	VWS-007
+apps/chau7-macos/Sources/Chau7/Views/SplashView.swift	M	d6260979bd38e49ae12d069e9f31c1f102228a192f9d893048c7c406c8f0278c	VWS-001,VWS-002
+apps/chau7-macos/Sources/Chau7CLI/Chau7CLIRunner.swift	A	80b85fabf46db285d7c73051f7326e0750941270cee2ed2a476bc375a21b094c	CLI-001,CLI-002,SKL-006
+apps/chau7-macos/Sources/Chau7CLI/main.swift	A	eb8dd3f48a9791fa6217837d2a844818b5c412bd72c42b2c9fdca349fb01b9eb	MCP-003,CLI-001
+apps/chau7-macos/Sources/Chau7Core/AIAutomationStrategy.swift	A	532ebf0a49671055b9f38ab0a5d9a0eab4d0487c36ea589bac56f92842454e43	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/AIDetectionState.swift	M	2ab4646800b4732b4660d282cbbb1b09681230b9ceb815833064c4042b340321	COR-001,AIX-002,AIX-003
+apps/chau7-macos/Sources/Chau7Core/AIEvent.swift	M	ed4eacc50ce00adb254b629ff39158730cdf2ca550c1daebc2a5938b183997bb	NOT-001,COR-002,AIX-011
+apps/chau7-macos/Sources/Chau7Core/AINotificationSettingsBridge.swift	M	97855542183bec0109ecf29ef429678060e2cf119b0ba901de5fd64fa6813d1b	NOT-036,COR-003
+apps/chau7-macos/Sources/Chau7Core/AIResumeOwnership.swift	A	de3ad3db4ef1d07d5e6ae7093690ce971348b9827cf3dbfb8479abfbead18954	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/AIResumeParser.swift	unchanged	2b255a11771f49d7e58d62f40eeac929c225c1a23d2e3757194240430348fafa	COR-004,AIX-008
+apps/chau7-macos/Sources/Chau7Core/AISessionBindingPolicy.swift	A	f718501e6a2b609656c48a38ed8df624c8c7325ff430d83cfdfc84e4f1e38229	OVL-119
+apps/chau7-macos/Sources/Chau7Core/AISubmitHeuristics.swift	A	174c51e7f33deaaa81137e8ae3952445321067c674b580771072747f6931c7ce	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/AIToolRegistry.swift	M	665759f8a9dfdbda450dadcc8ad7519256207debd2cc6891270e1232869180e2	COR-005,AIX-001,AIX-006
+apps/chau7-macos/Sources/Chau7Core/AethymeDelivery.swift	A	88108e7ba558acb6c2a33997406e13f9ae305df9be7d92fe355c6f3a2d608ec0	MON-022
+apps/chau7-macos/Sources/Chau7Core/AgentPromptInjectionPolicy.swift	A	a46ee241ce7c0d8494dade894c32518df90754eb002a5a302917cc325a69c568	REP-018
+apps/chau7-macos/Sources/Chau7Core/AnalyticsProvider.swift	A	f85eb76facd49258e3c6f34cacf3be2fed0ec5a4dafa63fd5654597e735392c3	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/BoundedSocketWriter.swift	A	e8c08bf3c2d6d57a3a4e9f191a50556bae391fbd4e4b8957749af8b7e6e01047	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/ChangedFilesBudget.swift	A	34e7597d617417b1c7d0da4edecf0d2c506c1ec9a27b0d230c5495ab083b4d37	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Chau7CoreLogging.swift	A	14bcc4d7b16bd43817df0b260d6f60afbc142ccb8cf42c133ffffae7867a8b6f	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Chau7MCPObserverContract.swift	A	6437e427157148a7a46dba2305730efed722ff389c3d1913a0674fbadb856fe6	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/CodexAppServerInteraction.swift	A	5f3cba24a5ac839f856cf9954a60c6f30db6a4400aa8fed18c8fe0e7739210ab	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/CodexFeedbackDetection.swift	A	87f0139bbbb5a9daded7a05089e917dfd9bbeb1510a359b5ec3aa0b7c1e303ea	MON-018
+apps/chau7-macos/Sources/Chau7Core/CodexFeedbackLookupPolicy.swift	A	a97fda006b615adf7dfabe57a594812531dd51288dc3aaac2109a75ae46aa4bb	MON-019
+apps/chau7-macos/Sources/Chau7Core/ColorParsing.swift	unchanged	0967d9a9afff4d3e04eb7587d7fd7c1bb9b823589770cddc7e2578be46e1a4b7	COR-006
+apps/chau7-macos/Sources/Chau7Core/CommandBlock.swift	M	cc13b8a897b1bd2c4fffe6a23a03a5d2a38061d476f6a2d9da2b7cb5220268ff	COR-007
+apps/chau7-macos/Sources/Chau7Core/CommandDetection.swift	M	e6ffe064d5c1cdf32687f13703c19a782e6d714b59e5f5e6e3fa3a558765315a	COR-008,AIX-001,AIX-002
+apps/chau7-macos/Sources/Chau7Core/CommandRiskDetection.swift	M	ae69f9b0cd8e5883db7070c67418ba22845f82452ef9a7334f2347e24e06c673	CMD-031,COR-009
+apps/chau7-macos/Sources/Chau7Core/CompletionLatch.swift	A	d0755a7db48733541558304017fc8a0fd3aca8b1510e2b1d9023fd8acac7adfd	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/ConfigFileParser.swift	M	8613c748656abe51f296b6e25a928181ebe539d6d91d7365a55de9540c6261e6	SET-011,COR-010
+apps/chau7-macos/Sources/Chau7Core/DataLittleEndian.swift	A	ceed462efd50a986526db0f0a5c56179cbc4a84200f624b2e0a38ba15b849558	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/DateFormatters.swift	M	530b335cbbdd7cbccc229a0c64b9c843bb41ef8a87ef17a4b87656e357ff1f93	COR-011
+apps/chau7-macos/Sources/Chau7Core/DeadlineResultLatch.swift	A	11162c8a99afa037a7b05bed1a714ab3bf5e52d231614d4a7b22aec610faacff	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/DeferredInputApproval.swift	A	b3b8fe85fc3880bfe6a882e08cc55cf5ebe62011a40a01ab7f95756a92978086	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/DeferredRestoreSchedulingPolicy.swift	A	517b7948a35cc8e3c3b83428f3bc385257ef52844ed9a9c13c03a7cda9f15b7d	OVL-118
+apps/chau7-macos/Sources/Chau7Core/DirectoryPathMatcher.swift	unchanged	0664e8444ad798af99464da72e767d1d6bd9bd9af2a146933bd8a3ca0878f237	COR-012
+apps/chau7-macos/Sources/Chau7Core/EscapeSequenceSanitizer.swift	M	4cf5564863131763aa3a44dd65ebd7c39d51fff124ab5ea37a2e587308127f62	COR-013
+apps/chau7-macos/Sources/Chau7Core/Events/EventEnvelope.swift	A	f66774614cba3605ca6511acf3e6f3c80bebfc52c34935c31f7bcfe7b97cf9eb	OBS-001
+apps/chau7-macos/Sources/Chau7Core/Events/EventSpine.swift	A	dd07fa46bff9813ae97e197afa9ce76c31c9c1d16c4cebfed8e821810aa68131	OBS-001
+apps/chau7-macos/Sources/Chau7Core/Events/EventTopicCatalog.swift	A	8a7b3f7b14600aa4083e467188841f8e45e69b57f2e7c68e3e27194db43bfd61	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Events/RingJournal.swift	A	ff82ccfec80b95da21115b01969e852afdc2738ffed8a3a717006c32bf706972	OBS-002
+apps/chau7-macos/Sources/Chau7Core/FileObservationRetryPolicy.swift	A	6486b0ae9ee84ded596d37f533004edabf4c64b972e5b19e9c5c3bc56be30e1a	LOG-030
+apps/chau7-macos/Sources/Chau7Core/FileRetentionBudget.swift	A	c1f7a38da808eb0b7a82200d7310626b58d65b11b9ecee0433ddb896a4fdbdee	LOG-030
+apps/chau7-macos/Sources/Chau7Core/FileTrackingModels.swift	A	70ae9469b711558191a3b7d0bcdd996e1511a752cd20c0db7e04030c313f1a82	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/ForeignCwdPolicy.swift	A	95a5912ab0752ba3f1819a17ae5c636c776fdee3f91af6cdf9df1a96cb6410e1	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/FrameParser.swift	unchanged	eddbe369b2b0de6aea9401448807d0dc8e3aca427714716344d72de91de46c12	COR-014,RMT-006
+apps/chau7-macos/Sources/Chau7Core/FullDiskAccessProbe.swift	A	eaf42c138eec81b0690b9627e1974b2cd12dc93a8d64416774755359df5fb3d9	SET-138
+apps/chau7-macos/Sources/Chau7Core/GitBranchNamePolicy.swift	A	e0ca708cf9884b6552a54041311579f1f0f5e41756982596011e40b91aebfc63	REP-019
+apps/chau7-macos/Sources/Chau7Core/GitPorcelainParser.swift	A	49ea0c9f090ab023f9ba5c63dee603ee804b584d979f344e4ea5064f855be044	REP-011
+apps/chau7-macos/Sources/Chau7Core/GridSyncStrategyPolicy.swift	A	6d01dbf8770cb1f190e2794f03d6b768d93dcff5df80031b57ed8fc97e29a31f	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/HangSampleEvidence.swift	A	0ce145f901b18de3e003855f3e79521c01cb385c573408c6bbc98e733627c33f	PRF-016
+apps/chau7-macos/Sources/Chau7Core/HistoryEntry.swift	unchanged	552dad2e90300261f4cbd1694fc5066d42f5334e9a79814bdac2f44ec843954c	COR-015,HIS-012
+apps/chau7-macos/Sources/Chau7Core/HistoryEventContextResolver.swift	unchanged	52df78fad22bc56ec7d51dec459a16570b4dfcf8a60ba251fc6df885c7cc5c70	NOT-015,COR-016
+apps/chau7-macos/Sources/Chau7Core/HistoryRecord.swift	unchanged	69202c6f56c549cc417bad330c9f7d83b848220ff86bfd2b9a2fc77a2bc02dbc	COR-017,HIS-001
+apps/chau7-macos/Sources/Chau7Core/HistorySessionLifecycle.swift	unchanged	ed091196251ce3c02f0a91752729a5e5de2783fc8b40854db239d60b63018349	COR-018,HIS-014
+apps/chau7-macos/Sources/Chau7Core/HistorySummarySanitizer.swift	unchanged	ef9bd3ece549b8a52be3f726b8a5bf4ba056fce433b6d639f9768eaae0d68c59	COR-019,HIS-013
+apps/chau7-macos/Sources/Chau7Core/InteractivePromptDetector.swift	M	6045255d90a63a06839b1617db72e176dad67285c91cd68d528b014248025446	COR-020,RMT-020
+apps/chau7-macos/Sources/Chau7Core/JSONPrettyPrinter.swift	unchanged	d0fe52d4bf6f2f30a9c0d3833fd56d335f9426cdb8de1aec3e4cacdb9a9fda35	COR-021
+apps/chau7-macos/Sources/Chau7Core/KittyKeyboardProtocol.swift	unchanged	396a15f11cfa7ca46ca3a2d06f7d6949c83fe8a9d10b227fdfbe71d1a3d5ed26	COR-022,KBD-016
+apps/chau7-macos/Sources/Chau7Core/KnownRepoRootResolver.swift	A	656782b52367e0f0ab622f450be27edced82d4fa318fea68db7ca2bf9dc6f716	REP-019
+apps/chau7-macos/Sources/Chau7Core/LLMProvider.swift	unchanged	bd6057a9b466438cd87b6ecbacc5b6ae4ed698b75d59eb4658ba0f19e672f64b	COR-023,AIX-012,AIX-013
+apps/chau7-macos/Sources/Chau7Core/LatestWorkGeneration.swift	A	ec9f5ddd992ca83759df8ae8bd71b331b429b4dc84940946a20fc496d4092215	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/LaunchContinuityPolicy.swift	A	0aeca9ecd748f785ae47b9160ef51f03cb9c673fde63c67fcf422d00e071cc43	APP-085
+apps/chau7-macos/Sources/Chau7Core/LocalSocketServerHealth.swift	A	64ca61330f66764421824b101b64cf62ea71b093aa356dcf71547a9b302e8f37	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/LockedCache.swift	A	f60bb1214ef963f50204b14c04476c8a335939052088571c26b8c8ebeb78fd7d	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/LogRetentionPolicy.swift	A	0325dd312cce36a8d91f3e91855c832172a14ea1810fdb65534092fa5e71f029	LOG-030
+apps/chau7-macos/Sources/Chau7Core/LowLatencyActivityPolicy.swift	A	1a380cd050dfb0a6eded69a809e307a4ea90646a4896657000ba424f2415676b	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/MCPConnectionLifetimePolicy.swift	A	d74277bc7482286435cd5a7b3f5d7975774583b69d473d187acf2f3eb9026e03	MCP-062
+apps/chau7-macos/Sources/Chau7Core/MCPHandshakeDiagnostic.swift	A	2d217a8e581d763d245f49e321c2820a7c83e24c354957ef27c1063d23abdfb3	MCP-062
+apps/chau7-macos/Sources/Chau7Core/MCPPermissionMode.swift	unchanged	2001b60513092e7d7873a97c5a92841ba411333c955b12783a1be2fd761a1911	MCP-041,COR-024
+apps/chau7-macos/Sources/Chau7Core/MCPProfile.swift	M	06fb6f3e8d0787d35614f201ce1b912e9288966f6b12b7fa5cc533da6193e036	MCP-043,COR-025
+apps/chau7-macos/Sources/Chau7Core/MCPProtocolCompatibility.swift	A	2766aba08eb3941d81e308f366ebc9cfce1c8f31301c6ce0db401e4e86c20317	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/MCPTabIDAllocator.swift	A	a49d6483f9e6762ec9b1aa1746b60c7c09f1bf2bd63636dd1b959ebc087b277c	MCP-062
+apps/chau7-macos/Sources/Chau7Core/MCPToolRateLimiter.swift	A	9c7bcc08d39a62388423171d58f9555c8ec2efee76f5ec06391eae7e65b57e8b	MCP-062
+apps/chau7-macos/Sources/Chau7Core/MainThreadHangMonitor.swift	A	6f947a26efc4c85fbe3d66527fe15bb983bd055c9594a7fdf4c93331259a8a47	PRF-016
+apps/chau7-macos/Sources/Chau7Core/MainThreadHangWatchdogLifetime.swift	A	85cd11e197b62d7b005a3d32353de3dfbcf84e0ff7444f252fbdcfcad76bc23a	PRF-016
+apps/chau7-macos/Sources/Chau7Core/MarkdownRunbookInfrastructure.swift	A	543ee0d9f2f318b6678cf3c00c9850f859702f4295083a7666edb90d312ced64	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/MetalFramePreparationState.swift	A	1cfb8425e9ce93906f724feb8179dc9d80f763d4d17928922f979165efc3b922	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/MetalFullRefreshPolicy.swift	A	5a6e5d7ee127f1a3cd88c452ecf875a26dd84203ee573fd0a672dcc2941d8b46	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/MetalInstanceUpdatePlanner.swift	A	66717ad75e80789e1c56d159dcadcb8841ce618c94c2e4952c56eb063f7494b4	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/MetalRenderParityAudit.swift	A	c750261081c1de43e26f6f42214d165c3cbf4319d773624a1c31508df1e7fd02	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/MetalRendererClaimPolicy.swift	A	1231d98106fc54dfb6edd24d4c36a76ae70f17dc0b055f8f1a125048595a4438	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/MetalRendererHandoffState.swift	A	6a7db6747f4d330869f5c10b0bc717d0954b2dc116a8c4253699cb46157b44e7	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/MonitoringSchedule.swift	M	7564d5d6eb57048a8b44fb9950edddf4e05e782a28bd6268113927e4466153fa	NOT-011,NOT-012,COR-026,MON-006
+apps/chau7-macos/Sources/Chau7Core/MouseReportEncoder.swift	A	15e3f613eba29855fda1fe8ac374f037ff24007c9391faf7bb088a9a30e77973	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/NetworkRequestAttribution.swift	A	6bf1d789ed04f86dad81df72246cd0dd50762fb0b49cc88c729544bbaf36b592	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/NotificationActionCatalog+AllActions.swift	A	2025af35668ee22600f72b13219e5f54a45bacc43544035800fc06500d73dba7	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/NotificationActionCatalog.swift	M	e0820117e9ff8faa9185c12a117748bf5ccfdddee02f6d45cd4ac9a438775ffc	NOT-010,NOT-037,COR-027
+apps/chau7-macos/Sources/Chau7Core/NotificationActionRequirements.swift	unchanged	0846bce289ab5a3c8b70f58c709359d4c645d6696196d66e91a6fe7b118de1e3	NOT-014,COR-028
+apps/chau7-macos/Sources/Chau7Core/NotificationDeliverySemantics.swift	M	fe78e7bda5066a7afcd0ffac8a70a454ab092c89edc90ca36ef7ab64dcbec918	NOT-014,COR-029
+apps/chau7-macos/Sources/Chau7Core/NotificationEventPreparation.swift	M	5f848adbff5c22377601ceefa0c96a91121a2312051354de30575f0c1f81388c	NOT-013,COR-030
+apps/chau7-macos/Sources/Chau7Core/NotificationStylePlanner.swift	M	1e281841eb85ea67e706e0ffa7c6696c92a91990e6d22c09d95d2e411cad134f	NOT-017,COR-031
+apps/chau7-macos/Sources/Chau7Core/NotificationTriggerCatalog.swift	M	c2a2948096276c3c571358a8bbdd0fdcddbc487e351030ec6a3b3a3190ee0db7	NOT-006,NOT-007,NOT-008,COR-032
+apps/chau7-macos/Sources/Chau7Core/Notifications/AIEventNotificationEngine.swift	A	c89c649166f2a0425705ba4c814640c187d937d6adcd1a6005c03969288d6d54	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Notifications/AIObservation.swift	A	965ba546f25fcc62c8f3609a63e3302500ea17e8bb141d1e92fb24127baf0618	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Notifications/AISessionEventReconciler.swift	A	15fdcb87ec1b66e4aa4fcd6e1b64e41cc44c53d44a215bebad01302de9d1a182	NOT-044
+apps/chau7-macos/Sources/Chau7Core/Notifications/CanonicalNotificationMapping.swift	M	244ca6fcc680eab33819d6459e78cf2e78e42ec05078b42e1b8f7d39266dec1d	COR-033
+apps/chau7-macos/Sources/Chau7Core/Notifications/CanonicalNotificationModel.swift	M	f55e40e1d9fc2dc63a45d55884ae15dcc6fa93da6b2909c2cab46d1f4fb3f7e9	COR-034
+apps/chau7-macos/Sources/Chau7Core/Notifications/ClaudeCodeHookConfiguration.swift	A	a35e63462b6aa08fca242f985012d8812aa61ae8fa12a5773dad3ccac0db62ae	NOT-040
+apps/chau7-macos/Sources/Chau7Core/Notifications/ClaudeCodeStatusLineConfiguration.swift	A	ce8730665c47e81b674fdbe8fa8a31e8aa18d014d97f5421baca0122bcbfbf03	NOT-041
+apps/chau7-macos/Sources/Chau7Core/Notifications/CodexNotifyHookConfiguration.swift	A	4981268600387f88235838c427e8fcdd5b06a65ea02452c8acf4b444a016be67	NOT-042
+apps/chau7-macos/Sources/Chau7Core/Notifications/NotificationContentFormatter.swift	A	17885a1e82e1ab024847b23fb0430709eb128376091c9a18f4812f398f1ff21c	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Notifications/NotificationDeliveryOutcome.swift	A	73456bd3ea6261e3176d038f62be3507a56a73e62ec8d0aa08404cab8ec2bfc9	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Notifications/NotificationDropLogPolicy.swift	A	29b89e1adfaf8fa0eaa069dfb9803d998461215e1d58edfb3486b247e68ef96e	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Notifications/NotificationIdentity.swift	A	b63d42e6735ef48ca69d54486304622bfe8322f907c37602d3f9879be9146eef	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Notifications/NotificationProviderAdapterRegistry.swift	M	679977915f4a72d68d8b6efa86a3215202f062fc6d05de557295f870fa764684	COR-036
+apps/chau7-macos/Sources/Chau7Core/Notifications/NotificationRoutingPolicy.swift	A	e4841f22ac5893be0c4cb5c66c6c8cea63d152f36947b2051bd03e5e8ead9983	NOT-044
+apps/chau7-macos/Sources/Chau7Core/Notifications/NotificationSuppressionCenter.swift	A	63e02a5ea6e22534ec386408bbf46f7652a60c212b658095e13c7a5eae2e2e45	NOT-044
+apps/chau7-macos/Sources/Chau7Core/Notifications/RepoNotificationMuting.swift	A	2554e3ceed98358b61b88ef5f4e2282d7306f67ab50bfcac17872e86b433e71f	NOT-043
+apps/chau7-macos/Sources/Chau7Core/Notifications/TerminalPromptNotificationAdapter.swift	M	b69def9b021c987e172d103fbd812d5310cd280910f31fdfa4b59708ca516e41	COR-037
+apps/chau7-macos/Sources/Chau7Core/Notifications/TriggerVocabulary.swift	A	947c683cdb1461283c5f1ca675a48b9f21195c773ad98fd51e6d3ed6c479d9a0	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/OptionModifiedTextRouting.swift	unchanged	9fa2a0adb28473ae027ede74bcaa478d25f8033f1beaefbb046be51e4167741e	COR-038,KBD-013
+apps/chau7-macos/Sources/Chau7Core/OutputPatternMatcher.swift	A	c3edd520e9588a4ca06e4bed7090ce79252448730637974ba93d375616d5bede	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/OverlayWindowDropResolver.swift	M	3745d3e999d83944f25f91cd1f9a53e052ffdc72a8be9372271fbae9897473f2	COR-039,OVL-039
+apps/chau7-macos/Sources/Chau7Core/PermissionDenialClassifier.swift	A	888722340e7fac6037e31ea934420f347cac954b414ef84789553131386ccebe	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/PresentationPaneFocusPolicy.swift	A	fb88fdd3a1f56842acaee73ff6ea6de1006b6483c98b71095772c3052d94c92e	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/ProcessTreeProviderResolver.swift	A	160ce9d06263436063e7d7ac153df572d129d6bbababcac9ede5bbbb5a9da879	MON-020
+apps/chau7-macos/Sources/Chau7Core/ProcessTreeSnapshot.swift	A	f16120cc907e80dd621373cef0e1c52d537895b175df336b3055743da74c13b6	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/ProfileSwitchRule.swift	M	48d030744706d001692f60b156c7d2af1523596be18618dfa24f1a720d6d16b6	PRO-004,COR-040
+apps/chau7-macos/Sources/Chau7Core/PromptInjectionTrigger.swift	A	3f11a882422c98e49cfde38ea3ecf315f80dfa8f63644474bc90770cacbab1e6	REP-017
+apps/chau7-macos/Sources/Chau7Core/ProtectedPathAccessPolicy.swift	A	e41c5dce99dbd0e8e61bebf922d70e8de692d8e99742e018234a065734b29285	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/ProviderHealth.swift	A	477f952ff0a98db62234b4e687b0bf10fee33d3d2dcca2aaa25ad29660ae685b	USG-008
+apps/chau7-macos/Sources/Chau7Core/Remote/ANSIStripper.swift	A	b7ee52eaa2f82953cc297881baa9f147350406911b93ef9ce383315681bb845e	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Remote/ApprovalSeverity.swift	A	e8d7a218176c5c8789b8b24e32e760aa987017048b16c7547354fca1bd770dd7	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Remote/PendingStateReconciler.swift	A	6f162715c96bb4164252055a8f821e3d8ea6defab9c099f945f99d1aae97087b	RMT-032
+apps/chau7-macos/Sources/Chau7Core/Remote/RelayToken.swift	A	f9057929d9c8e3cc4234d494285e478cbaf0a734620f9f108eb5264503a1feb4	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteActivityURLAction.swift	A	279e07ba63e1d72fac9df4aba9c24f6162136c53d444ed6bd9b5fbe73f42ffff	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteComposerInputPolicy.swift	A	37fc902fba6fe90cd2d94239b32b4dc46e33dc1e6070699cbd30b446665124db	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteFrameRateLimiter.swift	A	66fd8e84c5b83f62234740f89bfc4ec2b10c20f31a7b5aa005305593360d4107	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteGridDeliveryPolicy.swift	A	08036f097486ce6a3da787f713d38080baecbeccc5d7c977f56086586a2c17d6	RMT-031
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteGridSnapshotCache.swift	A	8c2bd5e90039370d0c0df7d649cb9533573aaec624f4b470546f471f8d095364	RMT-031
+apps/chau7-macos/Sources/Chau7Core/Remote/RemotePromptResponse.swift	A	5581e6782819d1ede287fea83a216653448931921c0611b57b30b3778e09ff72	RMT-032
+apps/chau7-macos/Sources/Chau7Core/Remote/RemotePushComposition.swift	A	bf89fc1f3b4aed78011f723b6d318960c620f9775f3fecdcab8b4eeb25e08212	RMT-033
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteReconnectBackoff.swift	A	7ab7434137e2605def0a9b3b6be28fccf9fdb1cbbadfd5fe903999dfa509c5e1	RMT-033
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteReplayGuard.swift	A	3b9cd7368b02881675768fc706699b9fd1b34ea458fdf26d312ce33bc823ee1d	RMT-032
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteTabPickerSnapshot.swift	A	6263c41319b071e7df72e75f82200cafa690aff2a42c391fd3c3f8c2799f8b1e	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteTabSelectionPolicy.swift	A	bd3cd3cf84193c6749e1cc1bbd9d33136ef820b0c291ae00d2d6420c606b32a7	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteTelemetryBuffer.swift	A	8a7fdedaaa5f26dbd791064b00d529ec7d845842046a0d1024646a09be3e08f1	RMT-033
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteTerminalScrollPolicy.swift	A	a54cc55a5f9c6936f2947af218c717e235f81a9a0bf9beb97564e44ed6a9ee07	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Remote/RemoteWirePayloads.swift	A	a15ccd8caf6a6a466d68369fb368001280381f54c1c3d1a2ea3159b9bcb620ed	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Remote/StructuredPromptStore.swift	A	18ee09a7abdd98badaf005bb31f7b5e848788af9553194d48509835973105842	RMT-032
+apps/chau7-macos/Sources/Chau7Core/RemoteActivityState.swift	M	52e81983e6786de3557691743d74959de3e9c6425e5e4a00f22db91d1f9a5113	COR-041,RMT-019
+apps/chau7-macos/Sources/Chau7Core/RemoteCryptoSession.swift	A	5181f8a6e29849b38c2fd82f5027b24b59815a8dc07deff2450e4359c4378ef3	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/RemoteFrame.swift	M	76fb57b9aa8251a7aba0bc69ef0d430bda0ae020235c5d6ef9384fdb87298b7f	COR-042,RMT-006
+apps/chau7-macos/Sources/Chau7Core/RemoteInteractivePrompt.swift	M	b7d7a8cf6d162423d29176935bd799a19bb5ac211391b16cb6018d5c65a5b884	COR-043,RMT-020
+apps/chau7-macos/Sources/Chau7Core/RemoteOperationalSnapshot.swift	A	115aafe5c766aefc280861e393e41dd8143feca5926d5fb653c6bf6ee57b5afd	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/RemoteOutputBuffering.swift	M	8c1b9b1da4013c1362f0304c5ef1cf61302bebb012ec7053e73772395e015f40	COR-044,RMT-014
+apps/chau7-macos/Sources/Chau7Core/RemotePromptDetectionCache.swift	A	067559560f58095dc47ff0de21d9c1c7d90f696fbbff23c245348845c5344827	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/RemoteProtection.swift	unchanged	d92640b4f28fbd37c849ba3660a21bd9e078cbf2930598dd8e10c1063524c198	COR-045,RMT-016
+apps/chau7-macos/Sources/Chau7Core/RemoteSidecarStderrPolicy.swift	A	5170065bddbfb586403083b2a590ee0260645b499aa790e097c79cf938e64e23	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/RemoteTabInventoryEmission.swift	A	0d754d1b4f9e3cc1fec7002a1bdbd2e9d8c6997c650697ca7a5b30f91ad500a7	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/RemoteTerminalGridSnapshot.swift	M	a786749332057db4f552ba94a66d0e9eb31b1904f8d6203009179a5e0a2323f3	COR-046,RMT-013
+apps/chau7-macos/Sources/Chau7Core/RenderMemoryPressurePolicy.swift	A	b7ecef0b86abfbb040647ac59a5ef9effe3bacbe96a9ba10069e2e0983fe4079	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/RepoEventQuery.swift	A	e64e9eef202cdea8f0e4fb4162e319d4ae089e8456dc6b5c158fbb8489254ea1	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/RepoGroupInheritance.swift	A	8c33bdbd0438cdc443af8b098a76bf81bd6d3b84f657c8fdad4cb938d77dc9d6	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/RepositoryRootLocator.swift	A	9022e6eb9c41a1940585a0995560a31a57bdbca8c1e16f62ba83ed03779838ae	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/RestoreSaveTransaction.swift	A	b2f4fa1eeb84385cf360b8ec35865301a85276fa0e1634a338d2c8443f1d8e5b	OVL-117
+apps/chau7-macos/Sources/Chau7Core/RestoreSourceArbiter.swift	A	ab025b58678918127517403688f8fa32829319cf6479400f3c34f78582e2c49c	OVL-117
+apps/chau7-macos/Sources/Chau7Core/Runtime/AgentBackendProtocol.swift	M	1d99509fb4478954260d62a33bbcdf931e616b2f2f78ad64c406f9e94bd98863	COR-047
+apps/chau7-macos/Sources/Chau7Core/Runtime/CodeReviewTaskTemplate.swift	A	e4bd7f40579f96ecd343a69e34e426c475292a7425b30625d17401c85dbd9139	RUN-030
+apps/chau7-macos/Sources/Chau7Core/Runtime/DelegatedTask.swift	A	0b4f893e0b5f03ef7358bb50c7afff7105efef74a84235a101907aedb6ad8156	RUN-025,RUN-026
+apps/chau7-macos/Sources/Chau7Core/Runtime/EventJournal.swift	M	3da7c639ed536d68e684050c1bcf53bcb5e24d69c7dc275e8227ec7340005e74	COR-048,RUN-012
+apps/chau7-macos/Sources/Chau7Core/Runtime/ExitClassifier.swift	unchanged	b5e768d0bc2f4c41ccd99f9a28556b6443d4b40e3dfdd599b98835f5e80f12bf	COR-049,RUN-019
+apps/chau7-macos/Sources/Chau7Core/Runtime/JSONValue.swift	A	20eb7556768cb4d756efabd8734c0f178c8747ef7e71c71d1268878024475ce6	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Runtime/RuntimeEvent.swift	M	e90985974c342df518face277a93114a50a1c821f19301cb32762a20172a8d4b	COR-050
+apps/chau7-macos/Sources/Chau7Core/Runtime/RuntimeLaunchReadiness.swift	A	d816c03595d8339759bd07645af0dcb994d642898a3a79b599c5aa95af91295e	RUN-031
+apps/chau7-macos/Sources/Chau7Core/Runtime/RuntimeSessionState.swift	M	4758ab089fb3e3b2a7d7b1097f7f07977bf3c8d94d6bb10778305bdd38056ba9	COR-051,RUN-010
+apps/chau7-macos/Sources/Chau7Core/Runtime/RuntimeToolEventMetadata.swift	A	e76b1ea03646bd3da38fa7d2bc2d294cdce1b85b4210bbcec9310d04c7d55d1d	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Runtime/StructuredResultExtractor.swift	A	df70f90123ae950e4967bcdd324a25bd13dcb5bbf0d9ee55b1af55f03f6f4361	RUN-028
+apps/chau7-macos/Sources/Chau7Core/Runtime/TurnStats.swift	M	95882940d33670242c7ee5f13bc8e49ddfa79f4377e2a851e674b023f8a92915	COR-052,RUN-017
+apps/chau7-macos/Sources/Chau7Core/RuntimeIsolation.swift	M	2ebcfbe783723c8f1c388d6c23d61811d656264f7981a0823a118e42d38d600e	COR-053
+apps/chau7-macos/Sources/Chau7Core/RustCommandRisk.swift	M	59e9c0f8fc4ee621ee756aedff7b6a781b03d5420de61cdc696a2622a6fca92e	COR-054
+apps/chau7-macos/Sources/Chau7Core/RustDylib.swift	A	0406a3e9a31680978632410ba2439cd4415c1efe8c9465fe3de46ec0e08a4e79	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/RustEscapeSanitizer.swift	M	d215146fb046b56e8c4303c95e7a1ffc5f8ebe4bc4b48b7da0161e74b8eb81db	COR-055
+apps/chau7-macos/Sources/Chau7Core/RustPatternMatcher.swift	M	89c46765a40e7ecbde2d4c3647282deb1445cf98f18b5dd8d1f0d1847c8f3595	COR-056
+apps/chau7-macos/Sources/Chau7Core/SQLiteHandleBox.swift	A	15141d2c85b8fa75601fd548e269c0bc74bfb8b15b13ad4ee367ab90bfc02314	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/SQLiteStatement.swift	A	017e6e95ff8d5ed18ac7297ef92d3cb9ab4823d53c92b8084cc0c943b392473e	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/SSHConfigParser.swift	unchanged	cba98bb04d98abe3322c3ad9fb7ab0970af291ab9c798903a12a3414a29c3b0b	COR-057
+apps/chau7-macos/Sources/Chau7Core/ScrollStormThrottlePolicy.swift	A	cb0d6a10627dec175f948b945c0b0aa7cf37c30db99128ee47235c4dfbeac904	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/ScrollbackCacheFailure.swift	A	634adc317036173c9b0c9569cb0a9e8eba7429b2a13e7c91ffa1476c808f542a	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/ScrollbackRestoreFilter.swift	A	158cb21002de10d6f116fb4f3a9f3cca3d672e3f804423ae42635c772256090b	PRF-018
+apps/chau7-macos/Sources/Chau7Core/ScrollbackRetentionPolicy.swift	A	0b9b4baa8abb39ca1f0c72049b66570040563b1fc315ceb18de1937786384581	PRF-018
+apps/chau7-macos/Sources/Chau7Core/SelectedTabRevealPolicy.swift	A	4553fab7757e917d10e719cea00f48d34b2829015d94ec8ee1cce217674ef7e9	OVL-121
+apps/chau7-macos/Sources/Chau7Core/SelfProtectiveCommandDetection.swift	A	e387ef1844f28572fc7e072ab4e387ddf2f36b120af73cbe4eb3801440ebc1a9	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/SensitiveInputGuard.swift	unchanged	186c7cf98bf3b168bdac531753b5826b31495c06500082ad14ae203f0ff611e7	COR-058
+apps/chau7-macos/Sources/Chau7Core/SessionNoteAttachmentLocator.swift	A	b7961083744657a08889544b2d56e3e1000bfaaa69432dbe70320373c6bc96da	SPL-025
+apps/chau7-macos/Sources/Chau7Core/SessionNoteFileStore.swift	A	33ebbee1ccb8f4fb24270457207d71fb4935c817c9dd37dad772eec10cec4389	SPL-025
+apps/chau7-macos/Sources/Chau7Core/SessionRecording.swift	unchanged	bad455c09378bd222c2b842576cb808088e6361f0fe8ffe582995ecff463f547	COR-059,HIS-015
+apps/chau7-macos/Sources/Chau7Core/ShellCommandOutcomePolicy.swift	A	c7b9561fcdb21a4005b672dae14584d136c091e8c1c24c5e5379d20fde2dcec7	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/ShellEscaping.swift	unchanged	ccdef647a9b3ee272656ba04b851f395211e4dae8355954e1ff7713091351c50	PRO-011,COR-060
+apps/chau7-macos/Sources/Chau7Core/ShellLaunchEnvironment.swift	M	703bc94ca33c730c8c07270732b203c0f61dc86797b686ed7668e10daeff78b8	COR-061
+apps/chau7-macos/Sources/Chau7Core/Skills/Chau7SkillInstallInspector.swift	A	c9ad6439e2ce3ec28060831b4ae8ae6e016ff458534c3f8631e608be526f5c6c	SKL-003
+apps/chau7-macos/Sources/Chau7Core/Skills/Chau7SkillInstallPlanner.swift	A	cc8ad4b014502cb6a74e6c0de30dd06ddcbb3f19d241cf0927ec896dbe84636e	SKL-004
+apps/chau7-macos/Sources/Chau7Core/Skills/Chau7SkillInstaller.swift	A	291fc4ef8a20eae954885b149749c22f49a57f3fc4cf1063f26a44dfa73fccac	SKL-005
+apps/chau7-macos/Sources/Chau7Core/Skills/Chau7SkillManifestHashing.swift	A	9641d036c334b3e5df2ac5c90a2d05b534425db79b40052c1fc244bc295cf22c	SKL-003
+apps/chau7-macos/Sources/Chau7Core/Skills/Chau7SkillModels.swift	A	1de60357ed48458d72d9d0110b57a295648618db6e3b5e863f160efbc51037d6	SKL-002
+apps/chau7-macos/Sources/Chau7Core/Skills/Chau7SkillProviderTargets.swift	A	1f8c34bcfab17c088817489d83cbc011081a67401642cc8c59fb853d837cc74f	SKL-002
+apps/chau7-macos/Sources/Chau7Core/Skills/Chau7SkillValidator.swift	A	57bc76091ca29a3cf53c2dcb709a9c87d8b0a5395ddf6d8d9dd7e336e11a3aa7	SKL-001
+apps/chau7-macos/Sources/Chau7Core/SnippetParsing.swift	M	49f8551387f485df8ef55535e8fefb17d70027bfa098d9ee2221f14d04bd8281	COR-062
+apps/chau7-macos/Sources/Chau7Core/StaleSessionSourceQuarantine.swift	A	80b6e3be16da55f2c829ecd5115b1686f41ee3cc07971d67904d01e1e02d6b0b	MON-023
+apps/chau7-macos/Sources/Chau7Core/StartupRestorePolicy.swift	A	b189be7e23a4ac80f56a679fb32215b4d3a1d8d925ede4c7878db342462eee42	OVL-118
+apps/chau7-macos/Sources/Chau7Core/SubprocessFailureMessage.swift	A	0208c25d66c60a7fe9e55fd66193d5b7c6d00d3bd9a15efa6442d4f1572ac7d3	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/SubprocessRunner.swift	M	01424989eb813bcf26ef0abba427ab3a9dffd33084fa91a9454dfdb23f9f90fa	COR-063
+apps/chau7-macos/Sources/Chau7Core/TabAttentionState.swift	A	2dc583a791980d95a2f07b8473e72bb5c782e67858cb2b553f56aa8b11cf8ba3	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TabAttribution.swift	A	e57a3df15e34cdaaf9804356d587ed7288604de9e739032d83efc85730360daf	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TabBarLayout.swift	M	491c0816d56f3d10ec58f36d3c50efc442092aa592b6a7526a803a546048b717	COR-064,OVL-007
+apps/chau7-macos/Sources/Chau7Core/TabDragLayout.swift	M	84d43fefc6365c8c64b39250eaf49dd1d844a559500f3efbd0938418382f2653	COR-065,OVL-036
+apps/chau7-macos/Sources/Chau7Core/TabExecutionReadiness.swift	A	2bc9616c34b0e29e727283a0feaa4631d2a55d64026acb78698bec3c55c4843d	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TabGroupDragState.swift	A	490827fe94a4b58d8d4bf63f57c6d929e72e6b99a9cabb9887b6a98c92cb0777	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TabRenderLifecycle.swift	A	5dd449cad43c3d628a3519016ebdf134b2a27af0292fc4e2c3e278aaa5620a4c	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TabRoutingIndex.swift	A	c45f4fc20174e303e2dc390e0bd61827427cc5015053513a0b0fd49e1fceee8a	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TabStateBackupNamespace.swift	A	b440493bf7f3da3fc676e336768058781b619b3f010e2008421663ef7cefc728	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TabSurfaceReactivationPolicy.swift	A	0e49545ecedea07dda5e14a0ab161e25eb60423f840b0de255bbdee7d25dc734	OVL-121
+apps/chau7-macos/Sources/Chau7Core/TabTarget.swift	unchanged	6d5e0901a10bcef230beea3668f29d8888423b26d3904fd6dff38d68d59066fe	COR-066
+apps/chau7-macos/Sources/Chau7Core/TabTitleFormatter.swift	A	e1e1c66848a822954fb88b2b8efb03ad9ff86269a20879d0458ebebeec6388b2	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Telemetry/BoundedTranscriptReader.swift	A	dc63b2ccda42f40b9c1a88d8206a283cf609151489fb5de98b54fde7e6fb591b	TEL-023
+apps/chau7-macos/Sources/Chau7Core/Telemetry/ClaudeTranscriptUsageParser.swift	M	c939e0f18365fe58a5547894f402cce741e0256bfeb1a8137b0fcd1416a05219	COR-067,TEL-004
+apps/chau7-macos/Sources/Chau7Core/Telemetry/CodexRolloutParser.swift	M	89eb472d505aeb8fe6129fe6676af31824fa1f79a30e13256b6ab6732bedf6a9	COR-068,TEL-005
+apps/chau7-macos/Sources/Chau7Core/Telemetry/JSONLTailReader.swift	A	ed0e250e62fe1e29f564e38a883dc53034d1be5070b85fa685bb0fd36e9bfe08	TEL-023
+apps/chau7-macos/Sources/Chau7Core/Telemetry/ModelPricingTable.swift	A	459cce759ed7623448ab1db7f716bb85cddb4145f8851e45a4a08dc013b1d5e6	TEL-019
+apps/chau7-macos/Sources/Chau7Core/Telemetry/ProviderTokenAccounting.swift	A	90fea5be2b847beceaadcfd66fe281d0736fecbd49d57884ecd427aecebeb9f0	TEL-018
+apps/chau7-macos/Sources/Chau7Core/Telemetry/RemoteClientTelemetryEvent.swift	M	c5c8143d5372fade3c4a022eea43fed5ac950aaaeda78f7e8580fa665092ead8	COR-069,TEL-015,RMT-024
+apps/chau7-macos/Sources/Chau7Core/Telemetry/RepositoryUsageTotals.swift	A	0bb76b8349b2cbcde3ab47a0a81ef4af20bd0a4cd3544f25903474c35663e34a	TEL-022
+apps/chau7-macos/Sources/Chau7Core/Telemetry/RunContentProvider.swift	M	d72c98c9b4ff944bf027ed0ab7bae46f4f6974d51751b539a83f09ab97eee41c	COR-070
+apps/chau7-macos/Sources/Chau7Core/Telemetry/TelemetryHistoricalCostBackfill.swift	A	71c73f7cfdd4d624d622503c8aa4812bb1bc092362abb0af453f02dac56f6500	TEL-020
+apps/chau7-macos/Sources/Chau7Core/Telemetry/TelemetryMetricsSanitizer.swift	M	17b0f0f9b0f66ae6a9c63d0346fc27789f143b1b6dd4eed5c5567f4b0ae7cf38	COR-071,TEL-007
+apps/chau7-macos/Sources/Chau7Core/Telemetry/TelemetryProxyAttribution.swift	A	1b7c47c5d2a84f64fd08f9f7c8eafa95753cf6da72980237ae724692c94150be	PRX-021
+apps/chau7-macos/Sources/Chau7Core/Telemetry/TelemetryQueryProjection.swift	A	7db1da56571851d14169ff60b5125dadfa5bdab815d9589b3ea2496c12fb0c1b	TEL-022
+apps/chau7-macos/Sources/Chau7Core/Telemetry/TelemetryRun.swift	M	fca3bebe00cf0cc16e1a494975cf3062ba9b903bb20f7f1fc1a85cd30ba244c1	COR-072
+apps/chau7-macos/Sources/Chau7Core/Telemetry/TelemetryTurn.swift	M	6f06e92c5b15d5ebbc646a7a18c2347879cf16e16b6924dfd0203c2e24332f92	COR-073
+apps/chau7-macos/Sources/Chau7Core/Telemetry/TokenMetrics.swift	M	ea3f0e8e369f686ef2054664b99c7e658e7c6627f430b03ea7e81938065fcae2	COR-074,TEL-018
+apps/chau7-macos/Sources/Chau7Core/Telemetry/UsageEvidence.swift	A	e769edd026229c01dd57b64d0b0bf947bdeca07b7285bfb5f7ea3020db3439e6	TEL-021
+apps/chau7-macos/Sources/Chau7Core/TerminalClickResolution.swift	A	770143f8d21339ec3f21d95426f19b8d35b57c2bad96917c85e26b381ee77142	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalClipboard.swift	A	7af38548dfe56464456d46d5aa4e19142129a85d49ea408951293a81e478929b	TRM-066
+apps/chau7-macos/Sources/Chau7Core/TerminalColorScheme.swift	A	dc386314e090dc03e86ccb3260f8a1883411cbef7d361cb47466fd18d313d81d	APR-001,APR-002,APR-003
+apps/chau7-macos/Sources/Chau7Core/TerminalCursorInputPolicy.swift	A	83459515a73085868c61a048d504ec310852e61235f2831ef0692cb9ecb6860e	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalFocusRequestPolicy.swift	A	502d89234a5b6ddaf89f52566b73818c3606d1b920bf74f321ea1c49224d3396	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalHistoryNavigationPolicy.swift	A	3fb4e295235dbc5e61c33d6ce28b6046be4cbe5e0ec0c704076659c1521a6c27	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalKeyEncoder.swift	A	f0fa748295f8039785fd75708b9e9f97a4bfdc3b1bc1a7c651970907637c45a6	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalKeyPress.swift	M	53bcc277167059a4367aa706c1bcdedf8a1ccc04d9c9268b57b0e42f2010ec18	COR-075,KBD-010,KBD-017
+apps/chau7-macos/Sources/Chau7Core/TerminalKeyboardInputPolicy.swift	A	c38cc823271b79dc5f6c37f8da3a1fd3e4622eae1c589cae9c9fc7f522d20f54	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalMemoryBudgetPolicy.swift	A	7d96cd85a1981ba06037003f6f854dcaf212d3b12406ade8df3f034c878cb5ea	PRF-017
+apps/chau7-macos/Sources/Chau7Core/TerminalOSC9Parser.swift	A	83d77ed0c05b5d542ad16d3516e455c1ba53f6cf6921b121f3609666afac9eab	TRM-067
+apps/chau7-macos/Sources/Chau7Core/TerminalOutputBudget.swift	A	a983ab37dcd44ea3a6fb75e737c9f5d666cb69b0999b56cb11b45f3b39588b5d	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalPresentationSurfaceState.swift	A	96944558bdac9a5af8894e306f90e237105faeb32733bc6a4aa35bc013b4d867	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalRenderGeometry.swift	A	eb8551612749b31b0f7ad5e99a0fc8e99af0a82caa695f2ae8e5151af8c2f287	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalRenderRequestCoalescer.swift	A	4cc7c68cd1d1f0f5bed6e36233387059d94d6c5354e99a14eaf89ee7359c47a9	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalRenderRetryPolicy.swift	A	06dd7bca8e8a6c46e7501c01938a058da3f00b4023736d13448a6e3f26a5d18f	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalRenderSurfaceReport.swift	A	a0bd7c5862e71853af411551fbf0b99cf412fc59cf132fca5385b5bce4c21885	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalRuntimeState.swift	A	5c95a981585766911de58d3024b31c3777ce8180f84986aed8f6079b98cd001d	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalStartupOrdering.swift	A	ea41b54ce49db0bcca42a23508f8066538df1e1cb3a0cbaa725467242d81c6e6	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalStartupPolicy.swift	A	2b2e815bc64ab5b9d6f79021a4778db22c43aefbd3f97ea21133db2a192b105d	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TerminalTitleChurnPolicy.swift	A	54c92234facbd4de18921a55c608aa35c5092b170d54a513177e12291004d61b	TRM-068
+apps/chau7-macos/Sources/Chau7Core/TerminalWriteQueue.swift	A	daa20dfb09d1b0125d0ba95b39658f1d9afebee619a22fb10553c80b57099670	RBK-062
+apps/chau7-macos/Sources/Chau7Core/TokenOptimization.swift	M	4c21f4519b5c46feece22eda29c3f723cb8a39fe9d971488a611cf75dd3dd8ec	TOK-001,TOK-002,TOK-004,TOK-012,TOK-017,COR-076,TEL-013
+apps/chau7-macos/Sources/Chau7Core/TranscriptRepairRetryGate.swift	A	ebc9d7b577b2c0128331a23a4f7ae4033cff8cb5c5434d435964e27548e1180b	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/TransitionSnapshotRetention.swift	A	00a64b85a22ac390bb090fb00665feb340c51583ef667f263a7409d13ae349f8	OVL-121
+apps/chau7-macos/Sources/Chau7Core/UnifiedDiffParser.swift	A	b14fd7d8ca6a6f971b1a080bbf86f34b9bae9136fdae64468843b0bfbcdfb34d	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/Usage/ProviderLatency.swift	A	0bf06d4deff31e2c941cb27635c5e8b26492c350650074b19e8ebdab028576f8	USG-005,USG-006
+apps/chau7-macos/Sources/Chau7Core/Usage/ProviderLatencyOutputHeuristics.swift	A	9bf49b00569ae83b4b59021530d922352090385645500d3ad5d4cef3867aa307	USG-007
+apps/chau7-macos/Sources/Chau7Core/Usage/ProviderQuota.swift	A	247138e30450d42df9f34580e3dcf9b07be20ef329152046e98c18da7e595981	USG-001,USG-003
+apps/chau7-macos/Sources/Chau7Core/UserInputTracker.swift	A	02fd7f0265d51c89c6fb443f33761f6cca6bc37de68d1ac47cb9bdffc4a0ec5d	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/VisibleTerminalPollingPolicy.swift	A	8fec0b813ff1e0698a04ed19619e4cb53acaddeeda37e1bba816efc803a8014d	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/WakeupControl.swift	A	fae1353e40dd613d9994b1aab7e24e5b756d553c7a79c5b13d611ceb1d633fca	module-level review; see coverage notes
+apps/chau7-macos/Sources/Chau7Core/WindowStateRestorePlanner.swift	A	589ec9ddd972349ef32eeabe85c6c1536eac6696630683df92df8cf70535ed64	OVL-117
