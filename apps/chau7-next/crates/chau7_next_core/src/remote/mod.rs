@@ -8,6 +8,8 @@ pub mod activity_state;
 pub mod agent_state;
 pub mod frame;
 pub mod frame_parser;
+pub mod grid_cache;
+pub mod grid_delivery;
 pub mod grid_snapshot;
 pub mod interactive_prompt;
 pub mod models;
