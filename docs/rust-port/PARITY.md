@@ -51,7 +51,7 @@ stale table.
 | [Logging](inventory/Logging.md) | 5 | 30 | 26 | 2 | 0 | 2 | 0 | 0 |
 | [MCP](inventory/MCP.md) | 3 | 63 | 51 | 0 | 11 | 1 | 0 | 0 |
 | [Migration](inventory/Migration.md) | 5 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
-| [Monitoring](inventory/Monitoring.md) | 2 | 23 | 17 | 4 | 2 | 0 | 0 | 0 |
+| [Monitoring](inventory/Monitoring.md) | 2 | 23 | 18 | 4 | 1 | 0 | 0 | 0 |
 | [Notifications](inventory/Notifications.md) | 2 | 44 | 39 | 1 | 4 | 0 | 0 | 0 |
 | [Observability](inventory/Observability.md) | 3 | 5 | 0 | 1 | 4 | 0 | 0 | 0 |
 | [Overlay](inventory/Overlay.md) | 1 | 121 | 110 | 4 | 0 | 7 | 0 | 0 |
@@ -61,7 +61,7 @@ stale table.
 | [Remote](inventory/Remote.md) | 3 | 33 | 28 | 4 | 0 | 1 | 0 | 0 |
 | [Rendering](inventory/Rendering.md) | 1 | 7 | 4 | 0 | 0 | 3 | 0 | 0 |
 | [Repository](inventory/Repository.md) | 2 | 19 | 10 | 3 | 6 | 0 | 0 | 0 |
-| [Runtime](inventory/Runtime.md) | 3 | 32 | 24 | 2 | 6 | 0 | 0 | 0 |
+| [Runtime](inventory/Runtime.md) | 3 | 32 | 32 | 0 | 0 | 0 | 0 | 0 |
 | [RustBackend](inventory/RustBackend.md) | 1 | 62 | 56 | 2 | 0 | 4 | 0 | 0 |
 | [Scripting](inventory/Scripting.md) | 3 | 15 | 15 | 0 | 0 | 0 | 0 | 0 |
 | [Settings](inventory/Settings.md) | 1 | 140 | 130 | 3 | 2 | 5 | 0 | 1 |
@@ -75,9 +75,9 @@ stale table.
 | [Usage](inventory/Usage.md) | 3 | 8 | 0 | 0 | 8 | 0 | 0 | 0 |
 | [Utilities](inventory/Utilities.md) | 1 | 13 | 6 | 0 | 0 | 7 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1297** | **1130** | **51** | **71** | **45** | **0** | |
+| **Total** | | **1297** | **1139** | **49** | **64** | **45** | **0** | |
 
-Finished (done, n/a or dropped): 1175 of 1297 rows (90%). Partial: 51.
+Finished (done, n/a or dropped): 1184 of 1297 rows (91%). Partial: 49.
 
 <!-- parity:end -->
 
