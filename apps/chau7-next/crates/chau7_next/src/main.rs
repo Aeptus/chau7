@@ -209,13 +209,11 @@ fn main() {
         // The welcome screen the first time, else the splash.
         memory_pressure::start(cx);
         views::launch(cx);
-        permission_center::start(cx);
         hang_watchdog::start(cx);
         permission_center::start(cx);
         performance::start(cx);
 
         cx.on_app_quit(|cx| {
-            permission_center::stop(cx);
             memory_pressure::stop(cx);
             permission_center::stop(cx);
             save_session(cx, true);
