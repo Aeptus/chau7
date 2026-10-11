@@ -402,7 +402,10 @@ impl DebugConsole {
         chrome: Chrome,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut picker = div().flex().gap_1();
+        let mut picker = div().flex().gap_1().child(
+            ui::button("debug-open-api-charts", "Open API Analytics Charts", chrome)
+                .on_click(|_, _, cx| crate::proxy::analytics::open(cx)),
+        );
         for (mode, label) in [
             (AnalyticsMode::ApiCalls, "API Calls"),
             (AnalyticsMode::AiRuns, "AI Runs"),
