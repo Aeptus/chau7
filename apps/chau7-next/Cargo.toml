@@ -1,0 +1,45 @@
+[workspace]
+members = ["crates/chau7_next_core", "crates/chau7_next", "crates/chau7_next_mcp_bridge"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "UNLICENSED"
+
+[workspace.dependencies]
+# Pinned on purpose. gpui-kit 0.7.1 bundles the matching set: gpui-pre 0.3.8
+# (a snapshot of Zed at 279fe07), gpui-pre-platform 0.3.8 (macOS, Linux,
+# Windows backends), gpui-base and gpui-component 0.7.1. Never upgrade one
+# of these without the others.
+gpui = { package = "gpui-pre", version = "=0.3.8" }
+gpui-kit = { version = "=0.7.1" }
+chau7_terminal = { path = "../chau7-macos/rust/chau7_terminal" }
+chau7_next_core = { path = "crates/chau7_next_core" }
+parking_lot = "0.12"
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+base64 = "0.22"
+sha2 = "0.10"
+# Command history store (history/). Bundled so no system SQLite is needed.
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+[profile.release]
+debug = false
+lto = "thin"
+codegen-units = 16
+
+[profile.dev]
+opt-level = 1
+# Small debug info keeps backtraces readable while keeping test and app
+# binaries small (many agents build side by side on limited disk).
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false

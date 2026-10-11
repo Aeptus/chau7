@@ -1,0 +1,575 @@
+//! Remote control with the Chau7 iOS app (`Remote/RemoteControlManager.swift`).
+//!
+//! `iOS app <-> relay <-> chau7-remote (Go agent) <-> remote.sock <-> Chau7 Next`.
+//! When "Enable Remote Control" is on, Chau7 Next listens on its own socket
+//! and starts the agent with its own state file (never the Swift app's), so
+//! both apps pair separately and the phone sees "<computer> (Chau7 Next)".
+//!
+//! | File | Part |
+//! |---|---|
+//! | `host.rs` | the protocol: what the phone sees and may do (no GPUI) |
+//! | `env.rs` | the host's view of windows, tabs and sessions |
+//! | `ipc.rs` | the Unix socket server |
+//! | `agent.rs` | finding, starting and stopping the agent |
+//! | `snapshot.rs` | grid snapshot payload |
+//!
+//! Viewer sharing (RMT-027) keeps its state here too; see
+//! `chau7_next_core::remote::viewer`.
+
+pub mod agent;
+mod env;
+pub mod host;
+pub mod ipc;
+pub mod snapshot;
+pub mod viewer_ui;
+
+use std::time::{Duration, Instant};
+
+use chau7_next_core::app_shell::URL_SCHEME;
+use chau7_next_core::data_root::DataRoot;
+use chau7_next_core::remote::agent_state::{self, AgentPairedDevice};
+use chau7_next_core::remote::frame::RemoteFrame;
+use chau7_next_core::remote::models::{ApprovalRequestPayload, RemotePairingInfo};
+use chau7_next_core::remote::viewer::{RemoteViewerMode, ViewerArrival};
+use chau7_next_core::remote::viewer_protocol;
+use chau7_next_core::telemetry::remote_client_event::RemoteClientTelemetryEvent;
+use chrono::Utc;
+use gpui::{AnyWindowHandle, App, AppContext, Context, Entity, Global};
+
+use self::agent::AgentProcess;
+use self::env::GpuiEnv;
+use self::host::{FrameSink, RemoteHost, ViewerInbound};
+use self::ipc::{IpcEvent, IpcServer};
+use crate::settings::{RemoteSettings, Settings};
+use crate::workspace::AppData;
+
+/// Timer while remote control is on: output batches go out at this pace.
+const TICK_ON: Duration = Duration::from_millis(33);
+/// Timer while it is off (only watches the setting).
+const TICK_OFF: Duration = Duration::from_millis(500);
+/// Tabs, activity and prompts are refreshed this often (Swift: 150 ms debounce).
+const REFRESH_EVERY: Duration = Duration::from_millis(150);
+
+/// Answers MCP command approvals from the phone (`TerminalControlService
+/// .resolveApproval`). Set by the MCP module.
+pub type ApprovalResolver = Box<dyn Fn(&str, bool, &mut App)>;
+/// Stores iOS telemetry events (TEL-015). Set by the telemetry module.
+pub type TelemetrySink = Box<dyn Fn(RemoteClientTelemetryEvent, &mut App)>;
+
+struct IpcSink<'a>(Option<&'a IpcServer>);
+
+impl FrameSink for IpcSink<'_> {
+    fn send(&mut self, frame: RemoteFrame) {
+        if let Some(ipc) = self.0 {
+            ipc.send(&frame);
+        }
+    }
+}
+
+/// What the settings window shows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RemoteStatus {
+    pub agent_running: bool,
+    pub ipc_connected: bool,
+    pub session_status: Option<String>,
+    pub last_error: Option<String>,
+    pub pairing_info: Option<RemotePairingInfo>,
+    /// Paired devices with whether each is connected now.
+    pub devices: Vec<(AgentPairedDevice, bool)>,
+    pub viewer: RemoteViewerMode,
+}
+
+pub struct RemoteControl {
+    root: DataRoot,
+    host: RemoteHost,
+    ipc: Option<IpcServer>,
+    agent: Option<AgentProcess>,
+    /// Settings the agent runs with (enabled, relay URL).
+    applied: Option<(bool, String)>,
+    focus_window: Option<AnyWindowHandle>,
+    devices: Vec<AgentPairedDevice>,
+    viewer: RemoteViewerMode,
+    last_refresh: Instant,
+    approval_resolver: Option<ApprovalResolver>,
+    telemetry_sink: Option<TelemetrySink>,
+    last_status: Option<RemoteStatus>,
+}
+
+struct RemoteHandle(Entity<RemoteControl>);
+impl Global for RemoteHandle {}
+
+fn handle(cx: &App) -> Option<Entity<RemoteControl>> {
+    cx.try_global::<RemoteHandle>().map(|h| h.0.clone())
+}
+
+/// Start remote control (the agent runs only while the setting is on).
+pub fn init(cx: &mut App) {
+    let root = cx.global::<AppData>().root.clone();
+    let entity = cx.new(|_| RemoteControl {
+        root,
+        host: RemoteHost::new(),
+        ipc: None,
+        agent: None,
+        applied: None,
+        focus_window: None,
+        devices: Vec::new(),
+        viewer: RemoteViewerMode::default(),
+        last_refresh: Instant::now(),
+        approval_resolver: None,
+        telemetry_sink: None,
+        last_status: None,
+    });
+    cx.set_global(RemoteHandle(entity.clone()));
+    let weak = entity.downgrade();
+    cx.spawn(async move |cx| {
+        loop {
+            let Ok(delay) = weak.update(cx, |rc, cx| rc.tick(cx)) else {
+                break;
+            };
+            cx.background_executor().timer(delay).await;
+        }
+    })
+    .detach();
+    // The agent stops with the app (`applicationWillTerminate`).
+    cx.on_app_quit(move |cx| {
+        entity.update(cx, |rc, _| rc.shutdown());
+        async {}
+    })
+    .detach();
+}
+
+/// `CHAU7_NEXT_REMOTE_OUTPUT_BATCH=0` (or `CHAU7_REMOTE_OUTPUT_BATCH`) sends
+/// each chunk at once instead of every timer tick (`remoteOutputBatchingEnabled`).
+fn output_batching_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        let raw = crate::logging::env_var(chau7_next_core::env_vars::REMOTE_OUTPUT_BATCH);
+        chau7_next_core::remote::output_buffering::RemoteOutputTuning::batching_enabled(
+            raw.as_deref(),
+        )
+    })
+}
+
+/// Output of a terminal session (`recordOutput`), called for every batch
+/// the session parses. Only the selected tab's output is kept. Batches go
+/// out on the remote timer (33 ms) or as soon as 32 KB are pending, which
+/// matches Swift's per-tab batching (50 ms or 256 KB, then the relay limit).
+pub fn record_output(session: u64, data: &[u8], cx: &mut App) {
+    let Some(entity) = handle(cx) else { return };
+    let full = entity.update(cx, |rc, _| {
+        if rc.viewer.should_broadcast() {
+            log::trace!(
+                "RemoteViewerMode: broadcast {} bytes to {} viewers",
+                data.len(),
+                rc.viewer.connected.len()
+            );
+        }
+        rc.host.record_output(session, data)
+    });
+    if full || (entity.read(cx).host.has_pending_output() && !output_batching_enabled()) {
+        // The session is being updated: send once it is done.
+        cx.defer(move |cx| {
+            entity.update(cx, |rc, cx| rc.flush_output(cx));
+        });
+    }
+}
+
+/// Show an MCP command approval on the phone (`sendApprovalRequest`).
+/// Called by `mcp::approval::request_command_approval`.
+pub fn send_approval_request(request: ApprovalRequestPayload, cx: &mut App) {
+    if let Some(entity) = handle(cx) {
+        // Deferred: the caller may be inside a window or tab update, and the
+        // host reads every window's tabs.
+        cx.defer(move |cx| {
+            entity.update(cx, |rc, cx| {
+                rc.with_host(cx, |host, env, sink| {
+                    host.send_approval_request(&request, env, sink)
+                });
+            });
+        });
+    }
+}
+
+/// Who answers approvals the phone sends for MCP commands (set by MCP).
+pub fn set_approval_resolver(resolver: ApprovalResolver, cx: &mut App) {
+    if let Some(entity) = handle(cx) {
+        entity.update(cx, |rc, _| rc.approval_resolver = Some(resolver));
+    }
+}
+
+/// Where iOS telemetry events go (default: the log). Set by the
+/// telemetry store (TEL-015).
+#[allow(dead_code)]
+pub fn set_telemetry_sink(sink: TelemetrySink, cx: &mut App) {
+    if let Some(entity) = handle(cx) {
+        entity.update(cx, |rc, _| rc.telemetry_sink = Some(sink));
+    }
+}
+
+/// The state shown in settings.
+pub fn status(cx: &App) -> Option<RemoteStatus> {
+    handle(cx).map(|e| e.read(cx).status())
+}
+
+/// "Regenerate": restart the agent for a new pairing code.
+pub fn regenerate(cx: &mut App) {
+    if let Some(entity) = handle(cx) {
+        entity.update(cx, |rc, cx| rc.restart_agent_if_running(cx));
+    }
+}
+
+/// Forget a paired device; it must pair again.
+pub fn revoke_device(id: String, cx: &mut App) {
+    if let Some(entity) = handle(cx) {
+        entity.update(cx, |rc, cx| rc.revoke(&id, cx));
+    }
+}
+
+/// Viewer sharing actions (popover buttons).
+pub fn update_viewer(cx: &mut App, change: impl FnOnce(&mut RemoteViewerMode)) {
+    let Some(entity) = handle(cx) else { return };
+    let known = entity.update(cx, |rc, cx| {
+        let before = rc.viewer.clone();
+        change(&mut rc.viewer);
+        // Tell the agent: share code, decisions, ended viewings (RMT-027).
+        let frames = viewer_protocol::sync_frames(&before, &rc.viewer);
+        if !frames.is_empty() {
+            rc.send_viewer_frames(frames);
+        }
+        cx.refresh_windows();
+        (rc.viewer.known_ids != before.known_ids)
+            .then(|| rc.viewer.known_ids.iter().cloned().collect())
+    });
+    // Trusted viewers are a setting (`remoteViewer.knownIDs`).
+    if let Some(ids) = known {
+        crate::settings_window::update(cx, |s| s.remote.viewer_known_ids = ids);
+    }
+}
+
+/// Start or stop sharing (a new 8-character link each time).
+pub fn set_sharing(on: bool, cx: &mut App) {
+    update_viewer(cx, |viewer| {
+        if on {
+            let token = uuid::Uuid::new_v4().to_string();
+            viewer.start_sharing(URL_SCHEME, &token);
+        } else {
+            viewer.stop_sharing();
+        }
+    });
+}
+
+/// A viewer with a valid code asks to watch (`viewer_join` from the agent):
+/// a trusted viewer is let in at once, one over the maximum is turned away,
+/// anyone else waits for the owner.
+pub fn viewer_connected(id: &str, name: &str, cx: &mut App) {
+    let mut arrival = None;
+    update_viewer(cx, |viewer| {
+        arrival = Some(viewer.handle_connection(id, name, Utc::now()));
+    });
+    let Some(entity) = handle(cx) else { return };
+    let frame = match arrival {
+        Some(ViewerArrival::AutoApproved) => Some(viewer_protocol::decision_frame(id, true, None)),
+        Some(ViewerArrival::Rejected) => Some(viewer_protocol::decision_frame(
+            id,
+            false,
+            Some("max_viewers"),
+        )),
+        _ => None,
+    };
+    if let Some(frame) = frame {
+        entity.update(cx, |rc, _| rc.send_viewer_frames(vec![frame]));
+    }
+}
+
+/// A viewer left on its side (`viewer_leave` from the agent).
+fn viewer_left(id: &str, cx: &mut App) {
+    if let Some(entity) = handle(cx) {
+        entity.update(cx, |rc, cx| {
+            rc.viewer.deny(id);
+            rc.viewer.disconnect(id);
+            cx.refresh_windows();
+        });
+    }
+}
+
+impl RemoteControl {
+    fn status(&self) -> RemoteStatus {
+        let ready = self.host.session_status.as_deref() == Some("ready");
+        RemoteStatus {
+            agent_running: self.agent.is_some(),
+            ipc_connected: self.host.ipc_connected,
+            session_status: self.host.session_status.clone(),
+            last_error: self.host.last_error.clone(),
+            pairing_info: self.host.pairing_info.clone(),
+            devices: self
+                .devices
+                .iter()
+                .map(|d| {
+                    let connected =
+                        ready && self.host.connected_device_id.as_deref() == Some(d.id.as_str());
+                    (d.clone(), connected)
+                })
+                .collect(),
+            viewer: self.viewer.clone(),
+        }
+    }
+
+    /// Run `f` on the host with the app as its environment and the socket
+    /// as its sink, then hand out what it resolved.
+    fn with_host<R>(
+        &mut self,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut RemoteHost, &mut GpuiEnv, &mut IpcSink) -> R,
+    ) -> R {
+        let (result, resolved, telemetry) = {
+            let mut env = GpuiEnv::new(cx, &mut self.focus_window);
+            let mut sink = IpcSink(self.ipc.as_ref());
+            let result = f(&mut self.host, &mut env, &mut sink);
+            (result, env.resolved, env.telemetry)
+        };
+        for (id, approved) in resolved {
+            match &self.approval_resolver {
+                Some(resolve) => resolve(&id, approved, cx),
+                None => log::info!("Remote: approval {id} answered ({approved}), no MCP handler"),
+            }
+        }
+        for event in telemetry {
+            match &self.telemetry_sink {
+                Some(store) => store(event, cx),
+                None => log::debug!("Remote telemetry: {:?}", event.event_type),
+            }
+        }
+        result
+    }
+
+    fn tick(&mut self, cx: &mut Context<Self>) -> Duration {
+        let settings = Settings::get(cx).remote.clone();
+        self.apply_settings(&settings, cx);
+
+        if let Some(agent) = &mut self.agent
+            && let Some(code) = agent.try_exit()
+        {
+            self.agent = None;
+            if code != 0 {
+                let error = format!("Remote agent exited with status {code}");
+                log::error!("{error}");
+                self.host.last_error = Some(error);
+            }
+        }
+
+        let events = self.ipc.as_ref().map(IpcServer::drain).unwrap_or_default();
+        for event in events {
+            match event {
+                IpcEvent::Connected => {
+                    self.with_host(cx, |host, env, sink| host.on_connected(env, sink));
+                    // A restarted agent learns the share code again.
+                    if self.viewer.is_sharing {
+                        let frame = viewer_protocol::share_frame(&self.viewer);
+                        self.send_viewer_frames(vec![frame]);
+                    }
+                }
+                IpcEvent::Frame(frame) => {
+                    self.with_host(cx, |host, env, sink| host.handle_frame(frame, env, sink));
+                }
+                IpcEvent::Disconnected => self.host.on_disconnected(),
+            }
+        }
+
+        for message in std::mem::take(&mut self.host.viewer_inbox) {
+            let weak = cx.entity().downgrade();
+            // The viewer state is changed through `update_viewer`, outside
+            // this entity's update.
+            cx.defer(move |cx| {
+                if weak.upgrade().is_none() {
+                    return;
+                }
+                match message {
+                    ViewerInbound::Join(join) => viewer_connected(&join.viewer_id, &join.name, cx),
+                    ViewerInbound::Leave(id) => viewer_left(&id, cx),
+                }
+            });
+        }
+        if self.host.has_pending_output() {
+            self.flush_output(cx);
+        }
+        if self.host.ipc_connected && self.last_refresh.elapsed() >= REFRESH_EVERY {
+            self.last_refresh = Instant::now();
+            self.with_host(cx, |host, env, sink| host.refresh(env, sink));
+        }
+        if self.host.devices_dirty {
+            self.host.devices_dirty = false;
+            self.refresh_devices();
+        }
+
+        let status = self.status();
+        if self.last_status.as_ref() != Some(&status) {
+            self.last_status = Some(status);
+            cx.refresh_windows();
+        }
+        if settings.enabled { TICK_ON } else { TICK_OFF }
+    }
+
+    fn send_viewer_frames(&mut self, frames: Vec<viewer_protocol::ViewerFrame>) {
+        let mut sink = IpcSink(self.ipc.as_ref());
+        self.host.send_viewer_frames(&mut sink, frames);
+    }
+
+    fn flush_output(&mut self, cx: &mut Context<Self>) {
+        self.with_host(cx, |host, env, sink| host.flush_output(env, sink));
+    }
+
+    /// Follow the settings: start, stop or restart the agent.
+    fn apply_settings(&mut self, settings: &RemoteSettings, cx: &mut Context<Self>) {
+        self.viewer.enabled = settings.viewer_enabled;
+        self.viewer.set_max_viewers(i64::from(settings.viewer_max));
+        self.viewer.auto_approve_known = settings.viewer_auto_approve_known;
+        self.viewer.known_ids = settings.viewer_known_ids.iter().cloned().collect();
+        if !self.viewer.enabled && self.viewer.is_sharing {
+            self.viewer.stop_sharing();
+        }
+
+        let wanted = (settings.enabled, settings.relay_url.trim().to_string());
+        let Some(applied) = self.applied.clone() else {
+            self.applied = Some(wanted.clone());
+            if wanted.0 {
+                self.start_agent(cx);
+            }
+            self.refresh_devices();
+            return;
+        };
+        if applied == wanted {
+            return;
+        }
+        self.applied = Some(wanted.clone());
+        match (applied.0, wanted.0) {
+            (false, true) => self.start_agent(cx),
+            (true, false) => self.stop_agent(),
+            // The relay URL changed: a running agent restarts.
+            (true, true) => self.restart_agent_if_running(cx),
+            (false, false) => {}
+        }
+    }
+
+    fn start_agent(&mut self, cx: &mut Context<Self>) {
+        if self.agent.is_some() {
+            return;
+        }
+        if self.ipc.is_none() {
+            match IpcServer::start(&self.root.remote_socket()) {
+                Ok(server) => self.ipc = Some(server),
+                Err(err) => {
+                    log::error!("Remote IPC: cannot listen: {err}");
+                    self.host.last_error = Some(format!("Cannot start remote agent: {err}"));
+                    return;
+                }
+            }
+        }
+        let binary = match agent::binary_path(&self.root) {
+            Ok(path) => path,
+            Err(err) => {
+                log::error!("{err}");
+                self.host.last_error = Some(err);
+                return;
+            }
+        };
+        let relay = self
+            .applied
+            .as_ref()
+            .map(|(_, url)| url.clone())
+            .unwrap_or_else(|| Settings::get(cx).remote.relay_url.clone());
+        let host_name = crate::platform::system::host_name();
+        match AgentProcess::spawn(&binary, &self.root, &relay, host_name) {
+            Ok(process) => {
+                self.agent = Some(process);
+                self.host.last_error = None;
+                self.refresh_devices();
+            }
+            Err(err) => {
+                log::error!("{err}");
+                self.host.last_error = Some(err);
+            }
+        }
+    }
+
+    fn stop_agent(&mut self) {
+        if let Some(agent) = self.agent.take() {
+            agent.stop();
+        }
+        self.host.on_agent_stopped();
+        if let Some(mut ipc) = self.ipc.take() {
+            ipc.stop();
+        }
+        if self.host.ipc_connected {
+            self.host.on_disconnected();
+        }
+    }
+
+    fn restart_agent_if_running(&mut self, cx: &mut Context<Self>) {
+        if self.agent.is_none() {
+            return;
+        }
+        if let Some(agent) = self.agent.take() {
+            agent.stop();
+        }
+        self.host.on_agent_stopped();
+        self.start_agent(cx);
+    }
+
+    fn shutdown(&mut self) {
+        self.stop_agent();
+    }
+
+    fn refresh_devices(&mut self) {
+        let path = self.root.remote_state_file();
+        self.devices = match std::fs::read_to_string(&path) {
+            Ok(text) => match agent_state::paired_devices(&text) {
+                Ok(devices) => devices,
+                Err(err) => {
+                    log::warn!("Failed to refresh paired devices: {err}");
+                    return;
+                }
+            },
+            Err(_) => Vec::new(),
+        };
+    }
+
+    fn revoke(&mut self, id: &str, cx: &mut Context<Self>) {
+        let path = self.root.remote_state_file();
+        let result = std::fs::read_to_string(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|text| agent_state::remove_paired_device(&text, id))
+            .and_then(|updated| match updated {
+                Some(text) => write_private(&path, &text).map_err(|e| e.to_string()),
+                None => Ok(()),
+            });
+        match result {
+            Ok(()) => {
+                self.host.on_device_revoked(id);
+                self.refresh_devices();
+                self.restart_agent_if_running(cx);
+            }
+            Err(err) => {
+                log::error!("Failed to revoke paired device: {err}");
+                self.host.last_error = Some("Failed to revoke paired device".into());
+            }
+        }
+        cx.refresh_windows();
+    }
+}
+
+/// Write the agent state file atomically, readable by the user only.
+fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    let dir = path.parent().unwrap_or(std::path::Path::new("."));
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!(".state-{}.tmp", std::process::id()));
+    std::fs::write(&tmp, text)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+    }
+    std::fs::rename(&tmp, path)
+}
+
+#[cfg(all(test, unix))]
+mod e2e_tests;

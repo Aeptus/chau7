@@ -1,0 +1,10 @@
+Alerts are disabled for Chau7 Next. Enable banners or alerts in System Settings.	settings.notifications.permission.warning.alertsDisabled
+App Language	settings.general.language.label
+Automatically start Chau7 Next when you log in to your Mac	settings.general.launchAtLogin.help
+Keep your Chau7 Next settings synchronized across all your Macs	settings.general.icloud.sync.help
+Notification status unknown. Check System Settings > Notifications > Chau7 Next.	settings.notifications.permission.warning.unknown
+Notifications are denied. Open System Settings and allow alerts for Chau7 Next.	settings.notifications.permission.warning.denied
+Notifications require the app bundle. Build and launch Chau7 Next.app.	settings.notifications.permission.warning.notBundled
+Quit Chau7	statusBar.quit
+Quit Chau7 Next	statusBar.quit
+Some changes may require restarting the app	settings.general.language.note

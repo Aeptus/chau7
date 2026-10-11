@@ -1,0 +1,200 @@
+# Overlay
+
+Swift: `apps/chau7-macos/Sources/Chau7/Overlay/` (9 Swift files, 9,034 lines)
+Swift tests: `Overlay/OverlayTabsModelTests.swift`, `Overlay/TabBarLayoutTests.swift`, `Overlay/TabDragLayoutTests.swift`, `Overlay/OverlayWindowDropResolverTests.swift`
+Wave: 1 (see README.md)
+Depends on: Chau7Core (TabBarLayout, TabDragLayout, OverlayWindowDropResolver), Terminal, SplitPanes, Settings (FeatureSettings), Appearance (TabColor)
+
+The Overlay module is the window chrome around the terminal: the tab bar in
+the titlebar (tabs, repo groups, idle tabs chip, badges, indicators, drag and
+drop, context menus), the hover card, the floating panels drawn over the
+terminal (find, rename, clipboard history, bookmarks, snippets, task banners)
+and the per-window tab model (lifecycle, notification styles, save and restore
+with AI session resume).
+
+## Features
+
+| ID | Feature | Swift source | Tests | Rust | Status | macOS API |
+|---|---|---|---|---|---|---|
+| OVL-001 | Tab bar sits in the titlebar row to the right of the traffic lights (unified compact toolbar, no separator) | `Overlay/Chau7OverlayView.swift` (TabBarToolbarDelegate) | | `workspace/` (TitleBar) | done | NSToolbar |
+| OVL-002 | Translucent HUD vibrancy behind the tab bar and titlebar | `Overlay/Chau7OverlayView.swift` (ToolbarBackgroundView), `Overlay/TitlebarBackgroundInstaller.swift` |  | chau7_next/src/theme.rs (hud_titlebar_background), chau7_next/src/workspace/mod.rs (translucent titlebar over the blurred window, opaque terminal area), chau7_next/src/workspace/window.rs (Blurred on macOS) | done | NSVisualEffectView |
+| OVL-003 | Tab bar stays visible in fullscreen; minimize button disabled while fullscreen | `Overlay/FullscreenToolbarController.swift`, `Overlay/OverlayWindow.swift` | | `workspace/` | done | NSWindow fullscreen notifications |
+| OVL-004 | Drag the window from empty tab bar space; double-click follows the system titlebar setting | `Overlay/Chau7OverlayView.swift` | | `workspace/` (TitleBar, tabs stop propagation) | done | |
+| OVL-005 | Tab bar scrolls horizontally without a visible scrollbar when tabs overflow | `Overlay/Chau7OverlayView.swift` (ToolbarTabBarView) | | `workspace/` (render_tab_bar) | done | |
+| OVL-006 | Selected tab scrolls into view, centered, with a 0.25 s ease when selection changes | `Overlay/Chau7OverlayView.swift` |  | chau7_next/src/workspace/tab_bar_view.rs (tick_scroll) | done |  |
+| OVL-007 | Bar item order: idle chip first, repo tag before each contiguous group run, tabs, then the "+" button | `Overlay/Chau7OverlayView.swift`, `Chau7Core/TabBarLayout.swift` | `TabBarLayoutTests` | `chau7_next_core/src/tab_bar_layout.rs`, `chau7_next_core/src/tabs_state.rs`, `workspace/` | done | |
+| OVL-008 | "+" button opens a new tab | `Overlay/Chau7OverlayView.swift` | | `workspace/` | done | |
+| OVL-009 | Git branch capsule (branch name, "Git" or "unknown") at the right end of the bar for the selected tab | `Overlay/Chau7OverlayView.swift` (GitBranchBadge) |  | chau7_next/src/workspace/tab_bar_view.rs (render_git_capsule) | done |  |
+| OVL-010 | Dev server capsule (green, server name and ":port") at the right end of the bar; click opens its URL in the browser | `Overlay/Chau7OverlayView.swift` (DevServerBadge) |  | chau7_next/src/workspace/ai.rs (render_dev_server_capsule), chau7_next/src/workspace/tab_bar_view.rs | done | NSWorkspace |
+| OVL-011 | Tab bar self-recovery (watchdog every 3 s, refresh when no tab rendered or the toolbar view collapsed, toolbar recreation) | `Overlay/Chau7OverlayView.swift`, `Overlay/OverlayTabsModel.swift` | | | n/a | NSToolbar |
+| OVL-012 | Tab chip: 22 pt rounded pill; selected tab uses its color at 25%, others dark at 18% | `Overlay/Chau7OverlayView.swift` (UnifiedTabButton) | | `workspace/` (render_tab) | done | |
+| OVL-013 | Tab title: custom title, then AI tool name, then "Vite" for a Vite dev server, "Editor" for a tab with no terminal, else "Shell" | `Overlay/OverlayTabsModel.swift` (displayTitle), `Overlay/Chau7OverlayView.swift` (TabSessionContent) |  | chau7_next/src/workspace/mod.rs | done |  |
+| OVL-014 | Path suffix "- <repo or dir>" after the title, middle-truncated, hidden for tabs inside a repo group; `showTabPath` setting | `Overlay/Chau7OverlayView.swift` (TabSessionContent) |  | chau7_next/src/workspace/tab_bar_view.rs, chau7_next_core/src/tab_bar_text.rs (truncate_middle) | done |  |
+| OVL-015 | Tab icon: AI product logo (35% opacity when the AI is not running) or a yellow bolt for Vite; `showTabIcons` setting | `Overlay/Chau7OverlayView.swift` (TabSessionContent) |  | chau7_next/src/workspace/tab_bar_view.rs (ai_logo, Vite bolt) | done |  |
+| OVL-016 | "Custom title only" mode: custom-titled tabs show only the title (no icon, path, badges, indicators); `customTitleOnly` setting | `Overlay/Chau7OverlayView.swift` |  | chau7_next/src/workspace/tab_bar_view.rs, chau7_next/src/settings/tabs.rs | done |  |
+| OVL-017 | Last command badge on the tab ("✓"/"✗" plus duration, green or red capsule); `isLastCommandBadgeEnabled` setting | `Overlay/Chau7OverlayView.swift`, `Overlay/OverlayTabsModel.swift` (commandBadge, commandStarted/Finished) |  | chau7_next/src/workspace/tab_bar_view.rs (command_badge), chau7_next_core/src/tab_bar_text.rs | done |  |
+| OVL-018 | Broadcast indicator (orange radio waves) on tabs that receive broadcast input; `showTabBroadcastIndicator` setting | `Overlay/Chau7OverlayView.swift` |  | chau7_next/src/workspace/tab_bar_view.rs | done |  |
+| OVL-019 | Git branch indicator on the tab: dim on main/master, bright on another branch; `showTabGitIndicator` setting | `Overlay/Chau7OverlayView.swift` (BranchIndicator) |  | chau7_next/src/workspace/tab_bar_view.rs | done |  |
+| OVL-020 | MCP-controlled tab: purple dashed-face icon and purple background; `mcpShowTabIndicator` setting | `Overlay/Chau7OverlayView.swift` |  | chau7_next/src/workspace/tab_bar_view.rs (mcp_look), chau7_next/src/settings/mcp.rs (show_tab_indicator), chau7_next/src/workspace/mcp.rs | done |  |
+| OVL-021 | Close button (x) on every tab | `Overlay/Chau7OverlayView.swift` | | `workspace/` | done | |
+| OVL-022 | VoiceOver labels and hints on tabs ("<title> tab, <path>", selected trait), new tab button, badges | `Overlay/Chau7OverlayView.swift` |  | chau7_next/src/workspace/tab_bar_view.rs | done |  |
+| OVL-023 | Click a tab to select it; hover card closes; the tab's notification style clears unless persistent | `Overlay/OverlayTabsModel.swift` (selectTab) | `OverlayTabsModelTests` | chau7_next/src/workspace/mod.rs (select_tab) | done |  |
+| OVL-024 | Double-click a tab to rename it | `Overlay/Chau7OverlayView.swift` | | `workspace/` | done | |
+| OVL-025 | Right-click (or Ctrl-click) a tab or group tag opens a native context menu; group tags are hit-tested before tabs | `Overlay/Chau7OverlayView.swift` (TabBarHostingView) | | `workspace/` (show_tab_menu, show_group_menu) | done | NSMenu |
+| OVL-026 | Hovering a tab prewarms it (cancels render suspension); leaving reschedules suspension after 0.5 s | `Overlay/OverlayTabsModel+TabSwitchOptimization.swift` (prewarmTab, cancelPrewarm) | | `workspace/` (hover_tab, log only) | n/a | |
+| OVL-027 | Tab menu: Rename Tab... | `Overlay/Chau7OverlayView.swift` | | `workspace/` | done | NSMenu |
+| OVL-028 | Tab menu: Move to Idle Tabs (tab goes to the idle chip and its rendering is suspended) | `Overlay/Chau7OverlayView.swift`, `Overlay/OverlayTabsModel.swift` (forceTabIdle) | | `workspace/`, `chau7_next_core/src/tabs_state.rs` (force_idle) | done | NSMenu |
+| OVL-029 | Tab menu: Move to Window submenu (New Window, then each other window by title) | `Overlay/Chau7OverlayView.swift` | | `workspace/` (window_submenu, move_tabs_to) | done | NSMenu |
+| OVL-030 | Tab menu: Remove from Repo Group and Move Group to Window submenu, shown when the tab's group has 2 or more tabs | `Overlay/Chau7OverlayView.swift` | | `workspace/` | done | NSMenu |
+| OVL-031 | Tab menu: Add to Repo Group and Group All Same Repo, shown for an ungrouped tab inside a git repo | `Overlay/Chau7OverlayView.swift`, `Overlay/OverlayTabsModel.swift` | | `workspace/`, `chau7_next_core/src/tabs_state.rs` | done | NSMenu |
+| OVL-032 | Tab menu: Close Tab | `Overlay/Chau7OverlayView.swift` | | `workspace/` | done | NSMenu |
+| OVL-033 | Group menu: Move "<repo>" to Window submenu | `Overlay/Chau7OverlayView.swift` (buildGroupContextMenu) | | `workspace/` | done | NSMenu |
+| OVL-034 | Group menu: Remove from Repo Group (ungroups every tab of the group) | `Overlay/Chau7OverlayView.swift` | | `workspace/`, `chau7_next_core/src/tabs_state.rs` (ungroup) | done | NSMenu |
+| OVL-035 | Group menu: Close Group (N tabs), each close going through the normal close confirmations | `Overlay/Chau7OverlayView.swift` |  | chau7_next/src/workspace/menus.rs, chau7_next/src/workspace/mod.rs (close_tabs_confirming) | done | NSMenu |
+| OVL-036 | Drag a tab to reorder: starts after a few points, dragged tab follows the cursor, neighbors spring aside (response 0.25, damping 0.85), drop commits; hover card closes | `Overlay/Chau7OverlayView.swift`, `Chau7Core/TabDragLayout.swift` | `TabDragLayoutTests` | `tab_bar.rs`, `workspace/` | done | |
+| OVL-037 | Reorder drag survives tabs closed or added in the background during the drag | `Overlay/Chau7OverlayView.swift` (handleTabDrag) | | `workspace/` (finish_reorder) | done | |
+| OVL-038 | Drag a group tag to move the whole group; group dims to 50% while dragged | `Overlay/Chau7OverlayView.swift` (handleGroupDrag) | | `workspace/` (begin_press, finish_reorder) | done | |
+| OVL-039 | Drop a tab on another window (its tab bar first, then its frame, source excluded): appended and selected there | `Overlay/Chau7OverlayView.swift`, `Chau7Core/OverlayWindowDropResolver.swift`, `App/AppDelegate.swift` | `OverlayWindowDropResolverTests` | `workspace/` (drop_target_for, move_tabs_to) | done | |
+| OVL-040 | Drop a group on another window moves the whole group | `Overlay/Chau7OverlayView.swift`, `Overlay/OverlayTabsModel.swift` (extractGroupForWindowTransfer) | `OverlayTabsModelTests` | `workspace/` (move_subject_to) | done | |
+| OVL-041 | Moving the last tab(s) out leaves the source window open and gives it a fresh tab when it is shown again | `Overlay/OverlayTabsModel.swift` (extractTabForWindowTransfer), `Overlay/OverlayTabsModel+TabSwitchOptimization.swift` (ensureFreshTabIfNeeded) | `OverlayTabsModelTests` | chau7_next/src/workspace/mod.rs (take_tab), chau7_next/src/main.rs (open_parked_window) | done |  |
+| OVL-042 | Repo group look: repo tag in a color hashed from the repo path (FNV-1a over the tab palette), bracket stroke on its left, continuous top line over the group's tabs | `Overlay/Chau7OverlayView.swift` (RepoGroupBracket, RepoTagChip) |  | chau7_next/src/workspace/tab_bar_view.rs (render_group, paint_bracket), chau7_next_core/src/tabs_state.rs (repo_group_color) | done |  |
+| OVL-043 | Repo grouping mode (off, auto, manual): auto assigns each tab's git root as its group, follows `cd`, and pulls group tabs together | `Overlay/OverlayTabsModel.swift` (setupRepoGrouping, coalesceGroup) | | `chau7_next_core/src/tabs_state.rs` (set_git_root), `settings/` (auto_repo_grouping) | done | |
+| OVL-044 | Existing groups stay when grouping is turned off; group membership is saved and restored | `Overlay/OverlayTabsModel.swift` | | `session_store.rs`, `workspace/` | done | |
+| OVL-045 | New tab inherits the selected tab's repo group and opens right after it; otherwise `newTabPosition` (end or after current) | `Overlay/OverlayTabsModel.swift` (insertionIndexForNewTab) | `OverlayTabsModelTests` | `chau7_next_core/src/tabs_state.rs` (add) | done | |
+| OVL-046 | Idle tabs: non-selected tabs inactive longer than the threshold leave the bar for the idle chip; `groupIdleTabs`, `idleTabThresholdSeconds` | `Overlay/Chau7OverlayView.swift`, `Overlay/OverlayTabsModel.swift` | | `chau7_next_core/src/tabs_state.rs` (idle_ids), `settings/` | done | |
+| OVL-047 | Idle chip: tray icon and count, brighter while open, tooltip "Idle tabs (N)"; click toggles a popover | `Overlay/IdleTabsChip.swift` |  | chau7_next/src/workspace/tab_bar_view.rs (render_idle_chip) | done |  |
+| OVL-048 | Idle popover rows: moon icon, title, idle duration ("12m", "1h 5m"); hover shows the tab's hover card; click selects | `Overlay/IdleTabsChip.swift` |  | chau7_next/src/workspace/tab_bar_view.rs (render_idle_popover), chau7_next_core/src/tab_bar_text.rs (idle_duration) | done |  |
+| OVL-049 | Idle popover "Close All Idle" button | `Overlay/IdleTabsChip.swift` |  | chau7_next/src/workspace/tab_bar_view.rs (render_idle_popover) | done |  |
+| OVL-050 | Idle tabs have their rendering suspended when background render suspension is on | `Overlay/OverlayTabsModel.swift` (suspendIdleTabs) | | | n/a | |
+| OVL-051 | Hover card appears after 0.4 s, centered on the tab and kept inside the window; moving to another tab while it is shown switches it instantly | `Overlay/OverlayTabsModel.swift` (tabHoverBegan), `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/hover_card.rs (hover_tab) | done |  |
+| OVL-052 | Hover card stays while the pointer moves onto it (0.15 s grace) and is clickable; closes on select, close, rename and drag | `Overlay/OverlayTabsModel.swift` (hoverCardMouseEntered/Exited, dismissHoverCard) |  | chau7_next/src/workspace/hover_card.rs | done |  |
+| OVL-053 | Hover card header: AI logo (dim when not running) or color dot, title, status pill (Idle, Running, Waiting, Stuck, Exited) with its color | `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/hover_card.rs | done |  |
+| OVL-054 | Hover card row: working directory | `Overlay/TabHoverCard.swift` | | `workspace/` | done | |
+| OVL-055 | Hover card row: git branch | `Overlay/TabHoverCard.swift` | | `workspace/` | done | |
+| OVL-056 | Hover card row: "Shell integration active" or "Heuristic detection" | `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/hover_card.rs (has_shell_integration) | done |  |
+| OVL-057 | Hover card row: dev server name, port and an open-in-browser button | `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/hover_card.rs | done | NSWorkspace |
+| OVL-058 | Hover card row: processes (total CPU and memory, up to 5 children with name, pid, CPU, memory, orange when high, "+N more"); monitoring runs only while the card is shown | `Overlay/TabHoverCard.swift`, `Overlay/OverlayTabsModel.swift` (startProcessMonitoring) |  | chau7_next/src/workspace/hover_card.rs (sample_processes), chau7_next/src/platform/process.rs (process_name) | done |  |
+| OVL-059 | Hover card row: last command text, ✓/✗ and duration | `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/hover_card.rs (last command text, exit mark, duration) | done |  |
+| OVL-060 | Hover card row: AI session summary (provider, model, tokens in/out, cost, turns, top 3 tool calls) | `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/hover_card.rs, chau7_next/src/telemetry.rs (hover_summary) | done |  |
+| OVL-061 | Hover card row: repo stats (runs, tokens, cost, commands) | `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/hover_card.rs, chau7_next/src/repository/mod.rs (stats), chau7_next/src/telemetry.rs (ai_repo_stats) | done |  |
+| OVL-062 | Hover card row: file conflicts (count and up to 3 paths) | `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/hover_card.rs, chau7_next/src/ai/hub.rs (conflicts_for_tab) | done |  |
+| OVL-063 | Hover card row: token optimization state (Active, Off, Forced On, Forced Off) with a button that cycles the tab's override | `Overlay/TabHoverCard.swift`, `Overlay/OverlayTabsModel.swift` (toggleTokenOpt) |  | chau7_next/src/workspace/hover_card.rs (toggle_token_opt, token_optimization_mode: cto.mode setting), chau7_next/src/workspace/mcp.rs (apply_token_opt_override), chau7_next_core/src/tabs_state.rs (next_token_opt_override) | done |  |
+| OVL-064 | Hover card row: broadcast "Included" | `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/hover_card.rs | done |  |
+| OVL-065 | Hover card row: rendering "Suspended" | `Overlay/TabHoverCard.swift` | | | n/a | |
+| OVL-066 | Hover card row: notification state (Error, Success, Attention, Waiting, Active) with its icon | `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/hover_card.rs, chau7_next_core/src/tab_style.rs (summary) | done |  |
+| OVL-067 | Hover card footer: tab age ("5 min ago"), AI session id, bookmark count | `Overlay/TabHoverCard.swift` |  | chau7_next/src/workspace/hover_card.rs | done |  |
+| OVL-068 | Hover card settings: one toggle per row and for the footer (13 `hoverCardShow*` settings) | `Overlay/TabHoverCard.swift` |  | chau7_next/src/settings/hover_card.rs, chau7_next/src/settings_window/hover_card.rs | done |  |
+| OVL-069 | Tab notification styles: presets waiting, error, success, attention (title color, bold, italic, icon, icon color, colored border) | `Overlay/OverlayTabsModel.swift` (TabNotificationStyle), `Overlay/Chau7OverlayView.swift` | `OverlayTabsModelTests` | `tab_bar.rs` (NotificationStyle), `workspace/` | done | |
+| OVL-070 | Pulse animation on styled tabs: whole chip fades 1.0 to 0.6, 0.8 s ease-in-out, back and forth | `Overlay/Chau7OverlayView.swift` (UnifiedTabButton) |  | chau7_next/src/workspace/tab_bar_view.rs | done |  |
+| OVL-071 | Notification border styles: solid, dotted (3/3) or dashed (6/4) | `Overlay/OverlayTabsModel.swift` (buildNotificationStyle) |  | chau7_next/src/workspace/tab_bar_view.rs (paint_border), chau7_next_core/src/tab_style.rs | done |  |
+| OVL-072 | Styles built from notification actions: preset or custom, custom color, italic, bold, pulse, border width and style, persistent, "clear" | `Overlay/OverlayTabsModel.swift` (applyNotificationStyle, buildNotificationStyle) | `OverlayTabsModelTests` | chau7_next_core/src/tab_style.rs (build_notification_style), chau7_next/src/workspace/mod.rs (apply_notification_style), chau7_next/src/notifications/routing.rs, chau7_next/src/notifications/executor.rs (style_tab) | done |  |
+| OVL-073 | Persistent styles (permission requests) stay when the tab is selected and clear when the permission is answered | `Overlay/OverlayTabsModel.swift` (clearPersistentStyle) |  | chau7_next/src/workspace/mod.rs (select_tab, clear_persistent_style), chau7_next/src/workspace/ai.rs (PermissionResolved), chau7_next/src/notifications/routing.rs | done |  |
+| OVL-074 | Tab badge text and color set by a notification action (`setBadge`) | `Overlay/OverlayTabsModel.swift` (setBadge) |  | chau7_next/src/workspace/mod.rs (set_tab_badge), chau7_next/src/notifications/routing.rs (badge_tab), chau7_next/src/notifications/executor.rs | done |  |
+| OVL-075 | Rename panel: title field prefilled and focused, Enter saves, Cancel and Save buttons, 8 color swatches, Escape cancels; Cmd+Opt+R | `Overlay/Chau7OverlayView.swift` (RenameOverlayView), `Overlay/OverlayTabsModel.swift` | | `workspace/` (render_rename) | done | |
+| OVL-076 | Rename rules: empty title clears the custom title, an unchanged title is not stored, a color change becomes a manual override (beats auto color), cancel restores title and color | `Overlay/OverlayTabsModel.swift` (commitRename) |  | chau7_next/src/workspace/rename.rs, chau7_next_core/src/tabs_state.rs (apply_rename, effective_color) | done |  |
+| OVL-077 | Automatic tab color by AI tool and custom AI detection rules; `isAutoTabThemeEnabled` | `Overlay/OverlayTabsModel.swift` (updateAutoColor, effectiveColor) |  | chau7_next/src/workspace/mod.rs (MetadataChanged), chau7_next_core/src/tabs_state.rs (auto_color_for_command), chau7_next/src/settings/ai.rs (color_rules) | done |  |
+| OVL-078 | New tab: color cycles through the palette by tab count, starts in the current tab's directory (`newTabsUseCurrentDirectory`) | `Overlay/OverlayTabsModel+TabSwitchOptimization.swift` (newTab) | `OverlayTabsModelTests` | chau7_next/src/workspace/mod.rs (add_tab, inherited_start_directory) | done |  |
+| OVL-079 | Background new tab (not selected, no auto focus) and new tab at a given directory, used by MCP and scripting | `Overlay/OverlayTabsModel+TabSwitchOptimization.swift` | `OverlayTabsModelTests` | chau7_next/src/workspace/mod.rs (new_tab_at), chau7_next/src/workspace/mcp.rs (mcp_create_tab) | done |  |
+| OVL-080 | `tab_opened` and `tab_closed` app events (`notifyOnTabOpen`, `notifyOnTabClose`) | `Overlay/OverlayTabsModel+TabSwitchOptimization.swift` |  | chau7_next/src/notifications/app_events.rs (tab_opened, tab_closed), chau7_next/src/workspace/mod.rs (add_tab_with, close_tab) | done |  |
+| OVL-081 | Close confirmation: when processes run (`warnOnCloseWithRunningProcess`, count in title) or always (`alwaysWarnOnTabClose`, with "Don't ask again") | `Overlay/OverlayTabsModel+TabSwitchOptimization.swift` (confirmTabClose) |  | chau7_next/src/workspace/mod.rs (close_with_confirmation) | done | NSAlert |
+| OVL-082 | Closing the selected tab selects the tab to its left | `Overlay/OverlayTabsModel+TabSwitchOptimization.swift` (closeTab) | `OverlayTabsModelTests` | `chau7_next_core/src/tabs_state.rs` (close) | done | |
+| OVL-083 | Closing the last tab asks "Close Window" or "New Tab"; New Tab replaces it with a fresh tab in the same directory | `Overlay/OverlayTabsModel+TabSwitchOptimization.swift` (confirmCloseLastTab) | `OverlayTabsModelTests` | chau7_next/src/workspace/mod.rs (confirm_close_last_tab), chau7_next_core/src/tabs_state.rs (replace) | done | NSAlert |
+| OVL-084 | Close Other Tabs, with a confirmation naming running processes and tabs | `Overlay/OverlayTabsModel+TabSwitchOptimization.swift` (closeOtherTabs) | `OverlayTabsModelTests` | chau7_next/src/workspace/mod.rs (close_other_tabs) | done | NSAlert |
+| OVL-085 | Reopen Closed Tab (Cmd+Shift+T): last 10 closed tabs, original position, title, color, directory, split layout, scrollback, AI resume | `Overlay/OverlayTabsModel+TabSwitchOptimization.swift` (reopenClosedTab), `Overlay/OverlayTabsModel.swift` (captureClosedTabSnapshot) | `OverlayTabsModelTests` | chau7_next/src/workspace/mod.rs (closed_tab_snapshot, reopen_closed), chau7_next/src/main.rs (save_session keeps closed tab scrollback), chau7_next_core/src/tabs_state.rs, chau7_next/src/restore.rs (capture_tab) | done |  |
+| OVL-086 | Next and previous tab with wrap-around; select tab 1 to 9 (re-focuses the terminal when already selected) | `Overlay/OverlayTabsModel+TabSwitchOptimization.swift` | `OverlayTabsModelTests` | `chau7_next_core/src/tabs_state.rs`, `actions/` | done | |
+| OVL-087 | Move the current tab one place left or right from the keyboard | `Overlay/OverlayTabsModel.swift` (moveCurrentTabLeft/Right) | `OverlayTabsModelTests` | chau7_next/src/workspace/mod.rs, chau7_next_core/src/tabs_state.rs (move_selected) | done |  |
+| OVL-088 | Tab color shortcut opens the rename panel on the color row | `Overlay/OverlayTabsModel.swift` (showTabColorPicker) |  | chau7_next/src/workspace/rename.rs (begin_rename_with, rename_color_keys) | done |  |
+| OVL-089 | Broadcast input: toggle mode, per-tab exclusion, typing in one tab is sent to every other included tab | `Overlay/OverlayTabsModel.swift` (toggleBroadcast, broadcastInput) | `OverlayTabsModelTests` | `workspace/` | done | |
+| OVL-090 | Tab switch: cached snapshot of the incoming tab with a blinking cursor placeholder while the terminal renders (snapshots kept for 2 tabs around the current one) | `Overlay/OverlayTabsModel.swift` (captureCurrentTabSnapshot), `Overlay/Chau7OverlayView.swift` (CursorPlaceholderView) | | | n/a | |
+| OVL-091 | Tab switch animation: incoming terminal slides 30 pt from the side of travel with a spring | `Overlay/Chau7OverlayView.swift` (Chau7OverlayView.terminalStack) |  | chau7_next/src/workspace/mod.rs (switch_anim) | done |  |
+| OVL-092 | Background render suspension after a delay (`isSuspendBackgroundRendering`, `suspendRenderDelay`), AI-active tabs kept live, only nearby tabs kept in the view tree | `Overlay/OverlayTabsModel.swift` (updateSuspensionState, shouldKeepTabInLiveHierarchy) | `OverlayTabsModelTests` | | n/a | |
+| OVL-093 | (dev) Force refresh of the selected terminal view (recovery command) | `Overlay/OverlayTabsModel.swift` (forceRefreshSelectedTab) | | | n/a | |
+| OVL-094 | Floating panels have a grab handle; dragged position is remembered per panel and per workspace (repo or directory) | `Overlay/Chau7OverlayView.swift` (DraggableOverlay) |  | chau7_next/src/workspace/panel.rs (panel positions saved per workspace), chau7_next_core/src/data_root.rs (panel_positions_file), chau7_next/src/settings_window/general.rs (Reset Window Positions) | done |  |
+| OVL-095 | Only one panel open at a time; clicking outside an open panel closes it | `Overlay/OverlayTabsModel.swift` (dismissOverlays, toggle*), `Overlay/Chau7OverlayView.swift` | `OverlayTabsModelTests` | chau7_next/src/workspace/panel.rs (close_other_panels), chau7_next/src/workspace/widgets.rs (modal backdrop dismiss), chau7_next/src/workspace/pickers.rs (dismiss_picker) | done |  |
+| OVL-096 | Panels slide in from the top with a fade (0.2 s), no animation with Reduce Motion | `Overlay/Chau7OverlayView.swift` (ReduceMotionAnimationModifier) |  | chau7_next/src/workspace/panel.rs (floating_panel) | done | NSWorkspace accessibility (Reduce Motion) |
+| OVL-097 | Find panel: query field focused, match count, Enter for next, Prev and Next buttons, Close; Cmd+F, Cmd+G, Cmd+Shift+G | `Overlay/Chau7OverlayView.swift` (SearchOverlayView), `Overlay/OverlayTabsModel.swift` | `OverlayTabsModelTests` | `workspace/find.rs` (render_search), `chau7_next_core/src/scrollback_search.rs` | done | |
+| OVL-098 | Find options: case-sensitive (Aa) and regex (.*) toggles, defaults from settings, regex errors shown in orange | `Overlay/Chau7OverlayView.swift`, `Overlay/OverlayTabsModel.swift` (refreshSearch) |  | chau7_next/src/workspace/find.rs, chau7_next_core/src/scrollback_search.rs | done |  |
+| OVL-099 | Find option: semantic command search toggle (`isSemanticSearchEnabled`) | `Overlay/Chau7OverlayView.swift` |  | chau7_next/src/workspace/find.rs (semantic), chau7_next/src/terminal/session.rs (semantic_search) | done |  |
+| OVL-100 | Find results list: up to 12 matching lines with the query highlighted, "No results" | `Overlay/Chau7OverlayView.swift` (SearchResultRow) |  | chau7_next/src/workspace/find.rs, chau7_next_core/src/scrollback_search.rs | done |  |
+| OVL-101 | Clipboard history panel: items with preview and relative time, click to paste, pin and unpin, remove, Clear, empty state | `Overlay/Chau7OverlayView.swift` (ClipboardHistoryOverlayView) |  | chau7_next/src/workspace/pickers.rs (PickerKind::Clipboard, clip_controls), chau7_next_core/src/input/clipboard_history.rs | done |  |
+| OVL-102 | Bookmarks panel: add with optional label (Cmd+B), list for the current tab (label, line preview, time), click to jump, remove | `Overlay/Chau7OverlayView.swift` (BookmarkListOverlayView), `Overlay/OverlayTabsModel.swift` |  | chau7_next/src/workspace/bookmarks.rs | done |  |
+| OVL-103 | Snippet panel: search, rows with source chip (REPO, GLOBAL, PROFILE), OVERRIDDEN, pin mark, tags, two-line body preview, repo root footer, "disabled in Settings" message; click inserts | `Overlay/Chau7OverlayView.swift` (SnippetManagerOverlayView) |  | chau7_next/src/workspace/pickers/snippets_ui.rs, chau7_next/src/snippets/mod.rs | done |  |
+| OVL-104 | Snippet quick-select: letters a to z when the search is empty (custom keys first, clashes shown as KEY CONFLICT) | `Overlay/Chau7OverlayView.swift` (buildKeyMap, SnippetSearchField) |  | chau7_next/src/workspace/pickers/snippets_ui.rs (quick-select letters, KEY CONFLICT) | done |  |
+| OVL-105 | Snippet editing in the panel: New, Edit (title, id, key, body, tags, folder, shells, location), Delete with confirmation, Pin to top | `Overlay/Chau7OverlayView.swift` (SnippetEditorView, SnippetRowView) |  | chau7_next/src/workspace/pickers/snippets_ui.rs (inline editor, delete confirmation, pin) | done |  |
+| OVL-106 | Snippet variables dialog for `${input:Name}` and `${input:Name:default}`: text, single-select and multi-select fields, Tab to next, Enter inserts | `Overlay/Chau7OverlayView.swift` (SnippetVariableDialog) |  | chau7_next/src/workspace/pickers/snippets_ui.rs (render_variable_dialog, snippet_variable_tab), chau7_next_core/src/snippet_store.rs (parse_input_variables) | done |  |
+| OVL-107 | Cmd+; toggles the snippet panel (overrides the system spelling shortcut) | `Overlay/OverlayWindow.swift` (performKeyEquivalent) |  | chau7_next/src/actions/keymap.rs (tab_bindings) | done |  |
+| OVL-108 | Task lifecycle: candidate banner (confirm or dismiss), active task bar (approve or fail), assessment panel with a note | `Overlay/Chau7OverlayView.swift`, `Overlay/OverlayTabsModel.swift` |  | chau7_next/src/workspace/tasks.rs, chau7_next/src/proxy/mod.rs | done |  |
+| OVL-109 | Shortcut helper hint at the top right ("Keyboard Shortcuts ⌘/", "Report Issue ⌥⌘I"); `isShortcutHelperHintEnabled` | `Overlay/Chau7OverlayView.swift` (ShortcutHelperHintView) |  | chau7_next/src/workspace/keys.rs (render_shortcut_hint) | done |  |
+| OVL-110 | Shell loading indicator: animated text bar "Loading shell…" after 0.2 s, centered "Shell initializing…" spinner when startup is slow | `Overlay/Chau7OverlayView.swift` (ShellLoadingBar) |  | chau7_next/src/workspace/shell_loading.rs | done |  |
+| OVL-111 | Save and restore tabs per window: id, custom title, color, directory, selected tab, repo group, creation date, token optimization override | `Overlay/OverlayTabsModel.swift` (exportTabStates), `Overlay/OverlayTabsModel+SessionFinder.swift` (decodeRestorableTabs) | `OverlayTabsModelTests` | chau7_next/src/session_store.rs, chau7_next/src/workspace/mod.rs (snapshot) | done |  |
+| OVL-112 | Restore each tab's split layout and focused pane | `Overlay/OverlayTabsModel+SessionFinder.swift` (buildRestorableController) |  | chau7_next/src/pane.rs,chau7_next/src/restore.rs | done |  |
+| OVL-113 | Restore scrollback (last `restoredScrollbackLines` lines, replayed with `cat`, then `cd` and `clear`, kept out of shell history) | `Overlay/OverlayTabsModel+SessionFinder.swift` (restoreTabState, captureScrollback) |  | chau7_next/src/restore.rs,chau7_next/src/pane.rs,chau7_next_core/src/session_restore.rs | done |  |
+| OVL-114 | AI session resume: find the Claude or Codex session per pane and prefill `claude --resume <id>` or `codex resume <id>` in the focused pane after restore, with retries until the prompt is ready | `Overlay/OverlayTabsModel+SessionFinder.swift`, `Overlay/OverlayTabsModel.swift` (resolveResumeMetadata) | `OverlayTabsModelTests` | chau7_next/src/pane.rs (start_restore, resume_ready, prefill), chau7_next/src/restore.rs (capture_tab: tracked session, Claude hook monitor, transcripts, observed Codex history), chau7_next_core/src/session_restore.rs | done |  |
+| OVL-115 | Crash-safe tab state backups: `latest.json` plus an archive (120 files, 30 days) in the app support folder, used when the main saved state is missing or unreadable | `Overlay/OverlayTabsModel+SessionFinder.swift` | `OverlayTabsModelTests` | chau7_next/src/session_store.rs, chau7_next_core/src/data_root.rs (tab_state_backups_dir) | done |  |
+| OVL-116 | (dev) Diagnostic logging of overlay state, tab bar size and watchdog summaries | `Overlay/OverlayTabsModel.swift` (logVisualState) |  | chau7_next/src/workspace/debug.rs (log_visual_state), chau7_next/src/workspace/mod.rs (render: trace on tab or panel change), TABBAR log lines in workspace/ | done |  |
+
+## Notes
+
+Gaps behind the `partial` and `missing` rows, and how some rows are done:
+
+- OVL-002: on macOS the window is always the blurred material (`WindowBackgroundAppearance::Blurred`); the titlebar and tab bar get a translucent HUD tint (`theme::hud_titlebar_background`) and only the terminal area is painted opaque, so the blur shows behind the tab bar only. Not an NSVisualEffectView, so check the look on a Mac.
+- OVL-010, 057, and the Vite part of 013: the session tracks its dev server (`TerminalSession::dev_server`, Monitoring). OVL-015 shows the Vite bolt from it.
+- OVL-013: no "Editor" title (no editor panes yet).
+- OVL-020: drawn for `TabMeta::mcp_controlled` (set by `mcp_create_tab`) when `mcp_show_tab_indicator` is on.
+- OVL-041: GPUI cannot hide a single window: the emptied source window closes and is parked with its frame (`AppData::hidden`, no tabs); the next Dock click or Show Chau7 reopens it there with a fresh tab.
+- OVL-053: the status pill follows `TerminalSession::status` (Idle, Running, Waiting, Stuck, Exited).
+- OVL-056: "Shell integration active" once the shell has sent an OSC 133 mark (`hasShellIntegration`), else "Heuristic detection".
+- OVL-059: the command text of the last finished command block, ✓/✗ and the duration (Rust also shows "exit N" on failure).
+- OVL-060, 061: read the telemetry store (`mcp::sources::telemetry`; repo stats through `repository::set_ai_stats_provider`, registered in `seams.rs`). That store stays empty until the Telemetry port registers one with `mcp::sources::set_telemetry`; until then OVL-060 shows the AI tool name and OVL-061 the command counts only. OVL-062 reads the conflict detector (`ai::hub`), OVL-067 the session's AI session id.
+- OVL-056: "Shell integration active" once the shell has reported a command through OSC 133, else "Heuristic detection".
+- OVL-059: the session does not keep the command text, so the row shows "Last command" with ✓/✗ and the duration.
+- OVL-060, 061: AI telemetry (`runs.db`, `telemetry::hover_summary`) and repo stats (`history.db` plus `runs.db`). OVL-060 looks for the active run of any terminal of the tab, else the latest run when it belongs to one of them (Swift compares the tab UUID, which never matches the recorder's key). OVL-062 reads the conflict detector (`ai::hub`), OVL-067 the session's AI session id.
+- OVL-063: the row, the override cycle and `allowTabCTOToggle` are wired; the global token optimization mode is not a setting yet (TokenOptimization), so it reads "off" and the row hides, as Swift does in that mode.
+- OVL-077: the color comes from the AI tool detected in the tab (`ai_app`) and the custom AI detection rules' colors, not from each command line.
+- OVL-085: the closed tab's split layout, scrollback (kept in the scrollback folder while the tab can be reopened) and AI sessions are captured at close (`closed_tab_snapshot`) and restored with `PaneTree::from_saved`, under the same tab UUID.
+- OVL-094: positions are saved in `DataRoot::panel_positions_file`; Reset Window Positions clears them.
+- OVL-101, 103 to 106: the clipboard and snippet panels are the pickers in `pickers.rs` (same features as KBD-003/005 and SNP-003, 005, 019, 026, 027).
+- OVL-108: needs the proxy task lifecycle (`ProxyIPCServer` candidates and tasks, Proxy module), not ported.
+- OVL-116: a trace line (`log_visual_state`) whenever the tab count, the selected tab or the open panel changes, plus the `TABBAR` lines; there is no tab bar watchdog to summarize (OVL-011 is n/a).
+- OVL-079: `Workspace::new_tab_at(directory, select)` exists (demo tabs use it); MCP and scripting call it once ported.
+- OVL-080: needs the app event system (Events, `appEventConfig`).
+- OVL-085: Rust keeps 10 closed tabs with position, title, color, group, directory and token override; split layout, scrollback and AI resume come with session restore (OVL-112 to 114).
+- OVL-094: positions are kept for the session only (not saved across launches).
+- OVL-095: find, rename, bookmarks and the pickers close each other and a click outside find, rename or bookmarks closes them; the picker sheet (`pickers.rs`) still ignores clicks on its backdrop.
+- OVL-098: the Aa and .* defaults are off; `findCaseSensitiveDefault` and `findRegexDefault` (SET-101) are not settings yet.
+- OVL-099: needs semantic search (SET-100) and command blocks in the session.
+- OVL-101, 103 to 106: the clipboard and snippet panels are the pickers in `pickers.rs`, the same features as KBD-003/005 and SNP-003, 005, 019, 026, 027; left to the owners of those rows so there is one implementation.
+- OVL-108: `workspace/tasks.rs`, with the proxy state in `proxy/mod.rs` (PRX-012 to PRX-014).
+- OVL-109: needs the keyboard shortcuts window, Report Issue and `isShortcutHelperHintEnabled` (SET-092).
+- OVL-116: logs cover tab bar clicks, hover and menus; no periodic overlay or watchdog summaries.
+
+Rust differences that are not gaps: the tab path is shortened in the middle to 28 characters (SwiftUI truncates by width); glyphs replace SF Symbols; the hover card text is always light on its dark background. Swift's own tab switch slide never moves (both offsets are 0 for unselected tabs); Rust slides the incoming terminal 30 pt as the code intends. Swift's shell loading bar uses `isShellLoading` and a never-set `shellStartupSlow`; Rust shows the bar while the new shell has drawn nothing and the centered "Shell initializing…" after 5 s without output.
+
+`n/a` rows: OVL-011 works around NSToolbar collapsing its hosting view
+(SPEC.md section 2). OVL-026, 050, 065, 090, 092 and 093 exist because the
+Swift app keeps many Metal terminal views alive; GPUI renders only the
+selected tab, so there is nothing to suspend, prewarm or snapshot. They become
+relevant again only if Chau7 Next adds background render throttling.
+
+Rust additions not in Swift: a Color submenu in the tab menu (a manual color, like the rename panel), Include/Exclude
+from Broadcast in the tab menu, "Load Demo Tabs" (Cmd+Shift+Opt+D), the window
+title "<tab title> - Chau7 Next", and bell / command-finished styles on
+background tabs (Swift sets these through the Notifications module).
+
+Settings keys used by this module (FeatureSettings): `groupIdleTabs`,
+`idleTabThresholdSeconds`, `repoGroupingMode`, `newTabPosition`,
+`newTabsUseCurrentDirectory`, `showTabPath`, `showTabIcons`,
+`customTitleOnly`, `isLastCommandBadgeEnabled`, `showTabBroadcastIndicator`,
+`showTabGitIndicator`, `mcpShowTabIndicator`, `isAutoTabThemeEnabled`,
+`hoverCardShow*`, `warnOnCloseWithRunningProcess`, `alwaysWarnOnTabClose`,
+`findCaseSensitiveDefault`, `findRegexDefault`, `isSemanticSearchEnabled`,
+`isSnippetsEnabled`, `isRepoSnippetsEnabled`, `isBookmarksEnabled`,
+`isShortcutHelperHintEnabled`, `restoredScrollbackLines`,
+`tokenOptimizationMode`, `allowTabCTOToggle`, `appEventConfig`.
+
+Swift persistence: UserDefaults keys `com.chau7.savedTabState` and
+`com.chau7.savedMultiWindowState` (JSON `[SavedTabState]` and
+`{windows: [[SavedTabState]]}`), backups under
+`Application Support/Chau7/TabStateBackups/`. Chau7 Next must not read or
+write these (coexistence rule in AGENTS.md); import, if wanted, belongs to the
+Migration module.

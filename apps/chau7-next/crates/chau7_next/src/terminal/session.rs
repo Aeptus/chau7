@@ -1,0 +1,1770 @@
+//! One shell: a `chau7_terminal::Chau7Terminal` plus the state the UI shows
+//! (grid snapshot, title, directory, git info, detected AI tool, command
+//! status and blocks, exit status).
+//!
+//! PTY output is read by `chau7_terminal`'s own reader thread. A small poll
+//! thread here calls `Chau7Terminal::poll` (which feeds the parser), keeps the
+//! raw output for the UI thread and wakes it; the UI then takes a grid
+//! snapshot on the main thread and feeds the output, the typed input and the
+//! OSC 133 marks to [`ShellSession`] (`chau7_next_core::shell_session`), the
+//! port of `TerminalSessionModel`'s shell logic. Input goes to the PTY from a
+//! writer thread ([`PtyWriter`]), so the UI never blocks on a full PTY.
+//! This mirrors `RustTerminalView.swift` (display link, `poll()`, write queue)
+//! and `TerminalSessionModel.swift`.
+
+use std::cell::RefCell;
+use std::collections::{BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+
+use chau7_next_core::ai::detection_state::now_secs;
+use chau7_next_core::ai::event::{AiEvent, AiEventReliability, AiEventSource};
+use chau7_next_core::command_block::{CommandBlockList, git_changes};
+use chau7_next_core::data_root::DataRoot;
+use chau7_next_core::monitoring::dev_server::{
+    BURST_CHECKS, BURST_FIRST_DELAY, BURST_INTERVAL, CheckRequest, DevServerInfo,
+    should_stop_burst_checks,
+};
+use chau7_next_core::shell_bookmarks::{self, Bookmark, BookmarkList};
+use chau7_next_core::shell_history::CommandHistory;
+use chau7_next_core::shell_latency::{LagEvent, LatencyTracker};
+use chau7_next_core::shell_restore;
+use chau7_next_core::shell_session::{
+    CommandStatus, ShellContext, ShellMark, ShellSession, ShellSessionConfig, ShellSessionEvent,
+};
+use chau7_next_core::{shell_env, shell_integration, shell_tips};
+use chau7_terminal::{Chau7Terminal, GridCopy, graphics::ShellIntegrationEvent};
+use futures::StreamExt;
+use futures::channel::mpsc;
+use gpui::{AppContext, Context, EventEmitter, Global, Task};
+use parking_lot::{Mutex, RwLock};
+
+use super::pty_writer::{CloseMode, PtyWriter, Signal, signal_group};
+use crate::monitoring::session::{SessionMonitor, shell_ai_event};
+use crate::platform::process as procinfo;
+use crate::settings::{BellSound, Settings};
+
+static NEXT_SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// Set when the app quits: sessions dropped afterwards get SIGTERM at once.
+static APP_QUITTING: AtomicBool = AtomicBool::new(false);
+
+/// Live shells (session id to shell pid), for [`terminate_all_for_quit`].
+static LIVE_SHELLS: Mutex<Option<HashMap<u64, i32>>> = Mutex::new(None);
+
+/// No PTY output this long after start: "Shell initializing" notice
+/// (`shellStartupTimeoutWork`, RBK-009).
+const STARTUP_SLOW_AFTER: Duration = Duration::from_secs(5);
+/// White flash of the visual bell (`flashBell`: 0.05 s in, 0.12 s out).
+pub const BELL_FLASH: Duration = Duration::from_millis(170);
+
+/// Events other views listen to (tab bar, workspace).
+#[derive(Debug, Clone)]
+pub enum SessionEvent {
+    /// New output was processed (grid changed).
+    Output,
+    /// Title, directory, git root, AI tool, status or loading state changed.
+    MetadataChanged,
+    /// The bell rang (after the bell setting allowed it).
+    Bell,
+    /// A command started (typed line or shell integration), with its text.
+    CommandStarted(String),
+    /// A command finished (shell integration, OSC 133 D) with this exit code.
+    CommandFinished(i32),
+    /// The shell exited, with its exit code when known.
+    Exited(Option<i32>),
+    /// The program asked to set the clipboard (OSC 52).
+    ClipboardStore(String),
+    /// The program asked to read the clipboard (OSC 52): answer with
+    /// [`TerminalSession::respond_clipboard`].
+    ClipboardLoad,
+    /// The shell's directory changed (profile rules, snippet repo context).
+    DirectoryChanged(PathBuf),
+    /// The user answered a prompt: clear a permission border.
+    PermissionResolved,
+    /// An AI tool handed back the prompt (`waiting_input` fallback event).
+    WaitingInput { tool: String },
+    /// An event for the AI event feed (shell events, waiting input, shell
+    /// exit). The workspace fills in the tab and, with `tab_name_as_tool`,
+    /// puts the tab title in `tool` (`notificationTabName`).
+    Ai {
+        event: Box<AiEvent>,
+        notify: bool,
+        tab_name_as_tool: bool,
+    },
+    /// The last command changed these files (git, MON-014).
+    ChangedFiles(Vec<String>),
+}
+
+/// Last finished command, from shell integration (OSC 133 D).
+#[derive(Debug, Clone, Copy)]
+pub struct LastCommand {
+    pub exit_code: i32,
+    pub duration: Duration,
+}
+
+/// Command history shared by every session (`CommandHistoryManager.shared`).
+#[derive(Default)]
+pub struct SharedCommandHistory(pub CommandHistory);
+impl Global for SharedCommandHistory {}
+
+/// What the session needs from the environment.
+struct EnvContext {
+    search_path: Option<String>,
+    home: String,
+}
+
+impl ShellContext for EnvContext {
+    fn is_dir(&self, path: &str) -> bool {
+        Path::new(path).is_dir()
+    }
+    fn search_path(&self) -> Option<String> {
+        self.search_path.clone()
+    }
+    fn home(&self) -> String {
+        self.home.clone()
+    }
+}
+
+pub struct TerminalSession {
+    pub id: u64,
+    /// This terminal's identity for the analytics proxy and AI run
+    /// telemetry (`tabIdentifier`, `CHAU7_TAB_ID`): a UUID per session.
+    pub tab_identifier: String,
+    term: Arc<RwLock<Chau7Terminal>>,
+    writer: PtyWriter,
+    stop: Arc<AtomicBool>,
+    /// Raw output collected by the poll thread since the last refresh, and
+    /// when the first of it arrived (latency).
+    output: Arc<Mutex<(Vec<u8>, Option<Instant>)>>,
+    /// (dev) Input and output latency (TRM-062).
+    latency: RefCell<LatencyTracker>,
+    /// Bytes of output the last refresh processed (output bursts, TRM-055).
+    pub last_output_bytes: usize,
+    /// Bookmarks of this session (TRM-057).
+    bookmarks: BookmarkList,
+    /// Resume command waiting to be typed at the prompt (TRM-010).
+    pending_prefill: Option<String>,
+    prefill_retries: u32,
+    prefill_scheduled: bool,
+    /// Typed input not yet given to the tracker, with the echo state.
+    pending_input: RefCell<Vec<(Vec<u8>, bool)>>,
+    echo_fd: i32,
+    pub grid: GridCopy,
+    pub cursor: (u16, u16),
+    pub title: Option<String>,
+    pub cwd: Option<PathBuf>,
+    pub git_root: Option<PathBuf>,
+    pub git_branch: Option<String>,
+    pub ai_app: Option<String>,
+    /// Id the token optimizer knows this shell by (`CHAU7_CTO_SESSION`, the
+    /// flag file name).
+    cto_id: String,
+    pub exited: Option<Option<i32>>,
+    pub last_activity: Instant,
+    pub last_command: Option<LastCommand>,
+    pub command_running: bool,
+    pub started_at: Instant,
+    /// Suspend Background Rendering (`paint.rs`, view blink timer): while
+    /// set, output is still parsed but the grid is refreshed at most every
+    /// 500 ms (Swift `startBackgroundDrain`).
+    render_suspended: Arc<AtomicBool>,
+    /// Shell state machine (status, typed lines, AI tool, command blocks).
+    tracker: ShellSession,
+    shell_context: EnvContext,
+    /// Our startup files are installed for this shell (zsh, bash, fish).
+    has_hooks: bool,
+    /// Some PTY output arrived.
+    first_output: bool,
+    /// No output 5 s after start (`shellStartupSlow`).
+    pub shell_slow: bool,
+    /// Visual bell: paint a white flash until this time.
+    pub bell_flash_until: Option<Instant>,
+    /// Git status at the start of the running command (OSC 133 C).
+    git_baseline: Arc<Mutex<Option<BTreeSet<String>>>>,
+    /// The user closed this session (no "shell exited" notice).
+    close_requested: bool,
+    last_cwd_check: Instant,
+    last_branch_check: Instant,
+    /// Directory of the running command and the shell's name, for the
+    /// command history.
+    command_dir: Option<String>,
+    /// The session restore line was typed and its command has not finished
+    /// yet: its start and end are not command results (no success style,
+    /// history, AI shell events or last command).
+    restore_line_pending: bool,
+    shell_name: Option<String>,
+    pending_resize: Option<(u16, u16)>,
+    /// Shell events, dev server and AI log (Monitoring).
+    monitor: SessionMonitor,
+    /// Dev server port checks in flight (burst or one-shot).
+    dev_checks: Option<Task<()>>,
+    /// `[terminal] mouse_reporting` (`input.mouse_reporting`): off hides the program's mouse modes,
+    /// so the mouse always selects (TRM-018).
+    mouse_reporting_enabled: std::cell::Cell<bool>,
+    _pump: Task<()>,
+    _ticker: Task<()>,
+}
+
+impl EventEmitter<SessionEvent> for TerminalSession {}
+
+/// Login shell of the user's passwd entry (`systemDefaultShell`), else
+/// `$SHELL`, else zsh (PowerShell on Windows).
+pub fn system_login_shell() -> String {
+    #[cfg(unix)]
+    {
+        // SAFETY: getpwuid_r writes into our buffer and `pwd`; the shell
+        // string is copied before the buffer goes away.
+        unsafe {
+            let mut pwd: libc::passwd = std::mem::zeroed();
+            let mut result: *mut libc::passwd = std::ptr::null_mut();
+            let mut buffer = vec![0 as libc::c_char; 4096];
+            if libc::getpwuid_r(
+                libc::getuid(),
+                &mut pwd,
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                &mut result,
+            ) == 0
+                && !result.is_null()
+                && !pwd.pw_shell.is_null()
+            {
+                let shell = std::ffi::CStr::from_ptr(pwd.pw_shell)
+                    .to_string_lossy()
+                    .to_string();
+                if !shell.is_empty() {
+                    return shell;
+                }
+            }
+        }
+    }
+    std::env::var("SHELL")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            if cfg!(windows) {
+                "powershell.exe"
+            } else {
+                "/bin/zsh"
+            }
+            .to_string()
+        })
+}
+
+/// SIGTERM to every live shell's process group (`closeSessionForTermination`
+/// on quit). Sessions dropped afterwards skip the grace delays.
+pub fn terminate_all_for_quit() {
+    APP_QUITTING.store(true, Ordering::Release);
+    let pids: Vec<i32> = LIVE_SHELLS
+        .lock()
+        .as_ref()
+        .map(|m| m.values().copied().collect())
+        .unwrap_or_default();
+    for pid in pids {
+        signal_group(pid, Signal::Term);
+    }
+}
+
+fn register_shell(id: u64, pid: i32) {
+    if pid > 0 {
+        LIVE_SHELLS
+            .lock()
+            .get_or_insert_with(HashMap::new)
+            .insert(id, pid);
+    }
+}
+
+fn unregister_shell(id: u64) {
+    if let Some(map) = LIVE_SHELLS.lock().as_mut() {
+        map.remove(&id);
+    }
+}
+
+impl TerminalSession {
+    /// Start a shell in `cwd` (or the configured/default directory).
+    pub fn spawn(
+        cols: u16,
+        rows: u16,
+        cwd: Option<PathBuf>,
+        settings: &Settings,
+        root: &DataRoot,
+        cx: &mut Context<Self>,
+    ) -> anyhow::Result<Self> {
+        super::pty_capture::init(&root.pty_capture_file());
+        let shell_path = settings.terminal.resolved_shell();
+        let home = root.home().to_string_lossy().to_string();
+        let mut env =
+            shell_env::shell_environment(Some(&home), std::env::var("PATH").ok().as_deref());
+        let integration_dir = root.shell_integration_dir();
+        env.extend(shell_integration::environment(
+            &shell_path,
+            &integration_dir,
+            &root.history_file(),
+            |key| std::env::var(key).ok(),
+        ));
+        let start_dir = start_directory(cwd.as_deref(), settings, &home);
+        let session_id = uuid::Uuid::new_v4().to_string().to_uppercase();
+        env.extend(shell_env::session_environment(
+            &shell_path,
+            &session_id,
+            &start_dir.to_string_lossy(),
+            &settings.terminal.startup_command,
+            settings.terminal.ls_colors,
+        ));
+        // TRM-026: AI CLIs go through the local analytics proxy.
+        let tab_identifier = uuid::Uuid::new_v4().to_string().to_uppercase();
+        if settings.proxy.enabled {
+            env.extend(chau7_next_core::proxy::shell_env(
+                settings.proxy.port,
+                settings.proxy.include_openai,
+                &session_id,
+                &tab_identifier,
+                &start_dir.to_string_lossy(),
+            ));
+        }
+        // Token optimization: the wrapper folder in front of PATH, and the
+        // variables the wrappers read (`launchPATHValue`, `buildEnvironment`).
+        if settings.cto.mode != chau7_next_core::token_optimization::TokenOptimizationMode::Off {
+            let paths = chau7_next_core::cto_wrappers::CtoPaths::from_root(root);
+            let path = env
+                .iter()
+                .find(|(k, _)| k == "PATH")
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default();
+            env.retain(|(k, _)| k != "PATH");
+            env.extend(crate::cto::shell_environment(&paths, &path, &session_id));
+        }
+        let search_path = env
+            .iter()
+            .find(|(k, _)| k == "PATH")
+            .map(|(_, v)| v.clone());
+        let args = shell_integration::arguments(&shell_path, &integration_dir);
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let env_refs: Vec<(&str, &str)> =
+            env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let term = Chau7Terminal::new_with_args_env_in_dir(
+            cols.max(2),
+            rows.max(1),
+            &shell_path,
+            &arg_refs,
+            &env_refs,
+            Some(&start_dir),
+        )
+        .map_err(|e| anyhow::anyhow!("could not start shell: {e}"))?;
+        term.set_scrollback_size(settings.terminal.scrollback_lines);
+        apply_colors(&term, settings);
+        apply_image_protocols(&term, settings);
+        let mouse_reporting = settings.input.mouse_reporting;
+        // Tip box above the first prompt (TRM-005, injected without the PTY).
+        if let Some(tip) = shell_tips::header_box(
+            cols.max(2) as usize,
+            &crate::l10n::platform(&shell_tips::random_formatted_tip(now_secs() as u64)),
+        ) {
+            term.inject_output(tip.as_bytes());
+        }
+        let has_hooks =
+            !shell_integration::environment(&shell_path, &integration_dir, Path::new(""), |_| None)
+                .is_empty();
+        let mut session = Self::from_terminal(term, Some(start_dir), cx);
+        session.tab_identifier = tab_identifier;
+        session.has_hooks = has_hooks;
+        session.shell_name = Path::new(&shell_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string());
+        session.mouse_reporting_enabled.set(mouse_reporting);
+        session.shell_context = EnvContext { search_path, home };
+        session.cto_id = session_id;
+        crate::cto::register_session(
+            &session.cto_id,
+            chau7_next_core::token_optimization::TabTokenOptOverride::Default,
+        );
+        session.apply_cto_prefix(settings);
+        Ok(session)
+    }
+
+    /// Wrap an existing terminal (also used by tests with headless terminals).
+    pub fn from_terminal(
+        term: Chau7Terminal,
+        cwd: Option<PathBuf>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let echo_fd = term.echo_fd();
+        let has_pty = term.has_pty();
+        let pid = term.shell_pid() as i32;
+        let term = Arc::new(RwLock::new(term));
+        let stop = Arc::new(AtomicBool::new(false));
+        let output = Arc::new(Mutex::new((Vec::new(), None)));
+        let (tx, mut rx) = mpsc::unbounded::<()>();
+        let id = NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed);
+
+        {
+            let term = term.clone();
+            let stop = stop.clone();
+            let output = output.clone();
+            std::thread::Builder::new()
+                .name("chau7-next-poll".into())
+                .spawn(move || {
+                    while !stop.load(Ordering::Acquire) {
+                        let (had_data, closed, bytes) = {
+                            let term = term.read();
+                            let had = term.poll(16);
+                            (had, term.is_pty_closed(), term.get_last_output())
+                        };
+                        let got_bytes = !bytes.is_empty();
+                        if got_bytes {
+                            super::pty_capture::record(&bytes, "read");
+                            crate::history::recorder::output(id, &bytes);
+                            let mut out = output.lock();
+                            out.0.extend_from_slice(&bytes);
+                            out.1.get_or_insert_with(Instant::now);
+                        }
+                        if (had_data || closed || got_bytes) && tx.unbounded_send(()).is_err() {
+                            break;
+                        }
+                        if closed {
+                            break;
+                        }
+                    }
+                })
+                .expect("spawn poll thread");
+        }
+
+        // Coalesce wakeups: one UI refresh per batch of output.
+        let render_suspended = Arc::new(AtomicBool::new(false));
+        let suspended = render_suspended.clone();
+        let pump = cx.spawn(async move |this, cx| {
+            while rx.next().await.is_some() {
+                while rx.try_recv().is_ok() {}
+                if this.update(cx, |this, cx| this.refresh(cx)).is_err() {
+                    break;
+                }
+                if suspended.load(Ordering::Relaxed) {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(500))
+                        .await;
+                }
+            }
+        });
+        // Once a second: idle/stuck timers, startup notice, cwd and branch.
+        let ticker = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(1000))
+                    .await;
+                if this.update(cx, |this, cx| this.tick(cx)).is_err() {
+                    break;
+                }
+            }
+        });
+
+        if has_pty {
+            register_shell(id, pid);
+        }
+        let writer = PtyWriter::spawn(term.clone());
+        let git_root = cwd.as_deref().and_then(procinfo::git_root);
+        let git_branch = git_root.as_deref().and_then(procinfo::git_branch);
+        let grid = term.read().grid_copy();
+        let now = Instant::now();
+        let directory = cwd
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mut config = ShellSessionConfig::from_env(|k| std::env::var(k).ok());
+        let (root, shell_events) = match cx.try_global::<Settings>() {
+            Some(settings) => {
+                config.custom_rules = settings.ai.detection_rules();
+                (
+                    cx.try_global::<crate::workspace::AppData>()
+                        .map(|d| d.root.clone())
+                        .unwrap_or_else(DataRoot::from_env),
+                    chau7_next_core::monitoring::shell_events::ShellEventConfig::from_notification_settings(
+                        &settings.notifications.shell_events,
+                    ),
+                )
+            }
+            None => (DataRoot::from_env(), Default::default()),
+        };
+        Self {
+            id,
+            term,
+            writer,
+            stop,
+            output,
+            pending_input: RefCell::new(Vec::new()),
+            latency: RefCell::new(LatencyTracker::new()),
+            last_output_bytes: 0,
+            bookmarks: BookmarkList::new(),
+            pending_prefill: None,
+            prefill_retries: 0,
+            prefill_scheduled: false,
+            echo_fd,
+            grid,
+            cursor: (0, 0),
+            title: None,
+            cwd,
+            git_root,
+            git_branch,
+            ai_app: None,
+            cto_id: uuid::Uuid::new_v4().to_string().to_uppercase(),
+            exited: None,
+            last_activity: now,
+            last_command: None,
+            command_running: false,
+            started_at: now,
+            render_suspended,
+            tracker: ShellSession::new(config, &directory, now_secs()),
+            shell_context: EnvContext {
+                search_path: std::env::var("PATH").ok(),
+                home: std::env::var("HOME").unwrap_or_default(),
+            },
+            has_hooks: false,
+            first_output: false,
+            shell_slow: false,
+            bell_flash_until: None,
+            git_baseline: Arc::new(Mutex::new(None)),
+            close_requested: false,
+            last_cwd_check: now,
+            last_branch_check: now,
+            command_dir: None,
+            restore_line_pending: false,
+            shell_name: None,
+            pending_resize: None,
+            monitor: SessionMonitor::new(id, &root, shell_events),
+            tab_identifier: uuid::Uuid::new_v4().to_string().to_uppercase(),
+            dev_checks: None,
+            mouse_reporting_enabled: std::cell::Cell::new(false),
+            _pump: pump,
+            _ticker: ticker,
+        }
+    }
+
+    /// Pull everything new from the terminal and notify observers.
+    pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        let mut metadata_changed = self.retry_resize();
+        let (grid, cursor, title, closed, events, bell, clipboard, clipboard_load) = {
+            let term = self.term.read();
+            (
+                term.grid_copy(),
+                term.cursor_position(),
+                term.take_pending_title(),
+                term.is_pty_closed(),
+                term.take_shell_events(),
+                term.check_bell(),
+                term.take_clipboard_store(),
+                term.has_pending_clipboard_load(),
+            )
+        };
+        let (output, output_at) = std::mem::take(&mut *self.output.lock());
+        self.last_output_bytes = output.len();
+        if let Some(at) = output_at {
+            // Output latency runs from the bytes' arrival to the frame that
+            // shows them (`mark_frame_drawn`); a measure no frame closed
+            // within 0.2 s (hidden tab) is dropped first.
+            let mut latency = self.latency.borrow_mut();
+            latency.expire_output(clock(Instant::now()));
+            let spike = latency.mark_output(clock(at));
+            drop(latency);
+            if let Some(spike) = spike {
+                self.log_lag(&spike);
+            }
+        }
+        let display_offset_before = self.grid.display_offset;
+        self.grid = grid;
+        self.cursor = cursor;
+        self.last_activity = Instant::now();
+        let now = now_secs();
+
+        if let Some(title) = title {
+            self.title = Some(title).filter(|t| !t.trim().is_empty());
+            metadata_changed = true;
+        }
+
+        // Typed input first (the command line), then the marks, then the
+        // output: an OSC 133 D must be seen before the OSC 7 of the next
+        // prompt, or the command would complete without its exit code.
+        self.process_pending_input(now);
+        let line = self.grid.scrollback_rows as i64 + self.cursor.1 as i64;
+        for event in events {
+            let mark = match event {
+                ShellIntegrationEvent::PromptStart => ShellMark::PromptStart,
+                ShellIntegrationEvent::CommandStart => ShellMark::CommandStart,
+                ShellIntegrationEvent::CommandExecuted => ShellMark::CommandExecuted,
+                ShellIntegrationEvent::CommandFinished { exit_code } => {
+                    ShellMark::CommandFinished(exit_code)
+                }
+            };
+            let prompt = mark == ShellMark::PromptStart;
+            self.tracker.handle_mark(mark, line, now);
+            if prompt {
+                // The first prompt creates the deferred token optimizer flag.
+                crate::cto::prompt_detected(&self.cto_id);
+            }
+        }
+        if !output.is_empty() {
+            if !self.first_output {
+                self.first_output = true;
+                if self.shell_slow {
+                    self.shell_slow = false;
+                    metadata_changed = true;
+                }
+                if !self.has_hooks {
+                    // No prompt marks will come: loading ends with output.
+                    crate::cto::prompt_detected(&self.cto_id);
+                    metadata_changed = true;
+                }
+            }
+            let ctx = &self.shell_context;
+            self.tracker.handle_output(&output, ctx, now);
+            let (events, dev_changed, check, ai_exit) = self.monitor.output(&output, now);
+            for event in events {
+                self.emit_ai(shell_ai_event(event), true, cx);
+            }
+            if let Some(check) = check {
+                self.schedule_dev_check(check, cx);
+            }
+            metadata_changed |= dev_changed;
+            if let Some(code) = ai_exit {
+                self.finish_ai_run(Some(code), cx);
+            }
+            // Remote control: the selected tab's output goes to the phone.
+            crate::remote::record_output(self.id, &output, cx);
+            // Smart scroll off: new output brings the view back down.
+            if !Settings::get(cx).terminal.smart_scroll
+                && (display_offset_before > 0 || self.grid.display_offset > 0)
+            {
+                self.scroll_to_bottom();
+                self.grid = self.term.read().grid_copy();
+            }
+        }
+        metadata_changed |= self.drain_tracker_events(cx);
+
+        if bell {
+            self.ring_bell(cx);
+        }
+        if let Some(text) = clipboard {
+            cx.emit(SessionEvent::ClipboardStore(text));
+        }
+        if clipboard_load {
+            cx.emit(SessionEvent::ClipboardLoad);
+        }
+        if closed && self.exited.is_none() {
+            let code = self.term.read().try_child_exit_code();
+            self.exited = Some(code);
+            self.tracker.mark_exited();
+            self.tracker.take_events();
+            self.command_running = false;
+            unregister_shell(self.id);
+            self.finish_ai_run(None, cx);
+            self.dev_checks = None;
+            self.monitor.dev_server.stop();
+            if !self.close_requested {
+                match code {
+                    Some(code) => log::info!("Shell exited with code {code}."),
+                    None => log::info!("Shell exited."),
+                }
+                // `handleProcessTermination`: recorded and notified.
+                let (kind, message) = match code {
+                    Some(code) => (
+                        if code == 0 { "finished" } else { "failed" },
+                        format!("Shell exited with code {code}."),
+                    ),
+                    None => ("failed", "Shell exited.".to_string()),
+                };
+                let mut event = AiEvent::new(
+                    AiEventSource::terminal_session(),
+                    kind,
+                    "Shell",
+                    message,
+                    chau7_next_core::iso8601::now_iso8601(),
+                );
+                event.directory = Some(self.tracker.current_directory().to_string());
+                cx.emit(SessionEvent::Ai {
+                    event: Box::new(event),
+                    notify: true,
+                    tab_name_as_tool: true,
+                });
+            }
+            cx.emit(SessionEvent::Exited(code));
+            metadata_changed = true;
+        }
+        if metadata_changed {
+            cx.emit(SessionEvent::MetadataChanged);
+        }
+        cx.emit(SessionEvent::Output);
+        cx.notify();
+    }
+
+    fn process_pending_input(&mut self, now: f64) {
+        let pending = std::mem::take(&mut *self.pending_input.borrow_mut());
+        for (bytes, echo_disabled) in pending {
+            let text = String::from_utf8_lossy(&bytes);
+            self.monitor.ai_log.input(
+                &chau7_next_core::shell_session::sanitize_input_for_buffer(&text),
+                echo_disabled,
+            );
+            self.tracker
+                .handle_input(&text, echo_disabled, &self.shell_context, now);
+        }
+    }
+
+    /// Apply the tracker's events. Returns true when metadata changed.
+    fn drain_tracker_events(&mut self, cx: &mut Context<Self>) -> bool {
+        let mut changed = false;
+        for event in self.tracker.take_events() {
+            match event {
+                ShellSessionEvent::StatusChanged(status) => {
+                    self.command_running = matches!(
+                        status,
+                        CommandStatus::Running
+                            | CommandStatus::Stuck
+                            | CommandStatus::WaitingForInput
+                    );
+                    changed = true;
+                }
+                ShellSessionEvent::CommandStarted {
+                    command,
+                    directory,
+                    from_shell_integration,
+                } => {
+                    if self.is_restore_command(command.as_deref()) {
+                        continue;
+                    }
+                    self.command_dir = Some(directory.clone());
+                    if from_shell_integration {
+                        crate::history::recorder::command_start(
+                            self.id,
+                            command.as_deref().unwrap_or_default(),
+                        );
+                    }
+                    if from_shell_integration && self.git_root.is_some() {
+                        let baseline = self.git_baseline.clone();
+                        let directory = directory.clone();
+                        cx.background_spawn(async move {
+                            *baseline.lock() = Some(git_dirty_files(&directory));
+                        })
+                        .detach();
+                    }
+                    if let Some(command) = command.as_deref().filter(|c| !c.trim().is_empty()) {
+                        cx.emit(SessionEvent::CommandStarted(command.to_string()));
+                    }
+                    let events = self.monitor.shell_events.command_started(
+                        command.as_deref(),
+                        &directory,
+                        now_secs(),
+                    );
+                    for event in events {
+                        self.emit_ai(shell_ai_event(event), true, cx);
+                    }
+                    if let Some(check) = command
+                        .as_deref()
+                        .and_then(|c| self.monitor.command_typed(c))
+                    {
+                        self.schedule_dev_check(check, cx);
+                    }
+                }
+                ShellSessionEvent::CommandFinished {
+                    command,
+                    exit_code,
+                    duration,
+                    from_shell_integration,
+                } => {
+                    if self.is_restore_command(command.as_deref()) {
+                        self.restore_line_pending = false;
+                        self.tracker
+                            .blocks_mut()
+                            .remove_where(chau7_next_core::session_restore::is_restore_line);
+                        continue;
+                    }
+                    crate::history::recorder::command_end(self.id, exit_code);
+                    if let Some(command) = command.as_deref() {
+                        let directory = self
+                            .command_dir
+                            .take()
+                            .unwrap_or_else(|| self.tracker.current_directory().to_string());
+                        crate::history::record_command(
+                            command,
+                            Some(&directory),
+                            exit_code,
+                            duration,
+                            self.shell_name.as_deref(),
+                            &self.id.to_string(),
+                            cx,
+                        );
+                    }
+                    let events = self
+                        .monitor
+                        .shell_events
+                        .command_finished(exit_code, command.as_deref());
+                    for event in events {
+                        self.emit_ai(shell_ai_event(event), true, cx);
+                    }
+                    if let Some(check) = self.monitor.dev_server.command_did_finish() {
+                        self.schedule_dev_check(check, cx);
+                    }
+                    if let Some(code) = exit_code {
+                        self.last_command = Some(LastCommand {
+                            exit_code: code,
+                            duration: Duration::from_secs_f64(duration.max(0.0)),
+                        });
+                        changed = true;
+                        cx.emit(SessionEvent::CommandFinished(code));
+                    }
+                    if from_shell_integration && self.git_root.is_some() {
+                        self.collect_changed_files(cx);
+                    }
+                }
+                ShellSessionEvent::ActiveAppChanged(app) => {
+                    match &app {
+                        Some(tool) => {
+                            log::info!("AI detected: {tool}");
+                            let command = self.tracker.pending_command().map(str::to_string);
+                            self.start_ai_run(tool, command.as_deref(), cx);
+                        }
+                        None => self.finish_ai_run(None, cx),
+                    }
+                    // The token optimizer follows AI tools (AI Only mode).
+                    crate::cto::set_ai_active(&self.cto_id, app.is_some());
+                    self.ai_app = app;
+                    changed = true;
+                }
+                ShellSessionEvent::DirectoryChanged(path) => {
+                    let events = self.monitor.shell_events.directory_changed(&path);
+                    for event in events {
+                        self.emit_ai(shell_ai_event(event), true, cx);
+                    }
+                    let path = PathBuf::from(path);
+                    self.set_cwd(path.clone());
+                    cx.emit(SessionEvent::DirectoryChanged(path));
+                    changed = true;
+                }
+                ShellSessionEvent::HistoryLine { command, sensitive } => {
+                    log::debug!(
+                        "session {}: typed line ({} chars, sensitive={sensitive})",
+                        self.id,
+                        command.chars().count()
+                    );
+                    let tab = self.id.to_string();
+                    cx.default_global::<SharedCommandHistory>()
+                        .0
+                        .record(&command, &tab, sensitive);
+                }
+                ShellSessionEvent::PermissionResolved => {
+                    cx.emit(SessionEvent::PermissionResolved);
+                }
+                ShellSessionEvent::WaitingInputFallback { tool, provider } => {
+                    self.emit_waiting_input(&tool, &provider, cx);
+                    cx.emit(SessionEvent::WaitingInput { tool });
+                }
+            }
+        }
+        changed
+    }
+
+    fn collect_changed_files(&mut self, cx: &mut Context<Self>) {
+        let directory = self.tracker.current_directory().to_string();
+        let baseline = self.git_baseline.lock().take();
+        let task = cx.background_spawn(async move {
+            let current = git_dirty_files(&directory);
+            git_changes::changed_files(baseline.as_ref(), &current)
+        });
+        cx.spawn(async move |this, cx| {
+            let files = task.await;
+            if files.is_empty() {
+                return;
+            }
+            let _ = this.update(cx, |this, cx| {
+                this.tracker.blocks_mut().set_changed_files(files.clone());
+                cx.emit(SessionEvent::ChangedFiles(files));
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Once a second.
+    fn tick(&mut self, cx: &mut Context<Self>) {
+        if self.exited.is_some() {
+            return;
+        }
+        let mut changed = self.retry_resize();
+        self.process_pending_input(now_secs());
+        self.tracker.tick(now_secs());
+        // TEL-003: a resume command named the AI session.
+        if self.ai_app.is_some()
+            && let Some(session) = self.tracker.ai_session_id()
+        {
+            crate::telemetry::update_session_id(&self.tab_identifier, session, cx);
+        }
+        if !self.first_output
+            && !self.shell_slow
+            && self.term.read().has_pty()
+            && self.started_at.elapsed() >= STARTUP_SLOW_AFTER
+        {
+            log::warn!(
+                "session {}: no PTY output after 5s, shell may be hung",
+                self.id
+            );
+            self.shell_slow = true;
+            changed = true;
+        }
+        // Without OSC 7 (shells without our hooks), read the directory from
+        // the process table.
+        if !self.tracker.saw_osc7() && self.last_cwd_check.elapsed() > Duration::from_millis(500) {
+            self.last_cwd_check = Instant::now();
+            changed |= self.update_cwd();
+        }
+        // The branch can change without a cd (git checkout): re-read HEAD.
+        if self.last_branch_check.elapsed() >= Duration::from_secs(2) {
+            self.last_branch_check = Instant::now();
+            // Tabs in one repository share one branch value.
+            let branch = match self.git_root.as_deref() {
+                Some(root) => match crate::repository::resolve(root, cx) {
+                    Some(shared) => crate::repository::branch(&shared, cx),
+                    None => procinfo::git_branch(root),
+                },
+                None => None,
+            };
+            if branch != self.git_branch {
+                log::info!(
+                    "session {}: git branch {:?} -> {:?}",
+                    self.id,
+                    self.git_branch,
+                    branch
+                );
+                let events = self
+                    .monitor
+                    .shell_events
+                    .git_branch_changed(branch.as_deref());
+                for event in events {
+                    self.emit_ai(shell_ai_event(event), true, cx);
+                }
+                self.git_branch = branch;
+                changed = true;
+            }
+        }
+        if self.monitor.shell_events.is_timing() {
+            let events = self.monitor.shell_events.check_long_running(now_secs());
+            for event in events {
+                self.emit_ai(shell_ai_event(event), true, cx);
+            }
+        }
+        changed |= self.drain_tracker_events(cx);
+        if self.pending_prefill.is_some() && !self.prefill_scheduled {
+            self.flush_prefill(cx);
+        }
+        if changed {
+            cx.emit(SessionEvent::MetadataChanged);
+            cx.notify();
+        }
+    }
+
+    fn emit_ai(&self, event: AiEvent, notify: bool, cx: &mut Context<Self>) {
+        cx.emit(SessionEvent::Ai {
+            event: Box::new(event),
+            notify,
+            tab_name_as_tool: false,
+        });
+    }
+
+    /// `emitWaitingInputFallbackIfNeeded`: "<tool> is waiting for your
+    /// input in <project>".
+    fn emit_waiting_input(&self, tool: &str, provider: &str, cx: &mut Context<Self>) {
+        let Some(source) = AiEventSource::for_provider(Some(provider)) else {
+            return;
+        };
+        let directory = self.tracker.current_directory().to_string();
+        let project = directory
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .to_string();
+        let location = if project.is_empty() {
+            "this tab".to_string()
+        } else {
+            project
+        };
+        let mut event = AiEvent::new(
+            source,
+            "waiting_input",
+            tool,
+            format!("{tool} is waiting for your input in {location}"),
+            chau7_next_core::iso8601::now_iso8601(),
+        );
+        event.directory = Some(directory);
+        event.session_id = self.tracker.ai_session_id().map(str::to_string);
+        event.producer = Some("terminal_prompt_waiting_input".into());
+        event.reliability = AiEventReliability::Fallback;
+        self.emit_ai(event, true, cx);
+    }
+
+    /// The dev server running in this session (`devServer`).
+    pub fn dev_server(&self) -> Option<&DevServerInfo> {
+        self.monitor.dev_server()
+    }
+
+    /// TRM-046: an AI CLI was detected (by command or output): its PTY log
+    /// and its telemetry run start.
+    fn start_ai_run(&mut self, tool: &str, command: Option<&str>, cx: &mut Context<Self>) {
+        self.monitor.ai_log.start(tool, command);
+        let repo = self
+            .git_root
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned());
+        crate::telemetry::run_started(
+            &self.tab_identifier,
+            tool,
+            self.tracker.current_directory(),
+            repo.as_deref(),
+            self.tracker.ai_session_id(),
+            cx,
+        );
+    }
+
+    /// TRM-046: the AI CLI exited (`finishAILogging`): the run ends with the
+    /// PTY log and the terminal text as fallback transcripts.
+    fn finish_ai_run(&mut self, exit_code: Option<i32>, cx: &mut Context<Self>) {
+        self.monitor.ai_log.finish(exit_code);
+        let running = crate::telemetry::recorder(cx)
+            .is_some_and(|r| r.active_run_for_tab(&self.tab_identifier).is_some());
+        if !running {
+            return;
+        }
+        let pty_log = self.monitor.ai_log.last_log_path.clone();
+        let buffer = self.buffer_text();
+        crate::telemetry::run_ended(
+            &self.tab_identifier,
+            exit_code,
+            self.tracker.ai_session_id(),
+            Some(buffer),
+            pty_log,
+            cx,
+        );
+    }
+
+    /// PTY log of the current or last AI run (`lastPTYLogPath`).
+    #[allow(dead_code)]
+    pub fn last_ai_log_path(&self) -> Option<&Path> {
+        self.monitor.ai_log.last_log_path.as_deref()
+    }
+
+    /// Port checks (`startBurstCheck`, `scheduleOneShot`).
+    fn schedule_dev_check(&mut self, request: CheckRequest, cx: &mut Context<Self>) {
+        let pid = self.term.read().shell_pid() as u32;
+        if pid == 0 || self.exited.is_some() {
+            return;
+        }
+        let (first, count) = match request {
+            CheckRequest::Burst => (BURST_FIRST_DELAY, BURST_CHECKS),
+            CheckRequest::Once(delay) => (delay, 1),
+        };
+        self.dev_checks = Some(cx.spawn(async move |this, cx| {
+            let mut delay = first;
+            for remaining in (0..count).rev() {
+                cx.background_executor()
+                    .timer(Duration::from_secs_f64(delay))
+                    .await;
+                delay = BURST_INTERVAL;
+                let (descendants, listening) = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let descendants: Vec<u32> =
+                            procinfo::process_tree(pid).into_iter().skip(1).collect();
+                        let listening = procinfo::listening_port(&descendants).map(|(p, port)| {
+                            let name = procinfo::process_name(p).unwrap_or_default();
+                            (p, port, name)
+                        });
+                        (descendants, listening)
+                    })
+                    .await;
+                let stop = this
+                    .update(cx, |this, cx| {
+                        if this.monitor.dev_server.apply_check(&descendants, listening) {
+                            if let Some(server) = this.monitor.dev_server() {
+                                log::info!(
+                                    "session {}: dev server {} port {:?}",
+                                    this.id,
+                                    server.name,
+                                    server.port
+                                );
+                            }
+                            cx.emit(SessionEvent::MetadataChanged);
+                            cx.notify();
+                        }
+                        should_stop_burst_checks(this.monitor.dev_server(), remaining)
+                    })
+                    .unwrap_or(true);
+                if stop {
+                    break;
+                }
+            }
+        }));
+    }
+
+    /// Types `text` (without running it) once the shell shows its prompt
+    /// (`prefillInput`).
+    pub fn prefill_input(&mut self, text: String, cx: &mut Context<Self>) {
+        if text.is_empty() {
+            return;
+        }
+        self.tracker.track_resume_metadata(&text);
+        self.tracker.prefill_pending = true;
+        self.pending_prefill = Some(text);
+        self.prefill_retries = 0;
+        self.flush_prefill(cx);
+    }
+
+    /// `flushPendingPrefillInputIfReady`: retried up to 20 times, 0.3 s more
+    /// each time (3 s at most); after 4 tries the shell counts as started.
+    fn flush_prefill(&mut self, cx: &mut Context<Self>) {
+        self.prefill_scheduled = false;
+        let Some(text) = self.pending_prefill.clone() else {
+            self.prefill_retries = 0;
+            return;
+        };
+        if self.exited.is_some() {
+            self.pending_prefill = None;
+            self.tracker.prefill_pending = false;
+            return;
+        }
+        let forced = self.prefill_retries >= shell_restore::PREFILL_FORCE_READY_AFTER;
+        let loading = self.is_loading() && !forced;
+        let at_prompt = self.tracker.is_at_prompt() || (forced && !self.has_hooks);
+        if !loading && at_prompt {
+            self.pending_prefill = None;
+            self.prefill_retries = 0;
+            self.tracker.prefill_pending = false;
+            log::info!(
+                "Resume prefill delivered: {}",
+                text.chars().take(60).collect::<String>()
+            );
+            self.write(text.as_bytes());
+            return;
+        }
+        if self.prefill_retries >= shell_restore::PREFILL_MAX_RETRIES {
+            // Wait for the next prompt (the tick tries again).
+            self.prefill_retries = 0;
+            return;
+        }
+        self.prefill_retries += 1;
+        self.prefill_scheduled = true;
+        let delay = Duration::from_secs_f64(shell_restore::prefill_retry_delay_secs(
+            self.prefill_retries,
+        ));
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(delay).await;
+            let _ = this.update(cx, |this, cx| this.flush_prefill(cx));
+        })
+        .detach();
+    }
+
+    fn set_cwd(&mut self, cwd: PathBuf) {
+        if self.cwd.as_ref() == Some(&cwd) {
+            return;
+        }
+        self.git_root = procinfo::git_root(&cwd);
+        self.git_branch = self.git_root.as_deref().and_then(procinfo::git_branch);
+        self.cwd = Some(cwd);
+    }
+
+    /// Re-read the shell's directory from the process table. Returns true
+    /// when it changed.
+    pub fn update_cwd(&mut self) -> bool {
+        let pid = self.term.read().shell_pid() as u32;
+        let Some(cwd) = procinfo::process_cwd(pid) else {
+            return false;
+        };
+        let path = cwd.to_string_lossy().to_string();
+        if self.tracker.update_directory(&path, &self.shell_context) {
+            // The tracker's DirectoryChanged event is applied on the next drain.
+            self.set_cwd(cwd);
+            return true;
+        }
+        false
+    }
+
+    fn ring_bell(&mut self, cx: &mut Context<Self>) {
+        let settings = &Settings::get(cx).terminal;
+        if !settings.bell_enabled {
+            return;
+        }
+        match settings.bell_sound {
+            BellSound::Visual => {
+                self.bell_flash_until = Some(Instant::now() + BELL_FLASH);
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(BELL_FLASH).await;
+                    let _ = this.update(cx, |this, cx| {
+                        this.bell_flash_until = None;
+                        cx.emit(SessionEvent::MetadataChanged);
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
+            BellSound::Subtle => {
+                if crate::platform::sound::play_named("Pop", 1.0).is_err() {
+                    crate::platform::sound::beep();
+                }
+            }
+            BellSound::Default => crate::platform::sound::beep(),
+        }
+        cx.emit(SessionEvent::Bell);
+    }
+
+    /// A frame of this session was drawn: closes the output latency measure
+    /// (`recordOutputLatencyIfNeeded`, TRM-062).
+    pub fn mark_frame_drawn(&self) {
+        let spike = self
+            .latency
+            .borrow_mut()
+            .mark_rendered(clock(Instant::now()));
+        if let Some(spike) = spike {
+            self.log_lag(&spike);
+        }
+    }
+
+    /// A dangerous-output highlight pass ran `congestion_ms` after it was
+    /// due (`dangerousHighlightDelayMs`, TRM-062).
+    pub fn record_highlight_latency(&self, congestion_ms: f64) {
+        let spike = self
+            .latency
+            .borrow_mut()
+            .record_highlight(congestion_ms, clock(Instant::now()));
+        if let Some(spike) = spike {
+            self.log_lag(&spike);
+        }
+    }
+
+    /// Input and output lag (average, else last) for `isCpuSaturated`.
+    pub fn ui_lag_ms(&self) -> (Option<i64>, Option<i64>) {
+        let latency = self.latency.borrow();
+        (
+            latency.lag_ms(chau7_next_core::shell_latency::LagKind::Input),
+            latency.lag_ms(chau7_next_core::shell_latency::LagKind::Output),
+        )
+    }
+
+    fn log_lag(&self, spike: &LagEvent) {
+        log::warn!(
+            "Latency spike: {}={}ms avg={}ms p50/p95={:?}/{:?} n={} session={} app={}",
+            spike.kind.as_str(),
+            spike.elapsed_ms,
+            spike.average_ms,
+            spike.p50,
+            spike.p95,
+            spike.sample_count,
+            self.id,
+            self.ai_app.as_deref().unwrap_or("shell"),
+        );
+    }
+
+    /// Bookmarks the line at the top of the view (TRM-057). `max` is the
+    /// per-tab limit (`feature.maxBookmarks`).
+    pub fn add_bookmark(&mut self, label: Option<String>, max: usize) -> u64 {
+        let history = self.grid.scrollback_rows as i64;
+        let offset = self.grid.display_offset as i64;
+        let line = shell_bookmarks::top_line(history, offset);
+        let preview = self.line_text(-(offset as i32)).unwrap_or_default();
+        self.bookmarks.add(line, &preview, label, max, now_secs())
+    }
+
+    pub fn bookmarks(&self) -> &[Bookmark] {
+        self.bookmarks.all()
+    }
+
+    pub fn remove_bookmark(&mut self, id: u64) {
+        self.bookmarks.remove(id);
+    }
+
+    /// Scrolls back to a bookmark.
+    pub fn jump_to_bookmark(&mut self, id: u64, cx: &mut Context<Self>) {
+        let Some(line) = self.bookmarks.get(id).map(|b| b.line) else {
+            return;
+        };
+        let term = self.term.read();
+        let history = self.grid.scrollback_rows as i64;
+        let target = shell_bookmarks::display_offset_for(line, history);
+        let current = term.display_offset() as i64;
+        term.scroll_lines((target - current) as i32);
+        drop(term);
+        self.refresh(cx);
+    }
+
+    /// Text of the last finished command (hover card, Debug Console).
+    pub fn last_command_text(&self) -> Option<String> {
+        self.tracker
+            .blocks()
+            .blocks()
+            .iter()
+            .rev()
+            .find(|b| !b.is_running())
+            .map(|b| b.command.clone())
+            .filter(|c| !c.trim().is_empty())
+    }
+
+    /// The shell loads our startup files (OSC 133 marks): the Debug Console
+    /// Health tab counts these tabs.
+    pub fn has_shell_integration(&self) -> bool {
+        self.has_hooks
+    }
+
+    /// (dev) Forget the lag timeline (Debug Console, Lag tab, Clear).
+    pub fn clear_lag_timeline(&self) {
+        self.latency.borrow_mut().clear_timeline();
+    }
+
+    /// (dev) Latency samples and lag timeline (TRM-062), for the debug console.
+    pub fn latency(&self) -> std::cell::Ref<'_, LatencyTracker> {
+        self.latency.borrow()
+    }
+
+    /// Strength of the visual bell flash now, 0 to 1 (fades out).
+    pub fn bell_flash_alpha(&self) -> f32 {
+        let Some(until) = self.bell_flash_until else {
+            return 0.0;
+        };
+        let now = Instant::now();
+        if now >= until {
+            return 0.0;
+        }
+        let left = (until - now).as_secs_f32() / BELL_FLASH.as_secs_f32();
+        left.clamp(0.0, 1.0)
+    }
+
+    /// Raw bytes for the program (key and mouse reports, replies). Written
+    /// in order on the writer thread.
+    pub fn write(&self, bytes: &[u8]) {
+        self.writer.write(bytes.to_vec());
+    }
+
+    /// The session restore line (`session_restore::restore_input`): written
+    /// like [`Self::write`], and the command it runs is kept out of the
+    /// command results, so a restored tab does not show "success".
+    pub fn write_restore_line(&mut self, line: &str) {
+        self.restore_line_pending = true;
+        self.write(line.as_bytes());
+    }
+
+    /// True when a command event belongs to the restore line.
+    fn is_restore_command(&self, command: Option<&str>) -> bool {
+        self.restore_line_pending
+            && command.is_none_or(chau7_next_core::session_restore::is_restore_line)
+    }
+
+    /// Bytes typed or pasted by the user: written like [`Self::write`] and
+    /// given to the command tracker (typed lines, history, AI detection).
+    pub fn write_input(&self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        // Password prompts only: Swift checks ECHO alone, which line editors
+        // (readline, ZLE) also clear, so every typed command looked secret.
+        let echo_disabled = Chau7Terminal::password_input_on_fd(self.echo_fd);
+        self.latency.borrow_mut().mark_input(clock(Instant::now()));
+        if !echo_disabled {
+            crate::history::recorder::input(self.id, bytes);
+        }
+        self.pending_input
+            .borrow_mut()
+            .push((bytes.to_vec(), echo_disabled));
+        self.write(bytes);
+    }
+
+    /// Text shown in the terminal without going through the PTY
+    /// (`injectOutput`, RBK-053).
+    pub fn inject_output(&self, text: &str) {
+        self.term.read().inject_output(text.as_bytes());
+    }
+
+    /// Answer an OSC 52 clipboard read (RBK-012).
+    pub fn respond_clipboard(&self, text: &str) {
+        self.writer.respond_clipboard(text.to_string());
+    }
+
+    pub fn resize(&mut self, cols: u16, rows: u16) {
+        let cols = cols.max(2);
+        let rows = rows.max(1);
+        if self.grid.cols == cols && self.grid.rows == rows && self.pending_resize.is_none() {
+            return;
+        }
+        self.pending_resize = Some((cols, rows));
+        crate::history::recorder::resize(self.id, cols, rows);
+        self.retry_resize();
+    }
+
+    /// Applies a pending resize. Waits at most 50 ms for the terminal lock
+    /// (a blocked input write could hold it) and retries on the next refresh.
+    fn retry_resize(&mut self) -> bool {
+        let Some((cols, rows)) = self.pending_resize else {
+            return false;
+        };
+        let Some(mut term) = self.term.try_write_for(Duration::from_millis(50)) else {
+            return false;
+        };
+        term.resize(cols, rows);
+        drop(term);
+        self.pending_resize = None;
+        self.grid = self.term.read().grid_copy();
+        true
+    }
+
+    pub fn scroll_lines(&self, lines: i32) {
+        self.term.read().scroll_lines(lines);
+    }
+
+    pub fn scroll_to_bottom(&self) {
+        let term = self.term.read();
+        if term.display_offset() > 0 {
+            term.scroll_to(0.0);
+        }
+    }
+
+    /// Top of the scrollback (RBK-026).
+    pub fn scroll_to_top(&self) {
+        self.term.read().scroll_to(1.0);
+    }
+
+    pub fn selection_start(&self, col: i32, row: i32, kind: SelectionKind) {
+        self.term.read().selection_start(col, row, kind as u8);
+    }
+
+    pub fn selection_update(&self, col: i32, row: i32) {
+        self.term.read().selection_update(col, row);
+    }
+
+    pub fn selection_clear(&self) {
+        self.term.read().selection_clear();
+    }
+
+    pub fn select_all(&self) {
+        self.term.read().selection_all();
+    }
+
+    pub fn selection_text(&self) -> Option<String> {
+        self.term.read().selection_text().filter(|t| !t.is_empty())
+    }
+
+    pub fn clear_scrollback(&self) {
+        self.term.read().clear_scrollback();
+    }
+
+    pub fn is_bracketed_paste(&self) -> bool {
+        self.term.read().is_bracketed_paste_mode()
+    }
+
+    pub fn is_app_cursor(&self) -> bool {
+        self.term.read().is_application_cursor_mode()
+    }
+
+    pub fn mouse_reporting(&self) -> bool {
+        self.mouse_reporting_enabled.get() && self.term.read().is_mouse_reporting_active()
+    }
+
+    /// `Chau7Terminal::mouse_mode` bits (see `key_encoding::mouse_mode`).
+    /// The click, drag and motion bits are cleared when mouse reporting is
+    /// turned off in settings.
+    pub fn mouse_mode(&self) -> u32 {
+        let mode = self.term.read().mouse_mode();
+        if self.mouse_reporting_enabled.get() {
+            mode
+        } else {
+            mode & !0b111
+        }
+    }
+
+    pub fn link_url(&self, link_id: u16) -> Option<String> {
+        self.term.read().get_link_url(link_id)
+    }
+
+    /// Text of one grid line (negative values are scrollback).
+    pub fn line_text(&self, line: i32) -> Option<String> {
+        self.term.read().line_text(line)
+    }
+
+    /// The soft-wrapped logical line holding a grid row: its text and the
+    /// UTF-16 offset of `column` in it (`RustTerminalView.getClickableLineHit`).
+    pub fn logical_line_hit(&self, line: i32, column: usize) -> Option<(String, usize)> {
+        self.term
+            .read()
+            .logical_line_text(line, column)
+            .map(|(text, _, offset)| (text, offset))
+    }
+
+    /// Whole buffer (scrollback + screen) as text, for search and export.
+    pub fn buffer_text(&self) -> String {
+        self.term.read().full_buffer_text()
+    }
+
+    pub fn display_offset(&self) -> usize {
+        self.term.read().display_offset()
+    }
+
+    pub fn scroll_position(&self) -> f64 {
+        self.term.read().scroll_position()
+    }
+
+    pub fn scroll_to(&self, position: f64) {
+        self.term.read().scroll_to(position);
+    }
+
+    pub fn shell_pid(&self) -> u64 {
+        self.term.read().shell_pid()
+    }
+
+    /// Run `f` with the emulator (input handling reads modes, the cursor,
+    /// echo state and the Kitty keyboard flags through it).
+    pub fn with_terminal<R>(&self, f: impl FnOnce(&Chau7Terminal) -> R) -> R {
+        f(&self.term.read())
+    }
+
+    /// Images decoded since the last call (iTerm2, Sixel, Kitty).
+    pub fn take_images(&self) -> Vec<chau7_terminal::graphics::DecodedImage> {
+        self.term.read().take_pending_images()
+    }
+
+    /// Suspend Background Rendering for a hidden tab (see `render_suspended`).
+    pub fn set_render_suspended(&self, suspended: bool) {
+        self.render_suspended.store(suspended, Ordering::Relaxed);
+    }
+
+    pub fn is_render_suspended(&self) -> bool {
+        self.render_suspended.load(Ordering::Relaxed)
+    }
+
+    /// Typed input is not echoed (password prompt).
+    pub fn is_echo_disabled(&self) -> bool {
+        Chau7Terminal::password_input_on_fd(self.echo_fd)
+    }
+
+    /// Command status (idle, running, waiting for input, stuck, exited).
+    pub fn status(&self) -> CommandStatus {
+        self.tracker.status()
+    }
+
+    /// "Loading" until the first prompt (`isShellLoading`).
+    pub fn is_loading(&self) -> bool {
+        if self.exited.is_some() || !self.term.read().has_pty() {
+            return false;
+        }
+        if self.has_hooks {
+            self.tracker.is_shell_loading()
+        } else {
+            !self.first_output
+        }
+    }
+
+    pub fn is_at_prompt(&self) -> bool {
+        self.tracker.is_at_prompt()
+    }
+
+    /// The command being run (typed line, secrets redacted).
+    pub fn pending_command(&self) -> Option<&str> {
+        self.tracker.pending_command()
+    }
+
+    /// Semantic command search (`updateSemanticSearch`): past commands
+    /// containing `query`, with previews "cmd (exit N)". The caller checks
+    /// `feature.semanticSearch`.
+    pub fn semantic_search(
+        &self,
+        query: &str,
+        max_matches: usize,
+        max_preview_lines: usize,
+    ) -> (
+        Vec<chau7_next_core::semantic_search::SemanticMatch>,
+        Vec<String>,
+    ) {
+        chau7_next_core::semantic_search::search(
+            self.tracker.blocks().blocks(),
+            query,
+            max_matches,
+            max_preview_lines,
+        )
+    }
+
+    /// Command blocks of this session (OSC 133).
+    pub fn blocks(&self) -> &CommandBlockList {
+        self.tracker.blocks()
+    }
+
+    /// Shell state (AI provider and session id, prompt, integration).
+    pub fn shell(&self) -> &ShellSession {
+        &self.tracker
+    }
+
+    /// The tab hosts an agent runtime session: no terminal-prompt
+    /// "waiting for input" fallback (RUN-023).
+    pub fn set_runtime_owned(&mut self, owned: bool) {
+        self.tracker.runtime_owns_tab = owned;
+    }
+
+    /// Restores AI metadata of a saved tab (TRM-044).
+    pub fn restore_ai_metadata(
+        &mut self,
+        provider: Option<&str>,
+        session_id: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        self.tracker.restore_ai_metadata(provider, session_id);
+        self.ai_app = self.tracker.active_app().map(str::to_string);
+        crate::cto::set_ai_active(&self.cto_id, self.ai_app.is_some());
+        cx.emit(SessionEvent::MetadataChanged);
+    }
+
+    /// Close the session: `exit`, then signals (TRM-007). Also done on drop.
+    pub fn close(&mut self) {
+        if self.close_requested {
+            return;
+        }
+        self.close_requested = true;
+        unregister_shell(self.id);
+        let mode = if APP_QUITTING.load(Ordering::Acquire) {
+            CloseMode::AppQuit
+        } else {
+            CloseMode::Graceful {
+                ai_running: self.ai_app.is_some(),
+            }
+        };
+        if self.exited.is_none() {
+            self.writer.close(mode);
+        }
+    }
+
+    /// The id of this shell for the token optimizer (flag file name, the
+    /// key of the per-tab input prefix overrides).
+    pub fn cto_id(&self) -> &str {
+        &self.cto_id
+    }
+
+    /// The tab's token optimization override changed (`recalculate` is false
+    /// when a saved one comes back at restore).
+    pub fn set_token_opt_override(
+        &mut self,
+        value: chau7_next_core::token_optimization::TabTokenOptOverride,
+        recalculate: bool,
+    ) {
+        crate::cto::set_override(&self.cto_id, value, recalculate);
+    }
+
+    /// The input prefix of this shell (`applyCTOPrefixIfNeeded`).
+    fn apply_cto_prefix(&mut self, settings: &Settings) {
+        self.tracker
+            .set_input_prefix(settings.cto.prefix_for(&self.cto_id).map(str::to_string));
+    }
+
+    pub fn apply_settings(&mut self, settings: &Settings) {
+        self.apply_cto_prefix(settings);
+        let mut config = ShellSessionConfig::from_env(|k| std::env::var(k).ok());
+        config.custom_rules = settings.ai.detection_rules();
+        self.tracker.set_config(config);
+        self.monitor.shell_events.set_config(
+            chau7_next_core::monitoring::shell_events::ShellEventConfig::from_notification_settings(
+                &settings.notifications.shell_events,
+            ),
+        );
+        self.mouse_reporting_enabled
+            .set(settings.input.mouse_reporting);
+        let term = self.term.read();
+        apply_colors(&term, settings);
+        apply_image_protocols(&term, settings);
+        term.set_scrollback_size(settings.terminal.scrollback_lines);
+    }
+}
+
+impl Drop for TerminalSession {
+    fn drop(&mut self) {
+        crate::cto::unregister_session(&self.cto_id);
+        if crate::history::recorder::is_recording(self.id) {
+            crate::history::recorder::stop();
+        }
+        self.close();
+        self.stop.store(true, Ordering::Release);
+    }
+}
+
+/// Seconds since the first call, for the latency tracker.
+fn clock(at: Instant) -> f64 {
+    static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    let epoch = *EPOCH.get_or_init(Instant::now);
+    at.saturating_duration_since(epoch).as_secs_f64()
+}
+
+/// The latency clock now: lag events carry times on this clock, so the Debug
+/// Console subtracts to get how long ago they happened.
+pub fn clock_seconds_now() -> f64 {
+    clock(Instant::now())
+}
+
+/// Where a new shell starts (`startDirectoryForLaunch`): the tab's directory
+/// when it exists, else the "default start directory" setting, else home.
+fn start_directory(cwd: Option<&Path>, settings: &Settings, home: &str) -> PathBuf {
+    let default = || {
+        let raw = settings
+            .general
+            .default_directory
+            .clone()
+            .unwrap_or_default();
+        let resolved = PathBuf::from(shell_env::resolve_start_directory(&raw, home));
+        if resolved.is_dir() {
+            resolved
+        } else {
+            PathBuf::from(home)
+        }
+    };
+    match cwd {
+        Some(dir) => {
+            let resolved = PathBuf::from(shell_env::resolve_start_directory(
+                &dir.to_string_lossy(),
+                home,
+            ));
+            if resolved.is_dir() {
+                resolved
+            } else {
+                default()
+            }
+        }
+        None => default(),
+    }
+}
+
+/// `git status --porcelain` paths in `directory` (empty outside a repo).
+/// Runs with a 5 s kill timeout (`GitDiffTracker.runGit`).
+fn git_dirty_files(directory: &str) -> BTreeSet<String> {
+    let output =
+        chau7_next_core::monitoring::git::run_git_raw(&["status", "--porcelain"], directory);
+    git_changes::dirty_files(&output)
+}
+
+/// Selection modes understood by `Chau7Terminal::selection_start`.
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum SelectionKind {
+    Simple = 0,
+    Block = 1,
+    Word = 2,
+    Line = 3,
+}
+
+fn apply_colors(term: &Chau7Terminal, settings: &Settings) {
+    use chau7_next_core::color_schemes::ColorScheme;
+    let scheme = settings.appearance.color_scheme;
+    term.set_colors(
+        ColorScheme::rgb(scheme.foreground),
+        ColorScheme::rgb(scheme.background),
+        ColorScheme::rgb(scheme.cursor),
+        scheme.ansi_rgb(),
+    );
+}
+
+/// Which image sequences the emulator intercepts (`setImageProtocols`):
+/// iTerm2 follows Inline Images, Sixel and Kitty their own toggles.
+fn apply_image_protocols(term: &Chau7Terminal, settings: &Settings) {
+    let appearance = &settings.appearance;
+    term.set_image_protocols(
+        appearance.graphics.sixel,
+        appearance.graphics.kitty,
+        appearance.display.inline_images,
+    );
+}

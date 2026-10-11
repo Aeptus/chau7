@@ -1,0 +1,119 @@
+[package]
+name = "chau7_next"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "chau7-next"
+path = "src/main.rs"
+
+[build-dependencies]
+# Compiles the os_log shim on macOS (build.rs).
+cc = "1"
+
+[dependencies]
+gpui.workspace = true
+gpui-kit.workspace = true
+chau7_next_core.workspace = true
+chau7_terminal.workspace = true
+parking_lot.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+anyhow = "1"
+uuid.workspace = true
+base64.workspace = true
+# Decodes inline images (iTerm2, Kitty PNG) and encodes them for Copy/Save.
+# Same version and formats as GPUI's own `image` dependency.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"] }
+chrono.workspace = true
+regex.workspace = true
+# File watching (FSEvents/kqueue on macOS, inotify on Linux); the version
+# gpui-component already uses.
+notify = "8.2.0"
+# The OS preferred languages, for "System Default" (l10n).
+sys-locale = "0.3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# NSWindow behind a GPUI window (platform/window_style.rs).
+raw-window-handle = "0.6"
+# Platform layer (src/platform/). Only the framework features in use are on.
+objc2 = "0.6.5"
+block2 = "0.6.2"
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "objc2-core-foundation",
+    "NSArray",
+    "NSBundle",
+    "NSData",
+    "NSDictionary",
+    "NSError",
+    "NSGeometry",
+    "NSHost",
+    "NSObject",
+    "NSProcessInfo",
+    "NSString",
+    "NSUbiquitousKeyValueStore",
+    "NSURL",
+] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "block2",
+    "objc2-core-foundation",
+    "NSAccessibility",
+    "NSAppearance",
+    "NSApplication",
+    "NSBitmapImageRep",
+    "NSButton",
+    "NSCell",
+    "NSControl",
+    "NSDockTile",
+    "NSFont",
+    "NSGraphics",
+    "NSImage",
+    "NSImageRep",
+    "NSMenu",
+    "NSMenuItem",
+    "NSPasteboard",
+    "NSPrintInfo",
+    "NSPrintOperation",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSSound",
+    "NSSpeechSynthesizer",
+    "NSStatusBar",
+    "NSStatusBarButton",
+    "NSStatusItem",
+    "NSText",
+    "NSTextInputContext",
+    "NSTextView",
+    "NSView",
+    "NSWindow",
+    "NSWorkspace",
+] }
+objc2-user-notifications = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "block2",
+    "UNNotification",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationResponse",
+    "UNNotificationSettings",
+    "UNNotificationSound",
+    "UNNotificationTrigger",
+    "UNUserNotificationCenter",
+] }
+objc2-service-management = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "objc2",
+    "objc2-foundation",
+    "SMAppService",
+] }
+security-framework = "3.7.0"
+core-foundation = "0.10.1"
+core-foundation-sys = "0.8.7"

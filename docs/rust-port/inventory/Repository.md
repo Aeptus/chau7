@@ -1,0 +1,32 @@
+# Repository
+
+Swift: `apps/chau7-macos/Sources/Chau7/Repository/` (4 files, 433 lines)
+Swift tests: `Repository/RepositoryCacheTests.swift`, `Repository/RepoMetadataTests.swift`
+Wave: 2
+Depends on: Monitoring (`GitDiffTracker.runGit`), History (command stats), Telemetry (AI run stats), Settings
+
+Knows which git repository each tab is in and on which branch, with one shared model per repository so every tab in that repo updates together. Each repository can carry user metadata (description, labels, favorite files) saved inside the repo, shows up in a "recent repositories" list, and has computed stats (commands run, AI runs, tokens, cost) shown in the hover card. Git status is used by Monitoring for per-command changed files and conflicts (MON-014, MON-015).
+
+## Features
+
+| ID | Feature | Swift source | Tests | Rust | Status | macOS API |
+|---|---|---|---|---|---|---|
+| REP-001 | Find the git root of a tab's directory (subfolders and worktrees included); results cached, non-repo folders remembered | `Repository/RepositoryCache.swift` | `RepositoryCacheTests` | `chau7_next/src/platform/process.rs` (`git_root`), `chau7_next/src/terminal/session.rs` | done | |
+| REP-002 | Do not touch protected folders (Desktop, Documents, Downloads, ...) for repo detection unless the user allowed it and granted access | `Repository/RepositoryCache.swift`, `Utilities/ProtectedPathPolicy.swift` |  | chau7_next/src/platform/process.rs (git_root), chau7_next/src/protected_paths.rs | done | TCC, security-scoped bookmarks |
+| REP-003 | Current branch per tab, refreshed when the directory changes | `Repository/RepositoryModel.swift`, `Terminal/Session/TerminalSessionModel.swift` | `RepositoryCacheTests` | `chau7_next/src/platform/process.rs` (`git_branch`), `chau7_next/src/terminal/session.rs` (`update_cwd`) | done | |
+| REP-004 | Branch shown in the tab bar (main/master vs other branch indicator) and the hover card | `Overlay/Chau7OverlayView.swift`, `Overlay/TabHoverCard.swift` | | `chau7_next/src/workspace/` (`branch_state`, hover card "Branch" line) | done | |
+| REP-005 | One shared model per repository: a branch change seen by one tab updates every tab in that repo | `Repository/RepositoryModel.swift`, `Repository/RepositoryCache.swift` | `RepositoryCacheTests` | chau7_next_core/src/repository.rs (RepositoryCache), chau7_next/src/repository/mod.rs, chau7_next/src/terminal/session.rs (tick) | done |  |
+| REP-006 | Repository metadata saved in `<repo>/.chau7/metadata.json`: description, labels, favorite files, updated time; debounced (0.5 s) atomic save, file removed when empty (Rust reads the repo file but never writes it: edits go to an overlay in its own data root, `repo-overlays/<repo key>/metadata.json`, which wins on read) | `Repository/RepoMetadata.swift`, `Repository/RepositoryModel.swift` | `RepoMetadataTests` | chau7_next_core/src/repo_metadata.rs, chau7_next_core/src/repository.rs (debounced saves), chau7_next/src/repository/mod.rs | done |  |
+| REP-007 | Settings > Repositories: list of recent repositories with description and labels; select one to edit description, labels (comma-separated) and favorite files (one per line) | `Settings/Views/RepositoriesSettingsView.swift` |  | chau7_next/src/settings_window/repositories.rs | done |  |
+| REP-008 | Recent repositories list (20 most recent) recorded the first time a repo is seen in a tab | `Repository/RepositoryCache.swift`, `Settings/FeatureSettings.swift` (`recordRecentRepo`) | `RepositoryCacheTests` | chau7_next/src/settings_window/repositories.rs (record_recent_repo), chau7_next_core/src/repo_metadata.rs | done |  |
+| REP-009 | Repo stats line in the hover card: AI runs, tokens, cost, commands run in this repo | `Repository/RepoStats.swift`, `Overlay/TabHoverCard.swift` |  | chau7_next_core/src/repository.rs (RepoStats), chau7_next/src/repository/mod.rs (stats, set_ai_stats_provider), chau7_next/src/workspace/hover_card.rs, chau7_next/src/telemetry.rs (ai_repo_stats) | done |  |
+| REP-010 | Full repo stats on demand (debug console, MCP, sessions explorer): success rate, average command duration, AI turns, providers, top 5 tools, last command and last AI run | `Repository/RepoStats.swift`, `Repository/RepositoryModel.swift` (`refreshStats`), `DataExplorer/SessionsExplorerView.swift` |  | chau7_next_core/src/repository.rs (RepoStats::to_json, detail_lines), chau7_next/src/repository/mod.rs (stats), chau7_next/src/seams.rs (mcp_repo_stats), chau7_next/src/telemetry.rs (ai_repo_stats, analytics_data) | done |  |
+
+## Notes
+
+- REP-001/003: Swift runs `git rev-parse --show-toplevel --abbrev-ref HEAD` (and `rev-parse --abbrev-ref HEAD` to refresh, coalesced 0.1 s) through `GitDiffTracker.runGit`. Chau7 Next reads `.git` and `.git/HEAD` directly (no subprocess), follows `gitdir:` worktree files and shows 8 characters of a detached commit. Swift shows "HEAD" for a detached HEAD (that is what `--abbrev-ref` prints). Both refresh only when the directory changes, so a `git checkout` in the same folder is picked up on the next `cd` in both apps.
+- REP-002: `ProtectedPathPolicy.shouldSkipAutoAccess` skips git calls under TCC-protected folders unless "allow protected folder access" is on and a bookmark grants access. Chau7 Next reads `.git` in any folder, which can trigger macOS privacy prompts; port this behind the platform trait.
+- REP-006: the metadata file lives in the user's repository and belongs to the Swift app, which migrates it; per DUAL-SHIP phase 1 Chau7 Next only reads it and keeps its own edits (settings editor, `repo_set_metadata`) in `DataRoot::repo_metadata_overlay_file`, merged over the repo file on read. JSON keys `description`, `labels`, `favoriteFiles`, `updatedAt` (ISO 8601), empty fields omitted, sorted keys, pretty printed. The MCP server also updates it (`MCP/TerminalControlService.swift`). Rust (SET-059) reads it and writes its overlay with the same format; it saves when the settings editor's Save is clicked, with no live repository model and no 0.5 s debounce yet.
+- REP-009/010: stats come from `history.db` (History, HIS-006) and the telemetry `runs.db` (Telemetry), so they depend on those stores being ported. The hover card computes them on every render in Swift.
+- Repo grouping of tabs in the tab bar uses the git root and is tracked in the Overlay inventory.
+- Overlapping rows in other inventories (update both when porting): REP-002 with UTL-004 and UTL-005; REP-007/008 with SET-059.

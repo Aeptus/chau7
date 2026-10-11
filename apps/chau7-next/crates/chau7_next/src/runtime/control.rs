@@ -1,0 +1,578 @@
+//! The `runtime_*` MCP tools (`RuntimeControlService.swift`, MCP-031 to
+//! MCP-038). They run on the MCP client thread and reach tabs through the
+//! tab tools (`crate::mcp::tools::tabs`), as Swift goes through
+//! `TerminalControlService`: the prompt and approval answers pass the same
+//! command filter as `tab_send_input`.
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use chau7_next_core::mcp::output::{encode_sorted, json_error};
+use chau7_next_core::runtime::agent_backend::SessionConfig;
+use chau7_next_core::runtime::backends::{
+    backend_named, binary_name, missing_binary_message, unknown_backend_message, validate_model,
+};
+use chau7_next_core::runtime::runtime_event::poll_response_json;
+use chau7_next_core::runtime::session::RuntimeSession;
+use chau7_next_core::runtime::session_state::State;
+use serde_json::{Map, Value, json};
+
+use super::manager;
+use crate::mcp::MainThread;
+use crate::mcp::tools::{ToolContext, arg_bool, arg_str, arg_str_list, tabs};
+use crate::mcp::windows::parse_tab_id;
+
+/// Initial prompt tries (`scheduleInitialPrompt`): 0.3 s twice, then 0.5 s.
+const INITIAL_PROMPT_ATTEMPTS: u32 = 8;
+
+fn initial_prompt_delay(attempt: u32) -> Duration {
+    Duration::from_millis(if attempt <= 2 { 300 } else { 500 })
+}
+
+/// `handleToolCall`.
+pub fn handle_tool_call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> String {
+    match name {
+        "runtime_session_create" => create_session(args, ctx),
+        "runtime_session_list" => {
+            let include = arg_bool(args, "include_stopped").unwrap_or(false);
+            let list: Vec<Value> = manager()
+                .all_sessions(include)
+                .iter()
+                .map(|s| s.summary())
+                .collect();
+            encode_sorted(&Value::Array(list))
+        }
+        "runtime_session_get" => match session_arg(args) {
+            Ok(session) => encode_sorted(&session.summary()),
+            Err(err) => err,
+        },
+        "runtime_session_stop" => stop_session(args, ctx),
+        "runtime_turn_send" => send_turn(args, ctx),
+        "runtime_turn_status" => turn_status(args),
+        "runtime_events_poll" => poll_events(args),
+        "runtime_approval_respond" => respond_to_approval(args, ctx),
+        _ => json_error(&format!("Unknown runtime tool: {name}")),
+    }
+}
+
+/// The session named by `session_id`, or the error to return.
+fn session_arg(args: &Map<String, Value>) -> Result<Arc<RuntimeSession>, String> {
+    let Some(id) = arg_str(args, "session_id") else {
+        return Err(json_error("session_id is required"));
+    };
+    manager()
+        .session(id)
+        .ok_or_else(|| json_error(&format!("Session not found: {id}")))
+}
+
+/// `args["env"] as? [String: String]`: every value a string, else empty.
+fn env_arg(args: &Map<String, Value>) -> std::collections::HashMap<String, String> {
+    args.get("env")
+        .and_then(Value::as_object)
+        .and_then(|obj| {
+            obj.iter()
+                .map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `binaryExistsInPath` (`/usr/bin/which <name>`): an executable file of
+/// that name in a `PATH` folder.
+pub fn find_in_path(name: &str, path: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    std::env::split_paths(path?)
+        .map(|dir| dir.join(name))
+        .find(|p| is_executable(p))
+}
+
+fn is_executable(path: &Path) -> bool {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        meta.is_file() && meta.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        meta.is_file()
+    }
+}
+
+fn create_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
+    let backend_name = arg_str(args, "backend").unwrap_or("claude").to_string();
+    let directory = arg_str(args, "directory")
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .map(|d| d.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| "/".into())
+        });
+    let model = arg_str(args, "model").map(str::to_string);
+    let resume = arg_str(args, "resume_session_id").map(str::to_string);
+    let env = env_arg(args);
+    let backend_args = arg_str_list(args, "backend_args").unwrap_or_default();
+    let initial_prompt = arg_str(args, "initial_prompt").map(str::to_string);
+    let auto_approve = arg_bool(args, "auto_approve").unwrap_or(false);
+    let attach = arg_str(args, "attach_tab_id").map(str::to_string);
+    log::info!(
+        "MCP runtime_session_create: backend={backend_name} model={} dir={directory} autoApprove={auto_approve} resume={} backendArgs={backend_args:?} hasInitialPrompt={} attachTab={}",
+        model.as_deref().unwrap_or("(none)"),
+        resume.as_deref().unwrap_or("(none)"),
+        initial_prompt.is_some(),
+        attach.as_deref().unwrap_or("(none)")
+    );
+
+    let Some(backend) = backend_named(&backend_name) else {
+        log::warn!("MCP runtime_session_create: unknown backend '{backend_name}'");
+        return json_error(&unknown_backend_message(&backend_name));
+    };
+    if let Some(model) = &model
+        && let Some(err) = validate_model(model, &backend_name)
+    {
+        log::warn!("MCP runtime_session_create: model validation failed - {err}");
+        return json_error(&err);
+    }
+    if attach.is_none()
+        && let Some(binary) = binary_name(&backend_name)
+        && find_in_path(binary, std::env::var_os("PATH").as_deref()).is_none()
+    {
+        let msg = missing_binary_message(&backend_name, binary);
+        log::warn!("MCP runtime_session_create: {msg}");
+        return json_error(&msg);
+    }
+
+    let config = SessionConfig {
+        directory: directory.clone(),
+        provider: backend_name.clone(),
+        model,
+        resume_session_id: resume,
+        environment: env,
+        args: backend_args,
+        auto_approve,
+    };
+
+    // As in Swift, an `attach_tab_id` that is not a UUID opens a new tab
+    // (which is then adopted, without launching anything).
+    let tab_id = match attach.as_deref().and_then(parse_tab_id) {
+        Some(uuid) => {
+            log::info!("MCP runtime_session_create: attaching to existing tab {uuid}");
+            crate::workspace::mcp::uuid_string(uuid)
+        }
+        None => {
+            let result = tabs::create_tab(Some(directory.clone()), None, ctx);
+            let created = serde_json::from_str::<Value>(&result)
+                .ok()
+                .and_then(|v| v.get("tab_id").and_then(Value::as_str).map(str::to_string))
+                .filter(|id| parse_tab_id(id).is_some());
+            match created {
+                Some(id) => {
+                    log::info!("MCP runtime_session_create: created tab {id}");
+                    id
+                }
+                None => {
+                    log::error!("MCP runtime_session_create: failed to create tab - {result}");
+                    return json_error(&format!("Failed to create tab: {result}"));
+                }
+            }
+        }
+    };
+
+    let launch = backend.launch_command(&config);
+    let session = if attach.is_some() {
+        manager().adopt_session(&tab_id, backend, &directory)
+    } else {
+        manager().create_session(&tab_id, backend, config, auto_approve)
+    };
+    if !launch.is_empty() && attach.is_none() {
+        log::info!("MCP runtime_session_create: launching command: {launch}");
+        let _ = tabs::exec(&tab_id, &launch, ctx);
+        manager().mark_ready(&session.id);
+    }
+    sync_owned_tabs(ctx.main);
+    if let Some(prompt) = initial_prompt {
+        schedule_initial_prompt(session.clone(), prompt, ctx.main.clone());
+    }
+    log::info!(
+        "MCP runtime_session_create: session {} created (state={})",
+        session.id,
+        session.state().raw_value()
+    );
+    encode_sorted(&session.summary())
+}
+
+fn sync_owned_tabs(main: &MainThread) {
+    let _ = main.call(super::sync_runtime_owned_tabs);
+}
+
+/// `scheduleInitialPrompt`: wait for `ready`, up to 8 tries (about 4 s).
+fn schedule_initial_prompt(session: Arc<RuntimeSession>, prompt: String, main: MainThread) {
+    let spawned = std::thread::Builder::new()
+        .name("chau7-next-runtime-prompt".into())
+        .spawn(move || {
+            let ctx = ToolContext { main: &main };
+            for attempt in 1..=INITIAL_PROMPT_ATTEMPTS {
+                std::thread::sleep(initial_prompt_delay(attempt));
+                if session.is_terminal() {
+                    log::warn!(
+                        "MCP initial_prompt: session {} reached terminal state before prompt could be sent (state={})",
+                        session.id,
+                        session.state().raw_value()
+                    );
+                    session.record(
+                        None,
+                        "initial_prompt_failed",
+                        [
+                            ("reason".to_string(), "session_terminated".to_string()),
+                            ("state".to_string(), session.state().raw_value().to_string()),
+                        ]
+                        .into(),
+                    );
+                    return;
+                }
+                if session.can_accept_turn() {
+                    log::info!(
+                        "MCP initial_prompt: sending to session {} (attempt {attempt})",
+                        session.id
+                    );
+                    let result = send_turn_internal(&session, &prompt, None, &ctx);
+                    if result.contains("\"error\"") {
+                        log::warn!("MCP initial_prompt: sendTurn failed - {result}");
+                    }
+                    return;
+                }
+            }
+            log::warn!(
+                "MCP initial_prompt: giving up after {INITIAL_PROMPT_ATTEMPTS} attempts, session state={}",
+                session.state().raw_value()
+            );
+            session.record(
+                None,
+                "initial_prompt_failed",
+                [
+                    ("reason".to_string(), "timeout".to_string()),
+                    ("state".to_string(), session.state().raw_value().to_string()),
+                    ("attempts".to_string(), INITIAL_PROMPT_ATTEMPTS.to_string()),
+                ]
+                .into(),
+            );
+        });
+    if let Err(err) = spawned {
+        log::error!("MCP initial_prompt: thread: {err}");
+    }
+}
+
+fn stop_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
+    let Some(id) = arg_str(args, "session_id") else {
+        return json_error("session_id is required");
+    };
+    let close_tab = arg_bool(args, "close_tab").unwrap_or(false);
+    let force = arg_bool(args, "force").unwrap_or(false);
+    let Some(session) = manager().session(id) else {
+        log::info!("MCP runtime_session_stop: session not found {id}");
+        return json_error(&format!("Session not found: {id}"));
+    };
+    log::info!(
+        "MCP runtime_session_stop: session={id} state={} force={force} closeTab={close_tab}",
+        session.state().raw_value()
+    );
+    if force || matches!(session.state(), State::Busy | State::AwaitingApproval) {
+        let _ = tabs::send_input(&session.tab_id, "\u{3}", ctx);
+    }
+    let stopped = manager().stop_session(id);
+    if close_tab {
+        let tab = session.tab_id.clone();
+        let _ = ctx.main.call(move |cx| tabs::close_tab(&tab, true, cx));
+    }
+    sync_owned_tabs(ctx.main);
+    encode_sorted(&json!({
+        "ok": stopped,
+        "session_id": id,
+        "final_state": session.state().raw_value()
+    }))
+}
+
+fn send_turn(args: &Map<String, Value>, ctx: &ToolContext) -> String {
+    if arg_str(args, "session_id").is_none() {
+        return json_error("session_id is required");
+    }
+    let Some(prompt) = arg_str(args, "prompt") else {
+        return json_error("prompt is required");
+    };
+    let context = arg_str(args, "context");
+    match session_arg(args) {
+        Ok(session) => send_turn_internal(&session, prompt, context, ctx),
+        Err(err) => err,
+    }
+}
+
+fn send_turn_internal(
+    session: &RuntimeSession,
+    prompt: &str,
+    context: Option<&str>,
+    ctx: &ToolContext,
+) -> String {
+    if !session.can_accept_turn() {
+        log::info!(
+            "MCP runtime_turn_send: rejected for session {}, state={}",
+            session.id,
+            session.state().raw_value()
+        );
+        return json_error(&format!(
+            "Session {} is not ready (state: {}). Wait for ready state.",
+            session.id,
+            session.state().raw_value()
+        ));
+    }
+    let Some(turn_id) = session.start_turn(prompt) else {
+        log::error!(
+            "MCP runtime_turn_send: startTurn failed for session {}",
+            session.id
+        );
+        return json_error(&format!("Failed to start turn in session {}", session.id));
+    };
+    let input = session.backend.format_prompt_input(prompt, context);
+    let result = tabs::send_input(&session.tab_id, &input, ctx);
+    log::info!(
+        "MCP runtime_turn_send: session={} turn={turn_id} inputLen={} sendResult={}",
+        session.id,
+        input.chars().count(),
+        result.chars().take(100).collect::<String>()
+    );
+    encode_sorted(&json!({
+        "turn_id": turn_id,
+        "status": "accepted",
+        "session_state": session.state().raw_value(),
+        "cursor": session.journal.latest_cursor()
+    }))
+}
+
+fn turn_status(args: &Map<String, Value>) -> String {
+    let session = match session_arg(args) {
+        Ok(session) => session,
+        Err(err) => return err,
+    };
+    let mut out = Map::new();
+    out.insert("session_id".into(), json!(session.id));
+    out.insert("state".into(), json!(session.state().raw_value()));
+    out.insert("turn_count".into(), json!(session.turn_count()));
+    if let Some(turn) = session.current_turn_id() {
+        out.insert("current_turn_id".into(), json!(turn));
+    }
+    if let Some(reason) = session.last_exit_reason() {
+        out.insert("last_exit_reason".into(), json!(reason.raw_value()));
+    }
+    if let Some(approval) = session.pending_approval() {
+        out.insert("pending_approval".into(), approval.json());
+    }
+    encode_sorted(&Value::Object(out))
+}
+
+/// `cursor` as a number (`NSNumber.uint64Value`; negative or missing is 0).
+fn cursor_arg(args: &Map<String, Value>) -> u64 {
+    match args.get("cursor") {
+        Some(v) => v
+            .as_u64()
+            .or_else(|| v.as_f64().filter(|f| *f >= 0.0).map(|f| f as u64))
+            .unwrap_or(0),
+        None => 0,
+    }
+}
+
+fn poll_events(args: &Map<String, Value>) -> String {
+    let session = match session_arg(args) {
+        Ok(session) => session,
+        Err(err) => return err,
+    };
+    // Swift returns at least one event whatever the limit (its loop checks
+    // the count after appending).
+    let limit = crate::mcp::tools::arg_int(args, "limit")
+        .unwrap_or(50)
+        .max(1) as usize;
+    let batch = session.journal.events(cursor_arg(args), limit);
+    encode_sorted(&poll_response_json(
+        &batch.events,
+        batch.cursor,
+        batch.has_more,
+        session.state().raw_value(),
+    ))
+}
+
+fn respond_to_approval(args: &Map<String, Value>, ctx: &ToolContext) -> String {
+    if arg_str(args, "session_id").is_none() {
+        return json_error("session_id is required");
+    }
+    let Some(approval_id) = arg_str(args, "approval_id") else {
+        return json_error("approval_id is required");
+    };
+    let Some(approved) = arg_bool(args, "approved") else {
+        return json_error("approved is required");
+    };
+    let reason = arg_str(args, "reason").unwrap_or("orchestrator");
+    let session = match session_arg(args) {
+        Ok(session) => session,
+        Err(err) => return err,
+    };
+    if session.pending_approval().map(|a| a.id).as_deref() != Some(approval_id) {
+        return json_error(&format!("No pending approval with id {approval_id}"));
+    }
+    let _ = tabs::send_input(&session.tab_id, if approved { "y\n" } else { "n\n" }, ctx);
+    if session.resolve_approval(approval_id, approved, reason) {
+        let tab = session.tab_id.clone();
+        let _ = ctx.main.call(move |cx| {
+            let Some(found) = crate::mcp::windows::find_tab(&tab, cx) else {
+                return;
+            };
+            found
+                .window
+                .workspace
+                .update(cx, |ws, cx| ws.clear_persistent_style(found.tab, cx));
+        });
+    }
+    encode_sorted(&json!({"ok": true, "approved": approved}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn initial_prompt_retries_last_about_four_seconds() {
+        let total: Duration = (1..=INITIAL_PROMPT_ATTEMPTS)
+            .map(initial_prompt_delay)
+            .sum();
+        assert_eq!(total, Duration::from_millis(3600));
+    }
+
+    #[test]
+    fn env_needs_string_values() {
+        let args = json!({"env": {"A": "1", "B": "2"}});
+        assert_eq!(env_arg(args.as_object().unwrap()).len(), 2);
+        let bad = json!({"env": {"A": "1", "B": 2}});
+        assert!(env_arg(bad.as_object().unwrap()).is_empty());
+    }
+
+    #[test]
+    fn cursors_are_unsigned() {
+        let args = |v: Value| json!({ "cursor": v }).as_object().unwrap().clone();
+        assert_eq!(cursor_arg(&args(json!(7))), 7);
+        assert_eq!(cursor_arg(&args(json!(7.0))), 7);
+        assert_eq!(cursor_arg(&args(json!(-3))), 0);
+        assert_eq!(cursor_arg(&Map::new()), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn path_lookup_needs_an_executable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("chau7-next-which-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tool = dir.join("claude");
+        std::fs::write(&tool, "#!/bin/sh\n").unwrap();
+        let path = std::env::join_paths([Path::new("/nonexistent"), &dir]).unwrap();
+        assert!(find_in_path("claude", Some(&path)).is_none());
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(find_in_path("claude", Some(&path)), Some(tool));
+        assert!(find_in_path("codex", Some(&path)).is_none());
+        assert!(find_in_path("claude", None).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tools_validate_arguments_before_reaching_tabs() {
+        let (tx, _rx) = futures::channel::mpsc::unbounded();
+        let main = MainThread::for_tests(tx);
+        let ctx = ToolContext { main: &main };
+        let call = |name: &str, args: Value| {
+            let v: Value =
+                serde_json::from_str(&handle_tool_call(name, args.as_object().unwrap(), &ctx))
+                    .unwrap();
+            v
+        };
+        assert_eq!(
+            call("runtime_session_create", json!({"backend": "gemini"}))["error"],
+            "Unknown backend: gemini. Valid: claude, codex, shell"
+        );
+        assert!(
+            call(
+                "runtime_session_create",
+                json!({"backend": "codex", "model": "sonnet"})
+            )["error"]
+                .as_str()
+                .unwrap()
+                .contains("looks like a Claude model")
+        );
+        assert_eq!(
+            call("runtime_session_get", json!({}))["error"],
+            "session_id is required"
+        );
+        assert_eq!(
+            call("runtime_session_get", json!({"session_id": "rs_nope"}))["error"],
+            "Session not found: rs_nope"
+        );
+        assert_eq!(
+            call("runtime_turn_send", json!({"session_id": "x"}))["error"],
+            "prompt is required"
+        );
+        assert_eq!(
+            call(
+                "runtime_approval_respond",
+                json!({"session_id": "x", "approval_id": "a"})
+            )["error"],
+            "approved is required"
+        );
+        assert_eq!(
+            call("runtime_nope", json!({}))["error"],
+            "Unknown runtime tool: runtime_nope"
+        );
+
+        // A session the registry knows (adopted, so nothing is launched).
+        let session = manager().adopt_session(
+            "00000000-0000-0000-0000-00000000AAAA",
+            backend_named("shell").unwrap(),
+            "/tmp",
+        );
+        let got = call("runtime_session_get", json!({"session_id": session.id}));
+        assert_eq!(got["state"], "ready");
+        let status = call("runtime_turn_status", json!({"session_id": session.id}));
+        assert_eq!(status["turn_count"], 0);
+        assert!(status.get("current_turn_id").is_none());
+        let polled = call(
+            "runtime_events_poll",
+            json!({"session_id": session.id, "cursor": 0}),
+        );
+        assert_eq!(polled["session_state"], "ready");
+        let types: Vec<_> = polled["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["type"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(types, ["state_changed", "session_ready"]);
+        assert_eq!(polled["cursor"], 2);
+        assert_eq!(polled["has_more"], false);
+        let limited = call(
+            "runtime_events_poll",
+            json!({"session_id": session.id, "cursor": 0, "limit": 1}),
+        );
+        assert_eq!(limited["cursor"], 1);
+        assert_eq!(limited["has_more"], true);
+        let wrong = call(
+            "runtime_approval_respond",
+            json!({"session_id": session.id, "approval_id": "a", "approved": true}),
+        );
+        assert_eq!(wrong["error"], "No pending approval with id a");
+        let listed = call("runtime_session_list", json!({}));
+        assert!(
+            listed
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s["session_id"] == session.id.as_str())
+        );
+        manager().stop_session(&session.id);
+    }
+}

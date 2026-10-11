@@ -1,0 +1,25 @@
+# Checks the Chau7 Next parity inventory (docs/rust-port/inventory/) and that
+# the generated table in docs/rust-port/PARITY.md is up to date.
+name: Chau7 Next parity
+
+on:
+  push:
+    paths:
+      - "docs/rust-port/**"
+      - "apps/chau7-next/scripts/parity.py"
+      - ".github/workflows/chau7-next-parity.yml"
+  pull_request:
+    paths:
+      - "docs/rust-port/**"
+      - "apps/chau7-next/scripts/parity.py"
+      - ".github/workflows/chau7-next-parity.yml"
+  workflow_dispatch:
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check inventory and PARITY.md
+        run: python3 apps/chau7-next/scripts/parity.py --check

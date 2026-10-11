@@ -1,0 +1,155 @@
+//! Port of `Telemetry/TokenMetrics.swift`: canonical token accounting and the
+//! metric and cost state enums.
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TelemetryMetricState {
+    Complete,
+    Estimated,
+    Missing,
+    Invalid,
+}
+
+impl TelemetryMetricState {
+    pub const ALL: [Self; 4] = [
+        Self::Complete,
+        Self::Estimated,
+        Self::Missing,
+        Self::Invalid,
+    ];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TokenUsageSource {
+    #[serde(rename = "proxy")]
+    Proxy,
+    #[serde(rename = "transcriptDelta")]
+    TranscriptDelta,
+    #[serde(rename = "transcriptSnapshot")]
+    TranscriptSnapshot,
+    #[serde(rename = "providerEstimate")]
+    ProviderEstimate,
+    #[serde(rename = "unknown")]
+    Unknown,
+}
+
+impl TokenUsageSource {
+    pub const ALL: [Self; 5] = [
+        Self::Proxy,
+        Self::TranscriptDelta,
+        Self::TranscriptSnapshot,
+        Self::ProviderEstimate,
+        Self::Unknown,
+    ];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CostSource {
+    Observed,
+    Estimated,
+    Unavailable,
+}
+
+impl CostSource {
+    pub const ALL: [Self; 3] = [Self::Observed, Self::Estimated, Self::Unavailable];
+}
+
+/// Canonical token accounting shared across runtime, proxy, and telemetry persistence.
+///
+/// - `input_tokens`: uncached input tokens sent to the model
+/// - `cached_input_tokens`: provider-reported cached or cache-read input tokens
+/// - `output_tokens`: normal model output tokens
+/// - `reasoning_output_tokens`: hidden or reasoning-only output tokens when reported
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsage {
+    pub input_tokens: i64,
+    pub cached_input_tokens: i64,
+    pub output_tokens: i64,
+    pub reasoning_output_tokens: i64,
+}
+
+impl TokenUsage {
+    /// Negative inputs are clamped to zero, like the Swift initializer.
+    pub fn new(input: i64, cached_input: i64, output: i64, reasoning_output: i64) -> Self {
+        Self {
+            input_tokens: input.max(0),
+            cached_input_tokens: cached_input.max(0),
+            output_tokens: output.max(0),
+            reasoning_output_tokens: reasoning_output.max(0),
+        }
+    }
+
+    pub fn has_any_tokens(&self) -> bool {
+        self.total_tokens() > 0
+    }
+
+    /// Input + output shown in most user-facing summaries.
+    pub fn total_visible_tokens(&self) -> i64 {
+        self.input_tokens + self.output_tokens
+    }
+
+    /// Best effort billable total when providers expose cache and reasoning counters.
+    pub fn total_billable_tokens(&self) -> i64 {
+        self.input_tokens
+            + self.cached_input_tokens
+            + self.output_tokens
+            + self.reasoning_output_tokens
+    }
+
+    /// Backward-compatible aggregate used by older surfaces.
+    pub fn total_tokens(&self) -> i64 {
+        self.total_visible_tokens()
+    }
+
+    pub fn add(&mut self, other: &TokenUsage) {
+        self.input_tokens += other.input_tokens;
+        self.cached_input_tokens += other.cached_input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.reasoning_output_tokens += other.reasoning_output_tokens;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_clamps_negatives() {
+        let u = TokenUsage::new(-1, -2, 3, -4);
+        assert_eq!(u, TokenUsage::new(0, 0, 3, 0));
+    }
+
+    #[test]
+    fn totals_and_add() {
+        let mut u = TokenUsage::new(1, 2, 3, 4);
+        assert_eq!(u.total_tokens(), 4);
+        assert_eq!(u.total_billable_tokens(), 10);
+        u.add(&TokenUsage::new(1, 1, 1, 1));
+        assert_eq!(u.total_billable_tokens(), 14);
+        assert!(u.has_any_tokens());
+        assert!(!TokenUsage::default().has_any_tokens());
+    }
+
+    #[test]
+    fn json_keys_and_enum_raw_values() {
+        let json = serde_json::to_value(TokenUsage::new(1, 2, 3, 4)).unwrap();
+        assert_eq!(json["cachedInputTokens"], 2);
+        assert_eq!(json["reasoningOutputTokens"], 4);
+        assert_eq!(
+            serde_json::to_string(&TokenUsageSource::TranscriptDelta).unwrap(),
+            "\"transcriptDelta\""
+        );
+        assert_eq!(
+            serde_json::to_string(&CostSource::Unavailable).unwrap(),
+            "\"unavailable\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TelemetryMetricState::Invalid).unwrap(),
+            "\"invalid\""
+        );
+    }
+}

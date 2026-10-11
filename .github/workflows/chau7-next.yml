@@ -1,0 +1,131 @@
+# Builds and tests Chau7 Next (apps/chau7-next) on macOS, Linux and Windows.
+# The macOS job also produces "Chau7 Next.app" as a downloadable artifact.
+name: Chau7 Next
+
+on:
+  push:
+    paths:
+      - "apps/chau7-next/**"
+      - "apps/chau7-macos/rust/**"
+      - "apps/chau7-macos/chau7-proxy/**"
+      - "services/chau7-remote/**"
+      - ".github/workflows/chau7-next.yml"
+  pull_request:
+    paths:
+      - "apps/chau7-next/**"
+      - "apps/chau7-macos/rust/**"
+      - "apps/chau7-macos/chau7-proxy/**"
+      - "services/chau7-remote/**"
+      - ".github/workflows/chau7-next.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: chau7-next-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+    working-directory: apps/chau7-next
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Linux
+            os: ubuntu-latest
+          - name: Windows
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/chau7-next
+
+      - name: Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config clang libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libxcb1-dev libxcb-xkb-dev libx11-xcb-dev libvulkan-dev \
+            libfontconfig1-dev libfreetype6-dev libssl-dev libzstd-dev
+
+      - name: Format
+        run: set -o pipefail; cargo fmt --all --check 2>&1 | tee ../../ci.log
+
+      - name: Clippy
+        run: set -o pipefail; cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee ../../ci.log
+
+      - name: Test
+        run: set -o pipefail; cargo test --workspace 2>&1 | tee ../../ci.log
+
+      # The remote control agent (services/chau7-remote) and the API
+      # analytics proxy (apps/chau7-macos/chau7-proxy) ship inside the app.
+      - uses: actions/setup-go@v5
+        if: runner.os == 'macOS'
+        with:
+          go-version-file: services/chau7-remote/go.mod
+          cache-dependency-path: |
+            services/chau7-remote/go.sum
+            apps/chau7-macos/chau7-proxy/go.sum
+
+      - name: Bundle Chau7 Next.app
+        if: runner.os == 'macOS'
+        env:
+          REQUIRE_REMOTE_AGENT: "1"
+          REQUIRE_PROXY: "1"
+        # Linux and Windows are proven by the build and tests above; only the
+        # macOS app is packaged, so only macOS pays for a release build.
+        run: |
+          set -o pipefail
+          TARGET=aarch64-apple-darwin ./scripts/bundle-macos.sh 2>&1 | tee ../../ci.log
+          plutil -lint "target/bundle/Chau7 Next.app/Contents/Info.plist"
+          test -x "target/bundle/Chau7 Next.app/Contents/MacOS/Chau7 Next"
+          test -x "target/bundle/Chau7 Next.app/Contents/MacOS/chau7-next-mcp-bridge"
+          test -x "target/bundle/Chau7 Next.app/Contents/MacOS/chau7-remote"
+          test -x "target/bundle/Chau7 Next.app/Contents/MacOS/chau7-proxy"
+          test -x "target/bundle/Chau7 Next.app/Contents/MacOS/chau7-optim"
+          test -x "target/bundle/Chau7 Next.app/Contents/MacOS/chau7-md"
+          cd target/bundle && ditto -c -k --keepParent "Chau7 Next.app" "Chau7-Next-macOS-arm64.zip"
+
+      - name: Upload Chau7 Next.app
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chau7-Next-macOS-arm64
+          path: apps/chau7-next/target/bundle/Chau7-Next-macOS-arm64.zip
+          if-no-files-found: error
+
+      # Surface the end of the failing step's output as an annotation, so the
+      # failure is readable from the check run without opening the logs.
+      - name: Report failure
+        if: failure()
+        working-directory: .
+        run: |
+          PY_BIN="$(command -v python3 || command -v python)"
+          "$PY_BIN" - <<'PY'
+          import pathlib
+          log = pathlib.Path("ci.log")
+          lines = log.read_text(errors="replace").splitlines() if log.exists() else ["no log captured"]
+          errors = [l for l in lines if l.startswith(("error", "warning: unused", "  -->", "test ")) and ("FAILED" in l or l.startswith(("error", "  -->")))]
+          tail = (errors[-60:] if errors else []) + ["---- tail ----"] + lines[-80:]
+          msg = "\n".join(tail)[-60000:]
+          msg = msg.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=${{ matrix.name }} failure::{msg}")
+          PY
