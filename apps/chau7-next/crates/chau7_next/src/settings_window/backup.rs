@@ -104,9 +104,13 @@ fn export_settings(cx: &mut App) {
         &home.to_string_lossy(),
     );
     let path = cx.prompt_for_new_path(&home, Some(export::EXPORT_FILE_NAME));
+    let background = cx.background_executor().clone();
     cx.spawn(async move |cx| {
         if let Ok(Ok(Some(path))) = path.await {
-            let result = std::fs::write(&path, text);
+            let write_path = path.clone();
+            let result = background
+                .spawn(async move { std::fs::write(write_path, text) })
+                .await;
             cx.update(|cx| match result {
                 Ok(()) => set_message(
                     cx,
@@ -131,6 +135,7 @@ fn import_settings(cx: &mut App) {
         multiple: false,
         prompt: Some("Import".into()),
     });
+    let background = cx.background_executor().clone();
     cx.spawn(async move |cx| {
         let Ok(Ok(Some(paths))) = paths.await else {
             return;
@@ -138,7 +143,10 @@ fn import_settings(cx: &mut App) {
         let Some(path) = paths.into_iter().next() else {
             return;
         };
-        let text = std::fs::read_to_string(&path);
+        let read_path = path.clone();
+        let text = background
+            .spawn(async move { std::fs::read_to_string(read_path) })
+            .await;
         cx.update(|cx| {
             let text = match text {
                 Ok(text) => text,
@@ -162,7 +170,9 @@ fn import_settings(cx: &mut App) {
                     replace_base(cx, base);
                     set_message(cx, "Settings imported".to_string(), false);
                 }
-                Err(_) => set_message(cx, "Invalid settings file format".to_string(), true),
+                Err(reason) => {
+                    set_message(cx, format!("Invalid settings file format: {reason}"), true)
+                }
             }
         });
     })

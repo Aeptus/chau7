@@ -314,6 +314,7 @@ pub(super) fn confirm_reset_all(window: &mut Window, cx: &mut App) {
             cx.update(|cx| {
                 // The login item is registered with the OS, not in the file.
                 let _ = login_item::current().set_enabled(false);
+                crate::repository::reset_discovered_repositories(cx);
                 update(cx, Settings::reset_all)
             });
         }

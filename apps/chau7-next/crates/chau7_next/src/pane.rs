@@ -4,15 +4,12 @@
 //! editor, a file preview or a diff viewer ([`PaneItem`]; the side panes
 //! live in `crate::panes`).
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use chau7_next_core::editor::diff::DiffMode;
-use chau7_next_core::session_restore::{
-    SavedAxis, SavedSplitNode, build_ai_resume_command, normalized_resume_command,
-    resolve_resume_metadata_from_saved, restore_input,
-};
+use chau7_next_core::session_restore::{SavedAxis, SavedSplitNode};
 use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Entity, EntityId, EventEmitter, FocusHandle,
     Focusable, Render, Subscription, Window, div, prelude::*, px, relative,
@@ -22,7 +19,6 @@ use crate::actions::{ScrollToBottom, ScrollToTop};
 use crate::panes::{
     DashboardPane, DiffPane, EditorPane, PreviewPane, RepositoryPane, SidePaneEvent,
 };
-use crate::restore;
 use crate::session_store::{SavedPane, SavedTab};
 use crate::settings::Settings;
 use crate::terminal::session::{SessionEvent, TerminalSession};
@@ -169,6 +165,12 @@ pub struct PaneTree {
     /// Complete saved payload parked until this tab is actually selected.
     deferred_saved: Option<SavedTab>,
     deferred_cwd: Option<PathBuf>,
+    restore_selected: Cell<bool>,
+    restore_prepared: Option<crate::restore::preparation::PreparedTab>,
+    restore_activation: Option<gpui::Task<()>>,
+    restore_override: chau7_next_core::token_optimization::TabTokenOptOverride,
+    restore_release_registered: bool,
+    restored_metadata: HashMap<PaneId, SavedPane>,
     root: Option<Node<PaneItem>>,
     focused: Option<EntityId>,
     next_split_id: u64,
@@ -194,6 +196,12 @@ impl PaneTree {
         Self {
             deferred_saved: None,
             deferred_cwd: None,
+            restore_selected: Cell::new(false),
+            restore_prepared: None,
+            restore_activation: None,
+            restore_override: chau7_next_core::token_optimization::TabTokenOptOverride::Default,
+            restore_release_registered: false,
+            restored_metadata: HashMap::new(),
             root: None,
             focused: None,
             next_split_id: 1,
@@ -244,24 +252,137 @@ impl PaneTree {
         self.deferred_saved.is_some()
     }
 
+    pub(crate) fn set_restore_surface(&self, selected: bool, visible: bool, cx: &App) {
+        self.restore_selected.set(selected);
+        for (_, session) in self.pane_sessions(cx) {
+            session.read(cx).set_restore_selected(selected);
+            session.read(cx).mark_restore_surface(visible);
+        }
+    }
+    pub(crate) fn set_restore_override(
+        &mut self,
+        value: chau7_next_core::token_optimization::TabTokenOptOverride,
+    ) {
+        self.restore_override = value;
+    }
     fn activate_deferred(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(saved) = self.deferred_saved.take() else {
+        let Some(saved) = self.deferred_saved.clone() else {
             return;
         };
-        let cwd = self.deferred_cwd.take().or_else(|| saved.cwd.clone());
-        let owner = self.owner_tab;
-        let mut active = Self::from_saved(Some(&saved), cwd, window, cx);
-        if let Some(owner) = owner {
-            active.set_owner_tab(owner, window, cx);
+        if let Some(mut prepared) = self.restore_prepared.take() {
+            if !self.restore_selected.get() || !window.is_visible() {
+                self.restore_prepared = Some(prepared);
+                return;
+            }
+            let owner = self.owner_tab;
+            if let Some(owner) = owner {
+                crate::restore::preparation::claim(
+                    &cx.global::<AppData>().root,
+                    owner,
+                    &mut prepared,
+                );
+            }
+
+            let token_override = self.restore_override;
+            let cwd = self.deferred_cwd.clone().or_else(|| saved.cwd.clone());
+            let mut active = Self::from_saved_prepared(Some(&prepared.saved), cwd, window, cx);
+            active.restore_selected.set(true);
+            active.restore_release_registered = self.restore_release_registered;
+            active.restored_metadata = prepared
+                .saved
+                .panes
+                .iter()
+                .map(|pane| (pane.id, pane.clone()))
+                .collect();
+            active.restore_override = token_override;
+            if let Some(owner) = owner {
+                active.set_owner_tab(owner, window, cx);
+            }
+            for (pane, session) in active.pane_sessions(cx) {
+                session.update(cx, |session, cx| {
+                    session.set_token_opt_override(token_override, false);
+                    session.set_restore_selected(true);
+                    session.mark_restore_surface(window.is_visible());
+                    if let Some(prepared) = prepared.panes.get(&pane) {
+                        if let Some(context) = &prepared.context {
+                            session.replay_restored_context(context, cx);
+                        }
+                        if let Some(identity) = &prepared.identity {
+                            session.restore_ai_metadata(
+                                Some(&identity.provider),
+                                Some(&identity.session_id),
+                                cx,
+                            );
+                            if let Some(command) = &prepared.command {
+                                session.queue_restored_resume(
+                                    command.clone(),
+                                    prepared.directory.clone(),
+                                    identity.clone(),
+                                    cx,
+                                );
+                            }
+                        } else if let Some(provider) = active
+                            .restored_metadata
+                            .get(&pane)
+                            .and_then(|pane| pane.ai_provider.as_deref())
+                        {
+                            session.restore_ai_metadata(Some(provider), None, cx);
+                        }
+                    }
+                });
+            }
+            for (pane, prepared) in &prepared.panes {
+                active.pending_restore.remove(pane);
+                if let Some(identity) = &prepared.identity {
+                    active.resume_meta.insert(
+                        *pane,
+                        (identity.provider.clone(), identity.session_id.clone()),
+                    );
+                }
+            }
+            *self = active;
+            self.focus_own(window, cx);
+            cx.emit(PaneEvent::MetadataChanged);
+            cx.notify();
+            return;
         }
-        *self = active;
-        cx.emit(PaneEvent::MetadataChanged);
-        cx.notify();
+        if self.restore_activation.is_some() {
+            return;
+        }
+        let root = cx.global::<AppData>().root.clone();
+        let cwd = self.deferred_cwd.clone();
+        let task =
+            cx.background_spawn(
+                async move { crate::restore::preparation::prepare(&root, saved, cwd) },
+            );
+        self.restore_activation = Some(cx.spawn_in(window, async move |this, cx| {
+            let prepared = task.await;
+            // Keep prepared data even if the original window disappeared during
+            // a move. The receiving window activates it when actually selected.
+            let _ = this.update(cx, |this, cx| {
+                this.restore_prepared = Some(prepared);
+                this.restore_activation = None;
+                cx.notify();
+            });
+            let _ = this.update_in(cx, |this, window, cx| this.activate_deferred(window, cx));
+        }));
     }
 
     /// The panes of a tab: restored from its saved split layout when it has
     /// one (`buildRestorableController`), else one shell in `cwd`.
     pub fn from_saved(
+        saved: Option<&SavedTab>,
+        cwd: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        match saved {
+            Some(saved) => Self::park_saved(saved.clone(), cwd),
+            None => Self::new(cwd, window, cx),
+        }
+    }
+
+    fn from_saved_prepared(
         saved: Option<&SavedTab>,
         cwd: Option<PathBuf>,
         window: &mut Window,
@@ -301,7 +422,6 @@ impl PaneTree {
             }
         }
         this.deferred_cwd = None;
-        this.start_restore(cx);
         this
     }
 
@@ -725,6 +845,12 @@ impl PaneTree {
 
     /// Whether the tab has a terminal (a tab of editors only is "Editor").
     pub fn has_terminal(&self) -> bool {
+        if let Some(saved) = &self.deferred_saved {
+            return saved
+                .layout
+                .as_ref()
+                .is_none_or(|layout| !layout.terminal_ids().is_empty());
+        }
         !self.views().is_empty()
     }
 
@@ -771,7 +897,10 @@ impl PaneTree {
 
     /// Focus the focused pane of `panes`.
     pub fn focus_entity(panes: &Entity<PaneTree>, window: &mut Window, cx: &mut App) {
-        panes.update(cx, |tree, cx| tree.activate_deferred(window, cx));
+        panes.update(cx, |tree, cx| {
+            tree.restore_selected.set(true);
+            tree.activate_deferred(window, cx);
+        });
         let handle = panes
             .read(cx)
             .focused_item()
@@ -850,6 +979,16 @@ impl PaneTree {
     /// Workspace passes its persistent tab UUID after new/restore/reopen construction.
     #[allow(dead_code)] // Coordinator wires the shared workspace constructor seam.
     pub fn set_owner_tab(&mut self, tab: uuid::Uuid, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.restore_release_registered {
+            self.restore_release_registered = true;
+            let root = cx.global::<AppData>().root.clone();
+            cx.on_release(move |this, _| {
+                if let Some(owner) = this.owner_tab {
+                    crate::restore::preparation::release_owner(&root, owner);
+                }
+            })
+            .detach();
+        }
         if self.owner_tab != Some(tab) {
             self.owner_tab = Some(tab);
             self.note_binding = None;
@@ -1238,119 +1377,16 @@ impl PaneTree {
         self.pending_restore.get(&pane)
     }
 
+    pub(crate) fn restored_metadata(&self, pane: PaneId) -> Option<&SavedPane> {
+        self.restored_metadata.get(&pane)
+    }
+
     /// AI session a restored pane was running.
     pub fn resume_meta(&self, pane: PaneId) -> Option<(String, String)> {
         self.resume_meta.get(&pane).cloned()
     }
 
     // ----- restore ------------------------------------------------------
-
-    /// Replay the saved scrollback into every restored pane after
-    /// `restoreDelaySeconds` (0.8 s), then type the AI resume command into
-    /// the focused pane once its prompt is ready, retrying up to 16 times
-    /// (`restoreTabState`, `scheduleResumeCommand`).
-    fn start_restore(&mut self, cx: &mut Context<Self>) {
-        if self.pending_restore.is_empty() {
-            return;
-        }
-        let token = format!("{:x}", new_pane_id());
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(800))
-                .await;
-            let Ok(target) = this.update(cx, |this, cx| this.replay_pending(&token, cx)) else {
-                return;
-            };
-            let Some((pane, command)) = target else {
-                return;
-            };
-            let mut delay = Duration::from_millis(600);
-            for _ in 0..16 {
-                cx.background_executor().timer(delay).await;
-                match this.update(cx, |this, cx| this.resume_ready(pane, cx)) {
-                    Ok(Some(true)) => break,
-                    Ok(Some(false)) => {
-                        delay = (delay + Duration::from_millis(500)).min(Duration::from_secs(4));
-                    }
-                    // The pane or the tab is gone.
-                    Ok(None) | Err(_) => return,
-                }
-            }
-            // Ready, or retries exhausted: type it anyway, as Swift queues it.
-            let _ = this.update(cx, |this, cx| this.prefill(pane, &command, cx));
-        })
-        .detach();
-    }
-
-    /// Type the restore line into each pending pane. Returns the resume
-    /// command of the focused pane, if it was running an AI session.
-    fn replay_pending(&mut self, token: &str, cx: &mut Context<Self>) -> Option<(PaneId, String)> {
-        let root = cx.global::<crate::workspace::AppData>().root.clone();
-        let focused = self.focused_pane_id();
-        let mut target = None;
-        for (pane, session) in self.pane_sessions(cx) {
-            let Some(saved) = self.pending_restore.remove(&pane) else {
-                continue;
-            };
-            let file = saved
-                .scrollback
-                .then(|| restore::replay_copy(&root, pane, token))
-                .flatten();
-            if let Some(line) = restore_input(file.as_deref(), saved.directory.as_deref()) {
-                session.update(cx, |s, _| s.write_restore_line(&line));
-            }
-            let meta = resolve_resume_metadata_from_saved(
-                saved.ai_provider.as_deref(),
-                saved.ai_session_id.as_deref(),
-                saved.ai_resume_command.as_deref(),
-            );
-            let command = build_ai_resume_command(
-                meta.as_ref().map(|m| m.provider.as_str()),
-                meta.as_ref().map(|m| m.session_id.as_str()),
-            )
-            .or_else(|| normalized_resume_command(saved.ai_resume_command.as_deref()));
-            // Every restored pane keeps its AI session (`restoreAIMetadata`), so
-            // it is saved again; only the focused pane gets the command typed.
-            if let Some(meta) = meta {
-                // The session knows its AI tool again (tab color, detection).
-                session.update(cx, |s, cx| {
-                    s.restore_ai_metadata(Some(&meta.provider), Some(&meta.session_id), cx)
-                });
-                self.resume_meta
-                    .insert(pane, (meta.provider, meta.session_id));
-                if let Some(command) = command
-                    && Some(pane) == focused
-                {
-                    target = Some((pane, command));
-                }
-            }
-        }
-        target
-    }
-
-    /// `Some(true)` when the pane's shell shows a prompt, `Some(false)` when
-    /// not yet, `None` when the pane no longer exists.
-    fn resume_ready(&self, pane: PaneId, cx: &App) -> Option<bool> {
-        let (_, session) = self
-            .pane_sessions(cx)
-            .into_iter()
-            .find(|(id, _)| *id == pane)?;
-        let session = session.read(cx);
-        Some(session.is_at_prompt() && !session.is_loading() && session.exited.is_none())
-    }
-
-    fn prefill(&mut self, pane: PaneId, command: &str, cx: &mut Context<Self>) {
-        if let Some((_, session)) = self
-            .pane_sessions(cx)
-            .into_iter()
-            .find(|(id, _)| *id == pane)
-        {
-            // Typed at the prompt, not run (`prefillInput`; the session waits
-            // for its prompt again if the shell is still busy).
-            let command = command.to_string();
-            session.update(cx, |s, cx| s.prefill_input(command, cx));
-        }
-    }
 
     /// Directory of the focused pane (for new tabs, restore).
     pub fn cwd(&self, cx: &App) -> Option<PathBuf> {
@@ -1731,7 +1767,9 @@ fn remove_leaf<L: LeafKey>(node: Node<L>, target: EntityId) -> Option<Node<L>> {
 }
 
 impl Render for PaneTree {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.restore_selected.set(true);
+        self.activate_deferred(window, cx);
         let chrome = Chrome::get(cx);
         let show_focus = self.pane_count() > 1;
         let content = match &self.root {
@@ -1742,7 +1780,9 @@ impl Render for PaneTree {
                 self.root = root;
                 element
             }
-            None => div().into_any_element(),
+            None => div()
+                .child(crate::l10n::l("misc.loading", "Loading..."))
+                .into_any_element(),
         };
         div()
             .size_full()

@@ -12,7 +12,7 @@
 //! This mirrors `RustTerminalView.swift` (display link, `poll()`, write queue)
 //! and `TerminalSessionModel.swift`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -49,6 +49,14 @@ use crate::platform::process as procinfo;
 use crate::settings::{ActivePollingRateCap, BellSound, Settings};
 
 const PTY_READINESS_MAX_WAIT_MS: u64 = 200;
+
+fn replay_restored_terminal(term: &Chau7Terminal, context: &str) {
+    let live = term.full_buffer_ansi_text();
+    let mut bytes = context.as_bytes().to_vec();
+    bytes.extend_from_slice(b"\r\n\x1b[0m");
+    bytes.extend_from_slice(live.as_bytes());
+    term.replay_buffer(&bytes);
+}
 
 #[derive(Clone, Copy)]
 enum RefreshWake {
@@ -185,6 +193,13 @@ pub struct TerminalSession {
     /// Bookmarks of this session (TRM-057).
     bookmarks: BookmarkList,
     /// Resume command waiting to be typed at the prompt (TRM-010).
+    restore_intent: Option<chau7_next_core::session_restore::lifecycle::RestorePrefillIntent>,
+    restore_token: u64,
+    restore_input_generation: Cell<u64>,
+    restore_presented: Cell<bool>,
+    restore_selected: Cell<bool>,
+    restore_window_visible: Cell<bool>,
+    restore_hidden_since: Cell<Option<Instant>>,
     pending_prefill: Option<String>,
     prefill_retries: u32,
     prefill_scheduled: bool,
@@ -678,6 +693,13 @@ impl TerminalSession {
             last_output_bytes: 0,
             permission_output_tail: Default::default(),
             bookmarks: BookmarkList::new(),
+            restore_intent: None,
+            restore_token: 0,
+            restore_input_generation: Cell::new(0),
+            restore_presented: Cell::new(false),
+            restore_selected: Cell::new(false),
+            restore_window_visible: Cell::new(false),
+            restore_hidden_since: Cell::new(Some(Instant::now())),
             pending_prefill: None,
             prefill_retries: 0,
             prefill_scheduled: false,
@@ -1327,6 +1349,7 @@ impl TerminalSession {
             }
         }
         changed |= self.drain_tracker_events(cx);
+        self.flush_restored_resume(cx);
         if self.pending_prefill.is_some() && !self.prefill_scheduled {
             self.flush_prefill(cx);
         }
@@ -1584,6 +1607,104 @@ impl TerminalSession {
                 }
             }
         }));
+    }
+
+    /// Direct emulator replay never sends a restore command to the PTY. The
+    /// outer write guard prevents the poll worker from parsing between capture
+    /// and replay, preserving the newly launched shell's prompt/output.
+    pub(crate) fn replay_restored_context(&mut self, context: &str, cx: &mut Context<Self>) {
+        let term = self.term.write();
+        replay_restored_terminal(&term, context);
+        self.grid = term.grid_copy();
+        self.cursor = term.cursor_position();
+        drop(term);
+        cx.emit(SessionEvent::Output);
+        cx.notify();
+    }
+    pub(crate) fn queue_restored_resume(
+        &mut self,
+        command: String,
+        directory: PathBuf,
+        identity: chau7_next_core::session_restore::lifecycle::ResumeIdentity,
+        cx: &mut Context<Self>,
+    ) {
+        self.restore_token = self.restore_token.wrapping_add(1);
+        self.restore_intent = Some(
+            chau7_next_core::session_restore::lifecycle::RestorePrefillIntent {
+                token: self.restore_token,
+                command,
+                expected_directory: directory,
+                expected_identity: identity,
+                // The shell was just constructed. Input typed while background
+                // restore validation/first-frame preparation ran cancels delivery.
+                input_generation: 0,
+            },
+        );
+        self.flush_restored_resume(cx);
+    }
+    pub(crate) fn set_restore_selected(&self, selected: bool) {
+        self.restore_selected.set(selected);
+        self.sync_surface_clock();
+    }
+    pub(crate) fn mark_restore_surface(&self, visible: bool) {
+        self.restore_window_visible.set(visible);
+        self.sync_surface_clock();
+    }
+    fn sync_surface_clock(&self) {
+        if self.restore_surface_visible() {
+            self.restore_hidden_since.set(None);
+        } else if self.restore_hidden_since.get().is_none() {
+            self.restore_hidden_since.set(Some(Instant::now()));
+        }
+    }
+    pub(crate) fn surface_hidden_for(&self) -> Option<Duration> {
+        self.restore_hidden_since.get().map(|at| at.elapsed())
+    }
+    pub(crate) fn restore_surface_visible(&self) -> bool {
+        self.restore_selected.get() && self.restore_window_visible.get()
+    }
+    pub(crate) fn mark_restore_presented(&self) {
+        self.restore_presented.set(true);
+    }
+    pub(crate) fn surface_has_live_frame(&self) -> bool {
+        self.restore_presented.get()
+    }
+    pub(crate) fn request_surface_frame(&self) {
+        self.restore_presented.set(false);
+    }
+
+    fn flush_restored_resume(&mut self, _cx: &mut Context<Self>) {
+        use chau7_next_core::session_restore::lifecycle::{PrefillDecision, PrefillSnapshot};
+        let Some(intent) = self.restore_intent.as_ref() else {
+            return;
+        };
+        let snapshot = PrefillSnapshot {
+            current_token: self.restore_token,
+            directory: self.cwd.clone().unwrap_or_default(),
+            provider: self.tracker.ai_provider().map(str::to_owned),
+            session_id: self.tracker.ai_session_id().map(str::to_owned),
+            input_generation: self.restore_input_generation.get(),
+            view_presented: self.restore_presented.get(),
+            surface_visible: self.restore_surface_visible(),
+            at_prompt: self.is_at_prompt(),
+            loading: self.is_loading(),
+            ai_running: self.is_ai_running(),
+            exited: self.exited.is_some(),
+        };
+        match intent.decision(&snapshot) {
+            PrefillDecision::Wait => {}
+            PrefillDecision::Reject(reason) => {
+                self.restore_intent = None;
+                // Outcomes only: no command, path, transcript or credential.
+                log::info!("restore resume rejected: {reason:?}");
+            }
+            PrefillDecision::Deliver => {
+                if let Some(intent) = self.restore_intent.take() {
+                    self.write(intent.command.as_bytes()); // Deliberately no CR/LF.
+                    log::info!("restore resume prefilled");
+                }
+            }
+        }
     }
 
     /// Types `text` (without running it) once the shell shows its prompt
@@ -1849,6 +1970,8 @@ impl TerminalSession {
         if bytes.is_empty() {
             return;
         }
+        self.restore_input_generation
+            .set(self.restore_input_generation.get().wrapping_add(1));
         // Password prompts only: Swift checks ECHO alone, which line editors
         // (readline, ZLE) also clear, so every typed command looked secret.
         let echo_disabled = Chau7Terminal::password_input_on_fd(self.echo_fd);
@@ -2130,6 +2253,7 @@ impl TerminalSession {
     /// Automation must never overwrite a typed fragment or queued restore.
     pub(crate) fn has_pending_automation_input(&self) -> bool {
         !self.pending_input.borrow().is_empty()
+            || self.restore_intent.is_some()
             || self.pending_prefill.is_some()
             || self.tracker.prefill_pending
             || self.tracker.has_pending_input()
@@ -2827,5 +2951,23 @@ mod refresh_pacing_tests {
             refresh_wait(Duration::from_secs(1), true, Duration::from_millis(10)),
             Duration::from_millis(490)
         );
+    }
+}
+
+#[cfg(test)]
+mod restored_context_tests {
+    use super::*;
+
+    #[test]
+    fn direct_restore_replay_preserves_live_prompt_without_a_pty() {
+        let term = Chau7Terminal::new_headless(80, 24).unwrap();
+        term.replay_buffer(b"fresh shell\r\nlive-prompt> ");
+        replay_restored_terminal(&term, "\x1b[31msaved history\x1b[0m");
+        let text = term.full_buffer_text();
+        assert!(text.contains("saved history"), "{text:?}");
+        assert!(text.contains("fresh shell"), "{text:?}");
+        assert!(text.contains("live-prompt>"), "{text:?}");
+        assert!(text.find("saved history").unwrap() < text.find("fresh shell").unwrap());
+        assert!(!text.contains("cat "));
     }
 }

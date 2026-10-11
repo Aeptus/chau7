@@ -5,8 +5,12 @@
 //! Chau7 imports into Chau7 Next and the other way round. Swift decodes the
 //! file strictly: every non-optional key must exist. The export therefore
 //! starts from the full default template (`defaultExportableSettings`) and
-//! overwrites the keys Chau7 Next has a setting for. Keys it has no setting
-//! for keep their Swift defaults, and are ignored on import.
+//! overwrites the shared keys from their typed domains. A versioned Next
+//! extension also preserves all preferences saved by those domains, including
+//! editor, proxy, history, usage and optimizer options absent from Swift JSON.
+//! Next uses its own extension when present; Swift ignores that unknown key.
+
+mod current;
 
 use chau7_next_core::color_schemes::ColorScheme;
 use chau7_next_core::data_root::default_repo_snippet_path;
@@ -274,6 +278,13 @@ pub fn export_json(settings: &Settings, home: &str) -> String {
     set("ctoPrefix", json!(cto.prefix));
     set("ctoTabOverrides", json!(cto.tab_overrides));
 
+    current::export(settings, &mut map);
+    map.insert(
+        "exportedAt".into(),
+        json!(super::cloud_freshness::export_timestamp(
+            std::time::SystemTime::now()
+        )),
+    );
     serde_json::to_string_pretty(&Value::Object(map)).unwrap_or_default()
 }
 
@@ -288,6 +299,9 @@ pub fn import_json(settings: &mut Settings, text: &str, home: &str) -> Result<()
     // A document with none of the core keys is something else.
     if !map.contains_key("fontFamily") && !map.contains_key("colorSchemeName") {
         return Err("not a Chau7 settings document".into());
+    }
+    if current::import_extension(settings, &map)? {
+        return Ok(());
     }
     let str_of = |key: &str| map.get(key).and_then(Value::as_str);
     let bool_of = |key: &str| map.get(key).and_then(Value::as_bool);
@@ -491,6 +505,7 @@ pub fn import_json(settings: &mut Settings, text: &str, home: &str) -> Result<()
             .filter_map(|(tab, on)| Some((tab.clone(), on.as_bool()?)))
             .collect();
     }
+    current::import(settings, &map);
     Ok(())
 }
 

@@ -179,10 +179,36 @@ impl Workspace {
         state.auto_repo_grouping = settings.tabs.auto_repo_grouping();
         // Refresh idle state and the window title once a second.
         Self::hide_on_close(window, cx);
-        cx.observe_window_activation(window, |_, window, cx| {
+        cx.observe_window_activation(window, |this, window, cx| {
+            this.sync_restore_surfaces(window, cx);
             if window.is_window_active() {
                 crate::permission_center::recheck(cx);
+                this.queue_surface_reactivation(
+                    chau7_next_core::session_restore::lifecycle::SurfaceEvents {
+                        key: true,
+                        main: true,
+                        ..Default::default()
+                    },
+                    window,
+                    cx,
+                );
             }
+        })
+        .detach();
+        cx.observe_window_visibility(window, |this, _, window, cx| {
+            this.sync_restore_surfaces(window, cx);
+            if window.is_visible() {
+                this.queue_surface_reactivation(
+                    chau7_next_core::session_restore::lifecycle::SurfaceEvents {
+                        visible: true,
+                        deminiaturized: true,
+                        ..Default::default()
+                    },
+                    window,
+                    cx,
+                );
+            }
+            cx.notify();
         })
         .detach();
         let ticker = cx.spawn(async move |this, cx| {
@@ -666,7 +692,14 @@ impl Workspace {
 
     fn focus_selected(&mut self, window: &mut Window, cx: &mut App) {
         self.record_restore_selection();
+        self.sync_restore_surfaces(window, cx);
         if let Some(panes) = self.selected_panes() {
+            if let Some(meta) = self.state.selected().and_then(|id| self.state.get(id)) {
+                panes.update(cx, |tree, _| {
+                    tree.set_restore_override(meta.token_opt_override)
+                });
+            }
+
             let deferred = panes.read(cx).is_deferred();
             PaneTree::focus_entity(&panes, window, cx);
             // Parked tabs had no shells when overrides were first restored.
@@ -680,6 +713,11 @@ impl Workspace {
                 }
             }
         }
+        self.reveal_selected_surface(
+            chau7_next_core::session_restore::lifecycle::RevealTrigger::Selection,
+            window,
+            cx,
+        );
     }
 
     pub fn select_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
@@ -1130,7 +1168,17 @@ impl Workspace {
         let session = panes.and_then(|p| p.focused_session(cx));
         let ai = session
             .as_ref()
-            .and_then(|s| s.read(cx).ai_display_app_name());
+            .and_then(|s| s.read(cx).ai_display_app_name())
+            .or_else(|| {
+                panes
+                    .and_then(|tree| tree.deferred_saved())
+                    .and_then(|saved| saved.focused_terminal())
+                    .and_then(|pane| {
+                        chau7_next_core::shell_session::display_name_from_provider(
+                            pane.ai_provider.as_deref(),
+                        )
+                    })
+            });
         let dev_server = session
             .as_ref()
             .and_then(|s| s.read(cx).dev_server().map(|d| d.name.clone()));
@@ -1343,6 +1391,7 @@ fn register_tab_actions(div: Stateful<Div>, cx: &mut Context<Workspace>) -> Stat
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.screen_bounds = global_bounds(window, cx);
+        self.sync_restore_surfaces(window, cx);
         self.window_active = window.is_window_active();
         // (dev) A trace line whenever the tabs or the open panel change.
         let picker = self.picker.as_ref().map(|p| p.kind);

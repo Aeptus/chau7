@@ -410,6 +410,14 @@ impl ShellSession {
         self.pending_command_line.as_deref()
     }
 
+    /// Actual observed input/output timestamps for restore persistence.
+    pub fn last_input_at(&self) -> f64 {
+        self.last_input_at
+    }
+    pub fn last_output_at(&self) -> f64 {
+        self.last_output_at
+    }
+
     pub fn command_started_at(&self) -> f64 {
         self.command_started_at
     }

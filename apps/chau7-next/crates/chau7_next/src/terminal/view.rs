@@ -225,6 +225,9 @@ impl TerminalView {
     }
 
     fn update_refresh_pacing(&mut self, window: &Window, cx: &App) {
+        self.session
+            .read(cx)
+            .mark_restore_surface(window.is_visible());
         self.refresh_interactive = window.is_visible()
             && window.is_window_active()
             && self.focus_handle.is_focused(window);
@@ -234,6 +237,37 @@ impl TerminalView {
             rendering.active_polling_rate_cap,
             rendering.inactive_view_max_fps,
         );
+    }
+
+    /// Existing live frames repaint in place. Initial/explicit reveals refresh
+    /// the authoritative grid and await the actual next paint for resume input.
+    pub(crate) fn reveal_surface(
+        &mut self,
+        trigger: chau7_next_core::session_restore::lifecycle::RevealTrigger,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        use chau7_next_core::session_restore::lifecycle::{RevealAction, reveal_action};
+        self.update_refresh_pacing(window, cx);
+        let session = self.session.clone();
+        let visible = session.read(cx).restore_surface_visible();
+        if !visible {
+            return;
+        }
+        session.read(cx).set_render_suspended(false);
+        let action = reveal_action(
+            trigger,
+            visible,
+            true,
+            session.read(cx).surface_has_live_frame(),
+        );
+        if matches!(action, RevealAction::Authoritative { .. }) {
+            session.update(cx, |session, cx| {
+                session.request_surface_frame();
+                session.refresh(cx);
+            });
+        }
+        cx.notify();
     }
 
     /// Cursor blink (`handleBlinkTick`): toggles every blink interval (500 ms
@@ -248,18 +282,25 @@ impl TerminalView {
                 self.session.read(cx).profiling_phase(),
                 chau7_next_core::work_profiler::Queue::Main,
             ));
-        wake.idle(!self.overlays.recently_painted(Duration::from_secs(1)));
+        let visible = self.session.read(cx).restore_surface_visible();
+        wake.idle(!visible || !self.overlays.recently_painted(Duration::from_secs(1)));
         let appearance = &Settings::get(cx).appearance;
         let interval = appearance.blink_interval();
         let rendering = appearance.rendering.clone();
-        let visible = self.overlays.recently_painted(interval * 2);
-        let suspend = rendering.suspend_background
-            && !self
-                .overlays
-                .recently_painted(Duration::from_secs_f32(rendering.suspend_delay_secs));
+        let delay = if rendering.suspend_delay_secs.is_finite() {
+            Duration::from_secs_f32(rendering.suspend_delay_secs.max(0.0))
+        } else {
+            Duration::from_secs(5)
+        };
+        let suspend = chau7_next_core::session_restore::lifecycle::suspend_hidden_surface(
+            visible,
+            self.session.read(cx).surface_hidden_for(),
+            rendering.suspend_background,
+            delay,
+        );
         let session = self.session.read(cx);
         session.set_refresh_pacing(
-            self.refresh_interactive,
+            self.refresh_interactive && visible,
             rendering.active_polling_rate_cap,
             rendering.inactive_view_max_fps,
         );
@@ -267,6 +308,14 @@ impl TerminalView {
             session.set_render_suspended(suspend);
         }
         if !visible {
+            // Wake at the configured suspension deadline rather than adding an
+            // arbitrary cursor-blink interval to the actual hidden duration.
+            if rendering.suspend_background
+                && !suspend
+                && let Some(age) = session.surface_hidden_for()
+            {
+                return interval.min(delay.saturating_sub(age).max(Duration::from_millis(1)));
+            }
             return interval;
         }
         if appearance.cursor_blink {
@@ -508,6 +557,7 @@ impl Render for TerminalView {
                             cx,
                         );
                         paint::paint_grid(bounds, state, window, cx);
+                        view.read(cx).session.read(cx).mark_restore_presented();
                     },
                 )
                 .size_full(),
