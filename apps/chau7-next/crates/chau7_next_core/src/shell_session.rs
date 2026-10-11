@@ -1170,6 +1170,44 @@ mod tests {
         }
     }
 
+    struct ToolCtx(std::path::PathBuf);
+    impl ToolCtx {
+        fn claude() -> Self {
+            let root = std::env::temp_dir()
+                .join(format!("chau7-next-shell-tool-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&root).unwrap();
+            let executable = root.join(if cfg!(windows) {
+                "claude.exe"
+            } else {
+                "claude"
+            });
+            std::fs::write(&executable, b"fixture-only; never executed").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(executable, std::fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
+            Self(root)
+        }
+    }
+    impl ShellContext for ToolCtx {
+        fn is_dir(&self, path: &str) -> bool {
+            Ctx.is_dir(path)
+        }
+        fn search_path(&self) -> Option<String> {
+            Some(self.0.to_string_lossy().into_owned())
+        }
+        fn home(&self) -> String {
+            Ctx.home()
+        }
+    }
+    impl Drop for ToolCtx {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     fn session() -> ShellSession {
         ShellSession::new(ShellSessionConfig::default(), "/home/me", 0.0)
     }
@@ -1216,8 +1254,9 @@ mod tests {
 
     #[test]
     fn process_absence_preserves_current_swift_non_restored_shell_fallback() {
+        let ctx = ToolCtx::claude();
         let mut s = session();
-        s.handle_input("claude\r", false, &Ctx, 0.0);
+        s.handle_input("claude\r", false, &ctx, 0.0);
         assert!(s.is_ai_running());
         assert!(!s.update_live_agent(None));
         // No native match is not proof of absence (SSH/remote or missed argv).
