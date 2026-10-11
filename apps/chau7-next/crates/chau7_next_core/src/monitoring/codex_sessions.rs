@@ -4,8 +4,8 @@
 //! working directory.
 //!
 //! - [`CodexSessionResolver::metadata`]: a session id to its directory,
-//!   looking in the day folders around a reference date first, then the 14
-//!   most recent day folders; results are cached.
+//!   looking in the day folders around a reference date first, then every known
+//!   day folder; results are cached.
 //! - [`session_candidates`]: sessions of a directory in the 3 most recent
 //!   day folders, closest directory match only, newest first.
 //! - [`best_matching_session_id`]: picks among known candidates.
@@ -62,7 +62,8 @@ fn recent_day_directories(sessions: &Path, limit: usize) -> Vec<PathBuf> {
 }
 
 /// Day folders around `reference` (same day, day before, day after), then
-/// the 14 most recent (`prioritizedDayDirectories`).
+/// every known folder (`prioritizedDayDirectories`). Exact persisted IDs must
+/// remain discoverable even when older than the directory discovery window.
 fn prioritized_day_directories(sessions: &Path, reference: Option<f64>) -> Vec<PathBuf> {
     let mut seen = HashSet::new();
     let mut ordered = Vec::new();
@@ -78,7 +79,7 @@ fn prioritized_day_directories(sessions: &Path, reference: Option<f64>) -> Vec<P
             }
         }
     }
-    for dir in recent_day_directories(sessions, 14) {
+    for dir in recent_day_directories(sessions, usize::MAX) {
         push(dir);
     }
     ordered
@@ -102,7 +103,7 @@ fn rollout_files(dir: &Path) -> Vec<String> {
 /// Session id to directory lookups, cached (`metadataCache`).
 #[derive(Debug, Default, Clone)]
 pub struct CodexSessionResolver {
-    cache: HashMap<String, Candidate>,
+    cache: HashMap<(PathBuf, String), Candidate>,
 }
 
 impl CodexSessionResolver {
@@ -121,10 +122,11 @@ impl CodexSessionResolver {
         if !is_valid_session_id(id) {
             return None;
         }
-        if let Some(cached) = self.cache.get(id) {
+        let sessions = sessions_dir(home);
+        let cache_key = (sessions.clone(), id.to_owned());
+        if let Some(cached) = self.cache.get(&cache_key) {
             return Some(cached.clone());
         }
-        let sessions = sessions_dir(home);
         for day in prioritized_day_directories(&sessions, reference) {
             for file in rollout_files(&day).into_iter().filter(|f| f.contains(id)) {
                 let path = day.join(&file);
@@ -141,7 +143,10 @@ impl CodexSessionResolver {
                     cwd,
                     touched_at: modified_secs(&path),
                 };
-                self.cache.insert(id.to_string(), candidate.clone());
+                if self.cache.len() >= 256 {
+                    self.cache.clear();
+                }
+                self.cache.insert(cache_key, candidate.clone());
                 return Some(candidate);
             }
         }
@@ -152,12 +157,23 @@ impl CodexSessionResolver {
 /// Codex sessions of `directory` (`sessionCandidates(forDirectory:)`):
 /// (session id, last activity), newest first.
 pub fn session_candidates(home: &Path, directory: &str, now: f64) -> Vec<(String, f64)> {
+    session_candidates_with_limit(home, directory, Some(now), 3)
+}
+
+/// Current Swift restore passes its saved activity reference and a 14-day
+/// discovery limit; exact-ID metadata lookup intentionally searches all days.
+pub fn session_candidates_with_limit(
+    home: &Path,
+    directory: &str,
+    reference: Option<f64>,
+    max_days: usize,
+) -> Vec<(String, f64)> {
     let sessions = sessions_dir(home);
     let mut seen = HashSet::new();
     let mut results: Vec<(String, f64, u8)> = Vec::new();
-    for day in prioritized_day_directories(&sessions, Some(now))
+    for day in prioritized_day_directories(&sessions, reference)
         .into_iter()
-        .take(3)
+        .take(max_days)
     {
         for file in rollout_files(&day) {
             let path = day.join(&file);
@@ -305,5 +321,64 @@ mod tests {
         assert_eq!(list[0].0, id);
         assert!(session_candidates(&home, "/elsewhere", at).is_empty());
         let _ = std::fs::remove_dir_all(&home);
+    }
+    #[test]
+    fn metadata_cache_is_home_scoped_bounded_and_old_exact_ids_ignore_recency() {
+        let roots: Vec<_> = (0..2)
+            .map(|_| {
+                std::env::temp_dir()
+                    .join(format!("chau7-next-codex-cache-{}", uuid::Uuid::new_v4()))
+            })
+            .collect();
+        let mut resolver = CodexSessionResolver::new();
+        for (index, home) in roots.iter().enumerate() {
+            for recent in 1..=18 {
+                std::fs::create_dir_all(sessions_dir(home).join(format!("2026/03/{recent:02}")))
+                    .unwrap();
+            }
+            let day = sessions_dir(home).join("2020/01/01");
+            std::fs::create_dir_all(&day).unwrap();
+            std::fs::write(day.join("rollout-s1.jsonl"),serde_json::json!({"type":"session_meta","payload":{"id":"s1","cwd":format!("/repo-{index}")}}).to_string()).unwrap();
+            assert_eq!(
+                resolver
+                    .metadata(home, "s1", Some(1772625600.0))
+                    .unwrap()
+                    .cwd,
+                format!("/repo-{index}")
+            );
+        }
+        let day = sessions_dir(&roots[0]).join("2020/01/01");
+        for index in 0..270 {
+            let id = format!("session-{index}");
+            std::fs::write(
+                day.join(format!("rollout-{id}.jsonl")),
+                serde_json::json!({"type":"session_meta","payload":{"id":id,"cwd":"/repo"}})
+                    .to_string(),
+            )
+            .unwrap();
+            assert!(resolver.metadata(&roots[0], &id, None).is_some());
+            assert!(resolver.cache.len() <= 256);
+        }
+        for home in roots {
+            std::fs::remove_dir_all(home).unwrap();
+        }
+    }
+    #[test]
+    fn restore_discovery_can_search_fourteen_reference_days() {
+        let home =
+            std::env::temp_dir().join(format!("chau7-next-codex-days-{}", uuid::Uuid::new_v4()));
+        for day in 1..=14 {
+            let folder = sessions_dir(&home).join(format!("2026/03/{day:02}"));
+            std::fs::create_dir_all(&folder).unwrap();
+            if day == 1 {
+                std::fs::write(folder.join("rollout-old-session.jsonl"),serde_json::json!({"type":"session_meta","payload":{"id":"old-session","cwd":"/repo"}}).to_string()).unwrap();
+            }
+        }
+        assert!(session_candidates_with_limit(&home, "/repo", None, 3).is_empty());
+        assert_eq!(
+            session_candidates_with_limit(&home, "/repo", None, 14)[0].0,
+            "old-session"
+        );
+        std::fs::remove_dir_all(home).unwrap();
     }
 }
