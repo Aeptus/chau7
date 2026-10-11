@@ -53,7 +53,12 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
   line gutter are wired. The optional `markdown_native_attributes` example
   uses the production styler in a hidden owned AppKit window: H1 22.1pt at
   body13, task indent29.7324pt, unchanged text/selection, and preserved native
-  user-insertion undo passed. File loads now open source by default, preserving
+  user-insertion undo passed. Native append and non-load model replacement
+  now use registered AppKit insertion operations, retaining valid native
+  selection/visible rect and preceding undo history; the production-helper
+  fixture also passes append Undo/Redo, stale-document rejection, replacement
+  history and explicit-load history reset assertions.
+  File loads now open source by default, preserving
   the chosen preview mode on same-file reload. Explicit loads cancel stale
   native queued input, reset native undo even for identical file content and
   set the requested selection; pending native edits block external replacement.

@@ -1,5 +1,6 @@
 //! Real AppKit source layout; raw text, selection and undo belong to NSTextView.
 //! The NSScrollView is attached only while its GPUI source element is mounted.
+mod editing;
 mod styles;
 
 use super::{EditorPane, SaveEditor, ToggleMarkdownMode};
@@ -657,12 +658,8 @@ impl NativeMarkdown {
                 ruler.setNeedsDisplay(true);
             }
             self.shared.mirroring.set(true);
-            self.text.setString(&NSString::from_str(text));
+            editing::replace(&self.text, text, loaded);
             self.shared.mirroring.set(false);
-            // Programmatic loads start a fresh native edit history; style updates never do.
-            if let Some(undo) = self.text.undoManager() {
-                undo.removeAllActions();
-            }
         }
         let mut doc = self.shared.document.borrow_mut();
         doc.update(text);
@@ -675,6 +672,16 @@ impl NativeMarkdown {
             self.shared.theme.borrow().apply(&storage, &doc, range);
         }
     }
+    pub(super) fn append(&self, expected: &str, addition: &str) -> bool {
+        if !editing::append(&self.text, expected, addition) {
+            return false;
+        }
+        // Capture the final string and restored selection before the synchronous
+        // flush, regardless of how AppKit coalesces its change notifications.
+        self.shared.changed(&self.text, true);
+        true
+    }
+
     /// GPUI application menu items use Chau7 actions rather than AppKit's
     /// responder selectors. Route them only when this native surface owns focus.
     pub(super) fn menu_command(&self, command: MenuCommand) -> bool {

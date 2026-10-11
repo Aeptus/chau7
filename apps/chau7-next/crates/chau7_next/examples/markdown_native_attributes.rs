@@ -14,6 +14,9 @@ use objc2_app_kit::{
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSPoint, NSRange, NSRect, NSSize, NSString};
 #[cfg(target_os = "macos")]
+#[path = "../src/panes/editor/native_markdown/editing.rs"]
+mod editing;
+#[cfg(target_os = "macos")]
 #[path = "../src/panes/editor/native_markdown/styles.rs"]
 mod styles;
 #[cfg(target_os = "macos")]
@@ -93,8 +96,36 @@ fn main() {
     assert!(undo.canUndo());
     undo.undo();
     assert_eq!(view.string().to_string(), initial);
+    undo.removeAllActions();
+    view.setSelectedRange(selection);
+    let visible = view.visibleRect();
+    undo.beginUndoGrouping();
+    assert!(editing::append(&view, initial, "extra"));
+    undo.endUndoGrouping();
+    assert_eq!(view.string().to_string(), format!("{initial}extra"));
+    assert_eq!(view.selectedRange(), selection);
+    assert_eq!(view.visibleRect(), visible);
+    assert!(!editing::append(&view, "stale", "discarded"));
+    assert_eq!(view.string().to_string(), format!("{initial}extra"));
+    undo.undo();
+    assert_eq!(view.string().to_string(), initial);
+    undo.redo();
+    assert_eq!(view.string().to_string(), format!("{initial}extra"));
+    view.setSelectedRange(selection);
+    undo.beginUndoGrouping();
+    editing::replace(&view, "# replacement\n", false);
+    undo.endUndoGrouping();
+    assert_eq!(view.string().to_string(), "# replacement\n");
+    assert_eq!(view.selectedRange(), selection);
+    assert_eq!(view.visibleRect(), visible);
+    undo.undo();
+    assert_eq!(view.string().to_string(), format!("{initial}extra"));
+    undo.undo();
+    assert_eq!(view.string().to_string(), initial);
+    editing::replace(&view, initial, true);
+    assert!(!undo.canUndo());
     println!(
-        "heading_size={} hanging_indent={} selected_range_unchanged=true native_undo_preserved=true",
+        "heading_size={} hanging_indent={} selected_range_unchanged=true native_undo_preserved=true native_append_undo_redo=true replacement_preserves_history=true explicit_load_clears_history=true",
         font.pointSize(),
         paragraph.headIndent()
     );
