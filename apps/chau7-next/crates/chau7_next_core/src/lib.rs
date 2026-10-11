@@ -33,6 +33,7 @@ pub mod feature_profiler;
 pub mod file_tailer;
 pub mod font_catalog;
 pub mod guard_line;
+pub mod hang_monitor;
 pub mod help;
 pub mod history_events;
 pub mod history_monitor;
