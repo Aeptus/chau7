@@ -7,7 +7,7 @@
 //! shares a pairing with the Swift app, and a `CHAU7_MAC_NAME` naming
 //! "Chau7 Next" so the iPhone can tell the two hosts apart.
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::SystemTime;
@@ -225,7 +225,7 @@ pub fn binary_path(root: &DataRoot) -> Result<PathBuf, String> {
 
 /// A running agent.
 pub struct AgentProcess {
-    child: Child,
+    child: Option<Child>,
 }
 
 impl AgentProcess {
@@ -262,13 +262,13 @@ impl AgentProcess {
             forward_lines(err, true);
         }
         log::info!("Remote agent started from {}", binary.display());
-        Ok(Self { child })
+        Ok(Self { child: Some(child) })
     }
 
     /// `Some(status)` once the agent exited: its exit code, or the signal
     /// that ended it (Swift `terminationStatus`).
     pub fn try_exit(&mut self) -> Option<i32> {
-        match self.child.try_wait() {
+        match self.child.as_mut()?.try_wait() {
             Ok(Some(status)) => {
                 #[cfg(unix)]
                 {
@@ -285,29 +285,131 @@ impl AgentProcess {
         }
     }
 
-    /// SIGTERM, a short wait, then kill (`ManagedProcess.terminate`).
-    pub fn stop(mut self) {
-        if self.try_exit().is_some() {
+    /// Consume only this owned helper; reaping and bounded termination run off UI.
+    pub fn stop(self) {
+        drop(self);
+    }
+}
+
+impl Drop for AgentProcess {
+    fn drop(&mut self) {
+        let Some(mut child) = self.child.take() else {
+            return;
+        };
+        if matches!(child.try_wait(), Ok(Some(_))) {
             return;
         }
         #[cfg(unix)]
         {
-            // SAFETY: plain kill(2) on our own child's pid.
+            // SAFETY: signal only the still-owned child, never Chau7 or another process.
             unsafe {
-                libc::kill(self.child.id() as i32, libc::SIGTERM);
-            }
-            use std::time::{Duration, Instant};
-            let deadline = Instant::now() + Duration::from_millis(1500);
-            while Instant::now() < deadline {
-                if self.try_exit().is_some() {
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(25));
+                libc::kill(child.id() as i32, libc::SIGTERM);
             }
         }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Err(error) = std::thread::Builder::new()
+            .name("remote-agent-reaper".into())
+            .spawn(move || {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+                while std::time::Instant::now() < deadline {
+                    if matches!(child.try_wait(), Ok(Some(_))) {
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                let _ = child.kill();
+                let _ = child.wait();
+            })
+        {
+            log::error!("Cannot start remote helper reaper: {error}");
+        }
     }
+}
+
+/// Prepare the public identity with the Go helper, then validate the separate
+/// credential file. Arguments always name Next's own state, including first launch.
+/// This function is called only by the background startup worker.
+pub fn prepare_credentials(binary: &Path, root: &DataRoot) -> Result<(), String> {
+    use chau7_next_core::remote::relay_credentials;
+    let instructions = || provisioning_instructions(binary, root);
+    let mut command = Command::new(binary);
+    command
+        .arg("identity")
+        .arg("--state")
+        .arg(root.remote_state_file())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    for (key, value) in agent_env(root, "", None) {
+        command.env(key, value);
+    }
+    let mut child = command.spawn().map_err(|_| instructions())?;
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(instructions());
+    };
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    if std::thread::Builder::new()
+        .name("remote-identity-read".into())
+        .spawn(move || {
+            let mut bytes = Vec::new();
+            let result = stdout.take(8193).read_to_end(&mut bytes).map(|_| bytes);
+            let _ = sender.send(result);
+        })
+        .is_err()
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(instructions());
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return Err(instructions());
+                }
+                break;
+            }
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(instructions());
+            }
+        }
+    }
+    let bytes = receiver
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .ok()
+        .and_then(Result::ok)
+        .filter(|bytes| bytes.len() <= 8192)
+        .ok_or_else(instructions)?;
+    #[derive(serde::Deserialize)]
+    struct Identity {
+        device_id: String,
+    }
+    let identity: Identity = serde_json::from_slice(&bytes).map_err(|_| instructions())?;
+    relay_credentials::load(&root.remote_credentials_file(), &identity.device_id)
+        .map_err(|_| instructions())?;
+    Ok(())
+}
+
+fn shell_argument(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
+}
+
+pub fn provisioning_instructions(binary: &Path, root: &DataRoot) -> String {
+    format!(
+        "Remote needs an owner-only credential file matching this Next identity. Run {} identity --state {}, then {} provision --bundle <file> --state {}. Credentials: {}",
+        shell_argument(binary),
+        shell_argument(&root.remote_state_file()),
+        shell_argument(binary),
+        shell_argument(&root.remote_state_file()),
+        root.remote_credentials_file().display()
+    )
 }
 
 fn forward_lines(stream: impl std::io::Read + Send + 'static, is_stderr: bool) {
@@ -369,6 +471,41 @@ mod tests {
         sync_installed(&bundled, &installed).unwrap();
         assert_eq!(std::fs::read(&installed).unwrap(), b"v2");
         let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn instructions_use_only_next_paths_and_quote_shell_metacharacters() {
+        let root = DataRoot::with_home(PathBuf::from("/tmp/next profile'$literal`"), true);
+        let instructions = provisioning_instructions(Path::new("/tmp/helper'file"), &root);
+        assert!(instructions.contains("identity --state"));
+        assert!(instructions.contains("provision --bundle <file> --state"));
+        assert!(instructions.contains(".chau7-next/remote/state.json"));
+        assert!(!instructions.contains("/.chau7/"));
+        assert_eq!(shell_argument(Path::new("/tmp/a'b")), "'/tmp/a'\"'\"'b'");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn identity_worker_uses_next_state_and_requires_private_matching_credentials() {
+        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+        use std::os::unix::fs::PermissionsExt;
+        let (home, root) = temp_root("identity");
+        let binary = home.join("identity-helper");
+        std::fs::write(&binary, b"#!/bin/sh\n[ \"$1\" = identity ] && [ \"$2\" = --state ] && [ \"$3\" = \"$CHAU7_REMOTE_STATE\" ] || exit 2\nprintf '%s' '{\"device_id\":\"next-device\"}'\n").unwrap();
+        set_executable(&binary);
+        let path = root.remote_credentials_file();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        assert!(prepare_credentials(&binary, &root).is_err());
+        let credentials = serde_json::json!({"device_id":"next-device","key_id":"key-1",
+            "mac_secret":URL_SAFE_NO_PAD.encode([1u8;32]), "ios_secret":URL_SAFE_NO_PAD.encode([2u8;32])});
+        std::fs::write(&path, serde_json::to_vec(&credentials).unwrap()).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(prepare_credentials(&binary, &root).is_ok());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let error = prepare_credentials(&binary, &root).unwrap_err();
+        assert!(!error.contains(credentials["mac_secret"].as_str().unwrap()));
+        assert!(error.contains(&root.remote_state_file().display().to_string()));
+        std::fs::remove_dir_all(home).unwrap();
     }
 
     #[test]
