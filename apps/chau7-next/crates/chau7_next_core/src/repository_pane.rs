@@ -352,7 +352,7 @@ pub fn perform(repo: &Path, op: &Operation) -> Result<(), String> {
         }
         Operation::StashPop { index, hash } | Operation::StashDrop { index, hash } => {
             let fresh = stashes(repo)?;
-            if !fresh.get(*index).is_some_and(|s| s.hash == *hash) {
+            if fresh.get(*index).is_none_or(|s| s.hash != *hash) {
                 return Err("Stash changed since it was displayed; refresh before retrying".into());
             }
             args(&[

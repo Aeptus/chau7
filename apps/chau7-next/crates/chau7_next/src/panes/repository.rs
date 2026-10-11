@@ -539,13 +539,27 @@ impl RepositoryPane {
             }
             Section::Session => {
                 if let Some(session) = &self.session {
-                    let stats = session.current_turn_stats();
-                    let known = session.has_token_usage_evidence() || stats.total_tokens() > 0;
+                    let completed = session.last_completed_turn_snapshot();
+                    let active = session.current_turn_id().is_some();
+                    let stats = if active {
+                        session.current_turn_stats()
+                    } else {
+                        completed
+                            .as_ref()
+                            .map(|s| s.stats.clone())
+                            .unwrap_or_else(|| session.current_turn_stats())
+                    };
+                    let known = if active {
+                        session.current_turn_usage_known()
+                    } else {
+                        completed.as_ref().is_some_and(|s| s.usage_known)
+                    };
                     let usage = if known {
                         format!(
-                            "{} input · {} output · {} cache creation · {} cache read",
+                            "{} input · {} output · {} reasoning · {} cache creation · {} cache read",
                             stats.input_tokens(),
                             stats.output_tokens(),
+                            stats.reasoning_output_tokens(),
                             stats.cache_creation_tokens(),
                             stats.cache_read_tokens()
                         )
@@ -567,16 +581,42 @@ impl RepositoryPane {
                         .collect();
                     tools.sort();
                     body = body.child(tools.join(" · "));
-                    if let Some(reason) = session.last_exit_reason() {
-                        body = body.child(format!("Exit: {}", reason.raw_value()));
+                    if let Some(completed) = completed.as_ref() {
+                        body = body.child(format!("Exit: {}", completed.exit_reason.raw_value()));
+                        if !active {
+                            body = body.child(format!(
+                                "Duration: {:.1}s",
+                                completed.duration_ms as f64 / 1000.
+                            ));
+                        }
                     }
-                    if let (Some(start), Some(end)) = (
-                        session.last_turn_submitted_at(),
-                        session.last_turn_completed_at(),
-                    ) {
+                    if session.active_duration_ms() > 0 {
                         body = body.child(format!(
-                            "Duration: {:.1}s",
-                            (end - start).num_milliseconds().max(0) as f64 / 1000.
+                            "Active duration: {:.1}s",
+                            session.active_duration_ms() as f64 / 1000.
+                        ));
+                    }
+                    if let Some(average) = session.average_visible_tokens_per_completed_turn() {
+                        body = body
+                            .child(format!("Average tokens per completed turn: {:.0}", average));
+                    }
+                    let cost = if active {
+                        session.current_turn_cost_usd()
+                    } else {
+                        completed.as_ref().and_then(|s| s.estimated_cost_usd)
+                    };
+                    if let Some(cost) = cost {
+                        body = body.child(format!(
+                            "Estimated turn cost: ${:.*}",
+                            if cost < 0.01 { 4 } else { 2 },
+                            cost
+                        ));
+                    }
+                    if let Some(cost) = session.estimated_cost_usd() {
+                        body = body.child(format!(
+                            "Estimated completed session cost: ${:.*}",
+                            if cost < 0.01 { 4 } else { 2 },
+                            cost
                         ));
                     }
                 } else {
