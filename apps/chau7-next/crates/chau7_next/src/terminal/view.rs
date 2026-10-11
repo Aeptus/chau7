@@ -357,18 +357,37 @@ impl TerminalView {
     }
 
     fn write(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
-        self.write_without_broadcast(bytes, cx);
-        cx.emit(TerminalViewEvent::Input(bytes.to_vec()));
+        self.admit_steps(
+            vec![chau7_next_core::remote::key_input::InputStep {
+                bytes: bytes.to_vec(),
+                delay_ms: 0,
+            }],
+            true,
+            cx,
+        );
     }
 
-    /// Write user input that came from another terminal (broadcast mode).
-    pub fn write_without_broadcast(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+    /// User/automation input, including broadcasts, uses the same admission.
+    pub fn write_without_broadcast(&mut self, bytes: &[u8], cx: &mut Context<Self>) -> bool {
+        self.send_guarded_steps(
+            vec![chau7_next_core::remote::key_input::InputStep {
+                bytes: bytes.to_vec(),
+                delay_ms: 0,
+            }],
+            cx,
+        )
+    }
+
+    fn write_admitted(&mut self, bytes: &[u8], broadcast: bool, cx: &mut Context<Self>) {
         let session = self.session.read(cx);
         session.scroll_to_bottom();
         session.selection_clear();
         session.write_input(bytes);
         self.cursor_on = true;
         self.note_user_input(bytes, cx);
+        if broadcast {
+            cx.emit(TerminalViewEvent::Input(bytes.to_vec()));
+        }
     }
 
     /// Cmd+C: copy the selection, or send Ctrl-C (interrupt) when nothing
@@ -464,6 +483,7 @@ fn png_name(name: &str) -> String {
 
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.focus_guard(window, cx);
         self.update_refresh_pacing(window, cx);
         if window.is_visible() {
             self.session.read(cx).mark_memory_visible(cx);

@@ -4,8 +4,7 @@
 //! block and per-directory lists live in `dangerous_guard.json`.
 
 use chau7_next_core::command_risk::{DangerousCommandGuard, GuardVerdict, self_protect};
-use chau7_next_core::dangerous_guard_store;
-use chau7_next_core::guard_line;
+use chau7_next_core::{dangerous_guard_store, guard_line};
 use gpui::{App, Global};
 
 use crate::settings::Settings;

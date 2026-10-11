@@ -486,6 +486,27 @@ impl TerminalSession {
         cwd: Option<PathBuf>,
         cx: &mut Context<Self>,
     ) -> Self {
+        Self::from_terminal_driving(term, cwd, true, cx)
+    }
+
+    /// Real fixture PTYs use the production model and writer, while their
+    /// deterministic GPUI tests manually drive input instead of permitting
+    /// external native threads to wake the mock foreground scheduler.
+    #[cfg(all(test, unix))]
+    pub(crate) fn from_terminal_manually_driven(
+        term: Chau7Terminal,
+        cwd: Option<PathBuf>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        Self::from_terminal_driving(term, cwd, false, cx)
+    }
+
+    fn from_terminal_driving(
+        term: Chau7Terminal,
+        cwd: Option<PathBuf>,
+        start_external_workers: bool,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let echo_fd = term.echo_fd();
         let has_pty = term.has_pty();
         let pid = term.shell_pid() as i32;
@@ -502,7 +523,7 @@ impl TerminalSession {
             std::sync::Weak<crate::memory_pressure::SessionMemory>,
         >::new());
 
-        {
+        if start_external_workers {
             let term = term.clone();
             let stop = stop.clone();
             let output = output.clone();
@@ -676,7 +697,7 @@ impl TerminalSession {
             .map_or(10_000, |settings| settings.terminal.scrollback_lines);
         let memory = crate::memory_pressure::register(id, &term, &root, lines);
         let _ = profile_memory.set(Arc::downgrade(&memory));
-        let process_subscription = (has_pty && pid > 0).then(|| {
+        let process_subscription = (start_external_workers && has_pty && pid > 0).then(|| {
             crate::monitoring::process_tree::subscribe(pid as u32, cx.entity().downgrade(), cx)
         });
         Self {
@@ -1966,6 +1987,24 @@ impl TerminalSession {
 
     /// Bytes typed or pasted by the user: written like [`Self::write`] and
     /// given to the command tracker (typed lines, history, AI detection).
+    /// Immediate user-input revision; independent of delayed tracker processing.
+    pub fn input_revision(&self) -> u64 {
+        self.restore_input_generation.get()
+    }
+
+    /// Rebuild the current line from cached tracker state and not-yet-processed
+    /// user fragments. No PTY read or native process scan runs here.
+    pub fn reviewed_input_prefix(&self) -> String {
+        let pending = self.pending_input.borrow();
+        chau7_next_core::command_risk::admission::pending_prefix(
+            self.tracker.pending_input_text(),
+            pending
+                .iter()
+                .filter(|(_, secret)| !secret)
+                .map(|(bytes, _)| String::from_utf8_lossy(bytes)),
+        )
+    }
+
     pub fn write_input(&self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
