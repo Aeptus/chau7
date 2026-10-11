@@ -750,8 +750,12 @@ printf '%s' "$CHAU7_TAB_ID" > "$CAPTURE_DIR/legacy"
             }
         }
         fn command(&self) -> std::process::Command {
-            let mut c =
-                std::process::Command::new(codex_wrapper_dir(&self.integration).join("codex"));
+            // Other parallel command fixtures can briefly inherit a freshly
+            // written script's descriptor during fork, causing Linux ETXTBSY.
+            // Run the real POSIX wrapper through its declared interpreter;
+            // shell $0, literal argv and all wrapper behavior remain unchanged.
+            let mut c = std::process::Command::new("/bin/sh");
+            c.arg(codex_wrapper_dir(&self.integration).join("codex"));
             c.env_clear()
                 .current_dir(&self.dir)
                 .env(

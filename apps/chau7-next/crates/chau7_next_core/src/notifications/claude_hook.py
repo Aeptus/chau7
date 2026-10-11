@@ -39,16 +39,12 @@ def main():
     transcript = payload.get("transcript_path") or ""
     if transcript:
         projects = (
-            os.path.join(
-                os.path.expanduser(os.environ["CLAUDE_CONFIG_DIR"]), "projects"
-            )
+            os.path.join(os.path.expanduser(os.environ["CLAUDE_CONFIG_DIR"]), "projects")
             if os.environ.get("CLAUDE_CONFIG_DIR")
             else CLAUDE_PROJECTS
         )
         full = os.path.abspath(os.path.expanduser(transcript))
-        if os.path.commonpath([full, os.path.abspath(projects)]) != os.path.abspath(
-            projects
-        ):
+        if os.path.commonpath([full, os.path.abspath(projects)]) != os.path.abspath(projects):
             return
     hook = payload.get("hook_event_name", "")
     kind = HOOK_TYPES.get(hook, "unknown")
@@ -66,7 +62,7 @@ def main():
         "message": payload.get("message") or payload.get("prompt") or "",
         "cwd": payload.get("cwd") or os.environ.get("CHAU7_NEXT_PROJECT", ""),
         "tabID": tab,
-        "timestamp": datetime.datetime.now(datetime.timezone.utc)
+        "timestamp": datetime.datetime.now(datetime.timezone.utc)  # noqa: UP017 - Python 3.9 macOS compatibility
         .isoformat()
         .replace("+00:00", "Z"),
     }
@@ -75,10 +71,7 @@ def main():
         "ExitPlanMode",
     ):
         tool_input = payload.get("tool_input")
-        if (
-            tool_input is not None
-            and len(json.dumps(tool_input, ensure_ascii=True)) <= 16384
-        ):
+        if tool_input is not None and len(json.dumps(tool_input, ensure_ascii=True)) <= 16384:
             event["toolInput"] = tool_input
     os.makedirs(os.path.dirname(EVENTS_FILE), exist_ok=True)
     line = (json.dumps(event, ensure_ascii=True) + "\n").encode("utf-8")

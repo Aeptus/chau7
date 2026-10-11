@@ -106,6 +106,27 @@ fn choose_directory(cx: &mut App) {
     .detach();
 }
 
+pub(super) fn default_directory(ctx: &SectionContext) -> gpui::Div {
+    let chrome = ctx.chrome;
+    let inputs = &ctx.view.shell_inputs;
+    titled("Default Directory", chrome).child(row(
+        "Default directory",
+        div()
+            .flex()
+            .gap_1()
+            .child(
+                div()
+                    .w(px(200.0))
+                    .child(Input::new(&inputs.default_directory)),
+            )
+            .child(
+                chip("choose-dir", "Choose...", false, chrome)
+                    .on_click(|_, _, cx| choose_directory(cx)),
+            ),
+        chrome,
+    ))
+}
+
 pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     let chrome = ctx.chrome;
     let t = &ctx.settings.terminal;
@@ -156,22 +177,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             div()
                 .w(px(260.0))
                 .child(Input::new(&inputs.startup_command)),
-            chrome,
-        ))
-        .child(row(
-            "Default directory",
-            div()
-                .flex()
-                .gap_1()
-                .child(
-                    div()
-                        .w(px(200.0))
-                        .child(Input::new(&inputs.default_directory)),
-                )
-                .child(
-                    chip("choose-dir", "Choose...", false, chrome)
-                        .on_click(|_, _, cx| choose_directory(cx)),
-                ),
             chrome,
         ))
         .child(row(

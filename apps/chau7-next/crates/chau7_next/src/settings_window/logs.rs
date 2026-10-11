@@ -483,6 +483,11 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         .child(history_logs)
         .child(terminal_logs)
         .child(sessions)
+        .child(super::anchors::target("debugConsole", titled("Diagnostics", chrome)
+            .child(description("Inspect performance, timers, memory, event monitoring and logs in the local diagnostics console.", chrome))
+            .child(button("open-diagnostics", "Open Diagnostics", chrome).on_click(|_, _, cx| {
+                crate::debug::open_console(Some(crate::debug::Tab::Health), cx)
+            }))))
 }
 
 /// Whether "Clear All" is waiting for its second click.
