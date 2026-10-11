@@ -20,6 +20,7 @@ pub mod cto_monitor;
 pub mod cto_wrappers;
 pub mod danger_highlight;
 pub mod dangerous_guard_store;
+pub mod dashboard;
 pub mod data_explorer;
 pub mod data_root;
 pub mod debug_console;

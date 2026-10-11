@@ -118,6 +118,9 @@ impl Workspace {
         };
         self.anims.reset();
         if !drag.active {
+            if let DragSubject::Group(group) = drag.subject {
+                self.toggle_dashboard(group, cx);
+            }
             cx.notify();
             return;
         }
