@@ -351,10 +351,13 @@ impl PaneTree {
         }
         let root = cx.global::<AppData>().root.clone();
         let cwd = self.deferred_cwd.clone();
-        let task =
-            cx.background_spawn(
-                async move { crate::restore::preparation::prepare(&root, saved, cwd) },
-            );
+        let contexts = crate::restore::writer::contexts_for(
+            &saved.panes.iter().map(|pane| pane.id).collect::<Vec<_>>(),
+            cx,
+        );
+        let task = cx.background_spawn(async move {
+            crate::restore::preparation::prepare_with_contexts(&root, saved, cwd, contexts)
+        });
         self.restore_activation = Some(cx.spawn_in(window, async move |this, cx| {
             let prepared = task.await;
             // Keep prepared data even if the original window disappeared during

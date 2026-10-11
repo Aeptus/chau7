@@ -12,6 +12,7 @@ pub mod lifecycle;
 pub mod models;
 pub mod preparation;
 pub mod transaction;
+pub mod writer;
 
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;

@@ -5,11 +5,10 @@
 //! (`DataRoot::scrollback_dir`); `PaneTree::from_saved` replays it.
 
 pub(crate) use chau7_next_core::session_restore::preparation;
+pub(crate) mod writer;
 
-use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
+use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::session_restore::{
@@ -21,7 +20,6 @@ use gpui::{App, Entity};
 use crate::pane::{PaneId, PaneTree};
 use crate::session_store::SavedPane;
 use crate::settings::Settings;
-use crate::workspace::AppData;
 
 /// Everything saved for one tab beyond its title and color.
 pub struct TabCapture {
@@ -30,50 +28,8 @@ pub struct TabCapture {
     pub panes: Vec<SavedPane>,
 }
 
-/// Hash of the text last written for each pane, to skip identical rewrites
-/// (the session is saved every 15 seconds).
-static LAST_WRITTEN: Mutex<Option<HashMap<PaneId, u64>>> = Mutex::new(None);
-
 pub fn scrollback_file(root: &DataRoot, pane: PaneId) -> PathBuf {
     root.scrollback_dir().join(format!("{pane}.txt"))
-}
-
-fn text_hash(text: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    text.hash(&mut hasher);
-    hasher.finish()
-}
-
-/// Write (or remove) the scrollback file of a pane. Returns whether a file
-/// exists afterwards.
-fn store_scrollback(root: &DataRoot, pane: PaneId, text: Option<&str>) -> bool {
-    let path = scrollback_file(root, pane);
-    let mut guard = LAST_WRITTEN.lock().unwrap_or_else(|e| e.into_inner());
-    let hashes = guard.get_or_insert_with(HashMap::new);
-    let Some(text) = text else {
-        hashes.remove(&pane);
-        let _ = std::fs::remove_file(&path);
-        return false;
-    };
-    let hash = text_hash(text);
-    if hashes.get(&pane) == Some(&hash) && path.is_file() {
-        return true;
-    }
-    let result = std::fs::create_dir_all(root.scrollback_dir()).and_then(|_| {
-        let tmp = path.with_extension("txt.tmp");
-        std::fs::write(&tmp, text)?;
-        std::fs::rename(&tmp, &path)
-    });
-    match result {
-        Ok(()) => {
-            hashes.insert(pane, hash);
-            true
-        }
-        Err(err) => {
-            log::warn!("save scrollback of pane {pane}: {err}");
-            false
-        }
-    }
 }
 
 /// Capture the layout and per-pane state of one tab. `claimed` holds the AI
@@ -84,7 +40,6 @@ pub fn capture_tab(
     claimed: &mut HashSet<String>,
     cx: &App,
 ) -> TabCapture {
-    let root = &cx.global::<AppData>().root;
     let max_lines = Settings::get(cx).terminal.restored_scrollback_lines;
     let tree = panes.read(cx);
     if let Some(saved) = tree.deferred_saved() {
@@ -132,7 +87,7 @@ pub fn capture_tab(
         } else {
             None
         };
-        let has_file = store_scrollback(root, id, scrollback.as_deref());
+        let has_file = writer::record(id, scrollback, cx);
 
         // Persistence uses already captured identity only. Transcript validation
         // and directory discovery happen once, off UI, during restore preparation.
@@ -248,21 +203,11 @@ pub fn prune_scrollback(root: &DataRoot, keep: &HashSet<PaneId>) {
     let Ok(entries) = std::fs::read_dir(root.scrollback_dir()) else {
         return;
     };
-    let mut guard = LAST_WRITTEN.lock().unwrap_or_else(|e| e.into_inner());
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         let stale = if let Some(stem) = name.strip_suffix(".txt") {
             match stem.parse::<PaneId>() {
-                Ok(id) => {
-                    if !keep.contains(&id) {
-                        if let Some(hashes) = guard.as_mut() {
-                            hashes.remove(&id);
-                        }
-                        true
-                    } else {
-                        false
-                    }
-                }
+                Ok(id) => !keep.contains(&id),
                 // restore-<token>-<pane>.txt: only old ones, a replay may be running.
                 Err(_) => {
                     name.starts_with(REPLAY_FILE_PREFIX)
@@ -286,6 +231,19 @@ pub fn prune_scrollback(root: &DataRoot, keep: &HashSet<PaneId>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    fn store_scrollback(root: &DataRoot, pane: PaneId, text: Option<&str>) -> bool {
+        let contexts = HashMap::from([(
+            pane,
+            chau7_next_core::session_restore::writer::ContextBuffer {
+                version: 1,
+                text: text.map(|s| std::sync::Arc::new(s.to_owned())),
+            },
+        )]);
+        writer::write_contexts(root, &contexts).unwrap();
+        text.is_some()
+    }
 
     fn temp_root(name: &str) -> DataRoot {
         let home = std::env::temp_dir().join(format!("chau7-next-{name}-{}", std::process::id()));
