@@ -1444,10 +1444,11 @@ impl PaneTree {
     }
 
     /// Send input to the focused pane of `panes` without re-broadcasting it.
-    pub fn send_input(panes: &Entity<PaneTree>, bytes: &[u8], cx: &mut App) {
-        if let Some(view) = panes.read(cx).focused_view() {
-            view.update(cx, |v, cx| v.write_without_broadcast(bytes, cx));
-        }
+    pub fn send_input(panes: &Entity<PaneTree>, bytes: &[u8], cx: &mut App) -> bool {
+        panes
+            .read(cx)
+            .focused_view()
+            .is_some_and(|view| view.update(cx, |v, cx| v.write_without_broadcast(bytes, cx)))
     }
 
     /// A synthesized key press (MCP `tab_press_key`, KBD-017) to the focused
@@ -1465,8 +1466,7 @@ impl PaneTree {
         let Ok(encoded) = press.encode(app_cursor) else {
             return false;
         };
-        view.update(cx, |v, cx| v.write_without_broadcast(&encoded.bytes, cx));
-        true
+        view.update(cx, |v, cx| v.write_without_broadcast(&encoded.bytes, cx))
     }
 
     pub fn set_font_size(&mut self, size: f32, cx: &mut Context<Self>) {
