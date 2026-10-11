@@ -248,6 +248,7 @@ pub struct TerminalSession {
     /// The user closed this session (no "shell exited" notice).
     close_requested: bool,
     last_cwd_check: Instant,
+    cwd_probe_pending: bool,
     last_branch_check: Instant,
     /// Directory of the running command and the shell's name, for the
     /// command history.
@@ -646,7 +647,9 @@ impl TerminalSession {
             register_shell(id, pid);
         }
         let writer = PtyWriter::spawn(term.clone());
-        let git_root = cwd.as_deref().and_then(procinfo::git_root);
+        let git_root = cwd
+            .as_deref()
+            .and_then(|dir| crate::repository::resolve(dir, cx).map(PathBuf::from));
         let git_branch = git_root.as_deref().and_then(|root| {
             crate::repository::resolve(root, cx)
                 .and_then(|shared| crate::repository::branch(&shared, cx))
@@ -737,6 +740,7 @@ impl TerminalSession {
             git_baseline: Arc::new(Mutex::new(None)),
             close_requested: false,
             last_cwd_check: now,
+            cwd_probe_pending: false,
             last_branch_check: now,
             command_dir: None,
             restore_line_pending: false,
@@ -1226,7 +1230,7 @@ impl TerminalSession {
                         self.emit_ai(shell_ai_event(event), true, cx);
                     }
                     let path = PathBuf::from(path);
-                    self.set_cwd(path.clone());
+                    self.set_cwd(path.clone(), cx);
                     cx.emit(SessionEvent::DirectoryChanged(path));
                     changed = true;
                 }
@@ -1313,11 +1317,27 @@ impl TerminalSession {
         // the process table.
         if !self.tracker.saw_osc7() && self.last_cwd_check.elapsed() > Duration::from_millis(500) {
             self.last_cwd_check = Instant::now();
-            changed |= self.update_cwd();
+            self.request_cwd_update(cx);
         }
         // The branch can change without a cd (git checkout): re-read HEAD.
         if self.last_branch_check.elapsed() >= Duration::from_secs(2) {
             self.last_branch_check = Instant::now();
+            // Known identity is available immediately; a shared background
+            // probe reconciles cold/nested repositories without blocking UI.
+            if let Some(cwd) = &self.cwd {
+                let root = crate::repository::resolve(cwd, cx)
+                    .map(PathBuf::from)
+                    .or_else(|| {
+                        self.git_root
+                            .as_ref()
+                            .filter(|root| cwd.starts_with(root))
+                            .cloned()
+                    });
+                if root != self.git_root {
+                    self.git_root = root;
+                    changed = true;
+                }
+            }
             // Tabs in one repository share one branch value.
             let branch = match self.git_root.as_deref() {
                 Some(root) => match crate::repository::resolve(root, cx) {
@@ -1791,11 +1811,18 @@ impl TerminalSession {
         .detach();
     }
 
-    fn set_cwd(&mut self, cwd: PathBuf) {
+    fn set_cwd(&mut self, cwd: PathBuf, cx: &mut Context<Self>) {
         if self.cwd.as_ref() == Some(&cwd) {
             return;
         }
-        self.git_root = procinfo::git_root(&cwd);
+        self.git_root = crate::repository::resolve(&cwd, cx)
+            .map(PathBuf::from)
+            .or_else(|| {
+                self.git_root
+                    .as_ref()
+                    .filter(|root| cwd.starts_with(root))
+                    .cloned()
+            });
         self.git_branch = None;
         // New directory: reconcile on the next existing monitor tick, off UI.
         self.last_branch_check = Instant::now()
@@ -1804,20 +1831,63 @@ impl TerminalSession {
         self.cwd = Some(cwd);
     }
 
-    /// Re-read the shell's directory from the process table. Returns true
-    /// when it changed.
-    pub fn update_cwd(&mut self) -> bool {
+    /// One native directory probe at a time, off UI. A late result cannot
+    /// overwrite OSC7 or a newer directory/shell identity.
+    fn request_cwd_update(&mut self, cx: &mut Context<Self>) {
         let pid = self.term.read().shell_pid() as u32;
-        let Some(cwd) = procinfo::process_cwd(pid) else {
-            return false;
-        };
-        let path = cwd.to_string_lossy().to_string();
-        if self.tracker.update_directory(&path, &self.shell_context) {
-            // The tracker's DirectoryChanged event is applied on the next drain.
-            self.set_cwd(cwd);
-            return true;
+        if self.cwd_probe_pending || self.exited.is_some() || pid == 0 || self.tracker.saw_osc7() {
+            return;
         }
-        false
+        self.cwd_probe_pending = true;
+        let captured_cwd = self.cwd.clone();
+        let input_revision = self.restore_input_generation.get();
+        cx.spawn(async move |this, cx| {
+            let cwd = cx
+                .background_executor()
+                .spawn(async move {
+                    chau7_next_core::work_profiler::measure(
+                        chau7_next_core::work_profiler::Key::work(
+                            "process_cwd_probe",
+                            "fallback",
+                            "unobserved",
+                            "session_monitor",
+                            chau7_next_core::work_profiler::Queue::Background,
+                        ),
+                        || procinfo::process_cwd(pid),
+                    )
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.cwd_probe_pending = false;
+                if input_revision != this.restore_input_generation.get()
+                    || !accepts_cwd_probe(
+                        pid,
+                        this.term.read().shell_pid() as u32,
+                        captured_cwd.as_deref(),
+                        this.cwd.as_deref(),
+                        this.tracker.saw_osc7(),
+                        this.exited.is_some(),
+                    )
+                {
+                    return;
+                }
+                let Some(cwd) = cwd else {
+                    return;
+                };
+                if this
+                    .tracker
+                    .update_directory(&cwd.to_string_lossy(), &this.shell_context)
+                {
+                    this.set_cwd(cwd, cx);
+                    // Reuse the authoritative DirectoryChanged routing and
+                    // metadata reconciliation rather than inventing a UI value.
+                    this.drain_tracker_events(cx);
+                    cx.emit(SessionEvent::MetadataChanged);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     fn ring_bell(&mut self, cx: &mut Context<Self>) {
@@ -2996,5 +3066,43 @@ mod restored_context_tests {
         assert!(text.contains("live-prompt>"), "{text:?}");
         assert!(text.find("saved history").unwrap() < text.find("fresh shell").unwrap());
         assert!(!text.contains("cat "));
+    }
+}
+
+fn accepts_cwd_probe(
+    expected_pid: u32,
+    live_pid: u32,
+    expected_cwd: Option<&std::path::Path>,
+    live_cwd: Option<&std::path::Path>,
+    saw_osc7: bool,
+    exited: bool,
+) -> bool {
+    expected_pid != 0
+        && expected_pid == live_pid
+        && expected_cwd == live_cwd
+        && !saw_osc7
+        && !exited
+}
+#[cfg(test)]
+mod cwd_probe_tests {
+    use super::accepts_cwd_probe;
+    use std::path::Path;
+    #[test]
+    fn late_native_directory_results_require_unchanged_live_identity() {
+        let before = Some(Path::new("/before"));
+        assert!(accepts_cwd_probe(10, 10, before, before, false, false));
+        assert!(accepts_cwd_probe(10, 10, None, None, false, false));
+        assert!(!accepts_cwd_probe(0, 0, before, before, false, false));
+        assert!(!accepts_cwd_probe(10, 11, before, before, false, false));
+        assert!(!accepts_cwd_probe(
+            10,
+            10,
+            before,
+            Some(Path::new("/after")),
+            false,
+            false
+        ));
+        assert!(!accepts_cwd_probe(10, 10, before, before, true, false));
+        assert!(!accepts_cwd_probe(10, 10, before, before, false, true));
     }
 }
