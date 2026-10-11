@@ -425,6 +425,12 @@ impl RemoteControl {
     }
 
     fn tick(&mut self, cx: &mut Context<Self>) -> Duration {
+        let mut wake =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::wakeup(
+                "remote_timer",
+                "app",
+                chau7_next_core::work_profiler::Queue::Main,
+            ));
         let settings = Settings::get(cx).remote.clone();
         self.apply_settings(&settings, cx);
 
@@ -440,6 +446,9 @@ impl RemoteControl {
         }
 
         let events = self.ipc.as_ref().map(IpcServer::drain).unwrap_or_default();
+        wake.idle(
+            events.is_empty() && !self.host.has_pending_output() && !self.grid_worker.has_result(),
+        );
         for event in events {
             match event {
                 IpcEvent::Connected => {

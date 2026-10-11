@@ -307,6 +307,7 @@ pub fn link_color(dark: bool) -> Hsla {
 
 /// Everything the paint closure needs, computed in prepaint.
 pub struct PaintState {
+    visibility: &'static str,
     cpu_frame: Arc<Mutex<FrameCache>>,
     inputs: FrameInputs,
     cols: u16,
@@ -334,6 +335,16 @@ pub fn prepaint(
     mut inputs: FrameInputs,
     overlays: &mut Overlays,
 ) -> PaintState {
+    let visibility = session.profiling_phase();
+    let mut stage =
+        chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+            "prepaint_snapshot",
+            "layout",
+            visibility,
+            "terminal_painter",
+            chau7_next_core::work_profiler::Queue::Main,
+        ));
+    stage.items(session.grid.cells.len());
     overlays.last_paint = Instant::now();
     let grid = &session.grid;
     let offset = grid.display_offset as i32;
@@ -400,6 +411,7 @@ pub fn prepaint(
         }
     }
     PaintState {
+        visibility,
         cpu_frame: overlays.cpu_frame.clone(),
         clusters,
         cols: grid.cols,
@@ -565,6 +577,15 @@ pub fn paint_grid(bounds: Bounds<Pixels>, state: PaintState, window: &mut Window
     if crate::hang_watchdog::render_blocked() {
         return;
     }
+    let mut stage =
+        chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+            "grid_paint",
+            "draw",
+            state.visibility,
+            "terminal_painter",
+            chau7_next_core::work_profiler::Queue::Main,
+        ));
+    stage.items(state.cells.len());
     feature_profiler::measure(Feature::TerminalRender, 0, || {
         paint_grid_inner(bounds, state, window, cx)
     })
@@ -576,6 +597,7 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
         bounds,
         state.inputs.gpu_renderer,
         state.cpu_frame.clone(),
+        state.visibility,
         cx,
     );
     let window = &mut canvas;
@@ -742,6 +764,15 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
                 }
             }
             if any_visible {
+                let shape = chau7_next_core::work_profiler::begin(
+                    chau7_next_core::work_profiler::Key::work(
+                        "shape_line",
+                        "draw",
+                        state.visibility,
+                        "terminal_painter",
+                        chau7_next_core::work_profiler::Queue::Main,
+                    ),
+                );
                 let line = window.text_system().shape_line(
                     text.into(),
                     m.font_size,
@@ -750,6 +781,7 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
                     // next chunk's position. Normal runs keep the fast grid layout.
                     (!chunk.natural).then_some(m.cell_width),
                 );
+                drop(shape);
                 let _ = window.paint_line(
                     &line,
                     point(bounds.left() + m.cell_width * chunk.columns.start as f32, y),

@@ -101,6 +101,14 @@ pub(crate) fn register(
     memory
 }
 impl SessionMemory {
+    pub fn profiling_phase(&self) -> &'static str {
+        match self.state.lock().phase {
+            RenderPhase::Active => "active",
+            RenderPhase::PassiveVisible => "passive_visible",
+            RenderPhase::Warm => "warm",
+            RenderPhase::Hidden => "hidden",
+        }
+    }
     pub fn activate(self: &Arc<Self>, cx: &App) {
         let mut state = self.state.lock();
         state.phase = RenderPhase::Active;
@@ -139,7 +147,16 @@ impl SessionMemory {
         let term = self.terminal.upgrade()?;
         let flushed = self.state.lock().flushed;
         let term = term.read();
-        let tail = term.full_buffer_ansi_text();
+        let tail = chau7_next_core::work_profiler::measure(
+            chau7_next_core::work_profiler::Key::work(
+                "full_buffer_ansi",
+                "autosave",
+                self.profiling_phase(),
+                "session_restore",
+                chau7_next_core::work_profiler::Queue::Main,
+            ),
+            || term.full_buffer_ansi_text(),
+        );
         let Some(record) = flushed else {
             return Some(tail);
         };
@@ -164,6 +181,12 @@ impl SessionMemory {
     /// terminal lock. After persistence, a counter check under the parser lock
     /// aborts trimming if output arrived during the transaction.
     fn maintain(&self) {
+        let _wake =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::wakeup(
+                "scrollback_maintenance",
+                self.profiling_phase(),
+                chau7_next_core::work_profiler::Queue::Background,
+            ));
         self.maintain_inner(|| {});
         self.state.lock().queued = false;
     }
@@ -200,7 +223,16 @@ impl SessionMemory {
                             append_tail(&mut bytes, &term.full_buffer_ansi_text());
                         }
                         term.set_scrollback_size(configured);
-                        term.replay_buffer(&bytes);
+                        chau7_next_core::work_profiler::measure(
+                            chau7_next_core::work_profiler::Key::work(
+                                "replay_buffer",
+                                "restore",
+                                self.profiling_phase(),
+                                "scrollback_maintenance",
+                                chau7_next_core::work_profiler::Queue::Background,
+                            ),
+                            || term.replay_buffer(&bytes),
+                        );
                         self.state.lock().flushed = None;
                         *self.restore_preview.lock() = None;
                         self.metrics.lock().reloads += 1;
@@ -247,7 +279,17 @@ impl SessionMemory {
                     before.saturating_sub(term.debug_state().estimated_grid_bytes);
                 return;
             }
-            (term.full_buffer_ansi_text(), term.stats().1, before)
+            let text = chau7_next_core::work_profiler::measure(
+                chau7_next_core::work_profiler::Key::work(
+                    "full_buffer_ansi",
+                    "persist",
+                    self.profiling_phase(),
+                    "scrollback_maintenance",
+                    chau7_next_core::work_profiler::Queue::Background,
+                ),
+                || term.full_buffer_ansi_text(),
+            );
+            (text, term.stats().1, before)
         };
         // Durable verification must succeed before touching retained grid history.
         if let Err(error) =
@@ -434,6 +476,11 @@ fn selected(cx: &mut App) -> HashMap<u64, bool> {
     selected
 }
 fn tick(cx: &mut App) {
+    let _wake = chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::wakeup(
+        "memory_pressure_timer",
+        "app",
+        chau7_next_core::work_profiler::Queue::Main,
+    ));
     let selected = selected(cx);
     let visible: HashSet<u64> = selected
         .iter()

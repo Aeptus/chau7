@@ -35,6 +35,7 @@ use chau7_next_core::shell_restore;
 use chau7_next_core::shell_session::{
     CommandStatus, ShellContext, ShellMark, ShellSession, ShellSessionConfig, ShellSessionEvent,
 };
+use chau7_next_core::work_profiler::{self, Key as WorkKey, Kind as WorkKind, Queue as WorkQueue};
 use chau7_next_core::{shell_env, shell_integration, shell_tips};
 use chau7_terminal::{Chau7Terminal, GridCopy, graphics::ShellIntegrationEvent};
 use futures::StreamExt;
@@ -402,21 +403,56 @@ impl TerminalSession {
         let output = Arc::new(Mutex::new((Vec::new(), None)));
         let (tx, mut rx) = mpsc::unbounded::<()>();
         let id = NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed);
+        // The poll thread observes the actual retention phase without owning
+        // the session or altering construction/teardown order.
+        let profile_memory = Arc::new(std::sync::OnceLock::<
+            std::sync::Weak<crate::memory_pressure::SessionMemory>,
+        >::new());
 
         {
             let term = term.clone();
             let stop = stop.clone();
             let output = output.clone();
+            let profile_memory = profile_memory.clone();
             std::thread::Builder::new()
                 .name("chau7-next-poll".into())
                 .spawn(move || {
                     while !stop.load(Ordering::Acquire) {
+                        let visibility = profile_memory
+                            .get()
+                            .and_then(std::sync::Weak::upgrade)
+                            .map_or("unobserved", |memory| memory.profiling_phase());
+                        let mut wake = work_profiler::begin(WorkKey::wakeup(
+                            "pty_poll",
+                            visibility,
+                            WorkQueue::Background,
+                        ));
                         let (had_data, closed, bytes) = {
                             let term = term.read();
-                            let had = term.poll(16);
-                            (had, term.is_pty_closed(), term.get_last_output())
+                            let had = work_profiler::measure(
+                                WorkKey::work(
+                                    "native_poll_and_parse",
+                                    "drain",
+                                    visibility,
+                                    "pty_poll",
+                                    WorkQueue::Background,
+                                ),
+                                || term.poll(16),
+                            );
+                            let mut extraction = work_profiler::begin(WorkKey::work(
+                                "get_last_output",
+                                "drain",
+                                visibility,
+                                "pty_poll",
+                                WorkQueue::Background,
+                            ));
+                            let bytes = term.get_last_output();
+                            extraction.bytes(bytes.len());
+                            (had, term.is_pty_closed(), bytes)
                         };
                         let got_bytes = !bytes.is_empty();
+                        wake.bytes(bytes.len());
+                        wake.idle(!had_data && !closed && !got_bytes);
                         if got_bytes {
                             super::pty_capture::record(&bytes, "read");
                             crate::history::recorder::output(id, &bytes);
@@ -440,8 +476,22 @@ impl TerminalSession {
         let suspended = render_suspended.clone();
         let pump = cx.spawn(async move |this, cx| {
             while rx.next().await.is_some() {
-                while rx.try_recv().is_ok() {}
-                if this.update(cx, |this, cx| this.refresh(cx)).is_err() {
+                let mut notifications = 1;
+                while rx.try_recv().is_ok() {
+                    notifications += 1;
+                }
+                if this
+                    .update(cx, |this, cx| {
+                        let mut wake = work_profiler::begin(WorkKey::wakeup(
+                            "output_dispatch",
+                            this.profiling_phase(),
+                            WorkQueue::Main,
+                        ));
+                        wake.items(notifications);
+                        this.refresh(cx);
+                    })
+                    .is_err()
+                {
                     break;
                 }
                 if suspended.load(Ordering::Relaxed) {
@@ -497,6 +547,7 @@ impl TerminalSession {
             .try_global::<Settings>()
             .map_or(10_000, |settings| settings.terminal.scrollback_lines);
         let memory = crate::memory_pressure::register(id, &term, &root, lines);
+        let _ = profile_memory.set(Arc::downgrade(&memory));
         Self {
             id,
             term,
@@ -554,15 +605,52 @@ impl TerminalSession {
     }
 
     /// Pull everything new from the terminal and notify observers.
+    pub fn profiling_phase(&self) -> &'static str {
+        self.memory.profiling_phase()
+    }
+
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        let mut processing = work_profiler::begin(WorkKey::work(
+            "output_processing",
+            "drain",
+            self.profiling_phase(),
+            "session_refresh",
+            WorkQueue::Main,
+        ));
         let started = Instant::now();
         self.memory.set_tui(self.ai_app.is_some());
         let mut metadata_changed = self.retry_resize();
         let (grid, cursor, title, closed, events, bell, clipboard, clipboard_load) = {
             let term = self.term.read();
             (
-                term.grid_copy(),
-                term.cursor_position(),
+                {
+                    let mut capture = work_profiler::begin(WorkKey::work(
+                        "get_grid",
+                        "drain",
+                        self.profiling_phase(),
+                        "session_refresh",
+                        WorkQueue::Main,
+                    ));
+                    let grid = term.grid_copy();
+                    capture.items(grid.cells.len());
+                    capture.bytes(
+                        grid.cells
+                            .len()
+                            .saturating_mul(std::mem::size_of::<chau7_terminal::OwnedCell>())
+                            .saturating_add(grid.clusters.values().map(String::len).sum::<usize>()),
+                    );
+                    grid
+                },
+                work_profiler::measure(
+                    WorkKey::work(
+                        "cursor_mode_read",
+                        "drain",
+                        self.profiling_phase(),
+                        "session_refresh",
+                        WorkQueue::Main,
+                    ),
+                    || term.cursor_position(),
+                ),
                 term.take_pending_title(),
                 term.is_pty_closed(),
                 term.take_shell_events(),
@@ -573,8 +661,25 @@ impl TerminalSession {
         };
         let (output, output_at) = std::mem::take(&mut *self.output.lock());
         self.last_output_bytes = output.len();
+        processing.bytes(output.len());
+        processing.idle(output.is_empty());
         self.permission_output_tail.push(&output);
         if let Some(at) = output_at {
+            let mut key = WorkKey::work(
+                "event_dispatch_wait",
+                "drain",
+                self.profiling_phase(),
+                "output_dispatch",
+                WorkQueue::Main,
+            );
+            key.kind = WorkKind::Latency;
+            work_profiler::record(
+                key,
+                at.elapsed().as_secs_f64() * 1000.0,
+                output.len(),
+                1,
+                false,
+            );
             // Output latency runs from the bytes' arrival to the frame that
             // shows them (`mark_frame_drawn`); a measure no frame closed
             // within 0.2 s (hidden tab) is dropped first.
@@ -976,6 +1081,12 @@ impl TerminalSession {
 
     /// Once a second.
     fn tick(&mut self, cx: &mut Context<Self>) {
+        let mut wake = work_profiler::begin(WorkKey::wakeup(
+            "session_timer",
+            self.profiling_phase(),
+            WorkQueue::Main,
+        ));
+        wake.idle(self.last_activity.elapsed() >= Duration::from_secs(1));
         if self.exited.is_some() {
             return;
         }
@@ -1616,7 +1727,16 @@ impl TerminalSession {
     }
 
     pub fn buffer_text(&self) -> String {
-        self.term.read().full_buffer_text()
+        let mut capture = work_profiler::begin(WorkKey::work(
+            "full_buffer_text",
+            "capture",
+            self.profiling_phase(),
+            "session",
+            WorkQueue::Main,
+        ));
+        let text = self.term.read().full_buffer_text();
+        capture.bytes(text.len());
+        text
     }
 
     pub fn display_offset(&self) -> usize {
