@@ -116,8 +116,23 @@ pub trait HostEnv {
     fn select(&mut self, key: TabKey) -> bool;
     /// The main pane's whole buffer as text.
     fn text_snapshot(&mut self, key: TabKey) -> Option<Vec<u8>>;
-    /// The main pane's grid (`CHG1`).
+    /// The main pane's full CHG2 grid; synchronous test environments only.
     fn grid_snapshot(&mut self, key: TabKey) -> Option<Vec<u8>>;
+    /// Actual environments enqueue capture and return None immediately.
+    fn queue_grid_snapshot(&mut self, key: TabKey, _tab_id: u32, _force: bool) -> Option<Vec<u8>> {
+        self.grid_snapshot(key)
+    }
+    /// Poll cursor/resize damage even when no PTY output arrives.
+    fn periodic_grid_snapshot(&mut self, _key: TabKey, _tab_id: u32) -> Option<Vec<u8>> {
+        None
+    }
+    fn main_session_id(&mut self, key: TabKey) -> Option<u64> {
+        self.tabs()
+            .iter()
+            .find(|tab| tab.key == key)?
+            .main()
+            .map(|pane| pane.session_id)
+    }
     /// The last lines of a pane, for prompt detection.
     fn pane_text(&mut self, key: TabKey, pane_id: u64) -> Option<String>;
     /// Type `text` in the tab's main pane. False when it cannot.
@@ -1085,15 +1100,82 @@ impl RemoteHost {
                 RemoteOutputTuning::cap_snapshot(&text),
             );
         }
-        self.send_grid_snapshot(env, sink, tab_id);
+        self.send_grid_snapshot(env, sink, tab_id, true);
     }
 
-    fn send_grid_snapshot(&mut self, env: &mut dyn HostEnv, sink: &mut dyn FrameSink, tab_id: u32) {
-        if let Some(key) = self.key_for(env, tab_id)
-            && let Some(grid) = env.grid_snapshot(key)
+    fn send_grid_snapshot(
+        &mut self,
+        env: &mut dyn HostEnv,
+        sink: &mut dyn FrameSink,
+        tab_id: u32,
+        force: bool,
+    ) {
+        if self.ipc_connected
+            && self.full()
+            && let Some(key) = self.key_for(env, tab_id)
+            && let Some(actual_tab) = self.registry.tab_id(key)
+            && let Some(grid) = env.queue_grid_snapshot(key, actual_tab, force)
         {
             self.send(sink, RemoteFrameType::TerminalGridSnapshot, tab_id, grid);
         }
+    }
+
+    pub(crate) fn streams_terminal(&self) -> bool {
+        self.full()
+    }
+
+    /// Resolve actual UI selection and focused session, including changes since
+    /// the last tab-list refresh. Neither this read nor enqueue copies grid data.
+    pub(crate) fn grid_capture_scope(
+        &self,
+        env: &mut dyn HostEnv,
+        epoch: u64,
+    ) -> Option<chau7_next_core::remote::grid_delivery::GridCaptureScope> {
+        if !self.ipc_connected || !self.full() {
+            return None;
+        }
+        let key = env.selected()?;
+        Some(chau7_next_core::remote::grid_delivery::GridCaptureScope {
+            epoch,
+            tab: self.registry.tab_id(key)?,
+            session: env.main_session_id(key)?,
+        })
+    }
+    pub(crate) fn capture_selected_grid(&self, env: &mut dyn HostEnv, force: bool) {
+        if let Some(scope) = self.grid_capture_scope(env, 0)
+            && let Some(key) = self.registry.key(scope.tab)
+        {
+            let _ = env.queue_grid_snapshot(key, scope.tab, force);
+        }
+    }
+    pub(crate) fn deliver_grid_result(
+        &mut self,
+        env: &mut dyn HostEnv,
+        sink: &mut dyn FrameSink,
+        epoch: u64,
+        result: super::snapshot::GridCaptureResult,
+    ) -> bool {
+        let current = self.grid_capture_scope(env, epoch);
+        if !chau7_next_core::remote::grid_delivery::should_deliver(
+            result.scope,
+            epoch,
+            current.map(|s| s.tab),
+            current.map(|s| s.session),
+            self.ipc_connected,
+            self.full(),
+        ) {
+            return false;
+        }
+        if let Some(payload) = result.payload {
+            self.send(
+                sink,
+                RemoteFrameType::TerminalGridSnapshot,
+                result.scope.tab,
+                payload,
+            );
+            return true;
+        }
+        false
     }
 
     /// Output of a session (`recordOutput`): kept when it belongs to the
@@ -1133,7 +1215,7 @@ impl RemoteHost {
             return None;
         }
         self.send(sink, RemoteFrameType::Output, tab_id, data.clone());
-        self.send_grid_snapshot(env, sink, tab_id);
+        self.send_grid_snapshot(env, sink, tab_id, false);
         Some(data)
     }
 
@@ -1377,6 +1459,16 @@ impl RemoteHost {
         if self.full() && (sent || previous_selected != self.selected_tab_id) {
             self.pending_output = None;
             self.send_selected_snapshot(env, sink);
+        } else if let Some(scope) = self.grid_capture_scope(env, 0)
+            && let Some(key) = self.registry.key(scope.tab)
+            && let Some(payload) = env.periodic_grid_snapshot(key, scope.tab)
+        {
+            self.send(
+                sink,
+                RemoteFrameType::TerminalGridSnapshot,
+                scope.tab,
+                payload,
+            );
         }
         self.send_activity(env, sink, false);
     }
@@ -1403,6 +1495,8 @@ pub(crate) mod tests {
         pub pane_texts: HashMap<(TabKey, u64), String>,
         pub typed: Vec<(TabKey, String)>,
         pub pane_typed: Vec<(TabKey, u64, String)>,
+        pub async_grid: bool,
+        pub grid_requests: Vec<(TabKey, u32, bool)>,
         pub resolved: Vec<(String, bool)>,
         pub cleared: Vec<TabKey>,
         pub telemetry: Vec<RemoteClientTelemetryEvent>,
@@ -1451,6 +1545,8 @@ pub(crate) mod tests {
                 pane_texts: HashMap::new(),
                 typed: Vec::new(),
                 pane_typed: Vec::new(),
+                async_grid: false,
+                grid_requests: Vec::new(),
                 resolved: Vec::new(),
                 cleared: Vec::new(),
                 telemetry: Vec::new(),
@@ -1473,6 +1569,20 @@ pub(crate) mod tests {
             } else {
                 false
             }
+        }
+        fn queue_grid_snapshot(&mut self, key: TabKey, tab: u32, force: bool) -> Option<Vec<u8>> {
+            if self.async_grid {
+                self.grid_requests.push((key, tab, force));
+                None
+            } else {
+                self.grid_snapshot(key)
+            }
+        }
+        fn periodic_grid_snapshot(&mut self, key: TabKey, tab: u32) -> Option<Vec<u8>> {
+            if self.async_grid {
+                self.grid_requests.push((key, tab, false));
+            }
+            None
         }
         fn text_snapshot(&mut self, key: TabKey) -> Option<Vec<u8>> {
             self.texts.get(&key).map(|t| t.as_bytes().to_vec())
@@ -1545,6 +1655,72 @@ pub(crate) mod tests {
         let mut out = Vec::new();
         host.on_connected(&mut env, &mut out);
         (host, env, out)
+    }
+
+    #[test]
+    fn asynchronous_grids_force_resync_poll_idle_and_resolve_active_tab_zero() {
+        let (mut host, mut env, _) = connected();
+        env.async_grid = true;
+        let mut out = Vec::new();
+        host.send_snapshot(&mut env, &mut out, 0);
+        assert_eq!(env.grid_requests, [(10, 1, true)]);
+        assert_eq!(types(&out), [RemoteFrameType::Snapshot]);
+        out.clear();
+        env.grid_requests.clear();
+        assert!(!host.record_output(100, b"output"));
+        host.flush_output(&mut env, &mut out);
+        assert_eq!(env.grid_requests, [(10, 1, false)]);
+        assert_eq!(types(&out), [RemoteFrameType::Output]);
+        out.clear();
+        env.grid_requests.clear();
+        host.refresh(&mut env, &mut out);
+        assert_eq!(env.grid_requests, [(10, 1, false)]);
+        assert!(out.is_empty());
+        env.grid_requests.clear();
+        host.stream_mode = RemoteClientStreamMode::ApprovalsOnly;
+        host.send_snapshot(&mut env, &mut out, 1);
+        host.refresh(&mut env, &mut out);
+        assert!(env.grid_requests.is_empty());
+        host.on_disconnected();
+        host.send_snapshot(&mut env, &mut out, 1);
+        assert!(env.grid_requests.is_empty());
+    }
+
+    #[test]
+    fn asynchronous_grid_delivery_validates_actual_selection_session_mode_and_epoch() {
+        use chau7_next_core::remote::grid_delivery::GridCaptureScope;
+        let (mut host, mut env, _) = connected();
+        let scope = GridCaptureScope {
+            epoch: 7,
+            tab: 1,
+            session: 100,
+        };
+        let mut out = Vec::new();
+        let frame = |scope| super::super::snapshot::GridCaptureResult {
+            scope,
+            generation: 3,
+            payload: Some(vec![1, 2, 3]),
+        };
+        assert!(host.deliver_grid_result(&mut env, &mut out, 7, frame(scope)));
+        assert_eq!(out[0].tab_id, 1);
+        assert_eq!(
+            out[0].frame_type(),
+            Some(RemoteFrameType::TerminalGridSnapshot)
+        );
+        out.clear();
+        assert!(!host.deliver_grid_result(&mut env, &mut out, 8, frame(scope)));
+        env.selected = Some(20); // Host's cached selected tab is still 1.
+        assert!(!host.deliver_grid_result(&mut env, &mut out, 7, frame(scope)));
+        env.selected = Some(10);
+        env.tabs[0].panes[0].session_id = 999;
+        assert!(!host.deliver_grid_result(&mut env, &mut out, 7, frame(scope)));
+        env.tabs[0].panes[0].session_id = 100;
+        host.stream_mode = RemoteClientStreamMode::ApprovalsOnly;
+        assert!(!host.deliver_grid_result(&mut env, &mut out, 7, frame(scope)));
+        host.stream_mode = RemoteClientStreamMode::Full;
+        host.on_disconnected();
+        assert!(!host.deliver_grid_result(&mut env, &mut out, 7, frame(scope)));
+        assert!(out.is_empty());
     }
 
     #[test]

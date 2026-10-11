@@ -39,10 +39,17 @@ pub struct GpuiEnv<'a> {
     pub telemetry: Vec<RemoteClientTelemetryEvent>,
     cache: Option<(Vec<TabInfo>, HashMap<TabKey, CachedTab>)>,
     now: DateTime<Utc>,
+    grid_worker: &'a mut snapshot::GridSnapshotWorker,
+    grid_epoch: u64,
 }
 
 impl<'a> GpuiEnv<'a> {
-    pub fn new(cx: &'a mut App, focus_window: &'a mut Option<AnyWindowHandle>) -> Self {
+    pub fn new(
+        cx: &'a mut App,
+        focus_window: &'a mut Option<AnyWindowHandle>,
+        grid_worker: &'a mut snapshot::GridSnapshotWorker,
+        grid_epoch: u64,
+    ) -> Self {
         Self {
             cx,
             focus_window,
@@ -50,7 +57,17 @@ impl<'a> GpuiEnv<'a> {
             telemetry: Vec::new(),
             cache: None,
             now: Utc::now(),
+            grid_worker,
+            grid_epoch,
         }
+    }
+
+    pub fn reset_grid_epoch(&mut self, epoch: u64) {
+        self.grid_worker.invalidate();
+        self.grid_epoch = epoch;
+    }
+    pub fn take_grid_result(&mut self) -> Option<snapshot::GridCaptureResult> {
+        self.grid_worker.take_result()
     }
 
     fn input_view(&mut self, key: TabKey, pane_id: Option<u64>) -> Option<Entity<TerminalView>> {
@@ -264,10 +281,28 @@ impl HostEnv for GpuiEnv<'_> {
         Some(session.read(self.cx).buffer_text().into_bytes())
     }
 
-    fn grid_snapshot(&mut self, key: TabKey) -> Option<Vec<u8>> {
-        let session = self.main_session(key)?;
-        let session = session.read(self.cx);
-        snapshot::encode_grid(&session.grid, session.cursor)
+    fn grid_snapshot(&mut self, _key: TabKey) -> Option<Vec<u8>> {
+        // The actual app never constructs a grid payload on the UI thread.
+        None
+    }
+    fn queue_grid_snapshot(&mut self, key: TabKey, tab_id: u32, force: bool) -> Option<Vec<u8>> {
+        let entity = self.main_session(key)?;
+        let session = entity.read(self.cx);
+        let scope = chau7_next_core::remote::grid_delivery::GridCaptureScope {
+            epoch: self.grid_epoch,
+            tab: tab_id,
+            session: session.id,
+        };
+        let terminal = session.remote_terminal();
+        self.grid_worker.request(scope, terminal, force);
+        None
+    }
+    fn periodic_grid_snapshot(&mut self, key: TabKey, tab_id: u32) -> Option<Vec<u8>> {
+        self.queue_grid_snapshot(key, tab_id, false)
+    }
+    fn main_session_id(&mut self, key: TabKey) -> Option<u64> {
+        let entity = self.main_session(key)?;
+        Some(entity.read(self.cx).id)
     }
 
     fn pane_text(&mut self, key: TabKey, pane_id: u64) -> Option<String> {

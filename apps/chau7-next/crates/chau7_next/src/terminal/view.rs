@@ -122,7 +122,9 @@ impl TerminalView {
                 this.danger_note_output(cx);
             }
             // OSC 52 read: answer with the clipboard text (RBK-012).
-            if matches!(event, SessionEvent::ClipboardLoad) {
+            if matches!(event, SessionEvent::ClipboardLoad)
+                && !this.session.read(cx).has_pending_clipboard_response()
+            {
                 let text = cx
                     .read_from_clipboard()
                     .and_then(|item| item.text())
@@ -213,6 +215,13 @@ impl TerminalView {
     /// hidden tabs when Suspend Background Rendering is on. Returns the next
     /// interval.
     fn blink_tick(&mut self, cx: &mut Context<Self>) -> Duration {
+        let mut wake =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::wakeup(
+                "cursor_blink_timer",
+                self.session.read(cx).profiling_phase(),
+                chau7_next_core::work_profiler::Queue::Main,
+            ));
+        wake.idle(!self.overlays.recently_painted(Duration::from_secs(1)));
         let appearance = &Settings::get(cx).appearance;
         let interval = appearance.blink_interval();
         let rendering = appearance.rendering.clone();
@@ -377,6 +386,14 @@ impl Render for TerminalView {
         if window.is_visible() {
             self.session.read(cx).mark_memory_visible(cx);
         }
+        let _build =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                "view_build",
+                "layout",
+                self.session.read(cx).profiling_phase(),
+                "terminal_view",
+                chau7_next_core::work_profiler::Queue::Main,
+            ));
         let metrics = self.metrics(window, cx);
         let guard_overlay = self.render_guard(cx);
         let settings = Settings::get(cx);

@@ -176,6 +176,27 @@ pub fn export_json(settings: &Settings, home: &str) -> String {
     }
     set("scrollbackLines", json!(t.scrollback_lines));
     set("bellEnabled", json!(t.bell_enabled));
+    set("bellSound", json!(t.bell_sound.raw_value()));
+    set(
+        "restoredScrollbackLines",
+        json!(t.restored_scrollback_lines),
+    );
+    set("startupCommand", json!(t.startup_command));
+    set("isLsColorsEnabled", json!(t.ls_colors));
+    set("isSmartScrollEnabled", json!(t.smart_scroll));
+    set(
+        "activePollingRateCap",
+        json!(a.rendering.active_polling_rate_cap.raw()),
+    );
+    set(
+        "inactiveViewMaxFPS",
+        json!(a.rendering.inactive_view_max_fps.clamp(1, 120)),
+    );
+    set("useMetalRenderer", json!(a.rendering.gpu_renderer));
+    if let Some(kind) = t.shell_type {
+        set("shellType", json!(kind.raw_value()));
+        set("customShellPath", json!(t.custom_shell_path));
+    }
 
     set(
         "newTabPosition",
@@ -318,6 +339,40 @@ pub fn import_json(settings: &mut Settings, text: &str, home: &str) -> Result<()
     }
     if let Some(v) = bool_of("bellEnabled") {
         t.bell_enabled = v;
+    }
+
+    if let Some(v) = str_of("bellSound") {
+        t.bell_sound = super::BellSound::from_raw(v);
+    }
+    if let Some(v) = str_of("startupCommand") {
+        t.startup_command = v.to_string();
+    }
+    if let Some(v) = bool_of("isLsColorsEnabled") {
+        t.ls_colors = v;
+    }
+    if let Some(v) = bool_of("isSmartScrollEnabled") {
+        t.smart_scroll = v;
+    }
+    if let Some(v) = map.get("restoredScrollbackLines").and_then(Value::as_u64) {
+        t.restored_scrollback_lines =
+            v.min(chau7_next_core::session_restore::MAX_RESTORED_SCROLLBACK_LINES as u64) as usize;
+    }
+    if let Some(v) = str_of("shellType").and_then(chau7_next_core::shell_env::ShellType::from_raw) {
+        t.shell_type = Some(v);
+        if let Some(path) = str_of("customShellPath") {
+            t.custom_shell_path = path.to_string();
+        }
+    }
+    if let Some(v) =
+        str_of("activePollingRateCap").and_then(super::appearance::ActivePollingRateCap::from_raw)
+    {
+        settings.appearance.rendering.active_polling_rate_cap = v;
+    }
+    if let Some(v) = map.get("inactiveViewMaxFPS").and_then(Value::as_i64) {
+        settings.appearance.rendering.inactive_view_max_fps = v.clamp(1, 120) as u32;
+    }
+    if let Some(v) = bool_of("useMetalRenderer") {
+        settings.appearance.rendering.gpu_renderer = v;
     }
 
     match str_of("newTabPosition") {
@@ -669,6 +724,60 @@ mod tests {
     }
 
     #[test]
+    fn current_terminal_and_refresh_values_survive_owned_formats() {
+        let mut source = Settings::default();
+        source.terminal.shell_type = Some(chau7_next_core::shell_env::ShellType::Custom);
+        source.terminal.custom_shell_path = "/custom/fish".into();
+        source.terminal.startup_command = "echo hello".into();
+        source.terminal.bell_sound = super::super::BellSound::Subtle;
+        source.terminal.restored_scrollback_lines = 2100;
+        source.terminal.ls_colors = false;
+        source.terminal.smart_scroll = false;
+        source.appearance.rendering.active_polling_rate_cap =
+            super::super::appearance::ActivePollingRateCap::Hz30;
+        source.appearance.rendering.inactive_view_max_fps = 17;
+        source.appearance.rendering.gpu_renderer = false;
+        let config = Settings::from_text(&source.to_text(""));
+        let mut imported = Settings::default();
+        import_json(&mut imported, &export_json(&source, "/owned"), "/owned").unwrap();
+        for actual in [config, imported.clone()] {
+            // Swift's legacy shell path and Next's explicit shell enum can
+            // represent the same shell without identical storage fields.
+            assert_eq!(
+                actual.terminal.effective_shell_type(),
+                source.terminal.effective_shell_type()
+            );
+            assert_eq!(
+                actual.terminal.resolved_shell(),
+                source.terminal.resolved_shell()
+            );
+            assert_eq!(
+                actual.terminal.startup_command,
+                source.terminal.startup_command
+            );
+            assert_eq!(actual.terminal.bell_sound, source.terminal.bell_sound);
+            assert_eq!(
+                actual.terminal.restored_scrollback_lines,
+                source.terminal.restored_scrollback_lines
+            );
+            assert_eq!(actual.terminal.ls_colors, source.terminal.ls_colors);
+            assert_eq!(actual.terminal.smart_scroll, source.terminal.smart_scroll);
+            assert_eq!(actual.appearance.rendering, source.appearance.rendering);
+        }
+        import_json(
+            &mut imported,
+            r#"{"fontFamily":"Menlo","activePollingRateCap":"unknown","inactiveViewMaxFPS":999}"#,
+            "/owned",
+        )
+        .unwrap();
+        assert_eq!(
+            imported.appearance.rendering.active_polling_rate_cap,
+            super::super::appearance::ActivePollingRateCap::Hz30
+        );
+        assert_eq!(imported.appearance.rendering.inactive_view_max_fps, 120);
+    }
+
+    #[test]
     fn reset_section_restores_defaults() {
         let mut settings = Settings::default();
         settings.tabs.confirm_close = !settings.tabs.confirm_close;
@@ -678,6 +787,6 @@ mod tests {
         assert_eq!(settings.tabs, Settings::default().tabs);
         settings.reset_all();
         assert!(!settings.general.launch_at_login);
-        assert_eq!(settings.general.default_directory.as_deref(), Some("/keep"));
+        assert_eq!(settings.general.default_directory, None);
     }
 }

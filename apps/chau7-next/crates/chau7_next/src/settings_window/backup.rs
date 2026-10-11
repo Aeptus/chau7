@@ -81,7 +81,18 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                 ),
         );
 
-    div().flex().flex_col().child(cloud).child(backup)
+    let reset = titled("Reset All Settings to Defaults", chrome).child(
+        div().flex().justify_end().child(
+            button("reset-all", "Reset All Settings to Defaults", chrome)
+                .on_click(|_, window, cx| super::general::confirm_reset_all(window, cx)),
+        ),
+    );
+    div()
+        .flex()
+        .flex_col()
+        .child(cloud)
+        .child(backup)
+        .child(reset)
 }
 
 /// Export Settings...: save panel, then the JSON document.

@@ -35,7 +35,7 @@ Each tab holds a tree of panes split side by side or stacked. Besides terminals,
 | SPL-022 | Diff Working / Staged toggle (`git diff` vs `git diff --cached`) and Refresh; an empty working-tree diff falls back to the staged diff | `SplitPanes/DiffViewerPaneView.swift`, `SplitPanes/SplitPaneController.swift` (`loadDiff`, `toggleDiffMode`) | `SplitPaneControllerTests` | chau7_next_core/src/editor/diff.rs,chau7_next/src/panes/diff.rs | done |  |
 | SPL-023 | Changed Files panel context menu: Open Diff, Preview File | `Debug/ChangedFilesPanel.swift` |  | chau7_next/src/panes/changed_files.rs | done |  |
 
-| SPL-024 | Open and restore repository/dashboard pane kinds with headers/factory actions and dependency lifetime; existing diff/editor panes remain available | `SplitPanes/PaneFactoryRegistry.swift`; `SplitPanes/SplitPaneController.swift`; `SplitPanes/RepositoryPaneView.swift` | SplitPaneControllerTests |  | missing |  |
+| SPL-024 | Open and restore repository/dashboard pane kinds with headers/factory actions and dependency lifetime; existing diff/editor panes remain available | `SplitPanes/PaneFactoryRegistry.swift`; `SplitPanes/SplitPaneController.swift`; `SplitPanes/RepositoryPaneView.swift` | SplitPaneControllerTests | chau7_next/src/pane.rs; chau7_next/src/panes/repository.rs; chau7_next/src/panes/dashboard.rs; chau7_next_core/src/session_restore.rs | done |  |
 | SPL-025 | Session notes attach Markdown companion files to AI session, derive correct repository/session location and persist without overwriting unrelated notes | `SplitPanes/SessionNoteCoordinator.swift`; `Chau7Core/SessionNoteFileStore.swift`; `Chau7Core/SessionNoteAttachmentLocator.swift` | SessionNoteFileStoreTests; SessionNoteAttachmentLocatorTests | chau7_next/src/panes/editor.rs; chau7_next/src/pane.rs; chau7_next_core/src/editor/session_note.rs | done | 6943290c isolated stable owner-tab notes plus coordinator e2cb9f62 three identity seams; descriptor-relative Unix creation and portable Windows guard. Native UI and Windows acceptance remain unverified. |
 | SPL-026 | Runbook renders editable checkbox tasks, bullets, numbered lists and dividers; task toggles update original source and plan progress excludes code fences | `Chau7Core/MarkdownRunbookInfrastructure.swift`; `SplitPanes/MarkdownRunbookView.swift` | current_runbook_tests::tasks_toggle_source_and_ignore_fenced_examples | chau7_next_core/src/editor/markdown.rs; chau7_next/src/panes/runbook.rs; chau7_next/src/panes/editor.rs | done | |
 
@@ -67,3 +67,9 @@ Each tab holds a tree of panes split side by side or stacked. Besides terminals,
   because `isMarkdownMode` follows the file path.
 - `SavedSplitNode` decodes old saved layouts that lack the preview and diff
   fields (`testSavedSplitNodeDecodeOldFormatWithoutNewFields`).
+
+## Current repository and dashboard factories
+
+- SPL-024 now includes the real Dashboard pane variant, factory/subscription, focus and close events, editor companion routing, visible Open in Split action, reuse by repository scope and saved layout kind. Repository, diff, preview, editor and terminal variants remain available in the same tree.
+- Dashboard layout regressions round-trip normal/empty/missing scopes and normalize duplicate IDs while preserving repository directories, editor paths and terminal identities. The Dashboard entity owns its cancellable diagnostic refresh timer; hidden tabs/windows do not trigger background repository refreshes, and the timer is independent of the window in which the pane was originally created.
+- Native visual, cross-window drag and relaunch acceptance remains on the coordinator's isolated macOS checklist.
