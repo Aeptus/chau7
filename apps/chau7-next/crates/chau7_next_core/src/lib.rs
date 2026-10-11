@@ -60,6 +60,7 @@ pub mod memory_pressure;
 pub mod monitoring;
 pub mod notifications;
 pub mod option_text_routing;
+pub mod osc9;
 pub mod path_rank;
 pub mod permission_center;
 pub mod procargs;
