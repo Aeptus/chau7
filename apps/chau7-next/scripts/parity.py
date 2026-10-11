@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Parity summary for Chau7 Next, computed from docs/rust-port/inventory/.
 
-    scripts/parity.py            print the summary table
-    scripts/parity.py --write    rewrite the generated block in docs/rust-port/PARITY.md
-    scripts/parity.py --check    exit 1 if a row is malformed, an ID repeats,
-                                 or PARITY.md is out of date (CI runs this)
-    scripts/parity.py --todo M   list the rows of module M that are not done
-    scripts/parity.py --set ID STATUS [RUST]
-                                 set a row's status (and Rust column), for
-                                 example: --set OVL-006 done chau7_next/src/workspace/tab_bar_view.rs
+scripts/parity.py            print the summary table
+scripts/parity.py --write    rewrite the generated block in docs/rust-port/PARITY.md
+scripts/parity.py --check    exit 1 if a row is malformed, an ID repeats,
+                             or PARITY.md is out of date (CI runs this)
+scripts/parity.py --todo M   list the rows of module M that are not done
+scripts/parity.py --set ID STATUS [RUST]
+                             set a row's status (and Rust column), for
+                             example: --set OVL-006 done chau7_next/src/workspace/tab_bar_view.rs
 """
 
 import collections
@@ -89,11 +89,7 @@ def summary(table):
         )
     n = sum(total.values())
     done = total["done"] + total["n/a"] + total["dropped"]
-    lines.append(
-        f"| **Total** | | **{n}** | "
-        + " | ".join(f"**{total[s]}**" for s in STATUSES)
-        + " | |"
-    )
+    lines.append(f"| **Total** | | **{n}** | " + " | ".join(f"**{total[s]}**" for s in STATUSES) + " | |")
     lines.append("")
     lines.append(
         f"Finished (done, n/a or dropped): {done} of {n} rows "
@@ -150,9 +146,7 @@ def main(argv):
     if "--check" in argv:
         text = PARITY.read_text()
         if generated_block(table) not in text:
-            problems.append(
-                "docs/rust-port/PARITY.md is out of date: run apps/chau7-next/scripts/parity.py --write"
-            )
+            problems.append("docs/rust-port/PARITY.md is out of date: run apps/chau7-next/scripts/parity.py --write")
         for problem in problems:
             print(f"parity: {problem}", file=sys.stderr)
         return 1 if problems else 0
