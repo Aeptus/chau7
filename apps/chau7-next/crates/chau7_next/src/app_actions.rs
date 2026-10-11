@@ -262,6 +262,7 @@ fn register_window_fallbacks(cx: &mut App) {
     forward::<OpenTextEditor>(cx);
     forward::<OpenFilePreview>(cx);
     forward::<OpenDiffViewer>(cx);
+    forward::<OpenRepositoryPane>(cx);
     forward::<AppendSelectionToEditor>(cx);
     forward::<ShowChangedFiles>(cx);
     forward::<SplitDown>(cx);

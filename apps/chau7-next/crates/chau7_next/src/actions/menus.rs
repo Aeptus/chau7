@@ -188,6 +188,7 @@ fn view_menu() -> Menu {
                     MenuItem::action("Open Text Editor", OpenTextEditor),
                     MenuItem::action("Open File Preview", OpenFilePreview),
                     MenuItem::action("Open Diff Viewer", OpenDiffViewer),
+                    MenuItem::action("Open Repository", OpenRepositoryPane),
                     MenuItem::action("Append Selection to Editor", AppendSelectionToEditor),
                     MenuItem::separator(),
                     MenuItem::action("Close Pane", ClosePane),
