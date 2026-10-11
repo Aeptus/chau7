@@ -41,9 +41,13 @@ use crate::terminal_prompt_notification::{
 pub enum CommandStatus {
     #[default]
     Idle,
+    /// An AI turn completed while its CLI remains open.
+    Done,
     Running,
     /// An AI tool asks for input or permission.
     WaitingForInput,
+    /// An explicit approval is outstanding.
+    ApprovalRequired,
     /// Running for a long time without output.
     Stuck,
     Exited,
@@ -54,8 +58,10 @@ impl CommandStatus {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Idle => "idle",
+            Self::Done => "done",
             Self::Running => "running",
             Self::WaitingForInput => "waitingForInput",
+            Self::ApprovalRequired => "approvalRequired",
             Self::Stuck => "stuck",
             Self::Exited => "exited",
         }
@@ -65,8 +71,10 @@ impl CommandStatus {
     pub fn label(self) -> &'static str {
         match self {
             Self::Idle => "Idle",
+            Self::Done => "Done",
             Self::Running => "Running",
             Self::WaitingForInput => "Waiting for input",
+            Self::ApprovalRequired => "Approval required",
             Self::Stuck => "Stuck",
             Self::Exited => "Exited",
         }
@@ -181,6 +189,14 @@ pub trait ShellContext {
 }
 
 /// AI waiting-for-input patterns (`maybeDetectAIWaitingForInput`).
+pub const APPROVAL_PATTERNS: &[&str] = &[
+    "needs your approval",
+    "needs your permission",
+    "approval required",
+    "approve this command",
+    "allow once",
+    "always allow",
+];
 pub const WAITING_PATTERNS: &[&str] = &[
     "yes/no",
     "[y/n]",
@@ -189,12 +205,16 @@ pub const WAITING_PATTERNS: &[&str] = &[
     "approve?",
     "continue?",
     "proceed?",
-    "permission",
-    "> ",
-    "? ",
+    "permission required",
+    "question requested",
+    "input requested",
+    "needs your input",
+    "ready for your input",
     "enter your",
     "type your",
-    "waiting for",
+    "waiting for your input",
+    "❯ 1.",
+    "❯ 1)",
 ];
 
 #[derive(Debug, Clone)]
@@ -227,6 +247,9 @@ pub struct ShellSession {
     /// The tab hosts an agent runtime session (the runtime reports
     /// waiting for input itself, `RuntimeSessionManager.sessionForTab`).
     pub runtime_owns_tab: bool,
+    pending_feedback_approval: bool,
+    pending_feedback_input: bool,
+    pub provider_has_authoritative_notifications: bool,
     current_directory: String,
     osc7: Osc7Scanner,
     blocks: CommandBlockList,
@@ -264,6 +287,9 @@ impl ShellSession {
             fallback_saw_output: false,
             prefill_pending: false,
             runtime_owns_tab: false,
+            pending_feedback_approval: false,
+            pending_feedback_input: false,
+            provider_has_authoritative_notifications: false,
             current_directory: directory.to_string(),
             osc7: Osc7Scanner::new(),
             blocks: CommandBlockList::new(),
@@ -530,12 +556,14 @@ impl ShellSession {
             return;
         }
         if let Some(meta) = resume::extract_metadata(trimmed) {
+            self.reset_feedback_for_identity(Some(&meta.provider), Some(&meta.session_id));
             self.last_ai_provider = Some(meta.provider);
             self.last_ai_session_id = Some(meta.session_id);
             return;
         }
         if let Some(provider) = resume::detect_provider(trimmed) {
-            // A different provider drops the old session id.
+            // A fresh launch drops the old native identity and its pending feedback.
+            self.reset_feedback_for_identity(Some(&provider), None);
             self.last_ai_provider = Some(provider);
             self.last_ai_session_id = None;
         }
@@ -544,6 +572,10 @@ impl ShellSession {
     /// Restores AI metadata of a saved tab (`restoreAIMetadata`).
     pub fn restore_ai_metadata(&mut self, provider: Option<&str>, session_id: Option<&str>) {
         let normalized = resume::normalize_provider_name(provider.unwrap_or_default());
+        let session_id = session_id
+            .map(str::trim)
+            .filter(|s| resume::is_valid_session_id(s));
+        self.reset_feedback_for_identity(normalized.as_deref(), session_id);
         let display = display_name_from_provider(normalized.as_deref());
         if let Some(name) = &display {
             self.ai.handle_restore(name);
@@ -554,10 +586,17 @@ impl ShellSession {
         self.suppress_waiting_fallback = display.is_some();
         self.fallback_armed = false;
         self.fallback_saw_output = false;
-        self.last_ai_session_id = session_id
-            .map(str::trim)
-            .filter(|s| resume::is_valid_session_id(s))
-            .map(str::to_string);
+        self.last_ai_session_id = session_id.map(str::to_string);
+    }
+
+    fn reset_feedback_for_identity(&mut self, provider: Option<&str>, session_id: Option<&str>) {
+        if self.last_ai_provider.as_deref() != provider
+            || self.last_ai_session_id.as_deref() != session_id
+        {
+            self.pending_feedback_approval = false;
+            self.pending_feedback_input = false;
+            self.provider_has_authoritative_notifications = false;
+        }
     }
 
     // MARK: output
@@ -625,15 +664,94 @@ impl ShellSession {
     }
 
     fn detect_waiting_for_input(&mut self, data: &[u8]) {
-        if self.active_app.is_none() || self.status != CommandStatus::Running {
+        if self.active_app.is_none()
+            || !matches!(self.status, CommandStatus::Running | CommandStatus::Stuck)
+        {
             return;
         }
         let Ok(text) = std::str::from_utf8(data) else {
             return;
         };
-        let lowered = text.to_lowercase();
-        if WAITING_PATTERNS.iter().any(|p| lowered.contains(p)) {
+        let text = escape_sanitizer::sanitize(text);
+        let trailing = text
+            .trim_end()
+            .chars()
+            .rev()
+            .take(280)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect::<String>()
+            .to_lowercase();
+        if APPROVAL_PATTERNS
+            .iter()
+            .any(|pattern| trailing.contains(pattern))
+        {
+            self.set_status(CommandStatus::ApprovalRequired);
+        } else if WAITING_PATTERNS
+            .iter()
+            .any(|pattern| trailing.contains(pattern))
+        {
             self.set_status(CommandStatus::WaitingForInput);
+        }
+    }
+
+    /// Apply authoritative feedback only to the current provider/native session and command generation.
+    pub fn apply_agent_feedback(
+        &mut self,
+        kind: &str,
+        provider: &str,
+        session_id: Option<&str>,
+        observed_at: f64,
+    ) -> bool {
+        if self.status == CommandStatus::Exited
+            || !observed_at.is_finite()
+            || observed_at < self.last_input_at
+        {
+            return false;
+        }
+        let provider = resume::normalize_provider_name(provider);
+        if provider.is_none() || self.effective_provider() != provider {
+            return false;
+        }
+        if let (Some(current), Some(incoming)) = (self.ai_session_id(), session_id)
+            && current != incoming
+        {
+            return false;
+        }
+        match kind {
+            "approval_requested" | "permission" => self.pending_feedback_approval = true,
+            "user_input_requested" | "waiting_input" => self.pending_feedback_input = true,
+            "approval_resolved" | "permission_resolved" => self.pending_feedback_approval = false,
+            "user_input_resolved" => self.pending_feedback_input = false,
+            "turn_completed" | "finished" => {
+                self.pending_feedback_approval = false;
+                self.pending_feedback_input = false;
+                self.provider_has_authoritative_notifications = true;
+                self.set_status(CommandStatus::Done);
+                return true;
+            }
+            _ => return false,
+        }
+        self.provider_has_authoritative_notifications = true;
+        self.set_status(if self.pending_feedback_approval {
+            CommandStatus::ApprovalRequired
+        } else if self.pending_feedback_input {
+            CommandStatus::WaitingForInput
+        } else {
+            CommandStatus::Running
+        });
+        true
+    }
+
+    fn completed_status(&self) -> CommandStatus {
+        if self.active_app.is_some()
+            || self.effective_provider().is_some()
+            || self.last_detected_app.is_some()
+        {
+            CommandStatus::Done
+        } else {
+            CommandStatus::Idle
         }
     }
 
@@ -648,8 +766,14 @@ impl ShellSession {
         let previous = self.status;
         self.is_shell_loading = false;
         self.is_at_prompt = true;
-        if matches!(self.status, CommandStatus::Running | CommandStatus::Stuck) {
-            self.set_status(CommandStatus::Idle);
+        if matches!(
+            self.status,
+            CommandStatus::Running
+                | CommandStatus::Stuck
+                | CommandStatus::WaitingForInput
+                | CommandStatus::ApprovalRequired
+        ) {
+            self.set_status(self.completed_status());
         }
         self.emit_waiting_fallback_if_needed(previous);
         self.clear_waiting_fallback_tracking();
@@ -679,6 +803,7 @@ impl ShellSession {
             runtime_owns_tab: self.runtime_owns_tab,
             provider_id: provider.clone(),
             provider_is_restored: self.ai.is_restored(),
+            provider_has_authoritative_notifications: self.provider_has_authoritative_notifications,
             has_pending_prefill_input: self.prefill_pending,
             suppress_until_next_user_command: self.suppress_waiting_fallback,
             has_recent_system_resume_prefill: false,
@@ -810,7 +935,7 @@ impl ShellSession {
         if idle_for < self.config.idle_seconds {
             return;
         }
-        self.set_status(CommandStatus::Idle);
+        self.set_status(self.completed_status());
         self.has_pending_command = false;
         self.prompt_seen_for_pending_command = false;
         self.pending_command_line = None;
@@ -1239,6 +1364,69 @@ mod tests {
         assert!(r.active_app().is_some());
         assert!(!r.is_ai_running());
         assert_eq!(display_name_from_provider(None), None);
+    }
+
+    #[test]
+    fn explicit_approval_and_input_feedback_keep_independent_pending_state() {
+        let mut s = session();
+        s.restore_ai_metadata(Some("codex"), Some("thread-1"));
+        assert!(s.apply_agent_feedback("approval_requested", "codex", Some("thread-1"), 1.0));
+        assert_eq!(s.status(), CommandStatus::ApprovalRequired);
+        s.apply_agent_feedback("user_input_requested", "codex", Some("thread-1"), 2.0);
+        assert_eq!(s.status(), CommandStatus::ApprovalRequired);
+        s.apply_agent_feedback("approval_resolved", "codex", Some("thread-1"), 3.0);
+        assert_eq!(s.status(), CommandStatus::WaitingForInput);
+        s.apply_agent_feedback("user_input_resolved", "codex", Some("thread-1"), 4.0);
+        assert_eq!(s.status(), CommandStatus::Running);
+        s.apply_agent_feedback("turn_completed", "codex", Some("thread-1"), 5.0);
+        assert_eq!(s.status(), CommandStatus::Done);
+        assert!(s.provider_has_authoritative_notifications);
+        assert_eq!(CommandStatus::Done.as_str(), "done");
+        assert_eq!(CommandStatus::ApprovalRequired.as_str(), "approvalRequired");
+    }
+    #[test]
+    fn native_identity_changes_reset_pending_feedback_and_authoritative_fallback_guard() {
+        let mut s = session();
+        s.restore_ai_metadata(Some("codex"), Some("thread-1"));
+        s.apply_agent_feedback("approval_requested", "codex", Some("thread-1"), 1.0);
+        s.track_resume_metadata("codex resume thread-1");
+        assert!(s.provider_has_authoritative_notifications);
+        s.restore_ai_metadata(Some("codex"), Some("thread-2"));
+        assert!(!s.provider_has_authoritative_notifications);
+        assert!(!s.pending_feedback_approval);
+        s.apply_agent_feedback("user_input_requested", "codex", Some("thread-2"), 2.0);
+        s.track_resume_metadata("claude --resume another-thread");
+        assert!(!s.provider_has_authoritative_notifications);
+        assert!(!s.pending_feedback_input);
+    }
+
+    #[test]
+    fn authoritative_feedback_rejects_stale_foreign_and_exited_session_events() {
+        let mut s = session();
+        s.restore_ai_metadata(Some("codex"), Some("thread-1"));
+        s.last_input_at = 10.0;
+        assert!(!s.apply_agent_feedback("approval_requested", "codex", Some("thread-1"), 9.0));
+        assert!(!s.apply_agent_feedback("approval_requested", "claude", Some("thread-1"), 11.0));
+        assert!(!s.apply_agent_feedback("approval_requested", "codex", Some("other"), 11.0));
+        assert!(!s.apply_agent_feedback("unknown", "codex", Some("thread-1"), 11.0));
+        assert!(!s.apply_agent_feedback("finished", "codex", Some("thread-1"), f64::NAN));
+        assert!(!s.provider_has_authoritative_notifications);
+        s.mark_exited();
+        assert!(!s.apply_agent_feedback("user_input_requested", "codex", Some("thread-1"), 12.0));
+        assert_eq!(s.status(), CommandStatus::Exited);
+    }
+    #[test]
+    fn terminal_detection_distinguishes_explicit_approval_and_ignores_old_output() {
+        let mut s = session();
+        s.handle_input("mybot\r", false, &Ctx, 1.0);
+        s.set_active_app(Some("Custom AI".into()));
+        s.detect_waiting_for_input(b"This command needs your approval");
+        assert_eq!(s.status(), CommandStatus::ApprovalRequired);
+        s.set_status(CommandStatus::Running);
+        s.detect_waiting_for_input(format!("Proceed? {}", "x".repeat(300)).as_bytes());
+        assert_eq!(s.status(), CommandStatus::Running);
+        s.detect_waiting_for_input(b"Input requested");
+        assert_eq!(s.status(), CommandStatus::WaitingForInput);
     }
 
     #[test]

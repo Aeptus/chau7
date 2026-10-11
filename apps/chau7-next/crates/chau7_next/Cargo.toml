@@ -32,7 +32,7 @@ chrono.workspace = true
 regex.workspace = true
 # File watching (FSEvents/kqueue on macOS, inotify on Linux); the version
 # gpui-component already uses.
-notify = "8.2.0"
+notify = { version = "8.2.0", features = ["macos_kqueue"] }
 # The OS preferred languages, for "System Default" (l10n).
 sys-locale = "0.3"
 

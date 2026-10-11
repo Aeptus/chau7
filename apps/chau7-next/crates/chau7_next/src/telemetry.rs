@@ -107,8 +107,16 @@ pub fn init(cx: &mut App) {
     usage::init_latency(cx);
     let home = root.home().to_owned();
     let rate_executor = cx.background_executor().clone();
+    let timer = crate::observability::register_background_timer(
+        cx,
+        "telemetry.transcript_rate",
+        "Transcript token rate observations",
+        "telemetry",
+        200,
+    );
     cx.background_executor()
         .spawn(async move {
+            let _timer = timer;
             use chau7_next_core::telemetry::{
                 jsonl_tail::JsonlTail, token_rate::TranscriptRateState,
             };

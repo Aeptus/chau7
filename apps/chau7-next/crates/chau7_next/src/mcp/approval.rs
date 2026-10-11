@@ -27,6 +27,17 @@ use crate::settings::Settings;
 
 /// One dialog at a time (Swift `runModal` blocks the main thread).
 static DIALOG: Mutex<()> = Mutex::new(());
+static PENDING_SUMMARIES: Mutex<Option<HashMap<String, serde_json::Value>>> = Mutex::new(None);
+pub fn pending_summaries() -> Vec<serde_json::Value> {
+    let state = PENDING_SUMMARIES.lock().unwrap_or_else(|e| e.into_inner());
+    let mut values: Vec<_> = state
+        .as_ref()
+        .into_iter()
+        .flat_map(|m| m.values().cloned())
+        .collect();
+    values.sort_by_key(|value| value["request_id"].as_str().unwrap_or_default().to_string());
+    values
+}
 
 /// Command approvals waiting for an answer from the iPhone, by request id.
 static PENDING_REMOTE: Mutex<Option<HashMap<String, oneshot::Sender<MCPApprovalResult>>>> =
@@ -116,6 +127,7 @@ pub fn request_command_approval(
     command: &str,
     flagged: &str,
     permissions: &ResolvedPermissions,
+    tab_id: &str,
 ) -> MCPApprovalResult {
     let _dialog = DIALOG.lock().unwrap_or_else(|e| e.into_inner());
     let request_id = uuid::Uuid::new_v4().to_string().to_uppercase();
@@ -125,11 +137,27 @@ pub fn request_command_approval(
         .unwrap_or_else(|e| e.into_inner())
         .get_or_insert_with(HashMap::new)
         .insert(request_id.clone(), remote_tx);
+    let tab_id = tab_id.to_string();
+    let pending_tab = tab_id.clone();
+    let pending_request = request_id.clone();
+    let summary = serde_json::json!({"request_id":request_id,"tab_id":tab_id,"command":command,
+        "flagged_command":flagged,"created_at_millis":chrono::Utc::now().timestamp_millis(),"status":"waiting"});
     let source_info = permissions.source_info();
     let detail = format!("An MCP client wants to execute:\n\n{command}\n\n{source_info}");
     let payload = crate::seams::approval_request(&request_id, command, flagged, &source_info);
     let result = main
         .call_async(move |cx, reply| {
+            super::control::set_command_approval_pending_on_main(&pending_tab, true, cx);
+            PENDING_SUMMARIES
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_or_insert_with(HashMap::new)
+                .insert(pending_request, summary.clone());
+            let mut event =
+                chau7_next_core::events::StructuralEvent::new("approval_waiting", "mcp_approvals");
+            event.tab_id = Some(pending_tab);
+            event.detail.insert("approval".into(), summary);
+            crate::observability::record(event, cx);
             // The paired iPhone gets the same request (RMT-017).
             crate::remote::send_approval_request(payload, cx);
             let parent = dialog_window(window, cx);
@@ -176,6 +204,25 @@ pub fn request_command_approval(
         .unwrap_or_else(|e| e.into_inner())
         .get_or_insert_with(HashMap::new)
         .remove(&request_id);
+    PENDING_SUMMARIES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .remove(&request_id);
+    let _ = main.call(move |cx| {
+        super::control::set_command_approval_pending_on_main(&tab_id, false, cx);
+        let mut event =
+            chau7_next_core::events::StructuralEvent::new("approval_resolved", "mcp_approvals");
+        event.tab_id = Some(tab_id);
+        event
+            .detail
+            .insert("request_id".into(), serde_json::json!(request_id));
+        event.detail.insert(
+            "approved".into(),
+            serde_json::json!(result != MCPApprovalResult::Denied),
+        );
+        crate::observability::record(event, cx);
+    });
     result
 }
 
@@ -189,6 +236,7 @@ pub fn enforce(
     full_input: &str,
     context: &str,
     window: Option<AnyWindowHandle>,
+    tab_id: &str,
 ) -> Option<String> {
     for name in &check.audited {
         log::info!(
@@ -205,7 +253,7 @@ pub fn enforce(
             )))
         }
         CommandVerdict::NeedsApproval(cmd) => {
-            match request_command_approval(main, window, full_input, &cmd, permissions) {
+            match request_command_approval(main, window, full_input, &cmd, permissions, tab_id) {
                 MCPApprovalResult::Denied => {
                     log::info!("MCP: user denied '{cmd}' in {context}");
                     Some(json_error(&format!("Command '{cmd}' was denied by user.")))

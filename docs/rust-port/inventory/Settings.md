@@ -235,6 +235,12 @@ UserDefaults keys (Swift) or `config.toml` keys (`[section] key`).
 | SET-134 | Reusable settings controls (section headers, toggles, pickers, steppers, sliders, directory field, shortcut rows) | `Settings/SettingsComponents.swift` | | `chau7_next/src/settings_window/` (`section`, `row`, `toggle`, `stepper`, `chip`) | n/a | |
 | SET-135 | Shortcut registry documentation (constants only) | `Settings/KeyboardShortcuts.swift` | | | n/a | |
 
+| SET-136 | Start Here page summarizes running integrations, profile, notifications, full disk/protected access and paths with links to relevant pages | `Settings/Views/StartHereSettingsView.swift`; `Settings/SettingsRootView.swift` |  |  | missing |  |
+| SET-137 | Search result focus navigates to setting anchor, grouped page summaries and current section selection retained while searching | `Settings/SettingsNavigationModel.swift`; `Settings/SettingsRootView.swift`; `Settings/Views/SettingsPageSummaryView.swift` |  | chau7_next/src/settings_window/mod.rs | partial |  |
+| SET-138 | Permission Center refreshed notification/full-disk/protected-folder state, explicit grants/regrants/cooldown and System Settings links; diagnose child process access | `Settings/PermissionCenterModel.swift`; `Settings/FullDiskAccessGuard.swift`; `Chau7Core/FullDiskAccessProbe.swift` | FullDiskAccessProbeTests | chau7_next/src/protected_paths.rs; chau7_next/src/settings_window/protected.rs | partial | Security scoped bookmarks, Full Disk Access |
+| SET-139 | Domain stores publish consistent settings changes and do not poll/reset unaffected options; import/export/reset cover new keys and domains | `Settings/TabDisplaySettingsStore.swift`; `Settings/ShellSettingsStore.swift`; `Settings/MCPRemoteSettingsStore.swift`; `Settings/NotificationSettingsStore.swift` | NotificationSettingsStoreTests; MCPRemoteSettingsStoreTests | chau7_next/src/settings/ | partial |  |
+| SET-140 | Usage/provider status/prompt injection/dashboard settings and current permission navigation are included in search, reset and config persistence | `Settings/SettingsSearch.swift`; `Settings/FeatureSettings.swift` |  |  | missing |  |
+
 ## Notes
 
 - Storage differs by design. Swift keeps every setting in UserDefaults and

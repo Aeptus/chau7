@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn contains_inline_secrets_detects_bearer_header() {
         assert!(contains_inline_secrets(
-            "curl -H 'Authorization: Bearer secret-token' https://example.com"
+            "curl -H 'Authorization: Bearer secret-token' https://example.com" // gitleaks:allow - deliberately fake bearer token tests detection
         ));
     }
 

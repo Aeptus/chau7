@@ -58,6 +58,14 @@ pub trait RuntimeHost {
     fn tab_output(&mut self, tab_id: &str, lines: usize) -> Option<String>;
     /// The first tab whose working directory is `cwd` (`resolveTabByCwd`).
     fn tab_for_cwd(&mut self, cwd: &str) -> Option<String>;
+    /// Provider/session identity for the visible AI process, when available.
+    fn live_ai_identity(&mut self, _tab_id: &str) -> Option<(String, Option<String>)> {
+        None
+    }
+    /// Resolve a matching Claude session or an unbound Claude tab, never an unrelated provider.
+    fn tab_for_claude_event(&mut self, cwd: &str, _session_id: Option<&str>) -> Option<String> {
+        self.tab_for_cwd(cwd)
+    }
     /// Whether the tab is still open.
     fn tab_exists(&mut self, tab_id: &str) -> bool;
     fn notify(&mut self, notification: RuntimeNotification);
@@ -72,6 +80,15 @@ struct Maps {
     runtime_to_claude: HashMap<String, String>,
     recently_stopped: HashMap<String, (Arc<RuntimeSession>, DateTime<Utc>)>,
     transcript_readers: HashMap<String, IncrementalTranscriptReader>,
+    failed_adoptions: HashMap<String, DateTime<Utc>>,
+    orphan_tracking: HashMap<String, (DateTime<Utc>, u32, bool)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrphanLogDecision {
+    Log,
+    SuppressionMarker,
+    Suppress,
 }
 
 /// The registry (`RuntimeSessionManager.shared`).
@@ -158,7 +175,26 @@ impl RuntimeSessionManager {
         cwd: &str,
     ) -> Arc<RuntimeSession> {
         let config = SessionConfig::new(cwd, backend.name());
-        let session = Arc::new(RuntimeSession::new(tab_id, backend, config, false, true));
+        self.adopt_session_with_config(tab_id, backend, config)
+    }
+
+    pub fn adopt_session_with_config(
+        &self,
+        tab_id: &str,
+        backend: Box<dyn AgentBackend>,
+        config: SessionConfig,
+    ) -> Arc<RuntimeSession> {
+        if let Some(existing) = self.session_for_tab(tab_id) {
+            return existing;
+        }
+        let auto_approve = config.auto_approve;
+        let session = Arc::new(RuntimeSession::new(
+            tab_id,
+            backend,
+            config,
+            auto_approve,
+            true,
+        ));
         session.transition(Trigger::BackendReady);
         self.register(&session);
         session.record(
@@ -206,6 +242,35 @@ impl RuntimeSessionManager {
         let mut out: Vec<_> = maps.sessions.values().cloned().collect();
         if include_stopped {
             out.extend(maps.recently_stopped.values().map(|(s, _)| s.clone()));
+        }
+        out.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
+        out
+    }
+
+    pub fn child_sessions(&self, parent: &str, include_stopped: bool) -> Vec<Arc<RuntimeSession>> {
+        self.all_sessions(include_stopped)
+            .into_iter()
+            .filter(|session| session.config.parent_session_id.as_deref() == Some(parent))
+            .collect()
+    }
+    pub fn descendant_sessions(
+        &self,
+        parent: &str,
+        include_stopped: bool,
+    ) -> Vec<Arc<RuntimeSession>> {
+        let all = self.all_sessions(include_stopped);
+        let mut seen = HashSet::from([parent.to_string()]);
+        let mut out = Vec::new();
+        let mut frontier = vec![parent.to_string()];
+        while let Some(parent) = frontier.pop() {
+            for session in &all {
+                if session.config.parent_session_id.as_deref() == Some(&parent)
+                    && seen.insert(session.id.clone())
+                {
+                    frontier.push(session.id.clone());
+                    out.push(session.clone());
+                }
+            }
         }
         out.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
         out
@@ -295,6 +360,126 @@ impl RuntimeSessionManager {
         }
     }
 
+    /// Terminal/history evidence can settle an interactive backend without
+    /// a Claude hook, after actual activity has been observed for this turn.
+    pub fn reconcile_settled_turn(
+        &self,
+        id: &str,
+        source: &str,
+        host: &mut dyn RuntimeHost,
+    ) -> bool {
+        let Some(session) = self.session(id) else {
+            return false;
+        };
+        if session.state() != State::Busy
+            || !session.has_observed_turn_activity()
+            || session.current_turn_id().is_none()
+        {
+            return false;
+        }
+        let output = host.tab_output(&session.tab_id, CAPTURE_LINES);
+        session.complete_turn(None, output.as_deref());
+        session.record(
+            session.last_completed_turn_id().as_deref(),
+            "turn_reconciled",
+            one("source", source),
+        );
+        true
+    }
+
+    /// Structured Codex lifecycle records, already bound to a visible tab/native thread.
+    pub fn handle_codex_record(
+        &self,
+        tab: &str,
+        native: &str,
+        cwd: &str,
+        record: &super::codex_feedback::Record,
+        host: &mut dyn RuntimeHost,
+    ) -> Option<Arc<RuntimeSession>> {
+        use super::codex_feedback::Record;
+        let mut session = self.session_for_tab(tab);
+        if session
+            .as_ref()
+            .is_some_and(|s| s.backend.name() != "codex")
+        {
+            return None;
+        }
+        if session
+            .as_ref()
+            .and_then(|s| s.native_session_id())
+            .is_some_and(|id| !id.eq_ignore_ascii_case(native))
+            && let Some(previous) = session.take()
+        {
+            previous.transition(Trigger::TabClosed);
+            self.move_to_stopped(&previous, Utc::now());
+        }
+        let session = session.or_else(|| {
+            matches!(record, Record::Started(_) | Record::Prompt(_))
+                .then(|| self.adopt_session(tab, Box::new(super::backends::CodexBackend), cwd))
+        })?;
+        session.bind_native_session_id(native);
+        if session.state() == State::Starting {
+            self.mark_ready(&session.id);
+        }
+        match record {
+            Record::Started(prompt)
+            | Record::Prompt(super::codex_feedback::Prompt {
+                message: prompt, ..
+            }) => {
+                if session.can_accept_turn() {
+                    session.start_turn(prompt);
+                }
+                session.mark_turn_activity();
+                if let Record::Prompt(prompt) = record {
+                    if session.state() != State::AwaitingApproval {
+                        session.transition(Trigger::InputRequested);
+                    }
+                    let mut data = one("call_id", &prompt.call_id);
+                    data.insert("message".into(), prompt.message.clone());
+                    data.insert("options".into(), prompt.options.join(", "));
+                    session.record(
+                        session.current_turn_id().as_deref(),
+                        "input_requested",
+                        data,
+                    );
+                }
+            }
+            Record::Usage {
+                input,
+                output,
+                cached,
+                reasoning,
+            } if session.current_turn_id().is_some() => {
+                session.add_token_usage(crate::telemetry::token_metrics::TokenUsage::provider(
+                    "codex",
+                    Some(*input),
+                    Some(*output),
+                    Some(0),
+                    Some(*cached),
+                    Some(*reasoning),
+                ));
+            }
+            Record::TurnCompleted(summary)
+                if session.current_turn_id().is_some() && session.state() == State::Busy =>
+            {
+                session.mark_turn_activity();
+                let output = host.tab_output(tab, CAPTURE_LINES);
+                session.complete_turn(summary.as_deref(), output.as_deref());
+            }
+            _ => (),
+        }
+        Some(session)
+    }
+    pub fn resolve_codex_input(&self, tab: &str, has_other_pending: bool) {
+        if !has_other_pending
+            && let Some(session) = self.session_for_tab(tab)
+            && session.backend.name() == "codex"
+            && session.state() == State::WaitingInput
+        {
+            session.transition(Trigger::InputProvided);
+        }
+    }
+
     // ----- Claude Code hook events -------------------------------------------
 
     /// Drive sessions from a Claude Code hook event (`handleClaudeEvent`);
@@ -307,6 +492,14 @@ impl RuntimeSessionManager {
         let Some(session) = session else {
             return;
         };
+        if host
+            .live_ai_identity(&session.tab_id)
+            .is_some_and(|(provider, _)| !provider.eq_ignore_ascii_case("claude"))
+        {
+            session.transition(Trigger::TabClosed);
+            self.move_to_stopped(&session, Utc::now());
+            return;
+        }
         let start_turn_if_idle = |s: &RuntimeSession| {
             if s.current_turn_id().is_none() && s.can_accept_turn() {
                 s.start_turn(&event.message);
@@ -319,6 +512,7 @@ impl RuntimeSessionManager {
         match event.event_type {
             EventType::ToolStart => {
                 start_turn_if_idle(&session);
+                session.mark_turn_activity();
                 let file = extract_file_path(&event.message);
                 session.record_tool_use(&event.tool_name, file.as_deref());
                 session.record(
@@ -343,7 +537,13 @@ impl RuntimeSessionManager {
                 start_turn_if_idle(&session);
                 if turn_active(&session) {
                     let owns_notifications = session.backend.name().eq_ignore_ascii_case("claude");
-                    if session.auto_approve {
+                    if let Some(reason) = session.config.policy.validate_tool(&event.tool_name) {
+                        host.send_input(&session.tab_id, "n\n");
+                        session.record_policy_block(&event.tool_name, &reason);
+                        if !owns_notifications {
+                            self.emit(&session, "policy_blocked", &reason, host);
+                        }
+                    } else if session.auto_approve {
                         // Layer 2: answer what the CLI flag (layer 1) let through.
                         host.send_input(&session.tab_id, "y\n");
                         log::info!(
@@ -408,6 +608,7 @@ impl RuntimeSessionManager {
             }
             EventType::UserPrompt => {
                 start_turn_if_idle(&session);
+                session.mark_turn_activity();
                 session.record(
                     session.current_turn_id().as_deref(),
                     RuntimeEventType::AGENT_RESPONDING.raw_value(),
@@ -488,12 +689,8 @@ impl RuntimeSessionManager {
             })
             .cloned()
             .collect();
-        let pool = if eligible.is_empty() {
-            claude
-        } else {
-            eligible
-        };
-        let chosen = choose_candidate(pool)?;
+        // A different native session in the same directory cannot steal a bound runtime.
+        let chosen = choose_candidate(eligible)?;
         if let Some(id) = claude_id {
             self.associate(&id, &chosen.id);
         }
@@ -518,14 +715,81 @@ impl RuntimeSessionManager {
         event: &ClaudeCodeEvent,
         host: &mut dyn RuntimeHost,
     ) -> Option<Arc<RuntimeSession>> {
-        let tab = host.tab_for_cwd(&event.cwd)?;
+        let id = normalize_claude_id(&event.session_id);
+        let key = id.clone().unwrap_or_else(|| format!("cwd:{}", event.cwd));
+        let now = Utc::now();
+        if self.should_skip_adoption(&key, now) {
+            return None;
+        }
+        let Some(tab) = host.tab_for_claude_event(&event.cwd, id.as_deref()) else {
+            self.record_adoption_failure(&key, now);
+            match self.orphan_log_decision(&key, now) {
+                OrphanLogDecision::Log => log::debug!("No live Claude tab for runtime adoption"),
+                OrphanLogDecision::SuppressionMarker => {
+                    log::debug!("Suppressing repeated orphan runtime adoption diagnostics")
+                }
+                OrphanLogDecision::Suppress => (),
+            }
+            return None;
+        };
         let session = self.adopt_session(&tab, Box::new(ClaudeCodeBackend), &event.cwd);
+        if session.backend.name() != "claude" {
+            self.record_adoption_failure(&key, now);
+            return None;
+        }
+        if let Some(id) = id {
+            self.associate(&id, &session.id);
+        }
         log::info!(
             "RuntimeSessionManager: auto-adopted session {} for cwd={}",
             session.id,
             event.cwd
         );
         Some(session)
+    }
+
+    /// Failed lookup retries after 3 seconds; a later new tab is never permanently excluded.
+    pub fn should_skip_adoption(&self, key: &str, now: DateTime<Utc>) -> bool {
+        self.lock()
+            .failed_adoptions
+            .get(key)
+            .is_some_and(|last| now.signed_duration_since(*last) < Duration::seconds(3))
+    }
+    pub fn record_adoption_failure(&self, key: &str, now: DateTime<Utc>) {
+        let mut maps = self.lock();
+        if maps.failed_adoptions.len() >= 4096
+            && !maps.failed_adoptions.contains_key(key)
+            && let Some(oldest) = maps
+                .failed_adoptions
+                .iter()
+                .min_by_key(|(_, time)| **time)
+                .map(|(key, _)| key.clone())
+        {
+            maps.failed_adoptions.remove(&oldest);
+            maps.orphan_tracking.remove(&oldest);
+        }
+        maps.failed_adoptions.insert(key.into(), now);
+    }
+    pub fn orphan_log_decision(&self, key: &str, now: DateTime<Utc>) -> OrphanLogDecision {
+        let mut maps = self.lock();
+        let entry = maps
+            .orphan_tracking
+            .entry(key.into())
+            .or_insert((now, 0, false));
+        entry.1 = entry.1.saturating_add(1);
+        if entry.1 < 6 || now.signed_duration_since(entry.0) < Duration::seconds(60) {
+            return OrphanLogDecision::Log;
+        }
+        if entry.2 {
+            return OrphanLogDecision::Suppress;
+        }
+        entry.2 = true;
+        OrphanLogDecision::SuppressionMarker
+    }
+    pub fn reset_adoption_cache(&self) {
+        let mut maps = self.lock();
+        maps.failed_adoptions.clear();
+        maps.orphan_tracking.clear();
     }
 
     fn read_transcript_tokens(&self, session: &RuntimeSession, event: &ClaudeCodeEvent) {
@@ -585,6 +849,143 @@ mod tests {
     use super::*;
     use crate::runtime::backends::GenericShellBackend;
 
+    #[test]
+    fn adoption_cache_retries_and_chronic_logging_only_suppresses_diagnostics() {
+        let manager = RuntimeSessionManager::new(None);
+        let now = Utc::now();
+        manager.record_adoption_failure("native", now);
+        assert!(manager.should_skip_adoption("native", now + Duration::milliseconds(2999)));
+        assert!(!manager.should_skip_adoption("native", now + Duration::seconds(3)));
+        for _ in 0..5 {
+            assert_eq!(
+                manager.orphan_log_decision("native", now),
+                OrphanLogDecision::Log
+            );
+        }
+        assert_eq!(
+            manager.orphan_log_decision("native", now + Duration::seconds(60)),
+            OrphanLogDecision::SuppressionMarker
+        );
+        assert_eq!(
+            manager.orphan_log_decision("native", now + Duration::seconds(61)),
+            OrphanLogDecision::Suppress
+        );
+        manager.reset_adoption_cache();
+        assert!(!manager.should_skip_adoption("native", now));
+        assert_eq!(
+            manager.orphan_log_decision("native", now),
+            OrphanLogDecision::Log
+        );
+    }
+    #[test]
+    fn duplicate_adoption_preserves_existing_backend_and_foreign_ids_do_not_rebind() {
+        let manager = RuntimeSessionManager::new(None);
+        let mut host = FakeHost::default();
+        let shell = manager.adopt_session("shell", Box::new(GenericShellBackend), "/x");
+        let duplicate = manager.adopt_session("shell", Box::new(ClaudeCodeBackend), "/x");
+        assert_eq!(duplicate.id, shell.id);
+        assert_eq!(duplicate.backend.name(), "shell");
+        let claude = manager.adopt_session("claude", Box::new(ClaudeCodeBackend), "/c");
+        manager.handle_claude_event(
+            &event(EventType::UserPrompt, "native-a", "", "first", "/c"),
+            &mut host,
+        );
+        manager.handle_claude_event(
+            &event(EventType::UserPrompt, "native-b", "", "foreign", "/c"),
+            &mut host,
+        );
+        assert_eq!(
+            manager
+                .session_for_claude_session_id("native-a")
+                .unwrap()
+                .id,
+            claude.id
+        );
+        assert!(manager.session_for_claude_session_id("native-b").is_none());
+    }
+    #[test]
+    fn codex_structured_feedback_drives_turn_without_fabricated_usage_or_resolution_verdict() {
+        use super::super::codex_feedback::{Prompt, Record};
+        let manager = RuntimeSessionManager::new(None);
+        let mut host = FakeHost::default();
+        let session = manager
+            .handle_codex_record(
+                "codex",
+                "thread",
+                "/c",
+                &Record::Started("task".into()),
+                &mut host,
+            )
+            .unwrap();
+        assert_eq!(session.state(), State::Busy);
+        assert_eq!(session.native_session_id().as_deref(), Some("thread"));
+        let prompt = Prompt {
+            call_id: "call".into(),
+            message: "Choose".into(),
+            options: vec!["A".into()],
+        };
+        manager.handle_codex_record("codex", "thread", "/c", &Record::Prompt(prompt), &mut host);
+        assert_eq!(session.state(), State::WaitingInput);
+        manager.resolve_codex_input("codex", true);
+        assert_eq!(session.state(), State::WaitingInput);
+        manager.resolve_codex_input("codex", false);
+        assert_eq!(session.state(), State::Busy);
+        manager.handle_codex_record(
+            "codex",
+            "thread",
+            "/c",
+            &Record::Usage {
+                input: 10,
+                output: 4,
+                cached: 2,
+                reasoning: 1,
+            },
+            &mut host,
+        );
+        session.request_approval("Codex", "Approval");
+        assert!(session.reconcile_approval_resolution("backend"));
+        assert!(
+            !of_type(&session, "approval_resolved")[0]
+                .data
+                .contains_key("approved")
+        );
+        manager.handle_codex_record(
+            "codex",
+            "thread",
+            "/c",
+            &Record::TurnCompleted(Some("{}".into())),
+            &mut host,
+        );
+        assert_eq!(session.state(), State::Ready);
+        assert_eq!(session.cumulative_token_usage().input_tokens, 8);
+        assert_eq!(session.cumulative_token_usage().output_tokens, 3);
+        assert_eq!(session.cumulative_token_usage().reasoning_output_tokens, 1);
+        assert_eq!(session.cumulative_token_usage().cache_read_input_tokens, 2);
+        assert!(session.has_token_usage_evidence());
+        assert_eq!(
+            session.latest_turn_result().unwrap().value,
+            Some(serde_json::json!({}))
+        );
+    }
+
+    #[test]
+    fn children_and_descendants_keep_parent_attribution_after_stop() {
+        let manager = RuntimeSessionManager::new(None);
+        let parent = manager.adopt_session("p", Box::new(GenericShellBackend), "/p");
+        let mut config = SessionConfig::new("/p", "shell");
+        config.parent_session_id = Some(parent.id.clone());
+        config.delegation_depth = 1;
+        let child = manager.create_session("c", Box::new(GenericShellBackend), config, false);
+        let mut config = SessionConfig::new("/p", "shell");
+        config.parent_session_id = Some(child.id.clone());
+        config.delegation_depth = 2;
+        let grandchild = manager.create_session("g", Box::new(GenericShellBackend), config, false);
+        assert_eq!(manager.child_sessions(&parent.id, false).len(), 1);
+        assert_eq!(manager.descendant_sessions(&parent.id, false).len(), 2);
+        manager.stop_session(&grandchild.id);
+        assert_eq!(manager.descendant_sessions(&parent.id, true).len(), 2);
+        assert_eq!(manager.descendant_sessions(&parent.id, false).len(), 1);
+    }
     #[derive(Default)]
     struct FakeHost {
         inputs: Vec<(String, String)>,
@@ -770,8 +1171,11 @@ mod tests {
         assert!(adopted.adopted);
         assert_eq!(adopted.backend.name(), "claude");
         assert_eq!(adopted.state(), State::Busy);
-        // Bound by the next event, through the directory (as in Swift).
-        assert!(m.session_for_claude_session_id("c9").is_none());
+        // Current Swift associates the native ID on the adopting event.
+        assert_eq!(
+            m.session_for_claude_session_id("c9").unwrap().id,
+            adopted.id
+        );
         m.handle_claude_event(
             &event(EventType::Notification, "c9", "", "n", "/proj"),
             &mut host,

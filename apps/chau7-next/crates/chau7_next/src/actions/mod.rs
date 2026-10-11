@@ -65,6 +65,7 @@ actions!(
         OpenTextEditor,
         OpenFilePreview,
         OpenDiffViewer,
+        OpenRepositoryPane,
         AppendSelectionToEditor,
         ShowChangedFiles,
         // App menu.

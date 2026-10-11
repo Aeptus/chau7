@@ -12,6 +12,17 @@ pub enum MarkdownSection {
         text: String,
     },
     Text(String),
+    Checkbox {
+        checked: bool,
+        text: String,
+        line: usize,
+    },
+    Bullet(String),
+    Numbered {
+        number: usize,
+        text: String,
+    },
+    Rule,
     CodeBlock {
         language: Option<String>,
         code: String,
@@ -64,12 +75,82 @@ pub fn parse_markdown(input: &str) -> Vec<MarkdownSection> {
             i += 1;
             continue;
         }
+        let trimmed = line.trim();
+        let special = if trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-') {
+            Some(MarkdownSection::Rule)
+        } else if let Some((checked, label)) = checkbox_line(line) {
+            Some(MarkdownSection::Checkbox {
+                checked,
+                text: label.to_string(),
+                line: i,
+            })
+        } else if let Some(label) = trimmed
+            .strip_prefix('-')
+            .or_else(|| trimmed.strip_prefix('*'))
+        {
+            let label = label.trim();
+            (!label.is_empty() && !label.starts_with('['))
+                .then(|| MarkdownSection::Bullet(label.to_string()))
+        } else if let Some((number, label)) = trimmed.split_once(". ") {
+            number
+                .parse::<usize>()
+                .ok()
+                .filter(|_| !label.trim().is_empty())
+                .map(|number| MarkdownSection::Numbered {
+                    number,
+                    text: label.trim().to_string(),
+                })
+        } else {
+            None
+        };
+        if let Some(section) = special {
+            flush(&mut text, &mut sections);
+            sections.push(section);
+            i += 1;
+            continue;
+        }
         text.push_str(line);
         text.push('\n');
         i += 1;
     }
     flush(&mut text, &mut sections);
     sections
+}
+
+fn checkbox_line(line: &str) -> Option<(bool, &str)> {
+    let line = line.trim_start();
+    let rest = line
+        .strip_prefix("- [")
+        .or_else(|| line.strip_prefix("* ["))?;
+    let (marker, label) = rest.split_once("] ")?;
+    let checked = match marker {
+        " " => false,
+        "x" | "X" => true,
+        _ => return None,
+    };
+    let label = label.trim();
+    (!label.is_empty()).then_some((checked, label))
+}
+
+/// Checked and total tasks; fenced sample checkboxes do not count.
+pub fn plan_progress(input: &str) -> (usize, usize) {
+    parse_markdown(input)
+        .into_iter()
+        .fold((0, 0), |(checked, total), section| match section {
+            MarkdownSection::Checkbox { checked: value, .. } => {
+                (checked + usize::from(value), total + 1)
+            }
+            _ => (checked, total),
+        })
+}
+
+pub fn toggle_checkbox(input: &str, line: usize) -> Option<String> {
+    let mut lines: Vec<String> = input.split('\n').map(str::to_string).collect();
+    let text = lines.get_mut(line)?;
+    let (checked, _) = checkbox_line(text)?;
+    let position = text.find('[')? + 1;
+    text.replace_range(position..position + 1, if checked { " " } else { "x" });
+    Some(lines.join("\n"))
 }
 
 /// The code of every block, in order (Run All).
@@ -81,6 +162,97 @@ pub fn code_blocks(input: &str) -> Vec<String> {
             _ => None,
         })
         .collect()
+}
+
+/// Only shell fences can be sent to a terminal. Untagged fences are shell.
+pub fn is_shell_language(language: Option<&str>) -> bool {
+    let token = language
+        .unwrap_or("")
+        .trim()
+        .trim_matches(['{', '}'])
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .next()
+        .unwrap_or("")
+        .trim_start_matches('.')
+        .to_ascii_lowercase();
+    matches!(token.as_str(), "" | "bash" | "sh" | "zsh" | "shell")
+}
+
+pub fn shell_blocks(input: &str) -> Vec<String> {
+    parse_markdown(input)
+        .into_iter()
+        .filter_map(|section| match section {
+            MarkdownSection::CodeBlock { language, code }
+                if is_shell_language(language.as_deref()) =>
+            {
+                Some(code)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// A completed command must have appeared after this run started. Old
+/// commands with identical text must never advance a runbook.
+pub fn completed_command(
+    blocks: &[crate::command_block::CommandBlock],
+    previous: &std::collections::HashSet<uuid::Uuid>,
+    command: &str,
+) -> Option<bool> {
+    let normalized = |s: &str| s.trim().to_string();
+    let expected = normalized(command);
+    blocks
+        .iter()
+        .rev()
+        .find(|block| !previous.contains(&block.id) && normalized(&block.command) == expected)
+        .filter(|block| !block.is_running())
+        .map(|block| block.is_success())
+}
+
+#[cfg(test)]
+mod current_runbook_tests {
+    use super::*;
+    #[test]
+    fn tasks_toggle_source_and_ignore_fenced_examples() {
+        let text = "- [ ] work\n* [X] done\n```\n- [x] sample\n```\n";
+        assert_eq!(plan_progress(text), (1, 2));
+        let changed = toggle_checkbox(text, 0).unwrap();
+        assert_eq!(plan_progress(&changed), (2, 2));
+        assert!(changed.ends_with('\n'));
+        assert!(toggle_checkbox(text, 2).is_none());
+        assert!(
+            parse_markdown("- item\n2. next\n---")
+                .iter()
+                .any(|s| matches!(s, MarkdownSection::Rule))
+        );
+    }
+    #[test]
+    fn only_shell_fences_are_executable() {
+        assert_eq!(
+            shell_blocks("```python\nprint(1)\n```\n```BASH extra\necho ok\n```\n```\npwd\n```"),
+            vec!["echo ok", "pwd"]
+        );
+        assert!(is_shell_language(Some("{.zsh}")));
+        assert!(!is_shell_language(Some("rust")));
+    }
+    #[test]
+    fn previous_and_running_commands_do_not_complete_next_run() {
+        let mut old = crate::command_block::CommandBlock::new("echo ok", 0);
+        old.end_line = Some(1);
+        old.exit_code = Some(0);
+        let previous = [old.id].into_iter().collect();
+        let mut new = crate::command_block::CommandBlock::new(" echo ok ", 2);
+        assert_eq!(
+            completed_command(&[old.clone(), new.clone()], &previous, "echo ok"),
+            None
+        );
+        new.end_line = Some(3);
+        new.exit_code = Some(1);
+        assert_eq!(
+            completed_command(&[old, new], &previous, "echo ok"),
+            Some(false)
+        );
+    }
 }
 
 /// A run of inline text with its style.

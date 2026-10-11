@@ -53,6 +53,7 @@ pub const ITEM_NAME: &str = "Chau7 Next";
 pub enum SessionState {
     Running,
     WaitingInput,
+    ApprovalRequired,
     Stuck,
 }
 
@@ -63,8 +64,9 @@ impl SessionState {
         match status {
             CommandStatus::Running => Some(Self::Running),
             CommandStatus::WaitingForInput => Some(Self::WaitingInput),
+            CommandStatus::ApprovalRequired => Some(Self::ApprovalRequired),
             CommandStatus::Stuck => Some(Self::Stuck),
-            CommandStatus::Idle | CommandStatus::Exited => None,
+            CommandStatus::Idle | CommandStatus::Done | CommandStatus::Exited => None,
         }
     }
 
@@ -73,6 +75,7 @@ impl SessionState {
         match self {
             Self::Running => "Working",
             Self::WaitingInput => "Waiting for input",
+            Self::ApprovalRequired => "Approval required",
             Self::Stuck => "No recent output",
         }
     }
@@ -82,6 +85,7 @@ impl SessionState {
         match self {
             Self::Running => "gearshape.2",
             Self::WaitingInput => "bubble.left.and.exclamationmark.bubble.right",
+            Self::ApprovalRequired => "hand.raised.fill",
             Self::Stuck => "exclamationmark.triangle",
         }
     }
@@ -91,6 +95,7 @@ impl SessionState {
         match self {
             Self::Running => Tone::Orange,
             Self::WaitingInput => Tone::Blue,
+            Self::ApprovalRequired => Tone::Orange,
             Self::Stuck => Tone::Yellow,
         }
     }
@@ -100,6 +105,7 @@ impl SessionState {
         match self {
             Self::Running => Tone::Secondary,
             Self::WaitingInput => Tone::Blue,
+            Self::ApprovalRequired => Tone::Orange,
             Self::Stuck => Tone::Yellow,
         }
     }
@@ -193,7 +199,10 @@ impl SessionSummary {
 
     /// Only a session waiting for input needs attention.
     pub fn needs_attention(&self) -> bool {
-        self.state == SessionState::WaitingInput
+        matches!(
+            self.state,
+            SessionState::WaitingInput | SessionState::ApprovalRequired
+        )
     }
 
     /// The app name is shown unless it equals the title (`showAppName`).

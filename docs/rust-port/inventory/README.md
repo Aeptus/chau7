@@ -1,7 +1,8 @@
 # Parity inventory
 
 What "full parity on macOS" means for Chau7 Next, feature by feature. One file
-per Swift module (format: [FORMAT.md](FORMAT.md)), 1,175 rows in total. The
+per Swift module (format: [FORMAT.md](FORMAT.md)). The original April baseline
+has 1,175 rows; current-source delta rows are appended without renumbering. The
 summary with counts per module is generated into
 [`../PARITY.md`](../PARITY.md).
 
@@ -40,7 +41,8 @@ Never renumber IDs. New features found later get the next free number.
 | History | HIS | Proxy | PRX | Terminal | TRM |
 | | | Remote | RMT | TokenOptimization | TOK |
 | | | | | Utilities | UTL |
-| | | | | Views | VWS |
+| Dashboard | DSH | Usage | USG | Skills | SKL |
+| CLI | CLI | Observability | OBS | Views | VWS |
 
 ## Waves
 
@@ -55,22 +57,31 @@ Modules in the same wave are independent and can be ported in parallel.
 | 4 | Extra panes | Editor, DataExplorer, SplitPanes (editor, diff, preview, runbook panes) |
 | 5 | macOS integration and shipping | StatusBar, Debug, Logging, Views, Localization, Migration; Developer ID signing, notarization, updates |
 
-## Fix first
+## Current baseline and regression priorities
 
-Differences between what Chau7 Next already ships and the Swift app, checked
-against both sources. These come before new features.
+Compare official main `7733b1f0c4440c0193915b036c38d5b83f31a1b3` with Next
+`3e1639a85fe9bb7a4cc9873996b8fade14525ac4`, then verify each integrated batch.
+The historical fix-first list is removed: source inspection confirms Cmd+C
+interrupt fallback, background PTY writer, Option punctuation routing, split
+shortcut mapping, last-tab dialog, quit confirmation, Ctrl+Tab and startup
+command are implemented now (`terminal/input.rs`, `terminal/pty_writer.rs`,
+`actions/keymap.rs`, `workspace/mod.rs`, `app_actions.rs`,
+`terminal/session.rs`). These remain regression checks, not open rows.
 
-| Row | Issue |
-|---|---|
-| KBD-035, RBK-021 | Cmd+C with no selection should send Ctrl-C (interrupt); Chau7 Next does nothing |
-| RBK-052 | Typed and pasted input is written to the PTY on the UI thread; a program that stops reading input freezes the window. Swift writes on a background queue |
-| KBD-013 | Option key: Swift sends ESC+key for Option+letter and types the character for Option+printable non-letter, with no setting. Chau7 Next's `option_as_meta` is all or nothing and off by default |
-| Keyboard.md notes | Custom `[keybindings]`: `splitHorizontal` and `splitVertical` are swapped in `action_for_swift_name` (Swift: horizontal = side by side) |
-| App.md notes | Default shortcuts differ: Swift Cmd+Shift+D = Data Explorer, Cmd+Shift+S = Export Text, Cmd+Opt+W = Close Other Tabs, Cmd+K = Clear Screen (Ctrl+L), Ctrl+Cmd+W = Close Pane. Chau7 Next binds Split Down, Snippets, Close Pane and Clear Scrollback |
-| OVL-083, SET-044 | Closing the last tab: Swift asks "Close Window / New Tab"; Chau7 Next closes the window |
-| APP-006 | Cmd+Q: Swift asks when processes are running; Chau7 Next quits |
-| APP-075 | Ctrl+Tab and Ctrl+Shift+Tab are not bound on macOS |
-| SET-062 | Startup command is parsed but never run |
+Current gaps have explicit delta rows. No `missing` or `partial` row may be
+silently excluded from a full-parity claim. In particular:
+
+- OVL-043 / OVL-120: repository seeding and regrouping were fixed in e78f2790 and remain regression checks. Default remains Off as in Swift.
+- PRF-002: GPU-only GPUI remains an explicit renderer limitation.
+- MCP-053 to MCP-063 / OBS-001 to OBS-005: current MCP observation, control
+  ownership, readiness and repository event contracts.
+- PRF-014 to PRF-018 / DBG-026: durable performance and memory diagnostics,
+  hang detection and recovery, scrollback budget behaviour.
+- SPL-016 / SPL-017: shell fence filtering and completion-driven sequencing were ported in b23ce32b and remain regression checks.
+
+New modules: Dashboard (DSH), Usage (USG), Skills (SKL), CLI (CLI),
+Observability (OBS). These are current Swift surfaces, separate from the
+existing Analytics, Telemetry, MCP and Notifications equivalents.
 
 ## Coexistence rules for wave 3
 
@@ -100,13 +111,13 @@ Found while inventorying; each must hold when the module is ported (see
   local proxy `OPENAI_BASE_URL`. `shell_env::inherited_cleanup` drops or
   restores each of them at startup.
 
-## Never-run Swift features (all to be ported)
+## Historical Swift reachability notes
 
-These Swift features exist in the code but never run in the Swift app today (no
-caller or no way to open them), checked by an independent pass. Decision
-(user, 2026-10-10): port all of them, none is dropped. Port them as designed
-and wire them where the design intends (for example "Explain This Error" on a
-failed command), since there is no working Swift behavior to copy.
+This table describes the April Swift reachability audit. It must not be read
+as a claim about current Swift callers. The earlier decision to port designed
+features remains recorded, but re-check current sources before changing a row.
+Current Next implementations are already present for many of these features.
+The verified current TUI prompt-injection TODO is recorded separately in REP-018.
 
 | Rows | Feature |
 |---|---|
@@ -120,3 +131,11 @@ failed command), since there is no working Swift behavior to copy.
 | PRO-004, PRO-005 | Profile auto-switch rules on SSH host and environment variables |
 | APR-008, APR-009, KBD-016 | Minimal mode, high contrast, Kitty keyboard protocol |
 | PRF-002 | "Metal Renderer" on/off setting (GPUI always renders on the GPU) |
+
+## Audit evidence
+
+The pinned source manifest is [`audit/current-swift-sources.tsv`](audit/current-swift-sources.tsv).
+It indexes every current Swift source file and direct row citations; absence of
+a direct citation flags module-level review, not feature completion. Cohesive
+implementation batches, source mappings, Next seams and validation are in
+[`../REBASE-ON-AEPTUS.md`](../REBASE-ON-AEPTUS.md#6-current-source-inventory-audit-2026-10-11).

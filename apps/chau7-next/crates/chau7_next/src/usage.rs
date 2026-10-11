@@ -65,8 +65,16 @@ fn init_health(cx: &mut App) {
     let state = Arc::new(Mutex::new(ProviderHealth::default()));
     cx.set_global(HealthGlobal(state.clone()));
     let executor = cx.background_executor().clone();
+    let timer = crate::observability::register_background_timer(
+        cx,
+        "usage.provider_health",
+        "Official provider health",
+        "usage",
+        60_000,
+    );
     cx.background_executor()
         .spawn(async move {
+            let _timer = timer;
             loop {
                 let now = Utc::now();
                 if state.lock().next_allowed.is_none_or(|at| now >= at) {
@@ -222,7 +230,15 @@ pub fn init(cx: &mut App) {
     cx.set_global(UsageGlobal(Arc::new(Mutex::new(state))));
     crate::debug::usage::register(cx);
     refresh(cx);
+    let timer = crate::observability::register_timer(
+        cx,
+        "usage.quota",
+        "Quota evidence refresh",
+        "usage",
+        30_000,
+    );
     cx.spawn(async move |cx| {
+        let _timer = timer;
         loop {
             cx.background_executor()
                 .timer(std::time::Duration::from_secs(30))
@@ -688,7 +704,15 @@ pub fn init_latency(cx: &mut App) {
     }))));
     cx.set_global(LatencyGlobal(Arc::new(Mutex::new(LatencyView::default()))));
     refresh_latency(cx);
+    let timer = crate::observability::register_timer(
+        cx,
+        "usage.latency",
+        "Latency and activity history refresh",
+        "usage",
+        30_000,
+    );
     cx.spawn(async move |cx| {
+        let _timer = timer;
         loop {
             cx.background_executor()
                 .timer(std::time::Duration::from_secs(30))

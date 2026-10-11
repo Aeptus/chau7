@@ -6,7 +6,76 @@
 //!
 //! Offsets are byte offsets into UTF-8 text.
 
+use sha2::{Digest, Sha256};
 use std::path::Path;
+
+pub type ContentHash = [u8; 32];
+pub fn content_hash(bytes: &[u8]) -> ContentHash {
+    Sha256::digest(bytes).into()
+}
+
+/// Missing files may be recreated; unreadable existing files must not be overwritten.
+pub fn can_save_file(path: &Path, loaded: Option<ContentHash>) -> std::io::Result<bool> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(loaded.is_none_or(|hash| hash == content_hash(&bytes))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+        Err(error) => Err(error),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExternalChange {
+    Unchanged,
+    Reload,
+    Conflict,
+}
+pub fn external_change(loaded: Option<ContentHash>, bytes: &[u8], dirty: bool) -> ExternalChange {
+    if loaded == Some(content_hash(bytes)) {
+        ExternalChange::Unchanged
+    } else if dirty {
+        ExternalChange::Conflict
+    } else {
+        ExternalChange::Reload
+    }
+}
+
+/// Auto-save only files owned by Next, never shared repository metadata.
+pub fn default_autosave(path: &Path, own_config: &Path) -> bool {
+    path.starts_with(own_config)
+        && (path.file_name().is_some_and(|name| name == "plan.md")
+            || path
+                .components()
+                .any(|part| part.as_os_str() == "session-notes"))
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+    #[test]
+    fn clean_reload_and_dirty_conflict_are_distinct() {
+        let hash = Some(content_hash(b"original"));
+        assert_eq!(
+            external_change(hash, b"original", true),
+            ExternalChange::Unchanged
+        );
+        assert_eq!(external_change(hash, b"new", false), ExternalChange::Reload);
+        assert_eq!(
+            external_change(hash, b"new", true),
+            ExternalChange::Conflict
+        );
+    }
+    #[test]
+    fn saves_guard_current_disk_and_allow_deleted_files() {
+        let path = std::env::temp_dir().join(format!("editor-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, b"original").unwrap();
+        let hash = Some(content_hash(b"original"));
+        assert!(can_save_file(&path, hash).unwrap());
+        std::fs::write(&path, b"external").unwrap();
+        assert!(!can_save_file(&path, hash).unwrap());
+        std::fs::remove_file(&path).unwrap();
+        assert!(can_save_file(&path, hash).unwrap());
+    }
+}
 
 /// Name shown in the editor header (`fileName`): the last path component,
 /// or "Untitled".

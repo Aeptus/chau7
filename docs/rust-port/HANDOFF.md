@@ -18,19 +18,27 @@ Last updated 2026-10-11.
 ## 2. First steps
 
 1. The branch is now in the official repository: check out
-   `Aeptus/chau7:feat/chau7-next`. The current milestone is a macOS test
-   package called **Chau7 Next**, running beside Chau7. Full parity work
-   remains a later milestone. See [MACOS-TEST-PACKAGE.md](MACOS-TEST-PACKAGE.md).
+   `Aeptus/chau7:feat/chau7-next`. The current goal is **full parity with
+   current Chau7**, retaining the isolated macOS test app named **Chau7 Next**.
+   The user expanded the packaging milestone on 2026-10-11. See
+   [PARITY.md](PARITY.md) and [MACOS-TEST-PACKAGE.md](MACOS-TEST-PACKAGE.md).
 2. The push starts `.github/workflows/chau7-next.yml` (macOS, Linux,
    Windows). The macOS job uploads `Chau7-Next-macOS-arm64`. To run it:
    unzip, `xattr -dr com.apple.quarantine "Chau7 Next.app"`, open.
    Local build instead: `cd apps/chau7-next && ./scripts/bundle-macos.sh`
    (Rust, Xcode with the Metal toolchain, Go).
-3. Open a draft PR `feat/chau7-next` into `main` once CI is green.
+3. Continue the existing draft PR [Aeptus/chau7#229](https://github.com/Aeptus/chau7/pull/229). Keep all parity work in that PR; it is not ready to merge.
 
 ## 3. Status
 
-- Against the **April 2026** Swift app: 1,174 of 1,175 inventory rows
+- The current-source audit indexes all 652 Swift source files at official main
+  `7733b1f0`, appends the current feature delta and reopens changed behaviour.
+  [PARITY.md](PARITY.md) is the current status, including missing features.
+- First current parity batch: ordinary/restored repository grouping, complete
+  grapheme painting, CTO recursion sentinel, Spanish/plural backend and macOS
+  file-watcher recovery. Numeric performance exports are described in
+  [PERFORMANCE.md](PERFORMANCE.md); full runtime observation is still pending.
+- Historical result against the **April 2026** Swift app: 1,174 of 1,175 inventory rows
   finished (1,129 done, 45 not needed in the Rust design). The one partial
   row is PRF-002: GPUI has no CPU renderer, so the "Metal Renderer" switch is
   saved and explained but cannot switch to CPU drawing.
@@ -50,25 +58,24 @@ Last updated 2026-10-11.
 
 ## 4. Next work, in order
 
-1. **Hand test the macOS test package** (section 6). A build is now available; fix packaging or launch issues before expanding parity work.
-2. **Inventory delta.** The Swift app grew a lot since April (124 new core
-   files, Overlay split, settings stores and Permission Center, repository
-   pane, hook installers, skills installer, usage and dashboard, event spine,
-   `chau7` CLI, Spanish, plural rules). REBASE-ON-AEPTUS.md section 5 lists
-   it by module. Add new rows to the inventory files (new IDs at the end of
-   each file, never renumber) and update rows whose Swift behavior changed,
-   then port them following AGENT-PLAYBOOK.md.
-3. **Known gaps from the rebase** (REBASE-ON-AEPTUS.md section 4):
-   - Remote control needs relay credentials now: add a UI that runs
-     `chau7-remote identity` and `provision` into Chau7 Next's own
-     credentials file; until then remote cannot reach a production relay.
-   - The painter draws only the first character of multi-character grapheme
-     clusters (emoji sequences, combining accents); `GridCopy` already
-     carries the clusters.
-   - Remote grid snapshots are full each time (Swift now sends deltas).
-   - `CHAU7_CTO_OPTIM_ACTIVE` sentinel in the CTO wrappers.
-4. **CI cost.** Every push runs macOS, Linux and Windows. Optionally run
-   Linux and Windows only on demand.
+1. Continue the 14 current-source batches in REBASE-ON-AEPTUS.md section 6.
+   Current active batches cover editor/runbook lifecycle, independent regional
+   formatting, agent dashboard, usage/rates, runtime delegation and structured
+   results. Use the agent playbook and preserve existing isolated app data.
+2. Complete observation/MCP parity: durable event spine, actual timer inventory,
+   subscriptions, control ownership and ready-state delivery. The new numeric
+   performance endpoint does not substitute for these behaviours.
+3. Implement the remaining repository/session files, settings/permissions,
+   hooks/routing, prompt rules, skills/CLI, restore/retention and remote deltas.
+   Remote credentials remain isolated; current Swift also relies on external
+   identity/provision commands, so a provision UI is not an established parity
+   requirement. Full/delta grid delivery and credential validation are.
+4. Validate every batch against current Swift tests, keep the generated parity
+   table honest, and finish the Mac checklist below. The running user's Next
+   may host active AI sessions; never stop it for a build or test. Use a separate
+   test bundle identity and fresh `CHAU7_NEXT_HOME_ROOT` for automated startup.
+5. CI runs the matrix for official feature pushes and PRs. Agent branch pushes
+   avoid duplicate runs. Inspect the complete PR checks, including quality gates.
 
 ## 5. Decisions waiting for Christophe
 
@@ -109,19 +116,19 @@ nothing new appears under `~/.chau7` or `~/Library/Application Support/Chau7`.
 - **AI CLI features:** Claude Code and Codex detection, hook events,
   "waiting for input" style, notifications on finish, dev server port
   badge, Explain This Error with a real provider.
-- **Languages:** French, Arabic (right to left), System Default.
+- **Languages:** French, Spanish, Arabic (right to left), System Default; regional number format independent of UI language.
 
 ## 7. Prompt to start the next session (on `Aeptus/chau7`)
 
 ```text
 Read docs/rust-port/HANDOFF.md, then AGENT-PLAYBOOK.md and
-REBASE-ON-AEPTUS.md, on branch feat/chau7-next. Current milestone: an
-isolated macOS test app named Chau7 Next, running beside the Swift app.
-Step 1: check the latest CI package and the validation record in
-MACOS-TEST-PACKAGE.md. Fix any packaging or launch failure.
-Step 2: complete the Mac hand-test checklist and record actual results.
-The inventory delta against current Swift sources and full parity are later
-work; use REBASE-ON-AEPTUS.md section 5 and AGENT-PLAYBOOK.md when that
-milestone is requested.
+REBASE-ON-AEPTUS.md, on branch feat/chau7-next. Goal: full parity with the
+CURRENT official Swift app, retaining the isolated macOS Chau7 Next package.
+Check PARITY.md and current source baseline before choosing the next batch.
+Finish missing and partial rows with real caller wiring and tests; do not
+claim current parity from the historical April percentage. Inspect current
+Next logs safely and use PERFORMANCE.md for numeric diagnostic access.
+Preserve running Next/Swift sessions and production restore data. Validate in
+an isolated bundle/profile, continue PR229, and record actual Mac results.
 Follow CLAUDE.md (Aethyme broker, commit format). No em dashes.
 ```

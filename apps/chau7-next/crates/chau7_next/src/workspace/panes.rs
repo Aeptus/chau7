@@ -12,7 +12,7 @@ use gpui::{Axis, Context, Div, Stateful, Window, prelude::*};
 use super::Workspace;
 use crate::actions::{
     AppendSelectionToEditor, ClosePane, FocusNextPane, FocusPreviousPane, OpenDiffViewer,
-    OpenFilePreview, OpenTextEditor, ShowChangedFiles, SplitDown, SplitRight,
+    OpenFilePreview, OpenRepositoryPane, OpenTextEditor, ShowChangedFiles, SplitDown, SplitRight,
 };
 
 impl Workspace {
@@ -155,6 +155,11 @@ pub(super) fn register_pane_actions(
             this.open_file_preview(None, window, cx)
         }),
     )
+    .on_action(cx.listener(|this, _: &OpenRepositoryPane, window, cx| {
+        if let Some(p) = this.selected_panes() {
+            p.update(cx, |p, cx| p.open_repository(window, cx));
+        }
+    }))
     .on_action(cx.listener(|this, _: &OpenDiffViewer, window, cx| {
         this.open_diff_for_last_change(window, cx)
     }))

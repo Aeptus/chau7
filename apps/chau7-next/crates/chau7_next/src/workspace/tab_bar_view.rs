@@ -309,6 +309,19 @@ impl Workspace {
             .then(|| raw_path.clone())
             .flatten();
         let badge = (!minimal).then(|| self.command_badge(id, cx)).flatten();
+        let token_rate = (!minimal && info.ai_running)
+            .then(|| {
+                let session = self.entries.get(&id)?.panes.read(cx).focused_session(cx)?;
+                let reading = crate::telemetry::token_rate(&session.read(cx).tab_identifier, cx)?;
+                // A finished response's old speed must not look like current output.
+                ((0..=15).contains(
+                    &chrono::Utc::now()
+                        .signed_duration_since(reading.updated_at)
+                        .num_seconds(),
+                ))
+                .then_some(reading)
+            })
+            .flatten();
         let broadcast_included = self.broadcast && !self.broadcast_excluded.contains(&id);
         let show_broadcast = !minimal && tabs.show_broadcast_indicator && broadcast_included;
         let branch = (!minimal && tabs.show_git_indicator && info.in_git_repo).then_some(matches!(
@@ -498,6 +511,22 @@ impl Workspace {
                         .child(badge),
                 )
             })
+            .when_some(token_rate, |d, reading| {
+                let detail = reading.detail();
+                d.child(
+                    div()
+                        .id(("token-rate", id as usize))
+                        .flex_shrink_0()
+                        .px_1()
+                        .rounded_full()
+                        .text_color(chrome.accent)
+                        .child(reading.formatted())
+                        .tooltip(move |window, cx| {
+                            gpui_kit::component::tooltip::Tooltip::new(detail.clone())
+                                .build(window, cx)
+                        }),
+                )
+            })
             .when(show_broadcast, |d| {
                 d.child(
                     div()
@@ -678,7 +707,7 @@ impl Workspace {
                             .child("+")
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .on_click(cx.listener(|this, _, window, cx| {
-                                this.add_tab(None, true, window, cx);
+                                this.add_default_tab(window, cx);
                                 this.focus_selected(window, cx);
                             })),
                     );

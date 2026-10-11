@@ -9,7 +9,12 @@
 //! and Run All for `.md` files, close. Closing with unsaved, non-empty text
 //! asks Save / Don't Save / Cancel.
 
+use crate::monitoring::file_monitor::FileMonitor;
+use crate::terminal::session::TerminalSession;
+use futures::StreamExt;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use chau7_next_core::editor::config::EditorConfig;
@@ -43,6 +48,7 @@ gpui::actions!(
 );
 
 const CONTEXT: &str = "EditorPane";
+type TerminalProvider = Rc<dyn Fn(&App) -> Option<Entity<TerminalSession>>>;
 
 /// Editor key bindings (Cmd+S on macOS, Ctrl+S elsewhere, inside the pane).
 pub fn bind_keys(cx: &mut App) {
@@ -86,6 +92,17 @@ pub struct EditorPane {
     settings_pending: bool,
     focus_handle: FocusHandle,
     _subscriptions: Vec<Subscription>,
+    loaded_hash: Option<edtext::ContentHash>,
+    autosave: bool,
+    autosaved_until: Option<Instant>,
+    autosave_task: Option<Task<()>>,
+    file_monitor: Option<FileMonitor>,
+    file_monitor_task: Option<Task<()>>,
+    terminal_provider: Option<TerminalProvider>,
+    run_task: Option<Task<()>>,
+    run_generation: u64,
+    run_states: HashMap<(usize, String), super::runbook::BlockStatus>,
+    note_attachment_pending: Option<PathBuf>,
 }
 
 impl EventEmitter<SidePaneEvent> for EditorPane {}
@@ -120,6 +137,9 @@ impl EditorPane {
                             this.dirty = true;
                             cx.emit(SidePaneEvent::Changed);
                         }
+                        if !this.programmatic {
+                            this.schedule_autosave(cx);
+                        }
                         cx.notify();
                     }
                     InputEvent::Focus => cx.emit(SidePaneEvent::Focused),
@@ -152,7 +172,35 @@ impl EditorPane {
             settings_pending: false,
             focus_handle,
             _subscriptions: subscriptions,
+            loaded_hash: None,
+            autosave: false,
+            autosaved_until: None,
+            autosave_task: None,
+            file_monitor: None,
+            file_monitor_task: None,
+            terminal_provider: None,
+            run_task: None,
+            run_generation: 0,
+            run_states: HashMap::new(),
+            note_attachment_pending: None,
         }
+    }
+
+    pub fn is_loading(&self) -> bool {
+        self.loading
+    }
+    /// Only attach an untitled buffer; pending typed text is merged after the background read.
+    pub fn attach_session_note(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.path.is_some() {
+            return;
+        }
+        self.note_attachment_pending = Some(path.clone());
+        self.load_file(path, None, window, cx);
     }
 
     pub fn path(&self) -> Option<&Path> {
@@ -225,6 +273,7 @@ impl EditorPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.autosave_task = None;
         self.load_token += 1;
         let token = self.load_token;
         self.loading = true;
@@ -260,14 +309,33 @@ impl EditorPane {
     fn finish_load(
         &mut self,
         path: PathBuf,
-        text: String,
+        mut text: String,
         line: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let merge_untitled = self
+            .note_attachment_pending
+            .take()
+            .is_some_and(|target| target == path)
+            && self.path.is_none();
+        let untitled = merge_untitled
+            .then(|| self.content(cx))
+            .filter(|text| !text.trim().is_empty());
+        let different_file = self.path.as_ref() != Some(&path);
+        self.loaded_hash = Some(edtext::content_hash(text.as_bytes()));
+        if let Some(untitled) = &untitled {
+            text = edtext::append_text(&text, untitled).unwrap_or(text);
+        }
+        self.error = None;
+        if different_file {
+            let root = chau7_next_core::data_root::DataRoot::from_env();
+            self.autosave = edtext::default_autosave(&path, root.config_dir())
+                || edtext::default_autosave(&path, root.state_dir());
+        }
         self.language = EditorLanguage::detect(&path.to_string_lossy());
         self.path = Some(path.clone());
-        self.dirty = false;
+        self.dirty = untitled.is_some();
         // A markdown file opens as a runbook (`isMarkdownMode` follows the path).
         self.markdown_mode = self.is_markdown_file();
         self.install_highlighter(cx);
@@ -278,8 +346,95 @@ impl EditorPane {
         if let Some(line) = line {
             self.select_line(&text, line, cx);
         }
+        self.watch_file(path.clone(), window, cx);
+        self.schedule_autosave(cx);
         log::info!("Loaded file: {}", path.display());
         cx.emit(SidePaneEvent::Changed);
+    }
+
+    fn schedule_autosave(&mut self, cx: &mut Context<Self>) {
+        self.autosave_task = None;
+        if !self.autosave || self.path.is_none() || !self.dirty {
+            return;
+        }
+        self.autosave_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(2500))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.autosave
+                    && this.dirty
+                    && let Some(path) = this.path.clone()
+                {
+                    this.write_to(path, cx);
+                }
+            });
+            cx.background_executor().timer(Duration::from_secs(2)).await;
+            let _ = this.update(cx, |_, cx| cx.notify());
+        }));
+    }
+
+    fn watch_file(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.file_monitor = None;
+        self.file_monitor_task = None;
+        let (sender, mut receiver) = futures::channel::mpsc::channel::<()>(1);
+        let sender = std::sync::Mutex::new(sender);
+        let monitor = FileMonitor::new(path.clone(), move || {
+            if let Ok(mut sender) = sender.lock() {
+                let _ = sender.try_send(());
+            }
+        });
+        monitor.start();
+        self.file_monitor = Some(monitor);
+        self.file_monitor_task = Some(cx.spawn_in(window, async move |this, cx| {
+            while receiver.next().await.is_some() {
+                let read_path = path.clone();
+                let bytes = cx
+                    .background_spawn(async move { std::fs::read(read_path) })
+                    .await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if this.path.as_ref() != Some(&path) {
+                        return;
+                    }
+                    let Ok(bytes) = bytes else {
+                        return;
+                    };
+                    match edtext::external_change(this.loaded_hash, &bytes, this.dirty) {
+                        edtext::ExternalChange::Unchanged => {}
+                        edtext::ExternalChange::Conflict => {
+                            this.autosave_task = None;
+                            this.error = Some(
+                                "File changed externally. Reload and merge before saving.".into(),
+                            );
+                            cx.notify();
+                        }
+                        edtext::ExternalChange::Reload => match String::from_utf8(bytes) {
+                            Ok(text) => {
+                                this.loaded_hash = Some(edtext::content_hash(text.as_bytes()));
+                                this.programmatic = true;
+                                this.state
+                                    .update(cx, |state, cx| state.set_value(text, window, cx));
+                                this.programmatic = false;
+                                this.error = None;
+                                cx.emit(SidePaneEvent::Changed);
+                                cx.notify();
+                            }
+                            Err(_) => {
+                                this.error = Some("Changed file is not valid UTF-8 text.".into());
+                                cx.notify();
+                            }
+                        },
+                    }
+                });
+            }
+        }));
+    }
+
+    pub fn set_terminal_provider(
+        &mut self,
+        provider: impl Fn(&App) -> Option<Entity<TerminalSession>> + 'static,
+    ) {
+        self.terminal_provider = Some(Rc::new(provider));
     }
 
     /// Select the start of `line` once the new text is laid out
@@ -299,12 +454,30 @@ impl EditorPane {
 
     /// Write the text to `path` (`saveAs(to:)`). Returns success.
     fn write_to(&mut self, path: PathBuf, cx: &mut Context<Self>) -> bool {
+        let expected = (self.path.as_ref() == Some(&path))
+            .then_some(self.loaded_hash)
+            .flatten();
+        match edtext::can_save_file(&path, expected) {
+            Ok(true) => {}
+            Ok(false) => {
+                self.error =
+                    Some("File changed externally. Reload and merge before saving.".into());
+                self.autosave_task = None;
+                cx.notify();
+                return false;
+            }
+            Err(error) => {
+                self.error = Some(format!("Cannot verify current file: {error}"));
+                cx.notify();
+                return false;
+            }
+        }
         let content = self.content(cx);
         let tmp = path.with_extension(format!(
             "{}.chau7-tmp",
             path.extension().and_then(|e| e.to_str()).unwrap_or("")
         ));
-        let result = std::fs::write(&tmp, content).and_then(|_| std::fs::rename(&tmp, &path));
+        let result = std::fs::write(&tmp, &content).and_then(|_| std::fs::rename(&tmp, &path));
         match result {
             Ok(()) => {
                 if self.path.as_ref() != Some(&path) {
@@ -312,8 +485,12 @@ impl EditorPane {
                     self.path = Some(path.clone());
                     self.install_highlighter(cx);
                 }
+                self.loaded_hash = Some(edtext::content_hash(content.as_bytes()));
                 self.dirty = false;
                 self.error = None;
+                self.autosaved_until = self
+                    .autosave
+                    .then(|| Instant::now() + Duration::from_secs(2));
                 log::info!("Saved file: {}", path.display());
                 cx.emit(SidePaneEvent::Changed);
                 cx.notify();
@@ -351,8 +528,17 @@ impl EditorPane {
             let Ok(Ok(Some(path))) = answer.await else {
                 return false;
             };
-            this.update(cx, |this, cx| this.write_to(path, cx))
-                .unwrap_or(false)
+            this.update_in(cx, |this, window, cx| {
+                let saved = this.write_to(path.clone(), cx);
+                if saved {
+                    let root = chau7_next_core::data_root::DataRoot::from_env();
+                    this.autosave |= edtext::default_autosave(&path, root.config_dir())
+                        || edtext::default_autosave(&path, root.state_dir());
+                    this.watch_file(path, window, cx);
+                }
+                saved
+            })
+            .unwrap_or(false)
         })
     }
 
@@ -395,6 +581,7 @@ impl EditorPane {
         });
         self.programmatic = false;
         self.dirty = true;
+        self.schedule_autosave(cx);
         log::info!(
             "Appended text to editor: {}...",
             text.trim().chars().take(50).collect::<String>()
@@ -409,6 +596,7 @@ impl EditorPane {
         if !self.dirty || self.content(cx).trim().is_empty() {
             return Task::ready(true);
         }
+        self.autosave_task = None;
         let answer = crate::l10n::prompt(
             window,
             PromptLevel::Warning,
@@ -425,8 +613,16 @@ impl EditorPane {
                 // A cancelled Save As keeps the pane.
                 saved.await
             }
-            Some(1) => true,
-            _ => false,
+            Some(1) => this
+                .update(cx, |this, _| {
+                    this.autosave_task = None;
+                    true
+                })
+                .unwrap_or(false),
+            _ => {
+                let _ = this.update(cx, |this, cx| this.schedule_autosave(cx));
+                false
+            }
         })
     }
 
@@ -608,6 +804,30 @@ impl EditorPane {
                     }))
                 }),
             )
+            .when(self.path.is_some(), |d| {
+                d.child(
+                    header_button(
+                        "editor-autosave",
+                        if self.autosave {
+                            "Auto-save On"
+                        } else {
+                            "Auto-save Off"
+                        },
+                        chrome,
+                        true,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.autosave = !this.autosave;
+                        this.schedule_autosave(cx);
+                        cx.notify();
+                    })),
+                )
+            })
+            .when(
+                self.autosaved_until
+                    .is_some_and(|until| until > Instant::now()),
+                |d| d.child(div().text_color(chrome.text_muted).child("Auto-saved")),
+            )
             .when(markdown, |d| {
                 let label = if self.markdown_mode {
                     "Show Source"
@@ -635,32 +855,92 @@ impl EditorPane {
             )
     }
 
-    /// Run All: every code block, 0.5 s apart, so the shell takes them one
-    /// at a time.
+    /// Run sequentially, observing real shell integration command completion.
     fn run_all(&mut self, cx: &mut Context<Self>) {
-        let blocks = markdown::code_blocks(&self.content(cx));
-        cx.spawn(async move |this, cx| {
-            for (i, block) in blocks.into_iter().enumerate() {
-                if i > 0 {
-                    cx.background_executor()
-                        .timer(Duration::from_millis(500))
-                        .await;
-                }
-                if this
-                    .update(cx, |_, cx| {
-                        cx.emit(SidePaneEvent::RunCommand(format!("{block}\n")))
-                    })
-                    .is_err()
+        let blocks = markdown::parse_markdown(&self.content(cx))
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, section)| match section {
+                markdown::MarkdownSection::CodeBlock { language, code }
+                    if markdown::is_shell_language(language.as_deref()) =>
                 {
-                    return;
+                    Some((index, code))
                 }
-            }
-        })
-        .detach();
+                _ => None,
+            })
+            .collect();
+        self.run_commands(blocks, cx);
     }
 
-    fn run_block(&mut self, code: String, cx: &mut Context<Self>) {
-        cx.emit(SidePaneEvent::RunCommand(format!("{code}\n")));
+    fn run_commands(&mut self, blocks: Vec<(usize, String)>, cx: &mut Context<Self>) {
+        self.run_task = None;
+        self.run_generation += 1;
+        let generation = self.run_generation;
+        let Some(terminal) = self
+            .terminal_provider
+            .as_ref()
+            .and_then(|provider| provider(cx))
+        else {
+            self.error = Some("Runbook requires a terminal pane.".into());
+            cx.notify();
+            return;
+        };
+        if terminal.read(cx).command_running
+            || terminal
+                .read(cx)
+                .pending_command()
+                .is_some_and(|command| !command.is_empty())
+        {
+            self.error =
+                Some("Wait for the terminal command to finish before running a block.".into());
+            cx.notify();
+            return;
+        }
+        self.error = None;
+        self.run_states.clear();
+        self.run_task = Some(cx.spawn(async move |this, cx| {
+            for (index, block) in blocks {
+                let previous = terminal.update(cx, |terminal, _| terminal.blocks().blocks().iter().map(|block| block.id).collect::<HashSet<_>>());
+                if this.update(cx, |this, cx| {
+                    this.run_states.insert((index, block.clone()), super::runbook::BlockStatus::Running);
+                    cx.emit(SidePaneEvent::RunCommand(format!("{block}\n"))); cx.notify();
+                }).is_err() { return; }
+                let deadline = Instant::now() + Duration::from_secs(60);
+                loop {
+                    cx.background_executor().timer(Duration::from_millis(250)).await;
+                    if this.update(cx, |this, _| this.run_generation != generation).unwrap_or(true) { return; }
+                    let completed = terminal.update(cx, |terminal, _| markdown::completed_command(terminal.blocks().blocks(), &previous, &block));
+                    if let Some(success) = completed {
+                        let _ = this.update(cx, |this, cx| {
+                            this.run_states.insert((index, block.clone()), if success { super::runbook::BlockStatus::Succeeded } else { super::runbook::BlockStatus::Failed }); cx.notify();
+                        }); break;
+                    }
+                    if Instant::now() >= deadline {
+                        let _ = this.update(cx, |this, cx| {
+                            this.run_states.insert((index, block.clone()), super::runbook::BlockStatus::Failed);
+                            this.error = Some("Runbook stopped: shell did not report command completion within 60 seconds.".into()); cx.notify();
+                        }); return;
+                    }
+                }
+            }
+        }));
+    }
+
+    fn toggle_checkbox(&mut self, line: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(content) = markdown::toggle_checkbox(&self.content(cx), line) {
+            self.programmatic = true;
+            self.state
+                .update(cx, |state, cx| state.set_value(content, window, cx));
+            self.programmatic = false;
+            self.dirty = true;
+            self.schedule_autosave(cx);
+            cx.emit(SidePaneEvent::Changed);
+            cx.notify();
+        }
+    }
+
+    fn run_block(&mut self, code: (usize, String), cx: &mut Context<Self>) {
+        self.run_commands(vec![code], cx);
     }
 }
 
@@ -783,10 +1063,16 @@ impl Render for EditorPane {
                 let content = self.content(cx);
                 super::runbook::render(
                     &content,
+                    &self.run_states,
                     chrome,
                     super::text_background(palette, cx),
                     super::mono_family(window, cx),
-                    cx.listener(|this, code: &String, _, cx| this.run_block(code.clone(), cx)),
+                    cx.listener(|this, code: &(usize, String), _, cx| {
+                        this.run_block(code.clone(), cx)
+                    }),
+                    cx.listener(|this, line: &usize, window, cx| {
+                        this.toggle_checkbox(*line, window, cx)
+                    }),
                 )
                 .into_any_element()
             } else {
@@ -836,7 +1122,38 @@ impl Render for EditorPane {
                             .py_1()
                             .text_size(px(11.0))
                             .text_color(chrome.danger)
-                            .child(error),
+                            .child(error)
+                            .child(
+                                header_button("editor-reload", "Reload", chrome, true).on_click(
+                                    cx.listener(|this, _, window, cx| {
+                                        let confirm = if this.dirty {
+                                            Some(crate::l10n::prompt(
+                                                window,
+                                                PromptLevel::Warning,
+                                                "Reload file?",
+                                                Some("Unsaved changes will be lost."),
+                                                &["Reload", "Cancel"],
+                                                cx,
+                                            ))
+                                        } else {
+                                            None
+                                        };
+                                        cx.spawn_in(window, async move |this, cx| {
+                                            if let Some(confirm) = confirm
+                                                && confirm.await.ok() != Some(0)
+                                            {
+                                                return;
+                                            }
+                                            let _ = this.update_in(cx, |this, window, cx| {
+                                                if let Some(path) = this.path.clone() {
+                                                    this.load_file(path, None, window, cx);
+                                                }
+                                            });
+                                        })
+                                        .detach();
+                                    }),
+                                ),
+                            ),
                     )
                 },
             )

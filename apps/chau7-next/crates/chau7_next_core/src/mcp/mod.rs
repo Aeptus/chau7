@@ -6,6 +6,8 @@
 
 pub mod client_config;
 pub mod command_filter;
+pub mod control_plane;
+pub mod handshake;
 pub mod output;
 pub mod protocol;
 

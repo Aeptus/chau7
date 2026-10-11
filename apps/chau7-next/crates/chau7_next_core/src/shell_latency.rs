@@ -234,6 +234,9 @@ impl LatencyTracker {
 
     /// Adds a sample. Returns the lag event when it is a spike worth logging.
     pub fn record(&mut self, kind: LagKind, elapsed_ms: f64, now: f64) -> Option<LagEvent> {
+        if !elapsed_ms.is_finite() || !now.is_finite() {
+            return None;
+        }
         let elapsed_ms = elapsed_ms.max(0.0);
         if elapsed_ms > MAX_ACCEPTED_MS {
             return None;
@@ -289,6 +292,18 @@ impl LatencyTracker {
         percentiles_summary(&self.state(kind).samples)
     }
 
+    /// Structured samples for diagnostics, independent of display formatting.
+    pub fn statistics(&self, kind: LagKind) -> serde_json::Value {
+        let state = self.state(kind);
+        let values = state.samples.values();
+        serde_json::json!({
+            "last_ms": state.last_ms, "average_ms": state.samples.recent_average(),
+            "p50_ms": percentile(&values, 0.5), "p95_ms": percentile(&values, 0.95),
+            "max_ms": values.iter().max(), "sample_count": values.len(),
+            "spike_threshold_ms": kind.threshold_ms()
+        })
+    }
+
     pub fn timeline(&self) -> &[LagEvent] {
         &self.timeline
     }
@@ -301,6 +316,26 @@ impl LatencyTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numeric_statistics_have_units_and_missing_values() {
+        let mut tracker = LatencyTracker::default();
+        assert_eq!(
+            tracker.statistics(LagKind::Input)["last_ms"],
+            serde_json::Value::Null
+        );
+        for value in [10.0, 20.0, 30.0] {
+            tracker.record(LagKind::Input, value, 0.0);
+        }
+        let value = tracker.statistics(LagKind::Input);
+        assert_eq!(value["sample_count"], 3);
+        assert_eq!(value["p50_ms"], 20);
+        assert_eq!(value["p95_ms"], 30);
+        assert_eq!(value["average_ms"], 20);
+        tracker.record(LagKind::Input, f64::NAN, 0.0);
+        tracker.record(LagKind::Input, f64::INFINITY, 0.0);
+        assert_eq!(tracker.statistics(LagKind::Input)["sample_count"], 3);
+    }
 
     #[test]
     fn ring_buffer_and_average() {

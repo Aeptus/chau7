@@ -9,9 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Introduce Chau7 Next as an isolated Rust/GPUI macOS test app alongside Chau7, with its own bundle, data folders, helper ports and MCP bridge. Track parity against the current Swift sources in `docs/rust-port/`; full current parity remains in progress.
+- Expose Chau7 Next runtime identity and numeric performance snapshots through MCP and bounded JSON reports, including CPU, RSS, main-thread heartbeat, per-pane latency percentiles and feature timings.
+
 - Show selected-tab tokens per second in the overlay across proxied Anthropic, OpenAI, and Gemini streams, with Claude Code and Codex transcript rates for direct CLI sessions; estimated readings are marked and explain their source and timing. Keep transient rate readings in a bounded recent-tab cache.
 
 ### Fixed
+
+- Reconcile Chau7 Next repository tab groups after setting changes, paint complete grapheme clusters, recover file watches across replacement, and preserve runbook save/execute guards. Add Spanish, counted UI strings and selectable regional number formatting.
 
 - Preserve MCP socket ownership across server restarts, detect closed/replaced listeners, and honor the guarded rebuild quit deadline even when AppleScript stalls.
 - Update both Chau7 Go modules to 1.27.2 for upstream standard-library security fixes.

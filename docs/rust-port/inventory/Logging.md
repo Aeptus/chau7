@@ -40,6 +40,10 @@ The app writes one rolling log file, mirrors category logs to the macOS unified 
 | LOG-027 | On launch, `*-pty.log` files over 10 MB are cut to their last 5 MB | `App/AppDelegate.swift` (`purgeLargePTYLogs`) |  | chau7_next/src/logging/ai_pty.rs, chau7_next/src/main.rs | done |  |
 | LOG-028 | (dev) Raw PTY dump with `CHAU7_PTY_DUMP=1` or `CHAU7_TRACE_PTY=true` to `~/Library/Logs/Chau7/pty-capture.log` (or `CHAU7_PTY_DUMP_PATH`), escaped bytes, trimmed to half above `CHAU7_PTY_DUMP_MAX_BYTES` (default 20 MB) | `Terminal/Rendering/TerminalOutputCapture.swift` |  | chau7_next/src/terminal/pty_capture.rs | done |  |
 
+| LOG-029 | Incident breadcrumbs bounded store links hangs/recovery/lifecycle to generated issue report and snapshot with recent diagnostic evidence | `Logging/IncidentBreadcrumbStore.swift`; `Logging/BugReportDraft.swift` | IncidentBreadcrumbStoreTests | chau7_next/src/debug/snapshot.rs | partial |  |
+
+| LOG-030 | Log/report retention caps count,total bytes,individual file bytes and age, tracks failures without unbounded repeat logging; directory watch retry survives rotation | `Chau7Core/FileRetentionBudget.swift`; `Chau7Core/LogRetentionPolicy.swift`; `Monitoring/LogFileCompactor.swift`; `Chau7Core/FileObservationRetryPolicy.swift` | FileRetentionBudgetTests; LogRetentionPolicyTests; FileObservationRetryPolicyTests | chau7_next/src/logging/writer.rs; chau7_next/src/monitoring/file_monitor.rs | partial |  |
+
 ## Notes
 
 - Rust (`chau7_next/src/logging/`, `chau7_next_core/src/logging.rs`): a
