@@ -46,6 +46,7 @@ mod panes;
 mod pickers;
 mod remote_hooks;
 mod rename;
+mod restore_lifecycle;
 mod shell_loading;
 mod tab_bar_view;
 mod tasks;
@@ -112,6 +113,7 @@ struct Frames {
 }
 
 pub struct Workspace {
+    restore_lifecycle: restore_lifecycle::RestoreLifecycle,
     state: TabsState,
     entries: HashMap<TabId, TabEntry>,
     pub window_handle: Option<AnyWindowHandle>,
@@ -191,6 +193,7 @@ impl Workspace {
             }
         });
         Self {
+            restore_lifecycle: restore_lifecycle::RestoreLifecycle::default(),
             state,
             entries: HashMap::new(),
             window_handle: None,
@@ -235,12 +238,14 @@ impl Workspace {
             Some(saved) if !saved.tabs.is_empty() => {
                 let selected_index = saved.selected.min(saved.tabs.len().saturating_sub(1));
                 let mut selected_id = None;
+                this.restore_lifecycle.startup = true;
                 for (index, tab) in saved.tabs.iter().enumerate() {
                     let id = this.add_tab(Some(tab.clone()), false, window, cx);
                     if index == selected_index {
                         selected_id = Some(id);
                     }
                 }
+                this.restore_lifecycle.startup = false;
                 // Seeding/coalescing groups can reorder tabs during hydration.
                 // Select the restored identity, not its former array position.
                 if let Some(id) = selected_id {
@@ -252,6 +257,7 @@ impl Workspace {
             }
         }
         this.focus_selected(window, cx);
+        this.start_deferred_identity_restore(cx);
         this
     }
 
@@ -325,7 +331,17 @@ impl Workspace {
     ) -> TabId {
         let (at_directory, inherit_group) = origin;
         let id = AppData::next_tab_id(cx);
-        let panes = cx.new(|cx| PaneTree::from_saved(saved.as_ref(), cwd.clone(), window, cx));
+        let deferred = self.restore_lifecycle.startup && saved.is_some();
+        let panes = cx.new(|cx| {
+            if deferred {
+                PaneTree::from_saved_deferred(saved.as_ref(), cwd.clone(), window, cx)
+            } else {
+                PaneTree::from_saved(saved.as_ref(), cwd.clone(), window, cx)
+            }
+        });
+        if deferred {
+            self.restore_lifecycle.pending_identity.push(id);
+        }
         let mut meta = TabMeta::new(id, self.state.next_color());
         meta.last_activity = AppData::now(cx);
         meta.created_at = meta.last_activity;
@@ -333,7 +349,21 @@ impl Workspace {
             .read(cx)
             .focused_session(cx)
             .and_then(|session| session.read(cx).git_root.clone())
-            .or_else(|| cwd.as_deref().and_then(procinfo::git_root))
+            .or_else(|| {
+                if deferred {
+                    cwd.as_deref()
+                        .and_then(|dir| {
+                            chau7_next_core::tabs_state::known_repo_root(
+                                dir,
+                                saved.as_ref().and_then(|s| s.repo_group_id.as_deref()),
+                                &self.known_repo_roots,
+                            )
+                        })
+                        .map(PathBuf::from)
+                } else {
+                    cwd.as_deref().and_then(procinfo::git_root)
+                }
+            })
             .map(|p| p.to_string_lossy().to_string());
         if let Some(saved) = &saved {
             if let Some(uuid) = saved.uuid {
@@ -378,7 +408,8 @@ impl Workspace {
         let directory = panes
             .read(cx)
             .focused_session(cx)
-            .and_then(|session| session.read(cx).cwd.clone());
+            .and_then(|session| session.read(cx).cwd.clone())
+            .or_else(|| cwd.clone());
         self.state
             .setup_repo_group_in_directory(id, directory.as_deref(), &self.known_repo_roots);
         // A saved token optimizer override goes to the tab's shells (the
@@ -632,9 +663,21 @@ impl Workspace {
         self.selected_panes().and_then(|p| p.read(cx).cwd(cx))
     }
 
-    fn focus_selected(&self, window: &mut Window, cx: &mut App) {
+    fn focus_selected(&mut self, window: &mut Window, cx: &mut App) {
+        self.record_restore_selection();
         if let Some(panes) = self.selected_panes() {
+            let deferred = panes.read(cx).is_deferred();
             PaneTree::focus_entity(&panes, window, cx);
+            // Parked tabs had no shells when overrides were first restored.
+            if deferred && let Some(meta) = self.state.selected().and_then(|id| self.state.get(id))
+            {
+                for view in panes.read(cx).views() {
+                    let session = view.read(cx).session.clone();
+                    session.update(cx, |session, _| {
+                        session.set_token_opt_override(meta.token_opt_override, false)
+                    });
+                }
+            }
         }
     }
 
@@ -1073,7 +1116,7 @@ impl Workspace {
         self.adopt_tab(meta, panes, select, cx);
     }
 
-    pub fn focus_selected_public(&self, window: &mut Window, cx: &mut App) {
+    pub fn focus_selected_public(&mut self, window: &mut Window, cx: &mut App) {
         self.focus_selected(window, cx);
     }
 
