@@ -1739,6 +1739,14 @@ impl TerminalSession {
         self.tracker.blocks()
     }
 
+    /// Automation must never overwrite a typed fragment or queued restore.
+    pub(crate) fn has_pending_automation_input(&self) -> bool {
+        !self.pending_input.borrow().is_empty()
+            || self.pending_prefill.is_some()
+            || self.tracker.prefill_pending
+            || self.tracker.has_pending_input()
+    }
+
     /// Shell state (AI provider and session id, prompt, integration).
     pub fn shell(&self) -> &ShellSession {
         &self.tracker
