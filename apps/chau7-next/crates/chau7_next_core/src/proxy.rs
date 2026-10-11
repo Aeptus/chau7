@@ -15,6 +15,7 @@ use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::Path;
 use std::time::Duration;
 
+use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::Deserialize;
@@ -95,14 +96,48 @@ pub fn shell_env(
     if include_openai {
         env.push((
             "OPENAI_BASE_URL".into(),
-            format!("https://127.0.0.1:{}/v1", tls_port(port)),
+            format!(
+                "https://127.0.0.1:{}{}/v1",
+                tls_port(port),
+                proxy_project_path(cwd)
+            ),
         ));
     }
+    env.push(("CHAU7_NEXT_PROXY_CORRELATION_ENABLED".into(), "1".into()));
     env.push(("GOOGLE_GEMINI_BASE_URL".into(), base));
-    env.push(("CHAU7_SESSION_ID".into(), term_session_id.to_string()));
-    env.push(("CHAU7_TAB_ID".into(), tab_id.to_string()));
-    env.push(("CHAU7_PROJECT".into(), cwd.to_string()));
+    env.push(("CHAU7_NEXT_SESSION_ID".into(), term_session_id.to_string()));
+    env.push(("CHAU7_NEXT_TAB_ID".into(), tab_id.to_string()));
+    env.push(("CHAU7_NEXT_PROJECT".into(), cwd.to_string()));
     env
+}
+
+/// URL-safe project identity without shell or TOML interpolation.
+pub fn proxy_project_path(cwd: &str) -> String {
+    format!(
+        "/_chau7/project/{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(cwd)
+    )
+}
+
+/// Owned launcher context. Go provisions the loopback CA under DataRoot;
+/// no global trust store or provider authentication is changed.
+pub fn codex_shell_env(root: &DataRoot, port: u16) -> Vec<(String, String)> {
+    vec![
+        (
+            "CHAU7_NEXT_OPENAI_PROXY_BASE_URL".into(),
+            format!("https://127.0.0.1:{}", tls_port(port)),
+        ),
+        (
+            "CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR".into(),
+            crate::shell_integration::codex_wrapper_dir(&root.shell_integration_dir())
+                .to_string_lossy()
+                .into_owned(),
+        ),
+        (
+            "CHAU7_NEXT_CODEX_CA_CERTIFICATE".into(),
+            root.proxy_tls_cert().to_string_lossy().into_owned(),
+        ),
+    ]
 }
 
 // ----- formatting (PRX-011) ---------------------------------------------------
@@ -1307,19 +1342,45 @@ mod tests {
         );
         assert_eq!(
             get("OPENAI_BASE_URL").as_deref(),
-            Some("https://127.0.0.1:18091/v1")
+            Some("https://127.0.0.1:18091/_chau7/project/L3A/v1")
         );
         assert_eq!(
             get("GOOGLE_GEMINI_BASE_URL").as_deref(),
             Some("http://127.0.0.1:18090")
         );
-        assert_eq!(get("CHAU7_SESSION_ID").as_deref(), Some("TERM"));
-        assert_eq!(get("CHAU7_TAB_ID").as_deref(), Some("TAB"));
-        assert_eq!(get("CHAU7_PROJECT").as_deref(), Some("/p"));
+        assert_eq!(get("CHAU7_NEXT_SESSION_ID").as_deref(), Some("TERM"));
+        assert_eq!(get("CHAU7_NEXT_TAB_ID").as_deref(), Some("TAB"));
+        assert_eq!(get("CHAU7_NEXT_PROJECT").as_deref(), Some("/p"));
         let no_openai = shell_env(18090, false, "T", "B", "/p");
         assert!(!no_openai.iter().any(|(k, _)| k == "OPENAI_BASE_URL"));
     }
 
+    #[test]
+    fn codex_launch_paths_are_owned_and_project_tokens_round_trip() {
+        let root = DataRoot::with_home(std::path::PathBuf::from("/fixture-home"), true);
+        let vars = codex_shell_env(&root, 18090);
+        for (key, path) in vars
+            .iter()
+            .filter(|(key, _)| key != "CHAU7_NEXT_OPENAI_PROXY_BASE_URL")
+        {
+            assert!(std::path::Path::new(path).starts_with(root.home()), "{key}");
+            assert!(path.contains("chau7-next"), "{key}");
+        }
+        let project = "/repo with quote\\\" and 🦀";
+        let path = proxy_project_path(project);
+        let token = path.strip_prefix("/_chau7/project/").unwrap();
+        assert_eq!(
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(token)
+                .unwrap(),
+            project.as_bytes()
+        );
+        assert!(
+            !vars
+                .iter()
+                .any(|(key, _)| key == "HTTPS_PROXY" || key == "CODEX_CA_CERTIFICATE")
+        );
+    }
     #[test]
     fn formatting_matches_swift() {
         assert_eq!(format_cost(0.0012), "$0.0012");

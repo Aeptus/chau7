@@ -133,7 +133,7 @@ impl ShellContext for EnvContext {
 pub struct TerminalSession {
     pub id: u64,
     /// This terminal's identity for the analytics proxy and AI run
-    /// telemetry (`tabIdentifier`, `CHAU7_TAB_ID`): a UUID per session.
+    /// telemetry (`tabIdentifier`, `CHAU7_NEXT_TAB_ID`): a UUID per session.
     pub tab_identifier: String,
     term: Arc<RwLock<Chau7Terminal>>,
     memory: Arc<crate::memory_pressure::SessionMemory>,
@@ -320,6 +320,22 @@ impl TerminalSession {
         ));
         // TRM-026: AI CLIs go through the local analytics proxy.
         let tab_identifier = uuid::Uuid::new_v4().to_string().to_uppercase();
+        env.extend([
+            ("CHAU7_NEXT_SESSION_ID".into(), session_id.clone()),
+            ("CHAU7_NEXT_TAB_ID".into(), tab_identifier.clone()),
+            (
+                "CHAU7_NEXT_PROJECT".into(),
+                start_dir.to_string_lossy().into_owned(),
+            ),
+            // Installed Swift hooks must not treat a Next shell as their tab.
+            ("CHAU7_TAB_ID".into(), String::new()),
+            (
+                "CHAU7_NEXT_CODEX_PROXY_WRAPPER_DIR".into(),
+                shell_integration::codex_wrapper_dir(&integration_dir)
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        ]);
         if settings.proxy.enabled {
             env.extend(chau7_next_core::proxy::shell_env(
                 settings.proxy.port,
@@ -328,6 +344,12 @@ impl TerminalSession {
                 &tab_identifier,
                 &start_dir.to_string_lossy(),
             ));
+            if settings.proxy.include_openai {
+                env.extend(chau7_next_core::proxy::codex_shell_env(
+                    root,
+                    settings.proxy.port,
+                ));
+            }
         }
         // Token optimization: the wrapper folder in front of PATH, and the
         // variables the wrappers read (`launchPATHValue`, `buildEnvironment`).
@@ -340,6 +362,19 @@ impl TerminalSession {
                 .unwrap_or_default();
             env.retain(|(k, _)| k != "PATH");
             env.extend(crate::cto::shell_environment(&paths, &path, &session_id));
+        }
+        // The owned dispatcher also provides notification capture when
+        // analytics is disabled; Codex's shim transparently passes through.
+        #[cfg(unix)]
+        {
+            let wrapper = shell_integration::codex_wrapper_dir(&integration_dir);
+            let previous = env
+                .iter()
+                .find(|(key, _)| key == "PATH")
+                .map(|(_, value)| value.clone())
+                .unwrap_or_default();
+            env.retain(|(key, _)| key != "PATH");
+            env.push(("PATH".into(), format!("{}:{previous}", wrapper.display())));
         }
         let search_path = env
             .iter()
