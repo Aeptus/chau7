@@ -182,37 +182,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             ),
     );
 
-    // Protected folders
-    let protected = titled("Protected Folders", chrome)
-        .child(row(
-            "Allow Protected Folder Access",
-            toggle("protected-access", g.allow_protected_folder_access, chrome, |s, v| {
-                s.general.allow_protected_folder_access = v
-            }),
-            chrome,
-        ))
-        .child(description(
-            "Repo detection skips Downloads, Desktop, Documents and Library unless you allow it, so macOS shows no privacy prompt.",
-            chrome,
-        ))
-        .when(g.allow_protected_folder_access, |d| {
-            d.child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(
-                        button("protected-grant", "Grant Access...", chrome)
-                            .on_click(|_, _, cx| grant_protected_access(cx)),
-                    )
-                    .child(button("protected-reset", "Reset Checks", chrome).on_click(
-                        |_, _, cx| {
-                            crate::protected_paths::reset();
-                            set_message(cx, "Protected folder checks reset.".to_string(), false);
-                        },
-                    )),
-            )
-        });
-
     // Status
     let m = &ctx.monitoring;
     let status = titled("Status", chrome)
@@ -265,7 +234,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         .child(language)
         .child(config)
         .child(repo)
-        .child(protected)
         .child(status)
         .child(actions)
         .child(reset)
@@ -325,7 +293,7 @@ const REPO_CONFIG_TEMPLATE: &str = "# Per-repo overrides: these keys replace the
 
 /// Forget where windows were (`resetOverlayOffsets`): the next launch and new
 /// windows open centered at the default size.
-fn reset_window_positions(cx: &mut App) {
+pub(super) fn reset_window_positions(cx: &mut App) {
     crate::workspace::reset_panel_positions(cx);
     let root = cx.global::<AppData>().root.clone();
     match crate::session_store::forget_positions(&root) {
@@ -383,7 +351,51 @@ fn grant_protected_access(cx: &mut App) {
                 format!("Granted: {}", granted.join(", "))
             };
             set_message(cx, text, granted.is_empty());
+            crate::permission_center::refresh(cx);
         });
     })
     .detach();
+}
+
+/// Current Productivity protected-folder controls, shared with Permission Center.
+pub(super) fn protected_controls(ctx: &SectionContext) -> gpui::Div {
+    let chrome = ctx.chrome;
+    let g = &ctx.settings.general;
+    titled("Protected Folders", chrome)
+        .child(row(
+            "Allow Protected Folder Access",
+            super::widgets::toggle_with("protected-access", g.allow_protected_folder_access, chrome, |cx, v| {
+                update(cx, |s| s.general.allow_protected_folder_access = v);
+                if v {crate::protected_paths::reset();}
+                crate::permission_center::refresh(cx);
+            }),
+            chrome,
+        ))
+        .child(description(
+            "Repo detection skips Downloads, Desktop, Documents and Library unless you allow it, so macOS shows no privacy prompt.",
+            chrome,
+        ))
+        .when(g.allow_protected_folder_access, |d| {
+            d.child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        button("protected-grant", "Grant Access...", chrome)
+                            .on_click(|_, _, cx| {
+                                crate::protected_paths::reset();
+                                grant_protected_access(cx);
+                            }),
+                    )
+                    .child(button("protected-system", "Open System Settings", chrome).on_click(|_, _, cx| {
+                        cx.open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders");
+                    }))
+                    .child(button("protected-reset", "Reset Checks", chrome).on_click(
+                        |_, _, cx| {
+                            crate::protected_paths::reset();
+                            set_message(cx, "Protected folder checks reset.".to_string(), false);
+                        },
+                    )),
+            )
+        })
 }

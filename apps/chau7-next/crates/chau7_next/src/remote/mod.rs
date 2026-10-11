@@ -84,6 +84,11 @@ pub struct RemoteControl {
     host: RemoteHost,
     ipc: Option<IpcServer>,
     agent: Option<AgentProcess>,
+    start_generation: u64,
+    start_pending: bool,
+    shutting_down: bool,
+    devices_refreshing: bool,
+    devices_refresh_again: bool,
     /// Settings the agent runs with (enabled, relay URL).
     applied: Option<(bool, String)>,
     focus_window: Option<AnyWindowHandle>,
@@ -110,6 +115,11 @@ pub fn init(cx: &mut App) {
         host: RemoteHost::new(),
         ipc: None,
         agent: None,
+        start_generation: 0,
+        start_pending: false,
+        shutting_down: false,
+        devices_refreshing: false,
+        devices_refresh_again: false,
         applied: None,
         focus_window: None,
         devices: Vec::new(),
@@ -398,7 +408,7 @@ impl RemoteControl {
         }
         if self.host.devices_dirty {
             self.host.devices_dirty = false;
-            self.refresh_devices();
+            self.refresh_devices(cx);
         }
 
         let status = self.status();
@@ -434,7 +444,7 @@ impl RemoteControl {
             if wanted.0 {
                 self.start_agent(cx);
             }
-            self.refresh_devices();
+            self.refresh_devices(cx);
             return;
         };
         if applied == wanted {
@@ -451,47 +461,98 @@ impl RemoteControl {
     }
 
     fn start_agent(&mut self, cx: &mut Context<Self>) {
-        if self.agent.is_some() {
+        if self.agent.is_some() || self.start_pending || self.shutting_down {
             return;
         }
-        if self.ipc.is_none() {
-            match IpcServer::start(&self.root.remote_socket()) {
-                Ok(server) => self.ipc = Some(server),
-                Err(err) => {
-                    log::error!("Remote IPC: cannot listen: {err}");
-                    self.host.last_error = Some(format!("Cannot start remote agent: {err}"));
-                    return;
-                }
-            }
-        }
-        let binary = match agent::binary_path(&self.root) {
-            Ok(path) => path,
-            Err(err) => {
-                log::error!("{err}");
-                self.host.last_error = Some(err);
-                return;
-            }
-        };
+        self.start_generation = self.start_generation.wrapping_add(1);
+        let generation = self.start_generation;
+        self.start_pending = true;
+        let root = self.root.clone();
         let relay = self
             .applied
             .as_ref()
             .map(|(_, url)| url.clone())
             .unwrap_or_else(|| Settings::get(cx).remote.relay_url.clone());
-        let host_name = crate::platform::system::host_name();
-        match AgentProcess::spawn(&binary, &self.root, &relay, host_name) {
-            Ok(process) => {
-                self.agent = Some(process);
-                self.host.last_error = None;
-                self.refresh_devices();
-            }
-            Err(err) => {
-                log::error!("{err}");
-                self.host.last_error = Some(err);
-            }
-        }
+        let preparation = cx.background_executor().spawn(async move {
+            let binary = agent::binary_path(&root)?;
+            agent::prepare_credentials(&binary, &root)?;
+            Ok::<_, String>((binary, root, relay, crate::platform::system::host_name()))
+        });
+        cx.spawn(async move |weak, cx| {
+            let prepared = preparation.await;
+            let job = weak
+                .update(cx, |rc, cx| {
+                    if !rc.accepts_start(generation) {
+                        return None;
+                    }
+                    let (binary, root, relay, name) = match prepared {
+                        Ok(prepared) => prepared,
+                        Err(error) => {
+                            rc.start_pending = false;
+                            rc.host.last_error = Some(error);
+                            cx.refresh_windows();
+                            return None;
+                        }
+                    };
+                    // Binding a Unix socket is small. Expensive binary sync, identity
+                    // preparation and process startup are delegated to workers.
+                    if rc.ipc.is_none() {
+                        match IpcServer::start(&rc.root.remote_socket()) {
+                            Ok(server) => rc.ipc = Some(server),
+                            Err(error) => {
+                                rc.start_pending = false;
+                                rc.host.last_error =
+                                    Some(format!("Cannot start remote agent: {error}"));
+                                return None;
+                            }
+                        }
+                    }
+                    Some(
+                        cx.background_executor().spawn(async move {
+                            AgentProcess::spawn(&binary, &root, &relay, name)
+                        }),
+                    )
+                })
+                .ok()
+                .flatten();
+            let Some(job) = job else { return };
+            let result = job.await;
+            let _ = weak.update(cx, |rc, cx| {
+                if !rc.accepts_start(generation) {
+                    // AgentProcess owns an asynchronous reaper, including stale completions.
+                    drop(result);
+                    return;
+                }
+                rc.start_pending = false;
+                match result {
+                    Ok(process) => {
+                        rc.agent = Some(process);
+                        rc.host.last_error = None;
+                    }
+                    Err(error) => {
+                        rc.host.last_error = Some(error);
+                    }
+                }
+                rc.refresh_devices(cx);
+                cx.refresh_windows();
+            });
+        })
+        .detach();
+    }
+
+    fn accepts_start(&self, generation: u64) -> bool {
+        start_is_current(
+            generation,
+            self.start_generation,
+            self.start_pending,
+            self.shutting_down,
+            self.applied.as_ref().is_some_and(|(enabled, _)| *enabled),
+        )
     }
 
     fn stop_agent(&mut self) {
+        self.start_generation = self.start_generation.wrapping_add(1);
+        self.start_pending = false;
         if let Some(agent) = self.agent.take() {
             agent.stop();
         }
@@ -505,32 +566,63 @@ impl RemoteControl {
     }
 
     fn restart_agent_if_running(&mut self, cx: &mut Context<Self>) {
-        if self.agent.is_none() {
+        if !self.applied.as_ref().is_some_and(|(enabled, _)| *enabled) {
             return;
         }
-        if let Some(agent) = self.agent.take() {
-            agent.stop();
-        }
-        self.host.on_agent_stopped();
+        self.stop_agent();
         self.start_agent(cx);
     }
 
     fn shutdown(&mut self) {
+        self.shutting_down = true;
         self.stop_agent();
     }
 
-    fn refresh_devices(&mut self) {
+    fn refresh_devices(&mut self, cx: &mut Context<Self>) {
+        if self.shutting_down {
+            return;
+        }
+        if self.devices_refreshing {
+            self.devices_refresh_again = true;
+            return;
+        }
+        self.devices_refreshing = true;
         let path = self.root.remote_state_file();
-        self.devices = match std::fs::read_to_string(&path) {
-            Ok(text) => match agent_state::paired_devices(&text) {
-                Ok(devices) => devices,
-                Err(err) => {
-                    log::warn!("Failed to refresh paired devices: {err}");
+        let read = cx.background_executor().spawn(async move {
+            use std::io::Read;
+            match std::fs::File::open(path) {
+                Ok(file) => {
+                    let mut text = String::new();
+                    file.take(1024 * 1024 + 1)
+                        .read_to_string(&mut text)
+                        .map_err(|_| ())?;
+                    if text.len() > 1024 * 1024 {
+                        return Err(());
+                    }
+                    agent_state::paired_devices(&text).map_err(|_| ())
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+                Err(_) => Err(()),
+            }
+        });
+        cx.spawn(async move |weak, cx| {
+            let result = read.await;
+            let _ = weak.update(cx, |rc, cx| {
+                rc.devices_refreshing = false;
+                if rc.shutting_down {
                     return;
                 }
-            },
-            Err(_) => Vec::new(),
-        };
+                match result {
+                    Ok(devices) => rc.devices = devices,
+                    Err(()) => log::warn!("Failed to read bounded remote paired-device state"),
+                }
+                if std::mem::take(&mut rc.devices_refresh_again) {
+                    rc.refresh_devices(cx);
+                }
+                cx.refresh_windows();
+            });
+        })
+        .detach();
     }
 
     fn revoke(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -545,7 +637,7 @@ impl RemoteControl {
         match result {
             Ok(()) => {
                 self.host.on_device_revoked(id);
-                self.refresh_devices();
+                self.refresh_devices(cx);
                 self.restart_agent_if_running(cx);
             }
             Err(err) => {
@@ -573,3 +665,27 @@ fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
 
 #[cfg(all(test, unix))]
 mod e2e_tests;
+
+/// A disabled setting, changed relay or app quit invalidates all late completions.
+fn start_is_current(
+    requested: u64,
+    current: u64,
+    pending: bool,
+    shutting_down: bool,
+    enabled: bool,
+) -> bool {
+    requested == current && pending && !shutting_down && enabled
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use super::*;
+    #[test]
+    fn only_current_enabled_pending_start_can_publish() {
+        assert!(start_is_current(5, 5, true, false, true));
+        assert!(!start_is_current(5, 6, true, false, true));
+        assert!(!start_is_current(5, 5, false, false, true));
+        assert!(!start_is_current(5, 5, true, true, true));
+        assert!(!start_is_current(5, 5, true, false, false));
+    }
+}

@@ -107,6 +107,24 @@ impl DataRoot {
         self.config_dir.join("config.toml")
     }
 
+    /// User repository skill sources are shared project inputs and read only.
+    pub fn repo_skills_source(repo_root: &Path) -> PathBuf {
+        repo_root.join(REPO_FOLDER).join("skills")
+    }
+
+    /// Read-only ownership check: Next must preserve production skill installations.
+    pub fn swift_skill_manifest_path(skill_directory: &Path) -> PathBuf {
+        skill_directory.join(".chau7-skill.json")
+    }
+
+    pub fn skill_staging_dir(&self) -> PathBuf {
+        self.config_dir.join("tmp").join("skills")
+    }
+
+    pub fn skill_backups_dir(&self) -> PathBuf {
+        self.config_dir.join("backups").join("skills")
+    }
+
     pub fn snippets_file(&self) -> PathBuf {
         self.config_dir.join("snippets.json")
     }
@@ -286,6 +304,11 @@ impl DataRoot {
     /// The 20 most recent repositories (`feature.recentRepoRoots`).
     pub fn recent_repos_file(&self) -> PathBuf {
         self.state_dir.join("recent-repos.json")
+    }
+
+    /// Confirmed repository roots and branch evidence, isolated from Swift defaults.
+    pub fn known_repo_identities_file(&self) -> PathBuf {
+        self.state_dir.join("known-repo-identities.json")
     }
 
     /// A repository's metadata (description, labels, favorite files). It

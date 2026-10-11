@@ -24,9 +24,12 @@ Paths come from `DataRoot`; Linux, Windows and isolated test roots use their
 own application data locations. Disk work runs on one background worker with
 one pending snapshot. A busy disk drops a queued sample rather than creating
 an unbounded backlog. Each snapshot is capped at 1 MiB; the two history files
-are capped at 4 MiB each. The latest file is replaced after serialization.
+are capped at 8 MiB each. The latest file is replaced after serialization.
 On Windows replacement removes the previous latest file before renaming.
-Persistence failures appear in the application log.
+History lines use `schema_version`, `timestamp`, `category` and `metrics`;
+`latest.json` retains the full snapshot shape used by MCP and the UI.
+Accepted records drain on the background quit worker. Repeated write failures
+produce one operational warning until a successful write resets it.
 
 ## Measurements and limits
 
@@ -53,6 +56,12 @@ JSON schema version 1 contains:
   monitoring, remote output, terminal painting and dangerous-command scans.
   The monitoring feature includes AI and dev-server monitoring. Empty feature
   arrays mean no instrumented work in that window; missing work is not zero.
+- On macOS, measured feature scopes also emit paired `os_signpost` intervals
+  under subsystem `com.chau7.next`, category `performance`, for Instruments.
+  Begin/end IDs match even when a scope exits early. Emission skips disabled
+  signpost logs, and no terminal content enters interval names. Plain recorded
+  elapsed values remain numeric aggregates; they are not fabricated intervals.
+  Linux and Windows explicitly report native signposts as unsupported.
 
 Snapshots include up to 128 panes and report `terminal_count` and
 `terminals_truncated` explicitly. They exclude terminal output, command text,
@@ -78,3 +87,32 @@ avoid copying arbitrary log lines into public output.
 This old running package exposes the earlier 30 MCP tools. The new diagnostics
 require a newly built package; source integration alone cannot update a running
 process. Preserve active Next and Swift sessions during installation/testing.
+
+## Main-thread hang diagnostics
+
+A separate monitor checks a main-thread progress token every 250 ms. A confirmed
+stall lasting two seconds opens the terminal paint circuit breaker. PTY parsing,
+input processing and persistence remain active; progress closes the breaker.
+The live performance JSON includes `hang_watchdog` status, transition counts,
+heartbeat interval and the diagnostics directory. MCP timeout snapshots expose
+whether the breaker is open without waiting for the main thread.
+
+On macOS a same-binary helper starts only during a confirmed stall. It captures
+`/usr/bin/sample` for five seconds, with a ten-second helper deadline and an
+8 MiB sample limit. It records heartbeat tokens before and after capture and
+main-thread stack families as evidence, without asserting a deadlock or a cause.
+Sampling has a 60-second cooldown scoped to the app launch. The child retires
+once progress has stayed healthy for two seconds. Shutdown stops the monitor,
+cancels an active diagnostic sample and reaps its child on the quit worker.
+Linux and Windows retain token monitoring and the circuit breaker; the JSON
+explicitly reports that the macOS external sampling helper is unavailable.
+
+Files live in Next's own `reports/hangs/` directory:
+
+- `main-thread-heartbeat.json` while the monitor runs.
+- `latest-transition.json` with the last stall or recovery breadcrumb.
+- `latest-hang.json` and paired `hang-*.json` / `hang-*.sample.txt` captures.
+
+Recognized sample bundles are bounded to 40 bundles, 64 MiB total and seven days.
+Unrelated files are retained. The helper is intercepted before app initialization,
+so it never imports settings, installs integrations or starts a second GUI.

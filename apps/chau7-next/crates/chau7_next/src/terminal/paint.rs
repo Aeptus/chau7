@@ -562,6 +562,9 @@ fn underline_for(cell: &OwnedCell, color: Hsla, link_color: Hsla) -> (Option<Und
 }
 
 pub fn paint_grid(bounds: Bounds<Pixels>, state: PaintState, window: &mut Window, cx: &mut App) {
+    if crate::hang_watchdog::render_blocked() {
+        return;
+    }
     feature_profiler::measure(Feature::TerminalRender, 0, || {
         paint_grid_inner(bounds, state, window, cx)
     })

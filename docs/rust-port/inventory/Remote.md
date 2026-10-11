@@ -41,7 +41,7 @@ Lets the user watch and drive Chau7 tabs from the Chau7 iOS app over the interne
 | RMT-028 | Remote viewer status button and popover (eye icon, viewer count badge, orange pending dot, sharing toggle, copy share link, approve/deny/disconnect). Chau7 Next: the eye button sits at the right end of the tab bar while viewer sharing is on, and the panel is also in Settings > Remote Control | `Remote/RemoteViewerStatusView.swift` |  | chau7_next/src/remote/viewer_ui.rs, chau7_next/src/workspace/tab_bar_view.rs | done | NSPasteboard |
 | RMT-029 | Legacy single-device state (`ios_public_key`/`ios_name`) read as one paired device, and written back for older agents | `Remote/RemoteControlModels.swift` | | | n/a | |
 
-| RMT-030 | Validate own relay credentials are regular owner-only 0600/0400 file, bounded to 8192 bytes, match device identity and strong distinct secrets; display identity/provision instructions on error | `Sidecar/ManagedGoSidecar.swift`; `Remote/RemoteControlManager.swift`; `Remote/RemoteRelayCredentials.swift`; `services/chau7-remote/docs/CREDENTIALS.md` |  | chau7_next/src/remote/agent.rs | partial |  |
+| RMT-030 | Validate own relay credentials are regular owner-only 0600/0400 file, bounded to 8192 bytes, match device identity and strong distinct secrets; display identity/provision instructions on error | `Sidecar/ManagedGoSidecar.swift`; `Remote/RemoteControlManager.swift`; `Remote/RemoteRelayCredentials.swift`; `services/chau7-remote/docs/CREDENTIALS.md` | Relay credential descriptor/key fixtures; isolated identity worker and stale-start tests | chau7_next_core/src/remote/relay_credentials.rs; chau7_next/src/remote/agent.rs; chau7_next/src/remote/mod.rs | done |  |
 | RMT-031 | CHG2 generation-based grid deltas with full resync on reset/tab/size change, skip unchanged snapshots and capture off UI thread | `Chau7Core/Remote/RemoteGridSnapshotCache.swift`; `Chau7Core/Remote/RemoteGridDeliveryPolicy.swift`; `Remote/RemoteGridSnapshotWorker.swift` | RemoteGridSnapshotCacheTests | chau7_next/src/remote/snapshot.rs; chau7_next_core/src/remote/grid_snapshot.rs | partial |  |
 | RMT-032 | Structured prompt ID storage, duplicate replay guard, pending reconciliation and response validation before typing selected answer | `Chau7Core/Remote/StructuredPromptStore.swift`; `Chau7Core/Remote/RemoteReplayGuard.swift`; `Chau7Core/Remote/PendingStateReconciler.swift`; `Chau7Core/Remote/RemotePromptResponse.swift` | StructuredPromptStoreTests | chau7_next_core/src/remote/interactive_prompt.rs | partial |  |
 | RMT-033 | Push payload composition includes safe tab/project/approval context, reconnect exponential backoff and bounded telemetry buffer | `Chau7Core/Remote/RemotePushComposition.swift`; `Chau7Core/Remote/RemoteReconnectBackoff.swift`; `Chau7Core/Remote/RemoteTelemetryBuffer.swift` |  | chau7_next/src/remote/mod.rs | partial |  |
@@ -78,3 +78,15 @@ Lets the user watch and drive Chau7 tabs from the Chau7 iOS app over the interne
 **Settings keys.** `remote.enabled` (default false), `remote.relayURL` (default `wss://relay.example.com/connect`). Both are part of the settings export/import JSON, not of `config.toml`.
 
 **RMT-029 n/a:** Chau7 Next starts with its own empty state file, so there is no single-device legacy state to read; the agent itself still writes the legacy fields.
+
+**RMT-030 current implementation.** Next validates the opened credential descriptor
+(no-follow, nonblocking, current owner, regular file, 0600/0400 and at most
+8192 bytes), canonical distinct 32-byte role keys and matching public identity.
+Only public metadata leaves the validator. The identity helper receives an
+explicit Next-owned `--state`; failures contain quoted identity/provision
+instructions and no credential contents. Binary sync/build, identity/provision
+validation, process spawn and paired-device reads run off the UI thread;
+generation guards reject completions after relay changes, disable or quit.
+Owned helper shutdown is asynchronous. Non-Unix builds explicitly report the
+unsupported owner/mode boundary of the current Go relay helper rather than
+claim validation. No production relay pairing is claimed by local tests.

@@ -27,7 +27,7 @@ BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 SOURCE_REVISION="$(git -C "$ROOT" rev-parse HEAD)"
 
 cd "$ROOT"
-cargo build --locked --release --target "$TARGET" --bin chau7-next --bin chau7-next-mcp-bridge
+cargo build --locked --release --target "$TARGET" --bin chau7-next --bin chau7-next-mcp-bridge --bin chau7-next-cli
 RELEASE_DIR="${CARGO_TARGET_DIR:-$ROOT/target}/$TARGET/release"
 BIN="$RELEASE_DIR/chau7-next"
 # MCP bridge: the app copies it to ~/.chau7-next/bin on launch.
@@ -37,6 +37,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Chau7 Next"
 cp "$BRIDGE" "$APP/Contents/MacOS/chau7-next-mcp-bridge"
+cp "$RELEASE_DIR/chau7-next-cli" "$APP/Contents/MacOS/chau7-next-cli"
+cp -R "$ROOT/resources/skills" "$APP/Contents/Resources/Skills"
 cp "$ROOT/../chau7-macos/Resources/AppDockIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Token optimizer and markdown renderer (the apps/chau7-macos/rust

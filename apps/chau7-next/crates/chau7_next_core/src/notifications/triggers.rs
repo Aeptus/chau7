@@ -390,7 +390,7 @@ const fn ai_type(
 }
 
 /// Trigger types shared across all AI coding tools.
-const AI_TRIGGER_TYPES: [AiTriggerType; 14] = [
+const AI_TRIGGER_TYPES: [AiTriggerType; 17] = [
     ai_type(
         "finished",
         "finished",
@@ -424,6 +424,27 @@ const AI_TRIGGER_TYPES: [AiTriggerType; 14] = [
         "attentionRequired",
         "Needs attention",
         "needs your attention.",
+        true,
+    ),
+    ai_type(
+        "tool_failed",
+        "toolFailed",
+        "Tool failed",
+        "tool execution failed.",
+        false,
+    ),
+    ai_type(
+        "response_failed",
+        "responseFailed",
+        "Response failed",
+        "response ended with an error.",
+        true,
+    ),
+    ai_type(
+        "elicitation",
+        "elicitation",
+        "MCP input request",
+        "MCP server requesting user input.",
         true,
     ),
     ai_type(
@@ -1125,6 +1146,24 @@ mod tests {
     // Catalog Integrity
 
     #[test]
+    fn current_ai_failure_and_elicitation_defaults_are_independently_configurable() {
+        let source = AiEventSource::claude_code();
+        let tool = trigger(&source, "tool_failed").unwrap();
+        let response = trigger(&source, "response_failed").unwrap();
+        let elicitation = trigger(&source, "elicitation").unwrap();
+        let task = trigger(&source, "failed").unwrap();
+        assert!(!tool.default_enabled);
+        assert!(response.default_enabled);
+        assert!(elicitation.default_enabled);
+        let mut state = NotificationTriggerState::default();
+        assert!(!state.is_enabled(tool));
+        assert!(state.is_enabled(task));
+        state.overrides.insert(tool.id.clone(), true);
+        assert!(state.is_enabled(tool));
+        assert!(state.is_enabled(task));
+    }
+
+    #[test]
     fn test_catalog_has_unique_ids() {
         let ids: Vec<_> = all().iter().map(|t| t.id.as_str()).collect();
         assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len());
@@ -1137,8 +1176,8 @@ mod tests {
 
     #[test]
     fn test_catalog_size_matches_swift() {
-        // 39 hand-written triggers + 9 AI sources x 14 types.
-        assert_eq!(all().len(), 39 + 9 * 14);
+        // 39 hand-written triggers + 9 AI sources x 17 current Swift types.
+        assert_eq!(all().len(), 39 + 9 * 17);
     }
 
     #[test]

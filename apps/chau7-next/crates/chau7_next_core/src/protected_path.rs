@@ -99,6 +99,20 @@ impl AccessPolicy {
         self.allowed.insert(root.to_string());
     }
 
+    /// Read existing denial evidence without probing a folder.
+    pub fn denied_by_cooldown(&self, root: &str, now: f64) -> bool {
+        self.denied_until
+            .get(root)
+            .is_some_and(|until| now < *until)
+    }
+
+    /// A bookmark could not be activated; avoid repeatedly trying it.
+    pub fn mark_denied(&mut self, root: &str, now: f64) {
+        self.allowed.remove(root);
+        self.denied_until
+            .insert(root.to_owned(), now + DENY_COOLDOWN_SECONDS);
+    }
+
     /// Forget every decision (`resetAccessChecks`).
     pub fn reset(&mut self) {
         self.allowed.clear();

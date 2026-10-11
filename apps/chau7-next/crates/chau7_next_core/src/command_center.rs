@@ -492,9 +492,10 @@ fn normalized_type(value: &str) -> String {
 }
 
 fn event_kind(event: &AiEvent) -> NotificationSemanticKind {
-    canonical::kind(
+    canonical::kind_with_canonical_type(
         Some(event.raw_type.as_deref().unwrap_or(&event.event_type)),
         event.notification_type.as_deref(),
+        Some(&event.event_type),
     )
 }
 
@@ -508,6 +509,7 @@ fn event_icon(event: &AiEvent) -> &'static str {
     match event_kind(event) {
         NotificationSemanticKind::TaskFinished => return "text.bubble",
         NotificationSemanticKind::TaskFailed => return "exclamationmark.circle",
+        NotificationSemanticKind::ToolFailed => return "wrench.and.screwdriver",
         NotificationSemanticKind::PermissionRequired => return "exclamationmark.triangle",
         NotificationSemanticKind::WaitingForInput => return "keyboard",
         NotificationSemanticKind::AttentionRequired => return "bell",
@@ -539,6 +541,7 @@ fn event_tone(event: &AiEvent) -> Tone {
     match event_kind(event) {
         NotificationSemanticKind::TaskFinished => return Tone::Blue,
         NotificationSemanticKind::TaskFailed => return Tone::Red,
+        NotificationSemanticKind::ToolFailed => return Tone::Orange,
         NotificationSemanticKind::PermissionRequired => return Tone::Yellow,
         NotificationSemanticKind::WaitingForInput | NotificationSemanticKind::AttentionRequired => {
             return Tone::Orange;
@@ -601,6 +604,7 @@ fn event_title(event: &AiEvent) -> String {
     match event_kind(event) {
         NotificationSemanticKind::TaskFinished => return "Finished responding".into(),
         NotificationSemanticKind::TaskFailed => return "Error occurred".into(),
+        NotificationSemanticKind::ToolFailed => return "Tool failed".into(),
         NotificationSemanticKind::PermissionRequired => return "Needs permission".into(),
         NotificationSemanticKind::WaitingForInput => return "Waiting for input".into(),
         NotificationSemanticKind::AttentionRequired => {
@@ -636,6 +640,7 @@ pub fn human_readable_type(kind: &str, semantic_kind: Option<&str>) -> String {
         match semantic {
             NotificationSemanticKind::TaskFinished => return "Finished responding".into(),
             NotificationSemanticKind::TaskFailed => return "Error occurred".into(),
+            NotificationSemanticKind::ToolFailed => return "Tool failed".into(),
             NotificationSemanticKind::PermissionRequired => return "Needs permission".into(),
             NotificationSemanticKind::WaitingForInput => return "Waiting for input".into(),
             NotificationSemanticKind::AttentionRequired => return "Needs attention".into(),
@@ -1038,6 +1043,31 @@ mod tests {
             version: "1.2.3",
             now: Utc::now(),
         }
+    }
+
+    #[test]
+    fn timeline_uses_adapter_semantics_and_preserves_raw_completion_provenance() {
+        let mut e = AiEvent::new(
+            AiEventSource::codex(),
+            "waiting_input",
+            "Codex",
+            "Should I continue?",
+            "2026-10-11T00:00:00Z",
+        );
+        e.raw_type = Some("agent-turn-complete".into());
+        assert_eq!(event_kind(&e), NotificationSemanticKind::WaitingForInput);
+        assert_eq!(event_icon(&e), "keyboard");
+        assert_eq!(event_title(&e), "Waiting for input");
+        assert_eq!(e.raw_type.as_deref(), Some("agent-turn-complete"));
+        e.event_type = "tool_failed".into();
+        e.raw_type = Some("tool-failed".into());
+        assert_eq!(event_icon(&e), "wrench.and.screwdriver");
+        assert_eq!(event_tone(&e), Tone::Orange);
+        assert_eq!(event_title(&e), "Tool failed");
+        assert_eq!(
+            human_readable_type("tool_failed", Some("tool_failed")),
+            "Tool failed"
+        );
     }
 
     #[test]

@@ -14,6 +14,7 @@ mod commands;
 mod cto;
 mod data_explorer;
 mod debug;
+mod hang_watchdog;
 mod history;
 mod l10n;
 mod logging;
@@ -27,6 +28,7 @@ mod observability;
 mod pane;
 mod panes;
 mod performance;
+mod permission_center;
 mod platform;
 mod profiles;
 mod protected_paths;
@@ -82,6 +84,9 @@ fn clean_inherited_environment() {
 pub(crate) use logging::log_file_path;
 
 fn main() {
+    if let Some(code) = hang_watchdog::run_cli_if_requested() {
+        std::process::exit(code);
+    }
     clean_inherited_environment();
     platform::defaults::disable_press_and_hold();
     let root = DataRoot::from_env();
@@ -89,6 +94,7 @@ fn main() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
     }
     logging::init(&root);
+    platform::oslog::install_feature_intervals();
     logging::ai_pty::purge_large_logs(root.ai_logs_dir());
     protected_paths::init(&root);
     match root.import_from_swift_app() {
@@ -202,10 +208,13 @@ fn main() {
         // The welcome screen the first time, else the splash.
         memory_pressure::start(cx);
         views::launch(cx);
+        hang_watchdog::start(cx);
+        permission_center::start(cx);
         performance::start(cx);
 
         cx.on_app_quit(|cx| {
             memory_pressure::stop(cx);
+            permission_center::stop(cx);
             save_session(cx, true);
             repository::flush(cx);
             history::recorder::flush_on_quit();
@@ -216,8 +225,16 @@ fn main() {
             // Shells get SIGTERM at once (`closeSessionForTermination`).
             terminal::session::terminate_all_for_quit();
             logging::flush();
+            let performance_worker = performance::stop(cx);
+            let hang_worker = hang_watchdog::stop(cx);
             let worker = observability::shutdown(cx);
             cx.background_spawn(async move {
+                if let Some(worker) = performance_worker {
+                    let _ = worker.join();
+                }
+                if let Some(worker) = hang_worker {
+                    let _ = worker.join();
+                }
                 if let Some(worker) = worker {
                     let _ = worker.join();
                 }

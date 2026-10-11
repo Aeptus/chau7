@@ -176,6 +176,12 @@ impl Workspace {
         state.auto_repo_grouping = settings.tabs.auto_repo_grouping();
         // Refresh idle state and the window title once a second.
         Self::hide_on_close(window, cx);
+        cx.observe_window_activation(window, |_, window, cx| {
+            if window.is_window_active() {
+                crate::permission_center::recheck(cx);
+            }
+        })
+        .detach();
         let ticker = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(Duration::from_secs(1)).await;

@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 const INTERVAL: Duration = Duration::from_secs(5);
 const MAX_TERMINALS: usize = 128;
 const MAX_RECORD_BYTES: usize = 1024 * 1024;
-const MAX_HISTORY_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_HISTORY_BYTES: u64 = 8 * 1024 * 1024;
 
 struct Identity {
     started: Instant,
@@ -87,6 +87,7 @@ pub fn unresponsive_snapshot() -> Value {
     json!({"schema_version":1,"captured_at":chrono::Utc::now().to_rfc3339(),
         "runtime":runtime_info(),"uptime_seconds":identity().started.elapsed().as_secs_f64(),
         "process":process_snapshot(),"partial":true,
+        "hang_watchdog":{"status":"main_thread_unresponsive","render_circuit_breaker_open":crate::hang_watchdog::render_blocked()},
         "error":"main_thread_unresponsive","retryable":true,"timeout_ms":1000,
         "main_thread":{"status":"unresponsive","timer_delay_ms":null,"sample_count":null},
         "window_count":null,"terminal_count":null,"terminals":null,"features":null})
@@ -110,7 +111,7 @@ pub fn capture(cx: &App) -> Value {
     let heartbeat = cx.try_global::<Heartbeat>();
     json!({"schema_version": 1, "captured_at": chrono::Utc::now().to_rfc3339(),
         "runtime": runtime_info(), "uptime_seconds": identity().started.elapsed().as_secs_f64(),
-        "process": process,
+        "process": process, "hang_watchdog":crate::hang_watchdog::snapshot(cx),
         "memory_retention": crate::memory_pressure::diagnostics(cx),
         "main_thread": {"timer_delay_ms": heartbeat.and_then(|h| h.last_delay_ms),
             "max_timer_delay_ms": heartbeat.map(|h| h.max_delay_ms),
@@ -119,6 +120,9 @@ pub fn capture(cx: &App) -> Value {
         "window_count": live.len(), "terminal_count": terminal_count,
         "terminals_truncated": terminal_count > terminals.len(), "terminals": terminals,
         "features": feature_profiler::snapshot().to_json(80),
+        "instrumentation": {"os_signpost_supported":cfg!(target_os="macos"),
+            "signpost_subsystem":if cfg!(target_os="macos") {Some("com.chau7.next")} else {None},
+            "signpost_category":if cfg!(target_os="macos") {Some("performance")} else {None}},
         "persistence": {"interval_seconds": INTERVAL.as_secs(), "history_file_count": 2,
             "max_history_file_bytes": MAX_HISTORY_BYTES, "max_snapshot_bytes": MAX_RECORD_BYTES}
     })
@@ -132,7 +136,10 @@ struct Heartbeat {
 }
 impl Global for Heartbeat {}
 
-struct Writer(SyncSender<Value>);
+struct Writer {
+    sender: Mutex<Option<SyncSender<Value>>>,
+    worker: Mutex<Option<std::thread::JoinHandle<()>>>,
+}
 impl Global for Writer {}
 
 pub fn directory(cx: &App) -> PathBuf {
@@ -144,8 +151,14 @@ pub fn directory(cx: &App) -> PathBuf {
 
 /// Queue without blocking rendering or growing a backlog during disk stalls.
 pub fn persist(snapshot: Value, cx: &App) -> bool {
-    cx.try_global::<Writer>()
-        .is_some_and(|writer| writer.0.try_send(snapshot).is_ok())
+    cx.try_global::<Writer>().is_some_and(|writer| {
+        writer
+            .sender
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .is_some_and(|sender| sender.try_send(snapshot).is_ok())
+    })
 }
 
 pub fn start(cx: &mut App) {
@@ -156,13 +169,23 @@ pub fn start(cx: &mut App) {
     match std::thread::Builder::new()
         .name("chau7-next-performance".into())
         .spawn(move || {
+            let mut reported_failure = false;
             while let Ok(snapshot) = receiver.recv() {
-                if let Err(error) = write_snapshot(&dir, &snapshot, MAX_HISTORY_BYTES) {
-                    log::warn!("Performance diagnostics persistence failed: {error}");
+                match write_snapshot(&dir, &snapshot, MAX_HISTORY_BYTES) {
+                    Ok(()) => reported_failure = false,
+                    Err(error) => {
+                        if !reported_failure {
+                            log::warn!("Performance diagnostics persistence failed: {error}");
+                            reported_failure = true;
+                        }
+                    }
                 }
             }
         }) {
-        Ok(_) => cx.set_global(Writer(sender)),
+        Ok(worker) => cx.set_global(Writer {
+            sender: Mutex::new(Some(sender)),
+            worker: Mutex::new(Some(worker)),
+        }),
         Err(error) => {
             log::warn!("Performance diagnostics worker failed: {error}");
             return;
@@ -194,11 +217,50 @@ pub fn start(cx: &mut App) {
     .detach();
 }
 
+/// Close the producer on the UI thread; drain accepted records and join only
+/// from the app's background quit future. Repeated stop calls are harmless.
+pub fn stop(cx: &App) -> Option<std::thread::JoinHandle<()>> {
+    let writer = cx.try_global::<Writer>()?;
+    writer
+        .sender
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
+    writer
+        .worker
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+}
+
+fn history_record(snapshot: &Value) -> io::Result<Vec<u8>> {
+    let timestamp = snapshot
+        .get("captured_at")
+        .cloned()
+        .unwrap_or_else(|| json!(chrono::Utc::now().to_rfc3339()));
+    let envelope = json!({"schema_version":1, "timestamp":timestamp,
+        "category":"runtime_snapshot", "metrics":snapshot});
+    let mut bytes = serde_json::to_vec(&envelope)?;
+    bytes.push(b'\n');
+    if bytes.len() > MAX_RECORD_BYTES {
+        return Err(io::Error::other(
+            "performance history record exceeds size bound",
+        ));
+    }
+    Ok(bytes)
+}
+
 fn write_snapshot(dir: &Path, snapshot: &Value, history_limit: u64) -> io::Result<()> {
     let mut bytes = serde_json::to_vec(snapshot)?;
     bytes.push(b'\n');
     if bytes.len() > MAX_RECORD_BYTES {
         return Err(io::Error::other("performance snapshot exceeds size bound"));
+    }
+    let record = history_record(snapshot)?;
+    if record.len() as u64 > history_limit {
+        return Err(io::Error::other(
+            "performance history record exceeds rotation bound",
+        ));
     }
     fs::create_dir_all(dir)?;
     let pending = dir.join("latest.tmp");
@@ -210,18 +272,18 @@ fn write_snapshot(dir: &Path, snapshot: &Value, history_limit: u64) -> io::Resul
     }
     fs::rename(pending, latest)?;
     let history = dir.join("history.jsonl");
-    if fs::metadata(&history).is_ok_and(|m| m.len() + bytes.len() as u64 > history_limit) {
+    if fs::metadata(&history)
+        .is_ok_and(|m| m.len().saturating_add(record.len() as u64) > history_limit)
+    {
         let previous = dir.join("history.1.jsonl");
         if previous.exists() {
             fs::remove_file(&previous)?;
         }
         fs::rename(&history, previous)?;
     }
-    OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(history)?
-        .write_all(&bytes)
+    let mut file = OpenOptions::new().create(true).append(true).open(history)?;
+    file.write_all(&record)?;
+    file.flush()
 }
 
 #[cfg(test)]
@@ -275,7 +337,7 @@ mod tests {
     fn persistence_rotates_and_latest_is_valid() {
         let dir = std::env::temp_dir().join(format!("chau7-next-perf-{}", uuid::Uuid::new_v4()));
         let value = json!({"schema_version": 1, "sample": 42});
-        let size = serde_json::to_vec(&value).unwrap().len() as u64 + 1;
+        let size = history_record(&value).unwrap().len() as u64;
         for _ in 0..6 {
             write_snapshot(&dir, &value, size * 2).unwrap();
         }
@@ -286,6 +348,18 @@ mod tests {
         for name in ["history.jsonl", "history.1.jsonl"] {
             assert!(fs::metadata(dir.join(name)).unwrap().len() <= size * 2);
         }
+        let row: Value = serde_json::from_slice(
+            fs::read(dir.join("history.jsonl"))
+                .unwrap()
+                .split(|b| *b == b'\n')
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(row["schema_version"], 1);
+        assert!(row["timestamp"].is_string());
+        assert_eq!(row["category"], "runtime_snapshot");
+        assert_eq!(row["metrics"], value);
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 3);
         fs::remove_dir_all(dir).unwrap();
     }

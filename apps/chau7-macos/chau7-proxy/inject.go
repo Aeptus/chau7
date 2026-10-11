@@ -350,7 +350,8 @@ func repoOverrideKey(project string) string {
 		name = name[:40]
 	}
 	for i, ch := range name {
-		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+		allowed := (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_'
+		if !allowed {
 			name[i] = '_'
 		}
 	}

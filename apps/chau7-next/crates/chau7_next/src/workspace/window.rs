@@ -72,17 +72,21 @@ pub fn window_options(bounds: Option<Bounds<Pixels>>, cx: &App) -> WindowOptions
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         window_min_size: Some(size(px(420.0), px(240.0))),
         app_id: Some("com.chau7.next".into()),
-        window_background: background_appearance(Settings::get(cx).appearance.opacity),
+        window_background: background_appearance(
+            Settings::get(cx).appearance.opacity,
+            Settings::get(cx).appearance.window_blur_enabled,
+        ),
         ..TitleBar::window_options()
     }
 }
 
-/// The window material behind the terminal. On macOS it is always the blurred
-/// material, as in Swift (`createOverlayWindow`); elsewhere blur is only worth
-/// it once the terminal is see-through.
-pub fn background_appearance(opacity: f32) -> gpui::WindowBackgroundAppearance {
-    if cfg!(target_os = "macos") || opacity < 1.0 {
+/// The current Windows material setting is independent of opacity. Turning
+/// blur off retains ordinary transparency for a translucent terminal.
+pub fn background_appearance(opacity: f32, blur_enabled: bool) -> gpui::WindowBackgroundAppearance {
+    if blur_enabled && (cfg!(target_os = "macos") || opacity < 1.0) {
         gpui::WindowBackgroundAppearance::Blurred
+    } else if opacity < 1.0 {
+        gpui::WindowBackgroundAppearance::Transparent
     } else {
         gpui::WindowBackgroundAppearance::Opaque
     }
@@ -108,7 +112,7 @@ pub(super) fn apply_window_style(window: &mut Window, cx: &App) {
     let wanted = AppliedStyle {
         alpha: appearance.opacity,
         floating: appearance.window_floating,
-        background: background_appearance(appearance.opacity),
+        background: background_appearance(appearance.opacity, appearance.window_blur_enabled),
     };
     let id = window.window_handle().window_id();
     let previous = APPLIED.with(|a| a.borrow_mut().insert(id, wanted));
@@ -136,5 +140,25 @@ pub(super) fn apply_window_style(window: &mut Window, cx: &App) {
             crate::platform::window_style::set_window_floating(window, wanted.floating)
     {
         log::warn!("floating window: {err}");
+    }
+}
+
+#[cfg(test)]
+mod current_windows_tests {
+    use super::*;
+    #[test]
+    fn explicit_blur_off_preserves_plain_transparency() {
+        assert_eq!(
+            background_appearance(0.5, false),
+            gpui::WindowBackgroundAppearance::Transparent
+        );
+        assert_eq!(
+            background_appearance(1., false),
+            gpui::WindowBackgroundAppearance::Opaque
+        );
+        assert_eq!(
+            background_appearance(0.5, true),
+            gpui::WindowBackgroundAppearance::Blurred
+        );
     }
 }

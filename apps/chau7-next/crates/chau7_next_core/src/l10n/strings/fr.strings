@@ -3227,3 +3227,26 @@
 "settings.terminal.shellHistoryMaxLines.help" = "Chaque onglet conserve son propre historique de commandes. Ceci limite le total conservé pour les onglets fermés — les commandes les plus anciennes sont supprimées en premier au-delà de la limite, et chaque onglet garde au moins ses dernières. Les onglets ouverts ne sont jamais réduits. (0–1 000 000)";
 
 "pane.showPreview" = "Afficher l’aperçu (⌘⇧P)";
+
+"settings.productivity.permissions.fullDiskAccess" = "Accès complet au disque";
+
+/* Next current status defaults. Swift source uses these keys with fallback
+   literals but its resource tables omit them. See l10n/tests.rs evidence. */
+"settings.profileBar.defaultSettings" = "Default Settings";
+"settings.startHere.operationalState" = "Operational State";
+"settings.startHere.activeProfile" = "Active Profile";
+"settings.startHere.mcp.detail" = "Max tabs: %d";
+"settings.productivity.permissions.fda.granted" = "Granted";
+"settings.productivity.permissions.fda.granted.detail" = "Child processes (codex, claude, shells) can reach protected folders like ~/Downloads.";
+"settings.productivity.permissions.fda.denied" = "Denied";
+"settings.productivity.permissions.fda.denied.detail" = "Grant Full Disk Access to Chau7 Next so child processes can reach protected folders.";
+"settings.productivity.permissions.fda.unknown" = "Unknown";
+"settings.productivity.permissions.fda.unknown.detail" = "Full Disk Access status could not be determined.";
+"settings.startHere.protectedFolders.none" = "None tracked";
+"settings.startHere.protectedFolders.ready" = "Ready";
+"settings.startHere.protectedFolders.needsAccess" = "%d need access";
+"settings.startHere.permissions" = "Permissions";
+"settings.startHere.protectedFolders" = "Protected Folders";
+"settings.startHere.protectedFolders.detail" = "%d protected roots tracked";
+"settings.startHere.paths" = "Paths";
+"settings.startHere.hint" = "Use the sidebar or search to change any setting shown here. This page summarizes current state only.";
