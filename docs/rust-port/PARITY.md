@@ -1,4 +1,17 @@
-# Chau7 Next parity with the Swift app
+# Chau7 Next parity with the current Swift app
+
+## Source baseline and interpretation
+
+Current comparison baseline: official `Aeptus/chau7` main
+`7733b1f0c4440c0193915b036c38d5b83f31a1b3` (2026-10-11). Next baseline:
+`3e1639a85fe9bb7a4cc9873996b8fade14525ac4`, before the current parity batches.
+The original 1,175 rows described the April Swift app. Its 99% result is an
+historical result, not evidence of parity with current Chau7. The current-source
+audit appends delta rows and revises changed rows without changing their IDs.
+
+`done` means implementation evidence exists. It does not mean the complete Mac
+hand-test checklist has passed. Packaging, launch and MCP checks establish a
+smaller validation scope. Platform-specific limitations remain explicit.
 
 Parity is defined row by row in [`inventory/`](inventory/README.md): one file
 per Swift module, one row per feature a user can see or rely on. A module is at
