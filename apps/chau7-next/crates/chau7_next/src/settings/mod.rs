@@ -244,7 +244,7 @@ impl Settings {
         use SettingsSection as S;
         match section {
             S::General => {
-                // The startup directory is not edited here: kept.
+                // The shared terminal reset owns the startup directory.
                 let directory = self.general.default_directory.take();
                 let contact = self.general.remembered_bug_report_fields();
                 self.general = GeneralSettings::default();
