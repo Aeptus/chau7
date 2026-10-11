@@ -47,6 +47,7 @@ pub mod app_events;
 pub mod banner;
 pub mod executor;
 pub mod flash;
+pub mod hooks;
 pub mod routing;
 
 use std::collections::{HashMap, VecDeque};
@@ -109,6 +110,7 @@ pub fn init(cx: &mut App) {
     nc.limiter.config = Settings::get(cx).notifications.rules.rate_limit_config;
     banner::request_permission(&mut nc.banner);
     cx.set_global(nc);
+    hooks::init(cx);
     cx.spawn(async move |cx| {
         loop {
             cx.background_executor()
