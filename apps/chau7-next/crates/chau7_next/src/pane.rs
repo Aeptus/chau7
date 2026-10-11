@@ -19,7 +19,9 @@ use gpui::{
 };
 
 use crate::actions::{ScrollToBottom, ScrollToTop};
-use crate::panes::{DiffPane, EditorPane, PreviewPane, RepositoryPane, SidePaneEvent};
+use crate::panes::{
+    DashboardPane, DiffPane, EditorPane, PreviewPane, RepositoryPane, SidePaneEvent,
+};
 use crate::restore;
 use crate::session_store::{SavedPane, SavedTab};
 use crate::settings::Settings;
@@ -82,6 +84,7 @@ pub enum PaneItem {
     Preview(Entity<PreviewPane>),
     Diff(Entity<DiffPane>),
     Repository(Entity<RepositoryPane>),
+    Dashboard(Entity<DashboardPane>),
 }
 
 impl PaneItem {
@@ -92,6 +95,7 @@ impl PaneItem {
             PaneItem::Preview(e) => e.entity_id(),
             PaneItem::Diff(e) => e.entity_id(),
             PaneItem::Repository(e) => e.entity_id(),
+            PaneItem::Dashboard(e) => e.entity_id(),
         }
     }
 
@@ -102,6 +106,7 @@ impl PaneItem {
             PaneItem::Preview(e) => e.read(cx).focus_handle(cx),
             PaneItem::Diff(e) => e.read(cx).focus_handle(cx),
             PaneItem::Repository(e) => e.read(cx).focus_handle(cx),
+            PaneItem::Dashboard(e) => e.read(cx).focus_handle(cx),
         }
     }
 
@@ -112,6 +117,7 @@ impl PaneItem {
             PaneItem::Preview(e) => e.clone().into_any_element(),
             PaneItem::Diff(e) => e.clone().into_any_element(),
             PaneItem::Repository(e) => e.clone().into_any_element(),
+            PaneItem::Dashboard(e) => e.clone().into_any_element(),
         }
     }
 
@@ -298,6 +304,9 @@ impl PaneTree {
                 }
                 Node::Leaf(PaneItem::Diff(diff))
             }
+            SavedSplitNode::Dashboard { id, directory } => Node::Leaf(PaneItem::Dashboard(
+                self.create_dashboard(*id, directory.clone().unwrap_or_default(), window, cx),
+            )),
             SavedSplitNode::Repository { id, directory } => {
                 let repository = self.create_repository(*id, window, cx);
                 if let Some(directory) = non_empty(directory) {
@@ -476,6 +485,7 @@ impl PaneTree {
             SidePaneEvent::PreviewFile(path) => {
                 self.open_file_preview(Some(path.clone()), None, window, cx)
             }
+            SidePaneEvent::OpenDashboard(root) => self.open_dashboard(root.clone(), window, cx),
             SidePaneEvent::OpenEditor(path) => {
                 self.open_file_in_editor(path.clone(), None, window, cx);
             }
@@ -539,6 +549,44 @@ impl PaneTree {
         diff
     }
 
+    fn create_dashboard(
+        &mut self,
+        pane_id: PaneId,
+        root: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<DashboardPane> {
+        let dashboard = cx.new(|cx| DashboardPane::new(root, true, window, cx));
+        let id = dashboard.entity_id();
+        self.pane_ids.insert(id, pane_id);
+        let sub = cx.subscribe_in(&dashboard, window, move |this, _, event, window, cx| {
+            this.on_side_event(id, event, window, cx)
+        });
+        self.subscriptions.push((id, vec![sub]));
+        dashboard
+    }
+    /// Reuse the actual repository dashboard when already present in this split tree.
+    pub fn open_dashboard(&mut self, root: String, window: &mut Window, cx: &mut Context<Self>) {
+        let existing = self.leaves().into_iter().find_map(|item| {
+            if let PaneItem::Dashboard(view) = item {
+                (view.read(cx).repository_root() == root).then_some(view)
+            } else {
+                None
+            }
+        });
+        let dashboard = existing.unwrap_or_else(|| {
+            let view = self.create_dashboard(new_pane_id(), root, window, cx);
+            self.insert_leaf(
+                PaneItem::Dashboard(view.clone()),
+                Axis::Horizontal,
+                window,
+                cx,
+            );
+            view
+        });
+        self.set_focused(dashboard.entity_id(), cx);
+        self.focus_own(window, cx);
+    }
     fn create_repository(
         &mut self,
         pane_id: PaneId,
@@ -1064,6 +1112,10 @@ impl PaneTree {
                             id,
                             path: path_string(preview.read(cx).path()),
                         },
+                        PaneItem::Dashboard(d) => SavedSplitNode::Dashboard {
+                            id,
+                            directory: Some(d.read(cx).repository_root().to_owned()),
+                        },
                         PaneItem::Repository(r) => SavedSplitNode::Repository {
                             id,
                             directory: r
@@ -1305,7 +1357,7 @@ impl PaneTree {
                 PaneItem::Editor(editor) => editor.update(cx, |e, cx| e.settings_changed(cx)),
                 PaneItem::Preview(preview) => preview.update(cx, |p, cx| p.apply_settings(cx)),
                 PaneItem::Diff(diff) => diff.update(cx, |d, cx| d.apply_settings(cx)),
-                PaneItem::Repository(_) => {}
+                PaneItem::Repository(_) | PaneItem::Dashboard(_) => {}
             }
         }
     }

@@ -77,6 +77,7 @@ pub enum SidePaneEvent {
     PreviewFile(std::path::PathBuf),
     /// Open an actual companion file in this pane tree.
     OpenEditor(std::path::PathBuf),
+    OpenDashboard(String),
     /// The shown file or its state changed (saved layout, titles).
     Changed,
 }

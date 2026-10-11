@@ -1,5 +1,5 @@
 //! Live repository agent dashboard (AgentDashboardModel/View.swift).
-//! Click a group to open; dragging it still reorders tabs.
+//! Shared by repository-group overlays and persistent split panes.
 use super::SidePaneEvent;
 use crate::workspace::widgets::{button as base_button, chrome_input};
 use crate::{mcp::MainThread, theme::Chrome};
@@ -64,6 +64,16 @@ struct DashboardReply {
     reset_files: bool,
     close_forms: bool,
     open_plan: Option<std::path::PathBuf>,
+    focus_tab: Option<uuid::Uuid>,
+}
+fn successful_launch_tab(name: &str, response: &Value) -> Option<uuid::Uuid> {
+    if name != "runtime_session_create" || response.get("error").is_some() {
+        return None;
+    }
+    response
+        .get("tab_id")
+        .and_then(Value::as_str)
+        .and_then(crate::mcp::windows::parse_tab_id)
 }
 struct DashboardSnapshot {
     root: String,
@@ -109,7 +119,7 @@ impl DashboardPane {
     pub fn new(
         root: String,
         auto_open_plan: bool,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let timer = crate::observability::register_timer(
@@ -119,14 +129,26 @@ impl DashboardPane {
             "dashboard",
             1000,
         );
-        let task = cx.spawn_in(window, async move |this, cx| {
+        let task = cx.spawn(async move |this, cx| {
             let _timer = timer;
             loop {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
                 if this
-                    .update_in(cx, |this, _window, cx| {
-                        this.refresh_dashboard(cx);
-                        cx.notify();
+                    .update(cx, |this, cx| {
+                        let id = cx.entity_id();
+                        let visible = crate::workspace::AppData::live(cx).into_iter().any(
+                            |(handle, workspace)| {
+                                let selected = workspace.read(cx).dashboard_contains(id, cx);
+                                selected
+                                    && handle
+                                        .update(cx, |_, window, _| window.is_visible())
+                                        .unwrap_or(false)
+                            },
+                        );
+                        if visible {
+                            this.refresh_dashboard(cx);
+                            cx.notify();
+                        }
                     })
                     .is_err()
                 {
@@ -156,6 +178,9 @@ impl DashboardPane {
         if let Some(receiver) = &self.dashboard.pending {
             match receiver.try_recv() {
                 Ok(reply) => {
+                    if let Some(tab) = reply.focus_tab {
+                        self.open_dashboard_tab(tab, cx);
+                    }
                     self.dashboard.message = Some(reply.message);
                     self.dashboard.plan_to_open = reply.open_plan;
                     if reply.close_forms {
@@ -493,12 +518,7 @@ impl DashboardPane {
             .flat_map(|(_, workspace)| workspace.read(cx).dashboard_live_sessions(cx))
             .collect()
     }
-    fn open_dashboard_tab(
-        &mut self,
-        tab: uuid::Uuid,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_dashboard_tab(&mut self, tab: uuid::Uuid, cx: &mut Context<Self>) {
         for (handle, workspace) in crate::workspace::AppData::live(cx) {
             if workspace.read(cx).mcp_find(tab).is_some() {
                 cx.defer(move |cx| {
@@ -564,6 +584,7 @@ impl DashboardPane {
                 DashboardReply {
                     message,
                     close_forms: succeeded,
+                    focus_tab: successful_launch_tab(name, &parsed),
                     ..Default::default()
                 }
             },
@@ -931,6 +952,15 @@ impl DashboardPane {
                             .on_click(cx.listener(|this, _, _, cx| this.open_dashboard_plan(cx))),
                     )
                     .child(
+                        button("dashboard-split", "Open in Split", chrome, false).on_click(
+                            cx.listener(|this, _, _, cx| {
+                                cx.emit(SidePaneEvent::OpenDashboard(
+                                    this.repository_root().to_owned(),
+                                ));
+                            }),
+                        ),
+                    )
+                    .child(
                         button("dashboard-close", "Close", chrome, false)
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(SidePaneEvent::Close))),
                     ),
@@ -1216,8 +1246,8 @@ impl DashboardPane {
                         )
                         .child(
                             button("dashboard-agent-open", "Open Tab", chrome, false).on_click(
-                                cx.listener(move |this, _, window, cx| {
-                                    this.open_dashboard_tab(tab, window, cx);
+                                cx.listener(move |this, _, _, cx| {
+                                    this.open_dashboard_tab(tab, cx);
                                 }),
                             ),
                         )
@@ -1426,5 +1456,39 @@ impl Render for DashboardPane {
             self.plan_auto_opened = self.dashboard.pending.is_some();
         }
         element.unwrap_or_else(|| div().size_full().into_any_element())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn successful_agent_launch_targets_the_real_returned_tab() {
+        let id = uuid::Uuid::new_v4();
+        let response = json!({"id":"runtime-session","tab_id":id.to_string(),"state":"starting"});
+        assert_eq!(
+            successful_launch_tab("runtime_session_create", &response),
+            Some(id)
+        );
+        assert_eq!(
+            successful_launch_tab("runtime_session_stop", &response),
+            None
+        );
+    }
+    #[test]
+    fn failed_or_malformed_launch_never_selects_a_tab() {
+        let id = uuid::Uuid::new_v4();
+        for response in [
+            Value::Null,
+            json!({}),
+            json!({"tab_id":42}),
+            json!({"tab_id":"invalid"}),
+            json!({"tab_id":id.to_string(),"error":"Launch failed"}),
+        ] {
+            assert_eq!(
+                successful_launch_tab("runtime_session_create", &response),
+                None
+            );
+        }
     }
 }
