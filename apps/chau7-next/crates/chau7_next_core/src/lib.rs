@@ -40,6 +40,7 @@ pub mod history_events;
 pub mod history_monitor;
 pub mod history_record;
 pub mod history_store;
+pub mod incidents;
 pub mod injection_rules;
 pub mod inline_image;
 pub mod input;

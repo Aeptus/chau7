@@ -16,6 +16,7 @@ mod data_explorer;
 mod debug;
 mod hang_watchdog;
 mod history;
+mod incidents;
 mod l10n;
 mod logging;
 mod mcp;
@@ -94,6 +95,7 @@ fn main() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
     }
     logging::init(&root);
+    incidents::start(&root);
     platform::oslog::install_feature_intervals();
     logging::ai_pty::purge_large_logs(root.ai_logs_dir());
     protected_paths::init(&root);
@@ -241,6 +243,7 @@ fn main() {
                 if let Some(worker) = worker {
                     let _ = worker.join();
                 }
+                incidents::shutdown();
             })
         })
         .detach();

@@ -351,6 +351,11 @@ impl DataRoot {
         self.config_dir.join("reports")
     }
 
+    /// Bounded local incident evidence owned by Next.
+    pub fn incidents_dir(&self) -> PathBuf {
+        self.config_dir.join("incidents")
+    }
+
     /// State snapshots (`chau7-snapshot-<ts>.json`; Swift: `~/.chau7/snapshots`).
     pub fn snapshots_dir(&self) -> PathBuf {
         self.config_dir.join("snapshots")

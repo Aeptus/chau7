@@ -105,6 +105,8 @@ pub struct StateSnapshot {
     pub feature_flags: BTreeMap<String, bool>,
     pub recent_logs: Vec<String>,
     pub active_contexts: Vec<ContextState>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_incidents: Vec<crate::incidents::Breadcrumb>,
 }
 
 impl StateSnapshot {
@@ -198,6 +200,13 @@ pub fn local_report(
             "\n- [{}] {} (running {}ms)",
             ctx.id, ctx.operation, ctx.duration_ms
         ));
+    }
+    if !snapshot.recent_incidents.is_empty() {
+        report.push_str("\n\n## Recent local incidents\n```json\n");
+        report.push_str(
+            &serde_json::to_string_pretty(&snapshot.recent_incidents).unwrap_or_default(),
+        );
+        report.push_str("\n```");
     }
     report.push_str("\n\n\n## Feature Flags");
     for (flag, enabled) in &snapshot.feature_flags {
@@ -700,6 +709,7 @@ mod tests {
             .into_iter()
             .collect(),
             recent_logs: vec!["a".into(), "  ".into(), "b".into()],
+            recent_incidents: vec![],
             active_contexts: vec![ContextState {
                 id: "ABC234".into(),
                 operation: "op".into(),
@@ -792,6 +802,34 @@ mod tests {
             draft
                 .markdown(&snapshot(), "")
                 .contains("## Recent Events (last 1)\n- [tool] PreToolUse: msg")
+        );
+    }
+
+    #[test]
+    fn incident_evidence_is_local_and_old_snapshots_still_decode() {
+        let mut state = snapshot();
+        state
+            .recent_incidents
+            .push(crate::incidents::Breadcrumb::new(
+                state.timestamp,
+                crate::incidents::Kind::MainThreadHang,
+                crate::incidents::Severity::Warning,
+                "local incident test",
+                BTreeMap::new(),
+            ));
+        assert!(local_report(&state, "", state.timestamp).contains("local incident test"));
+        assert!(
+            !Draft::new(None)
+                .markdown(&state, "")
+                .contains("local incident test")
+        );
+        let mut old = serde_json::to_value(&state).unwrap();
+        old.as_object_mut().unwrap().remove("recentIncidents");
+        assert!(
+            serde_json::from_value::<StateSnapshot>(old)
+                .unwrap()
+                .recent_incidents
+                .is_empty()
         );
     }
 

@@ -204,6 +204,37 @@ fn monitor(shared: Arc<Shared>, directory: PathBuf) {
             let record = json!({"schema_version":1,"timestamp":chrono::Utc::now().to_rfc3339(),
                 "kind":"main_thread_hang","phase":observation.phase,"stale_ms":observation.stale_for.as_millis(),
                 "render_circuit_breaker_open":stalled,"parent_pid":std::process::id(),"launch_id":shared.launch_id});
+            crate::incidents::record(
+                chau7_next_core::incidents::Kind::MainThreadHang,
+                if stalled {
+                    chau7_next_core::incidents::Severity::Warning
+                } else {
+                    chau7_next_core::incidents::Severity::Info
+                },
+                if stalled {
+                    "Main thread stalled"
+                } else {
+                    "Main thread recovered"
+                },
+                std::collections::BTreeMap::from([
+                    (
+                        "phase".into(),
+                        if stalled { "stalled" } else { "healthy" }.into(),
+                    ),
+                    (
+                        "staleMillis".into(),
+                        observation.stale_for.as_millis().to_string(),
+                    ),
+                    ("launchID".into(), shared.launch_id.to_string()),
+                    (
+                        "diagnosticFile".into(),
+                        directory
+                            .join("latest-transition.json")
+                            .display()
+                            .to_string(),
+                    ),
+                ]),
+            );
             if let Err(error) = write_json(&directory.join("latest-transition.json"), &record) {
                 log::warn!("Hang breadcrumb write failed: {error}");
             }
