@@ -94,6 +94,8 @@ fn main() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
     }
     logging::init(&root);
+    // Writers and all tailers/sessions are still quiescent at this point.
+    monitoring::log_compactor::compact_owned_queues(&root);
     platform::oslog::install_feature_intervals();
     logging::ai_pty::purge_large_logs(root.ai_logs_dir());
     protected_paths::init(&root);
