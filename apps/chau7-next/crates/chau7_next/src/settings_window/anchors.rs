@@ -8,6 +8,18 @@ struct Scope {
     anchors: Rc<HashMap<&'static str, ScrollAnchor>>,
     labels: HashMap<String, &'static str>,
 }
+#[cfg(test)]
+thread_local! { static RENDERED: RefCell<std::collections::HashSet<&'static str>> = RefCell::new(Default::default()); }
+#[cfg(test)]
+pub(super) fn take_rendered_targets() -> std::collections::HashSet<&'static str> {
+    RENDERED.with(|seen| std::mem::take(&mut *seen.borrow_mut()))
+}
+#[cfg(test)]
+fn record_rendered_target(id: &'static str) {
+    RENDERED.with(|seen| {
+        seen.borrow_mut().insert(id);
+    });
+}
 thread_local! { static ACTIVE: RefCell<Option<Scope>> = const { RefCell::new(None) }; }
 fn normalized(title: &str) -> String {
     title
@@ -42,6 +54,24 @@ pub(super) fn with_scope<T>(
             .or_insert(setting.anchor_id);
     }
     for (label, id) in [
+        ("Automatic profile switching", "profileAutoSwitch"),
+        ("Version Information", "about"),
+        ("System Information", "aboutDiagnostics"),
+        ("Recent Repositories", "repositoryMetadata"),
+        ("Dangerous commands", "dangerousCommands"),
+        ("Sixel protocol", "sixel"),
+        ("Cmd+click opens paths and URLs", "cmdClick"),
+        ("Ctrl+click opens paths and URLs", "cmdClick"),
+        ("Open links in", "urlHandler"),
+        ("Semantic scrollback search", "search"),
+        ("Find: case sensitive by default", "findDefaults"),
+        ("Indentation", "textEditor"),
+        ("SSH Config Sync", "sshProfiles"),
+        ("Status & Permissions", "notificationStatus"),
+        ("AI Notification Essentials", "aiToolNotifications"),
+        ("Long-Running (seconds)", "shellThresholds"),
+        ("Inactivity (minutes)", "appThresholds"),
+        ("Telemetry History", "telemetryRetention"),
         ("Font", "fontFamily"),
         ("Custom font", "fontFamily"),
         ("Size", "fontSize"),
@@ -82,10 +112,9 @@ pub(super) fn with_scope<T>(
             "restoredScrollback",
         ),
     ] {
-        if let Some(setting) = SEARCHABLE_SETTINGS
-            .iter()
-            .find(|setting| setting.id == id && setting.section == section)
-        {
+        if let Some(setting) = SEARCHABLE_SETTINGS.iter().find(|setting| {
+            (setting.id == id || setting.anchor_id == id) && setting.section == section
+        }) {
             labels.entry(normalized(label)).or_insert(setting.anchor_id);
             labels
                 .entry(normalized(&crate::l10n::tr(label)))
@@ -110,7 +139,12 @@ pub(super) fn for_title(title: &str) -> Option<ScrollAnchor> {
         let scope = active.borrow();
         let scope = scope.as_ref()?;
         let id = scope.labels.get(&normalized(title))?;
-        scope.anchors.get(id).cloned()
+        let (key, anchor) = scope.anchors.get_key_value(id)?;
+        #[cfg(test)]
+        record_rendered_target(key);
+        #[cfg(not(test))]
+        let _ = key;
+        Some(anchor.clone())
     })
 }
 pub(super) fn for_id(id: &str) -> Option<ScrollAnchor> {
@@ -122,7 +156,12 @@ pub(super) fn for_id(id: &str) -> Option<ScrollAnchor> {
             .any(|setting| setting.section == scope.section && setting.anchor_id == id)
             || (id == "permissions" && scope.section == SettingsSection::SnippetsTools);
         if present {
-            scope.anchors.get(id).cloned()
+            let (key, anchor) = scope.anchors.get_key_value(id)?;
+            #[cfg(test)]
+            record_rendered_target(key);
+            #[cfg(not(test))]
+            let _ = key;
+            Some(anchor.clone())
         } else {
             None
         }

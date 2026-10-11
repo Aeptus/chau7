@@ -139,6 +139,15 @@ impl NotifState {
     }
 
     /// Copy what the engine knows (history, permission) for this frame.
+    pub(super) fn focus_search_target(&mut self, anchor: &str) {
+        self.tab = match anchor {
+            "notificationTriggers" => NotifTab::Advanced,
+            "shellThresholds" | "appThresholds" => NotifTab::Thresholds,
+            "eventMonitoring" => NotifTab::Monitoring,
+            _ => NotifTab::Overview,
+        };
+    }
+
     pub(super) fn refresh(&mut self, cx: &App) {
         self.hooks = engine::hooks::snapshot(cx);
         if let Some(nc) = cx.try_global::<NotificationCenter>() {

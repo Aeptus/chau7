@@ -96,44 +96,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             })
     });
 
-    let cursor = [
-        ("Block", CursorShape::Block),
-        ("Bar", CursorShape::Bar),
-        ("Underline", CursorShape::Underline),
-    ]
-    .into_iter()
-    .map(|(label, shape)| {
-        let active = s.cursor_shape == shape;
-        chip(
-            SharedString::from(format!("cursor-{label}")),
-            label,
-            active,
-            chrome,
-        )
-        .on_click(move |_, _, cx| update(cx, |s| s.appearance.cursor_shape = shape.clone()))
-    });
-    let cursor_colors = CURSOR_COLORS.iter().map(|(label, hex)| {
-        let active = s.cursor_color.eq_ignore_ascii_case(hex);
-        chip(
-            SharedString::from(format!("cursor-color-{label}")),
-            *label,
-            active,
-            chrome,
-        )
-        .when(!hex.is_empty(), |d| {
-            d.child(
-                div()
-                    .ml_1()
-                    .size(px(8.0))
-                    .rounded_full()
-                    .bg(crate::terminal::paint::cursor_color(s.color_scheme, hex)),
-            )
-            .flex()
-            .items_center()
-        })
-        .on_click(move |_, _, cx| update(cx, |s| s.appearance.cursor_color = hex.to_string()))
-    });
-
     titled("Text", chrome)
         .child(row("Font", picker, chrome))
         .child(row(
@@ -198,6 +160,57 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                     "The quick brown fox jumps over the lazy dog  -> => != ===",
                 )),
         )
+        .child(row(
+            "Padding",
+            stepper("padding", format!("{:.0} px", s.padding), chrome, |s, d| {
+                s.appearance.padding = (s.appearance.padding + 2.0 * d as f32).clamp(0.0, 40.0)
+            }),
+            chrome,
+        ))
+}
+
+pub(super) fn cursor(ctx: &SectionContext) -> gpui::Div {
+    let chrome = ctx.chrome;
+    let s = &ctx.settings.appearance;
+    let cursor = [
+        ("Block", CursorShape::Block),
+        ("Bar", CursorShape::Bar),
+        ("Underline", CursorShape::Underline),
+    ]
+    .into_iter()
+    .map(|(label, shape)| {
+        let active = s.cursor_shape == shape;
+        chip(
+            SharedString::from(format!("cursor-{label}")),
+            label,
+            active,
+            chrome,
+        )
+        .on_click(move |_, _, cx| update(cx, |s| s.appearance.cursor_shape = shape.clone()))
+    });
+    let cursor_colors = CURSOR_COLORS.iter().map(|(label, hex)| {
+        let active = s.cursor_color.eq_ignore_ascii_case(hex);
+        chip(
+            SharedString::from(format!("cursor-color-{label}")),
+            *label,
+            active,
+            chrome,
+        )
+        .when(!hex.is_empty(), |d| {
+            d.child(
+                div()
+                    .ml_1()
+                    .size(px(8.0))
+                    .rounded_full()
+                    .bg(crate::terminal::paint::cursor_color(s.color_scheme, hex)),
+            )
+            .flex()
+            .items_center()
+        })
+        .on_click(move |_, _, cx| update(cx, |s| s.appearance.cursor_color = hex.to_string()))
+    });
+
+    titled("Cursor", chrome)
         .child(row("Cursor", div().flex().gap_1().children(cursor), chrome))
         .child(row(
             "Cursor color",
@@ -229,13 +242,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                         Some((rate * 10.0).round() / 10.0).map(|r: f32| r.clamp(0.3, 2.0));
                 },
             ),
-            chrome,
-        ))
-        .child(row(
-            "Padding",
-            stepper("padding", format!("{:.0} px", s.padding), chrome, |s, d| {
-                s.appearance.padding = (s.appearance.padding + 2.0 * d as f32).clamp(0.0, 40.0)
-            }),
             chrome,
         ))
 }
