@@ -24,9 +24,12 @@ Paths come from `DataRoot`; Linux, Windows and isolated test roots use their
 own application data locations. Disk work runs on one background worker with
 one pending snapshot. A busy disk drops a queued sample rather than creating
 an unbounded backlog. Each snapshot is capped at 1 MiB; the two history files
-are capped at 4 MiB each. The latest file is replaced after serialization.
+are capped at 8 MiB each. The latest file is replaced after serialization.
 On Windows replacement removes the previous latest file before renaming.
-Persistence failures appear in the application log.
+History lines use `schema_version`, `timestamp`, `category` and `metrics`;
+`latest.json` retains the full snapshot shape used by MCP and the UI.
+Accepted records drain on the background quit worker. Repeated write failures
+produce one operational warning until a successful write resets it.
 
 ## Measurements and limits
 

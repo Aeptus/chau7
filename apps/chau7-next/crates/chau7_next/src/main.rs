@@ -218,9 +218,13 @@ fn main() {
             // Shells get SIGTERM at once (`closeSessionForTermination`).
             terminal::session::terminate_all_for_quit();
             logging::flush();
+            let performance_worker = performance::stop(cx);
             let hang_worker = hang_watchdog::stop(cx);
             let worker = observability::shutdown(cx);
             cx.background_spawn(async move {
+                if let Some(worker) = performance_worker {
+                    let _ = worker.join();
+                }
                 if let Some(worker) = hang_worker {
                     let _ = worker.join();
                 }
