@@ -18,7 +18,7 @@ the rows below keep the user-visible effects.
 |---|---|---|---|---|---|---|
 | PRF-001 | Terminal text and backgrounds drawn on the GPU | `Performance/RustMetalDisplayCoordinator.swift`, `Performance/MetalTerminalRenderer.swift` | | `chau7_next/src/terminal/view.rs` (GPUI `paint_quad`, `shape_line`) | done | Metal |
 | PRF-002 | "Metal Renderer" switches terminal text, backgrounds, decorations and images between GPUI GPU drawing and a bounded CPU BGRA surface; existing tabs refresh font metrics. GPUI window composition still needs a platform graphics device, so startup without one remains unsupported | `Performance/RustMetalDisplayCoordinator.swift` (`init?`), `Settings/Views/ScrollbackPerfSettingsView.swift` | CPU raster/cache tests; native styled-text fixture | chau7_next/src/terminal/cpu_renderer.rs; chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs | partial | CoreText, Metal |
-| PRF-003 | Fallback fonts, double-width/bold/italic glyphs and complete multi-character grapheme clusters with continuation-cell spacing | `Performance/MetalTerminalRenderer.swift`; `RustBackend/RustTerminalView+Rendering.swift` |  | `chau7_next/src/terminal/view.rs` (`CellMetrics`, `fallback_fonts`) | partial | CoreText |
+| PRF-003 | Fallback fonts, double-width/bold/italic glyphs and complete multi-character grapheme clusters with continuation-cell spacing | `Performance/MetalTerminalRenderer.swift`; `RustBackend/RustTerminalView+Rendering.swift` | 17 native GridCopy paint fixtures; isolated macOS CPU/GPU-requested screenshots at e8f32e6014b0 | chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs | done | CoreText |
 | PRF-004 | Crisp text on Retina and when a window moves between screens with different scale factors | `Performance/RustMetalDisplayCoordinator.swift` (`configureFont`), `RustBackend/RustTerminalView.swift` (`viewDidMoveToWindow`) | | GPUI | done | |
 | PRF-005 | Rendering paced to the display refresh rate (ProMotion 120 Hz), vsync on, three drawables in flight | `Performance/OptimalMetalView.swift` (`configureForLowLatency`), `RustBackend/RustTerminalView.swift` (`displayRefreshInterval`) | | GPUI | done | CAMetalLayer, CVDisplayLink |
 | PRF-006 | Cursor blinks every 500 ms but stays solid for 1 s after typing or output; blink timer paused for suspended tabs | `Performance/RustMetalDisplayCoordinator.swift` (`handleBlinkTick`, `pauseBlinkTimer`, `setNeedsSync`) |  | `chau7_next/src/terminal/view.rs` (`blink_tick`), `chau7_next/src/terminal/paint.rs` (`Overlays::blink_hold`) | done |  |
@@ -51,11 +51,15 @@ the rows below keep the user-visible effects.
   The source switch works; automatic app startup without a graphics device is
   the remaining partial facet. The earlier claim that off only disabled
   ligatures is obsolete.
-- PRF-003: a native macOS fixture on `175fd1ee3b1e` confirms colors, bold,
-  italic, underlines, combining accents and CJK spacing. It also reveals that
-  ZWJ family/profession emoji and skin tone modifiers are split across shapes.
-  The buffer preserves all scalars; native complete-cluster acceptance fails.
-  Keep this row partial until the corrected painter passes that fixture.
+- PRF-003: native macOS acceptance on `e8f32e6014b0` passes colors,
+  bold/italic/underline, combining accents, composed woman-technologist skin
+  tone, one family glyph, French flag and CJK. The fix reconstructs extended
+  grapheme clusters across native cells before shaping; following text retains
+  its grid-column position. Both CPU-off/GPU-on settings were checked in an
+  isolated test bundle/profile, with screenshots preserved in the parity
+  recovery evidence. The earlier `175fd1ee3b1e` split-emoji failure is fixed.
+  That build predates actual-backend diagnostics; settings are recorded as
+  requested backend, with no inferred claim about a silent fallback.
 - PRF-014: history records use schema_version/timestamp/category/metrics,
   with 8 MiB live and archive bounds and a 1 MiB record bound. The latest
   snapshot keeps the live MCP/UI shape. Accepted records drain on the quit

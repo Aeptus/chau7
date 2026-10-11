@@ -37,11 +37,15 @@ Last updated 2026-10-11.
 - First current parity batch: ordinary/restored repository grouping, complete
   grapheme painting, CTO recursion sentinel, Spanish/plural backend and macOS
   file-watcher recovery. Numeric performance exports are described in
-  [PERFORMANCE.md](PERFORMANCE.md); full runtime observation is still pending.
+  [PERFORMANCE.md](PERFORMANCE.md). Independent native hang sampling, bounded
+  sampled metrics history, native Instruments intervals and memory retention
+  are implemented. Native emoji/style acceptance passes at e8f32e6014b0;
+  current-source parity and the complete Mac checklist remain in progress.
 - Historical result against the **April 2026** Swift app: 1,174 of 1,175 inventory rows
   finished (1,129 done, 45 not needed in the Rust design). The one partial
-  row is PRF-002: GPUI has no CPU renderer, so the "Metal Renderer" switch is
-  saved and explained but cannot switch to CPU drawing.
+  row was PRF-002. That historical limitation is superseded: Next now has a
+  terminal CPU rasterizer and a working renderer switch. GPUI window startup
+  without a platform graphics device remains an open facet.
 - Rebased on `Aeptus/chau7` main (2026-10-09), with the coexistence rules
   updated for the newer Swift app (relay credentials, parent PID, prompt
   rules, per-tab history, Codex wrapper, attribution headers, CHG2 grid
