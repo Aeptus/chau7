@@ -34,6 +34,7 @@ apps/
       chau7_optim/          #   Context Token Optimization engine
       chau7_md/             #   Terminal markdown renderer
     chau7-proxy/            # Go TLS proxy for API analytics
+  chau7-next/               # Chau7 Next: Rust/GPUI port, ships side by side (Cargo)
   chau7-ios/                # Native iOS companion app
 services/
   chau7-relay/              # Cloudflare Workers relay
@@ -44,6 +45,7 @@ scripts/                    # Repo-level CI and build orchestration
 - [macOS app](apps/chau7-macos/README.md)
 - [iOS app](apps/chau7-ios/README.md)
 - [Rust terminal crate](apps/chau7-macos/rust/chau7_terminal/README.md)
+- [Chau7 Next (Rust/GPUI port)](apps/chau7-next/README.md), plan in [docs/rust-port](docs/rust-port/)
 - [Relay service](services/chau7-relay/README.md)
 - [Remote agent](services/chau7-remote/README.md)
 - [Remote protocol](services/chau7-remote/docs/PROTOCOL.md)

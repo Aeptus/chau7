@@ -19,7 +19,7 @@ or stop sharing, which ends every viewing.
 
 ## Frames
 
-Same 20-byte header as every other frame (`SPEC-Remote-Control.md`). Payloads
+Same 20-byte header as every other frame (`services/chau7-remote/docs/PROTOCOL.md`). Payloads
 are UTF-8 JSON except `VIEWER_OUTPUT`. These frames are sent in clear between
 the agent and the relay: viewers have no pairing keys. See "Security" below.
 
@@ -77,8 +77,13 @@ Chau7 Next (`apps/chau7-next/crates/chau7_next/src/remote/mod.rs`,
 ## Relay (`services/chau7-relay`)
 
 Routing lives in `src/viewer.js` (tested by `test/viewer.test.js`), wired
-into the session Durable Object in `src/session.ts` and the worker in
-`src/worker.ts`.
+into the session Durable Object in `src/session.ts` (tested through the real
+Worker by `test/integration/viewer.test.ts`) and the worker in
+`src/worker.ts`. Viewer sockets are hibernatable WebSockets tagged `viewer`;
+their routing state (code, viewer id) lives in the socket attachments and the
+share code in the session's storage, so it survives eviction. Viewers need no
+relay credential (the relay keyring, `RELAY_AUTH_KEYS`, only admits Macs and
+phones); a misconfigured relay still refuses them.
 
 - Registry: on `VIEWER_SHARE` from a Mac, the Mac's session object records
   the code in a registry object named `share:<code>` (first device wins; a
@@ -86,7 +91,8 @@ into the session Durable Object in `src/session.ts` and the worker in
   the Mac stops sharing, changes code, or disconnects. Viewer frames from the
   Mac (0x60 to 0x64) are never forwarded to the phone.
 - `GET /view/<code>` (WebSocket, no pairing token): the code must be 8
-  letters or digits; attempts are limited to 60 per hour per IP; the worker
+  letters or digits; attempts are limited per IP (burst of 30, then 60 per
+  hour, in a session object named `view-ip:<ip>`); the worker
   looks the code up (404 when unknown) and hands the socket to the Mac's
   session object. There the socket is rejected at once, with a
   `VIEWER_DECISION` (`viewer_id` empty) then a close, when the code is not
@@ -103,7 +109,9 @@ into the session Durable Object in `src/session.ts` and the worker in
   (the leave always carries the socket's own id); everything else is
   dropped. A viewer socket that closes after joining becomes a
   `VIEWER_LEAVE` to the agent. When the Mac disconnects, every viewer gets a
-  `VIEWER_LEAVE` and is closed.
+  `VIEWER_LEAVE` and is closed; the share ends too, unless another Mac
+  connection already replaced this one (the agent registers the share again
+  on its new connection).
 
 ## Viewer client
 
@@ -115,8 +123,9 @@ decision, then writes `OUTPUT` and `SNAPSHOT` payloads to stdout and other
 frames as status lines on stderr, until the owner ends the viewing or
 Ctrl-C (which sends `VIEWER_LEAVE`). `-id` reuses an id, to be a known
 viewer. `go test ./internal/viewer -run TestEndToEnd` runs the agent, a fake
-app, the relay (`wrangler dev`) and this client together (see the test for
-the command).
+app, the relay (`wrangler dev` with a test keyring) and this client together
+(see the test for the command; off macOS, put a fake `ioreg` printing an
+`IOPlatformUUID` line on `PATH`, since the agent's state protection needs it).
 
 An iOS or web viewer would do the same and render the inner frames with the
 existing terminal views, read only.

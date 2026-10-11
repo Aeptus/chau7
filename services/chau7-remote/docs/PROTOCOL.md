@@ -163,6 +163,10 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
 - `0x50 APPROVAL_REQUEST` (encrypted, JSON)
 - `0x51 APPROVAL_RESPONSE` (encrypted, JSON)
 - `0x52 NOTIFICATION_EVENT` (encrypted, JSON)
+- `0x60` to `0x64` VIEWER_SHARE, VIEWER_JOIN, VIEWER_DECISION, VIEWER_LEAVE,
+  VIEWER_OUTPUT (cleartext, read-only viewers of a terminal shared by Chau7
+  Next; the Swift app never sends them. See
+  `docs/remote-control/VIEWER-PROTOCOL.md`)
 - `0x7F ERROR` (encrypted, JSON)
 
 JSON payloads are UTF-8.
