@@ -63,7 +63,7 @@ fn other_languages_only_miss_the_known_keys() {
         "settings.about.openAcknowledgments",
         "settings.about.stackSummary",
     ];
-    for lang in [Lang::Fr, Lang::Ar, Lang::He] {
+    for lang in [Lang::Fr, Lang::Es, Lang::Ar, Lang::He] {
         let t = table(lang);
         for key in en.keys() {
             assert!(
@@ -85,7 +85,7 @@ fn fallback_to_the_english_default() {
     // Missing in fr/ar/he but present in English: the default (L10-005),
     // and with no default the English text. The Swift tables of October
     // 2026 translate every key, so this only runs when one is missing.
-    for lang in [Lang::Fr, Lang::Ar, Lang::He] {
+    for lang in [Lang::Fr, Lang::Es, Lang::Ar, Lang::He] {
         let en = table(Lang::En);
         if let Some(key) = en.keys().find(|k| !table(lang).contains_key(*k)) {
             assert_eq!(localized(lang, key, "Fallback"), "Fallback");
@@ -180,6 +180,8 @@ fn rtl_detection() {
 
 #[test]
 fn printf_formats() {
+    let _guard = LANGUAGE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    set_current(Lang::En);
     assert_eq!(format_printf("%d snippets", &[Arg::Int(3)]), "3 snippets");
     assert_eq!(format_printf("Tab %@", &["x".into()]), "Tab x");
     assert_eq!(
@@ -257,4 +259,16 @@ fn relative_ages() {
     set_current(Lang::En);
     assert_eq!(relative_age(300), "5 minutes ago");
     assert_eq!(relative_age(3600), "1 hour ago");
+}
+
+#[test]
+fn spanish_resolution_and_formatting() {
+    assert_eq!(resolve("system", &prefs(&["es-MX", "en"])), Lang::Es);
+    assert_eq!(resolve("es", &prefs(&["fr"])), Lang::Es);
+    assert_eq!(localized(Lang::Es, "action.cancel", "Cancel"), "Cancelar");
+    assert_eq!(f::decimal(Lang::Es, 1234.5, 1), "1234,5");
+    assert_eq!(f::decimal(Lang::Es, 10000.5, 1), "10.000,5");
+    assert_eq!(f::percent(Lang::Es, 0.5), "50\u{00A0}%");
+    assert_eq!(f::long_date(Lang::Es, when()), "12 de enero de 2024");
+    assert_eq!(f::short_time(Lang::Es, when()), "15:45");
 }
