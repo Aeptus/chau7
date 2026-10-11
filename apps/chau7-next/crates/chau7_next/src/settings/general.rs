@@ -90,6 +90,8 @@ pub struct GeneralSettings {
     /// `allowProtectedFolderAccess` (`[next] allow_protected_folder_access`):
     /// background repo detection may read Downloads, Desktop, Documents...
     pub allow_protected_folder_access: bool,
+    /// Next-only counterpart of the hidden Full Disk Access guard preference.
+    pub full_disk_access_guard_enabled: bool,
     /// `bugReport.contactName` (`[next] bug_report_contact_name`): remembered
     /// between reports by "Remember for future reports".
     pub bug_report_contact_name: String,
@@ -114,6 +116,7 @@ impl Default for GeneralSettings {
             load_config_files: true,
             icloud_sync: false,
             allow_protected_folder_access: true,
+            full_disk_access_guard_enabled: true,
             bug_report_contact_name: String::new(),
             bug_report_contact_handle: String::new(),
             bug_report_issue_endpoint: String::new(),
@@ -169,6 +172,12 @@ fn toml_string(value: &str) -> String {
 
 impl SettingsDomain for GeneralSettings {
     fn load(&mut self, src: &ConfigSource) {
+        if let Some(value) = src
+            .next("full_disk_access_guard_enabled")
+            .and_then(RawValue::as_bool)
+        {
+            self.full_disk_access_guard_enabled = value;
+        }
         if let Some(general) = &src.file.general {
             self.default_directory = general.default_directory.clone().filter(|s| !s.is_empty());
         }
@@ -237,6 +246,10 @@ impl SettingsDomain for GeneralSettings {
     /// Edited in the Shell section of the settings window (SET-019).
     /// The default directory is edited in the Shell section (SET-019).
     fn save(&self, out: &mut ConfigSink) {
+        out.set_next(
+            "full_disk_access_guard_enabled",
+            self.full_disk_access_guard_enabled,
+        );
         let general = out.file.general.get_or_insert_with(Default::default);
         general.default_directory = Some(self.default_directory.clone().unwrap_or_default());
         out.set_next(
@@ -318,6 +331,7 @@ mod tests {
             load_config_files: false,
             icloud_sync: true,
             allow_protected_folder_access: false,
+            full_disk_access_guard_enabled: false,
             bug_report_contact_name: "Ada \"A\" Lovelace".into(),
             bug_report_contact_handle: "ada@example.com".into(),
             bug_report_issue_endpoint: "https://issues.example.com/report".into(),
@@ -347,6 +361,7 @@ mod tests {
         assert!(d.load_config_files);
         assert!(!d.icloud_sync);
         assert!(d.allow_protected_folder_access);
+        assert!(d.full_disk_access_guard_enabled);
     }
 
     #[test]
