@@ -27,14 +27,6 @@ use super::{AppLanguage, AppTheme, CursorShape, HighlightScope, Settings};
 /// File name proposed by the export dialog.
 pub const EXPORT_FILE_NAME: &str = "chau7-settings.json";
 
-/// Shells the Swift `ShellType` names by path.
-const KNOWN_SHELLS: [&str; 4] = [
-    "/bin/zsh",
-    "/bin/bash",
-    "/opt/homebrew/bin/fish",
-    "/usr/local/bin/fish",
-];
-
 /// `defaultExportableSettings` with `home` as the start directory.
 fn default_template(home: &str) -> Map<String, Value> {
     // Several small literals: one `json!` this long overflows the macro
@@ -176,14 +168,9 @@ pub fn export_json(settings: &Settings, home: &str) -> String {
     set("cursorBlink", json!(a.cursor_blink));
 
     let t = &settings.terminal;
-    match t.shell.as_deref() {
-        None => set("shellType", json!("system")),
-        Some(path) if KNOWN_SHELLS.contains(&path) => set("shellType", json!(path)),
-        Some(path) => {
-            set("shellType", json!("custom"));
-            set("customShellPath", json!(path));
-        }
-    }
+    let (shell_type, custom_shell_path) = t.effective_shell_type();
+    set("shellType", json!(shell_type.raw_value()));
+    set("customShellPath", json!(custom_shell_path));
     set("scrollbackLines", json!(t.scrollback_lines));
     set("shellHistoryMaxLines", json!(t.shell_history_max_lines));
     set("bellEnabled", json!(t.bell_enabled));
@@ -204,10 +191,6 @@ pub fn export_json(settings: &Settings, home: &str) -> String {
         json!(a.rendering.inactive_view_max_fps.clamp(1, 120)),
     );
     set("useMetalRenderer", json!(a.rendering.gpu_renderer));
-    if let Some(kind) = t.shell_type {
-        set("shellType", json!(kind.raw_value()));
-        set("customShellPath", json!(t.custom_shell_path));
-    }
 
     set(
         "newTabPosition",
