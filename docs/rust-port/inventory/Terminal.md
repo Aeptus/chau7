@@ -87,7 +87,7 @@ reported to notifications, telemetry and remote control.
 
 | TRM-067 | Bounded incremental OSC9 parser supports BEL/ST split across PTY chunks; distinguish chau7 key/value messages from foreign program notifications | `Chau7Core/TerminalOSC9Parser.swift`; `Terminal/Session/TerminalSessionModel+ShellIntegration.swift` | TerminalOSC9ParserTests | chau7_next_core/src/shell_integration.rs | partial |  |
 
-| TRM-068 | Stable display title removes spinner prefixes and suppresses redundant updates while preserving substantive title changes | `Chau7Core/TerminalTitleChurnPolicy.swift`; `Terminal/Session/TerminalSessionModel+TerminalUIState.swift` | TerminalTitleChurnPolicyTests |  | missing |  |
+| TRM-068 | Stable display title removes spinner prefixes and suppresses redundant updates while preserving substantive title changes | `Chau7Core/TerminalTitleChurnPolicy.swift`; `Terminal/Session/TerminalSessionModel+TerminalUIState.swift` | 3 exact title/grapheme/churn regressions | chau7_next_core/src/terminal_title.rs; chau7_next/src/terminal/session.rs | done |  |
 
 ## Notes
 

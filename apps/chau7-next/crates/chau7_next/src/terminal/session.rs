@@ -733,8 +733,12 @@ impl TerminalSession {
         let now = now_secs();
 
         if let Some(title) = title {
-            self.title = Some(title).filter(|t| !t.trim().is_empty());
-            metadata_changed = true;
+            let stable = chau7_next_core::terminal_title::stable_display_title(&title);
+            let next = (!stable.is_empty()).then(|| stable.to_string());
+            if next != self.title {
+                self.title = next;
+                metadata_changed = true;
+            }
         }
 
         // Typed input first (the command line), then the marks, then the

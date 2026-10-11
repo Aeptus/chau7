@@ -108,6 +108,7 @@ pub mod terminal_analytics;
 pub mod terminal_import;
 pub mod terminal_key_press;
 pub mod terminal_prompt_notification;
+pub mod terminal_title;
 pub mod token_optimization;
 pub mod welcome;
 
