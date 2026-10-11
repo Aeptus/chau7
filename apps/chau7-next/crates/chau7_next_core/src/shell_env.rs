@@ -247,22 +247,38 @@ pub enum EnvChange {
     Set(String, String),
 }
 
+/// Folders of the Swift app that its shells point variables at, from
+/// `DataRoot::swift_shell_paths` (the only place that knows them).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwiftShellPaths {
+    /// Token optimizer wrappers, put in front of `PATH`.
+    pub cto_bin: std::path::PathBuf,
+    /// Per-tab shell history (`HISTFILE=<dir>/<tab>.zsh_history`).
+    pub history_dir: std::path::PathBuf,
+    /// Last component of the Swift app's temporary shell integration folder
+    /// (its `ZDOTDIR`, `BASH_ENV` and fish `XDG_CONFIG_HOME` point inside).
+    pub integration_dir_name: &'static str,
+}
+
 /// Variables the Swift app sets for its shells that must not leak into
 /// Chau7 Next's shells when Chau7 Next is started from a Chau7 tab
 /// (`open -a "Chau7 Next"` or `cargo run`). Without this, shells in Chau7 Next
-/// would report events to Chau7's sockets and logs, and route API calls
-/// through Chau7's analytics proxy. `swift_cto_bin` (the Swift app's token
-/// optimizer wrappers, `DataRoot::swift_cto_bin_dir`) is dropped from `PATH`,
-/// so commands in Chau7 Next never go through Chau7's wrappers.
-pub fn inherited_cleanup(vars: &[(String, String)], swift_cto_bin: &Path) -> Vec<EnvChange> {
+/// would report events to Chau7's sockets and logs, write Chau7's per-tab
+/// history files, and route API calls through Chau7's analytics proxy. The
+/// Swift app's token optimizer wrappers and Codex proxy wrapper are dropped
+/// from `PATH`, so commands in Chau7 Next never go through Chau7's wrappers.
+pub fn inherited_cleanup(vars: &[(String, String)], swift: &SwiftShellPaths) -> Vec<EnvChange> {
     let get = |key: &str| vars.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
     let mut changes = Vec::new();
     if let Some(path) = get("PATH") {
-        let wrapper = swift_cto_bin.to_string_lossy();
-        let wrapper = wrapper.trim_end_matches('/');
+        let cto = swift.cto_bin.to_string_lossy();
+        let mut wrappers = vec![cto.trim_end_matches('/').to_string()];
+        if let Some(codex) = get("CHAU7_CODEX_PROXY_WRAPPER_DIR").filter(|d| !d.is_empty()) {
+            wrappers.push(codex.trim_end_matches('/').to_string());
+        }
         let kept: Vec<&str> = path
             .split(':')
-            .filter(|entry| entry.trim_end_matches('/') != wrapper)
+            .filter(|entry| !wrappers.iter().any(|w| w == entry.trim_end_matches('/')))
             .collect();
         let cleaned = kept.join(":");
         if cleaned != path {
@@ -276,6 +292,12 @@ pub fn inherited_cleanup(vars: &[(String, String)], swift_cto_bin: &Path) -> Vec
         {
             changes.push(EnvChange::Remove(key.clone()));
         }
+    }
+    // Per-tab history of the Swift app (exported by its rc wrappers).
+    if let Some(histfile) = get("HISTFILE")
+        && Path::new(histfile).starts_with(&swift.history_dir)
+    {
+        changes.push(EnvChange::Remove("HISTFILE".into()));
     }
     // Launched from a Claude Code session (`AppDelegate`: unsetenv("CLAUDECODE")):
     // the variable would stop Claude Code from starting inside our tabs.
@@ -295,6 +317,23 @@ pub fn inherited_cleanup(vars: &[(String, String)], swift_cto_bin: &Path) -> Vec
             changes.push(EnvChange::Set("ZDOTDIR".into(), user.into()));
         }
     }
+    let in_integration_dir = |value: &str| {
+        Path::new(value)
+            .components()
+            .any(|c| c.as_os_str() == swift.integration_dir_name)
+    };
+    // bash: `BASH_ENV` is the Swift wrapper's `.bashrc`.
+    if get("BASH_ENV").is_some_and(in_integration_dir) {
+        changes.push(EnvChange::Remove("BASH_ENV".into()));
+    }
+    // fish: `XDG_CONFIG_HOME` is the Swift wrapper's folder; the user's value
+    // is kept in CHAU7_USER_XDG_CONFIG_HOME.
+    if get("XDG_CONFIG_HOME").is_some_and(in_integration_dir) {
+        match get("CHAU7_USER_XDG_CONFIG_HOME").filter(|v| !v.is_empty()) {
+            Some(user) => changes.push(EnvChange::Set("XDG_CONFIG_HOME".into(), user.into())),
+            None => changes.push(EnvChange::Remove("XDG_CONFIG_HOME".into())),
+        }
+    }
     for key in [
         "ANTHROPIC_BASE_URL",
         "OPENAI_BASE_URL",
@@ -302,6 +341,27 @@ pub fn inherited_cleanup(vars: &[(String, String)], swift_cto_bin: &Path) -> Vec
     ] {
         if get(key).is_some_and(is_local_proxy) {
             changes.push(EnvChange::Remove(key.into()));
+        }
+    }
+    // Proxy attribution headers (`X-Chau7-Session`, tab, project): back to
+    // the user's own value, kept by the wrapper in
+    // CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE.
+    if let Some(headers) = get("ANTHROPIC_CUSTOM_HEADERS")
+        && headers.contains("X-Chau7-")
+    {
+        let user = get("CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE")
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                headers
+                    .lines()
+                    .filter(|line| !line.trim_start().starts_with("X-Chau7-"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            });
+        if user.trim().is_empty() {
+            changes.push(EnvChange::Remove("ANTHROPIC_CUSTOM_HEADERS".into()));
+        } else {
+            changes.push(EnvChange::Set("ANTHROPIC_CUSTOM_HEADERS".into(), user));
         }
     }
     for key in ["TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID"] {
@@ -490,8 +550,13 @@ mod tests {
             .collect()
     }
 
-    fn cto() -> &'static Path {
-        Path::new("/h/sw/cto_bin")
+    fn cto() -> &'static SwiftShellPaths {
+        static PATHS: std::sync::OnceLock<SwiftShellPaths> = std::sync::OnceLock::new();
+        PATHS.get_or_init(|| SwiftShellPaths {
+            cto_bin: "/h/sw/cto_bin".into(),
+            history_dir: "/h/sw/history".into(),
+            integration_dir_name: "swift-shell",
+        })
     }
 
     #[test]
@@ -560,5 +625,71 @@ mod tests {
             vec![EnvChange::Set("PATH".into(), "/usr/bin:/bin".into())]
         );
         assert!(inherited_cleanup(&vars(&[("PATH", "/usr/bin")]), cto()).is_empty());
+    }
+
+    #[test]
+    fn cleanup_inside_chau7_drops_history_wrappers_and_attribution() {
+        let changes = inherited_cleanup(
+            &vars(&[
+                ("TERM_PROGRAM", "Chau7"),
+                ("HISTFILE", "/h/sw/history/ABC.zsh_history"),
+                ("CHAU7_CODEX_PROXY_WRAPPER_DIR", "/tmp/swift-shell/bin"),
+                ("PATH", "/tmp/swift-shell/bin:/h/sw/cto_bin:/usr/bin"),
+                ("BASH_ENV", "/tmp/swift-shell/.bashrc"),
+                ("XDG_CONFIG_HOME", "/tmp/swift-shell/.config"),
+                ("CHAU7_USER_XDG_CONFIG_HOME", "/h/.config"),
+                ("CHAU7_ANTHROPIC_CUSTOM_HEADERS_BASE", "X-Team: a"),
+                (
+                    "ANTHROPIC_CUSTOM_HEADERS",
+                    "X-Team: a\nX-Chau7-Session: s\nX-Chau7-Tab: t",
+                ),
+                (
+                    "OPENAI_BASE_URL",
+                    "https://127.0.0.1:18081/_chau7/project/x/v1",
+                ),
+            ]),
+            cto(),
+        );
+        assert!(changes.contains(&EnvChange::Remove("HISTFILE".into())));
+        assert!(changes.contains(&EnvChange::Set("PATH".into(), "/usr/bin".into())));
+        assert!(changes.contains(&EnvChange::Remove("BASH_ENV".into())));
+        assert!(changes.contains(&EnvChange::Set(
+            "XDG_CONFIG_HOME".into(),
+            "/h/.config".into()
+        )));
+        assert!(changes.contains(&EnvChange::Set(
+            "ANTHROPIC_CUSTOM_HEADERS".into(),
+            "X-Team: a".into()
+        )));
+        assert!(changes.contains(&EnvChange::Remove("OPENAI_BASE_URL".into())));
+    }
+
+    #[test]
+    fn cleanup_keeps_the_users_own_history_and_config() {
+        let changes = inherited_cleanup(
+            &vars(&[
+                ("TERM_PROGRAM", "Chau7"),
+                ("HISTFILE", "/h/.zsh_history"),
+                ("XDG_CONFIG_HOME", "/h/.config"),
+                ("ANTHROPIC_CUSTOM_HEADERS", "X-Team: a"),
+            ]),
+            cto(),
+        );
+        assert_eq!(changes, vec![EnvChange::Remove("TERM_PROGRAM".into())]);
+    }
+
+    #[test]
+    fn attribution_headers_without_a_saved_base_are_filtered() {
+        let changes = inherited_cleanup(
+            &vars(&[
+                ("TERM_PROGRAM", "Chau7"),
+                (
+                    "ANTHROPIC_CUSTOM_HEADERS",
+                    "X-Chau7-Session: s\nX-Chau7-Tab: t",
+                ),
+            ]),
+            cto(),
+        );
+        assert!(changes.contains(&EnvChange::Remove("ANTHROPIC_CUSTOM_HEADERS".into())));
     }
 }

@@ -51,8 +51,9 @@ folder below; set `CHAU7_NEXT_LOG_STDOUT=1` to also print them).
 | Shell integration files | temporary `ZDOTDIR` | `~/.chau7-next/shell/` |
 | MCP socket and bridge | `~/.chau7/mcp.sock`, `~/.chau7/bin/chau7-mcp-bridge` | `~/.chau7-next/mcp.sock`, `~/.chau7-next/bin/chau7-next-mcp-bridge` |
 | MCP entry in Claude Code, Codex, Cursor, Windsurf configs | `chau7` | `chau7-next` (the `chau7` entry is never touched) |
-| Remote control (iOS pairing, agent socket) | `~/.chau7/remote/state.json`, `~/Library/Application Support/Chau7/remote.sock` | `~/.chau7-next/remote/state.json`, `~/Library/Application Support/Chau7 Next/remote.sock` |
-| API analytics proxy (ports, database, socket, TLS certificate) | 18080 / 18081, `~/Library/Application Support/Chau7/Proxy/` | 18090 / 18091, `~/Library/Application Support/Chau7 Next/Proxy/` |
+| Remote control (iOS pairing, relay credentials, agent socket) | `~/.chau7/remote/state.json`, `~/.chau7/remote/credentials.json`, `~/Library/Application Support/Chau7/remote.sock` | `~/.chau7-next/remote/state.json`, `~/.chau7-next/remote/credentials.json`, `~/Library/Application Support/Chau7 Next/remote.sock` |
+| API analytics proxy (ports, database, socket, TLS certificate, prompt rules) | 18080 / 18081, `~/Library/Application Support/Chau7/Proxy/`, `~/.chau7/prompt-rules.json` | 18090 / 18091, `~/Library/Application Support/Chau7 Next/Proxy/`, `~/.chau7-next/prompt-rules.json` |
+| Per-tab shell history | `~/.chau7/history/` | the shell's own default |
 | AI run telemetry | `~/.chau7/telemetry/runs.db` | `~/.chau7-next/telemetry/runs.db` |
 
 The API analytics proxy is the same Go program as Chau7's
@@ -63,8 +64,12 @@ Trust Certificate).
 
 Remote control pairs separately: Chau7 Next starts the same `chau7-remote`
 agent (built from `services/chau7-remote` into the app bundle; needs Go to
-build) with its own state file, and shows up on the iPhone as
-"<computer> (Chau7 Next)".
+build) with its own state and credentials files, and shows up on the iPhone as
+"<computer> (Chau7 Next)". The relay now admits only provisioned devices
+(`chau7-remote identity`, then `chau7-remote provision --bundle <file>
+--state ~/.chau7-next/remote/state.json`, see
+`services/chau7-remote/docs/CREDENTIALS.md`); Chau7 Next has no UI for that
+yet.
 
 On first launch, `~/.chau7/config.toml` and `~/.chau7/snippets.json` are
 **copied** (never modified). After that the two apps are independent. Every
@@ -75,8 +80,34 @@ other source file mentions a path owned by the Swift app.
 
 Started from a Chau7 tab (`open -a "Chau7 Next"`, `cargo run`), Chau7 Next
 first drops the variables Chau7 sets for its shells (`CHAU7_*`, its temporary
-`ZDOTDIR`, and the local analytics proxy `*_BASE_URL`s), so its shells never
-talk to Chau7's sockets, logs or proxy.
+`ZDOTDIR`, `BASH_ENV` and fish `XDG_CONFIG_HOME`, its per-tab `HISTFILE`, its
+token optimizer and Codex proxy wrapper folders on `PATH`, its `X-Chau7-*`
+attribution headers, and the local analytics proxy `*_BASE_URL`s), so its
+shells never talk to Chau7's sockets, logs, history or proxy.
+
+## Notes for agents
+
+The repository's `AGENTS.md` is generated (Aethyme), so the Chau7 Next rules
+live here:
+
+- Checks before a change: `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings` and
+  `cargo test --workspace` (from `apps/chau7-next`).
+- Never add a path owned by the Swift app outside
+  `chau7_next_core/src/data_root.rs` (a test enforces it).
+- Porting work is driven by `docs/rust-port/inventory/` (read its README
+  first). In the same PR as the code, set each ported row's status, then run
+  `scripts/parity.py --write` to refresh `docs/rust-port/PARITY.md` (CI
+  checks it).
+- Platform traits: full parity on macOS first, Linux and Windows only build
+  and pass CI. Any feature that calls a macOS-only API goes through a small
+  trait under `crates/chau7_next/src/platform/` (macOS implementation plus a
+  stub that returns "not supported"); see `src/platform/README.md`.
+- `chau7_terminal` is shared with the Swift app: never change its C API or
+  its Swift-visible behavior. Rust-only additions go in `src/rust_api.rs`;
+  the generated header must stay identical (build without
+  `CHAU7_TERMINAL_SKIP_CBINDGEN` and check `git diff` of
+  `include/chau7_terminal.h`).
 
 ## Settings
 

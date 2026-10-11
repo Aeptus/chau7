@@ -78,14 +78,27 @@ Found while inventorying; each must hold when the module is ported (see
 `../DUAL-SHIP.md`).
 
 - Remote (RMT): the Go agent keeps its state in `CHAU7_REMOTE_STATE`, default
-  `~/.chau7/remote/state.json`. Chau7 Next must always set it to a path in its
-  own data root, or both apps share pairing state and keys.
+  `~/.chau7/remote/state.json`, and (since the Aeptus rebase) its relay
+  credentials in `CHAU7_REMOTE_CREDENTIALS`, default beside the state file.
+  Chau7 Next must always set both to paths in its own data root, or both apps
+  share pairing state, keys and relay credentials. It also passes
+  `CHAU7_PARENT_PID` so the agent exits with it.
 - Proxy (PRX): Swift defaults to ports 18080 (HTTP) and 18081 (TLS). Chau7 Next
-  needs its own defaults so both proxies can run at once.
-- TokenOptimization (TOK): `chau7-optim` strips only the exact
-  `$HOME/.chau7/cto_bin` entry from `PATH`. A Chau7 Next wrapper folder would
-  stay on `PATH` and the wrapper would call itself; the Chau7 Next build of the
-  tool must strip its own folder.
+  needs its own defaults so both proxies can run at once. The proxy reads its
+  global prompt injection rules from `CHAU7_INJECTION_RULES` (default: the
+  Swift app's `~/.chau7/prompt-rules.json`) and watches `CHAU7_PARENT_PID`:
+  Chau7 Next passes both. `~/.chau7/pricing.json` is read only, by both.
+- TokenOptimization (TOK): `chau7-optim` strips `$HOME/.chau7/cto_bin` and every
+  folder in `CHAU7_CTO_BIN_DIR` from `PATH`; Chau7 Next's wrappers pass their
+  own folder there. The Swift wrappers also check `CHAU7_CTO_OPTIM_ACTIVE`
+  (set by `chau7-optim` for its children); porting that check is part of the
+  TOK delta.
+- Shells (TRM): a Chau7 Next started from a Chau7 tab inherits what the Swift
+  shell wrappers export: `HISTFILE` in `~/.chau7/history/`, the Codex proxy
+  wrapper folder on `PATH`, `BASH_ENV` and fish `XDG_CONFIG_HOME` in the Swift
+  temporary shell folder, `X-Chau7-*` lines in `ANTHROPIC_CUSTOM_HEADERS` and a
+  local proxy `OPENAI_BASE_URL`. `shell_env::inherited_cleanup` drops or
+  restores each of them at startup.
 
 ## Never-run Swift features (all to be ported)
 

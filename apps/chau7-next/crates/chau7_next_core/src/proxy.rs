@@ -65,6 +65,13 @@ pub fn proxy_env(root: &DataRoot, port: u16, log_prompts: bool) -> Vec<(String, 
         ("CHAU7_TLS_PORT".into(), tls_port(port).to_string()),
         ("CHAU7_TLS_CERT".into(), path(root.proxy_tls_cert())),
         ("CHAU7_TLS_KEY".into(), path(root.proxy_tls_key())),
+        // Without it the proxy reads the Swift app's global rules.
+        (
+            "CHAU7_INJECTION_RULES".into(),
+            path(root.proxy_injection_rules_file()),
+        ),
+        // The proxy exits when this process goes away.
+        ("CHAU7_PARENT_PID".into(), std::process::id().to_string()),
     ]
 }
 
@@ -1085,9 +1092,11 @@ mod tests {
             "CHAU7_IPC_SOCKET",
             "CHAU7_TLS_CERT",
             "CHAU7_TLS_KEY",
+            "CHAU7_INJECTION_RULES",
         ] {
             assert!(get(key).starts_with("/home/u/.chau7-next"), "{key}");
         }
+        assert_eq!(get("CHAU7_PARENT_PID"), std::process::id().to_string());
         let shell = shell_env(18090, true, "TERM", "TAB", "/p");
         let get = |k: &str| shell.iter().find(|(key, _)| key == k).map(|v| v.1.clone());
         assert_eq!(

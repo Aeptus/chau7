@@ -64,8 +64,8 @@ fn clean_inherited_environment() {
     let vars: Vec<(String, String)> = std::env::vars_os()
         .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
         .collect();
-    let swift_cto_bin = chau7_next_core::data_root::DataRoot::from_env().swift_cto_bin_dir();
-    for change in inherited_cleanup(&vars, &swift_cto_bin) {
+    let swift = chau7_next_core::data_root::DataRoot::from_env().swift_shell_paths();
+    for change in inherited_cleanup(&vars, &swift) {
         // SAFETY: called at the top of main, while the process is single threaded.
         unsafe {
             match change {

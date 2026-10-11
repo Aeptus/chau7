@@ -365,6 +365,21 @@ impl DataRoot {
         self.config_dir.join("remote").join("state.json")
     }
 
+    /// The agent's relay credentials (`chau7-remote provision` output),
+    /// passed to it as `CHAU7_REMOTE_CREDENTIALS`. The agent's default is
+    /// beside the state file, but an inherited value could point at the
+    /// Swift app's file, so it is always passed explicitly.
+    pub fn remote_credentials_file(&self) -> PathBuf {
+        self.config_dir.join("remote").join("credentials.json")
+    }
+
+    /// Global prompt injection rules of the API analytics proxy, passed as
+    /// `CHAU7_INJECTION_RULES` (the proxy's default is the Swift app's
+    /// `prompt-rules.json`).
+    pub fn proxy_injection_rules_file(&self) -> PathBuf {
+        self.config_dir.join("prompt-rules.json")
+    }
+
     /// Security-scoped bookmarks of the protected folders the user granted
     /// (Swift: UserDefaults `protectedPathPolicy.securityScopedBookmarksByRoot.v1`).
     pub fn protected_folder_bookmarks_file(&self) -> PathBuf {
@@ -459,6 +474,17 @@ impl DataRoot {
         self.home.join(".chau7").join("cto_bin")
     }
 
+    /// What the Swift app's shells point variables at, for
+    /// `shell_env::inherited_cleanup` (a Chau7 Next started from a Chau7 tab
+    /// inherits them). Never written.
+    pub fn swift_shell_paths(&self) -> crate::shell_env::SwiftShellPaths {
+        crate::shell_env::SwiftShellPaths {
+            cto_bin: self.swift_cto_bin_dir(),
+            history_dir: self.home.join(".chau7").join("history"),
+            integration_dir_name: SWIFT_SHELL_INTEGRATION_DIR_NAME,
+        }
+    }
+
     /// Marker file of the welcome screen (`app.hasShownWelcome`): present once
     /// the first-launch welcome was shown. Kept next to the app defaults key
     /// so the screen also stays away where there are no app defaults.
@@ -484,6 +510,11 @@ impl DataRoot {
         self.repo_overlay_dir(repo_root).join("metadata.json")
     }
 }
+
+/// The Swift app's temporary shell integration folder (`$TMPDIR/smartoverlay`,
+/// `ShellLaunchConfigurator.integrationDirectoryPath`). Chau7 Next writes its
+/// own files to [`DataRoot::shell_integration_dir`].
+pub const SWIFT_SHELL_INTEGRATION_DIR_NAME: &str = "smartoverlay";
 
 /// Variable that turns on isolated test mode (`CHAU7_ISOLATED_TEST_MODE` in
 /// Swift): login items and other system-wide changes are skipped.
@@ -662,6 +693,14 @@ mod tests {
             root.log_file(),
             root.reports_dir(),
             root.snapshots_dir(),
+            root.remote_state_file(),
+            root.remote_credentials_file(),
+            root.remote_socket(),
+            root.proxy_injection_rules_file(),
+            root.proxy_socket(),
+            root.cto_bin_dir(),
+            root.shell_integration_dir(),
+            root.history_db(),
         ] {
             let text = path.to_string_lossy().to_string();
             assert!(!text.contains("/.chau7/"), "{text}");
@@ -769,6 +808,16 @@ mod tests {
             ".join(\".chau7\")",
             "Logs/Chau7",
             "\"com.chau7\"",
+            // Added since April 2026 (see docs/rust-port/REBASE-ON-AEPTUS.md):
+            // the Swift app's temporary shell folder, its skill install
+            // markers and the helpers it installs into AI CLI configs.
+            "smartoverlay",
+            ".chau7-skill",
+            ".chau7-backups",
+            "chau7-claude-hook",
+            "chau7-claude-statusline",
+            "chau7-codex-notify",
+            "credentials.json",
         ];
         let mut offenders = Vec::new();
         let mut check = |path: &Path, text: &str| {

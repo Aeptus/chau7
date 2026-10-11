@@ -53,6 +53,12 @@ ports 18090 / 18091 and certificate trust entry.
 | LaunchAgent label `com.chau7` | Launch at login | Label `com.chau7.next` |
 | Shell integration (`ZDOTDIR` path in `TerminalSessionModel`) | Shell hooks | Own path in its data root |
 | Remote pairing with the iOS app | Pairing code per host | Paired separately; host shows as "Chau7 Next" so the iOS app can tell them apart |
+| `~/.chau7/remote/credentials.json` (`CHAU7_REMOTE_CREDENTIALS`, relay credentials provisioned with `chau7-remote provision`) | Relay admission | Own `~/.chau7-next/remote/credentials.json`, always passed explicitly to the agent |
+| `~/.chau7/prompt-rules.json` (`CHAU7_INJECTION_RULES`, proxy default) | Proxy prompt injection rules | Own `~/.chau7-next/prompt-rules.json`, passed to its proxy |
+| `~/.chau7/history/<tab>.{zsh,bash}_history` (`HISTFILE` exported by the shell wrappers) | Per-tab shell history | Not used; an inherited `HISTFILE` pointing there is dropped at startup |
+| `$TMPDIR/smartoverlay/` (`ZDOTDIR`, `BASH_ENV`, fish `XDG_CONFIG_HOME`, Codex proxy wrapper in `bin/` put on `PATH`) | Shell integration and Codex proxy routing | Own shell folder in its data root; inherited values restored or dropped at startup |
+| `~/.chau7/usage/`, `~/.chau7/sessions/`, `~/.chau7/cto_state.json`, `~/.chau7/bin/chau7-claude-hook`, `chau7-claude-statusline`, `chau7-codex-notify` and their entries in `~/.claude/settings.json` and `~/.codex/config.toml` | Usage tracking, plans, Claude Code hooks and status line, Codex notify hook | Not touched. The hooks are global, so they also run for AI CLIs started in Chau7 Next tabs and write to the Swift app's files: that is the Swift app's doing, not Chau7 Next's |
+| Skill installs (`.chau7-skill.json` markers, `.chau7-backups`, `~/.chau7/backups/skills`) | Installing skills into `~/.claude/skills`, `~/.codex/skills` | Not ported yet; must use its own markers and backups when it is |
 
 `~/.codex/`, `~/.ssh/config`, iTerm2 and Terminal preference files are only read
 by the Swift app and can be read by both.
@@ -64,8 +70,9 @@ by the Swift app and can be read by both.
    and defaults to the "Chau7 Next" locations.
 2. No other module builds a path by hand. A CI test greps the Rust sources and
    fails on `.chau7/`, `Application Support/Chau7/` (without " Next"),
-   `com.chau7.` (without `.next`), `mcp.sock`, `remote.sock`, `proxy.sock` outside
-   `DataRoot`.
+   `com.chau7.` (without `.next`), `mcp.sock`, `remote.sock`, `proxy.sock`,
+   `credentials.json`, `smartoverlay`, the Swift skill markers and the Swift
+   AI CLI hook helper names outside `DataRoot`.
 3. A second CI test starts the Rust app's services with a temporary home root and
    asserts nothing is created outside it.
 4. First-launch import is copy-only and never writes back to the Swift app's files.

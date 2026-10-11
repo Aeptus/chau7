@@ -30,6 +30,12 @@ pub fn agent_env(root: &DataRoot, relay_url: &str, host: Option<String>) -> Vec<
         ("CHAU7_RELAY_URL".into(), relay_url.to_string()),
         ("CHAU7_MAC_NAME".into(), mac_name(host)),
         ("CHAU7_REMOTE_STATE".into(), path(root.remote_state_file())),
+        (
+            "CHAU7_REMOTE_CREDENTIALS".into(),
+            path(root.remote_credentials_file()),
+        ),
+        // The agent exits when this process goes away.
+        ("CHAU7_PARENT_PID".into(), std::process::id().to_string()),
     ]
 }
 
@@ -339,6 +345,9 @@ mod tests {
         assert!(get("CHAU7_REMOTE_STATE").starts_with(&*home.to_string_lossy()));
         assert!(get("CHAU7_REMOTE_STATE").contains(".chau7-next"));
         assert!(get("CHAU7_REMOTE_SOCKET").starts_with(&*home.to_string_lossy()));
+        assert!(get("CHAU7_REMOTE_CREDENTIALS").starts_with(&*home.to_string_lossy()));
+        assert!(get("CHAU7_REMOTE_CREDENTIALS").contains(".chau7-next"));
+        assert_eq!(get("CHAU7_PARENT_PID"), std::process::id().to_string());
         assert_eq!(get("CHAU7_RELAY_URL"), "wss://relay.test/connect");
         assert_eq!(get("CHAU7_MAC_NAME"), "Studio (Chau7 Next)");
         assert_eq!(mac_name(None), "Mac (Chau7 Next)");
