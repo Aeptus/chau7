@@ -43,6 +43,15 @@ impl Workspace {
         self.state.tabs().iter().map(|t| t.uuid).collect()
     }
 
+    /// Process-local MCP control indicator; grants live in mcp::control.
+    pub(crate) fn mcp_set_control(&mut self, id: TabId, controlled: bool) -> bool {
+        let Some(meta) = self.state.get_mut(id) else {
+            return false;
+        };
+        meta.mcp_controlled = controlled;
+        true
+    }
+
     /// Tabs opened by MCP clients (`isMCPControlled`).
     pub(crate) fn mcp_tab_count(&self) -> usize {
         self.state
@@ -64,8 +73,26 @@ impl Workspace {
             .and_then(|e| e.panes.read(cx).focused_session(cx))
     }
 
+    pub(crate) fn mcp_controlled(&self, id: TabId) -> bool {
+        self.state.get(id).is_some_and(|meta| meta.mcp_controlled)
+    }
+
     /// `tabSummary`: the keys agents parse.
     pub(crate) fn mcp_summary(&self, id: TabId, cx: &App) -> Map<String, Value> {
+        self.mcp_summary_with_metadata(id, cx, true)
+    }
+
+    /// Readiness polls share the live projection without reading repo files.
+    pub(crate) fn mcp_readiness_summary(&self, id: TabId, cx: &App) -> Map<String, Value> {
+        self.mcp_summary_with_metadata(id, cx, false)
+    }
+
+    fn mcp_summary_with_metadata(
+        &self,
+        id: TabId,
+        cx: &App,
+        include_metadata: bool,
+    ) -> Map<String, Value> {
         let mut out = Map::new();
         let Some(meta) = self.state.get(id) else {
             return out;
@@ -114,13 +141,15 @@ impl Workspace {
             }
             if let Some(root) = &s.git_root {
                 out.insert("repo_root".into(), json!(root.to_string_lossy()));
-                let metadata =
-                    chau7_next_core::repo_metadata::load(&cx.global::<AppData>().root, root);
-                if let Some(description) = metadata.description {
-                    out.insert("repo_description".into(), json!(description));
-                }
-                if !metadata.labels.is_empty() {
-                    out.insert("repo_labels".into(), json!(metadata.labels));
+                if include_metadata {
+                    let metadata =
+                        chau7_next_core::repo_metadata::load(&cx.global::<AppData>().root, root);
+                    if let Some(description) = metadata.description {
+                        out.insert("repo_description".into(), json!(description));
+                    }
+                    if !metadata.labels.is_empty() {
+                        out.insert("repo_labels".into(), json!(metadata.labels));
+                    }
                 }
             }
         }
