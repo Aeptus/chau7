@@ -465,14 +465,42 @@ struct McpTelemetry(Arc<TelemetryRecorder>);
 
 impl mcp_sources::TelemetrySource for McpTelemetry {
     fn run(&self, run_id: &str) -> Option<TelemetryRun> {
-        self.0
-            .all_active_runs()
-            .into_iter()
-            .find(|r| r.id == run_id)
-            .or_else(|| self.0.store().get_run(run_id))
+        self.0.store().get_run(run_id).or_else(|| {
+            self.0
+                .all_active_runs()
+                .into_iter()
+                .find(|r| r.id == run_id)
+        })
     }
     fn runs(&self, filter: &TelemetryRunFilter) -> Vec<TelemetryRun> {
-        self.0.store().list_runs(filter)
+        let active: Vec<_> = self
+            .active_runs()
+            .into_iter()
+            .filter(|r| {
+                filter
+                    .session_id
+                    .as_ref()
+                    .is_none_or(|id| r.session_id.as_ref() == Some(id))
+                    && filter
+                        .repo_path
+                        .as_ref()
+                        .is_none_or(|p| r.repo_path.as_ref() == Some(p))
+                    && filter.provider.as_ref().is_none_or(|p| &r.provider == p)
+                    && filter.after.is_none_or(|at| r.started_at >= at)
+                    && filter.before.is_none_or(|at| r.started_at <= at)
+            })
+            .collect();
+        let offset = filter.offset.unwrap_or(0).max(0) as usize;
+        let limit = filter.limit.map(|n| n.max(0) as usize);
+        let mut stored_filter = filter.clone();
+        stored_filter.offset = None;
+        stored_filter.limit = limit.map(|n| n.saturating_add(offset).min(i64::MAX as usize) as i64);
+        chau7_next_core::telemetry::query_projection::merge_runs(
+            active,
+            self.0.store().list_runs(&stored_filter),
+            offset,
+            limit,
+        )
     }
     fn tool_calls(&self, run_id: &str) -> Vec<TelemetryToolCall> {
         self.0.store().get_tool_calls(run_id)
@@ -490,10 +518,16 @@ impl mcp_sources::TelemetrySource for McpTelemetry {
         self.0.store().list_sessions(repo_path)
     }
     fn active_runs(&self) -> Vec<TelemetryRun> {
-        self.0.all_active_runs()
+        self.0
+            .all_active_runs()
+            .into_iter()
+            .map(|r| self.0.store().get_run(&r.id).unwrap_or(r))
+            .collect()
     }
     fn active_run_for_tab(&self, tab_id: &str) -> Option<TelemetryRun> {
-        self.0.active_run_for_tab(tab_id)
+        self.0
+            .active_run_for_tab(tab_id)
+            .map(|r| self.0.store().get_run(&r.id).unwrap_or(r))
     }
 }
 
