@@ -11,6 +11,13 @@
 //! `view.rs` builds a [`FrameInputs`] in `render`, [`prepaint`] turns it
 //! into a [`PaintState`] once the bounds are known, and [`paint_grid`] draws.
 
+#[path = "cpu_renderer.rs"]
+mod cpu_renderer;
+
+pub use cpu_renderer::init as init_cpu_text_system;
+use cpu_renderer::{FrameCache, GridCanvas};
+use parking_lot::Mutex;
+
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
@@ -118,6 +125,7 @@ pub struct Overlays {
     /// Last time the view was painted (a hidden tab is not).
     pub last_paint: Instant,
     last_history: u32,
+    cpu_frame: Arc<Mutex<FrameCache>>,
 }
 
 impl Default for Overlays {
@@ -129,11 +137,16 @@ impl Default for Overlays {
             last_activity: now,
             last_paint: now,
             last_history: 0,
+            cpu_frame: Arc::new(Mutex::new(FrameCache::default())),
         }
     }
 }
 
 impl Overlays {
+    pub fn release_cpu_frame(&mut self, cx: &mut App) {
+        self.cpu_frame.lock().release(cx);
+    }
+
     /// After each output batch: take decoded images, follow the scrollback,
     /// stamp new lines.
     pub fn on_output(&mut self, session: &TerminalSession, settings: &Settings) {
@@ -184,6 +197,7 @@ impl Overlays {
 
 /// What `render` knows before layout.
 pub struct FrameInputs {
+    pub gpu_renderer: bool,
     pub metrics: CellMetrics,
     pub focused: bool,
     pub show_cursor: bool,
@@ -223,6 +237,7 @@ impl FrameInputs {
         let background = scheme_color(scheme.background);
         let dark = background.l < 0.5;
         Self {
+            gpu_renderer: appearance.rendering.gpu_renderer,
             metrics,
             focused,
             show_cursor: cursor_on || !focused || !appearance.cursor_blink,
@@ -280,6 +295,7 @@ pub fn link_color(dark: bool) -> Hsla {
 
 /// Everything the paint closure needs, computed in prepaint.
 pub struct PaintState {
+    cpu_frame: Arc<Mutex<FrameCache>>,
     inputs: FrameInputs,
     cols: u16,
     rows: u16,
@@ -372,6 +388,7 @@ pub fn prepaint(
         }
     }
     PaintState {
+        cpu_frame: overlays.cpu_frame.clone(),
         clusters,
         cols: grid.cols,
         rows: grid.rows,
@@ -438,6 +455,9 @@ fn text_chunks(
 }
 
 fn cell_text(cell: &OwnedCell, cluster: Option<&String>) -> String {
+    if cell.flags & CELL_FLAG_HIDDEN != 0 {
+        return " ".to_string();
+    }
     cluster.cloned().unwrap_or_else(|| match cell.character {
         '\0' => " ".to_string(),
         c => c.to_string(),
@@ -504,6 +524,14 @@ pub fn paint_grid(bounds: Bounds<Pixels>, state: PaintState, window: &mut Window
 }
 
 fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Window, cx: &mut App) {
+    let mut canvas = GridCanvas::new(
+        window,
+        bounds,
+        state.inputs.gpu_renderer,
+        state.cpu_frame.clone(),
+        cx,
+    );
+    let window = &mut canvas;
     let inputs = &state.inputs;
     let m = &inputs.metrics;
     let cols = state.cols as usize;
@@ -663,12 +691,11 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
                     (chunk.len() > 1 || !state.clusters.contains_key(&(start + chunk.start)))
                         .then_some(m.cell_width),
                 );
-                let _ = line.paint(
+                let _ = window.paint_line(
+                    &line,
                     point(bounds.left() + m.cell_width * chunk.start as f32, y),
                     m.line_height,
-                    gpui::TextAlign::Left,
-                    None,
-                    window,
+                    &runs,
                     cx,
                 );
             }
@@ -707,16 +734,18 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
                 underline: None,
                 strikethrough: None,
             };
-            let line = window
-                .text_system()
-                .shape_line(label.clone(), font_size, &[run], None);
+            let line = window.text_system().shape_line(
+                label.clone(),
+                font_size,
+                std::slice::from_ref(&run),
+                None,
+            );
             let x = bounds.right() - line.width - px(2.0);
-            let _ = line.paint(
+            let _ = window.paint_line(
+                &line,
                 point(x, bounds.top() + m.line_height * *row as f32),
                 m.line_height,
-                gpui::TextAlign::Left,
-                None,
-                window,
+                std::slice::from_ref(&run),
                 cx,
             );
         }
@@ -735,21 +764,22 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
             underline: None,
             strikethrough: None,
         };
-        let line = window
-            .text_system()
-            .shape_line(label, m.font_size, &[run], None);
-        let _ = line.paint(
+        let line =
+            window
+                .text_system()
+                .shape_line(label, m.font_size, std::slice::from_ref(&run), None);
+        let _ = window.paint_line(
+            &line,
             point(
                 bounds.left() + px(4.0),
                 bounds.bottom() - m.line_height - px(4.0),
             ),
             m.line_height,
-            gpui::TextAlign::Left,
-            None,
-            window,
+            std::slice::from_ref(&run),
             cx,
         );
     }
+    canvas.finish(cx);
 }
 
 fn scheme_fg_muted(background: Hsla) -> Hsla {
@@ -761,7 +791,13 @@ fn scheme_fg_muted(background: Hsla) -> Hsla {
 }
 
 /// Double, dotted and dashed underlines (`RustGridView.draw` decorations).
-fn paint_decoration(d: &Decoration, left: Pixels, y: Pixels, m: &CellMetrics, window: &mut Window) {
+fn paint_decoration(
+    d: &Decoration,
+    left: Pixels,
+    y: Pixels,
+    m: &CellMetrics,
+    window: &mut GridCanvas<'_>,
+) {
     let x0 = left + m.cell_width * d.col as f32;
     let width = m.cell_width * d.len as f32;
     let uy = y + m.underline_y;
@@ -797,7 +833,12 @@ fn paint_decoration(d: &Decoration, left: Pixels, y: Pixels, m: &CellMetrics, wi
     }
 }
 
-fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window, cx: &mut App) {
+fn paint_cursor(
+    bounds: Bounds<Pixels>,
+    state: &PaintState,
+    window: &mut GridCanvas<'_>,
+    cx: &mut App,
+) {
     let inputs = &state.inputs;
     let m = &inputs.metrics;
     let cols = state.cols as usize;
@@ -839,15 +880,17 @@ fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window,
                         underline: None,
                         strikethrough: None,
                     };
-                    let line = window
-                        .text_system()
-                        .shape_line(s, m.font_size, &[run], None);
-                    let _ = line.paint(
+                    let line = window.text_system().shape_line(
+                        s,
+                        m.font_size,
+                        std::slice::from_ref(&run),
+                        None,
+                    );
+                    let _ = window.paint_line(
+                        &line,
                         origin,
                         m.line_height,
-                        gpui::TextAlign::Left,
-                        None,
-                        window,
+                        std::slice::from_ref(&run),
                         cx,
                     );
                 }
@@ -889,17 +932,13 @@ fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window,
             }),
             strikethrough: None,
         };
-        let line = window
-            .text_system()
-            .shape_line(s, m.font_size, &[run], Some(m.cell_width));
-        let _ = line.paint(
-            origin,
-            m.line_height,
-            gpui::TextAlign::Left,
-            None,
-            window,
-            cx,
+        let line = window.text_system().shape_line(
+            s,
+            m.font_size,
+            std::slice::from_ref(&run),
+            Some(m.cell_width),
         );
+        let _ = window.paint_line(&line, origin, m.line_height, std::slice::from_ref(&run), cx);
     }
 }
 
@@ -907,6 +946,15 @@ fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window,
 mod tests {
     use super::*;
 
+    #[test]
+    fn concealed_color_emoji_never_reaches_either_renderer() {
+        let cell = OwnedCell {
+            character: '👩',
+            flags: CELL_FLAG_HIDDEN,
+            ..Default::default()
+        };
+        assert_eq!(cell_text(&cell, Some(&"👩‍💻".to_string())), " ");
+    }
     #[test]
     fn full_graphemes_are_anchored_to_grid_columns() {
         let mut cells = vec![OwnedCell::default(); 7];
