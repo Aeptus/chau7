@@ -337,7 +337,7 @@ mod tests {
         let dir = temp_dir("redact");
         let path = dir.join("pty.log");
         let mut session = AiLogSession::new("Claude", path.clone(), DEFAULT_MAX_BYTES);
-        session.record_input("curl -H 'Authorization: Bearer secret-token' https://example.com\n");
+        session.record_input("curl -H 'Authorization: Bearer secret-token' https://example.com\n"); // gitleaks:allow - deliberately fake bearer token tests redaction
         session.close();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
