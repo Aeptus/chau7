@@ -157,6 +157,14 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             .into_any_element(),
         );
     }
+    titled("Colors", chrome)
+        .child(live_preview(a, chrome))
+        .child(div().flex().flex_wrap().gap_2().children(tiles))
+}
+
+pub(super) fn windows(ctx: &SectionContext) -> gpui::Div {
+    let chrome = ctx.chrome;
+    let a = &ctx.settings.appearance;
     let themes = AppTheme::ALL.into_iter().map(|theme| {
         chip(
             SharedString::from(format!("theme-{}", theme.raw())),
@@ -166,9 +174,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         )
         .on_click(move |_, _, cx| update(cx, |s| s.appearance.app_theme = theme))
     });
-    titled("Colors", chrome)
-        .child(live_preview(a, chrome))
-        .child(div().flex().flex_wrap().gap_2().children(tiles))
+    titled("Interface", chrome)
         .child(row(
             "Window opacity",
             stepper(

@@ -193,7 +193,7 @@ fn group_label(text: &'static str, chrome: crate::theme::Chrome) -> gpui::Div {
         .child(text.to_uppercase())
 }
 
-pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
+pub(super) fn history(ctx: &SectionContext) -> gpui::Div {
     let chrome = ctx.chrome;
     let h = &ctx.settings.history;
     let inputs = &ctx.view.logs_inputs;
@@ -318,6 +318,14 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         .child(group_label("Maintenance", chrome))
         .child(maintenance);
 
+    div().flex().flex_col().gap_4().child(persistent)
+}
+
+pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
+    let chrome = ctx.chrome;
+    let h = &ctx.settings.history;
+    let inputs = &ctx.view.logs_inputs;
+    let data = &ctx.logs;
     let history_logs = titled("History Logs", chrome)
         .child(switch(
             "Monitor History Logs",
@@ -472,7 +480,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         .flex()
         .flex_col()
         .gap_4()
-        .child(persistent)
         .child(history_logs)
         .child(terminal_logs)
         .child(sessions)

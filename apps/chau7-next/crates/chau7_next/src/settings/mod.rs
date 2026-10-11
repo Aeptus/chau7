@@ -235,8 +235,8 @@ impl Settings {
 
     /// Put the settings of one window section back to their defaults
     /// (`resetToDefaults` of each Swift settings view). Sections whose
-    /// settings live in other modules are left alone. Font & Colors and
-    /// Display share the appearance domain, so they reset it together.
+    /// settings live in other modules are left alone. Current appearance
+    /// pages reset their own values without resetting unrelated domains.
     pub fn reset_section(&mut self, section: SettingsSection) {
         use SettingsSection as S;
         match section {
@@ -248,7 +248,27 @@ impl Settings {
                 self.general.default_directory = directory;
                 self.general.restore_bug_report_fields(contact);
             }
-            S::FontColors | S::Display => self.appearance = AppearanceSettings::default(),
+            S::Windows => {
+                self.appearance.app_theme = AppTheme::System;
+                self.appearance.menu_bar_only = false;
+                self.appearance.window_floating = false;
+                self.appearance.opacity = 1.0;
+                self.appearance.window_blur_enabled = true;
+                self.tabs.always_show_toolbar_in_fullscreen = false;
+                self.terminal.split_panes_enabled = true;
+            }
+            S::FontColors => {
+                let defaults = AppearanceSettings::default();
+                self.appearance.font_family = defaults.font_family;
+                self.appearance.font_weight = defaults.font_weight;
+                self.appearance.font_size = defaults.font_size;
+                self.appearance.custom_font_family = defaults.custom_font_family;
+                self.appearance.default_zoom_percent = defaults.default_zoom_percent;
+                self.appearance.color_scheme = defaults.color_scheme;
+                self.appearance.custom_color_scheme = defaults.custom_color_scheme;
+                self.appearance.ligatures = false;
+            }
+            S::Display => self.appearance.display = appearance::DisplayOptions::default(),
             S::Tabs => self.tabs = TabsSettings::default(),
             S::Shell | S::ScrollbackPerf => self.terminal = TerminalSettings::default(),
             S::DangerousCommands => self.dangerous_commands = DangerousCommandSettings::default(),
@@ -394,5 +414,41 @@ mod tests {
     fn defaults_survive_a_save() {
         let text = Settings::default().to_text("");
         assert_eq!(Settings::from_text(&text), Settings::default());
+    }
+    #[test]
+    fn current_appearance_pages_reset_only_their_own_values() {
+        let mut settings = Settings::default();
+        settings.appearance.font_size = 22.;
+        settings.appearance.menu_bar_only = true;
+        settings.appearance.window_blur_enabled = false;
+        settings.appearance.window_floating = true;
+        settings.appearance.opacity = 0.65;
+        settings.appearance.rendering.gpu_renderer = false;
+        settings.appearance.display.syntax_highlight = false;
+        settings.reset_section(SettingsSection::FontColors);
+        assert_eq!(
+            settings.appearance.font_size,
+            Settings::default().appearance.font_size
+        );
+        assert!(settings.appearance.menu_bar_only);
+        assert!(!settings.appearance.window_blur_enabled);
+        assert!(!settings.appearance.rendering.gpu_renderer);
+        assert!(!settings.appearance.display.syntax_highlight);
+        settings.reset_section(SettingsSection::Display);
+        assert!(settings.appearance.display.syntax_highlight);
+        assert!(settings.appearance.menu_bar_only);
+        assert!(settings.appearance.window_floating);
+        settings.appearance.font_size = 19.;
+        settings.tabs.always_show_toolbar_in_fullscreen = true;
+        settings.terminal.split_panes_enabled = false;
+        settings.reset_section(SettingsSection::Windows);
+        assert!(!settings.appearance.menu_bar_only);
+        assert!(settings.appearance.window_blur_enabled);
+        assert!(!settings.appearance.window_floating);
+        assert_eq!(settings.appearance.opacity, 1.);
+        assert_eq!(settings.appearance.font_size, 19.);
+        assert!(!settings.appearance.rendering.gpu_renderer);
+        assert!(!settings.tabs.always_show_toolbar_in_fullscreen);
+        assert!(settings.terminal.split_panes_enabled);
     }
 }

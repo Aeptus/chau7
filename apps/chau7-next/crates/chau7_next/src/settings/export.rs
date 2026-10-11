@@ -186,6 +186,12 @@ pub fn export_json(settings: &Settings, home: &str) -> String {
     );
 
     set("appTheme", json!(settings.appearance.app_theme.id()));
+    set("menuBarOnlyMode", json!(settings.appearance.menu_bar_only));
+    set(
+        "windowBlurEnabled",
+        json!(settings.appearance.window_blur_enabled),
+    );
+    set("windowFloating", json!(settings.appearance.window_floating));
     let g = &settings.general;
     set("appLanguage", json!(g.app_language.id()));
     set("launchAtLogin", json!(g.launch_at_login));
@@ -323,6 +329,15 @@ pub fn import_json(settings: &mut Settings, text: &str, home: &str) -> Result<()
     if let Some(v) = str_of("appTheme").and_then(AppTheme::from_id) {
         settings.appearance.app_theme = v;
     }
+    if let Some(v) = bool_of("menuBarOnlyMode") {
+        settings.appearance.menu_bar_only = v;
+    }
+    if let Some(v) = bool_of("windowBlurEnabled") {
+        settings.appearance.window_blur_enabled = v;
+    }
+    if let Some(v) = bool_of("windowFloating") {
+        settings.appearance.window_floating = v;
+    }
     let g = &mut settings.general;
     if let Some(v) = str_of("appLanguage").and_then(AppLanguage::from_id) {
         g.app_language = v;
@@ -457,6 +472,23 @@ mod tests {
     use super::*;
 
     const HOME: &str = "/Users/me";
+
+    #[test]
+    fn current_windows_values_survive_both_owned_formats() {
+        let mut settings = Settings::default();
+        settings.appearance.menu_bar_only = true;
+        settings.appearance.window_blur_enabled = false;
+        settings.appearance.window_floating = true;
+        let restored = Settings::from_text(&settings.to_text(""));
+        assert!(restored.appearance.menu_bar_only);
+        assert!(!restored.appearance.window_blur_enabled);
+        assert!(restored.appearance.window_floating);
+        let mut imported = Settings::default();
+        import_json(&mut imported, &export_json(&settings, HOME), HOME).unwrap();
+        assert!(imported.appearance.menu_bar_only);
+        assert!(!imported.appearance.window_blur_enabled);
+        assert!(imported.appearance.window_floating);
+    }
 
     #[test]
     fn export_has_every_required_swift_key() {

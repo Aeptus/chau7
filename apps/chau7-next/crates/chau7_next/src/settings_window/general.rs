@@ -293,7 +293,7 @@ const REPO_CONFIG_TEMPLATE: &str = "# Per-repo overrides: these keys replace the
 
 /// Forget where windows were (`resetOverlayOffsets`): the next launch and new
 /// windows open centered at the default size.
-fn reset_window_positions(cx: &mut App) {
+pub(super) fn reset_window_positions(cx: &mut App) {
     crate::workspace::reset_panel_positions(cx);
     let root = cx.global::<AppData>().root.clone();
     match crate::session_store::forget_positions(&root) {

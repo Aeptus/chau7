@@ -1,15 +1,16 @@
-//! Settings window (Cmd+,): a sidebar of 24 sections in 6 groups with search,
+//! Settings window (Cmd+,): a sidebar of 28 sections in 6 groups with search,
 //! and the section's controls next to it (`MainPanelView.swift`,
 //! `SettingsSearch.swift`). Changes are written to
 //! `~/.chau7-next/config.toml` and applied immediately.
 //!
 //! One file per section. A section is made of renderer functions listed in
 //! [`renderers`]; porting a section means a new file plus one line there. A
-//! section without a renderer shows a note instead of its controls, and its
-//! values stay editable in the config file ("Open config.toml").
+//! All current sidebar sections have renderer routes. Search results use
+//! stable current-source anchors to reach their controls.
 
 mod about;
 mod ai;
+mod anchors;
 mod backup;
 mod colors;
 mod display;
@@ -34,20 +35,23 @@ mod rendering;
 mod repositories;
 mod shell;
 mod shortcuts;
+mod start_here;
 mod tabs;
 mod text;
 mod token_optimization;
 mod widgets;
+mod windows;
 
 pub use about::open_about;
 
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::settings_search::{
-    SettingsGroup, SettingsSection, matching_settings, sections_matching,
+    SEARCHABLE_SETTINGS, SearchableSetting, SettingsGroup, SettingsNavigation, SettingsSection,
+    matching_settings, sections_matching,
 };
 use gpui::{
-    AnyWindowHandle, App, BorrowAppContext, Bounds, Context, Entity, Global, Render, SharedString,
-    Window, WindowBounds, WindowOptions, div, prelude::*, px, size,
+    AnyWindowHandle, App, BorrowAppContext, Bounds, Context, Entity, Global, Render, ScrollAnchor,
+    ScrollHandle, SharedString, Window, WindowBounds, WindowOptions, div, prelude::*, px, size,
 };
 use gpui_kit::component::TitleBar;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
@@ -72,6 +76,7 @@ pub(crate) struct SectionContext<'a> {
     /// Repositories section: the repository being edited.
     pub selected_repo: Option<String>,
     pub known_repo_roots: Vec<String>,
+    pub notification_warning: Option<String>,
     pub permissions: crate::permission_center::Snapshot,
     /// Config file state (General).
     pub config: &'a ConfigFiles,
@@ -103,12 +108,15 @@ type Section = fn(&SectionContext) -> gpui::Div;
 fn renderers(section: SettingsSection) -> &'static [Section] {
     use SettingsSection as S;
     match section {
+        S::StartHere => &[start_here::section],
+        S::Windows => &[windows::section],
+        S::History => &[logs::history],
+        S::SshProfiles => &[mine::profiles::ssh_sync],
         S::General => &[general::section, files::section],
         S::ProfilesBackup => &[
             mine::profiles::bar,
             backup::section,
             mine::profiles::auto_switch,
-            mine::profiles::ssh_sync,
         ],
         S::About => &[about::section],
         S::FontColors => &[text::section, colors::section],
@@ -123,7 +131,7 @@ fn renderers(section: SettingsSection) -> &'static [Section] {
         S::Graphics => &[graphics::section],
         S::DangerousCommands => &[mine::dangerous::section],
         S::KeyboardMouse => &[keyboard::section, mine::links::section],
-        S::SnippetsTools => &[mine::productivity::section, permission_center::section],
+        S::SnippetsTools => &[mine::productivity::section, permissions],
         S::Notifications => &[notifications::section],
         S::AiDetection => &[ai::section],
         S::PromptInjection => &[injection::section],
@@ -145,9 +153,16 @@ fn renderers(section: SettingsSection) -> &'static [Section] {
     }
 }
 
+fn permissions(ctx: &SectionContext) -> gpui::Div {
+    anchors::target("permissions", permission_center::section(ctx))
+}
+
 /// The open settings window, if any (only one at a time).
 #[derive(Default)]
-struct SettingsWindowHandle(Option<AnyWindowHandle>);
+struct SettingsWindowHandle {
+    handle: Option<AnyWindowHandle>,
+    view: Option<gpui::WeakEntity<SettingsView>>,
+}
 impl Global for SettingsWindowHandle {}
 
 pub(crate) use repositories::record_recent_repo;
@@ -167,7 +182,9 @@ pub(crate) fn set_message(cx: &mut App, text: String, error: bool) {
 pub fn open(cx: &mut App) {
     crate::permission_center::refresh(cx);
     crate::cto::refresh_gain(cx);
-    if let Some(handle) = cx.try_global::<SettingsWindowHandle>().and_then(|h| h.0)
+    if let Some(handle) = cx
+        .try_global::<SettingsWindowHandle>()
+        .and_then(|h| h.handle)
         && handle
             .update(cx, |_, window, _| window.activate_window())
             .is_ok()
@@ -183,9 +200,47 @@ pub fn open(cx: &mut App) {
     match gpui_kit::open_window(options, cx, |window, cx| {
         cx.new(|cx| SettingsView::new(window, cx))
     }) {
-        Ok((handle, _)) => cx.set_global(SettingsWindowHandle(Some(handle))),
+        Ok((handle, view)) => cx.set_global(SettingsWindowHandle {
+            handle: Some(handle),
+            view: Some(view.downgrade()),
+        }),
         Err(err) => log::error!("settings window: {err}"),
     }
+}
+
+/// Focus an actual settings section/control requested by a feature.
+pub fn open_at(section: Option<SettingsSection>, anchor_id: Option<&str>, cx: &mut App) {
+    open(cx);
+    let request = cx
+        .try_global::<SettingsWindowHandle>()
+        .and_then(|state| Some((state.handle?, state.view.clone()?)));
+    let Some((handle, view)) = request else {
+        return;
+    };
+    let anchor_id = anchor_id.map(str::to_owned);
+    let _ = handle.update(cx, move |_, window, cx| {
+        let _ = view.update(cx, |view, cx| {
+            if !view.search_input.read(cx).value().is_empty() {
+                view.suppress_search_change = true;
+                view.search_input
+                    .update(cx, |input, cx| input.set_value("", window, cx));
+            }
+            view.navigation.show(section, anchor_id.as_deref());
+            if view.navigation.selection == SettingsSection::StartHere {
+                crate::permission_center::refresh(cx);
+            }
+            if let Some(anchor) = view
+                .navigation
+                .anchor_id
+                .as_deref()
+                .and_then(|id| view.search_anchors.get(id))
+                .cloned()
+            {
+                cx.on_next_frame(window, move |_, window, cx| anchor.scroll_to(window, cx));
+            }
+            cx.notify();
+        });
+    });
 }
 
 pub struct SettingsView {
@@ -214,8 +269,10 @@ pub struct SettingsView {
     proxy_inputs: proxy::ProxyInputs,
     injection: injection::InjectionState,
     search_input: Entity<InputState>,
-    query: String,
-    selected: SettingsSection,
+    navigation: SettingsNavigation,
+    suppress_search_change: bool,
+    scroll_handle: ScrollHandle,
+    search_anchors: std::rc::Rc<std::collections::HashMap<&'static str, ScrollAnchor>>,
     /// Snippets, links, command guard and profile sections.
     mine: mine::MineState,
     /// Notifications section state.
@@ -275,16 +332,15 @@ impl SettingsView {
         let search_subscription =
             cx.subscribe(&search_input, |this, input, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
-                    this.query = input.read(cx).value().trim().to_string();
-                    // The shown section follows the search: the first match.
-                    if !this.query.is_empty() {
-                        let matches = sections_matching(&this.query);
-                        if !matches.iter().any(|(s, _)| *s == this.selected)
-                            && let Some((first, _)) = matches.first()
-                        {
-                            this.selected = *first;
-                        }
+                    if this.suppress_search_change {
+                        this.suppress_search_change = false;
+                        return;
                     }
+                    let query = input.read(cx).value().to_string();
+                    let first = sections_matching(&query)
+                        .first()
+                        .map(|(section, _)| *section);
+                    this.navigation.update_search_query(query, first);
                     cx.notify();
                 }
             });
@@ -292,7 +348,25 @@ impl SettingsView {
         let notif = notifications::NotifState::new(window, cx);
         let mcp = mcp::McpInputs::new(window, cx);
         let cto = token_optimization::CtoInputs::new(window, cx);
+        let scroll_handle = ScrollHandle::new();
+        let search_anchors = std::rc::Rc::new(
+            SEARCHABLE_SETTINGS
+                .iter()
+                .map(|setting| {
+                    (
+                        setting.anchor_id,
+                        ScrollAnchor::for_handle(scroll_handle.clone()),
+                    )
+                })
+                .chain(std::iter::once((
+                    "permissions",
+                    ScrollAnchor::for_handle(scroll_handle.clone()),
+                )))
+                .collect(),
+        );
         Self {
+            scroll_handle,
+            search_anchors,
             mcp,
             cto,
             font_input,
@@ -311,14 +385,37 @@ impl SettingsView {
             proxy_inputs: proxy::ProxyInputs::new(window, cx),
             injection: injection::InjectionState::new(window, cx),
             search_input,
-            query: String::new(),
-            selected: SettingsSection::General,
+            navigation: SettingsNavigation::default(),
+            suppress_search_change: false,
             _subscriptions: vec![font_sub, timestamp_sub, search_subscription],
         }
     }
 
+    fn focus_search_result(
+        &mut self,
+        setting: &'static SearchableSetting,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.navigation.focus_search_result(setting);
+        if self.navigation.selection == SettingsSection::StartHere {
+            crate::permission_center::refresh(cx);
+        }
+        let anchor = self.search_anchors.get(setting.anchor_id).cloned();
+        if let Some(anchor) = anchor {
+            // The new section must lay out before the nested target is scrolled to.
+            cx.on_next_frame(window, move |_, window, cx| anchor.scroll_to(window, cx));
+        }
+        cx.notify();
+    }
+
     fn select(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
-        self.selected = section;
+        self.navigation.selection = section;
+        self.navigation.clear_anchor();
+        self.scroll_handle.set_offset(gpui::point(px(0.), px(0.)));
+        if section == SettingsSection::StartHere {
+            crate::permission_center::refresh(cx);
+        }
         cx.set_global(UiMessage(None));
         cx.notify();
     }
@@ -359,8 +456,8 @@ pub(crate) fn replace_base(cx: &mut App, base: Settings) {
 impl SettingsView {
     /// The sidebar: the search field, then the groups and their sections.
     fn sidebar(&self, chrome: Chrome, cx: &Context<Self>) -> gpui::Stateful<gpui::Div> {
-        let searching = !self.query.is_empty();
-        let matches = sections_matching(&self.query);
+        let searching = !self.navigation.search_query.is_empty();
+        let matches = sections_matching(&self.navigation.search_query);
         let mut list = div().flex().flex_col().gap_0p5();
         for group in SettingsGroup::ALL {
             let sections: Vec<(SettingsSection, usize)> = group
@@ -387,7 +484,7 @@ impl SettingsView {
                     .child(crate::l10n::tr(group.title())),
             );
             for (section, count) in sections {
-                let selected = section == self.selected;
+                let selected = section == self.navigation.selection;
                 list = list.child(
                     div()
                         .id(SharedString::from(format!("section-{}", section.id())))
@@ -450,9 +547,9 @@ impl SettingsView {
     }
 
     /// The selected section: header, last message, and its controls.
-    fn detail(&self, context: &SectionContext, cx: &App) -> gpui::Stateful<gpui::Div> {
+    fn detail(&self, context: &SectionContext, cx: &Context<Self>) -> gpui::Stateful<gpui::Div> {
         let chrome = context.chrome;
-        let section = self.selected;
+        let section = self.navigation.selection;
         let mut page = div().flex().flex_col().child(
             div()
                 .pb_3()
@@ -478,14 +575,23 @@ impl SettingsView {
         if let Some((text, error)) = cx.try_global::<UiMessage>().and_then(|m| m.0.clone()) {
             page = page.child(div().pb_3().child(widgets::banner(text, error, chrome)));
         }
-        if !self.query.is_empty() {
-            let hits = matching_settings(section, &self.query);
+        if !self.navigation.search_query.is_empty() {
+            let hits = matching_settings(section, &self.navigation.search_query);
             if !hits.is_empty() {
-                let names: Vec<&str> = hits.iter().map(|h| h.title).collect();
-                page = page.child(div().pb_3().child(widgets::description(
-                    format!("Matches: {}", names.join(", ")),
-                    chrome,
-                )));
+                page = page.child(div().flex().flex_wrap().gap_2().pb_3().children(
+                    hits.into_iter().map(|setting| {
+                        widgets::button(
+                            gpui::SharedString::from(format!("search-hit-{}", setting.id)),
+                            setting.localized_title(),
+                            chrome,
+                        )
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.focus_search_result(setting, window, cx)
+                            },
+                        ))
+                    }),
+                ));
             }
         }
         let blocks = renderers(section);
@@ -504,7 +610,9 @@ impl SettingsView {
                 ),
             ));
         } else {
-            page = page.children(blocks.iter().map(|block| block(context)));
+            page = anchors::with_scope(section, self.search_anchors.clone(), || {
+                page.children(blocks.iter().map(|block| block(context)))
+            });
         }
         div()
             // One id per section: a newly selected section opens at the top
@@ -519,6 +627,7 @@ impl SettingsView {
             .min_w_0()
             .h_full()
             .overflow_y_scroll()
+            .track_scroll(&self.scroll_handle)
             .px_6()
             .py_4()
             .child(page)
@@ -537,29 +646,42 @@ impl Render for SettingsView {
         let root = cx.global::<AppData>().root.clone();
         let files = cx.global::<ConfigFiles>();
         let sync = cx.try_global::<SyncState>();
+        let known_repo_roots = crate::repository::known_roots(cx);
+        let permissions = crate::permission_center::snapshot(cx, &known_repo_roots);
         let context = SectionContext {
             settings: &settings,
             chrome,
             root: &root,
             view: self,
             selected_repo: repositories::selected_repo(cx),
-            known_repo_roots: crate::repository::known_roots(cx),
-            permissions: crate::permission_center::snapshot(
-                cx,
-                &crate::repository::known_roots(cx),
-            ),
+            known_repo_roots,
+            notification_warning: cx
+                .try_global::<crate::notifications::NotificationCenter>()
+                .and_then(|center| center.banner.warning().map(str::to_owned)),
+            permissions,
             config: files,
             sync,
             monitoring: MonitoringStatus::get(cx),
             login_status: login_item::current().status(),
             home: root.home().to_string_lossy().into_owned(),
-            logs: logs::LogsData::read(cx),
+            logs: if matches!(
+                self.navigation.selection,
+                SettingsSection::History | SettingsSection::LogsHistory
+            ) {
+                logs::LogsData::read(cx)
+            } else {
+                logs::LogsData::default()
+            },
             confirm_clear: logs::confirm_pending(cx),
             remote: crate::remote::status(cx),
             proxy_status: Some(crate::proxy::status(cx)),
-            proxy_stats: crate::proxy::today_stats(cx),
+            proxy_stats: if self.navigation.selection == SettingsSection::ApiProxy {
+                crate::proxy::today_stats(cx)
+            } else {
+                None
+            },
             cto: token_optimization::CtoData::read(
-                self.selected == SettingsSection::TokenOptimization,
+                self.navigation.selection == SettingsSection::TokenOptimization,
                 cx,
             ),
         };

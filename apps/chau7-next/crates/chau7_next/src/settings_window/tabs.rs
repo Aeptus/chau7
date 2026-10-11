@@ -95,16 +95,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             chrome,
         ))
         .child(row(
-            "Always Show Toolbar in Fullscreen",
-            toggle(
-                "fullscreen-toolbar",
-                s.always_show_toolbar_in_fullscreen,
-                chrome,
-                |s, v| s.tabs.always_show_toolbar_in_fullscreen = v,
-            ),
-            chrome,
-        ))
-        .child(row(
             "Group Idle Tabs in Dropdown",
             toggle("idle", s.group_idle_tabs, chrome, |s, v| {
                 s.tabs.group_idle_tabs = v
