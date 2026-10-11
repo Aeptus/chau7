@@ -144,6 +144,19 @@ impl DataRoot {
         self.config_dir.join("ssh_connections.json")
     }
 
+    /// Notification installation belongs to Next; provider and Swift files are read only.
+    pub fn notification_hooks_dir(&self) -> PathBuf {
+        self.config_dir.join("notification-hooks")
+    }
+
+    pub fn claude_hook_overlay(&self) -> PathBuf {
+        self.notification_hooks_dir().join("claude-settings.json")
+    }
+
+    pub fn next_claude_hook_events_file(&self) -> PathBuf {
+        self.state_dir.join("claude-events.jsonl")
+    }
+
     pub fn bin_dir(&self) -> PathBuf {
         self.config_dir.join("bin")
     }

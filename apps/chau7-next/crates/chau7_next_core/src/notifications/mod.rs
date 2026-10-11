@@ -28,6 +28,7 @@ pub mod app_events;
 pub mod canonical;
 pub mod delivery;
 pub mod history;
+pub mod hooks;
 pub mod pipeline;
 pub mod schedule;
 pub mod settings;

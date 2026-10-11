@@ -16,6 +16,7 @@ use chau7_next_core::ai::notification_settings::{
     self as bridge, AiNotificationPrimaryEvent, AiNotificationPrimaryPreference,
 };
 use chau7_next_core::notifications::history::HistoryEntry;
+use chau7_next_core::notifications::hooks::{HookProvider, InstallationStatus};
 use chau7_next_core::notifications::settings::{
     NotificationSettings, default_group_action_bindings,
 };
@@ -83,6 +84,7 @@ pub(super) struct NotifState {
     /// Copies refreshed on each render.
     pub history: Vec<HistoryEntry>,
     pub permission: PermissionState,
+    pub hooks: engine::hooks::Snapshot,
     pub warning: Option<&'static str>,
     pub message: Option<String>,
     _subscriptions: Vec<Subscription>,
@@ -129,6 +131,7 @@ impl NotifState {
             log_path,
             history: Vec::new(),
             permission: PermissionState::Unknown,
+            hooks: engine::hooks::Snapshot::default(),
             warning: None,
             message: None,
             _subscriptions: vec![sub],
@@ -137,6 +140,7 @@ impl NotifState {
 
     /// Copy what the engine knows (history, permission) for this frame.
     pub(super) fn refresh(&mut self, cx: &App) {
+        self.hooks = engine::hooks::snapshot(cx);
         if let Some(nc) = cx.try_global::<NotificationCenter>() {
             self.history = nc.history.recent(100);
             self.permission = nc.banner.permission;
@@ -244,7 +248,10 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         page = page.child(super::widgets::banner(message.clone(), false, chrome));
     }
     match state.tab {
-        NotifTab::Overview => page.child(status(ctx)).child(ai_overview(ctx)),
+        NotifTab::Overview => page
+            .child(status(ctx))
+            .child(hook_installers(ctx))
+            .child(ai_overview(ctx)),
         NotifTab::Advanced => page
             .child(status(ctx))
             .child(notification_triggers::triggers(ctx)),
@@ -253,6 +260,56 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         NotifTab::Monitoring => page.child(monitoring(ctx)),
         NotifTab::History => page.child(history(ctx)),
     }
+}
+
+fn hook_installers(ctx: &SectionContext) -> gpui::Div {
+    let chrome = ctx.chrome;
+    let state = &ctx.view.notif.hooks;
+    let mut section = titled("AI Tool Hooks", chrome)
+        .child(description("Capture completion, approval and interactive prompt events in Chau7 Next. Restart a CLI session after installing or removing hooks.", chrome));
+    for (index, (provider, name)) in [
+        (HookProvider::Claude, "Claude Code"),
+        (HookProvider::Codex, "Codex"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let installed = state.statuses[index] == Some(InstallationStatus::Installed);
+        let label = if !cfg!(unix) {
+            "Session wrappers are unavailable on this platform"
+        } else if state.busy {
+            "Checking…"
+        } else {
+            state.statuses[index]
+                .map(InstallationStatus::label)
+                .unwrap_or("Not checked")
+        };
+        let mut actions = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(small(label, chrome));
+        if cfg!(unix) && !state.busy {
+            actions = actions.child(
+                button(
+                    SharedString::from(format!("notif-hook-change-{index}")),
+                    if installed { "Uninstall" } else { "Install" },
+                    chrome,
+                )
+                .on_click(move |_, _, cx| engine::hooks::change(provider, !installed, cx)),
+            );
+        }
+        section = section.child(row(name, actions, chrome));
+    }
+    if let Some(message) = &state.message {
+        section = section.child(description(message.clone(), chrome));
+    }
+    section.child(
+        div().flex().child(
+            button("notif-hook-refresh", "Refresh Hook Status", chrome)
+                .on_click(|_, _, cx| engine::hooks::refresh(cx)),
+        ),
+    )
 }
 
 // ----- status ------------------------------------------------------------------
