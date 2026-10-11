@@ -27,6 +27,7 @@ mod minimal_mode;
 mod notification_triggers;
 mod notifications;
 mod panes;
+mod permission_center;
 mod proxy;
 mod remote;
 mod rendering;
@@ -71,6 +72,7 @@ pub(crate) struct SectionContext<'a> {
     /// Repositories section: the repository being edited.
     pub selected_repo: Option<String>,
     pub known_repo_roots: Vec<String>,
+    pub permissions: crate::permission_center::Snapshot,
     /// Config file state (General).
     pub config: &'a ConfigFiles,
     /// iCloud sync state (Sync & Backup).
@@ -121,7 +123,7 @@ fn renderers(section: SettingsSection) -> &'static [Section] {
         S::Graphics => &[graphics::section],
         S::DangerousCommands => &[mine::dangerous::section],
         S::KeyboardMouse => &[keyboard::section, mine::links::section],
-        S::SnippetsTools => &[mine::productivity::section],
+        S::SnippetsTools => &[mine::productivity::section, permission_center::section],
         S::Notifications => &[notifications::section],
         S::AiDetection => &[ai::section],
         S::PromptInjection => &[injection::section],
@@ -163,6 +165,7 @@ pub(crate) fn set_message(cx: &mut App, text: String, error: bool) {
 }
 
 pub fn open(cx: &mut App) {
+    crate::permission_center::refresh(cx);
     crate::cto::refresh_gain(cx);
     if let Some(handle) = cx.try_global::<SettingsWindowHandle>().and_then(|h| h.0)
         && handle
@@ -541,6 +544,10 @@ impl Render for SettingsView {
             view: self,
             selected_repo: repositories::selected_repo(cx),
             known_repo_roots: crate::repository::known_roots(cx),
+            permissions: crate::permission_center::snapshot(
+                cx,
+                &crate::repository::known_roots(cx),
+            ),
             config: files,
             sync,
             monitoring: MonitoringStatus::get(cx),
