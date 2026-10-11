@@ -24,6 +24,16 @@ struct CpuText {
 struct CpuTextGlobal(Arc<CpuText>);
 impl Global for CpuTextGlobal {}
 
+pub(crate) fn release_glyph_cache(cx: &App) -> u64 {
+    let Some(text) = cx.try_global::<CpuTextGlobal>() else {
+        return 0;
+    };
+    let mut glyphs = text.0.glyphs.lock();
+    let bytes = glyphs.bytes as u64;
+    *glyphs = GlyphCache::default();
+    bytes
+}
+
 pub fn init(platform: Arc<dyn PlatformTextSystem>, cx: &mut App) {
     cx.set_global(CpuTextGlobal(Arc::new(CpuText {
         platform,
@@ -92,6 +102,12 @@ pub(super) struct FrameCache {
     frame: Option<CachedFrame>,
 }
 impl FrameCache {
+    pub fn bytes(&self) -> u64 {
+        self.frame
+            .as_ref()
+            .and_then(|frame| frame.image.as_bytes(0))
+            .map_or(0, |bytes| bytes.len() as u64)
+    }
     pub fn release(&mut self, cx: &mut App) {
         if let Some(frame) = self.frame.take() {
             // A closed window already released its atlas. A surviving window must

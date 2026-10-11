@@ -15,6 +15,7 @@
 mod cpu_renderer;
 
 pub use cpu_renderer::init as init_cpu_text_system;
+pub(crate) use cpu_renderer::release_glyph_cache;
 use cpu_renderer::{FrameCache, GridCanvas};
 use parking_lot::Mutex;
 
@@ -143,6 +144,14 @@ impl Default for Overlays {
 }
 
 impl Overlays {
+    pub fn cache_bytes(&self) -> u64 {
+        self.cpu_frame.lock().bytes()
+    }
+    pub fn reclaim_cache(&mut self, cx: &mut App) -> u64 {
+        let bytes = self.cache_bytes();
+        self.release_cpu_frame(cx);
+        bytes
+    }
     pub fn release_cpu_frame(&mut self, cx: &mut App) {
         self.cpu_frame.lock().release(cx);
     }

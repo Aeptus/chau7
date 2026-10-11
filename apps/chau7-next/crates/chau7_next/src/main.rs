@@ -19,6 +19,7 @@ mod history;
 mod l10n;
 mod logging;
 mod mcp;
+mod memory_pressure;
 mod migration;
 mod monitoring;
 mod monitoring_status;
@@ -203,11 +204,13 @@ fn main() {
         }
 
         // The welcome screen the first time, else the splash.
+        memory_pressure::start(cx);
         views::launch(cx);
         hang_watchdog::start(cx);
         performance::start(cx);
 
         cx.on_app_quit(|cx| {
+            memory_pressure::stop(cx);
             save_session(cx, true);
             repository::flush(cx);
             history::recorder::flush_on_quit();

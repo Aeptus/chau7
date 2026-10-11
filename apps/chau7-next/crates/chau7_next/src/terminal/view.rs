@@ -105,6 +105,7 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        crate::memory_pressure::register_view(cx.entity().downgrade(), cx);
         let focus_handle = cx.focus_handle();
         let font_size = Settings::get(cx).appearance.zoomed_font_size();
         let mut subscriptions = vec![cx.observe(&session, |_, _, cx| cx.notify())];
@@ -158,7 +159,9 @@ impl TerminalView {
                 }
             }
         });
-        let scrollback = Settings::get(cx).terminal.scrollback_lines;
+        let scrollback = chau7_next_core::memory_pressure::tracker_cap(
+            Settings::get(cx).terminal.scrollback_lines,
+        );
         let mut this = Self {
             session,
             focus_handle,
@@ -188,6 +191,10 @@ impl TerminalView {
     /// The selection, for macOS Services (`platform::services`, RBK-042).
     fn publish_selection(&self, cx: &App) {
         crate::platform::services::set_selection(self.session.read(cx).selection_text());
+    }
+
+    pub(crate) fn memory_session_id(&self, cx: &App) -> u64 {
+        self.session.read(cx).id
     }
 
     pub fn set_font_size(&mut self, size: f32, cx: &mut Context<Self>) {
@@ -367,6 +374,9 @@ fn png_name(name: &str) -> String {
 
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if window.is_visible() {
+            self.session.read(cx).mark_memory_visible(cx);
+        }
         let metrics = self.metrics(window, cx);
         let guard_overlay = self.render_guard(cx);
         let settings = Settings::get(cx);

@@ -135,6 +135,7 @@ pub struct TerminalSession {
     /// telemetry (`tabIdentifier`, `CHAU7_TAB_ID`): a UUID per session.
     pub tab_identifier: String,
     term: Arc<RwLock<Chau7Terminal>>,
+    memory: Arc<crate::memory_pressure::SessionMemory>,
     writer: PtyWriter,
     stop: Arc<AtomicBool>,
     /// Raw output collected by the poll thread since the last refresh, and
@@ -490,9 +491,14 @@ impl TerminalSession {
             }
             None => (DataRoot::from_env(), Default::default()),
         };
+        let lines = cx
+            .try_global::<Settings>()
+            .map_or(10_000, |settings| settings.terminal.scrollback_lines);
+        let memory = crate::memory_pressure::register(id, &term, &root, lines);
         Self {
             id,
             term,
+            memory,
             writer,
             stop,
             output,
@@ -547,6 +553,7 @@ impl TerminalSession {
     /// Pull everything new from the terminal and notify observers.
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
         let started = Instant::now();
+        self.memory.set_tui(self.ai_app.is_some());
         let mut metadata_changed = self.retry_resize();
         let (grid, cursor, title, closed, events, bell, clipboard, clipboard_load) = {
             let term = self.term.read();
@@ -707,6 +714,7 @@ impl TerminalSession {
         if metadata_changed {
             cx.emit(SessionEvent::MetadataChanged);
         }
+        self.memory.set_tui(self.ai_app.is_some());
         cx.emit(SessionEvent::Output);
         cx.notify();
         feature_profiler::record(
@@ -1568,6 +1576,20 @@ impl TerminalSession {
     }
 
     /// Whole buffer (scrollback + screen) as text, for search and export.
+    pub fn mark_memory_visible(&self, cx: &gpui::App) {
+        self.memory.activate(cx);
+    }
+
+    pub fn take_memory_refresh(&self) -> bool {
+        self.memory.take_refresh()
+    }
+
+    pub fn styled_buffer_for_restore(&self) -> String {
+        self.memory
+            .styled_for_restore()
+            .unwrap_or_else(|| self.term.read().full_buffer_ansi_text())
+    }
+
     pub fn buffer_text(&self) -> String {
         self.term.read().full_buffer_text()
     }
@@ -1602,6 +1624,7 @@ impl TerminalSession {
     /// Suspend Background Rendering for a hidden tab (see `render_suspended`).
     pub fn set_render_suspended(&self, suspended: bool) {
         self.render_suspended.store(suspended, Ordering::Relaxed);
+        self.memory.set_tui(self.ai_app.is_some());
     }
 
     pub fn is_render_suspended(&self) -> bool {
@@ -1744,7 +1767,8 @@ impl TerminalSession {
         let term = self.term.read();
         apply_colors(&term, settings);
         apply_image_protocols(&term, settings);
-        term.set_scrollback_size(settings.terminal.scrollback_lines);
+        self.memory.configure(settings.terminal.scrollback_lines);
+        term.set_scrollback_size(self.memory.capacity());
     }
 }
 
