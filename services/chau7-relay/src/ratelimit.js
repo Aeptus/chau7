@@ -44,7 +44,12 @@ export class TokenBucket {
 export const RATE_LIMITS = Object.freeze({
   connect: { capacity: 15, refillPerSecond: 0.5 }, // ~30/min sustained, burst 15
   push: { capacity: 20, refillPerSecond: 1 }, // ~60/min sustained, burst 20
-  pending: { capacity: 40, refillPerSecond: 2 } // ~120/min sustained, burst 40
+  pending: { capacity: 40, refillPerSecond: 2 }, // ~120/min sustained, burst 40
+  // Read-only viewers (Chau7 Next). `viewer` counts viewer connections to
+  // one shared session; `viewattempt` runs in a DO per client IP and bounds
+  // share-code guessing (8 characters) to ~60 attempts an hour.
+  viewer: { capacity: 20, refillPerSecond: 0.2 },
+  viewattempt: { capacity: 30, refillPerSecond: 60 / 3600 }
 });
 
 /**
