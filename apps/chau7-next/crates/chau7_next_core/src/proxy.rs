@@ -290,7 +290,7 @@ impl ApiCallEvent {
             provider: self.provider.raw_value().to_string(),
             model: self.model.clone(),
             total_tokens: self.total_tokens(),
-            formatted_cost: self.formatted_cost(),
+            formatted_cost: crate::l10n::numbers::cost_precise(self.cost_usd),
             formatted_latency: self.formatted_latency(),
         }
     }

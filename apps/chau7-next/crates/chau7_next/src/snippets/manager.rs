@@ -377,7 +377,11 @@ impl SnippetsManager {
         {
             Ok(count) => {
                 self.reload(cx);
-                self.set_status(format!("Imported {count} snippets!"), false, cx);
+                self.set_status(
+                    crate::l10n::count("snippets.import.success", "Imported %d snippets!", count),
+                    false,
+                    cx,
+                );
             }
             Err(err) => self.set_status(format!("Error: {err}"), true, cx),
         }
@@ -1317,7 +1321,11 @@ impl SnippetsManager {
                     .gap_1()
                     .text_xs()
                     .text_color(chrome.text_muted)
-                    .child(format!("{} snippets", self.entries.len()))
+                    .child(crate::l10n::count(
+                        "snippets.count",
+                        "%d snippets",
+                        self.entries.len(),
+                    ))
                     .when_some(self.repo.clone(), |d, repo| {
                         d.child("\u{2022}").child(
                             repo.file_name()

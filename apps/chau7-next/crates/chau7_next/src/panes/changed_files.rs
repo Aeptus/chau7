@@ -284,7 +284,11 @@ impl Render for ChangedFilesView {
                     .p_2()
                     .text_size(px(11.0))
                     .text_color(chrome.text_muted)
-                    .child(format!("{count} file{}", if count == 1 { "" } else { "s" }))
+                    .child(crate::l10n::count(
+                        "panel.changedFiles.fileCount",
+                        "%d files",
+                        count,
+                    ))
                     .child(div().flex_1())
                     .child(
                         div()

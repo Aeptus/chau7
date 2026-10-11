@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 pub mod format;
 pub mod formatters;
+pub mod numbers;
 mod plural;
 
 pub use format::{Arg, format_printf};
