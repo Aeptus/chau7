@@ -432,33 +432,60 @@ pub fn with_local_echo(
     cells
 }
 
-/// Keep ASCII runs batched, but anchor each full or wide grapheme at its
-/// actual terminal column. GPUI's forced width counts shaped base glyphs,
-/// which need not equal terminal columns for emoji or combining sequences.
+/// A Unicode grapheme may span several native terminal cells. Keep the
+/// original column range for positioning while shaping the sequence together.
+#[derive(Debug, PartialEq, Eq)]
+struct TextChunk {
+    columns: Range<usize>,
+    natural: bool,
+}
 fn text_chunks(
     cells: &[OwnedCell],
     clusters: &HashMap<usize, String>,
     start: usize,
-) -> Vec<Range<usize>> {
-    let mut chunks = Vec::new();
-    let mut col = 0;
-    while col < cells.len() {
-        if cells[col].continuation {
-            col += 1;
+) -> Vec<TextChunk> {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut text = String::new();
+    let mut spans = Vec::new();
+    for (col, cell) in cells.iter().enumerate() {
+        if cell.continuation {
             continue;
         }
-        let first = col;
-        col += 1;
-        if cells[first].width <= 1 && !clusters.contains_key(&(start + first)) {
-            while col < cells.len()
-                && !cells[col].continuation
-                && cells[col].width <= 1
-                && !clusters.contains_key(&(start + col))
-            {
-                col += 1;
-            }
+        let offset = text.len();
+        text.push_str(&cell_text(cell, clusters.get(&(start + col))));
+        spans.push((col, offset, text.len()));
+    }
+    let mut chunks: Vec<TextChunk> = Vec::new();
+    let mut span = 0;
+    for (offset, grapheme) in text.grapheme_indices(true) {
+        while span < spans.len() && spans[span].2 <= offset {
+            span += 1;
         }
-        chunks.push(first..col);
+        if span == spans.len() {
+            break;
+        }
+        let first = span;
+        let end = offset + grapheme.len();
+        while span + 1 < spans.len() && spans[span + 1].1 < end {
+            span += 1;
+        }
+        let first_col = spans[first].0;
+        let last_col = spans[span].0;
+        let natural = first != span
+            || cells[first_col].width > 1
+            || clusters.contains_key(&(start + first_col));
+        if !natural
+            && let Some(previous) = chunks.last_mut()
+            && !previous.natural
+            && previous.columns.end == first_col
+        {
+            previous.columns.end = last_col + 1;
+        } else {
+            chunks.push(TextChunk {
+                columns: first_col..last_col + 1,
+                natural,
+            });
+        }
     }
     chunks
 }
@@ -623,12 +650,22 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
         // Text runs.
         let mut decorations: Vec<Decoration> = Vec::new();
         for chunk in text_chunks(row_cells, &state.clusters, start) {
-            let mut text = String::with_capacity(chunk.len());
+            let mut text = String::with_capacity(chunk.columns.len());
             let mut runs: Vec<TextRun> = Vec::new();
             let mut any_visible = false;
-            for col in chunk.clone() {
+            for col in chunk.columns.clone() {
                 let cell = &row_cells[col];
+                if cell.continuation {
+                    continue;
+                }
                 let contents = cell_text(cell, state.clusters.get(&(start + col)));
+                // One extended grapheme uses its leading cell style. Style
+                // boundaries inside a ZWJ sequence must not split its shaping.
+                let cell = if chunk.natural {
+                    &row_cells[chunk.columns.start]
+                } else {
+                    cell
+                };
                 let (fg, bg) = cell_colors(cell);
                 let mut color = rgb_tuple(if cell.flags & CELL_FLAG_HIDDEN != 0 {
                     bg
@@ -639,6 +676,9 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
                     color.a *= 0.6;
                 }
                 let mut run_font = m.font.clone();
+                if chunk.natural {
+                    run_font.features = FontFeatures::default();
+                }
                 if cell.flags & CELL_FLAG_BOLD != 0 {
                     run_font.weight = FontWeight(run_font.weight.0.max(FontWeight::BOLD.0));
                 }
@@ -697,12 +737,11 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
                     &runs,
                     // Full clusters are shaped naturally, independently of the
                     // next chunk's position. Normal runs keep the fast grid layout.
-                    (chunk.len() > 1 || !state.clusters.contains_key(&(start + chunk.start)))
-                        .then_some(m.cell_width),
+                    (!chunk.natural).then_some(m.cell_width),
                 );
                 let _ = window.paint_line(
                     &line,
-                    point(bounds.left() + m.cell_width * chunk.start as f32, y),
+                    point(bounds.left() + m.cell_width * chunk.columns.start as f32, y),
                     m.line_height,
                     &runs,
                     cx,
@@ -980,7 +1019,10 @@ mod tests {
         cells[6].character = 'z';
         let clusters = HashMap::from([(8, "e\u{301}".to_string()), (9, "👩‍💻".to_string())]);
         assert_eq!(
-            text_chunks(&cells, &clusters, 7),
+            text_chunks(&cells, &clusters, 7)
+                .into_iter()
+                .map(|chunk| chunk.columns)
+                .collect::<Vec<_>>(),
             vec![0..1, 1..2, 2..3, 4..5, 6..7]
         );
         assert_eq!(cell_text(&cells[1], clusters.get(&8)), "e\u{301}");
@@ -994,7 +1036,10 @@ mod tests {
         let grid = term.grid_copy();
         let mut painted = String::new();
         for chunk in text_chunks(&grid.cells, &grid.clusters, 0) {
-            for index in chunk {
+            for index in chunk.columns {
+                if grid.cells[index].continuation {
+                    continue;
+                }
                 painted.push_str(&cell_text(&grid.cells[index], grid.clusters.get(&index)));
             }
         }
@@ -1002,9 +1047,52 @@ mod tests {
     }
 
     #[test]
+    fn native_grid_emoji_sequences_are_each_one_naturally_shaped_chunk() {
+        let term = chau7_terminal::Chau7Terminal::new_headless(80, 1).unwrap();
+        term.inject_output("A👩🏽‍💻B👨‍👩‍👧‍👦C🇫🇷Da\u{20dd}E".as_bytes());
+        let grid = term.grid_copy();
+        let chunks = text_chunks(&grid.cells, &grid.clusters, 0);
+        let rendered: Vec<(String, Range<usize>, bool)> = chunks
+            .iter()
+            .map(|chunk| {
+                let text = chunk
+                    .columns
+                    .clone()
+                    .filter(|index| !grid.cells[*index].continuation)
+                    .map(|index| cell_text(&grid.cells[index], grid.clusters.get(&index)))
+                    .collect::<String>();
+                (text, chunk.columns.clone(), chunk.natural)
+            })
+            .collect();
+        for sequence in ["👩🏽‍💻", "👨‍👩‍👧‍👦", "🇫🇷", "a\u{20dd}"] {
+            let matching: Vec<_> = rendered
+                .iter()
+                .filter(|(text, _, _)| text == sequence)
+                .collect();
+            assert_eq!(matching.len(), 1, "{sequence}: {rendered:?}");
+            assert!(matching[0].2);
+        }
+        let woman = rendered.iter().find(|(text, _, _)| text == "👩🏽‍💻").unwrap();
+        assert_eq!(woman.1, 1..6);
+        let family = rendered.iter().find(|(text, _, _)| text == "👨‍👩‍👧‍👦").unwrap();
+        assert_eq!(family.1, 8..15);
+        assert!(
+            rendered
+                .iter()
+                .any(|(text, range, natural)| text == "B" && range.start == 7 && !*natural)
+        );
+    }
+
+    #[test]
     fn ascii_rows_still_shape_in_one_batch() {
         let cells = vec![OwnedCell::default(); 80];
-        assert_eq!(text_chunks(&cells, &HashMap::new(), 0), vec![0..80]);
+        assert_eq!(
+            text_chunks(&cells, &HashMap::new(), 0)
+                .into_iter()
+                .map(|chunk| chunk.columns)
+                .collect::<Vec<_>>(),
+            vec![0..80]
+        );
     }
 
     #[test]
