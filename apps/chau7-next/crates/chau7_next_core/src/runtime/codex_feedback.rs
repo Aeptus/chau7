@@ -23,6 +23,7 @@ pub enum Record {
         input: i64,
         output: i64,
         cached: i64,
+        reasoning: i64,
     },
 }
 fn text(v: &Value) -> Option<String> {
@@ -74,6 +75,10 @@ pub fn parse(line: &str) -> Option<Record> {
                 input: usage["input_tokens"].as_i64().unwrap_or(0).max(0),
                 output: usage["output_tokens"].as_i64().unwrap_or(0).max(0),
                 cached: usage["cached_input_tokens"].as_i64().unwrap_or(0).max(0),
+                reasoning: usage["reasoning_output_tokens"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .max(0),
             })
         }
         _ => None,
@@ -346,6 +351,19 @@ impl InteractionTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn codex_usage_retains_reported_reasoning() {
+        let line = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":8,"cached_input_tokens":3,"reasoning_output_tokens":2}}}}"#;
+        assert_eq!(
+            parse(line),
+            Some(Record::Usage {
+                input: 10,
+                output: 8,
+                cached: 3,
+                reasoning: 2
+            })
+        );
+    }
     #[test]
     fn debounce_overlap_and_resolutions() {
         let mut tracker = Tracker::default();

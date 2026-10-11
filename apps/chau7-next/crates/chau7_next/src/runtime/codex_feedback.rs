@@ -22,7 +22,7 @@ struct Watch {
     tracker: core::Tracker,
     next_lookup: u64,
     attempt: u32,
-    usage: Option<(i64, i64, i64)>,
+    usage: Option<(i64, i64, i64, i64)>,
 }
 
 type Watches = HashMap<(String, String), Watch>;
@@ -250,22 +250,30 @@ fn poll(
                                 input,
                                 output,
                                 cached,
+                                reasoning,
                             } => {
-                                let old = watch.usage.replace((input, output, cached));
+                                let old = watch.usage.replace((input, output, cached, reasoning));
                                 if !catch_up
-                                    && let Some((prior_input, prior_output, prior_cached)) = old
+                                    && let Some((
+                                        prior_input,
+                                        prior_output,
+                                        prior_cached,
+                                        prior_reasoning,
+                                    )) = old
                                 {
                                     let delta = Record::Usage {
                                         input: input.saturating_sub(prior_input).max(0),
                                         output: output.saturating_sub(prior_output).max(0),
                                         cached: cached.saturating_sub(prior_cached).max(0),
+                                        reasoning: reasoning.saturating_sub(prior_reasoning).max(0),
                                     };
                                     if !matches!(
                                         delta,
                                         Record::Usage {
                                             input: 0,
                                             output: 0,
-                                            cached: 0
+                                            cached: 0,
+                                            reasoning: 0,
                                         }
                                     ) {
                                         deliveries

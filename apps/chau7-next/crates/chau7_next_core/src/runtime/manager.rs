@@ -448,8 +448,16 @@ impl RuntimeSessionManager {
                 input,
                 output,
                 cached,
+                reasoning,
             } if session.current_turn_id().is_some() => {
-                session.add_tokens(*input, *output, 0, *cached);
+                session.add_token_usage(crate::telemetry::token_metrics::TokenUsage::provider(
+                    "codex",
+                    Some(*input),
+                    Some(*output),
+                    Some(0),
+                    Some(*cached),
+                    Some(*reasoning),
+                ));
             }
             Record::TurnCompleted(summary)
                 if session.current_turn_id().is_some() && session.state() == State::Busy =>
@@ -930,6 +938,7 @@ mod tests {
                 input: 10,
                 output: 4,
                 cached: 2,
+                reasoning: 1,
             },
             &mut host,
         );
@@ -948,7 +957,10 @@ mod tests {
             &mut host,
         );
         assert_eq!(session.state(), State::Ready);
-        assert_eq!(session.cumulative_token_usage().input_tokens, 10);
+        assert_eq!(session.cumulative_token_usage().input_tokens, 8);
+        assert_eq!(session.cumulative_token_usage().output_tokens, 3);
+        assert_eq!(session.cumulative_token_usage().reasoning_output_tokens, 1);
+        assert_eq!(session.cumulative_token_usage().cache_read_input_tokens, 2);
         assert!(session.has_token_usage_evidence());
         assert_eq!(
             session.latest_turn_result().unwrap().value,
