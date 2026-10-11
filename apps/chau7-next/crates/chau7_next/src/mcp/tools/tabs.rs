@@ -682,6 +682,16 @@ pub(crate) fn status(tab_id: &str, ctx: &ToolContext) -> String {
     encode_sorted(&Value::Object(summary))
 }
 
+fn close_requires_force(status: CommandStatus) -> bool {
+    matches!(
+        status,
+        CommandStatus::Running
+            | CommandStatus::WaitingForInput
+            | CommandStatus::ApprovalRequired
+            | CommandStatus::Stuck
+    )
+}
+
 pub(crate) fn close_tab(tab_id: &str, force: bool, cx: &mut App) -> String {
     if parse_tab_id(tab_id).is_none() {
         return json_error(&format!("Invalid tab ID: {tab_id}"));
@@ -696,11 +706,8 @@ pub(crate) fn close_tab(tab_id: &str, force: bool, cx: &mut App) -> String {
             .read(cx)
             .mcp_session(tab.tab, cx)
             .map(|s| s.read(cx).status());
-        if let Some(
-            status @ (CommandStatus::Running
-            | CommandStatus::WaitingForInput
-            | CommandStatus::ApprovalRequired),
-        ) = status
+        if let Some(status) = status
+            && close_requires_force(status)
         {
             return json_error(&format!(
                 "Tab has a running process (status: {}). Use force=true to close anyway.",
@@ -900,5 +907,20 @@ mod creation_tests {
                 ask: true
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod close_tests {
+    use super::close_requires_force;
+    use chau7_next_core::shell_session::CommandStatus::*;
+    #[test]
+    fn force_false_matches_current_swift_display_session_statuses() {
+        for status in [Running, WaitingForInput, ApprovalRequired, Stuck] {
+            assert!(close_requires_force(status));
+        }
+        for status in [Idle, Done, Exited] {
+            assert!(!close_requires_force(status));
+        }
     }
 }
