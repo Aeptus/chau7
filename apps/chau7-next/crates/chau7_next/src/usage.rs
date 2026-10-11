@@ -713,6 +713,7 @@ pub fn refresh_latency(cx: &mut App) {
             let now = Utc::now();
             let start = selection.range.start(now);
             recorder.store().backfill_latency_batch(100);
+            recorder.store().backfill_cost_batch(100);
             let mut samples = recorder.store().latency_samples(start);
             samples.extend(
                 chau7_next_core::proxy::ProxyAnalyticsStore::new(&root.proxy_db())

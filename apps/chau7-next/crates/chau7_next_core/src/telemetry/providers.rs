@@ -39,6 +39,8 @@ fn transcript_content(
         turns,
         total_input_tokens: positive(usage.input_tokens),
         total_cached_input_tokens: positive(usage.cached_input_tokens),
+        total_cache_creation_input_tokens: positive(usage.cache_creation_input_tokens),
+        total_cache_read_input_tokens: positive(usage.cache_read_input_tokens),
         total_output_tokens: positive(usage.output_tokens),
         total_reasoning_output_tokens: positive(usage.reasoning_output_tokens),
         cost_usd: estimated_cost,

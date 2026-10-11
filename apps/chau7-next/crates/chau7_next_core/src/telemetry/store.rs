@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS runs (
     exit_status INTEGER,
     total_input_tokens INTEGER,
     total_cached_input_tokens INTEGER,
+    total_cache_creation_input_tokens INTEGER,
+    total_cache_read_input_tokens INTEGER,
     total_output_tokens INTEGER,
     total_reasoning_output_tokens INTEGER,
     cost_usd REAL,
@@ -88,6 +90,8 @@ CREATE TABLE IF NOT EXISTS turns (
     content TEXT,
     input_tokens INTEGER,
     cached_input_tokens INTEGER,
+    cache_creation_input_tokens INTEGER,
+    cache_read_input_tokens INTEGER,
     output_tokens INTEGER,
     reasoning_output_tokens INTEGER,
     tool_calls TEXT,
@@ -186,7 +190,7 @@ cost_source = COALESCE(cost_source,
 const INVALIDATE_IMPLAUSIBLE: &str = "
 UPDATE runs
 SET total_input_tokens = NULL,
-    total_cached_input_tokens = NULL,
+    total_cached_input_tokens = NULL, total_cache_creation_input_tokens = NULL, total_cache_read_input_tokens = NULL,
     total_output_tokens = NULL,
     total_reasoning_output_tokens = NULL,
     cost_usd = NULL,
@@ -294,6 +298,8 @@ fn parse_run(row: &Row) -> Option<TelemetryRun> {
     run.exit_status = col(row, "exit_status");
     run.total_input_tokens = col(row, "total_input_tokens");
     run.total_cached_input_tokens = col(row, "total_cached_input_tokens");
+    run.total_cache_creation_input_tokens = col(row, "total_cache_creation_input_tokens");
+    run.total_cache_read_input_tokens = col(row, "total_cache_read_input_tokens");
     run.total_output_tokens = col(row, "total_output_tokens");
     run.total_reasoning_output_tokens = col(row, "total_reasoning_output_tokens");
     run.cost_usd = col(row, "cost_usd");
@@ -320,6 +326,8 @@ fn parse_turn(row: &Row) -> Option<TelemetryTurn> {
     turn.content = col(row, "content");
     turn.input_tokens = col(row, "input_tokens");
     turn.cached_input_tokens = col(row, "cached_input_tokens");
+    turn.cache_creation_input_tokens = col(row, "cache_creation_input_tokens");
+    turn.cache_read_input_tokens = col(row, "cache_read_input_tokens");
     turn.output_tokens = col(row, "output_tokens");
     turn.reasoning_output_tokens = col(row, "reasoning_output_tokens");
     turn.tool_calls = decode_json(col(row, "tool_calls")).unwrap_or_default();
@@ -452,10 +460,10 @@ impl TelemetryStore {
                 "INSERT OR IGNORE INTO runs
                 (run_id, session_id, tab_id, provider, model, cwd, repo_path,
                  started_at, ended_at, duration_ms, exit_status,
-                 total_input_tokens, total_cached_input_tokens, total_output_tokens, total_reasoning_output_tokens,
+                 total_input_tokens, total_cached_input_tokens, total_cache_creation_input_tokens, total_cache_read_input_tokens, total_output_tokens, total_reasoning_output_tokens,
                  cost_usd, token_usage_source, token_usage_state, cost_source, cost_state,
                  turn_count, tags, metadata, raw_transcript_ref, parent_run_id, error_message)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 params![
                     run.id,
                     run.session_id,
@@ -470,6 +478,8 @@ impl TelemetryStore {
                     run.exit_status,
                     run.total_input_tokens,
                     run.total_cached_input_tokens,
+                    run.total_cache_creation_input_tokens,
+                    run.total_cache_read_input_tokens,
                     run.total_output_tokens,
                     run.total_reasoning_output_tokens,
                     run.cost_usd,
@@ -526,6 +536,27 @@ impl TelemetryStore {
             rows.filter_map(|r|r.transpose()).collect()
         })
     }
+    /// Versioned resumable historical cost estimation. Observed provider
+    /// costs and invalid token totals are never overwritten by estimates.
+    pub fn backfill_cost_batch(&self, limit: usize) -> usize {
+        self.with(0,|conn| {
+            let key=format!("pricing_{}",super::pricing::VERSION);
+            let cursor:Option<String>=conn.query_row("SELECT cursor FROM maintenance_state WHERE name=?1",[&key],|r|r.get(0)).optional()?;
+            let mut stmt=conn.prepare("SELECT * FROM runs WHERE ended_at IS NOT NULL AND (?1 IS NULL OR started_at || '|' || run_id > ?1) ORDER BY started_at,run_id LIMIT ?2")?;
+            let runs:Vec<_>=stmt.query_map(params![cursor,limit.clamp(1,500) as i64],|r|Ok(parse_run(r)))?.filter_map(|r|r.transpose()).collect::<rusqlite::Result<Vec<_>>>()?;
+            if runs.is_empty(){return Ok(0);}
+            let tx=conn.unchecked_transaction()?;
+            for run in &runs {
+                if run.token_usage_state==TelemetryMetricState::Invalid || run.cost_usd.is_some()&&run.cost_source!=Some(super::token_metrics::CostSource::Estimated) {continue;}
+                let usage=run.token_usage();if !usage.has_any_tokens(){continue;}
+                let Some(price)=super::pricing::pricing(run.model.as_deref(),Some(&run.provider)) else {continue;};
+                let mut metadata=run.metadata.clone();metadata.insert("pricing_catalog_version".into(),super::pricing::VERSION.into());
+                tx.execute("UPDATE runs SET cost_usd=?1,cost_source='estimated',cost_state='estimated',metadata=?2 WHERE run_id=?3 AND (cost_usd IS NULL OR cost_source='estimated')",params![price.estimate(&usage),encode_json(&metadata),run.id])?;
+            }
+            let last=runs.last().unwrap();tx.execute("INSERT INTO maintenance_state(name,cursor) VALUES (?1,?2) ON CONFLICT(name) DO UPDATE SET cursor=excluded.cursor",params![key,format!("{}|{}",iso(&last.started_at),last.id)])?;
+            tx.commit()?;Ok(runs.len())
+        })
+    }
     /// Ordered history, including live terminal measurements and authoritative transcript replacements.
     pub fn latency_samples(
         &self,
@@ -559,7 +590,7 @@ impl TelemetryStore {
             tx.execute(
                 "UPDATE runs SET
                     session_id = ?, model = ?, ended_at = ?, duration_ms = ?, exit_status = ?,
-                    total_input_tokens = ?, total_cached_input_tokens = ?, total_output_tokens = ?,
+                    total_input_tokens = ?, total_cached_input_tokens = ?, total_cache_creation_input_tokens = ?, total_cache_read_input_tokens = ?, total_output_tokens = ?,
                     total_reasoning_output_tokens = ?, cost_usd = ?, token_usage_source = ?,
                     token_usage_state = ?, cost_source = ?, cost_state = ?,
                     turn_count = ?, raw_transcript_ref = ?, error_message = ?
@@ -572,6 +603,8 @@ impl TelemetryStore {
                     run.exit_status,
                     run.total_input_tokens,
                     run.total_cached_input_tokens,
+                    run.total_cache_creation_input_tokens,
+                    run.total_cache_read_input_tokens,
                     run.total_output_tokens,
                     run.total_reasoning_output_tokens,
                     run.cost_usd,
@@ -611,7 +644,7 @@ impl TelemetryStore {
                 "UPDATE runs SET
                     session_id = ?, tab_id = ?, provider = ?, model = ?, cwd = ?, repo_path = ?,
                     started_at = ?, ended_at = ?, duration_ms = ?, exit_status = ?,
-                    total_input_tokens = ?, total_cached_input_tokens = ?, total_output_tokens = ?,
+                    total_input_tokens = ?, total_cached_input_tokens = ?, total_cache_creation_input_tokens = ?, total_cache_read_input_tokens = ?, total_output_tokens = ?,
                     total_reasoning_output_tokens = ?, cost_usd = ?, token_usage_source = ?,
                     token_usage_state = ?, cost_source = ?, cost_state = ?, turn_count = ?,
                     tags = ?, metadata = ?, raw_transcript_ref = ?, parent_run_id = ?, error_message = ?
@@ -629,6 +662,8 @@ impl TelemetryStore {
                     run.exit_status,
                     run.total_input_tokens,
                     run.total_cached_input_tokens,
+                    run.total_cache_creation_input_tokens,
+                    run.total_cache_read_input_tokens,
                     run.total_output_tokens,
                     run.total_reasoning_output_tokens,
                     run.cost_usd,
@@ -662,7 +697,7 @@ impl TelemetryStore {
             c.execute(
                 "UPDATE runs
                 SET total_input_tokens = NULL,
-                    total_cached_input_tokens = NULL,
+                    total_cached_input_tokens = NULL, total_cache_creation_input_tokens = NULL, total_cache_read_input_tokens = NULL,
                     total_output_tokens = NULL,
                     total_reasoning_output_tokens = NULL,
                     cost_usd = NULL,
@@ -1170,12 +1205,16 @@ fn setup(conn: &Connection) {
 fn migrate(conn: &Connection) {
     for (table, name, definition) in [
         ("runs", "total_cached_input_tokens", "INTEGER"),
+        ("runs", "total_cache_creation_input_tokens", "INTEGER"),
+        ("runs", "total_cache_read_input_tokens", "INTEGER"),
         ("runs", "total_reasoning_output_tokens", "INTEGER"),
         ("runs", "token_usage_source", "TEXT"),
         ("runs", "token_usage_state", "TEXT"),
         ("runs", "cost_source", "TEXT"),
         ("runs", "cost_state", "TEXT"),
         ("turns", "cached_input_tokens", "INTEGER"),
+        ("turns", "cache_creation_input_tokens", "INTEGER"),
+        ("turns", "cache_read_input_tokens", "INTEGER"),
         ("turns", "reasoning_output_tokens", "INTEGER"),
     ] {
         ensure_column(conn, table, name, definition);
@@ -1206,9 +1245,9 @@ fn ensure_column(conn: &Connection, table: &str, name: &str, definition: &str) {
 fn insert_turn(conn: &Connection, turn: &TelemetryTurn) {
     if let Err(err) = conn.execute(
         "INSERT OR IGNORE INTO turns
-        (turn_id, run_id, turn_index, role, content, input_tokens, cached_input_tokens, output_tokens,
+        (turn_id, run_id, turn_index, role, content, input_tokens, cached_input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens,
          reasoning_output_tokens, tool_calls, timestamp, duration_ms)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params![
             turn.id,
             turn.run_id,
@@ -1217,6 +1256,8 @@ fn insert_turn(conn: &Connection, turn: &TelemetryTurn) {
             turn.content,
             turn.input_tokens,
             turn.cached_input_tokens,
+            turn.cache_creation_input_tokens,
+            turn.cache_read_input_tokens,
             turn.output_tokens,
             turn.reasoning_output_tokens,
             encode_json(&turn.tool_calls),
@@ -1543,5 +1584,78 @@ mod tests {
                 .latency_samples(Some(now + chrono::Duration::minutes(1)))
                 .is_empty()
         );
+    }
+    #[test]
+    fn canonical_cache_categories_survive_upgrade_finalize_and_repair() {
+        for legacy in [true, false] {
+            let store = TelemetryStore::in_memory();
+            if legacy {
+                store.execute_raw("ALTER TABLE runs DROP COLUMN total_cache_creation_input_tokens; ALTER TABLE runs DROP COLUMN total_cache_read_input_tokens; ALTER TABLE turns DROP COLUMN cache_creation_input_tokens; ALTER TABLE turns DROP COLUMN cache_read_input_tokens;");
+                store.reapply_migrations();
+            }
+            let mut r = run("claude", None, None);
+            r.model = Some("claude-sonnet-4".into());
+            r.total_input_tokens = Some(100);
+            r.total_cached_input_tokens = Some(30);
+            r.total_cache_creation_input_tokens = Some(20);
+            r.total_cache_read_input_tokens = Some(10);
+            r.total_output_tokens = Some(50);
+            store.insert_run(&r);
+            assert_eq!(store.get_run(&r.id).unwrap().token_usage(), r.token_usage());
+            let mut turn = TelemetryTurn::new(&r.id, 0, TurnRole::Assistant);
+            turn.input_tokens = r.total_input_tokens;
+            turn.cached_input_tokens = r.total_cached_input_tokens;
+            turn.cache_creation_input_tokens = r.total_cache_creation_input_tokens;
+            turn.cache_read_input_tokens = r.total_cache_read_input_tokens;
+            turn.output_tokens = r.total_output_tokens;
+            r.ended_at = Some(Utc::now());
+            store.finalize_run(&r, &[turn.clone()], &[]);
+            let persisted = store.get_turns(&r.id);
+            assert_eq!(persisted[0].token_usage(), r.token_usage());
+            let price = super::super::pricing::pricing(r.model.as_deref(), Some("claude")).unwrap();
+            assert_eq!(
+                price.estimate(&store.get_run(&r.id).unwrap().token_usage()),
+                price.estimate(&r.token_usage())
+            );
+            r.total_cache_creation_input_tokens = Some(25);
+            r.total_cached_input_tokens = Some(35);
+            turn.cache_creation_input_tokens = Some(25);
+            turn.cached_input_tokens = Some(35);
+            store.rewrite_completed_run(&r, &[turn], &[]);
+            assert_eq!(store.get_run(&r.id).unwrap().token_usage(), r.token_usage());
+            assert_eq!(store.get_turns(&r.id)[0].token_usage(), r.token_usage());
+            store.invalidate_run_metrics(&r.id, None);
+            let invalid = store.get_run(&r.id).unwrap();
+            assert!(invalid.total_cache_creation_input_tokens.is_none());
+            assert!(invalid.total_cache_read_input_tokens.is_none());
+        }
+    }
+    #[test]
+    fn versioned_cost_backfill_is_resumable_and_preserves_observed_prices() {
+        let store = TelemetryStore::in_memory();
+        let mut a = run("claude", None, None);
+        a.ended_at = Some(Utc::now());
+        a.model = Some("claude-sonnet-4".into());
+        a.total_input_tokens = Some(1000);
+        a.token_usage_state = TelemetryMetricState::Complete;
+        let mut b = a.clone();
+        b.id = "observed".into();
+        b.started_at += chrono::Duration::seconds(1);
+        b.cost_usd = Some(42.);
+        b.cost_source = Some(CostSource::Observed);
+        b.cost_state = TelemetryMetricState::Complete;
+        store.insert_run(&a);
+        store.insert_run(&b);
+        assert_eq!(store.backfill_cost_batch(1), 1);
+        let estimated = store.get_run(&a.id).unwrap();
+        assert!(estimated.cost_usd.unwrap() > 0.);
+        assert_eq!(estimated.cost_state, TelemetryMetricState::Estimated);
+        assert_eq!(
+            estimated.metadata["pricing_catalog_version"],
+            super::super::pricing::VERSION
+        );
+        assert_eq!(store.backfill_cost_batch(1), 1);
+        assert_eq!(store.backfill_cost_batch(1), 0);
+        assert_eq!(store.get_run(&b.id).unwrap().cost_usd, Some(42.));
     }
 }
