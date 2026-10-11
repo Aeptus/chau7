@@ -329,6 +329,37 @@ class Hooks(unittest.TestCase):
         self.assertEqual(config.read_bytes(), before)
         self.assertEqual(data["args"][-4:], ["--model", "m", "--", "--settings"])
 
+    def test_codex_indirect_swift_notify_chain_uses_owned_log_only(self):
+        swift_log = self.root / "swift-events.jsonl"
+        swift_log.write_text("existing Swift bytes\n")
+        swift_before = swift_log.read_bytes()
+        inherited_log = self.env.get("CHAU7_AI_EVENTS_LOG")
+        indirect = self.root / "custom-notify.py"
+        indirect.write_text(
+            'import os,sys\nwith open(os.environ["CHAU7_AI_EVENTS_LOG"],"a") as f: f.write(sys.argv[-1]+"\\n")\n'
+        )
+        real = self.root / "real-notifying-cli"
+        real.write_text(
+            "#!/usr/bin/env python3\nimport json,os,subprocess,sys\n"
+            'helper=json.loads(sys.argv[2].split("=",1)[1])[0]\n'
+            'subprocess.run([helper,json.dumps({"type":"agent-turn-complete"})],check=True)\n'
+        )
+        real.chmod(0o700)
+        result = self.run_py(
+            self.codex,
+            "--wrap",
+            str(real),
+            "-c",
+            "notify=" + json.dumps(["python3", str(indirect)]),
+            env=dict(self.env, CHAU7_AI_EVENTS_LOG=str(swift_log)),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(swift_log.read_bytes(), swift_before)
+        self.assertEqual(len(self.events()), 2)
+        self.assertEqual(self.events()[0]["tabID"], TAB)
+        self.assertEqual(self.events()[1]["type"], "agent-turn-complete")
+        self.assertEqual(self.env.get("CHAU7_AI_EVENTS_LOG"), inherited_log)
+
     def test_codex_wrap_suppresses_exact_swift_helper_command(self):
         result = self.run_py(
             self.codex,
