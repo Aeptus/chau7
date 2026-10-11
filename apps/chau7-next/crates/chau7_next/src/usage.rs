@@ -31,6 +31,9 @@ pub struct UsageView {
     pub last_error: Option<String>,
     pub capture_installed: bool,
     pub refreshing: bool,
+    pub capture_working: bool,
+    pub recent_consumption:
+        Option<Vec<chau7_next_core::token_optimization::ProviderConsumptionStats>>,
 }
 #[derive(Default)]
 struct ProviderHealth {
@@ -187,15 +190,37 @@ struct UsageState {
     root: DataRoot,
     history: Option<QuotaHistory>,
     view: UsageView,
-    codex_path: Option<PathBuf>,
+    codex_locator: chau7_next_core::telemetry::quota_discovery::CodexQuotaLocator,
     codex_tail: JsonlTail,
     warnings: HashSet<String>,
 }
-struct UsageGlobal(Arc<Mutex<UsageState>>);
+struct UsageGlobal {
+    worker: Arc<Mutex<UsageState>>,
+    snapshot: Arc<Mutex<UsageView>>,
+    refreshing: Arc<std::sync::atomic::AtomicBool>,
+    capture_working: Arc<std::sync::atomic::AtomicBool>,
+}
+impl UsageGlobal {
+    fn new(root: DataRoot) -> Self {
+        Self {
+            snapshot: Arc::new(Mutex::new(UsageView::default())),
+            worker: Arc::new(Mutex::new(UsageState {
+                root,
+                history: None,
+                view: UsageView::default(),
+                codex_locator: Default::default(),
+                codex_tail: JsonlTail::default(),
+                warnings: HashSet::new(),
+            })),
+            refreshing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            capture_working: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+}
 impl Global for UsageGlobal {}
 pub fn view(cx: &App) -> UsageView {
     cx.try_global::<UsageGlobal>()
-        .map(|g| g.0.lock().view.clone())
+        .map(|g| g.snapshot.lock().clone())
         .unwrap_or_default()
 }
 fn helper(root: &DataRoot) -> PathBuf {
@@ -218,16 +243,7 @@ fn installed(root: &DataRoot) -> bool {
 pub fn init(cx: &mut App) {
     init_health(cx);
     let root = cx.global::<AppData>().root.clone();
-    let mut state = UsageState {
-        root,
-        history: None,
-        view: UsageView::default(),
-        codex_path: None,
-        codex_tail: JsonlTail::default(),
-        warnings: HashSet::new(),
-    };
-    state.refresh_view();
-    cx.set_global(UsageGlobal(Arc::new(Mutex::new(state))));
+    cx.set_global(UsageGlobal::new(root));
     crate::debug::usage::register(cx);
     refresh(cx);
     let timer = crate::observability::register_timer(
@@ -329,28 +345,8 @@ impl UsageState {
             }
         }
         if monitoring {
-            let mut paths = Vec::new();
-            if let Some(path) = self.codex_path.clone() {
-                paths.push(path);
-            }
             let sessions = self.root.home().join(".codex/sessions");
-            for days in 0..14 {
-                let date = chrono::Local::now() - chrono::Duration::days(days);
-                let dir = sessions.join(date.format("%Y/%m/%d").to_string());
-                if let Ok(entries) = std::fs::read_dir(dir) {
-                    paths.extend(
-                        entries
-                            .flatten()
-                            .map(|e| e.path())
-                            .filter(|p| p.extension().is_some_and(|e| e == "jsonl")),
-                    );
-                }
-            }
-            if let Some(path) = paths
-                .into_iter()
-                .max_by_key(|p| p.metadata().ok().and_then(|m| m.modified().ok()))
-            {
-                self.codex_path = Some(path.clone());
+            if let Some(path) = self.codex_locator.find(&sessions, Utc::now()) {
                 match self.codex_tail.read(&path) {
                     Ok(text) => {
                         for line in text.lines() {
@@ -408,29 +404,40 @@ pub fn refresh(cx: &mut App) {
     let Some(global) = cx.try_global::<UsageGlobal>() else {
         return;
     };
-    let state = global.0.clone();
-    {
-        let mut s = state.lock();
-        if s.view.refreshing {
-            return;
-        }
-        s.view.refreshing = true;
+    let state = global.worker.clone();
+    let snapshot = global.snapshot.clone();
+    let refreshing = global.refreshing.clone();
+    let capture_working = global.capture_working.clone();
+    if refreshing.swap(true, std::sync::atomic::Ordering::AcqRel) {
+        return;
     }
+    snapshot.lock().refreshing = true;
+    let recorder = crate::telemetry::recorder(cx);
     let settings = Settings::get(cx).general.clone();
     cx.spawn(async move |cx| {
         let state2 = state.clone();
-        let warnings = cx
+        let (warnings, mut view) = cx
             .background_executor()
             .spawn(async move {
-                state2.lock().capture(
+                let mut worker = state2.lock();
+                let warnings = worker.capture(
                     settings.usage_monitoring,
                     settings.claude_quota_capture,
                     settings.usage_quota_warnings,
-                )
+                );
+                worker.view.recent_consumption = recorder.map(|r| {
+                    r.store()
+                        .consumption_per_provider(Some(Utc::now() - chrono::Duration::minutes(10)))
+                });
+                (warnings, worker.view.clone())
             })
             .await;
         cx.update(|cx| {
-            state.lock().view.refreshing = false;
+            refreshing.store(false, std::sync::atomic::Ordering::Release);
+            view.refreshing = false;
+            view.capture_working = capture_working.load(std::sync::atomic::Ordering::Acquire);
+            *snapshot.lock() = view;
+            cx.refresh_windows();
             for warning in warnings {
                 crate::ai::events_out::publish(
                     chau7_next_core::ai::event::AiEvent::new(
@@ -491,30 +498,41 @@ pub fn set_capture(enabled: bool, cx: &mut App) {
     let Some(g) = cx.try_global::<UsageGlobal>() else {
         return;
     };
-    let state = g.0.clone();
+    let state = g.worker.clone();
+    let snapshot = g.snapshot.clone();
+    let capture_working = g.capture_working.clone();
+    let refreshing = g.refreshing.clone();
+    if capture_working.swap(true, std::sync::atomic::Ordering::AcqRel) {
+        return;
+    }
+    snapshot.lock().capture_working = true;
+    let root = cx.global::<AppData>().root.clone();
     cx.spawn(async move |cx| {
-        let s = state.clone();
-        let result = cx
+        let (result, mut view) = cx
             .background_executor()
             .spawn(async move {
-                let root = s.lock().root.clone();
-                configure_capture(&root, enabled)
+                let result = configure_capture(&root, enabled);
+                let mut s = state.lock();
+                s.view.last_error = result.as_ref().err().cloned();
+                s.refresh_view();
+                (result, s.view.clone())
             })
             .await;
         cx.update(|cx| {
-            let mut s = state.lock();
-            s.view.last_error = result.err();
-            s.refresh_view();
-            let ok = s.view.last_error.is_none();
-            drop(s);
-            if ok {
+            capture_working.store(false, std::sync::atomic::Ordering::Release);
+            view.capture_working = false;
+            view.refreshing = refreshing.load(std::sync::atomic::Ordering::Acquire);
+            *snapshot.lock() = view;
+            if result.is_ok() {
                 crate::settings_window::update(cx, |s| s.general.claude_quota_capture = enabled);
             }
+            cx.refresh_windows();
             refresh(cx);
         });
     })
     .detach();
 }
+
 fn configure_capture(root: &DataRoot, enabled: bool) -> Result<(), String> {
     let settings = root.home().join(".claude/settings.json");
     let original = match std::fs::read(&settings) {
@@ -602,6 +620,21 @@ mod tests {
         let home = std::env::temp_dir().join(format!("chau7-quota-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(home.join(".claude")).unwrap();
         DataRoot::with_home(home, true)
+    }
+    #[test]
+    fn rendering_snapshot_stays_readable_while_worker_is_busy() {
+        let root = DataRoot::with_home(
+            std::env::temp_dir().join(format!("chau7-quota-cache-{}", uuid::Uuid::new_v4())),
+            true,
+        );
+        let global = UsageGlobal::new(root);
+        let _busy_worker = global.worker.lock();
+        let cached = global
+            .snapshot
+            .try_lock()
+            .expect("renderer must not share the worker mutex");
+        assert!(cached.providers.is_empty());
+        assert!(cached.recent_consumption.is_none());
     }
     #[test]
     fn capture_restores_exact_original_and_preserves_unrelated_settings() {
