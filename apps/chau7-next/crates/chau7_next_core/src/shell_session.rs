@@ -619,6 +619,55 @@ impl ShellSession {
         }
     }
 
+    /// A history/hook identity is considered only after transcript ownership was
+    /// checked off-thread. Recheck command generation/provider on the main thread.
+    pub fn can_adopt_observed_ai_identity(
+        &self,
+        provider: &str,
+        session_id: &str,
+        observed_at: f64,
+        replace_different: bool,
+    ) -> bool {
+        let provider = resume::normalize_provider_name(provider);
+        let session_id = session_id.trim();
+        self.status != CommandStatus::Exited
+            && observed_at.is_finite()
+            && observed_at >= self.last_input_at
+            && resume::is_valid_session_id(session_id)
+            && provider.is_some()
+            && self.effective_provider() == provider
+            && (replace_different
+                || self
+                    .ai_session_id()
+                    .is_none_or(|current| current == session_id))
+    }
+
+    pub fn adopt_observed_ai_identity(
+        &mut self,
+        provider: &str,
+        session_id: &str,
+        observed_at: f64,
+        replace_different: bool,
+    ) -> bool {
+        if !self.can_adopt_observed_ai_identity(
+            provider,
+            session_id,
+            observed_at,
+            replace_different,
+        ) {
+            return false;
+        }
+        let session_id = session_id.trim();
+        let normalized = resume::normalize_provider_name(provider);
+        if self.last_ai_provider == normalized && self.ai_session_id() == Some(session_id) {
+            return false;
+        }
+        self.reset_feedback_for_identity(normalized.as_deref(), Some(session_id));
+        self.last_ai_provider = normalized;
+        self.last_ai_session_id = Some(session_id.to_owned());
+        true
+    }
+
     /// Restores AI metadata of a saved tab (`restoreAIMetadata`).
     pub fn restore_ai_metadata(&mut self, provider: Option<&str>, session_id: Option<&str>) {
         let normalized = resume::normalize_provider_name(provider.unwrap_or_default());
@@ -1266,6 +1315,25 @@ mod tests {
         restored.restore_ai_metadata(Some("claude"), Some("native-session"));
         assert!(!restored.update_live_agent(None));
         assert!(!restored.is_ai_running());
+    }
+
+    #[test]
+    fn observed_identity_adoption_is_provider_time_and_native_session_fenced() {
+        let ctx = ToolCtx::claude();
+        let mut s = session();
+        s.handle_input("claude\r", false, &ctx, 10.0);
+        assert!(!s.adopt_observed_ai_identity("codex", "s1", 11.0, true));
+        assert!(!s.adopt_observed_ai_identity("claude", "bad;id", 11.0, true));
+        assert!(!s.adopt_observed_ai_identity("claude", "s1", 9.0, true));
+        assert!(s.adopt_observed_ai_identity("claude", "s1", 11.0, false));
+        assert_eq!(s.ai_session_id(), Some("s1"));
+        assert!(!s.adopt_observed_ai_identity("claude", "s1", 12.0, false));
+        assert!(!s.adopt_observed_ai_identity("claude", "s2", 12.0, false));
+        assert!(s.adopt_observed_ai_identity("claude", "s2", 12.0, true));
+        assert_eq!(s.ai_session_id(), Some("s2"));
+        assert!(!s.adopt_observed_ai_identity("claude", "s3", f64::NAN, true));
+        s.mark_exited();
+        assert!(!s.adopt_observed_ai_identity("claude", "s3", 20.0, true));
     }
 
     #[test]
