@@ -672,7 +672,7 @@ mod tests {
             for (suffix, text) in [("json", "{}"), ("sample.txt", "sample")] {
                 let path = dir.join(format!("hang-{i:02}.{suffix}"));
                 fs::write(&path, text).unwrap();
-                OpenOptions::new()
+                std::fs::OpenOptions::new()
                     .write(true)
                     .open(path)
                     .unwrap()
