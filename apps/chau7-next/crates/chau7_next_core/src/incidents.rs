@@ -222,6 +222,18 @@ impl Store {
             .collect()
     }
     pub fn append(&mut self, record: Breadcrumb) -> io::Result<()> {
+        // Public fields may have been changed after construction. Enforce
+        // admission bounds again at the persistence boundary.
+        let record = Breadcrumb {
+            id: record.id,
+            ..Breadcrumb::new(
+                record.timestamp,
+                record.kind,
+                record.severity,
+                &record.message,
+                record.metadata,
+            )
+        };
         let latest = serde_json::to_vec(&record)?;
         self.entries.push_back(record);
         while self.entries.len() > MAX_ENTRIES {
@@ -453,6 +465,37 @@ mod tests {
                 .iter()
                 .any(|e| e.kind == Kind::AppRecovery)
         );
+    }
+    #[test]
+    fn persistence_rebounds_mutated_public_fields() {
+        let directory = TempDir::new();
+        let mut store = Store::open(directory.path().into()).unwrap();
+        let mut record = Breadcrumb::new(
+            now(),
+            Kind::MainThreadHang,
+            Severity::Warning,
+            "initial",
+            BTreeMap::new(),
+        );
+        let id = record.id;
+        record.message = "界".repeat(MAX_LOG_BYTES);
+        record.metadata = (0..100)
+            .map(|i| {
+                (
+                    format!("{i}{}", "界".repeat(200)),
+                    "é".repeat(MAX_LOG_BYTES),
+                )
+            })
+            .collect();
+        store.append(record).unwrap();
+        for name in ["breadcrumbs.jsonl", "latest.json"] {
+            let bytes = fs::read(directory.path().join(name)).unwrap();
+            assert!(bytes.len() <= MAX_LOG_BYTES);
+            let persisted: Breadcrumb = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(persisted.id, id);
+            assert!(persisted.message.len() <= 1024);
+            assert!(persisted.metadata.len() <= 32);
+        }
     }
     #[test]
     fn corrupt_and_oversized_inputs_are_bounded() {

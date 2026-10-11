@@ -726,6 +726,7 @@ fn save_transaction(
     let index_text = serde_json::to_vec_pretty(&index).map_err(std::io::Error::other)?;
     let measurements = measurements(&bundle, text.len(), index_text.len())?;
     atomic_write(&root.session_file(), &index_text)?;
+    crate::incidents::restore_payload(measurements.bytes, measurements.metadata.clone());
     if let Err(err) = write_backups(root, &bundle, terminating.then_some("termination")) {
         log::warn!("tab state backup: {err}");
     }
