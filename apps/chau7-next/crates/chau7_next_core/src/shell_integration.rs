@@ -29,6 +29,8 @@ pub fn codex_wrapper_dir(dir: &Path) -> PathBuf {
 /// Startup file for zsh, placed in our `ZDOTDIR`. It restores the user's
 /// `ZDOTDIR`, sources their files, then adds the hooks.
 pub const ZSHRC: &str = r#"# Chau7 Next shell integration (zsh). Sources your own files first.
+_chau7_next_history_owned="${CHAU7_NEXT_OWNED_SHELL_HISTORY:-}"
+_chau7_next_history_file="${CHAU7_NEXT_SHELL_HISTORY_FILE:-}"
 export ZDOTDIR="${CHAU7_NEXT_USER_ZDOTDIR:-$HOME}"
 [ -f "$ZDOTDIR/.zshenv" ] && source "$ZDOTDIR/.zshenv"
 if [[ -o login ]]; then
@@ -38,6 +40,14 @@ fi
 if [[ -o login ]]; then
   [ -f "$ZDOTDIR/.zlogin" ] && source "$ZDOTDIR/.zlogin"
 fi
+if [ "$_chau7_next_history_owned" = "1" ]; then
+  export HISTFILE="$_chau7_next_history_file"
+  export CHAU7_NEXT_SHELL_HISTORY_FILE="$_chau7_next_history_file"
+  export CHAU7_NEXT_OWNED_SHELL_HISTORY=1
+  HISTSIZE=100000
+  SAVEHIST=100000
+fi
+unset _chau7_next_history_owned _chau7_next_history_file
 # Volta image node toolchains that ship codex go ahead of ~/.volta/bin.
 path=("${(s/:/)PATH}")
 for _chau7_next_bin in "$HOME/.volta/tools/image/node/"*"/bin"(N); do
@@ -122,8 +132,18 @@ fi
 /// start. `_chau7_next_prompt` reports the exit code only when a command
 /// actually ran, so pressing Enter on an empty line changes nothing.
 pub const BASHRC: &str = r#"# Chau7 Next shell integration (bash). Sources your own files first.
+_chau7_next_history_owned="${CHAU7_NEXT_OWNED_SHELL_HISTORY:-}"
+_chau7_next_history_file="${CHAU7_NEXT_SHELL_HISTORY_FILE:-}"
 [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc"
 [ -f "$HOME/.bash_profile" ] && source "$HOME/.bash_profile"
+if [ "$_chau7_next_history_owned" = "1" ]; then
+  export HISTFILE="$_chau7_next_history_file"
+  export CHAU7_NEXT_SHELL_HISTORY_FILE="$_chau7_next_history_file"
+  export CHAU7_NEXT_OWNED_SHELL_HISTORY=1
+  HISTSIZE=100000
+  HISTFILESIZE=100000
+fi
+unset _chau7_next_history_owned _chau7_next_history_file
 export CHAU7_TAB_ID=""
 if [ -n "$CHAU7_CTO_BIN_DIR" ]; then
  case ":$PATH:" in *":$CHAU7_CTO_BIN_DIR:"*) export PATH="$CHAU7_CTO_BIN_DIR:$PATH" ;; esac
@@ -1017,5 +1037,141 @@ export CHAU7_TAB_ID='legacy-owner'
             .output()
             .unwrap();
         assert_eq!(out.status.code(), Some(127));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod shell_history_tests {
+    use super::*;
+    use std::process::Command;
+    struct Fixture {
+        dir: PathBuf,
+        integration: PathBuf,
+        owned: PathBuf,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let dir = std::env::temp_dir()
+                .join(format!("chau7-next-shell-history-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir(&dir).unwrap();
+            let integration = dir.join("integration");
+            install(&integration).unwrap();
+            // Attempt to override both the ordinary variable and the public
+            // launcher path. The wrapper retains its pre-rc private capture.
+            let rc = "HISTFILE=\"$HOME/foreign-history\"\nCHAU7_NEXT_SHELL_HISTORY_FILE=\"$HOME/foreign-history\"\nHISTSIZE=2\nSAVEHIST=2\nHISTFILESIZE=2\n";
+            std::fs::write(dir.join(".bashrc"), rc).unwrap();
+            std::fs::write(dir.join(".zshrc"), rc).unwrap();
+            let owned = dir.join("owned-history");
+            std::fs::write(&owned, "prior-owned-command\n").unwrap();
+            std::fs::write(dir.join("foreign-history"), "foreign-preserved\n").unwrap();
+            Self {
+                dir,
+                integration,
+                owned,
+            }
+        }
+        fn command(&self, shell: &str, script: &str, prepared: bool) -> std::process::Output {
+            let mut command = Command::new(shell);
+            command
+                .env_clear()
+                .env("HOME", &self.dir)
+                .env("PATH", "/usr/bin:/bin")
+                .env("TERM", "dumb")
+                .env("PS1", "")
+                .env("CHAU7_NEXT_OWNED_SHELL_HISTORY", "1")
+                .env(
+                    "CHAU7_NEXT_SHELL_HISTORY_FILE",
+                    if prepared {
+                        self.owned.as_os_str()
+                    } else {
+                        std::ffi::OsStr::new("")
+                    },
+                );
+            if shell.ends_with("bash") {
+                command
+                    .arg("--noprofile")
+                    .arg("--rcfile")
+                    .arg(bashrc_path(&self.integration));
+            } else {
+                command
+                    .arg("-d")
+                    .env("ZDOTDIR", zsh_dir(&self.integration))
+                    .env("CHAU7_NEXT_USER_ZDOTDIR", &self.dir);
+            }
+            // A real interactive prompt loads zsh history after its rc file;
+            // `zsh -i -c` skips that prompt phase and cannot test reload.
+            use std::io::Write;
+            let mut child = command
+                .arg("-i")
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            let mut stdin = child.stdin.take().unwrap();
+            writeln!(stdin, "{script}\nexit").unwrap();
+            drop(stdin);
+            let output = child.wait_with_output().unwrap();
+            assert!(
+                output.status.success(),
+                "shell failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                std::fs::read_to_string(self.dir.join("foreign-history")).unwrap(),
+                "foreign-preserved\n"
+            );
+            output
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+    #[test]
+    fn bash_owned_history_survives_user_rc_and_reloads_on_next_shell() {
+        let f = Fixture::new();
+        let out=f.command("/bin/bash","printf 'owned=%s size=%s file_size=%s\\n' \"$HISTFILE\" \"$HISTSIZE\" \"$HISTFILESIZE\"; history -s next-owned-command; history -w",true);
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            text.contains(&format!(
+                "owned={} size=100000 file_size=100000",
+                f.owned.display()
+            )),
+            "{text}"
+        );
+        assert!(
+            std::fs::read_to_string(&f.owned)
+                .unwrap()
+                .contains("next-owned-command")
+        );
+        let out = f.command("/bin/bash", "history -r; history", true);
+        assert!(String::from_utf8_lossy(&out.stdout).contains("next-owned-command"));
+        let out = f.command("/bin/bash", "printf 'failed=%s\\n' \"$HISTFILE\"", false);
+        assert!(String::from_utf8_lossy(&out.stdout).contains("failed=\n"));
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn zsh_owned_history_survives_user_rc_and_reloads_on_next_shell() {
+        let f = Fixture::new();
+        let out=f.command("/bin/zsh","printf 'owned=%s size=%s save=%s\\n' \"$HISTFILE\" \"$HISTSIZE\" \"$SAVEHIST\"; print -s -- next-owned-command; fc -W",true);
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            text.contains(&format!(
+                "owned={} size=100000 save=100000",
+                f.owned.display()
+            )),
+            "{text}"
+        );
+        assert!(
+            std::fs::read_to_string(&f.owned)
+                .unwrap()
+                .contains("next-owned-command")
+        );
+        let out = f.command("/bin/zsh", "fc -l 1", true);
+        assert!(String::from_utf8_lossy(&out.stdout).contains("next-owned-command"));
+        let out = f.command("/bin/zsh", "printf 'failed=%s\\n' \"$HISTFILE\"", false);
+        assert!(String::from_utf8_lossy(&out.stdout).contains("failed=\n"));
     }
 }

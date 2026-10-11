@@ -127,6 +127,11 @@ fn main() {
     l10n::apply_setting(settings.general.app_language);
     chau7_next_core::l10n::numbers::set_current(settings.general.regional_number_format);
     let restored = session_store::load(&root);
+    history::shell_histories::prune_startup(
+        &root,
+        restored.as_ref(),
+        settings.terminal.shell_history_max_lines,
+    );
 
     // The bundled icons (find bar, side pane headers, palette rows).
     let platform = gpui_kit::platform::current_platform(false);
