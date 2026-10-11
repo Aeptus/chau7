@@ -283,8 +283,11 @@ func (h *viewerHub) liveCopies(frame *protocol.Frame) []*protocol.Frame {
 	inner := frame.Encode()
 	copies := make([]*protocol.Frame, 0, len(ids))
 	for _, id := range ids {
+		if len(id) > maxViewerIDLength {
+			continue // join() never admits one; the length must fit a byte.
+		}
 		payload := make([]byte, 0, 1+len(id)+len(inner))
-		payload = append(payload, byte(len(id)))
+		payload = append(payload, byte(len(id))) //nolint:gosec // at most 255, checked above
 		payload = append(payload, id...)
 		payload = append(payload, inner...)
 		copies = append(copies, &protocol.Frame{

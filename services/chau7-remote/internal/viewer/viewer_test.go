@@ -21,7 +21,7 @@ func jsonFrame(t *testing.T, frameType uint8, v any) []byte {
 
 func outputFor(id string, inner protocol.Frame) []byte {
 	encoded := inner.Encode()
-	payload := append([]byte{byte(len(id))}, id...)
+	payload := append([]byte{byte(len(id))}, id...) //nolint:gosec // test ids are short
 	payload = append(payload, encoded...)
 	frame := protocol.Frame{Version: 1, Type: protocol.TypeViewerOutput, Payload: payload}
 	return frame.Encode()

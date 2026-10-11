@@ -94,7 +94,7 @@ func (s *Session) Handle(data []byte) error {
 			return ErrDenied{Reason: d.Reason}
 		}
 		s.Approved = true
-		fmt.Fprintln(s.Log, "viewer: approved, showing the shared terminal (read only)")
+		_, _ = fmt.Fprintln(s.Log, "viewer: approved, showing the shared terminal (read only)")
 	case protocol.TypeViewerLeave:
 		return ErrEnded
 	case protocol.TypeViewerOutput:
@@ -109,9 +109,9 @@ func (s *Session) Handle(data []byte) error {
 		case protocol.TypeOutput, protocol.TypeSnapshot:
 			_, _ = s.Output.Write(inner.Payload)
 		case protocol.TypeTabList:
-			fmt.Fprintf(s.Log, "viewer: tab list %s\n", inner.Payload)
+			_, _ = fmt.Fprintf(s.Log, "viewer: tab list %s\n", inner.Payload)
 		default:
-			fmt.Fprintf(s.Log, "viewer: frame 0x%02x (%d bytes)\n", inner.Type, len(inner.Payload))
+			_, _ = fmt.Fprintf(s.Log, "viewer: frame 0x%02x (%d bytes)\n", inner.Type, len(inner.Payload))
 		}
 	}
 	return nil
@@ -142,12 +142,12 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 		return fmt.Errorf("connect %s: %w", url, err)
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "viewer closed")
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "viewer closed") }()
 	conn.SetReadLimit(16 << 20)
 	if err := conn.Write(ctx, websocket.MessageBinary, JoinFrame(cfg.ViewerID, cfg.Name, cfg.Code)); err != nil {
 		return fmt.Errorf("send join: %w", err)
 	}
-	fmt.Fprintf(cfg.Log, "viewer: joined %s as %s, waiting for the owner to approve\n", cfg.Code, cfg.ViewerID)
+	_, _ = fmt.Fprintf(cfg.Log, "viewer: joined %s as %s, waiting for the owner to approve\n", cfg.Code, cfg.ViewerID)
 	session := &Session{ViewerID: cfg.ViewerID, Output: cfg.Output, Log: cfg.Log}
 	for {
 		_, data, err := conn.Read(ctx)
@@ -155,7 +155,8 @@ func Run(ctx context.Context, cfg Config) error {
 			if ctx.Err() != nil {
 				leave, _ := json.Marshal(map[string]string{"viewer_id": cfg.ViewerID})
 				frame := protocol.Frame{Version: 1, Type: protocol.TypeViewerLeave, Payload: leave}
-				writeCtx, cancel := context.WithTimeout(context.Background(), websocketCloseTimeout)
+				// ctx is done: send the leave under a fresh deadline.
+				writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), websocketCloseTimeout)
 				_ = conn.Write(writeCtx, websocket.MessageBinary, frame.Encode())
 				cancel()
 				return nil

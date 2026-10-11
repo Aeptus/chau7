@@ -23,7 +23,7 @@ func runViewer(args []string) int {
 	name := flags.String("name", "chau7-remote viewer", "name shown to the owner")
 	id := flags.String("id", "", "viewer id (random by default; reuse one to be a known viewer)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "usage: chau7-remote viewer [-relay URL] [-name NAME] [-id ID] <share code>")
+		_, _ = fmt.Fprintln(flags.Output(), "usage: chau7-remote viewer [-relay URL] [-name NAME] [-id ID] <share code>")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -54,13 +54,13 @@ func runViewer(args []string) int {
 	case err == nil:
 		return 0
 	case errors.Is(err, viewer.ErrEnded):
-		fmt.Fprintln(os.Stderr, "viewer: the owner ended the viewing")
+		_, _ = fmt.Fprintln(os.Stderr, "viewer: the owner ended the viewing")
 		return 0
 	case errors.As(err, &denied):
-		fmt.Fprintf(os.Stderr, "viewer: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "viewer: %v\n", err)
 		return 1
 	default:
-		fmt.Fprintf(os.Stderr, "viewer: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "viewer: %v\n", err)
 		return 1
 	}
 }

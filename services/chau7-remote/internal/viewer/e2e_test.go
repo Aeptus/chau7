@@ -48,7 +48,7 @@ func (b *lockedBuffer) String() string {
 func writeIPC(conn net.Conn, frame *protocol.Frame) error {
 	data := frame.Encode()
 	buf := make([]byte, 4+len(data))
-	binary.LittleEndian.PutUint32(buf, uint32(len(data)))
+	binary.LittleEndian.PutUint32(buf, uint32(len(data))) //nolint:gosec // test frames are small
 	copy(buf[4:], data)
 	_, err := conn.Write(buf)
 	return err
@@ -107,7 +107,7 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	remote, err := agent.NewAgent(socketPath, relay+"/connect", "E2E Mac", statePath)
 	if err != nil {
@@ -119,7 +119,7 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer app.Close()
+	defer func() { _ = app.Close() }()
 	appReader := bufio.NewReader(app)
 	appFrames := make(chan *protocol.Frame, 64)
 	go func() {
@@ -133,7 +133,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 	}()
 
-	code := fmt.Sprintf("%08x", uint32(time.Now().UnixNano()))
+	code := fmt.Sprintf("%08x", time.Now().UnixNano()&0xffffffff)
 	if err := writeIPC(app, ipcJSON(t, protocol.TypeViewerShare, map[string]any{"share_code": code, "max_viewers": 2})); err != nil {
 		t.Fatal(err)
 	}
