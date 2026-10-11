@@ -150,6 +150,8 @@ fn main() {
         settings::config_files::init(cx, root.config_file(), settings.clone());
         cx.set_global(settings);
         cx.set_global(AppData::new(root));
+        // Service timers and background writers share this registry.
+        observability::init(cx);
         restore::writer::init(cx);
         terminal::command_guard::init(cx);
         cto::init(
@@ -157,7 +159,6 @@ fn main() {
             &Settings::get(cx).clone(),
             cx,
         );
-        observability::init(cx);
         ai::init(cx);
         history::init(cx);
         telemetry::init(cx);
@@ -525,3 +526,29 @@ pub(crate) const DEFAULT_CONFIG: &str = r#"# Chau7 Next settings. Same format as
 [keybindings]
 # cmd+shift+b = "toggleBroadcast"
 "#;
+
+#[cfg(test)]
+mod startup_order_tests {
+    #[test]
+    fn observability_precedes_services_that_register_timers() {
+        let startup = include_str!("main.rs")
+            .split_once("app.run(move |cx: &mut App| {")
+            .unwrap()
+            .1
+            .split_once("ai::init(cx);")
+            .unwrap()
+            .0;
+        let registry = startup.find("observability::init(cx);").unwrap();
+        assert!(startup.find("cx.set_global(AppData::new(root));").unwrap() < registry);
+        for service in [
+            "restore::writer::init(cx);",
+            "terminal::command_guard::init(cx);",
+            "cto::init(",
+        ] {
+            assert!(
+                registry < startup.find(service).unwrap(),
+                "{service} precedes observability"
+            );
+        }
+    }
+}
