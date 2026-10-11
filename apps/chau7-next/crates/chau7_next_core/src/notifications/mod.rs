@@ -30,6 +30,7 @@ pub mod delivery;
 pub mod history;
 pub mod hooks;
 pub mod pipeline;
+pub mod repo_muting;
 pub mod schedule;
 pub mod settings;
 pub mod shell_events;

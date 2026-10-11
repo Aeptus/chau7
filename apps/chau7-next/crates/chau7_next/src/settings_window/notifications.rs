@@ -251,6 +251,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         NotifTab::Overview => page
             .child(status(ctx))
             .child(hook_installers(ctx))
+            .child(repo_mutes(ctx))
             .child(ai_overview(ctx)),
         NotifTab::Advanced => page
             .child(status(ctx))
@@ -260,6 +261,55 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         NotifTab::Monitoring => page.child(monitoring(ctx)),
         NotifTab::History => page.child(history(ctx)),
     }
+}
+
+fn repo_mutes(ctx: &SectionContext) -> gpui::Div {
+    let chrome = ctx.chrome;
+    let mut section = titled("Muted Repositories", chrome)
+        .child(description("Mute or snooze a repository from its tab group menu. Expired snoozes resume notifications automatically.", chrome));
+    let now = chrono::Utc::now();
+    let active = ctx
+        .settings
+        .notifications
+        .rules
+        .muted_repos
+        .iter()
+        .filter(|(_, mute)| mute.is_active(now))
+        .collect::<Vec<_>>();
+    if active.is_empty() {
+        section = section.child(small("No repositories are muted.", chrome));
+    }
+    for (index, (root, mute)) in active.into_iter().enumerate() {
+        let until = mute
+            .snooze_until
+            .map(|until| {
+                format!(
+                    "Snoozed until {}",
+                    until.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M")
+                )
+            })
+            .unwrap_or_else(|| "Muted until unmuted".into());
+        let root = root.clone();
+        let label = root.clone();
+        section = section.child(row(
+            label,
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(small(until, chrome))
+                .child(
+                    button(
+                        SharedString::from(format!("notif-unmute-repo-{index}")),
+                        "Unmute",
+                        chrome,
+                    )
+                    .on_click(move |_, _, cx| engine::unmute_repo(&root, cx)),
+                ),
+            chrome,
+        ));
+    }
+    section
 }
 
 fn hook_installers(ctx: &SectionContext) -> gpui::Div {
