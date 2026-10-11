@@ -288,23 +288,47 @@ fn register_task_timer(
     kind: &str,
     queue: &str,
 ) -> TimerGuard {
-    let host = cx.global::<Observability>();
-    let timer = json!({"id":id,"label":label,"kind":kind,"subsystem":subsystem,"queue_label":queue,"interval_ms":interval_ms,"leeway_ms":null,"active":true});
-    host.timers
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(id.to_string(), timer.clone());
-    let mut event = StructuralEvent::new("timer_registered", subsystem);
-    event.detail.insert("timer".into(), timer);
-    host.journal
-        .spine
-        .ingest_structural(event, None, None, None);
-    TimerGuard {
-        id: id.into(),
+    timer_registry(cx)
+        .expect("observability initialized")
+        .register(id, label, subsystem, interval_ms, kind, queue)
+}
+#[derive(Clone)]
+pub struct TimerRegistry {
+    timers: Arc<Mutex<std::collections::BTreeMap<String, Value>>>,
+    spine: Arc<EventSpine>,
+}
+pub fn timer_registry(cx: &App) -> Option<TimerRegistry> {
+    cx.try_global::<Observability>().map(|host| TimerRegistry {
         timers: host.timers.clone(),
         spine: host.journal.spine.clone(),
+    })
+}
+impl TimerRegistry {
+    pub fn register(
+        &self,
+        id: &str,
+        label: &str,
+        subsystem: &str,
+        interval_ms: u64,
+        kind: &str,
+        queue: &str,
+    ) -> TimerGuard {
+        let timer = json!({"id":id,"label":label,"kind":kind,"subsystem":subsystem,"queue_label":queue,"interval_ms":interval_ms,"leeway_ms":null,"active":true});
+        self.timers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id.into(), timer.clone());
+        let mut event = StructuralEvent::new("timer_registered", subsystem);
+        event.detail.insert("timer".into(), timer);
+        self.spine.ingest_structural(event, None, None, None);
+        TimerGuard {
+            id: id.into(),
+            timers: self.timers.clone(),
+            spine: self.spine.clone(),
+        }
     }
 }
+
 pub fn timer_inventory(cx: &App) -> Value {
     let host = cx.global::<Observability>();
     let timers = host

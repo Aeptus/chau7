@@ -23,6 +23,7 @@ pub mod approval;
 mod approval_window;
 pub mod control;
 mod install;
+pub mod observer;
 mod server;
 pub mod sources;
 pub mod tools;
@@ -144,25 +145,6 @@ impl ReadError {
     }
 }
 
-#[cfg(test)]
-mod main_thread_tests {
-    use super::*;
-    #[test]
-    fn queued_read_is_bounded_and_closed_channel_is_distinguished() {
-        let (jobs, mut receiver) = mpsc::unbounded();
-        let main = MainThread::for_tests(jobs);
-        let started = std::time::Instant::now();
-        assert_eq!(
-            main.read_timeout(std::time::Duration::from_millis(10), |_| 42),
-            Err(ReadError::TimedOut)
-        );
-        assert!(started.elapsed() < std::time::Duration::from_secs(2));
-        assert!(receiver.try_recv().is_ok());
-        drop(receiver);
-        assert_eq!(main.read(|_| 42), Err(ReadError::Closed));
-    }
-}
-
 /// The running server.
 struct McpServer {
     socket: PathBuf,
@@ -183,7 +165,14 @@ pub fn start(cx: &mut App) {
     if let Err(err) = spawned {
         log::error!("MCPServer: install thread: {err}");
     }
-    server::spawn(socket.clone(), main);
+    server::spawn(
+        socket.clone(),
+        main,
+        crate::observability::journal(cx),
+        crate::observability::timer_registry(cx),
+        root.bin_dir()
+            .join(chau7_next_core::mcp::BRIDGE_BINARY_NAME),
+    );
     cx.set_global(McpServer { socket });
 }
 
@@ -192,5 +181,24 @@ pub fn stop(cx: &App) {
     if let Some(server) = cx.try_global::<McpServer>() {
         crate::platform::local_socket::remove(&server.socket);
         log::info!("MCPServer: stopped");
+    }
+}
+
+#[cfg(test)]
+mod main_thread_tests {
+    use super::*;
+    #[test]
+    fn queued_read_is_bounded_and_closed_channel_is_distinguished() {
+        let (jobs, mut receiver) = mpsc::unbounded();
+        let main = MainThread::for_tests(jobs);
+        let started = std::time::Instant::now();
+        assert_eq!(
+            main.read_timeout(std::time::Duration::from_millis(10), |_| 42),
+            Err(ReadError::TimedOut)
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(receiver.try_recv().is_ok());
+        drop(receiver);
+        assert_eq!(main.read(|_| 42), Err(ReadError::Closed));
     }
 }

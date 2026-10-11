@@ -394,7 +394,12 @@ fn sync_owned_tabs(main: &MainThread) {
 }
 
 /// Keep the prompt pending until a real backend readiness transition; no fixed retry deadline.
-fn schedule_initial_prompt(session: Arc<RuntimeSession>, prompt: String, main: MainThread, origin: CallOrigin) {
+fn schedule_initial_prompt(
+    session: Arc<RuntimeSession>,
+    prompt: String,
+    main: MainThread,
+    origin: CallOrigin,
+) {
     session.queue_initial_prompt(prompt);
     let pending = session.clone();
     let spawned = std::thread::Builder::new()

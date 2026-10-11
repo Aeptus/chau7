@@ -225,6 +225,31 @@ fn write_snapshot(dir: &Path, snapshot: &Value, history_limit: u64) -> io::Resul
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unresponsive_diagnostics_keep_process_identity_and_mark_gui_data_unknown() {
+        let snapshot = super::unresponsive_snapshot();
+        assert_eq!(snapshot["partial"], true);
+        assert_eq!(snapshot["error"], "main_thread_unresponsive");
+        assert_eq!(snapshot["timeout_ms"], 1000);
+        assert_eq!(snapshot["runtime"]["process_id"], std::process::id());
+        assert!(snapshot["uptime_seconds"].as_f64().is_some());
+        assert!(snapshot["terminals"].is_null());
+        assert!(snapshot["window_count"].is_null());
+        assert!(snapshot["terminal_count"].is_null());
+        let process = snapshot["process"].as_object().unwrap();
+        assert!(process.contains_key("resident_bytes"));
+        for key in [
+            "command",
+            "prompt",
+            "environment",
+            "terminal_content",
+            "cwd",
+            "title",
+        ] {
+            assert!(!snapshot.to_string().contains(&format!("\"{key}\"")));
+        }
+    }
+
     use super::*;
     #[test]
     fn cpu_is_a_delta_with_missing_and_reset_handling() {

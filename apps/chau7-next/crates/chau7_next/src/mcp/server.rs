@@ -2,8 +2,10 @@
 //! listener thread, one thread per client. Each line from a client is one
 //! JSON-RPC message; each answer is one line, flushed.
 
-use std::io::{BufRead, BufReader, Read, Write};
+use crate::observability::{Journal, TimerRegistry};
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use chau7_next_core::data_root::MCP_SERVER_NAME;
 use chau7_next_core::mcp::handshake::Handshake;
@@ -15,7 +17,13 @@ use super::tools::{self, ToolContext};
 use crate::platform::local_socket::{Connection, Listener};
 
 /// Bind the socket and accept clients on a background thread.
-pub(super) fn spawn(socket: PathBuf, main: MainThread) {
+pub(super) fn spawn(
+    socket: PathBuf,
+    main: MainThread,
+    journal: Option<Journal>,
+    timers: Option<TimerRegistry>,
+    bridge: PathBuf,
+) {
     let spawned = std::thread::Builder::new()
         .name("chau7-next-mcp".into())
         .spawn(move || {
@@ -34,11 +42,15 @@ pub(super) fn spawn(socket: PathBuf, main: MainThread) {
                         next_client += 1;
                         let client = next_client;
                         let main = main.clone();
+                        let journal = journal.clone();
+                        let timers = timers.clone();
+                        let socket_path = socket.clone();
+                        let bridge = bridge.clone();
                         log::info!("MCPServer: client connected ({client})");
                         let spawned = std::thread::Builder::new()
                             .name(format!("chau7-next-mcp-client-{client}"))
                             .spawn(move || {
-                                run_session(conn, main);
+                                run_session(conn, main, journal, timers, socket_path, bridge);
                                 log::info!("MCPServer: client disconnected ({client})");
                             });
                         if let Err(err) = spawned {
@@ -62,6 +74,9 @@ struct Session {
     main: MainThread,
     client_id: String,
     handshake: Handshake,
+    observer: super::observer::Observer,
+    socket_path: PathBuf,
+    bridge: PathBuf,
 }
 
 impl McpHost for Session {
@@ -73,11 +88,33 @@ impl McpHost for Session {
     }
 
     fn call_tool(&mut self, name: &str, arguments: &Map<String, Value>) -> String {
+        if name == "chau7_mcp_session_info" {
+            return chau7_next_core::mcp::output::encode_sorted(&self.handshake.payload(
+                MCP_SERVER_NAME,
+                chau7_next_core::mcp::protocol::SERVER_VERSION,
+                &self.bridge.to_string_lossy(),
+                &self.socket_path.to_string_lossy(),
+            ));
+        }
+        if let Some(result) = self.observer.call(name, arguments) {
+            return result;
+        }
         tools::call(
             name,
             arguments,
             &ToolContext::connection(&self.main, &self.client_id),
         )
+    }
+
+    fn call_tool_result(
+        &mut self,
+        name: &str,
+        arguments: &Map<String, Value>,
+    ) -> Result<String, chau7_next_core::mcp::handshake::ProtocolError> {
+        if name == "chau7_unsubscribe" {
+            self.observer.validate_unsubscription(arguments)?;
+        }
+        Ok(self.call_tool(name, arguments))
     }
 
     fn resource_definitions(&self) -> Vec<Value> {
@@ -114,24 +151,47 @@ fn read_capped_line(
 }
 
 /// Read lines until the client closes the connection.
-fn run_session(conn: Box<dyn Connection>, main: MainThread) {
-    let mut writer = match conn.try_clone_box() {
+fn run_session(
+    conn: Box<dyn Connection>,
+    main: MainThread,
+    journal: Option<Journal>,
+    timers: Option<TimerRegistry>,
+    socket_path: PathBuf,
+    bridge: PathBuf,
+) {
+    let writer = match conn.try_clone_box() {
         Ok(writer) => writer,
         Err(err) => {
             log::warn!("MCPServer: {err}");
             return;
         }
     };
-    let mut reader = BufReader::new(conn);
-    let client_id = uuid::Uuid::new_v4().to_string();
-    if super::control::connect(&client_id).is_err() {
+    if let Err(error) = writer.set_write_timeout(Some(std::time::Duration::from_secs(2))) {
+        log::warn!("MCPServer: cannot bound socket writes: {error}");
         writer.shutdown();
         return;
     }
+    let writer: super::observer::Writer = Arc::new(Mutex::new(writer));
+    let mut reader = BufReader::new(conn);
+    let client_id = uuid::Uuid::new_v4().to_string();
+    if super::control::connect(&client_id).is_err() {
+        writer.lock().unwrap_or_else(|e| e.into_inner()).shutdown();
+        return;
+    }
+    let observer = super::observer::Observer::new(
+        main.clone(),
+        journal,
+        timers,
+        writer.clone(),
+        client_id.clone(),
+    );
     let mut session = Session {
         main,
         client_id,
         handshake: Handshake::default(),
+        observer,
+        socket_path,
+        bridge,
     };
     let mut line = Vec::new();
     loop {
@@ -147,15 +207,14 @@ fn run_session(conn: Box<dyn Connection>, main: MainThread) {
         let Some(answer) = handle_line(&text, MCP_SERVER_NAME, &mut session) else {
             continue;
         };
-        if writer.write_all(answer.as_bytes()).is_err()
-            || writer.write_all(b"\n").is_err()
-            || writer.flush().is_err()
-        {
+        if super::observer::write_frame(&writer, &answer).is_err() {
             break;
         }
+        session.observer.arm();
     }
     super::control::disconnect(&session.client_id, &session.main);
-    writer.shutdown();
+    drop(session);
+    writer.lock().unwrap_or_else(|e| e.into_inner()).shutdown();
 }
 
 #[cfg(test)]

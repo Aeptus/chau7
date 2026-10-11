@@ -8,6 +8,13 @@ pub trait McpHost {
     fn handshake(&mut self) -> &mut Handshake;
     fn tool_definitions(&self) -> Vec<Value>;
     fn call_tool(&mut self, name: &str, arguments: &Map<String, Value>) -> String;
+    fn call_tool_result(
+        &mut self,
+        name: &str,
+        arguments: &Map<String, Value>,
+    ) -> Result<String, ProtocolError> {
+        Ok(self.call_tool(name, arguments))
+    }
     fn resource_definitions(&self) -> Vec<Value>;
     fn read_resource(&mut self, uri: &str) -> String;
 }
@@ -116,11 +123,15 @@ pub fn handle_line(line: &str, server_name: &str, host: &mut dyn McpHost) -> Opt
                     ));
                 }
             }
-            let text = host.call_tool(name, arguments);
+            let text = host.call_tool_result(name, arguments)?;
             let is_error = serde_json::from_str::<Value>(&text)
                 .ok()
                 .is_some_and(|v| v.get("error").is_some());
-            Ok(json!({"content":[{"type":"text","text":text}],"isError":is_error}))
+            let mut result = json!({"content":[{"type":"text","text":text}],"isError":is_error});
+            if let Ok(Value::Object(content)) = serde_json::from_str::<Value>(&text) {
+                result["structuredContent"] = Value::Object(content);
+            }
+            Ok(result)
         }
         "resources/list" => {
             host.handshake().require_ready(method)?;

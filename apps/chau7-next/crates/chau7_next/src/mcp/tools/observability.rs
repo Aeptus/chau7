@@ -7,6 +7,26 @@ pub fn definitions() -> Vec<Value> {
     let schema = json!({"type": "object", "properties": {}, "additionalProperties": false});
     vec![
         tool(
+            "chau7_mcp_session_info",
+            "Get this connection's actual bounded handshake and transport diagnostics.",
+            schema.clone(),
+        ),
+        tool(
+            "chau7_state_snapshot",
+            "Get the current observer contract, live tabs, approvals, repository events, telemetry and timers with a replay cursor.",
+            schema.clone(),
+        ),
+        tool(
+            "chau7_subscribe",
+            "Subscribe on this live MCP connection to ordered observer events, replay and heartbeat health.",
+            json!({"type":"object","properties":{"topics":{"type":"array","items":{"type":"string"}},"cursor":{"type":"integer"},"replay_limit":{"type":"integer","default":200},"heartbeat_interval_ms":{"type":"integer","default":15000}}}),
+        ),
+        tool(
+            "chau7_unsubscribe",
+            "Cancel this connection's subscription.",
+            json!({"type":"object","properties":{"subscription_id":{"type":"string"}}}),
+        ),
+        tool(
             "chau7_runtime_info",
             "Get the running app identity, build revision and component status.",
             schema.clone(),
@@ -36,6 +56,18 @@ pub fn definitions() -> Vec<Value> {
 
 pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<String> {
     match name {
+        "chau7_mcp_session_info" | "chau7_subscribe" | "chau7_unsubscribe" => Some(encode_sorted(
+            &json!({"error":"notifications_unavailable","observer_contract_version":1}),
+        )),
+        "chau7_state_snapshot" => Some(
+            match ctx.main.read(|cx| crate::observability::journal(cx)) {
+                Ok(journal) => encode_sorted(&crate::mcp::observer::state_snapshot(
+                    ctx.main,
+                    journal.as_ref(),
+                )),
+                Err(error) => encode_sorted(&error.payload()),
+            },
+        ),
         "chau7_runtime_info" => Some(
             ctx.main
                 .read(|cx| {
