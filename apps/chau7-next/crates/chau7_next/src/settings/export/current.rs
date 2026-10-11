@@ -112,6 +112,10 @@ macro_rules! bool_fields {
             $settings.terminal.split_panes_enabled
         );
         $visit!(
+            "dangerousCommandProtectChau7Enabled",
+            $settings.dangerous_commands.protect_chau7_enabled
+        );
+        $visit!(
             "dangerousOutputHighlightLowPowerEnabled",
             $settings.dangerous_commands.highlight_low_power
         );
@@ -196,6 +200,8 @@ pub(super) fn export(settings: &Settings, map: &mut Map<String, Value>) {
         ("urlHandler", json!(settings.productivity.url_handler.raw())),
         ("keybindingPreset", json!(settings.input.keybinding_preset)),
         ("dangerousCommandHighlightScope", json!(settings.dangerous_commands.scope.raw())),
+        ("dangerousCommandProtectChau7Level", json!(settings.dangerous_commands.protect_chau7_level.raw())),
+        ("dangerousCommandProtectedProcessPatterns", json!(settings.dangerous_commands.protected_process_patterns)),
         ("customShortcuts", json!(settings.input.shortcuts())),
         ("customAIDetectionRules", Value::Array(settings.ai.custom_rules.iter().map(|r| json!({"id":r.id,"pattern":r.pattern,"displayName":r.display_name,"colorName":r.color_name})).collect())),
         ("customColorScheme", settings.appearance.custom_color_scheme.as_deref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null)),
@@ -305,6 +311,24 @@ pub(super) fn import(settings: &mut Settings, map: &Map<String, Value>) {
     }
     bool_fields!(settings, flag);
     string_fields!(settings, string);
+    if let Some(level) = map
+        .get("dangerousCommandProtectChau7Level")
+        .and_then(Value::as_str)
+        .and_then(crate::settings::dangerous_commands::ProtectionLevel::from_raw)
+    {
+        settings.dangerous_commands.protect_chau7_level = level;
+    }
+    if let Some(patterns) = map
+        .get("dangerousCommandProtectedProcessPatterns")
+        .and_then(|value| serde_json::from_value::<Vec<String>>(value.clone()).ok())
+    {
+        // Current TerminalBehaviorStore trims and removes empty entries.
+        settings.dangerous_commands.protected_process_patterns = patterns
+            .into_iter()
+            .map(|pattern| pattern.trim().to_owned())
+            .filter(|pattern| !pattern.is_empty())
+            .collect();
+    }
     if let Some(n) = map.get("defaultZoomPercent").and_then(Value::as_u64) {
         settings.appearance.default_zoom_percent = n.clamp(50, 200) as u32;
     }
@@ -486,6 +510,90 @@ mod tests {
         string_fields!(restored, check_import);
     }
 
+    #[test]
+    fn protect_chau7_shared_fields_round_trip_without_next_extension() {
+        use crate::settings::dangerous_commands::ProtectionLevel;
+        for level in ProtectionLevel::ALL {
+            let mut source = Settings::default();
+            source.dangerous_commands.protect_chau7_enabled = false;
+            source.dangerous_commands.protect_chau7_level = level;
+            source.dangerous_commands.protected_process_patterns =
+                vec!["helper \"literal\"".into(), "path\\helper".into()];
+            let mut map = document(&source);
+            map.remove(NEXT_KEY);
+            assert_eq!(map["dangerousCommandProtectChau7Enabled"], json!(false));
+            assert_eq!(map["dangerousCommandProtectChau7Level"], json!(level.raw()));
+            assert_eq!(
+                map["dangerousCommandProtectedProcessPatterns"],
+                json!(source.dangerous_commands.protected_process_patterns)
+            );
+            let mut restored = Settings::default();
+            import_json(&mut restored, &serde_json::to_string(&map).unwrap(), HOME).unwrap();
+            assert!(!restored.dangerous_commands.protect_chau7_enabled);
+            assert_eq!(restored.dangerous_commands.protect_chau7_level, level);
+            assert_eq!(
+                restored.dangerous_commands.protected_process_patterns,
+                source.dangerous_commands.protected_process_patterns
+            );
+        }
+    }
+    #[test]
+    fn protect_chau7_shared_missing_invalid_and_empty_values_match_current_store() {
+        use crate::settings::dangerous_commands::ProtectionLevel;
+        let mut actual = Settings::default();
+        actual.dangerous_commands.protect_chau7_enabled = false;
+        actual.dangerous_commands.protect_chau7_level = ProtectionLevel::Warning;
+        actual.dangerous_commands.protected_process_patterns = vec!["existing".into()];
+        let mut map = document(&actual);
+        map.remove(NEXT_KEY);
+        for key in [
+            "dangerousCommandProtectChau7Enabled",
+            "dangerousCommandProtectChau7Level",
+            "dangerousCommandProtectedProcessPatterns",
+        ] {
+            map.remove(key);
+        }
+        for invalid in [false, true] {
+            if invalid {
+                map.insert(
+                    "dangerousCommandProtectChau7Enabled".into(),
+                    json!("invalid"),
+                );
+                map.insert("dangerousCommandProtectChau7Level".into(), json!("unknown"));
+                map.insert(
+                    "dangerousCommandProtectedProcessPatterns".into(),
+                    json!(["partial", 17]),
+                );
+            }
+            import_json(&mut actual, &serde_json::to_string(&map).unwrap(), HOME).unwrap();
+            assert!(!actual.dangerous_commands.protect_chau7_enabled);
+            assert_eq!(
+                actual.dangerous_commands.protect_chau7_level,
+                ProtectionLevel::Warning
+            );
+            assert_eq!(
+                actual.dangerous_commands.protected_process_patterns,
+                ["existing"]
+            );
+        }
+        map.insert(
+            "dangerousCommandProtectedProcessPatterns".into(),
+            json!(["  helper  ", "", "  ", "other"]),
+        );
+        import_json(&mut actual, &serde_json::to_string(&map).unwrap(), HOME).unwrap();
+        assert_eq!(
+            actual.dangerous_commands.protected_process_patterns,
+            ["helper", "other"]
+        );
+        map.insert("dangerousCommandProtectedProcessPatterns".into(), json!([]));
+        import_json(&mut actual, &serde_json::to_string(&map).unwrap(), HOME).unwrap();
+        assert!(
+            actual
+                .dangerous_commands
+                .protected_process_patterns
+                .is_empty()
+        );
+    }
     #[test]
     fn next_extension_preserves_all_domain_preferences_absent_from_swift() {
         let mut source = Settings::default();
