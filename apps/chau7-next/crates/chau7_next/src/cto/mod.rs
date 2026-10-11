@@ -17,6 +17,7 @@
 //! other's wrappers, flags, command log or savings database.
 
 pub mod debug_source;
+mod state_file;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -32,8 +33,8 @@ use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::debug_console::CtoLogEntry;
 use chau7_next_core::shell_env;
 use chau7_next_core::token_optimization::{
-    CTODecisionEvent, CTOGainStats, CTORuntimeSnapshot, TabTokenOptOverride, TokenOptimizationMode,
-    WrapperHealth, decision_reason,
+    CTODecisionEvent, CTODecisionTrigger, CTOGainStats, CTORuntimeSnapshot, TabTokenOptOverride,
+    TokenOptimizationMode, WrapperHealth, decision_reason,
 };
 use gpui::App;
 use parking_lot::Mutex;
@@ -71,6 +72,8 @@ struct Manager {
     monitor: CtoMonitor,
     sessions: HashMap<String, SessionCto>,
     gain: GainCache,
+    state_writer: Option<state_file::StateWriter>,
+    shutting_down: bool,
 }
 
 static MANAGER: OnceLock<Mutex<Manager>> = OnceLock::new();
@@ -83,6 +86,42 @@ fn with<R>(f: impl FnOnce(&mut Manager) -> R) -> Option<R> {
     manager().map(|m| f(&mut m.lock()))
 }
 
+fn mirror_locked(m: &mut Manager) {
+    let Some(writer) = m.state_writer.as_ref() else {
+        return;
+    };
+    if m.mode == TokenOptimizationMode::Off {
+        writer.remove();
+        return;
+    }
+    let mut overrides: Vec<_> = m
+        .sessions
+        .iter()
+        .map(
+            |(id, s)| chau7_next_core::cto_monitor::state::SessionOverrideInfo {
+                session_id: id.clone(),
+                override_mode: s.override_mode,
+                is_ai_active: s.ai_active,
+                active: wrappers::is_flag_active(&m.paths, id),
+                deferred: s.deferred,
+            },
+        )
+        .collect();
+    overrides.sort_by(|a, b| a.session_id.cmp(&b.session_id));
+    writer.write(m.monitor.diagnostic_state(overrides, false));
+}
+
+/// Quit caller joins this worker on its existing background shutdown future.
+pub fn shutdown_state_writer() -> Option<std::thread::JoinHandle<()>> {
+    with(|m| {
+        m.shutting_down = true;
+        m.state_writer
+            .take()
+            .and_then(state_file::StateWriter::shutdown)
+    })
+    .flatten()
+}
+
 // ----- start ---------------------------------------------------------------------------------
 
 /// Start the optimizer support at launch (`AppDelegate`: setup when the mode
@@ -92,18 +131,59 @@ pub fn init(root: &DataRoot, settings: &Settings, cx: &mut App) {
     let mode = settings.cto.mode;
     let mut monitor = CtoMonitor::new();
     monitor.set_initial_mode(mode);
+    let state_writer =
+        state_file::StateWriter::start(paths.clone(), crate::observability::timer_registry(cx));
     let _ = MANAGER.set(Mutex::new(Manager {
         paths,
         mode,
         monitor,
         sessions: HashMap::new(),
         gain: GainCache::default(),
+        state_writer,
+        shutting_down: false,
     }));
     if mode != TokenOptimizationMode::Off {
         setup(root);
         log::info!("CTO wrapper scripts installed");
         refresh_gain(cx);
     }
+    if mode == TokenOptimizationMode::Off {
+        with(mirror_locked);
+    }
+    // The actual gain poll is five minutes; health summaries are every thirty.
+    let timer = crate::observability::register_timer(
+        cx,
+        "cto.gain_poll",
+        "CTO gain refresh and health summary",
+        "cto",
+        300_000,
+    );
+    cx.spawn(async move |cx| {
+        let _timer = timer;
+        let mut ticks = 0u32;
+        loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(300))
+                .await;
+            let alive = cx.update(|cx| {
+                if with(|m| !m.shutting_down) != Some(true) {
+                    return false;
+                }
+                if self::mode() != TokenOptimizationMode::Off {
+                    refresh_gain(cx);
+                    ticks += 1;
+                    if ticks.is_multiple_of(6) {
+                        with(emit_summary_locked);
+                    }
+                }
+                true
+            });
+            if !alive {
+                break;
+            }
+        }
+    })
+    .detach();
     debug_source::register(cx);
 }
 
@@ -128,10 +208,10 @@ fn lookup_path(root: &DataRoot) -> String {
 /// Folders, wrapper scripts, bundled helper binaries, log rotation
 /// (`CTOManager.setup`).
 pub fn setup(root: &DataRoot) {
-    let Some(paths) = with(|m| {
+    let Some((paths, summary)) = with(|m| {
         let mode = m.mode;
-        m.monitor.record_manager_setup(Some(mode));
-        m.paths.clone()
+        let summary = m.monitor.record_manager_setup(Some(mode));
+        (m.paths.clone(), summary)
     }) else {
         return;
     };
@@ -141,6 +221,9 @@ pub fn setup(root: &DataRoot) {
         "CTO manager setup observed mode={}",
         mode().raw_value()
     );
+    if summary {
+        with(emit_summary_locked);
+    }
     if let Err(err) = wrappers::create_directories(&paths) {
         log::error!("CTOManager: cannot create folders: {err}");
     }
@@ -157,6 +240,7 @@ pub fn setup(root: &DataRoot) {
             }
         }
     }
+    with(mirror_locked);
     if let Some(old) = wrappers::rotate_command_log(&paths) {
         log::info!("CTOManager: rotated command log (was {old} bytes)");
     }
@@ -207,6 +291,9 @@ pub fn reinstall_optimizer() -> bool {
 pub fn teardown() {
     let Some(paths) = with(|m| {
         m.monitor.record_manager_teardown();
+        if let Some(writer) = &m.state_writer {
+            writer.remove();
+        }
         m.paths.clone()
     }) else {
         return;
@@ -250,97 +337,155 @@ pub fn shell_environment(paths: &CtoPaths, path: &str, session_id: &str) -> Vec<
 /// A terminal session started. With the mode on, its flag waits for the
 /// first prompt (`markCTOFlagDeferred`).
 pub fn register_session(id: &str, override_mode: TabTokenOptOverride) {
-    with(|m| {
-        let deferred = m.mode != TokenOptimizationMode::Off;
-        m.sessions.insert(
-            id.to_string(),
-            SessionCto {
-                override_mode,
-                ai_active: false,
-                deferred,
-                deferred_at: deferred.then(Instant::now),
-            },
+    with(|m| register_session_locked(m, id, override_mode));
+}
+
+fn register_session_locked(m: &mut Manager, id: &str, override_mode: TabTokenOptOverride) {
+    let deferred = m.mode != TokenOptimizationMode::Off;
+    m.sessions.insert(
+        id.to_string(),
+        SessionCto {
+            override_mode,
+            ai_active: false,
+            deferred,
+            deferred_at: deferred.then(Instant::now),
+        },
+    );
+    if deferred {
+        let pending = m.monitor.record_deferred_set(id);
+        log_cat!(
+            CTO,
+            Trace,
+            "CTO deferred set session={id} mode={} pendingDeferred={pending}",
+            m.mode.raw_value()
         );
-        if deferred {
-            let pending = m.monitor.record_deferred_set(id);
-            log_cat!(
-                CTO,
-                Trace,
-                "CTO deferred set session={id} mode={} pendingDeferred={pending}",
-                m.mode.raw_value()
-            );
-        }
-    });
+    }
+    mirror_locked(m);
 }
 
 /// A session closed: its flag goes away (also the last-tab replace path).
 pub fn unregister_session(id: &str) {
-    with(|m| {
-        m.sessions.remove(id);
-        wrappers::remove_flag(&m.paths, id);
-        if m.monitor.untrack_session(id) {
-            log_cat!(CTO, Trace, "CTO session untracked session={id}");
-        }
-    });
+    with(|m| unregister_session_locked(m, id));
+}
+
+fn unregister_session_locked(m: &mut Manager, id: &str) {
+    if let Some(session) = m.sessions.remove(id)
+        && session.deferred
+    {
+        let event = m.monitor.record_deferred_cancel(
+            id,
+            "session_closed_before_flush",
+            m.mode,
+            session.override_mode,
+            session.ai_active,
+        );
+        log_event(&event);
+    }
+    wrappers::remove_flag(&m.paths, id);
+    if m.monitor.untrack_session(id) {
+        log_cat!(CTO, Trace, "CTO session untracked session={id}");
+    }
+    mirror_locked(m);
 }
 
 /// The shell showed its first prompt: create the deferred flag
 /// (`createDeferredCTOFlag`).
 pub fn prompt_detected(id: &str) {
-    with(|m| {
-        let Some(session) = m.sessions.get_mut(id) else {
-            return;
-        };
-        if !session.deferred {
-            return;
-        }
-        session.deferred = false;
-        let delay_ms = session
-            .deferred_at
-            .take()
-            .map_or(0, |t| t.elapsed().as_millis() as i64);
-        let (override_mode, ai) = (session.override_mode, session.ai_active);
-        let mode = m.mode;
-        if mode == TokenOptimizationMode::Off {
-            let event = m
-                .monitor
-                .record_deferred_skip(id, "mode-off", mode, override_mode, ai);
-            log_event(&event);
-            return;
-        }
-        let flag = wrappers::recalculate_flag(&m.paths, id, mode, override_mode, ai);
-        let reason = decision_reason(mode, override_mode, ai);
-        let event = m.monitor.record_deferred_flush(
-            id,
-            delay_ms,
-            Decision {
-                mode,
-                override_mode,
-                is_ai_active: ai,
-                previous_state: flag.previous_state,
-                next_state: flag.next_state,
-                changed: flag.changed,
-                reason,
-            },
-            None,
-        );
-        log_event(&event);
-        log_cat!(
-            CTO,
-            Trace,
-            "CTO deferred flush session={id} delayMs={delay_ms}"
-        );
-    });
+    with(|m| prompt_detected_locked(m, id));
 }
 
-/// An AI tool started or stopped in the session (`activeAppName` change).
-pub fn set_ai_active(id: &str, active: bool) {
-    with(|m| {
-        if let Some(session) = m.sessions.get_mut(id) {
-            session.ai_active = active;
-        }
+fn prompt_detected_locked(m: &mut Manager, id: &str) {
+    let Some(session) = m.sessions.get_mut(id) else {
+        return;
+    };
+    if !session.deferred {
+        return;
+    }
+    session.deferred = false;
+    let delay_ms = session
+        .deferred_at
+        .take()
+        .map_or(0, |t| t.elapsed().as_millis() as i64);
+    let (override_mode, ai) = (session.override_mode, session.ai_active);
+    let mode = m.mode;
+    if mode == TokenOptimizationMode::Off {
+        let event = m
+            .monitor
+            .record_deferred_skip(id, "mode-off", mode, override_mode, ai);
+        log_event(&event);
+        mirror_locked(m);
+        return;
+    }
+    let flag = wrappers::recalculate_flag(&m.paths, id, mode, override_mode, ai);
+    if flag.next_state
+        != chau7_next_core::token_optimization::should_be_active(mode, override_mode, ai)
+    {
+        log_cat!(
+            CTO,
+            Warn,
+            "CTO flag mutation failed session={id} mode={} override={} observedActive={}",
+            mode.raw_value(),
+            override_mode.raw_value(),
+            flag.next_state
+        );
+    }
+    let reason = decision_reason(mode, override_mode, ai);
+    let event = m.monitor.record_deferred_flush(
+        id,
+        delay_ms,
+        Decision {
+            mode,
+            override_mode,
+            is_ai_active: ai,
+            previous_state: flag.previous_state,
+            next_state: flag.next_state,
+            changed: flag.changed,
+            reason,
+        },
+        None,
+    );
+    log_event(&event);
+    log_cat!(
+        CTO,
+        Trace,
+        "CTO deferred flush session={id} delayMs={delay_ms}"
+    );
+    mirror_locked(m);
+}
+
+/// Correlate the wrapper session with the observed live agent and tool identity.
+pub fn set_session_state(
+    id: &str,
+    active: bool,
+    provider: Option<String>,
+    tool_session_id: Option<String>,
+) {
+    with(|m| set_session_state_locked(m, id, active, provider, tool_session_id));
+}
+
+fn set_session_state_locked(
+    m: &mut Manager,
+    id: &str,
+    active: bool,
+    provider: Option<String>,
+    tool_session_id: Option<String>,
+) {
+    let active_changed = if let Some(session) = m.sessions.get_mut(id) {
+        let changed = session.ai_active != active;
+        session.ai_active = active;
+        changed
+    } else {
+        return;
+    };
+    let identity_changed = m
+        .monitor
+        .record_tool_session_identity(id, provider, tool_session_id);
+    if active_changed {
         recalculate_locked(m, id);
-    });
+    }
+    if identity_changed || active_changed {
+        mirror_locked(m);
+    }
 }
 
 /// The tab's override changed. `recalculate` is false when a saved override
@@ -351,12 +496,13 @@ pub fn set_override(id: &str, value: TabTokenOptOverride, recalculate: bool) {
             session.override_mode = value;
         }
         if recalculate {
-            recalculate_session_locked(m, id);
+            recalculate_session_locked(m, id, CTODecisionTrigger::OverrideChanged);
             log::info!(
                 "CTO toggle: session {id} override changed to {}",
                 value.raw_value()
             );
         }
+        mirror_locked(m);
     });
 }
 
@@ -369,11 +515,11 @@ fn recalculate_locked(m: &mut Manager, id: &str) {
     if m.sessions.get(id).is_none_or(|s| s.deferred) {
         return;
     }
-    recalculate_session_locked(m, id);
+    recalculate_session_locked(m, id, CTODecisionTrigger::AiStateChanged);
 }
 
 /// Recalculate one session's flag and record the decision.
-fn recalculate_session_locked(m: &mut Manager, id: &str) {
+fn recalculate_session_locked(m: &mut Manager, id: &str, trigger: CTODecisionTrigger) {
     let mode = m.mode;
     if mode == TokenOptimizationMode::Off {
         return;
@@ -383,7 +529,19 @@ fn recalculate_session_locked(m: &mut Manager, id: &str) {
     };
     let (override_mode, ai) = (session.override_mode, session.ai_active);
     let flag = wrappers::recalculate_flag(&m.paths, id, mode, override_mode, ai);
-    let (event, summary) = m.monitor.record_decision(
+    if flag.next_state
+        != chau7_next_core::token_optimization::should_be_active(mode, override_mode, ai)
+    {
+        log_cat!(
+            CTO,
+            Warn,
+            "CTO flag mutation failed session={id} mode={} override={} observedActive={}",
+            mode.raw_value(),
+            override_mode.raw_value(),
+            flag.next_state
+        );
+    }
+    let (event, summary) = m.monitor.record_decision_with_trigger(
         id,
         Decision {
             mode,
@@ -394,12 +552,16 @@ fn recalculate_session_locked(m: &mut Manager, id: &str) {
             changed: flag.changed,
             reason: decision_reason(mode, override_mode, ai),
         },
+        Some(trigger),
         None,
         None,
     );
     log_event(&event);
+    if flag.changed {
+        mirror_locked(m);
+    }
     if summary {
-        emit_summary(&m.monitor.snapshot());
+        emit_summary_locked(m);
     }
 }
 
@@ -451,13 +613,17 @@ fn recalculate_all_locked(m: &mut Manager) {
         let session = &m.sessions[&id];
         if session.deferred {
             let (o, ai) = (session.override_mode, session.ai_active);
-            let event =
-                m.monitor
-                    .record_deferred_skip(&id, "mode-change-before-first-prompt", mode, o, ai);
+            let event = m.monitor.record_deferred_cancel(
+                &id,
+                "mode-change-before-first-prompt",
+                mode,
+                o,
+                ai,
+            );
             log_event(&event);
             continue;
         }
-        recalculate_session_locked(m, &id);
+        recalculate_session_locked(m, &id, CTODecisionTrigger::ModeChanged);
     }
 }
 
@@ -488,8 +654,12 @@ fn log_event(event: &CTODecisionEvent) {
         .delay_to_activate_ms
         .map(|d| format!(" delayMs={d}"))
         .unwrap_or_default();
+    let trigger = event
+        .trigger
+        .map(|t| format!(" trigger={t:?}"))
+        .unwrap_or_default();
     let text = format!(
-        "session={} mode={} override={} ai={} previousState={} nextState={} changed={} reason={:?} deferred={} eventId={}{delay}{note}",
+        "session={} mode={} override={} ai={} previousState={} nextState={} changed={} reason={:?} deferred={} eventId={}{delay}{note}{trigger}",
         event.session_id,
         event.mode,
         event.override_mode,
@@ -508,6 +678,31 @@ fn log_event(event: &CTODecisionEvent) {
     }
 }
 
+fn emit_summary_locked(m: &mut Manager) {
+    let snapshot = m.monitor.snapshot();
+    let transition = m.monitor.assessment_transition(snapshot.assessment());
+    emit_summary(&snapshot);
+    use chau7_next_core::token_optimization::CTOAssessmentTransition;
+    match transition {
+        Some(CTOAssessmentTransition::Initial {
+            state,
+            score,
+            issues,
+        }) => log_cat!(
+            CTO,
+            Info,
+            "CTO runtime state initial state={state:?} score={score} issues={issues:?}"
+        ),
+        Some(CTOAssessmentTransition::Degraded { metadata }) => {
+            log_cat!(CTO, Warn, "CTO runtime state degraded {metadata:?}")
+        }
+        Some(CTOAssessmentTransition::Recovered { metadata }) => {
+            log_cat!(CTO, Info, "CTO runtime state recovered {metadata:?}")
+        }
+        None => {}
+    }
+}
+
 fn emit_summary(snap: &CTORuntimeSnapshot) {
     let assessment = snap.assessment();
     let text = format!(
@@ -522,6 +717,17 @@ fn emit_summary(snap: &CTORuntimeSnapshot) {
         snap.decisions_change_rate_percent(),
         assessment.state,
         assessment.score,
+    );
+    let text = format!(
+        "{text} deferredCancel={}{}",
+        snap.deferred_cancel_count,
+        snap.gain_stats
+            .as_ref()
+            .map(|g| format!(
+                " gainCommands={} gainSavedTokens={} gainSavingsPct={:.1}",
+                g.commands, g.saved_tokens, g.savings_pct
+            ))
+            .unwrap_or_default()
     );
     match assessment.state {
         chau7_next_core::token_optimization::CTORuntimeHealthState::Healthy => {
@@ -538,7 +744,11 @@ pub fn runtime_snapshot() -> CTORuntimeSnapshot {
 
 /// "Reset" in the telemetry panel.
 pub fn reset_monitor() {
-    with(|m| m.monitor.reset());
+    with(|m| {
+        m.monitor.reset();
+        m.monitor.set_initial_mode(m.mode);
+        mirror_locked(m);
+    });
     log_cat!(CTO, Info, "cto monitor reset scope=manual");
 }
 
@@ -621,10 +831,13 @@ pub fn refresh_gain(cx: &mut App) {
             .await;
         cx.update(|cx| {
             with(|m| {
+                m.monitor
+                    .record_gain_stats(result.0.as_ref().map(|r| r.summary.clone()));
                 m.gain.response = result.0;
                 m.gain.sessions = result.1;
                 m.gain.loading = false;
                 m.gain.loaded = true;
+                mirror_locked(m);
             });
             cx.refresh_windows();
         });
@@ -669,6 +882,107 @@ fn fetch_gain(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn isolated_manager(mode: TokenOptimizationMode) -> (PathBuf, Manager) {
+        let home = std::env::temp_dir().join(format!("chau7-cto-manager-{}", uuid::Uuid::new_v4()));
+        let paths = CtoPaths::from_root(&DataRoot::with_home(home.clone(), true));
+        wrappers::create_directories(&paths).unwrap();
+        let mut monitor = CtoMonitor::new();
+        monitor.set_initial_mode(mode);
+        (
+            home,
+            Manager {
+                state_writer: state_file::StateWriter::start(paths.clone(), None),
+                shutting_down: false,
+                paths,
+                mode,
+                monitor,
+                sessions: HashMap::new(),
+                gain: GainCache::default(),
+            },
+        )
+    }
+    fn finish_fixture(home: PathBuf, mut m: Manager) {
+        m.state_writer
+            .take()
+            .unwrap()
+            .shutdown()
+            .unwrap()
+            .join()
+            .unwrap();
+        std::fs::remove_dir_all(home).unwrap();
+    }
+    #[test]
+    fn deferred_first_prompt_live_identity_override_and_close_use_observed_flags() {
+        let (home, mut m) = isolated_manager(TokenOptimizationMode::AiOnly);
+        register_session_locked(&mut m, "A", TabTokenOptOverride::Default);
+        set_session_state_locked(
+            &mut m,
+            "A",
+            false,
+            Some("claude".into()),
+            Some("saved-tool".into()),
+        );
+        assert!(!wrappers::is_flag_active(&m.paths, "A"));
+        assert_eq!(m.monitor.snapshot().recalc_count, 0);
+        prompt_detected_locked(&mut m, "A");
+        assert!(!wrappers::is_flag_active(&m.paths, "A"));
+        assert_eq!(
+            m.monitor.snapshot().trigger_breakdown["shellInitialized"],
+            1
+        );
+        set_session_state_locked(
+            &mut m,
+            "A",
+            true,
+            Some("claude".into()),
+            Some("live-tool".into()),
+        );
+        assert!(wrappers::is_flag_active(&m.paths, "A"));
+        assert_eq!(m.monitor.snapshot().trigger_breakdown["aiStateChanged"], 1);
+        let recalc = m.monitor.snapshot().recalc_count;
+        set_session_state_locked(
+            &mut m,
+            "A",
+            true,
+            Some("claude".into()),
+            Some("live-tool".into()),
+        );
+        assert_eq!(m.monitor.snapshot().recalc_count, recalc);
+        m.sessions.get_mut("A").unwrap().override_mode = TabTokenOptOverride::ForceOff;
+        recalculate_session_locked(&mut m, "A", CTODecisionTrigger::OverrideChanged);
+        assert!(!wrappers::is_flag_active(&m.paths, "A"));
+        assert_eq!(m.monitor.snapshot().trigger_breakdown["overrideChanged"], 1);
+        unregister_session_locked(&mut m, "A");
+        assert_eq!(m.monitor.snapshot().tracked_sessions, 0);
+        assert!(
+            m.monitor
+                .diagnostic_state(Vec::new(), false)
+                .tool_sessions
+                .is_empty()
+        );
+        finish_fixture(home, m);
+    }
+    #[test]
+    fn mode_and_close_cancel_pending_flags_without_counting_skips() {
+        let (home, mut m) = isolated_manager(TokenOptimizationMode::AllTabs);
+        register_session_locked(&mut m, "A", TabTokenOptOverride::Default);
+        unregister_session_locked(&mut m, "A");
+        assert_eq!(m.monitor.snapshot().deferred_cancel_count, 1);
+        assert_eq!(m.monitor.snapshot().deferred_skip_count, 0);
+        register_session_locked(&mut m, "B", TabTokenOptOverride::Default);
+        m.mode = TokenOptimizationMode::AiOnly;
+        m.monitor
+            .record_mode_changed(TokenOptimizationMode::AllTabs, m.mode);
+        recalculate_all_locked(&mut m);
+        assert_eq!(m.monitor.snapshot().deferred_cancel_count, 2);
+        assert!(m.sessions["B"].deferred);
+        assert!(!wrappers::is_flag_active(&m.paths, "B"));
+        prompt_detected_locked(&mut m, "B");
+        assert_eq!(m.monitor.snapshot().deferred_flush_count, 1);
+        assert!(!wrappers::is_flag_active(&m.paths, "B"));
+        finish_fixture(home, m);
+    }
 
     #[test]
     fn shell_environment_puts_the_wrapper_folder_first() {

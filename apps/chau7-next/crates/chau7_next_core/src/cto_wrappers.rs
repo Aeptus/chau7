@@ -57,6 +57,11 @@ impl CtoPaths {
         }
     }
 
+    /// Diagnostic mirror beside isolated Next CTO flags. Never used on the wrapper hot path.
+    pub fn state_file(&self) -> PathBuf {
+        self.flag_dir.with_file_name("cto_state.json")
+    }
+
     pub fn optimizer(&self) -> PathBuf {
         self.bin_dir.join("chau7-optim")
     }
@@ -592,15 +597,17 @@ pub fn recalculate_flag(
 ) -> CTOFlagDecision {
     let active = should_be_active(mode, override_mode, is_ai_active);
     let previous = is_flag_active(paths, session_id);
-    let changed = if active {
-        create_flag(paths, session_id)
+    if active {
+        create_flag(paths, session_id);
     } else {
-        remove_flag(paths, session_id)
-    };
+        remove_flag(paths, session_id);
+    }
+    // Failed disk mutations must not turn the desired state into observed evidence.
+    let observed = is_flag_active(paths, session_id);
     CTOFlagDecision {
         previous_state: previous,
-        next_state: active,
-        changed,
+        next_state: observed,
+        changed: previous != observed,
     }
 }
 
@@ -774,6 +781,25 @@ mod tests {
             data_dir: PathBuf::from("/h/.chau7-next/cto_data"),
             swift_wrapper_dir: PathBuf::from("/swift/cto_bin"),
         }
+    }
+
+    #[test]
+    fn failed_flag_mutation_reports_observed_not_desired_activation() {
+        let home =
+            std::env::temp_dir().join(format!("chau7-cto-failed-flag-{}", uuid::Uuid::new_v4()));
+        let paths = CtoPaths::from_root(&DataRoot::with_home(home.clone(), true));
+        std::fs::create_dir_all(paths.flag_dir.parent().unwrap()).unwrap();
+        std::fs::write(&paths.flag_dir, b"not a directory").unwrap();
+        let result = recalculate_flag(
+            &paths,
+            "S",
+            TokenOptimizationMode::AllTabs,
+            TabTokenOptOverride::Default,
+            false,
+        );
+        assert!(!result.next_state);
+        assert!(!result.changed);
+        std::fs::remove_dir_all(home).unwrap();
     }
 
     #[test]

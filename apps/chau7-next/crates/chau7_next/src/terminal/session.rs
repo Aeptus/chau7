@@ -1192,7 +1192,7 @@ impl TerminalSession {
                         None => self.finish_ai_run(None, cx),
                     }
                     // The token optimizer follows AI tools (AI Only mode).
-                    crate::cto::set_ai_active(&self.cto_id, app.is_some());
+                    self.sync_cto_state();
                     self.ai_app = app;
                     changed = true;
                 }
@@ -1403,7 +1403,19 @@ impl TerminalSession {
                 }
             }
         }
+        if changed {
+            self.sync_cto_state();
+        }
         changed
+    }
+
+    fn sync_cto_state(&self) {
+        crate::cto::set_session_state(
+            &self.cto_id,
+            self.is_ai_running(),
+            self.tracker.effective_provider(),
+            self.tracker.ai_session_id().map(str::to_string),
+        );
     }
 
     fn adopt_reported_branch(&mut self, branch: Option<String>, cx: &mut Context<Self>) -> bool {
@@ -2144,7 +2156,7 @@ impl TerminalSession {
         }
         if self.tracker.update_live_agent(provider) {
             self.memory.set_tui(self.is_ai_running());
-            crate::cto::set_ai_active(&self.cto_id, self.is_ai_running());
+            self.sync_cto_state();
             cx.emit(SessionEvent::MetadataChanged);
             cx.notify();
         }
@@ -2165,7 +2177,7 @@ impl TerminalSession {
     ) {
         self.tracker.restore_ai_metadata(provider, session_id);
         self.ai_app = self.tracker.active_app().map(str::to_string);
-        crate::cto::set_ai_active(&self.cto_id, self.ai_app.is_some());
+        self.sync_cto_state();
         cx.emit(SessionEvent::MetadataChanged);
     }
 
