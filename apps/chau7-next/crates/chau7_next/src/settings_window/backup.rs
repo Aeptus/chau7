@@ -98,11 +98,25 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
 /// Export Settings...: save panel, then the JSON document.
 fn export_settings(cx: &mut App) {
     let home = cx.global::<AppData>().root.home().to_path_buf();
-    let text = export::export_json(
+    let text = export::export_json_with_recent(
         &cx.global::<crate::settings::config_files::ConfigFiles>()
             .base,
         &home.to_string_lossy(),
+        &match crate::repository::recent_roots(cx) {
+            Ok(roots) => roots,
+            Err(reason) => {
+                set_message(cx, reason, true);
+                return;
+            }
+        },
     );
+    let text = match text {
+        Ok(text) => text,
+        Err(reason) => {
+            set_message(cx, reason, true);
+            return;
+        }
+    };
     let path = cx.prompt_for_new_path(&home, Some(export::EXPORT_FILE_NAME));
     let background = cx.background_executor().clone();
     cx.spawn(async move |cx| {
@@ -145,7 +159,7 @@ fn import_settings(cx: &mut App) {
         };
         let read_path = path.clone();
         let text = background
-            .spawn(async move { std::fs::read_to_string(read_path) })
+            .spawn(async move { export::read_settings_document(&read_path) })
             .await;
         cx.update(|cx| {
             let text = match text {
@@ -165,9 +179,12 @@ fn import_settings(cx: &mut App) {
                 .global::<crate::settings::config_files::ConfigFiles>()
                 .base
                 .clone();
-            match export::import_json(&mut base, &text, &home) {
-                Ok(()) => {
+            match export::import_json_with_recent(&mut base, &text, &home) {
+                Ok(recent_roots) => {
                     replace_base(cx, base);
+                    if let Some(roots) = recent_roots {
+                        crate::repository::import_recent_roots(roots, cx);
+                    }
                     set_message(cx, "Settings imported".to_string(), false);
                 }
                 Err(reason) => {
