@@ -11,8 +11,8 @@ use objc2::{
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSFont, NSFontAttributeName,
-    NSParagraphStyle, NSParagraphStyleAttributeName, NSTextInputClient, NSTextView, NSWindow,
-    NSWindowStyleMask,
+    NSParagraphStyle, NSParagraphStyleAttributeName, NSTextInputClient, NSTextView, NSView,
+    NSWindow, NSWindowStyleMask,
 };
 #[cfg(target_os = "macos")]
 use objc2_foundation::{
@@ -21,6 +21,9 @@ use objc2_foundation::{
 #[cfg(target_os = "macos")]
 #[path = "../src/panes/editor/native_markdown/editing.rs"]
 mod editing;
+#[cfg(target_os = "macos")]
+#[path = "../src/panes/editor/native_markdown/host.rs"]
+mod host;
 #[cfg(target_os = "macos")]
 #[path = "../src/panes/editor/native_markdown/styles.rs"]
 mod styles;
@@ -41,6 +44,18 @@ define_class!(
         fn source_undo_manager(&self) -> Option<Retained<NSUndoManager>> {
             Some(self.ivars().history.manager())
         }
+    }
+);
+#[cfg(target_os = "macos")]
+define_class!(
+    #[unsafe(super = NSView)]
+    #[name = "Chau7NextMarkdownHostFixtureView"]
+    #[thread_kind = MainThreadOnly]
+    struct HostView;
+    unsafe impl NSObjectProtocol for HostView {}
+    impl HostView {
+        #[unsafe(method(acceptsFirstResponder))]
+        fn accepts_first_responder(&self) -> bool { true }
     }
 );
 #[cfg(target_os = "macos")]
@@ -125,6 +140,71 @@ fn drain_deferred_release(view: &Weak<HistoryView>) {
         view.load().is_none(),
         "closed source remained retained after deferred AppKit work"
     );
+}
+
+#[cfg(target_os = "macos")]
+fn verify_cross_window_host(mtm: MainThreadMarker) {
+    let frame = NSRect::new(NSPoint::new(0., 0.), NSSize::new(640., 480.));
+    let make_window = || unsafe {
+        NSWindow::initWithContentRect_styleMask_backing_defer(
+            NSWindow::alloc(mtm),
+            frame,
+            NSWindowStyleMask::Titled,
+            NSBackingStoreType::Buffered,
+            false,
+        )
+    };
+    // Both windows are owned, never ordered or activated, and accept no OS input.
+    let source = make_window();
+    let target = make_window();
+    unsafe {
+        source.setReleasedWhenClosed(false);
+        target.setReleasedWhenClosed(false);
+    }
+    let original: Retained<HostView> =
+        unsafe { msg_send![HostView::alloc(mtm), initWithFrame:frame] };
+    let current: Retained<HostView> =
+        unsafe { msg_send![HostView::alloc(mtm), initWithFrame:frame] };
+    source.setContentView(Some(&original));
+    target.setContentView(Some(&current));
+    let routing = host::SourceHost::new(&original);
+    let text = OwnedHistoryView::new(mtm, "# moved café😀");
+    original.addSubview(&text.0);
+    text.0.setSelectedRange(NSRange::new(2, 4));
+    let manager = text.0.undoManager().unwrap();
+    manager.setGroupsByEvent(false);
+    manager.beginUndoGrouping();
+    assert!(editing::append(&text.0, "# moved café😀", "!"));
+    manager.endUndoGrouping();
+    let selected = text.0.selectedRange();
+    text.0.removeFromSuperview();
+    current.addSubview(&text.0);
+    routing.bind(&current);
+    assert!(std::ptr::eq::<NSView>(
+        &*routing.view().unwrap(),
+        &**current
+    ));
+    source.close();
+    drop(source);
+    assert!(target.makeFirstResponder(Some(&text.0)));
+    routing.return_focus(&text.0);
+    assert!(
+        target
+            .firstResponder()
+            .and_then(|r| r.downcast::<NSView>().ok())
+            .is_some_and(|r| std::ptr::eq::<NSView>(&*r, &**current))
+    );
+    assert_eq!(text.0.string().to_string(), "# moved café😀!");
+    assert_eq!(text.0.selectedRange(), selected);
+    assert!(manager.canUndo());
+    manager.undo();
+    assert_eq!(text.0.string().to_string(), "# moved café😀");
+    manager.redo();
+    assert_eq!(text.0.string().to_string(), "# moved café😀!");
+    text.0.setHidden(true);
+    text.0.removeFromSuperview();
+    assert!(text.0.window().is_none());
+    target.close();
 }
 
 #[cfg(target_os = "macos")]
@@ -233,8 +313,9 @@ fn main() {
     editing::replace(&view, initial, true);
     assert!(!undo.canUndo());
     verify_source_release(mtm);
+    verify_cross_window_host(mtm);
     println!(
-        "heading_size={} hanging_indent={} selected_range_unchanged=true native_undo_preserved=true native_append_undo_redo=true replacement_preserves_history=true explicit_load_clears_history=true closed_source_released=true sibling_history_preserved=true",
+        "heading_size={} hanging_indent={} selected_range_unchanged=true native_undo_preserved=true native_append_undo_redo=true replacement_preserves_history=true explicit_load_clears_history=true closed_source_released=true sibling_history_preserved=true cross_window_detach_focus=true cross_window_selection_undo_preserved=true",
         font.pointSize(),
         paragraph.headIndent()
     );
