@@ -169,6 +169,11 @@ impl DataRoot {
         self.config_dir.join("shell")
     }
 
+    /// Reloadable per-tab zsh/bash history, always owned by Next.
+    pub fn shell_histories_dir(&self) -> PathBuf {
+        self.config_dir.join("history")
+    }
+
     /// Commands run in Chau7 Next shells (written by the shell integration).
     pub fn history_file(&self) -> PathBuf {
         self.config_dir.join("history.tsv")

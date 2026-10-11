@@ -66,6 +66,8 @@ pub struct TerminalSettings {
     /// `[next] ls_colors_enabled` (`terminal.lsColorsEnabled`).
     pub ls_colors: bool,
     pub scrollback_lines: usize,
+    /// Closed-tab shell history budget, distinct from SQLite history records.
+    pub shell_history_max_lines: usize,
     /// `[next] restored_scrollback_lines` (`terminal.restoredScrollbackLines`):
     /// lines of scrollback replayed when tabs are recovered, 0 disables.
     pub restored_scrollback_lines: usize,
@@ -87,6 +89,7 @@ impl Default for TerminalSettings {
             startup_command: String::new(),
             ls_colors: true,
             scrollback_lines: 10_000,
+            shell_history_max_lines: chau7_next_core::shell_histories::DEFAULT_MAX_LINES,
             restored_scrollback_lines: DEFAULT_RESTORED_SCROLLBACK_LINES,
             bell_enabled: true,
             bell_sound: BellSound::Default,
@@ -147,6 +150,13 @@ impl SettingsDomain for TerminalSettings {
                 self.bell_sound = BellSound::from_raw(sound);
             }
         }
+        if let Some(v) = src
+            .next("shell_history_max_lines")
+            .and_then(RawValue::as_int)
+        {
+            self.shell_history_max_lines =
+                v.clamp(0, chau7_next_core::shell_histories::MAX_LINES as i64) as usize;
+        }
         if let Some(v) = src.next("shell_type").and_then(RawValue::as_str) {
             self.shell_type = ShellType::from_raw(v);
         }
@@ -188,6 +198,11 @@ impl SettingsDomain for TerminalSettings {
         out.set_next("restored_scrollback_lines", self.restored_scrollback_lines);
         out.set_next("smart_scroll_enabled", self.smart_scroll);
         out.set_next("split_panes", self.split_panes_enabled);
+        out.set_next(
+            "shell_history_max_lines",
+            self.shell_history_max_lines
+                .min(chau7_next_core::shell_histories::MAX_LINES),
+        );
     }
 }
 
@@ -205,6 +220,7 @@ mod tests {
             startup_command: "echo hi".into(),
             ls_colors: false,
             scrollback_lines: 2_000,
+            shell_history_max_lines: 17,
             restored_scrollback_lines: 0,
             bell_enabled: false,
             bell_sound: BellSound::Visual,
@@ -216,6 +232,17 @@ mod tests {
             round_trip(&TerminalSettings::default()),
             TerminalSettings::default()
         );
+    }
+
+    #[test]
+    fn shell_history_budget_defaults_bounds_and_owned_round_trip() {
+        assert_eq!(TerminalSettings::default().shell_history_max_lines, 1000);
+        for (raw, expected) in [(-1, 0), (0, 0), (2345, 2345), (2_000_000, 1_000_000)] {
+            let t: TerminalSettings =
+                load_text(&format!("[next]\nshell_history_max_lines = {raw}\n"));
+            assert_eq!(t.shell_history_max_lines, expected);
+            assert_eq!(round_trip(&t).shell_history_max_lines, expected);
+        }
     }
 
     #[test]

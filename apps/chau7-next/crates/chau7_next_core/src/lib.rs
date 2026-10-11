@@ -88,6 +88,7 @@ pub mod settings_search;
 pub mod shell_bookmarks;
 pub mod shell_env;
 pub mod shell_escaping;
+pub mod shell_histories;
 pub mod shell_history;
 pub mod shell_integration;
 pub mod shell_latency;
