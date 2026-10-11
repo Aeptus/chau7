@@ -179,6 +179,9 @@ def wrap(real, args):
         chain = []
     os.environ[CHAIN_ENV] = json.dumps(chain)
     os.environ["CHAU7_TAB_ID"] = ""
+    # A preserved third-party command can invoke Swift notify indirectly.
+    # Its compatibility log override stays scoped to this Next invocation.
+    os.environ["CHAU7_AI_EVENTS_LOG"] = EVENTS_FILE
     helper = os.path.abspath(sys.argv[0])
     os.execv(
         real,
