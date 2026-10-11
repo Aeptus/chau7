@@ -26,7 +26,7 @@
 
 pub mod ai_pty;
 mod perf;
-mod writer;
+pub(crate) mod writer;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::IsTerminal;

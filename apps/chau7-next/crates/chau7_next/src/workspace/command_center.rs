@@ -70,7 +70,15 @@ impl Workspace {
     }
 
     /// Insert snippet text in the focused terminal of the selected tab.
-    pub fn command_center_insert(&mut self, body: &str, cx: &mut Context<Self>) {
+    pub fn command_center_insert(&mut self, body: &str, cx: &mut Context<Self>) -> bool {
+        if self
+            .selected_panes()
+            .and_then(|panes| panes.read(cx).focused_view())
+            .is_none()
+        {
+            return false;
+        }
         self.insert_snippet_text(body, None, cx);
+        true
     }
 }

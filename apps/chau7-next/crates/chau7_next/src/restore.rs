@@ -94,6 +94,18 @@ pub fn capture_tab(
     let root = &cx.global::<AppData>().root;
     let max_lines = Settings::get(cx).terminal.restored_scrollback_lines;
     let tree = panes.read(cx);
+    if let Some(saved) = tree.deferred_saved() {
+        for pane in &saved.panes {
+            if let Some(id) = &pane.ai_session_id {
+                claimed.insert(id.clone());
+            }
+        }
+        return TabCapture {
+            layout: saved.layout.clone(),
+            focused: saved.focused_pane,
+            panes: saved.panes.clone(),
+        };
+    }
     let mut saved = Vec::new();
     for (id, session) in tree.pane_sessions(cx) {
         // Not replayed yet (the app was closed right after launch): keep what

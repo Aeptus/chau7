@@ -351,6 +351,15 @@ impl DataRoot {
         self.config_dir.join("reports")
     }
 
+    /// Independent lifetime lock for the Next application, retained after exit.
+    pub fn instance_lock_file(&self) -> PathBuf {
+        self.state_dir.join("app-instance.lock")
+    }
+    /// Launch marker distinguishes clean termination from an abrupt exit.
+    pub fn launch_continuity_file(&self) -> PathBuf {
+        self.state_dir.join("launch-continuity.json")
+    }
+
     /// Bounded local incident evidence owned by Next.
     pub fn incidents_dir(&self) -> PathBuf {
         self.config_dir.join("incidents")

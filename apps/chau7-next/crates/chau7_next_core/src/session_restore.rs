@@ -8,6 +8,9 @@
 //! `buildAIResumeCommand`, `findCodexSessionId`) and the layout export of
 //! `SplitPanes/SplitPaneController.swift` (`SavedSplitNode`).
 
+pub mod lifecycle;
+pub mod transaction;
+
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -514,33 +517,14 @@ pub fn claude_project_dir_name(directory: &str) -> String {
 /// monitor this reads the transcripts Claude Code writes itself
 /// (`~/.claude/projects/<directory>/<session id>.jsonl`).
 pub fn claude_session_candidates(home: &Path, directory: &str) -> Vec<SessionCandidate> {
-    let projects = home.join(".claude").join("projects");
     let mut dir = Path::new(directory.trim_end_matches('/'));
     loop {
         if dir.as_os_str().is_empty() || dir == Path::new("/") || dir == home {
             return Vec::new();
         }
-        let folder = projects.join(claude_project_dir_name(&dir.to_string_lossy()));
-        let mut found = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(&folder) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-                    continue;
-                }
-                let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
-                    continue;
-                };
-                if is_valid_session_id(id) {
-                    found.push(SessionCandidate {
-                        session_id: id.to_string(),
-                        touched_at: modified_secs(&path),
-                    });
-                }
-            }
-        }
+        let found =
+            crate::monitoring::claude_resolver::session_candidates(home, &dir.to_string_lossy());
         if !found.is_empty() {
-            found.sort_by(|a, b| b.touched_at.total_cmp(&a.touched_at));
             return found;
         }
         match dir.parent() {
