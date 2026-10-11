@@ -108,6 +108,7 @@ pub fn prepare(root: &DataRoot, tab: Uuid, shell: &str) -> io::Result<Option<Pat
         }
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
     }
+    drop(file);
     Ok(Some(path))
 }
 
