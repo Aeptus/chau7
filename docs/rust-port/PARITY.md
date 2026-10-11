@@ -43,15 +43,15 @@ stale table.
 | [Dashboard](inventory/Dashboard.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | [DataExplorer](inventory/DataExplorer.md) | 4 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | [Debug](inventory/Debug.md) | 5 | 27 | 27 | 0 | 0 | 0 | 0 | 0 |
-| [Editor](inventory/Editor.md) | 4 | 15 | 14 | 1 | 0 | 0 | 0 | 0 |
+| [Editor](inventory/Editor.md) | 4 | 15 | 14 | 1 | 0 | 0 | 0 | 1 |
 | [Events](inventory/Events.md) | 2 | 10 | 10 | 0 | 0 | 0 | 0 | 0 |
 | [History](inventory/History.md) | 2 | 16 | 16 | 0 | 0 | 0 | 0 | 0 |
 | [Keyboard](inventory/Keyboard.md) | 1 | 70 | 69 | 0 | 0 | 1 | 0 | 0 |
 | [Localization](inventory/Localization.md) | 5 | 9 | 9 | 0 | 0 | 0 | 0 | 0 |
-| [Logging](inventory/Logging.md) | 5 | 30 | 27 | 1 | 0 | 2 | 0 | 0 |
+| [Logging](inventory/Logging.md) | 5 | 30 | 28 | 0 | 0 | 2 | 0 | 0 |
 | [MCP](inventory/MCP.md) | 3 | 63 | 63 | 0 | 0 | 0 | 0 | 0 |
 | [Migration](inventory/Migration.md) | 5 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
-| [Monitoring](inventory/Monitoring.md) | 2 | 24 | 23 | 1 | 0 | 0 | 0 | 0 |
+| [Monitoring](inventory/Monitoring.md) | 2 | 24 | 24 | 0 | 0 | 0 | 0 | 0 |
 | [Notifications](inventory/Notifications.md) | 2 | 45 | 45 | 0 | 0 | 0 | 0 | 0 |
 | [Observability](inventory/Observability.md) | 3 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | [Overlay](inventory/Overlay.md) | 1 | 121 | 111 | 3 | 0 | 7 | 0 | 0 |
@@ -64,7 +64,7 @@ stale table.
 | [Runtime](inventory/Runtime.md) | 3 | 33 | 33 | 0 | 0 | 0 | 0 | 0 |
 | [RustBackend](inventory/RustBackend.md) | 1 | 62 | 58 | 0 | 0 | 4 | 0 | 0 |
 | [Scripting](inventory/Scripting.md) | 3 | 15 | 15 | 0 | 0 | 0 | 0 | 0 |
-| [Settings](inventory/Settings.md) | 1 | 141 | 133 | 3 | 0 | 5 | 0 | 3 |
+| [Settings](inventory/Settings.md) | 1 | 142 | 134 | 3 | 0 | 5 | 0 | 3 |
 | [Skills](inventory/Skills.md) | 3 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | [Snippets](inventory/Snippets.md) | 1 | 37 | 37 | 0 | 0 | 0 | 0 | 0 |
 | [SplitPanes](inventory/SplitPanes.md) | 1 | 26 | 26 | 0 | 0 | 0 | 0 | 0 |
@@ -75,9 +75,9 @@ stale table.
 | [Usage](inventory/Usage.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | [Utilities](inventory/Utilities.md) | 1 | 13 | 6 | 0 | 0 | 7 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1303** | **1248** | **11** | **0** | **44** | **0** | |
+| **Total** | | **1304** | **1251** | **9** | **0** | **44** | **0** | |
 
-Finished (done, n/a or dropped): 1292 of 1303 rows (99%). Partial: 11.
+Finished (done, n/a or dropped): 1295 of 1304 rows (99%). Partial: 9.
 
 <!-- parity:end -->
 
