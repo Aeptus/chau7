@@ -36,6 +36,54 @@ const REPAIR_LIMIT: i64 = 500;
 const PTY_LOG_DRAIN: std::time::Duration = std::time::Duration::from_millis(500);
 
 struct TelemetryGlobal(Arc<TelemetryRecorder>);
+struct TokenRates(Arc<Mutex<chau7_next_core::telemetry::token_rate::TokenRateStore>>);
+impl Global for TokenRates {}
+/// Current observed reading only. Absence remains absence, never a zero rate.
+pub fn token_rate(
+    tab: &str,
+    cx: &App,
+) -> Option<chau7_next_core::telemetry::token_rate::TokenRateReading> {
+    cx.try_global::<TokenRates>()?
+        .0
+        .lock()
+        .reading(tab)
+        .cloned()
+}
+pub fn token_rates(
+    cx: &App,
+) -> std::collections::HashMap<String, chau7_next_core::telemetry::token_rate::TokenRateReading> {
+    cx.try_global::<TokenRates>()
+        .map(|g| g.0.lock().snapshot())
+        .unwrap_or_default()
+}
+pub fn record_token_rate(
+    tab: &str,
+    reading: chau7_next_core::telemetry::token_rate::TokenRateReading,
+    cx: &App,
+) {
+    let previous = token_rate(tab, cx);
+    if let Some(store) = cx.try_global::<TokenRates>() {
+        store.0.lock().record_rate(
+            tab,
+            &reading.provider,
+            reading.tokens_per_second,
+            reading.output_tokens,
+            reading.duration_ms,
+            reading.source,
+            reading.updated_at,
+        );
+    }
+    if previous.as_ref() != Some(&reading) {
+        log::debug!(
+            "Token rate tab={tab} source={:?} rate={:.2} output={} duration_ms={}",
+            reading.source,
+            reading.tokens_per_second,
+            reading.output_tokens,
+            reading.duration_ms
+        );
+    }
+}
+
 impl Global for TelemetryGlobal {}
 
 /// Open the store (Chau7 Next's own file) and set up the recorder.
@@ -43,7 +91,70 @@ pub fn init(cx: &mut App) {
     let root = cx.global::<AppData>().root.clone();
     let store = Arc::new(TelemetryStore::open(&root.telemetry_db()));
     let recorder = TelemetryRecorder::new(store, default_providers(root.home()));
-    cx.set_global(TelemetryGlobal(Arc::new(recorder)));
+    let recorder = Arc::new(recorder);
+    let rates = Arc::new(Mutex::new(
+        chau7_next_core::telemetry::token_rate::TokenRateStore::default(),
+    ));
+    cx.set_global(TelemetryGlobal(recorder.clone()));
+    cx.set_global(TokenRates(rates.clone()));
+    let home = root.home().to_owned();
+    let rate_executor = cx.background_executor().clone();
+    cx.background_executor()
+        .spawn(async move {
+            use chau7_next_core::telemetry::{
+                jsonl_tail::JsonlTail, token_rate::TranscriptRateState,
+            };
+            let claude =
+                chau7_next_core::telemetry::providers::ClaudeCodeContentProvider::new(&home);
+            let codex = chau7_next_core::telemetry::providers::CodexContentProvider::new(&home);
+            let mut files: std::collections::HashMap<
+                (String, PathBuf),
+                (JsonlTail, TranscriptRateState),
+            > = std::collections::HashMap::new();
+            loop {
+                rate_executor
+                    .timer(std::time::Duration::from_millis(200))
+                    .await;
+                let runs = recorder.all_active_runs();
+                let active: std::collections::HashSet<_> =
+                    runs.iter().filter_map(|r| r.tab_id.clone()).collect();
+                files.retain(|(tab, _), _| active.contains(tab));
+                for run in runs {
+                    let (Some(tab), Some(session)) = (run.tab_id, run.session_id) else {
+                        continue;
+                    };
+                    let paths = if matches!(run.provider.as_str(), "claude" | "anthropic") {
+                        claude.transcript_files(&run.cwd, &session)
+                    } else if matches!(run.provider.as_str(), "codex" | "openai") {
+                        codex
+                            .find_rollout(&session, run.started_at)
+                            .into_iter()
+                            .collect()
+                    } else {
+                        vec![]
+                    };
+                    for path in paths {
+                        let state = files.entry((tab.clone(), path.clone())).or_default();
+                        if let Ok(text) = state.0.read(&path) {
+                            for line in text.lines() {
+                                if let Some(r) = state.1.consume(&run.provider, line) {
+                                    rates.lock().record_rate(
+                                        &tab,
+                                        &r.provider,
+                                        r.tokens_per_second,
+                                        r.output_tokens,
+                                        r.duration_ms,
+                                        r.source,
+                                        r.updated_at,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
 }
 
 /// The shared recorder (and through it the store).

@@ -481,6 +481,11 @@ pub enum ProxyMessage {
         event: ApiCallEvent,
         tab_id: Option<String>,
         project_path: Option<String>,
+        token_rate: Option<crate::telemetry::token_rate::TokenRateReading>,
+    },
+    GenerationProgress {
+        tab_id: String,
+        reading: crate::telemetry::token_rate::TokenRateReading,
     },
     TaskCandidate(TaskCandidate),
     TaskStarted(TrackedTask),
@@ -498,11 +503,17 @@ struct ApiCallData {
     provider: String,
     model: String,
     endpoint: String,
-    input_tokens: i64,
-    output_tokens: i64,
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
+    #[serde(default)]
+    ttft_ms: i64,
+    #[serde(default)]
+    is_streaming: bool,
+    #[serde(default)]
+    output_tokens_estimated: bool,
     latency_ms: i64,
     status_code: i64,
-    cost_usd: f64,
+    cost_usd: Option<f64>,
     timestamp: String,
     #[serde(default)]
     error_message: Option<String>,
@@ -580,6 +591,31 @@ pub fn parse_message(line: &str, now: DateTime<Utc>) -> Result<ProxyMessage, Str
     Ok(match kind.as_str() {
         "api_call" => {
             let d: ApiCallData = decode(data)?;
+            let mut rate_store = crate::telemetry::token_rate::TokenRateStore::default();
+            let source = if d.output_tokens_estimated {
+                crate::telemetry::token_rate::TokenRateSource::ProxyEstimatedUsage
+            } else if d.is_streaming {
+                crate::telemetry::token_rate::TokenRateSource::ProxyUsage
+            } else {
+                crate::telemetry::token_rate::TokenRateSource::ProxyRequestUsage
+            };
+            if (200..300).contains(&d.status_code) {
+                rate_store.record(
+                    d.tab_id.as_deref().unwrap_or(""),
+                    &d.provider,
+                    d.output_tokens.unwrap_or(0),
+                    if d.is_streaming {
+                        (d.latency_ms - d.ttft_ms.max(0)).max(1)
+                    } else {
+                        d.latency_ms.max(1)
+                    },
+                    source,
+                    now,
+                );
+            }
+            let token_rate = rate_store
+                .reading(d.tab_id.as_deref().unwrap_or(""))
+                .cloned();
             let error = d.error_message.filter(|m| !m.is_empty());
             ProxyMessage::ApiCall {
                 event: ApiCallEvent {
@@ -588,16 +624,40 @@ pub fn parse_message(line: &str, now: DateTime<Utc>) -> Result<ProxyMessage, Str
                     provider: Provider::from_raw(&d.provider),
                     model: d.model,
                     endpoint: d.endpoint,
-                    input_tokens: d.input_tokens,
-                    output_tokens: d.output_tokens,
+                    input_tokens: d.input_tokens.unwrap_or(0),
+                    output_tokens: d.output_tokens.unwrap_or(0),
                     latency_ms: d.latency_ms,
                     status_code: d.status_code,
-                    cost_usd: d.cost_usd,
+                    cost_usd: d.cost_usd.unwrap_or(0.0),
                     timestamp: parse_time(&d.timestamp).unwrap_or(now),
                     error_message: error,
                 },
                 tab_id: d.tab_id.filter(|t| !t.is_empty()),
                 project_path: d.project_path.filter(|p| !p.is_empty()),
+                token_rate,
+            }
+        }
+        "generation_progress" => {
+            let tab = text(&data, "tab_id").unwrap_or_default();
+            let provider = text(&data, "provider").unwrap_or_default();
+            let mut store = crate::telemetry::token_rate::TokenRateStore::default();
+            store.record_rate(
+                &tab,
+                &provider,
+                float(&data, "tokens_per_second"),
+                int(&data, "output_tokens_estimate"),
+                int(&data, "duration_ms"),
+                crate::telemetry::token_rate::TokenRateSource::ProxyStreamEstimate,
+                text(&data, "timestamp")
+                    .and_then(|s| parse_time(&s))
+                    .unwrap_or(now),
+            );
+            match store.reading(&tab).cloned() {
+                Some(reading) => ProxyMessage::GenerationProgress {
+                    tab_id: tab,
+                    reading,
+                },
+                None => ProxyMessage::Unknown(kind),
             }
         }
         "task_candidate" => {
@@ -1198,6 +1258,46 @@ mod tests {
         ));
         assert!(parse_message("nope", now()).is_err());
         assert!(parse_message(r#"{"type":"api_call","data":{}}"#, now()).is_err());
+    }
+
+    #[test]
+    fn generation_progress_and_optional_usage_preserve_confidence() {
+        let now = now();
+        let line = r#"{"type":"generation_progress","data":{"tab_id":"tab","provider":"claude","output_tokens_estimate":50,"tokens_per_second":25.0,"duration_ms":2000,"timestamp":"2026-04-01T10:00:00Z"}}"#;
+        let ProxyMessage::GenerationProgress { tab_id, reading } =
+            parse_message(line, now).unwrap()
+        else {
+            panic!("progress")
+        };
+        assert_eq!(tab_id, "tab");
+        assert_eq!(reading.formatted(), "~25 t/s");
+        let line = r#"{"type":"api_call","data":{"session_id":"s","tab_id":"tab","provider":"claude","model":"m","endpoint":"/v1/messages","input_tokens":null,"output_tokens":50,"cost_usd":null,"latency_ms":3000,"ttft_ms":1000,"is_streaming":true,"status_code":200,"timestamp":"2026-04-01T10:00:00Z"}}"#;
+        let ProxyMessage::ApiCall {
+            token_rate: Some(reading),
+            event,
+            ..
+        } = parse_message(line, now).unwrap()
+        else {
+            panic!("call")
+        };
+        assert_eq!(event.input_tokens, 0);
+        assert_eq!(reading.formatted(), "25 t/s");
+        assert_eq!(reading.duration_ms, 2000);
+        let line = line.replace("\"is_streaming\":true", "\"is_streaming\":false");
+        let ProxyMessage::ApiCall {
+            token_rate: Some(reading),
+            ..
+        } = parse_message(&line, now).unwrap()
+        else {
+            panic!("request")
+        };
+        assert!(reading.source.estimated());
+        assert_eq!(reading.duration_ms, 3000);
+        let line = line.replace("\"output_tokens\":50", "\"output_tokens\":null");
+        let ProxyMessage::ApiCall { token_rate, .. } = parse_message(&line, now).unwrap() else {
+            panic!("missing")
+        };
+        assert!(token_rate.is_none());
     }
 
     #[test]

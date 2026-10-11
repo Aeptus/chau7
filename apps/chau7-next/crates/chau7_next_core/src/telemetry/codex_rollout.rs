@@ -127,11 +127,13 @@ pub fn parse(jsonl: &str, run_id: &str, started_at: DateTime<Utc>) -> ParseResul
                 let Some(Value::Object(last)) = info.get("last_token_usage") else {
                     continue;
                 };
-                token_usage.add(&TokenUsage::new(
-                    as_int(last.get("input_tokens")).unwrap_or(0),
-                    as_int(last.get("cached_input_tokens")).unwrap_or(0),
-                    as_int(last.get("output_tokens")).unwrap_or(0),
-                    as_int(last.get("reasoning_output_tokens")).unwrap_or(0),
+                token_usage.add(&TokenUsage::provider(
+                    "codex",
+                    as_int(last.get("input_tokens")),
+                    as_int(last.get("output_tokens")),
+                    None,
+                    as_int(last.get("cached_input_tokens")),
+                    as_int(last.get("reasoning_output_tokens")),
                 ));
             }
             _ => {}
@@ -169,9 +171,9 @@ mod tests {
         assert_eq!(parsed.model.as_deref(), Some("gpt-5-codex"));
         assert_eq!(parsed.turns.len(), 2);
         assert_eq!(parsed.tool_calls.len(), 1);
-        assert_eq!(parsed.token_usage.input_tokens, 80);
+        assert_eq!(parsed.token_usage.input_tokens, 70);
         assert_eq!(parsed.token_usage.cached_input_tokens, 10);
-        assert_eq!(parsed.token_usage.output_tokens, 30);
+        assert_eq!(parsed.token_usage.output_tokens, 26);
         assert_eq!(parsed.token_usage.reasoning_output_tokens, 4);
     }
 

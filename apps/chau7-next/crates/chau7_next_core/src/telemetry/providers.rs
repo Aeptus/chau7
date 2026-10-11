@@ -26,7 +26,13 @@ fn transcript_content(
     usage: TokenUsage,
     tool_calls: Vec<super::turn::TelemetryToolCall>,
     raw_ref: String,
+    truncated: bool,
 ) -> ExtractedRunContent {
+    let estimated_cost = usage
+        .has_any_tokens()
+        .then(|| super::pricing::pricing(model.as_deref(), None))
+        .flatten()
+        .map(|p| p.estimate(&usage));
     ExtractedRunContent {
         model,
         turns,
@@ -34,11 +40,23 @@ fn transcript_content(
         total_cached_input_tokens: positive(usage.cached_input_tokens),
         total_output_tokens: positive(usage.output_tokens),
         total_reasoning_output_tokens: positive(usage.reasoning_output_tokens),
-        cost_usd: None,
+        cost_usd: estimated_cost,
         token_usage_source: Some(TokenUsageSource::TranscriptDelta),
-        token_usage_state: TelemetryMetricState::Complete,
-        cost_source: Some(CostSource::Unavailable),
-        cost_state: TelemetryMetricState::Missing,
+        token_usage_state: if truncated {
+            TelemetryMetricState::Estimated
+        } else {
+            TelemetryMetricState::Complete
+        },
+        cost_source: Some(if estimated_cost.is_some() {
+            CostSource::Estimated
+        } else {
+            CostSource::Unavailable
+        }),
+        cost_state: if estimated_cost.is_some() {
+            TelemetryMetricState::Estimated
+        } else {
+            TelemetryMetricState::Missing
+        },
         raw_transcript_ref: Some(raw_ref),
         tool_calls,
     }
@@ -107,6 +125,23 @@ impl ClaudeCodeContentProvider {
         None
     }
 
+    pub fn transcript_files(&self, cwd: &str, session: &str) -> Vec<PathBuf> {
+        let Some(project) = self.resolve_project_dir(cwd) else {
+            return vec![];
+        };
+        let flat = project.join(format!("{session}.jsonl"));
+        if flat.is_file() {
+            return vec![flat];
+        }
+        let Some(dir) = Self::find_session_dir(&project, session) else {
+            return vec![];
+        };
+        let mut files = jsonl_files(&dir);
+        files.extend(jsonl_files(&dir.join("subagents")));
+        files.truncate(64);
+        files
+    }
+
     fn find_session_dir(project: &Path, session_id: &str) -> Option<PathBuf> {
         let candidate = project.join(session_id);
         if candidate.exists() {
@@ -138,18 +173,18 @@ impl RunContentProvider for ClaudeCodeContentProvider {
     ) -> Option<ExtractedRunContent> {
         let session_id = session_id.filter(|s| !s.is_empty())?;
         let project = self.resolve_project_dir(cwd)?;
-        let session_dir = Self::find_session_dir(&project, session_id)?;
-        let mut files = jsonl_files(&session_dir.join("subagents"));
-        if files.is_empty() {
-            files = jsonl_files(&session_dir);
-        }
+        let session_dir = Self::find_session_dir(&project, session_id)
+            .unwrap_or_else(|| project.join(format!("{session_id}.jsonl")));
+        let mut files = self.transcript_files(cwd, session_id);
         if files.is_empty() {
             return None;
         }
+        let mut truncated = false;
         files.sort_by_key(|p| file_name(p));
         let mut state = claude_transcript::State::new();
         for file in files {
-            if let Ok(text) = std::fs::read_to_string(&file) {
+            if let Ok((text, partial)) = bounded_transcript(&file) {
+                truncated |= partial;
                 claude_transcript::ingest(&text, run_id, started_at, &mut state);
             }
         }
@@ -162,6 +197,7 @@ impl RunContentProvider for ClaudeCodeContentProvider {
             state.token_usage,
             state.tool_calls,
             session_dir.to_string_lossy().into_owned(),
+            truncated,
         ))
     }
 }
@@ -190,7 +226,7 @@ impl CodexContentProvider {
     }
 
     /// The rollout of `session_id` on the run's day, else the day before.
-    fn find_rollout(&self, session_id: &str, started_at: DateTime<Utc>) -> Option<PathBuf> {
+    pub fn find_rollout(&self, session_id: &str, started_at: DateTime<Utc>) -> Option<PathBuf> {
         let local = started_at.with_timezone(&Local);
         for day in [local, local - Duration::days(1)] {
             let found = jsonl_files(&self.day_dir(day))
@@ -210,7 +246,7 @@ impl CodexContentProvider {
         started_at: DateTime<Utc>,
     ) -> Option<ExtractedRunContent> {
         let file = self.find_rollout(session_id, started_at)?;
-        let text = std::fs::read_to_string(&file).ok()?;
+        let (text, truncated) = bounded_transcript(&file).ok()?;
         let parsed = codex_rollout::parse(&text, run_id, started_at);
         if parsed.turns.is_empty() {
             return None;
@@ -221,6 +257,7 @@ impl CodexContentProvider {
             parsed.token_usage,
             parsed.tool_calls,
             file.to_string_lossy().into_owned(),
+            truncated,
         ))
     }
 
@@ -311,6 +348,26 @@ pub fn default_providers(home: &Path) -> Vec<Box<dyn RunContentProvider>> {
     ]
 }
 
+/// Never allocate an entire multi-GB transcript. Partial usage stays estimated.
+fn bounded_transcript(path: &Path) -> std::io::Result<(String, bool)> {
+    use std::io::{Read, Seek, SeekFrom};
+    const MAX: u64 = 48 * 1024 * 1024;
+    let mut file = std::fs::File::open(path)?;
+    let size = file.metadata()?.len();
+    let start = size.saturating_sub(MAX);
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.take(size.min(MAX)).read_to_end(&mut bytes)?;
+    if start > 0 {
+        if let Some(i) = bytes.iter().position(|b| *b == b'\n') {
+            bytes.drain(..=i);
+        } else {
+            bytes.clear();
+        }
+    }
+    Ok((String::from_utf8_lossy(&bytes).into_owned(), start > 0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,8 +405,9 @@ mod tests {
         assert_eq!(content.model.as_deref(), Some("claude-opus"));
         assert!(!content.turns.is_empty());
         assert_eq!(content.total_input_tokens, Some(10));
-        assert_eq!(content.cost_state, TelemetryMetricState::Missing);
-        assert_eq!(content.cost_source, Some(CostSource::Unavailable));
+        assert_eq!(content.cost_state, TelemetryMetricState::Estimated);
+        assert_eq!(content.cost_source, Some(CostSource::Estimated));
+        assert!(content.cost_usd.unwrap() > 0.0);
         assert!(
             content
                 .raw_transcript_ref
@@ -417,3 +475,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(home);
     }
 }
+

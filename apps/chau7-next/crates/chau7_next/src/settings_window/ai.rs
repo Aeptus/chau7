@@ -334,10 +334,10 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         )
         .on_click(move |_, _, cx| update(cx, |s| s.general.regional_number_format = format))
     });
-    let usage_display = titled(crate::l10n::l("settings.ai.usageDisplay", "Usage Display"), chrome)
-        .child(row(crate::l10n::l("settings.ai.numberFormat", "Number Format"),
+    let usage_display = titled(crate::l10n::tr("Usage Display"), chrome)
+        .child(row(crate::l10n::tr("Number Format"),
             div().flex().flex_wrap().gap_1().children(formats), chrome))
-        .child(description(crate::l10n::l("settings.ai.numberFormat.help",
+        .child(description(crate::l10n::tr(
             "Controls token, cost, and dashboard number formatting independently from app language."), chrome));
 
     // LLM provider.
