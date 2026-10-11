@@ -24,7 +24,7 @@ use crate::mcp::tools::{ToolContext, arg_bool, arg_str, arg_str_list, tabs};
 use crate::mcp::windows::parse_tab_id;
 
 /// Initial prompt tries (`scheduleInitialPrompt`): 0.3 s twice, then 0.5 s.
-const INITIAL_PROMPT_ATTEMPTS: u32 = 8;
+const INITIAL_PROMPT_ATTEMPTS: u32 = 120;
 
 fn initial_prompt_delay(attempt: u32) -> Duration {
     Duration::from_millis(if attempt <= 2 { 300 } else { 500 })
@@ -48,6 +48,11 @@ pub fn handle_tool_call(name: &str, args: &Map<String, Value>, ctx: &ToolContext
             Err(err) => err,
         },
         "runtime_session_stop" => stop_session(args, ctx),
+        "runtime_session_children" => child_sessions(args),
+        "runtime_session_cancel_children" => cancel_children(args, ctx),
+        "runtime_session_retry" => retry_session(args, ctx),
+        "runtime_turn_result" => turn_result(args, ctx),
+        "runtime_turn_wait" => wait_turn(args),
         "runtime_turn_send" => send_turn(args, ctx),
         "runtime_turn_status" => turn_status(args),
         "runtime_events_poll" => poll_events(args),
@@ -112,11 +117,88 @@ fn create_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
         });
     let model = arg_str(args, "model").map(str::to_string);
     let resume = arg_str(args, "resume_session_id").map(str::to_string);
-    let env = env_arg(args);
+    let mut env = env_arg(args);
     let backend_args = arg_str_list(args, "backend_args").unwrap_or_default();
     let initial_prompt = arg_str(args, "initial_prompt").map(str::to_string);
     let auto_approve = arg_bool(args, "auto_approve").unwrap_or(false);
     let attach = arg_str(args, "attach_tab_id").map(str::to_string);
+    let purpose = clean_arg(args, "purpose");
+    let parent_session_id = clean_arg(args, "parent_session_id");
+    let parent_run_id = clean_arg(args, "parent_run_id");
+    let parent = match parent_session_id.as_deref() {
+        Some(id) => match manager().session(id) {
+            Some(parent) => Some(parent),
+            None => return json_error(&format!("Parent session not found: {id}")),
+        },
+        None => None,
+    };
+    let delegation_depth = crate::mcp::tools::arg_int(args, "delegation_depth")
+        .map(|depth| depth.clamp(0, i64::from(u32::MAX)) as u32)
+        .unwrap_or_else(|| {
+            parent
+                .as_ref()
+                .map_or(0, |parent| parent.config.delegation_depth.saturating_add(1))
+        });
+    let policy = match args.get("policy") {
+        Some(policy) => match serde_json::from_value::<
+            chau7_next_core::runtime::delegated_task::DelegationPolicy,
+        >(policy.clone())
+        {
+            Ok(policy) => policy,
+            Err(error) => return json_error(&format!("Invalid delegation policy: {error}")),
+        },
+        None => Default::default(),
+    };
+    if let Some(error) = policy.validate_start(1, 0, delegation_depth) {
+        return json_error(&error);
+    }
+    if let Some(parent) = parent
+        && let Some(error) = parent.config.policy.validate_child(delegation_depth)
+    {
+        return json_error(&error);
+    }
+    for (key, value) in [
+        ("CHAU7_SESSION_PURPOSE", &purpose),
+        ("CHAU7_PARENT_SESSION_ID", &parent_session_id),
+        ("CHAU7_PARENT_RUN_ID", &parent_run_id),
+    ] {
+        if let Some(value) = value {
+            env.insert(key.into(), value.clone());
+        }
+    }
+    env.insert(
+        "CHAU7_DELEGATION_DEPTH".into(),
+        delegation_depth.to_string(),
+    );
+    env.insert(
+        "CHAU7_ALLOW_CHILD_DELEGATION".into(),
+        if policy.allow_child_delegation {
+            "1"
+        } else {
+            "0"
+        }
+        .into(),
+    );
+    env.insert(
+        "CHAU7_MAX_DELEGATION_DEPTH".into(),
+        policy.max_delegation_depth.to_string(),
+    );
+    for (key, value) in [
+        ("CHAU7_MAX_TURNS", policy.max_turns),
+        ("CHAU7_MAX_DURATION_MS", policy.max_duration_ms),
+    ] {
+        if let Some(value) = value {
+            env.insert(key.into(), value.to_string());
+        }
+    }
+    for (key, value) in [
+        ("CHAU7_ALLOW_NETWORK", policy.allow_network),
+        ("CHAU7_ALLOW_FILE_WRITES", policy.allow_file_writes),
+    ] {
+        if let Some(value) = value {
+            env.insert(key.into(), if value { "1" } else { "0" }.into());
+        }
+    }
     log::info!(
         "MCP runtime_session_create: backend={backend_name} model={} dir={directory} autoApprove={auto_approve} resume={} backendArgs={backend_args:?} hasInitialPrompt={} attachTab={}",
         model.as_deref().unwrap_or("(none)"),
@@ -152,6 +234,13 @@ fn create_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
         environment: env,
         args: backend_args,
         auto_approve,
+        purpose,
+        parent_session_id,
+        parent_run_id,
+        delegation_depth,
+        policy,
+        task_metadata: string_map_arg(args, "task_metadata"),
+        result_schema: args.get("result_schema").cloned(),
     };
 
     // As in Swift, an `attach_tab_id` that is not a UUID opens a new tab
@@ -182,14 +271,13 @@ fn create_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
 
     let launch = backend.launch_command(&config);
     let session = if attach.is_some() {
-        manager().adopt_session(&tab_id, backend, &directory)
+        manager().adopt_session_with_config(&tab_id, backend, config)
     } else {
         manager().create_session(&tab_id, backend, config, auto_approve)
     };
     if !launch.is_empty() && attach.is_none() {
         log::info!("MCP runtime_session_create: launching command: {launch}");
         let _ = tabs::exec(&tab_id, &launch, ctx);
-        manager().mark_ready(&session.id);
     }
     sync_owned_tabs(ctx.main);
     if let Some(prompt) = initial_prompt {
@@ -303,7 +391,13 @@ fn send_turn(args: &Map<String, Value>, ctx: &ToolContext) -> String {
     };
     let context = arg_str(args, "context");
     match session_arg(args) {
-        Ok(session) => send_turn_internal(&session, prompt, context, ctx),
+        Ok(session) => send_turn_with_schema(
+            &session,
+            prompt,
+            context,
+            args.get("result_schema").cloned(),
+            ctx,
+        ),
         Err(err) => err,
     }
 }
@@ -314,6 +408,43 @@ fn send_turn_internal(
     context: Option<&str>,
     ctx: &ToolContext,
 ) -> String {
+    send_turn_with_schema(session, prompt, context, None, ctx)
+}
+
+fn send_turn_with_schema(
+    session: &RuntimeSession,
+    prompt: &str,
+    context: Option<&str>,
+    schema: Option<Value>,
+    ctx: &ToolContext,
+) -> String {
+    if let Some(error) = session.policy_error_for_next_turn() {
+        session.record_policy_block("turn_submission", &error);
+        return json_error(&error);
+    }
+    if session.state() == State::Starting {
+        let tab = session.id.clone();
+        let snapshot = ctx.main.call(move |cx| {
+            manager()
+                .session(&tab)
+                .and_then(|session| super::launch_snapshot(&session, cx))
+        });
+        if let Some(Some((mut snapshot, pid))) = snapshot {
+            snapshot.process_names = crate::platform::process::process_tree(pid)
+                .into_iter()
+                .filter_map(crate::platform::process::process_name)
+                .collect();
+            if session.backend.name() == "shell" && !snapshot.shell_loading && snapshot.is_at_prompt
+                || chau7_next_core::runtime::launch_readiness::is_ready(
+                    &snapshot,
+                    session.backend.name(),
+                    session.config.purpose.as_deref(),
+                )
+            {
+                manager().mark_ready(&session.id);
+            }
+        }
+    }
     if !session.can_accept_turn() {
         log::info!(
             "MCP runtime_turn_send: rejected for session {}, state={}",
@@ -326,7 +457,7 @@ fn send_turn_internal(
             session.state().raw_value()
         ));
     }
-    let Some(turn_id) = session.start_turn(prompt) else {
+    let Some(turn_id) = session.start_turn_with_schema(prompt, schema) else {
         log::error!(
             "MCP runtime_turn_send: startTurn failed for session {}",
             session.id
@@ -341,6 +472,16 @@ fn send_turn_internal(
         input.chars().count(),
         result.chars().take(100).collect::<String>()
     );
+    if serde_json::from_str::<Value>(&result)
+        .ok()
+        .is_none_or(|value| value.get("error").is_some())
+    {
+        session.fail_turn("send_input_failed");
+        return json_error(&format!(
+            "Failed to deliver input to session {}",
+            session.id
+        ));
+    }
     encode_sorted(&json!({
         "turn_id": turn_id,
         "status": "accepted",
@@ -358,6 +499,20 @@ fn turn_status(args: &Map<String, Value>) -> String {
     out.insert("session_id".into(), json!(session.id));
     out.insert("state".into(), json!(session.state().raw_value()));
     out.insert("turn_count".into(), json!(session.turn_count()));
+    if let Some(turn) = session.last_completed_turn_id() {
+        out.insert("last_completed_turn_id".into(), json!(turn));
+    }
+    if let Some(result) = session.turn_result(arg_str(args, "turn_id")) {
+        out.insert(
+            if arg_str(args, "turn_id").is_some() {
+                "turn_result"
+            } else {
+                "latest_turn_result"
+            }
+            .into(),
+            json!(result),
+        );
+    }
     if let Some(turn) = session.current_turn_id() {
         out.insert("current_turn_id".into(), json!(turn));
     }
@@ -368,6 +523,192 @@ fn turn_status(args: &Map<String, Value>) -> String {
         out.insert("pending_approval".into(), approval.json());
     }
     encode_sorted(&Value::Object(out))
+}
+
+fn clean_arg(args: &Map<String, Value>, key: &str) -> Option<String> {
+    arg_str(args, key)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+fn string_map_arg(
+    args: &Map<String, Value>,
+    key: &str,
+) -> std::collections::HashMap<String, String> {
+    args.get(key)
+        .and_then(Value::as_object)
+        .and_then(|object| {
+            object
+                .iter()
+                .map(|(key, value)| value.as_str().map(|value| (key.clone(), value.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+fn child_sessions(args: &Map<String, Value>) -> String {
+    let Some(id) = arg_str(args, "session_id") else {
+        return json_error("session_id is required");
+    };
+    let include = arg_bool(args, "include_stopped").unwrap_or(false);
+    let sessions = if arg_bool(args, "recursive").unwrap_or(false) {
+        manager().descendant_sessions(id, include)
+    } else {
+        manager().child_sessions(id, include)
+    };
+    encode_sorted(&json!(
+        sessions
+            .iter()
+            .map(|session| session.summary())
+            .collect::<Vec<_>>()
+    ))
+}
+fn cancel_children(args: &Map<String, Value>, ctx: &ToolContext) -> String {
+    let Some(id) = arg_str(args, "session_id") else {
+        return json_error("session_id is required");
+    };
+    let mut stopped = Vec::new();
+    for session in manager().descendant_sessions(id, false) {
+        let mut stop_args = Map::new();
+        stop_args.insert("session_id".into(), json!(session.id));
+        stop_args.insert(
+            "close_tab".into(),
+            json!(arg_bool(args, "close_tabs").unwrap_or(false)),
+        );
+        stop_args.insert(
+            "force".into(),
+            json!(arg_bool(args, "force").unwrap_or(false)),
+        );
+        let response = stop_session(&stop_args, ctx);
+        if serde_json::from_str::<Value>(&response)
+            .ok()
+            .is_some_and(|value| value["ok"] == true)
+        {
+            stopped.push(session.id.clone());
+        }
+    }
+    encode_sorted(
+        &json!({"ok":true,"session_id":id,"count":stopped.len(),"stopped_session_ids":stopped}),
+    )
+}
+fn retry_session(args: &Map<String, Value>, ctx: &ToolContext) -> String {
+    let session = match session_arg(args) {
+        Ok(session) => session,
+        Err(error) => return error,
+    };
+    let config = &session.config;
+    let mut retry = json!({"backend":config.provider,"directory":config.directory,"env":config.environment,"backend_args":config.args,
+        "auto_approve":config.auto_approve,"delegation_depth":config.delegation_depth,"policy":config.policy.summary(),"task_metadata":config.task_metadata}).as_object().unwrap().clone();
+    for (key, value) in [
+        ("model", &config.model),
+        ("resume_session_id", &config.resume_session_id),
+        ("purpose", &config.purpose),
+        ("parent_session_id", &config.parent_session_id),
+        ("parent_run_id", &config.parent_run_id),
+    ] {
+        if let Some(value) = value {
+            retry.insert(key.into(), json!(value));
+        }
+    }
+    if let Some(schema) = &config.result_schema {
+        retry.insert("result_schema".into(), schema.clone());
+    }
+    if let Some(prompt) = clean_arg(args, "prompt").or_else(|| session.last_prompt()) {
+        retry.insert("initial_prompt".into(), json!(prompt));
+    }
+    create_session(&retry, ctx)
+}
+fn turn_result(args: &Map<String, Value>, ctx: &ToolContext) -> String {
+    let session = match session_arg(args) {
+        Ok(session) => session,
+        Err(error) => return error,
+    };
+    if let Some(result) = session.turn_result(arg_str(args, "turn_id")) {
+        return encode_sorted(&json!(result));
+    }
+    if arg_str(args, "turn_id").is_none() {
+        let tab_id = session.tab_id.clone();
+        let source = ctx.main.call(move |cx| {
+            let tab = crate::mcp::windows::find_tab(&tab_id, cx)?;
+            let terminal = tab.window.workspace.read(cx).mcp_session(tab.tab, cx)?;
+            let terminal = terminal.read(cx);
+            Some((
+                crate::telemetry::recorder(cx)?,
+                terminal.tab_identifier.clone(),
+                terminal.shell().ai_session_id().map(str::to_string),
+            ))
+        });
+        if let Some(Some((recorder, tab, native_id))) = source {
+            let filter = chau7_next_core::telemetry::run::TelemetryRunFilter {
+                session_id: native_id,
+                provider: Some(session.backend.name().into()),
+                limit: Some(1000),
+                ..Default::default()
+            };
+            if let Some(run) = recorder
+                .store()
+                .list_runs(&filter)
+                .into_iter()
+                .find(|run| run.tab_id.as_deref() == Some(&tab))
+            {
+                let turns = recorder.store().get_turns(&run.id);
+                if let Some(content) = turns
+                    .iter()
+                    .rev()
+                    .find(|turn| turn.role == chau7_next_core::telemetry::turn::TurnRole::Assistant)
+                    .and_then(|turn| turn.content.as_deref())
+                {
+                    let turn = session
+                        .last_completed_turn_id()
+                        .unwrap_or_else(|| "telemetry_latest".into());
+                    if let Some(result) = chau7_next_core::runtime::structured_result::capture(
+                        &session.id,
+                        &turn,
+                        Some(content),
+                        None,
+                        session.config.result_schema.as_ref(),
+                    ) {
+                        return encode_sorted(&json!(result));
+                    }
+                }
+            }
+        }
+    }
+    json_error(&format!("Turn result not found for session {}", session.id))
+}
+fn wait_turn(args: &Map<String, Value>) -> String {
+    let session = match session_arg(args) {
+        Ok(session) => session,
+        Err(error) => return error,
+    };
+    let requested = arg_str(args, "turn_id");
+    let timeout = Duration::from_millis(
+        crate::mcp::tools::arg_int(args, "timeout_ms")
+            .unwrap_or(30000)
+            .clamp(100, 3600000) as u64,
+    );
+    let started = std::time::Instant::now();
+    loop {
+        let settled = if let Some(turn) = requested {
+            session.turn_result(Some(turn)).is_some()
+                || session.last_completed_turn_id().as_deref() == Some(turn)
+                || (session.state() != State::Starting
+                    && session.current_turn_id().as_deref() != Some(turn)
+                    && !matches!(session.state(), State::Busy | State::AwaitingApproval))
+        } else {
+            session.current_turn_id().is_none() && session.state() != State::Starting
+        };
+        let timed_out = started.elapsed() >= timeout;
+        if settled || timed_out {
+            let mut response =
+                serde_json::from_str::<Value>(&turn_status(args)).unwrap_or_else(|_| json!({}));
+            response["timed_out"] = json!(!settled);
+            response["waited_ms"] = json!(started.elapsed().as_millis().min(timeout.as_millis()));
+            return encode_sorted(&response);
+        }
+        std::thread::sleep(
+            Duration::from_millis(200).min(timeout.saturating_sub(started.elapsed())),
+        );
+    }
 }
 
 /// `cursor` as a number (`NSNumber.uint64Value`; negative or missing is 0).
@@ -439,11 +780,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initial_prompt_retries_last_about_four_seconds() {
+    fn initial_prompt_wait_is_bounded_while_readiness_is_observed() {
         let total: Duration = (1..=INITIAL_PROMPT_ATTEMPTS)
             .map(initial_prompt_delay)
             .sum();
-        assert_eq!(total, Duration::from_millis(3600));
+        assert_eq!(total, Duration::from_millis(59600));
     }
 
     #[test]
