@@ -1062,35 +1062,28 @@ impl Workspace {
         self.focus_selected(window, cx);
     }
 
-    /// Title as `TabSessionContent.resolvedTitle`: custom title, then the AI
-    /// tool, then "Editor" for a tab with no terminal, then "Shell".
+    /// Current TabTitleFormatter: custom, AI, Vite, localized fallback.
     pub fn tab_title(&self, id: TabId, cx: &App) -> String {
         let Some(meta) = self.state.get(id) else {
             return String::new();
         };
-        if let Some(title) = meta.custom_title.as_ref().filter(|t| !t.trim().is_empty()) {
-            return title.clone();
-        }
         let panes = self.entries.get(&id).map(|entry| entry.panes.read(cx));
         let session = panes.and_then(|p| p.focused_session(cx));
-        if let Some(app) = session
+        let ai = session.as_ref().and_then(|s| s.read(cx).ai_app.clone());
+        let dev_server = session
             .as_ref()
-            .and_then(|session| session.read(cx).ai_app.clone())
-            .filter(|name| !name.is_empty())
-        {
-            return app;
-        }
-        // A Vite dev server names the tab (`displayTitle`).
-        if session
-            .and_then(|s| s.read(cx).dev_server().map(|d| d.name.clone()))
-            .is_some_and(|name| name.eq_ignore_ascii_case("Vite"))
-        {
-            return "Vite".into();
-        }
-        if panes.is_some_and(|p| !p.has_terminal()) {
-            return "Editor".into();
-        }
-        "Shell".into()
+            .and_then(|s| s.read(cx).dev_server().map(|d| d.name.clone()));
+        let fallback = crate::l10n::tr(if panes.is_some_and(|p| !p.has_terminal()) {
+            "Editor"
+        } else {
+            "Shell"
+        });
+        chau7_next_core::tab_bar_text::resolved_title(
+            meta.custom_title.as_deref(),
+            ai.as_deref(),
+            dev_server.as_deref(),
+            &fallback,
+        )
     }
 
     // ----- notification styles -----------------------------------------
