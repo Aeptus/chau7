@@ -14,3 +14,9 @@ pub mod session;
 pub mod session_state;
 pub mod transcript_reader;
 pub mod turn_stats;
+
+pub mod code_review;
+pub mod delegated_task;
+pub mod structured_result;
+
+pub mod launch_readiness;
