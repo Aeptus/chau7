@@ -9,7 +9,9 @@ pub mod graphics;
 mod metrics;
 mod pool;
 mod pty;
+#[cfg(unix)]
 mod reader_pool;
+mod rust_api;
 mod terminal;
 mod types;
 
@@ -18,5 +20,6 @@ pub use ffi::*;
 pub use metrics::*;
 pub use pool::*;
 pub use pty::*;
+pub use rust_api::*;
 pub use terminal::*;
 pub use types::*;

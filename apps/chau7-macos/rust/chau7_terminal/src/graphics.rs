@@ -60,6 +60,18 @@ pub struct DecodedImage {
     pub anchor_col: u16,
     /// Protocol that produced this image.
     pub protocol: ImageProtocol,
+    /// iTerm2 arguments as sent (`File=name=...;width=...;inline=1`); empty for
+    /// the other protocols. Not part of the C API (Rust callers only).
+    pub args: String,
+    /// Cursor row and column at the point of the stream where the image
+    /// arrived. `anchor_row`/`anchor_col` keep their historical meaning (the
+    /// cursor after the whole output chunk, as the C API reports them); these
+    /// are exact even when text follows the image in the same chunk. Rust only.
+    pub arrival_row: i32,
+    pub arrival_col: u16,
+    /// Scrollback size when the image arrived, so a host can anchor the
+    /// image to an absolute line (`history_size + arrival_row`). Rust only.
+    pub history_size: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,6 +185,10 @@ pub struct GraphicsInterceptor {
     iterm_data: Vec<u8>,
     /// Shell integration events extracted this feed cycle.
     shell_events: Vec<ShellIntegrationEvent>,
+    /// For each graphics event of the last feed, the passthrough length when
+    /// it completed, so the host can place the image where the cursor was
+    /// at that point of the stream (see `take_event_offsets`).
+    event_offsets: Vec<usize>,
     /// Whether each protocol is enabled.
     pub sixel_enabled: bool,
     pub kitty_enabled: bool,
@@ -200,6 +216,7 @@ impl GraphicsInterceptor {
             iterm_args: Vec::new(),
             iterm_data: Vec::new(),
             shell_events: Vec::new(),
+            event_offsets: Vec::new(),
             sixel_enabled: true,
             kitty_enabled: true,
             iterm2_enabled: true, // iTerm2 on by default
@@ -220,6 +237,7 @@ impl GraphicsInterceptor {
     ) -> (&'a [u8], Vec<GraphicsEvent>, Vec<ShellIntegrationEvent>) {
         self.passthrough.clear();
         self.shell_events.clear();
+        self.event_offsets.clear();
         let mut events = Vec::new();
         let mut i = 0;
 
@@ -571,6 +589,12 @@ impl GraphicsInterceptor {
         (owned, events, shell_events)
     }
 
+    /// Passthrough offsets of the graphics events returned by the last
+    /// `feed` / `feed_owned`, one per event, in order.
+    pub fn take_event_offsets(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.event_offsets)
+    }
+
     // ── Event Emitters ───────────────────────────────────────────────
 
     fn emit_sixel(&mut self, events: &mut Vec<GraphicsEvent>) {
@@ -582,6 +606,7 @@ impl GraphicsInterceptor {
                 data.len(),
                 params.len()
             );
+            self.event_offsets.push(self.passthrough.len());
             events.push(GraphicsEvent::Sixel { params, data });
         }
     }
@@ -595,6 +620,7 @@ impl GraphicsInterceptor {
             control,
             payload.len()
         );
+        self.event_offsets.push(self.passthrough.len());
         events.push(GraphicsEvent::Kitty { control, payload });
     }
 
@@ -607,6 +633,7 @@ impl GraphicsInterceptor {
             args,
             base64_data.len()
         );
+        self.event_offsets.push(self.passthrough.len());
         events.push(GraphicsEvent::ITerm2 { args, base64_data });
     }
 
@@ -1843,6 +1870,10 @@ mod tests {
             anchor_row: 0,
             anchor_col: 0,
             protocol: ImageProtocol::Sixel,
+            args: String::new(),
+            arrival_row: 0,
+            arrival_col: 0,
+            history_size: 0,
         };
         let id = store.push(img);
         assert_eq!(id, 1);

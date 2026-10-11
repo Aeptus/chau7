@@ -356,6 +356,7 @@ pub struct Chau7Terminal {
     /// Flag to signal the reader pool to stop monitoring this terminal
     pub(crate) running: Arc<AtomicBool>,
     /// Raw fd registered with the shared reader pool (for unregistration on drop)
+    #[cfg_attr(not(unix), allow(dead_code))]
     pub(crate) reader_pool_fd: Option<i32>,
     /// Event receiver for terminal events
     pub(crate) event_rx: Receiver<Event>,
@@ -543,6 +544,34 @@ impl Chau7Terminal {
         Self::new_with_launch(cols, rows, shell, env_vars, &[], None)
     }
 
+    /// Same as [`Self::new_with_env`], starting the shell in `cwd` when given.
+    /// Used by Chau7 Next; the Swift app goes through the C API.
+    pub fn new_with_env_in_dir(
+        cols: u16,
+        rows: u16,
+        shell: &str,
+        env_vars: &[(&str, &str)],
+        cwd: Option<&std::path::Path>,
+    ) -> Result<Self, TerminalError> {
+        Self::new_with_args_env_in_dir(cols, rows, shell, &[], env_vars, cwd)
+    }
+
+    /// Same as [`Self::new_with_env_in_dir`], passing `args` to the shell
+    /// (Chau7 Next starts bash with `--rcfile`). A thin wrapper over
+    /// [`Self::new_with_launch`] for Rust callers.
+    pub fn new_with_args_env_in_dir(
+        cols: u16,
+        rows: u16,
+        shell: &str,
+        args: &[&str],
+        env_vars: &[(&str, &str)],
+        cwd: Option<&std::path::Path>,
+    ) -> Result<Self, TerminalError> {
+        let args: Vec<String> = args.iter().map(|arg| (*arg).to_string()).collect();
+        let cwd = cwd.map(|dir| dir.to_string_lossy().into_owned());
+        Self::new_with_launch(cols, rows, shell, env_vars, &args, cwd.as_deref())
+    }
+
     /// Create a new terminal with full launch control: shell argv (e.g. bash's
     /// `--rcfile` for interactive shell integration) and an explicit working
     /// directory (otherwise the child inherits the app's cwd — often `/` when
@@ -577,7 +606,7 @@ impl Chau7Terminal {
 
         // Determine shell path
         let shell_path = if shell.is_empty() {
-            std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
+            std::env::var("SHELL").unwrap_or_else(|_| default_shell().to_string())
         } else {
             shell.to_string()
         };
@@ -660,6 +689,10 @@ impl Chau7Terminal {
 
         // Capture the master PTY fd for tcgetattr echo detection.
         // Use the MasterPty trait's as_raw_fd() method directly — no unsafe casts needed.
+        // Windows (Chau7 Next only) has no PTY fd; echo detection is disabled there.
+        #[cfg(not(unix))]
+        let master_fd: i32 = -1;
+        #[cfg(unix)]
         let master_fd = match pair.master.as_raw_fd() {
             Some(raw_fd) => {
                 let duped = unsafe { libc::dup(raw_fd) };
@@ -685,6 +718,10 @@ impl Chau7Terminal {
 
         // Get a raw fd for the shared reader pool by dup'ing the master PTY.
         // The pool thread will use poll()+read() on this fd.
+        // Windows (Chau7 Next only) uses a reader thread instead, see below.
+        #[cfg(not(unix))]
+        let reader_fd: i32 = -1;
+        #[cfg(unix)]
         let reader_fd = match pair.master.as_raw_fd() {
             Some(raw_fd) => {
                 let duped = unsafe { libc::dup(raw_fd) };
@@ -725,6 +762,7 @@ impl Chau7Terminal {
         // Register with the shared reader pool instead of spawning a per-terminal thread.
         // The pool's single thread uses poll() to monitor all PTY fds and dispatches
         // PtyMessage::Data to the appropriate channel.
+        #[cfg(unix)]
         if reader_fd >= 0 {
             let pool = crate::reader_pool::shared_reader_pool();
             if !pool.is_running() {
@@ -751,6 +789,8 @@ impl Chau7Terminal {
                 id
             );
         }
+        #[cfg(not(unix))]
+        spawn_pty_reader_thread(id, pair.master.as_ref(), pty_tx, running.clone())?;
 
         // Create the PTY handle
         let pty_handle = PtyHandle {
@@ -852,26 +892,7 @@ impl Chau7Terminal {
             // fd capture failed at creation time, can't check
             return false;
         }
-        unsafe {
-            let mut termios: libc::termios = std::mem::zeroed();
-            if libc::tcgetattr(echo_fd, &mut termios) == 0 {
-                let echo_off = (termios.c_lflag & (libc::ECHO as libc::tcflag_t)) == 0;
-                trace!(
-                    "[terminal-{}] tcgetattr: ECHO={}, echo_disabled={}",
-                    self.id,
-                    if echo_off { "off" } else { "on" },
-                    echo_off
-                );
-                echo_off
-            } else {
-                // tcgetattr failed (PTY might be closed)
-                trace!(
-                    "[terminal-{}] tcgetattr failed, assuming echo enabled",
-                    self.id
-                );
-                false
-            }
-        }
+        echo_disabled_for_fd(self.id, echo_fd)
     }
 
     /// Get the URL for a hyperlink ID from the most recent grid snapshot.
@@ -1025,27 +1046,8 @@ impl Chau7Terminal {
         // from the UI thread (window drag) and must never stall behind a
         // backpressured write. The dup'd echo_fd ioctls TIOCSWINSZ directly,
         // the same lock-free pattern echo detection uses for tcgetattr.
-        let mut pty_resized = false;
         let echo_fd = self.echo_fd.load(Ordering::Acquire);
-        if echo_fd >= 0 {
-            let winsize = libc::winsize {
-                ws_row: rows,
-                ws_col: cols,
-                ws_xpixel: 0,
-                ws_ypixel: 0,
-            };
-            let rc = unsafe { libc::ioctl(echo_fd, libc::TIOCSWINSZ, &winsize) };
-            if rc == 0 {
-                pty_resized = true;
-                debug!("[terminal-{}] PTY resized via TIOCSWINSZ", self.id);
-            } else {
-                error!(
-                    "[terminal-{}] TIOCSWINSZ failed: {}",
-                    self.id,
-                    std::io::Error::last_os_error()
-                );
-            }
-        }
+        let pty_resized = echo_fd >= 0 && set_fd_winsize(self.id, echo_fd, cols, rows);
         if !pty_resized {
             // Fallback (no dup'd fd): use the handle, but never block behind
             // a backpressured write — a missed PTY resize self-corrects on
@@ -1103,28 +1105,7 @@ impl Chau7Terminal {
             warn!("[terminal-{}] nudge_winsize: no master fd", self.id);
             return;
         }
-        let pgrp = unsafe { libc::tcgetpgrp(echo_fd) };
-        if pgrp <= 0 {
-            debug!(
-                "[terminal-{}] nudge_winsize: no foreground pgrp ({})",
-                self.id, pgrp
-            );
-            return;
-        }
-        let rc = unsafe { libc::killpg(pgrp, libc::SIGWINCH) };
-        if rc == 0 {
-            debug!(
-                "[terminal-{}] nudge_winsize: SIGWINCH delivered to pgrp {}",
-                self.id, pgrp
-            );
-        } else {
-            warn!(
-                "[terminal-{}] nudge_winsize: killpg({}) failed: {}",
-                self.id,
-                pgrp,
-                std::io::Error::last_os_error()
-            );
-        }
+        signal_foreground_winch(self.id, echo_fd);
     }
 
     /// Poll for new data from PTY, process it, and return event flags.
@@ -1461,9 +1442,10 @@ impl Chau7Terminal {
         // race-free pickup point queried via `get_pending_cwd`.
         self.scan_osc7(data);
 
-        let (passthrough_owned, events, shell_events) = {
+        let (passthrough_owned, events, shell_events, offsets) = {
             let mut interceptor = self.graphics_interceptor.lock();
-            interceptor.feed_owned(data)
+            let (passthrough, events, shell) = interceptor.feed_owned(data);
+            (passthrough, events, shell, interceptor.take_event_offsets())
             // Lock dropped here — passthrough_owned is an owned Vec, no borrow.
         };
 
@@ -1480,19 +1462,47 @@ impl Chau7Terminal {
                 .store(true, std::sync::atomic::Ordering::Release);
         }
 
-        if !passthrough_owned.is_empty() {
+        // Feed the parser up to each image to record where the cursor was
+        // when it arrived (`arrival_*`, Rust callers), then the rest. Without
+        // images this is the single `advance` call it always was, and the
+        // parser state is the same either way.
+        let mut arrivals = Vec::with_capacity(events.len());
+        if !passthrough_owned.is_empty() || !events.is_empty() {
             let mut term = self.term.lock();
             let mut processor = self.processor.lock();
-            processor.advance(&mut *term, &passthrough_owned);
-            // Sample the grid for invariant violations every
-            // INVARIANT_CHECK_PERIOD calls. Catches the moment of state
-            // corruption (orphan wide-char spacers, cursor outside
-            // viewport) without paying the per-byte cost on every chunk.
-            let n = self
-                .advance_counter
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if n.is_multiple_of(INVARIANT_CHECK_PERIOD) {
-                Self::check_grid_invariants(self.id, &term, passthrough_owned.len());
+            let mut fed = 0usize;
+            for index in 0..events.len() {
+                let end = offsets
+                    .get(index)
+                    .copied()
+                    .unwrap_or(passthrough_owned.len())
+                    .clamp(fed, passthrough_owned.len());
+                if end > fed {
+                    processor.advance(&mut *term, &passthrough_owned[fed..end]);
+                    fed = end;
+                }
+                let grid = term.grid();
+                let cursor = grid.cursor.point;
+                arrivals.push((
+                    cursor.line.0,
+                    cursor.column.0 as u16,
+                    grid.history_size() as u32,
+                ));
+            }
+            if fed < passthrough_owned.len() {
+                processor.advance(&mut *term, &passthrough_owned[fed..]);
+            }
+            if !passthrough_owned.is_empty() {
+                // Sample the grid for invariant violations every
+                // INVARIANT_CHECK_PERIOD calls. Catches the moment of state
+                // corruption (orphan wide-char spacers, cursor outside
+                // viewport) without paying the per-byte cost on every chunk.
+                let n = self
+                    .advance_counter
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if n.is_multiple_of(INVARIANT_CHECK_PERIOD) {
+                    Self::check_grid_invariants(self.id, &term, passthrough_owned.len());
+                }
             }
         }
 
@@ -1503,6 +1513,7 @@ impl Chau7Terminal {
                 events.len()
             );
 
+            // `anchor_*` stay the cursor after the whole chunk, as before.
             let (cursor_row, cursor_col) = {
                 let term = self.term.lock();
                 let cursor = term.grid().cursor.point;
@@ -1510,20 +1521,25 @@ impl Chau7Terminal {
             };
 
             let mut store = self.image_store.lock();
-            for event in events {
+            for (event, (arrival_row, arrival_col, history_size)) in
+                events.into_iter().zip(arrivals)
+            {
                 let image = match event {
-                    graphics::GraphicsEvent::ITerm2 {
-                        args: _,
-                        base64_data,
-                    } => graphics::DecodedImage {
-                        id: 0,
-                        width: 0,
-                        height: 0,
-                        rgba: base64_data,
-                        anchor_row: cursor_row,
-                        anchor_col: cursor_col,
-                        protocol: graphics::ImageProtocol::ITerm2,
-                    },
+                    graphics::GraphicsEvent::ITerm2 { args, base64_data } => {
+                        graphics::DecodedImage {
+                            id: 0,
+                            width: 0,
+                            height: 0,
+                            rgba: base64_data,
+                            anchor_row: cursor_row,
+                            anchor_col: cursor_col,
+                            protocol: graphics::ImageProtocol::ITerm2,
+                            args,
+                            arrival_row,
+                            arrival_col,
+                            history_size,
+                        }
+                    }
                     graphics::GraphicsEvent::Sixel { params: _, data } => {
                         match graphics::decode_sixel(&data) {
                             Some((rgba, width, height)) => {
@@ -1542,6 +1558,10 @@ impl Chau7Terminal {
                                     anchor_row: cursor_row,
                                     anchor_col: cursor_col,
                                     protocol: graphics::ImageProtocol::Sixel,
+                                    args: String::new(),
+                                    arrival_row,
+                                    arrival_col,
+                                    history_size,
                                 }
                             }
                             None => {
@@ -1573,6 +1593,10 @@ impl Chau7Terminal {
                                     anchor_row: cursor_row,
                                     anchor_col: cursor_col,
                                     protocol: graphics::ImageProtocol::Kitty,
+                                    args: String::new(),
+                                    arrival_row,
+                                    arrival_col,
+                                    history_size,
                                 }
                             }
                             graphics::KittyAction::Continue => {
@@ -3393,6 +3417,10 @@ impl Drop for Chau7Terminal {
         // Close the duplicated master fd used for echo detection without taking
         // the PTY writer lock. Drop can run while a write is backpressured.
         let echo_fd = self.echo_fd.swap(-1, Ordering::AcqRel);
+        // Outside Unix there is never a duplicated fd (always -1).
+        #[cfg(not(unix))]
+        let _ = echo_fd;
+        #[cfg(unix)]
         if echo_fd >= 0 {
             unsafe {
                 libc::close(echo_fd);
@@ -3405,6 +3433,7 @@ impl Drop for Chau7Terminal {
 
         // Signal the shared reader pool to stop monitoring this terminal
         self.running.store(false, Ordering::Release);
+        #[cfg(unix)]
         if let Some(fd) = self.reader_pool_fd.take() {
             crate::reader_pool::shared_reader_pool().unregister(fd, self.id);
             debug!(
@@ -3475,6 +3504,137 @@ impl Drop for Chau7Terminal {
 
         info!("[terminal-{}] Terminal destroyed", self.id);
     }
+}
+
+/// Shell used when `$SHELL` is unset. macOS keeps its historical default.
+fn default_shell() -> &'static str {
+    if cfg!(windows) {
+        "powershell.exe"
+    } else {
+        "/bin/zsh"
+    }
+}
+
+/// tcgetattr-based echo check (password prompts) on the duplicated master fd.
+#[cfg(unix)]
+pub(crate) fn echo_disabled_for_fd(id: u64, master_fd: i32) -> bool {
+    unsafe {
+        let mut termios: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(master_fd, &mut termios) == 0 {
+            let echo_off = (termios.c_lflag & (libc::ECHO as libc::tcflag_t)) == 0;
+            trace!(
+                "[terminal-{}] tcgetattr: ECHO={}, echo_disabled={}",
+                id,
+                if echo_off { "off" } else { "on" },
+                echo_off
+            );
+            echo_off
+        } else {
+            // tcgetattr failed (PTY might be closed)
+            trace!("[terminal-{}] tcgetattr failed, assuming echo enabled", id);
+            false
+        }
+    }
+}
+
+/// No PTY fd outside Unix (Chau7 Next on Windows): echo is never reported off.
+#[cfg(not(unix))]
+pub(crate) fn echo_disabled_for_fd(_id: u64, _master_fd: i32) -> bool {
+    false
+}
+
+/// TIOCSWINSZ on the duplicated master fd. True when the PTY was resized.
+#[cfg(unix)]
+fn set_fd_winsize(id: u64, fd: i32, cols: u16, rows: u16) -> bool {
+    let winsize = libc::winsize {
+        ws_row: rows,
+        ws_col: cols,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    let rc = unsafe { libc::ioctl(fd, libc::TIOCSWINSZ, &winsize) };
+    if rc == 0 {
+        debug!("[terminal-{}] PTY resized via TIOCSWINSZ", id);
+        true
+    } else {
+        error!(
+            "[terminal-{}] TIOCSWINSZ failed: {}",
+            id,
+            std::io::Error::last_os_error()
+        );
+        false
+    }
+}
+
+#[cfg(not(unix))]
+fn set_fd_winsize(_id: u64, _fd: i32, _cols: u16, _rows: u16) -> bool {
+    false
+}
+
+/// `killpg(tcgetpgrp(fd), SIGWINCH)`, see [`Chau7Terminal::nudge_winsize`].
+#[cfg(unix)]
+fn signal_foreground_winch(id: u64, fd: i32) {
+    let pgrp = unsafe { libc::tcgetpgrp(fd) };
+    if pgrp <= 0 {
+        debug!(
+            "[terminal-{}] nudge_winsize: no foreground pgrp ({})",
+            id, pgrp
+        );
+        return;
+    }
+    let rc = unsafe { libc::killpg(pgrp, libc::SIGWINCH) };
+    if rc == 0 {
+        debug!(
+            "[terminal-{}] nudge_winsize: SIGWINCH delivered to pgrp {}",
+            id, pgrp
+        );
+    } else {
+        warn!(
+            "[terminal-{}] nudge_winsize: killpg({}) failed: {}",
+            id,
+            pgrp,
+            std::io::Error::last_os_error()
+        );
+    }
+}
+
+#[cfg(not(unix))]
+fn signal_foreground_winch(_id: u64, _fd: i32) {}
+
+/// Outside Unix (Chau7 Next on Windows) there is no fd for the shared
+/// `poll()` reader pool, so each terminal reads its PTY on its own thread,
+/// with the same channel messages (blocking send gives the same no-loss
+/// backpressure as the pool's retained buffer).
+#[cfg(not(unix))]
+fn spawn_pty_reader_thread(
+    id: u64,
+    master: &(dyn portable_pty::MasterPty + Send),
+    sender: crossbeam_channel::Sender<PtyMessage>,
+    running: Arc<AtomicBool>,
+) -> Result<(), TerminalError> {
+    use std::io::Read;
+    let mut reader = master.try_clone_reader().map_err(|e| {
+        error!("[terminal-{}] Failed to clone PTY reader: {}", id, e);
+        TerminalError::ReaderThread(std::io::Error::other(e.to_string()))
+    })?;
+    std::thread::Builder::new()
+        .name(format!("term-{}-reader", id))
+        .spawn(move || {
+            let mut buf = vec![0u8; 64 * 1024];
+            while running.load(Ordering::Acquire) {
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if sender.send(PtyMessage::Data(buf[..n].to_vec())).is_err() {
+                            return;
+                        }
+                    }
+                }
+            }
+            let _ = sender.send(PtyMessage::Closed);
+        })
+        .map_err(TerminalError::ReaderThread)?;
+    Ok(())
 }
 
 #[cfg(test)]
