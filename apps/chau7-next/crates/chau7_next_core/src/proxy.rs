@@ -10,6 +10,8 @@
 //! Chau7 Next runs its own proxy next to the Swift app's, so its default
 //! ports differ ([`DEFAULT_PORT`]) and every file lives in its own data root.
 
+pub mod analytics;
+
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::Path;
