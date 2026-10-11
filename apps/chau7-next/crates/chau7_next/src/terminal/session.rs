@@ -243,6 +243,7 @@ pub struct TerminalSession {
     mouse_reporting_enabled: std::cell::Cell<bool>,
     _pump: Task<()>,
     _ticker: Task<()>,
+    process_subscription: Option<crate::monitoring::process_tree::Subscription>,
 }
 
 impl EventEmitter<SessionEvent> for TerminalSession {}
@@ -631,6 +632,9 @@ impl TerminalSession {
             .map_or(10_000, |settings| settings.terminal.scrollback_lines);
         let memory = crate::memory_pressure::register(id, &term, &root, lines);
         let _ = profile_memory.set(Arc::downgrade(&memory));
+        let process_subscription = (has_pty && pid > 0).then(|| {
+            crate::monitoring::process_tree::subscribe(pid as u32, cx.entity().downgrade(), cx)
+        });
         Self {
             id,
             term,
@@ -686,6 +690,7 @@ impl TerminalSession {
             mouse_reporting_enabled: std::cell::Cell::new(false),
             _pump: pump,
             _ticker: ticker,
+            process_subscription,
         }
     }
 
@@ -703,7 +708,7 @@ impl TerminalSession {
             WorkQueue::Main,
         ));
         let started = Instant::now();
-        self.memory.set_tui(self.ai_app.is_some());
+        self.memory.set_tui(self.is_ai_running());
         let mut metadata_changed = self.retry_resize();
         let (grid, cursor, title, closed, events, bell, clipboard, clipboard_load) = {
             let term = self.term.read();
@@ -806,6 +811,7 @@ impl TerminalSession {
                 }
             };
             let prompt = mark == ShellMark::PromptStart;
+            crate::monitoring::process_tree::refresh(cx, mark == ShellMark::CommandStart);
             self.tracker.handle_mark(mark, line, now);
             if prompt {
                 // The first prompt creates the deferred token optimizer flag.
@@ -872,6 +878,8 @@ impl TerminalSession {
         if closed && self.exited.is_none() {
             let code = self.term.read().try_child_exit_code();
             self.exited = Some(code);
+            self.process_subscription.take();
+            self.tracker.update_live_agent(None);
             self.tracker.mark_exited();
             self.tracker.take_events();
             self.command_running = false;
@@ -912,7 +920,7 @@ impl TerminalSession {
         if metadata_changed {
             cx.emit(SessionEvent::MetadataChanged);
         }
-        self.memory.set_tui(self.ai_app.is_some());
+        self.memory.set_tui(self.is_ai_running());
         cx.emit(SessionEvent::Output);
         cx.notify();
         feature_profiler::record(
@@ -1860,7 +1868,7 @@ impl TerminalSession {
         if self.render_suspended.swap(suspended, Ordering::Relaxed) != suspended {
             let _ = self.refresh_wake.unbounded_send(RefreshWake::Cadence);
         }
-        self.memory.set_tui(self.ai_app.is_some());
+        self.memory.set_tui(self.is_ai_running());
     }
 
     /// Actual view/window focus supplies interactive state. A zero interval
@@ -1951,6 +1959,28 @@ impl TerminalSession {
         &self.tracker
     }
 
+    pub(crate) fn ai_display_app_name(&self) -> Option<String> {
+        self.tracker.ai_display_app_name()
+    }
+    pub(crate) fn is_ai_running(&self) -> bool {
+        self.exited.is_none() && self.tracker.is_ai_running()
+    }
+    pub(crate) fn apply_live_process_snapshot(
+        &mut self,
+        provider: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.close_requested || self.exited.is_some() {
+            return;
+        }
+        if self.tracker.update_live_agent(provider) {
+            self.memory.set_tui(self.is_ai_running());
+            crate::cto::set_ai_active(&self.cto_id, self.is_ai_running());
+            cx.emit(SessionEvent::MetadataChanged);
+            cx.notify();
+        }
+    }
+
     /// The tab hosts an agent runtime session: no terminal-prompt
     /// "waiting for input" fallback (RUN-023).
     pub fn set_runtime_owned(&mut self, owned: bool) {
@@ -1972,6 +2002,7 @@ impl TerminalSession {
 
     /// Close the session: `exit`, then signals (TRM-007). Also done on drop.
     pub fn close(&mut self) {
+        self.process_subscription.take();
         if self.close_requested {
             return;
         }
@@ -1981,7 +2012,7 @@ impl TerminalSession {
             CloseMode::AppQuit
         } else {
             CloseMode::Graceful {
-                ai_running: self.ai_app.is_some(),
+                ai_running: self.is_ai_running(),
             }
         };
         if self.exited.is_none() {

@@ -1084,7 +1084,9 @@ impl Workspace {
         };
         let panes = self.entries.get(&id).map(|entry| entry.panes.read(cx));
         let session = panes.and_then(|p| p.focused_session(cx));
-        let ai = session.as_ref().and_then(|s| s.read(cx).ai_app.clone());
+        let ai = session
+            .as_ref()
+            .and_then(|s| s.read(cx).ai_display_app_name());
         let dev_server = session
             .as_ref()
             .and_then(|s| s.read(cx).dev_server().map(|d| d.name.clone()));

@@ -220,6 +220,7 @@ fn main() {
             repository::flush(cx);
             history::recorder::flush_on_quit();
             monitoring::aethyme_delivery::stop(cx);
+            monitoring::process_tree::stop(cx);
             mcp::stop(cx);
             scripting::stop(cx);
             // Token optimizer: no flags or wrappers outlive the app.

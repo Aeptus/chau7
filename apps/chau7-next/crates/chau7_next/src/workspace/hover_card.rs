@@ -245,8 +245,8 @@ impl Workspace {
         let mono = "Menlo";
 
         // Header: AI logo (dim when not running) or color dot, title, status.
-        let ai_app = session.ai_app.clone().filter(|a| !a.is_empty());
-        let ai_running = ai_app.is_some() && session.command_running;
+        let ai_app = session.ai_display_app_name();
+        let ai_running = session.is_ai_running();
         // `statusLabel`.
         let (status, status_color) = if session.exited.is_some() {
             ("Exited", muted)
