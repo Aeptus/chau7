@@ -97,7 +97,7 @@ fn enabled(cx: &App) -> bool {
         .is_some_and(|f| f.base.general.icloud_sync)
 }
 
-fn document(cx: &App) -> String {
+fn document(cx: &App) -> Result<String, String> {
     let home = cx
         .global::<AppData>()
         .root
@@ -105,7 +105,7 @@ fn document(cx: &App) -> String {
         .to_string_lossy()
         .into_owned();
     let base = &cx.global::<ConfigFiles>().base;
-    export::export_json(base, &home)
+    export::export_json_with_recent(base, &home, &crate::repository::recent_roots(cx)?)
 }
 
 /// A setting changed: upload after the debounce (`syncToiCloud`).
@@ -121,7 +121,13 @@ pub fn push_now(cx: &mut App) {
         return;
     }
     let store = icloud::current();
-    let text = document(cx);
+    let text = match document(cx) {
+        Ok(text) => text,
+        Err(reason) => {
+            state(cx).message = Some(reason);
+            return;
+        }
+    };
     let available = store.is_available();
     let result = state(cx).upload(store, text, SystemTime::now());
     match result {
@@ -158,7 +164,8 @@ pub fn restore(cx: &mut App) -> Result<(), String> {
     let last_date = cx
         .try_global::<SyncState>()
         .and_then(|state| state.last_exported_at);
-    let prepared = cloud_freshness::prepare_remote(base, &text, &home, last_date);
+    let prepared = export::validate_document_size(&text)
+        .and_then(|()| cloud_freshness::prepare_remote(base, &text, &home, last_date));
     match prepared {
         Ok(RemoteSettings::NotNewer) => {
             let state = state(cx);
@@ -171,6 +178,9 @@ pub fn restore(cx: &mut App) -> Result<(), String> {
             fingerprint,
         }) => {
             crate::settings_window::replace_base(cx, *settings);
+            if let Some(roots) = export::recent_roots_from_json(&text) {
+                crate::repository::import_recent_roots(roots, cx);
+            }
             let state = state(cx);
             // Applying a remote document must not immediately echo it back.
             state.pending_since = None;
@@ -208,7 +218,13 @@ pub fn tick(cx: &mut App) {
     let now = Instant::now();
     if push_due(state(cx).pending_since, now) {
         // An unchanged document is not uploaded again.
-        let text = document(cx);
+        let text = match document(cx) {
+            Ok(text) => text,
+            Err(reason) => {
+                state(cx).message = Some(reason);
+                return;
+            }
+        };
         let fingerprint = cloud_freshness::fingerprint(&text).ok();
         if fingerprint.is_some() && state(cx).last_fingerprint == fingerprint {
             state(cx).pending_since = None;

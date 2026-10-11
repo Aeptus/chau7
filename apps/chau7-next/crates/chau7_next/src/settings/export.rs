@@ -11,6 +11,11 @@
 //! Next uses its own extension when present; Swift ignores that unknown key.
 
 mod current;
+mod recent;
+pub use recent::{
+    export_json_with_recent, import_json_with_recent, read_settings_document,
+    recent_roots_from_json, validate_document_size,
+};
 
 use chau7_next_core::color_schemes::ColorScheme;
 use chau7_next_core::data_root::default_repo_snippet_path;
