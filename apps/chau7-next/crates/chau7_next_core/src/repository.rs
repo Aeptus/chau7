@@ -324,6 +324,14 @@ pub struct RepositoryCache {
 
 /// Remove `.` segments, doubled and trailing slashes (`standardized`).
 pub fn normalize_path(path: &str) -> String {
+    #[cfg(windows)]
+    if std::path::Path::new(path).has_root() {
+        return known_identity::normalize_root(path).unwrap_or_default();
+    }
+    #[cfg(windows)]
+    let slashed = path.replace('\\', "/");
+    #[cfg(windows)]
+    let path = slashed.as_str();
     let absolute = path.starts_with('/');
     let mut parts: Vec<&str> = Vec::new();
     for part in path.split('/') {
@@ -441,7 +449,7 @@ impl RepositoryCache {
 
     /// Record a branch seen by one tab for every tab in that repository.
     pub fn set_branch(&mut self, root: &str, branch: Option<String>) -> bool {
-        match self.models.get_mut(root) {
+        match self.models.get_mut(&normalize_path(root)) {
             Some(model) if model.branch != branch => {
                 model.branch = branch;
                 true
@@ -736,6 +744,23 @@ mod tests {
         );
         assert_eq!(cache.cached_root("/saved/repository"), None);
         assert_eq!(cache.branch("/saved/repo").as_deref(), Some("last-branch"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_native_and_saved_identity_paths_share_the_same_model() {
+        let mut identities = known_identity::KnownRepoIdentities::default();
+        identities.record(r"C:\work\repo", Some("remembered"), None, false);
+        let mut cache = RepositoryCache::default();
+        cache.adopt_known_identities(&identities);
+        assert_eq!(normalize_path(r"C:\work\repo"), "C:/work/repo");
+        assert_eq!(cache.branch(r"C:\work\repo").as_deref(), Some("remembered"));
+        assert!(cache.set_branch(r"C:\work\repo", Some("next".into())));
+        assert_eq!(cache.branch("C:/work/repo").as_deref(), Some("next"));
+        assert_eq!(
+            cache.cached_root(r"C:\work\repo\src"),
+            Some("C:/work/repo".into())
+        );
     }
 
     #[test]

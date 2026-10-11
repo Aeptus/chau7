@@ -149,6 +149,9 @@ pub trait HostEnv {
     fn resolve_approval(&mut self, request_id: &str, approved: bool);
     /// Store an iOS telemetry event (TEL-015).
     fn store_telemetry(&mut self, event: RemoteClientTelemetryEvent);
+    fn spine_seq(&self) -> Option<u64> {
+        None
+    }
     fn now(&self) -> DateTime<Utc>;
 }
 
@@ -898,7 +901,9 @@ impl RemoteHost {
             return;
         }
         self.register_approval(env, request);
-        self.send_json(sink, RemoteFrameType::ApprovalRequest, 0, request);
+        let wire =
+            chau7_next_core::remote::push_composition::compose_approval(request, env.spine_seq());
+        self.send_json(sink, RemoteFrameType::ApprovalRequest, 0, &wire);
         self.send_activity(env, sink, false);
         log::info!("Remote: sent approval request {}", request.request_id);
     }
@@ -1016,7 +1021,10 @@ impl RemoteHost {
                 sink,
                 RemoteFrameType::ApprovalRequest,
                 0,
-                &context.payload(),
+                &chau7_next_core::remote::push_composition::compose_approval(
+                    &context.payload(),
+                    env.spine_seq(),
+                ),
             );
         }
     }
@@ -1444,7 +1452,8 @@ impl RemoteHost {
             return;
         }
         let payload = RemoteInteractivePromptListPayload { prompts: next };
-        self.send_json(sink, RemoteFrameType::InteractivePromptList, 0, &payload);
+        let wire = chau7_next_core::remote::push_composition::compose_prompt_list(&payload);
+        self.send_json(sink, RemoteFrameType::InteractivePromptList, 0, &wire);
     }
 
     /// Periodic refresh (tabs, selection, activity, prompts). Swift reacts to
@@ -1635,6 +1644,9 @@ pub(crate) mod tests {
         }
         fn store_telemetry(&mut self, event: RemoteClientTelemetryEvent) {
             self.telemetry.push(event);
+        }
+        fn spine_seq(&self) -> Option<u64> {
+            Some(42)
         }
         fn now(&self) -> DateTime<Utc> {
             self.now
@@ -1883,6 +1895,11 @@ pub(crate) mod tests {
         host.send_approval_request(&request, &mut env, &mut out);
         assert_eq!(out[0].frame_type(), Some(RemoteFrameType::ApprovalRequest));
         assert_eq!(host.pending_approval_ids(), ["REQ-1"]);
+        let initial: serde_json::Value = serde_json::from_slice(&out[0].payload).unwrap();
+        assert_eq!(initial["command"], "rm -rf build");
+        assert_eq!(initial["push_body"], "rm -rf");
+        assert_eq!(initial["severity"], "destructive");
+        assert_eq!(initial["spine_seq"], 42);
 
         // Reconnect: pending approvals are sent first.
         host.on_disconnected();
@@ -1891,6 +1908,12 @@ pub(crate) mod tests {
         assert_eq!(out[0].frame_type(), Some(RemoteFrameType::ApprovalRequest));
         let resent: ApprovalRequestPayload = serde_json::from_slice(&out[0].payload).unwrap();
         assert_eq!(resent.tab_title.as_deref(), Some("Shell"));
+        let wire: serde_json::Value = serde_json::from_slice(&out[0].payload).unwrap();
+        assert_eq!(wire["push_title"], "Protected action needs approval");
+        assert_eq!(wire["push_body"], "rm -rf");
+        assert_eq!(wire["severity"], "destructive");
+        assert_eq!(wire["spine_seq"], 42);
+        assert!(wire["push_subtitle"].as_str().unwrap().contains("Shell"));
         assert_eq!(
             resent.context_note.as_deref(),
             Some("Permissions source: global settings")
@@ -2044,6 +2067,14 @@ pub(crate) mod tests {
         let payload: RemoteInteractivePromptListPayload =
             serde_json::from_slice(&list.payload).unwrap();
         assert_eq!(payload.prompts.len(), 1);
+        let wire: serde_json::Value = serde_json::from_slice(&list.payload).unwrap();
+        assert_eq!(wire["prompts"][0]["push_title"], "Claude is waiting");
+        assert!(
+            wire["prompts"][0]["push_subtitle"]
+                .as_str()
+                .unwrap()
+                .contains("Shell")
+        );
         let prompt = &payload.prompts[0];
         assert_eq!(prompt.prompt, "Do you want to proceed?");
         assert_eq!(prompt.options[0].response, "1\r");

@@ -64,6 +64,8 @@ _chau7_next_precmd() {
     printf '\e]133;D;%s\a' "$code"
   fi
   unset _chau7_next_ran
+  printf '\e]9;chau7;exit=%s\a' "$code"
+  _chau7_next_update_project
   printf '\e]7;file://%s%s\a' "${HOST:-localhost}" "$PWD"
   printf '\e]133;A\a'
 }
@@ -77,7 +79,11 @@ if [ "$CHAU7_NEXT_PROXY_CORRELATION_ENABLED" = "1" ]; then
  export CHAU7_NEXT_ANTHROPIC_HEADERS_BASE="${ANTHROPIC_CUSTOM_HEADERS:-}"
 fi
 _chau7_next_update_project() {
-  local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+  local git_data=$(git rev-parse --show-toplevel --abbrev-ref HEAD 2>/dev/null)
+  local git_root="${git_data%%$'\n'*}"
+  local git_branch="${git_data##*$'\n'}"
+  [ -n "$git_root" ] && printf '\e]9;chau7;repo-root=%s\a' "$git_root"
+  [ -n "$git_branch" ] && [ "$git_branch" != "$git_root" ] && printf '\e]9;chau7;branch=%s\a' "$git_branch"
   export CHAU7_NEXT_PROJECT="${git_root:-$PWD}"
   if [ "$CHAU7_NEXT_PROXY_CORRELATION_ENABLED" = "1" ]; then
     local headers="X-Chau7-Session: ${CHAU7_NEXT_SESSION_ID:-}
@@ -133,8 +139,12 @@ if [ "$CHAU7_NEXT_PROXY_CORRELATION_ENABLED" = "1" ]; then
  export CHAU7_NEXT_ANTHROPIC_HEADERS_BASE="${ANTHROPIC_CUSTOM_HEADERS:-}"
 fi
 _chau7_next_update_project() {
-  local git_root
-  git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+  local git_data git_root git_branch
+  git_data=$(git rev-parse --show-toplevel --abbrev-ref HEAD 2>/dev/null)
+  git_root="${git_data%%$'\n'*}"
+  git_branch="${git_data##*$'\n'}"
+  [ -n "$git_root" ] && printf '\e]9;chau7;repo-root=%s\a' "$git_root"
+  [ -n "$git_branch" ] && [ "$git_branch" != "$git_root" ] && printf '\e]9;chau7;branch=%s\a' "$git_branch"
   export CHAU7_NEXT_PROJECT="${git_root:-$PWD}"
   if [ "$CHAU7_NEXT_PROXY_CORRELATION_ENABLED" = "1" ]; then
     local headers="X-Chau7-Session: ${CHAU7_NEXT_SESSION_ID:-}
@@ -157,10 +167,8 @@ _chau7_next_prompt() {
     [ -f "$CHAU7_NEXT_HISTORY_FILE" ] && printf '%s\t%s\t%s\n' "$(date +%s)" "$PWD" "$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]* *//')" >> "$CHAU7_NEXT_HISTORY_FILE" 2>/dev/null
   fi
   unset _c7r
-  if [ "$_chau7_next_pwd" != "$PWD" ]; then
-    _chau7_next_pwd="$PWD"
-    _chau7_next_update_project
-  fi
+  printf '\e]9;chau7;exit=%s\a' "$_c7c"
+  _chau7_next_update_project
   printf '\e]7;file://%s%s\a' "${HOSTNAME:-localhost}" "$PWD"
   printf '\e]133;A\a'
   return $_c7c
@@ -197,6 +205,9 @@ if test -n "$CHAU7_NEXT_START_DIR"; and test -d "$CHAU7_NEXT_START_DIR"
 end
 set -e CHAU7_NEXT_START_DIR
 function _chau7_next_prompt --on-event fish_prompt
+  set -l code $status
+  printf '\e]9;chau7;exit=%s\a' $code
+  _chau7_next_update_project
   printf '\e]7;file://%s%s\a' (hostname) "$PWD"
   printf '\e]133;A\a'
 end
@@ -213,7 +224,18 @@ if test "$CHAU7_NEXT_PROXY_CORRELATION_ENABLED" = "1"
  set -gx CHAU7_NEXT_ANTHROPIC_HEADERS_BASE "$ANTHROPIC_CUSTOM_HEADERS"
 end
 function _chau7_next_update_project --on-variable PWD
-  set -l git_root (git rev-parse --show-toplevel 2>/dev/null)
+  set -l git_data (git rev-parse --show-toplevel --abbrev-ref HEAD 2>/dev/null)
+  set -l git_root
+  if test (count $git_data) -ge 1
+    set git_root $git_data[1]
+    test -n "$git_root"; and printf '\e]9;chau7;repo-root=%s\a' "$git_root"
+  end
+  if test (count $git_data) -ge 2
+    set -l git_branch $git_data[2]
+    if test -n "$git_branch"; and test "$git_branch" != "$git_root"
+      printf '\e]9;chau7;branch=%s\a' "$git_branch"
+    end
+  end
   if test -n "$git_root"
     set -gx CHAU7_NEXT_PROJECT $git_root
   else

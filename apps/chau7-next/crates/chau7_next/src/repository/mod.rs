@@ -56,7 +56,37 @@ struct Inner {
     in_flight: HashSet<String>,
     stats: HashMap<String, (Instant, RepoStats)>,
     ai: Option<AiStatsProvider>,
+    /// Shell OSC9 reports fence filesystem probes captured before them.
+    shell_report_generation: u64,
 }
+impl Inner {
+    fn report_shell_root(&mut self, root: &str, branch: Option<&str>) -> Option<String> {
+        let root = root.trim();
+        if !Path::new(root).is_absolute() {
+            return None;
+        }
+        let root = known_identity::normalize_root(root)?;
+        let branch = known_identity::branch_name(branch);
+        self.shell_report_generation = self.shell_report_generation.wrapping_add(1);
+        self.cache.forget_path_resolution(&root);
+        self.cache.resolve(
+            &root,
+            &CapturedProbe {
+                root: Some(root.clone()),
+                branch: branch.clone(),
+            },
+        );
+        self.cache.set_branch(&root, branch.clone());
+        self.identities
+            .record(&root, branch.as_deref(), Some(Utc::now()), false);
+        Some(root)
+    }
+
+    fn accepts_probe(&self, captured_generation: u64) -> bool {
+        captured_generation == self.shell_report_generation
+    }
+}
+
 #[derive(Default)]
 struct Jobs {
     probes: BTreeSet<String>,
@@ -174,13 +204,29 @@ fn worker(
         list.replace_all(&recent);
         list
     });
-    if bootstrap {
-        identities.save(loaded.clone());
-    }
     {
         let mut state = inner.lock();
-        state.cache.adopt_known_identities(&loaded);
-        state.identities = loaded;
+        // Shell observations made during disk bootstrap remain authoritative,
+        // including an explicit detached-HEAD branch cleared to None.
+        let observed = state.identities.clone();
+        let observed_roots = observed.roots();
+        state.identities.restore(
+            observed
+                .all()
+                .iter()
+                .chain(
+                    loaded
+                        .all()
+                        .iter()
+                        .filter(|item| !observed_roots.contains(&item.root_path)),
+                )
+                .cloned(),
+        );
+        let merged = state.identities.clone();
+        state.cache.adopt_known_identities(&merged);
+        if bootstrap || state.shell_report_generation != 0 {
+            identities.save(merged);
+        }
     }
     loop {
         let (probes, metadata, recent) = {
@@ -214,6 +260,7 @@ fn worker(
             }
         }
         for path in probes {
+            let captured_generation = inner.lock().shell_report_generation;
             // Filesystem work runs before acquiring the shared state lock.
             let found = procinfo::git_root(Path::new(&path))
                 .map(|root| root.to_string_lossy().into_owned());
@@ -224,8 +271,12 @@ fn worker(
                 let should_load = !inner.lock().metadata_loaded.contains(repo);
                 should_load.then(|| repo_metadata::load(&root, Path::new(repo)))
             });
-            let snapshot = {
+            let confirmed = {
                 let mut state = inner.lock();
+                if !state.accepts_probe(captured_generation) {
+                    state.in_flight.remove(&path);
+                    continue;
+                }
                 if let Some(repo) = &found {
                     state.cache.forget_path_resolution(&path);
                     let branch = match &evidence {
@@ -261,7 +312,10 @@ fn worker(
                         Some(Utc::now()),
                         true,
                     );
-                    Some(state.identities.clone())
+                    // Queue while the state lock still orders writers, so an
+                    // older clone cannot enqueue after a newer shell report.
+                    identities.save(state.identities.clone());
+                    true
                 } else {
                     // An unavailable protected or deleted root preserves saved evidence.
                     if state.cache.cached_root(&path).is_none() {
@@ -273,14 +327,11 @@ fn worker(
                             },
                         );
                     }
-                    None
+                    false
                 }
             };
-            if let Some(snapshot) = snapshot {
-                identities.save(snapshot);
-                if let Some(repo) = found {
-                    enqueue_recent(&jobs, repo);
-                }
+            if confirmed && let Some(repo) = found {
+                enqueue_recent(&jobs, repo);
             }
             inner.lock().in_flight.remove(&path);
         }
@@ -383,6 +434,18 @@ pub fn resolve(dir: &Path, cx: &App) -> Option<String> {
     }
     known
 }
+/// Learn an authoritative report from this app's shell without reading the
+/// reported filesystem path, including protected repositories.
+pub fn report_shell_root(root: &str, branch: Option<&str>, cx: &App) -> Option<String> {
+    let registry = registry(cx)?;
+    let mut state = registry.inner.lock();
+    let root = state.report_shell_root(root, branch)?;
+    registry.identity_writer.save(state.identities.clone());
+    drop(state);
+    enqueue_recent(&registry.jobs, root.clone());
+    Some(root)
+}
+
 /// Shared cached branch; live filesystem reads happen on the registry worker.
 pub fn branch(root: &str, cx: &App) -> Option<String> {
     registry(cx)?.inner.lock().cache.branch(root)
@@ -455,6 +518,38 @@ pub fn stats(root: &str, cx: &App) -> Option<RepoStats> {
 #[cfg(test)]
 mod identity_tests {
     use super::*;
+    #[test]
+    fn shell_reports_reject_relative_roots_normalize_and_fence_stale_probes() {
+        let mut state = Inner::default();
+        assert!(
+            state
+                .report_shell_root("relative/repo", Some("main"))
+                .is_none()
+        );
+        assert_eq!(state.shell_report_generation, 0);
+        let before = state.shell_report_generation;
+        let parent = std::env::temp_dir().join("protected");
+        let raw = format!(" {}/./repo// ", parent.to_string_lossy());
+        let root = known_identity::normalize_root(raw.trim()).unwrap();
+        assert_eq!(
+            state.report_shell_root(&raw, Some("12345678")),
+            Some(root.clone())
+        );
+        assert!(!state.accepts_probe(before));
+        assert_eq!(
+            state.cache.cached_root(&format!("{root}/src")),
+            Some(root.clone())
+        );
+        assert_eq!(state.cache.branch(&root), Some("12345678".into()));
+        state.report_shell_root(&root, Some("HEAD"));
+        assert_eq!(state.cache.branch(&root), None);
+        assert_eq!(
+            state.identities.identity(&root).unwrap().last_known_branch,
+            None
+        );
+        assert!(state.accepts_probe(state.shell_report_generation));
+    }
+
     #[test]
     fn background_registry_preserves_saved_roots_and_records_real_detachment() {
         let home = std::env::temp_dir().join(format!("c7n-registry-{}", uuid::Uuid::new_v4()));
