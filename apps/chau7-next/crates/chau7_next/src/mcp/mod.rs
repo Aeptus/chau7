@@ -21,6 +21,7 @@
 
 pub mod approval;
 mod approval_window;
+pub mod control;
 mod install;
 mod server;
 pub mod sources;
