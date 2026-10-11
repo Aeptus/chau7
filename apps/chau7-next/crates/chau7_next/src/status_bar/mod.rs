@@ -1,5 +1,5 @@
 //! The menu bar item and its command center (StatusBar module): a bell in
-//! the macOS menu bar for the life of the app. Clicking it opens a 400 pt
+//! the macOS menu bar for the life of the app. Clicking it opens a 380 pt
 //! popover under the icon ([`popover`]) with the sessions that need
 //! attention, the live AI sessions, the activity feed, the pinned snippets,
 //! the Monitoring switch and Quit.
@@ -44,6 +44,8 @@ pub struct StatusBar {
     alert: Option<Alert>,
     counts: BadgeCounts,
     shown: Option<StatusIcon>,
+    shown_description: Option<String>,
+    active_description: String,
     popover: Option<AnyWindowHandle>,
     closed_by_blur: Option<Instant>,
     ticks: u32,
@@ -74,6 +76,8 @@ pub fn init(cx: &mut App) {
         alert: None,
         counts: BadgeCounts::default(),
         shown: None,
+        shown_description: None,
+        active_description: String::new(),
         popover: None,
         closed_by_blur: None,
         ticks: 0,
@@ -142,14 +146,12 @@ pub fn panel_model(cx: &App) -> PanelModel {
 
 /// Recount the sessions and redraw the icon (`refreshSessions`).
 fn refresh(cx: &mut App) {
-    let counts = {
-        let sessions = live_sessions(cx);
-        BadgeCounts {
-            live: sessions.len(),
-            attention: sessions.iter().filter(|s| s.needs_attention()).count(),
-        }
-    };
-    cx.global_mut::<StatusBar>().counts = counts;
+    let sessions = live_sessions(cx);
+    let counts = cc::badge_counts(&sessions);
+    let description = cc::menu_status_description(&sessions, chau7_next_core::l10n::current());
+    let bar = cx.global_mut::<StatusBar>();
+    bar.counts = counts;
+    bar.active_description = description;
     update_icon(cx);
 }
 
@@ -170,18 +172,28 @@ fn update_icon(cx: &mut App) {
         None => None,
     };
     let icon = cc::status_icon(monitoring, bar.counts, phase);
-    if bar.shown.as_ref() == Some(&icon) {
+    let description = if monitoring {
+        bar.active_description.clone()
+    } else {
+        chau7_next_core::l10n::l("statusBar.icon.monitoringPaused", "monitoring paused")
+    };
+    if bar.shown.as_ref() == Some(&icon) && bar.shown_description.as_ref() == Some(&description) {
         return;
     }
     if let Some(item) = &bar.item {
-        if bar.shown.as_ref().map(|s| s.symbol) != Some(icon.symbol)
-            && let Err(err) = item.set_symbol(icon.symbol, cc::ITEM_NAME)
+        if (bar.shown.as_ref().map(|s| s.symbol) != Some(icon.symbol)
+            || bar.shown_description.as_ref() != Some(&description))
+            && let Err(err) =
+                item.set_symbol(icon.symbol, &format!("{}, {description}", cc::ITEM_NAME))
         {
             log::warn!("menu bar item: {err}");
         }
         item.set_title(&icon.title);
+        item.set_accessibility_label(&format!("{}, {description}", cc::ITEM_NAME));
+        item.set_tooltip(Some(&format!("{}: {description}", cc::ITEM_NAME)));
     }
     bar.shown = Some(icon);
+    bar.shown_description = Some(description);
 }
 
 /// "Menu bar alert" action (`flashAlert`): show the alert bell for
@@ -321,15 +333,36 @@ pub fn run(command: PanelCommand, cx: &mut App) {
             close_popover(cx);
         }
         PanelCommand::RunSnippet(id) => {
-            run_snippet(&id, cx);
-            close_popover(cx);
+            if run_snippet(&id, cx) == SnippetOutcome::Inserted {
+                close_popover(cx);
+            }
         }
         PanelCommand::SetMonitoring(on) => {
             crate::settings_window::update(cx, |s| s.notifications.monitor_ai_events = on);
             update_icon(cx);
         }
         PanelCommand::OpenSettings => {
-            crate::settings_window::open(cx);
+            crate::settings_window::open_at(
+                Some(chau7_next_core::settings_search::SettingsSection::StartHere),
+                None,
+                cx,
+            );
+            close_popover(cx);
+        }
+        PanelCommand::OpenMonitoringSettings => {
+            crate::settings_window::open_at(
+                Some(chau7_next_core::settings_search::SettingsSection::Notifications),
+                Some("eventMonitoring"),
+                cx,
+            );
+            close_popover(cx);
+        }
+        PanelCommand::OpenSnippetSettings => {
+            crate::settings_window::open_at(
+                Some(chau7_next_core::settings_search::SettingsSection::SnippetsTools),
+                Some("snippets"),
+                cx,
+            );
             close_popover(cx);
         }
         PanelCommand::Quit => {
@@ -358,15 +391,26 @@ fn focus_tab(tab: u64, cx: &mut App) {
 
 /// `executeSnippet`: insert a pinned snippet in the selected tab; with no
 /// window, copy its text.
-fn run_snippet(id: &str, cx: &mut App) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SnippetOutcome {
+    Inserted,
+    Copied,
+    Unavailable,
+}
+
+fn run_snippet(id: &str, cx: &mut App) -> SnippetOutcome {
     let Some(command) = pinned_snippets(cx).into_iter().find(|c| c.id == id) else {
-        return;
+        return SnippetOutcome::Unavailable;
     };
-    let Some((handle, workspace)) = crate::app_actions::active_workspace(cx) else {
-        cx.write_to_clipboard(ClipboardItem::new_string(command.body));
-        return;
-    };
-    let _ = handle.update(cx, |_, _, cx| {
-        workspace.update(cx, |ws, cx| ws.command_center_insert(&command.body, cx));
-    });
+    if let Some((handle, workspace)) = crate::app_actions::active_workspace(cx)
+        && handle
+            .update(cx, |_, _, cx| {
+                workspace.update(cx, |ws, cx| ws.command_center_insert(&command.body, cx))
+            })
+            .is_ok_and(|inserted| inserted)
+    {
+        return SnippetOutcome::Inserted;
+    }
+    cx.write_to_clipboard(ClipboardItem::new_string(command.body));
+    SnippetOutcome::Copied
 }

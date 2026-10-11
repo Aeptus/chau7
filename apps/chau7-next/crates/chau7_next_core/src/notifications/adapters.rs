@@ -233,12 +233,11 @@ fn emit_with_table(
 fn adapt_shell_event(event: &AiEvent) -> AdapterDecision {
     use NotificationSemanticKind as K;
     emit_with_table(event, "shell", |t| match t {
-        "command_finished" => K::TaskFinished,
-        "command_failed" => K::TaskFailed,
-        "exit_code_match" | "pattern_match" | "long_running" | "process_started"
-        | "process_ended" | "directory_changed" | "git_branch_changed" | "other" => {
-            K::Informational
-        }
+        "command_finished" | "script_succeeded" => K::TaskFinished,
+        "command_failed" | "script_failed" => K::TaskFailed,
+        "dev_server_started" | "exit_code_match" | "pattern_match" | "long_running"
+        | "process_started" | "process_ended" | "directory_changed" | "git_branch_changed"
+        | "other" => K::Informational,
         _ => K::Unknown,
     })
 }
@@ -745,6 +744,21 @@ mod tests {
     fn events_log_waiting_input_drops_without_identity() {
         let e = event(AiEventSource::events_log(), "waiting_input", "Codex");
         assert!(dropped(adapt(&e)).contains("missing routing identity"));
+    }
+
+    #[test]
+    fn current_shell_script_and_dev_server_aliases_reach_canonical_admission() {
+        for (raw, kind) in [
+            ("script_succeeded", K::TaskFinished),
+            ("script_failed", K::TaskFailed),
+            ("dev_server_started", K::Informational),
+        ] {
+            let e = event(AiEventSource::shell(), raw, "Shell");
+            let (adapted, canonical) = emit(adapt(&e));
+            assert_eq!(canonical.kind, kind);
+            assert_eq!(adapted.event_type, raw);
+            assert_eq!(adapted.raw_type.as_deref(), Some(raw));
+        }
     }
 
     #[test]

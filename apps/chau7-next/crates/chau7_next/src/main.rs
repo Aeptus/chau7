@@ -16,6 +16,8 @@ mod data_explorer;
 mod debug;
 mod hang_watchdog;
 mod history;
+mod incidents;
+mod instance;
 mod l10n;
 mod logging;
 mod mcp;
@@ -88,13 +90,26 @@ fn main() {
         std::process::exit(code);
     }
     clean_inherited_environment();
-    platform::defaults::disable_press_and_hold();
     let root = DataRoot::from_env();
     if let Err(err) = root.ensure_dirs() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
     }
+    let instance = match instance::acquire(&root) {
+        Ok(Some(instance)) => std::sync::Arc::new(instance),
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("Chau7 Next: cannot acquire application instance lock: {error}");
+            std::process::exit(1);
+        }
+    };
+    platform::defaults::disable_press_and_hold();
     logging::init(&root);
-    // Writers and all tailers/sessions are still quiescent at this point.
+    incidents::start(&root);
+    if let Err(error) = instance::begin(&instance) {
+        log::error!("Cannot record launch continuity: {error}");
+        std::process::exit(1);
+    }
+    // AI event writers and all tailers/sessions are still quiescent.
     monitoring::log_compactor::compact_owned_queues(&root);
     platform::oslog::install_feature_intervals();
     logging::ai_pty::purge_large_logs(root.ai_logs_dir());
@@ -215,7 +230,8 @@ fn main() {
         permission_center::start(cx);
         performance::start(cx);
 
-        cx.on_app_quit(|cx| {
+        cx.on_app_quit(move |cx| {
+            let instance = instance.clone();
             memory_pressure::stop(cx);
             permission_center::stop(cx);
             save_session(cx, true);
@@ -227,6 +243,7 @@ fn main() {
             scripting::stop(cx);
             // Token optimizer: no flags or wrappers outlive the app.
             cto::teardown();
+            let cto_worker = cto::shutdown_state_writer();
             // Shells get SIGTERM at once (`closeSessionForTermination`).
             terminal::session::terminate_all_for_quit();
             logging::flush();
@@ -243,6 +260,14 @@ fn main() {
                 if let Some(worker) = worker {
                     let _ = worker.join();
                 }
+                if let Some(worker) = cto_worker {
+                    let _ = worker.join();
+                }
+                incidents::shutdown();
+                if let Err(error) = instance.mark_clean() {
+                    log::warn!("Cannot mark clean termination: {error}");
+                }
+                logging::flush();
             })
         })
         .detach();

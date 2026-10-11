@@ -204,6 +204,37 @@ fn monitor(shared: Arc<Shared>, directory: PathBuf) {
             let record = json!({"schema_version":1,"timestamp":chrono::Utc::now().to_rfc3339(),
                 "kind":"main_thread_hang","phase":observation.phase,"stale_ms":observation.stale_for.as_millis(),
                 "render_circuit_breaker_open":stalled,"parent_pid":std::process::id(),"launch_id":shared.launch_id});
+            crate::incidents::record(
+                chau7_next_core::incidents::Kind::MainThreadHang,
+                if stalled {
+                    chau7_next_core::incidents::Severity::Warning
+                } else {
+                    chau7_next_core::incidents::Severity::Info
+                },
+                if stalled {
+                    "Main thread stalled"
+                } else {
+                    "Main thread recovered"
+                },
+                std::collections::BTreeMap::from([
+                    (
+                        "phase".into(),
+                        if stalled { "stalled" } else { "healthy" }.into(),
+                    ),
+                    (
+                        "staleMillis".into(),
+                        observation.stale_for.as_millis().to_string(),
+                    ),
+                    ("launchID".into(), shared.launch_id.to_string()),
+                    (
+                        "diagnosticFile".into(),
+                        directory
+                            .join("latest-transition.json")
+                            .display()
+                            .to_string(),
+                    ),
+                ]),
+            );
             if let Err(error) = write_json(&directory.join("latest-transition.json"), &record) {
                 log::warn!("Hang breadcrumb write failed: {error}");
             }
@@ -530,11 +561,13 @@ fn prune_diagnostics(directory: &Path) {
             .2
             .max(meta.modified().unwrap_or(std::time::UNIX_EPOCH));
     }
-    let mut groups: Vec<_> = groups.into_values().collect();
-    groups.sort_by_key(|group| std::cmp::Reverse(group.2));
+    let mut groups: Vec<_> = groups.into_iter().collect();
+    groups.sort_by(|(left_key, left), (right_key, right)| {
+        right.2.cmp(&left.2).then_with(|| right_key.cmp(left_key))
+    });
     let mut count = 0;
     let mut bytes = 0_u64;
-    for (paths, size, modified) in groups {
+    for (_, (paths, size, modified)) in groups {
         let old = std::time::SystemTime::now()
             .duration_since(modified)
             .is_ok_and(|age| age > Duration::from_secs(7 * 86400));
@@ -634,15 +667,27 @@ mod tests {
         fs::create_dir(&dir).unwrap();
         fs::write(dir.join("unrelated.json"), b"keep").unwrap();
         fs::write(dir.join("main-thread-heartbeat.json"), b"keep").unwrap();
+        let modified = std::time::SystemTime::now();
         for i in 0..45 {
-            fs::write(dir.join(format!("hang-{i}.json")), b"{}").unwrap();
-            fs::write(dir.join(format!("hang-{i}.sample.txt")), b"sample").unwrap();
+            for (suffix, text) in [("json", "{}"), ("sample.txt", "sample")] {
+                let path = dir.join(format!("hang-{i:02}.{suffix}"));
+                fs::write(&path, text).unwrap();
+                OpenOptions::new()
+                    .write(true)
+                    .open(path)
+                    .unwrap()
+                    .set_times(std::fs::FileTimes::new().set_modified(modified))
+                    .unwrap();
+            }
         }
         prune_diagnostics(&dir);
         assert!(
             dir.join("unrelated.json").exists() && dir.join("main-thread-heartbeat.json").exists()
         );
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 82);
+        assert!(!dir.join("hang-04.json").exists());
+        assert!(dir.join("hang-05.json").exists());
+        assert!(dir.join("hang-44.sample.txt").exists());
         fs::remove_dir_all(dir).unwrap();
     }
 }

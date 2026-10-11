@@ -140,6 +140,7 @@ pub fn capture(cx: &App) -> StateSnapshot {
         recent_events,
         feature_flags: feature_flags(cx),
         recent_logs,
+        recent_incidents: crate::incidents::recent(),
         active_contexts: DebugContext::active()
             .iter()
             .map(|c| ContextState {

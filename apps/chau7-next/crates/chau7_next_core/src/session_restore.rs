@@ -8,6 +8,9 @@
 //! `buildAIResumeCommand`, `findCodexSessionId`) and the layout export of
 //! `SplitPanes/SplitPaneController.swift` (`SavedSplitNode`).
 
+pub mod lifecycle;
+pub mod transaction;
+
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 

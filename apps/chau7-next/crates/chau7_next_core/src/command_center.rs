@@ -22,20 +22,15 @@ use crate::notifications::triggers;
 use crate::shell_session::CommandStatus;
 
 /// Width of the popover (`contentSize`), in points.
-pub const POPOVER_WIDTH: f32 = 400.0;
+pub const POPOVER_WIDTH: f32 = 380.0;
 /// Height of the popover (`contentSize`), in points.
 pub const POPOVER_HEIGHT: f32 = 520.0;
 /// The Live Sessions box shows at most this many sessions.
 pub const MAX_LIVE_SESSIONS: usize = 5;
-/// The hero zone lists at most this many sessions that need attention.
-pub const MAX_ATTENTION_SHOWN: usize = 3;
 /// The Activity box shows at most this many entries.
 pub const MAX_TIMELINE_ENTRIES: usize = 8;
 /// Quick Commands shows this many pinned snippets.
-pub const MAX_QUICK_COMMANDS: usize = 3;
-/// An event within this many seconds of a notification history entry is the
-/// same event.
-pub const DUPLICATE_WINDOW_SECS: i64 = 2;
+pub const MAX_QUICK_COMMANDS: usize = 5;
 /// The panel and the badge refresh this often.
 pub const REFRESH_SECS: u64 = 1;
 
@@ -85,7 +80,7 @@ impl SessionState {
         match self {
             Self::Running => "gearshape.2",
             Self::WaitingInput => "bubble.left.and.exclamationmark.bubble.right",
-            Self::ApprovalRequired => "hand.raised.fill",
+            Self::ApprovalRequired => "hand.raised",
             Self::Stuck => "exclamationmark.triangle",
         }
     }
@@ -95,7 +90,7 @@ impl SessionState {
         match self {
             Self::Running => Tone::Orange,
             Self::WaitingInput => Tone::Blue,
-            Self::ApprovalRequired => Tone::Orange,
+            Self::ApprovalRequired => Tone::Red,
             Self::Stuck => Tone::Yellow,
         }
     }
@@ -105,7 +100,7 @@ impl SessionState {
         match self {
             Self::Running => Tone::Secondary,
             Self::WaitingInput => Tone::Blue,
-            Self::ApprovalRequired => Tone::Orange,
+            Self::ApprovalRequired => Tone::Red,
             Self::Stuck => Tone::Yellow,
         }
     }
@@ -487,10 +482,6 @@ pub fn timeline_time(timestamp: DateTime<Utc>) -> String {
         .to_string()
 }
 
-fn normalized_type(value: &str) -> String {
-    value.trim().to_lowercase().replace('-', "_")
-}
-
 fn event_kind(event: &AiEvent) -> NotificationSemanticKind {
     canonical::kind_with_canonical_type(
         Some(event.raw_type.as_deref().unwrap_or(&event.event_type)),
@@ -517,23 +508,16 @@ fn event_icon(event: &AiEvent) -> &'static str {
         NotificationSemanticKind::Idle => return "moon",
         NotificationSemanticKind::Informational | NotificationSemanticKind::Unknown => {}
     }
-    match normalized_type(&event.event_type).as_str() {
-        "user_prompt" | "userprompt" => "person.fill",
-        "tool_start" | "toolstart" | "tool_called" | "toolcalled" => "hammer",
-        "tool_complete" => "checkmark.circle",
-        "session_end" => "xmark.circle",
-        "api_call" => "arrow.up.arrow.down",
-        "file_edited" => "doc.text",
-        "context_limit" => "gauge.with.dots.needle.33percent",
-        "token_threshold" | "cost_threshold" => "dollarsign.circle",
-        _ => match event.source.raw_value() {
-            AiEventSource::TERMINAL_SESSION => "terminal.fill",
-            AiEventSource::SHELL => "terminal",
-            AiEventSource::HISTORY_MONITOR | AiEventSource::EVENTS_LOG => "clock.arrow.circlepath",
-            AiEventSource::APP => "app.badge",
-            AiEventSource::API_PROXY => "arrow.up.arrow.down",
-            _ => "circle",
-        },
+    if crate::notifications::vocabulary::entry(&event.event_type).is_some() {
+        return "bell";
+    }
+    match event.source.raw_value() {
+        AiEventSource::TERMINAL_SESSION => "terminal.fill",
+        AiEventSource::SHELL => "terminal",
+        AiEventSource::HISTORY_MONITOR | AiEventSource::EVENTS_LOG => "clock.arrow.circlepath",
+        AiEventSource::APP => "app.badge",
+        AiEventSource::API_PROXY => "arrow.up.arrow.down",
+        _ => "circle",
     }
 }
 
@@ -550,13 +534,7 @@ fn event_tone(event: &AiEvent) -> Tone {
         NotificationSemanticKind::Idle => return Tone::Gray,
         NotificationSemanticKind::Informational | NotificationSemanticKind::Unknown => {}
     }
-    match normalized_type(&event.event_type).as_str() {
-        "user_prompt" => Tone::Green,
-        "session_end" => Tone::Red,
-        "tool_complete" => Tone::Cyan,
-        "api_call" => Tone::Purple,
-        _ => Tone::Secondary,
-    }
+    Tone::Secondary
 }
 
 /// Readable name of a tool from the AI events (`friendlyToolName`).
@@ -599,39 +577,52 @@ pub fn friendly_source_name(source: &AiEventSource) -> String {
     }
 }
 
-/// `humanReadableEvent`: the title of an event row.
+/// The same canonical notification vocabulary as the current Swift timeline.
 fn event_title(event: &AiEvent) -> String {
-    match event_kind(event) {
-        NotificationSemanticKind::TaskFinished => return "Finished responding".into(),
-        NotificationSemanticKind::TaskFailed => return "Error occurred".into(),
-        NotificationSemanticKind::ToolFailed => return "Tool failed".into(),
-        NotificationSemanticKind::PermissionRequired => return "Needs permission".into(),
-        NotificationSemanticKind::WaitingForInput => return "Waiting for input".into(),
-        NotificationSemanticKind::AttentionRequired => {
-            return if event.message.is_empty() {
-                "Needs attention".into()
-            } else {
-                event.message.clone()
-            };
-        }
-        NotificationSemanticKind::AuthenticationSucceeded => return "Authenticated".into(),
-        NotificationSemanticKind::Idle => return "Session idle".into(),
-        NotificationSemanticKind::Informational | NotificationSemanticKind::Unknown => {}
+    let source = source_display_name(event);
+    if crate::notifications::vocabulary::entry(&event.event_type).is_none()
+        && let Some(trigger) = triggers::trigger(&event.source, &event.event_type)
+        && !trigger.is_wildcard()
+    {
+        return format!(
+            "{source}: {}",
+            crate::l10n::l(&trigger.label_key, &trigger.label_fallback)
+        );
     }
-    let kind = normalized_type(&event.event_type);
-    match kind.as_str() {
-        "user_prompt" | "userprompt" => "Prompt sent".into(),
-        "tool_start" | "toolstart" => format!("Running {}", friendly_tool_name(&event.tool)),
-        "tool_called" | "toolcalled" => "Tool running".into(),
-        "tool_complete" => format!("{} done", friendly_tool_name(&event.tool)),
-        "session_end" => "Session ended".into(),
-        "api_call" => format!("{} API call", friendly_source_name(&event.source)),
-        "file_edited" => "File edited".into(),
-        "context_limit" => "Context limit reached".into(),
-        "token_threshold" | "cost_threshold" => "Usage threshold".into(),
-        "command_finished" => "Command finished".into(),
-        _ => human_readable_type(&kind, None),
+    event.notification_title_with(Some(&source), None)
+}
+
+fn source_display_name(event: &AiEvent) -> String {
+    let registered = crate::ai::tool_registry::AI_TOOLS
+        .iter()
+        .find(|tool| tool.event_source_raw_value == Some(event.source.raw_value()))
+        .or_else(|| {
+            let source = AiEventSource::for_provider(Some(&event.tool))?;
+            crate::ai::tool_registry::AI_TOOLS
+                .iter()
+                .find(|tool| tool.event_source_raw_value == Some(source.raw_value()))
+        });
+    if let Some(tool) = registered {
+        return match tool.event_source_raw_value {
+            Some(AiEventSource::CLAUDE_CODE) => "Claude Code".into(),
+            Some(AiEventSource::COPILOT) => "GitHub Copilot".into(),
+            _ => tool.display_name.into(),
+        };
     }
+    let tool = event.tool.trim();
+    if event.source.raw_value() == AiEventSource::UNKNOWN && !tool.is_empty() {
+        return tool.into();
+    }
+    if let Some(source) = triggers::sources()
+        .iter()
+        .find(|source| source.id == event.source)
+    {
+        return crate::l10n::l(source.label_key, source.label_fallback);
+    }
+    if !tool.is_empty() {
+        return tool.into();
+    }
+    capitalized(&event.source.raw_value().replace('_', " "))
 }
 
 /// `humanReadableType`: the title of a notification history row.
@@ -680,59 +671,66 @@ fn extract_file_name(message: &str) -> Option<String> {
     (!last.is_empty() && last.contains('.')).then(|| last.to_string())
 }
 
-/// `cleanDetail` for history rows.
-fn clean_detail(tool: &str, message: &str) -> String {
-    if !message.is_empty() {
-        if let Some(file) = extract_file_name(message) {
-            return file;
-        }
-        if message.chars().count() > 60 {
-            let head: String = message.chars().take(57).collect();
-            return format!("{head}...");
-        }
-        return message.to_string();
+fn compact_detail(message: &str) -> String {
+    if let Some(file) = extract_file_name(message) {
+        return file;
     }
-    if !tool.is_empty() {
-        return friendly_tool_name(tool);
+    if message.chars().count() > 60 {
+        return format!("{}...", message.chars().take(57).collect::<String>());
     }
-    String::new()
+    message.into()
 }
 
-/// `humanReadableDetail` for event rows: the source and, when there is one,
-/// the file or message.
 fn event_detail(event: &AiEvent) -> String {
-    let source = friendly_source_name(&event.source);
-    match normalized_type(&event.event_type).as_str() {
-        "tool_start" | "toolstart" | "tool_called" | "toolcalled" | "tool_complete"
-        | "file_edited" => {
-            if let Some(file) = extract_file_name(&event.message) {
-                format!("{source} - {file}")
-            } else if event.message.is_empty() {
-                source
-            } else {
-                format!("{source} - {}", event.message)
-            }
-        }
-        "permission" | "permission_request" | "waiting_input" | "attention_required" => {
-            if event.tool.is_empty() {
-                source
-            } else {
-                format!("{source} - {}", friendly_tool_name(&event.tool))
-            }
-        }
-        _ => {
-            if event.message.is_empty() {
-                source
-            } else {
-                event.message.clone()
-            }
+    let message = event.message.trim();
+    if !message.is_empty() {
+        return compact_detail(message);
+    }
+    for (path, key, fallback) in [
+        (event.repo_path.as_deref(), "aiEvent.subtitle.repo", "Repo"),
+        (
+            event.directory.as_deref(),
+            "aiEvent.subtitle.directory",
+            "Dir",
+        ),
+    ] {
+        if let Some(path) = path
+            && let Some(name) = path.trim().trim_end_matches('/').rsplit('/').next()
+            && !name.is_empty()
+        {
+            return format!("{}: {name}", crate::l10n::l(key, fallback));
         }
     }
+    let body = event.notification_body();
+    let body = body.trim();
+    if !body.is_empty() && canonical::normalize(body) != canonical::normalize(&event.event_type) {
+        return compact_detail(body);
+    }
+    source_display_name(event)
+}
+
+fn history_event(entry: &HistoryEntry) -> AiEvent {
+    let mut event = AiEvent::new(
+        AiEventSource::new(entry.source.clone()),
+        &entry.event_type,
+        &entry.tool,
+        &entry.message,
+        entry.timestamp.to_rfc3339(),
+    );
+    event.id = entry.id;
+    event.raw_type = entry.raw_type.clone();
+    event.notification_type = entry.notification_type.clone();
+    event.tab_id = entry
+        .resolved_tab_id
+        .as_deref()
+        .and_then(|id| Uuid::parse_str(id).ok());
+    event.producer = entry.producer.clone();
+    event
 }
 
 /// `unifiedTimeline`: the last notification history entries merged with the
-/// last tool-agnostic events, events within 2 s of a history entry dropped
-/// (the history entry wins), newest first, at most 8.
+/// last tool-agnostic events, duplicate UUIDs suppressed in favor of history,
+/// newest first, at most 8. Distinct nearby events are preserved.
 ///
 /// `history` is `NotificationHistory.recent(8)`; `recent_events` is the
 /// accepted events, newest last.
@@ -747,9 +745,7 @@ pub fn unified_timeline(
     let mut entries: Vec<TimelineEntry> = history
         .iter()
         .map(|entry| {
-            let label =
-                triggers::trigger(&AiEventSource::new(entry.source.clone()), &entry.event_type)
-                    .map(|t| t.label_fallback.clone());
+            let event = history_event(entry);
             TimelineEntry {
                 id: entry.id,
                 icon: if entry.was_rate_limited {
@@ -762,23 +758,18 @@ pub fn unified_timeline(
                 } else {
                     Tone::Orange
                 },
-                title: label.unwrap_or_else(|| {
-                    human_readable_type(&entry.event_type, entry.semantic_kind.as_deref())
-                }),
-                detail: clean_detail(&entry.tool, &entry.message),
+                title: event_title(&event),
+                detail: event_detail(&event),
                 timestamp: entry.timestamp,
                 is_rate_limited: entry.was_rate_limited,
             }
         })
         .collect();
 
-    let history_seconds: Vec<i64> = history.iter().map(|e| e.timestamp.timestamp()).collect();
+    let history_ids: std::collections::HashSet<_> = history.iter().map(|e| e.id).collect();
     for event in raw_events {
         let ts = iso8601::parse_iso8601(&event.ts).unwrap_or(now);
-        let second = ts.timestamp();
-        let duplicate = history_seconds
-            .iter()
-            .any(|h| (h - second).abs() <= DUPLICATE_WINDOW_SECS);
+        let duplicate = history_ids.contains(&event.id);
         if duplicate {
             continue;
         }
@@ -800,22 +791,168 @@ pub fn unified_timeline(
 
 // ----- the panel --------------------------------------------------------------
 
-/// The top of the panel (`HeroZoneView`).
-#[derive(Debug, Clone, PartialEq)]
-pub enum Hero {
-    /// "N sessions need attention" with up to three sessions and a Go button each.
-    Attention {
-        summary: String,
-        sessions: Vec<SessionSummary>,
-    },
-    /// "All clear", the live session count and the monitoring state.
-    AllClear {
-        /// "3 sessions", empty when there are none.
-        sessions: String,
-        monitoring: bool,
-        /// "Active" or "Paused".
-        state: &'static str,
-    },
+/// Current Swift hero precedence and presentation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeroKind {
+    ApprovalRequired,
+    WaitingForInput,
+    MonitoringPaused,
+    Running,
+    Quiet,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hero {
+    pub kind: HeroKind,
+    pub title: String,
+    pub detail: String,
+}
+
+/// Approval requests take priority over waiting sessions in the menu badge.
+pub fn badge_counts(sessions: &[SessionSummary]) -> BadgeCounts {
+    let approvals = sessions
+        .iter()
+        .filter(|s| s.state == SessionState::ApprovalRequired)
+        .count();
+    let waiting = sessions
+        .iter()
+        .filter(|s| s.state == SessionState::WaitingInput)
+        .count();
+    BadgeCounts {
+        live: sessions.len(),
+        attention: if approvals > 0 { approvals } else { waiting },
+    }
+}
+
+/// Current Swift menu icon tooltip and accessibility status.
+pub fn menu_status_description(sessions: &[SessionSummary], lang: crate::l10n::Lang) -> String {
+    let approvals = sessions
+        .iter()
+        .filter(|s| s.state == SessionState::ApprovalRequired)
+        .count();
+    let waiting = sessions
+        .iter()
+        .filter(|s| s.state == SessionState::WaitingInput)
+        .count();
+    let (count, base, singular, plural) = if approvals > 0 {
+        (
+            approvals,
+            "statusBar.icon.approval",
+            "1 approval required",
+            "%d approvals required",
+        )
+    } else if waiting > 0 {
+        (
+            waiting,
+            "statusBar.icon.waitingInput",
+            "1 session waiting for input",
+            "%d sessions waiting for input",
+        )
+    } else if !sessions.is_empty() {
+        (
+            sessions.len(),
+            "statusBar.icon.liveSession",
+            "1 live session",
+            "%d live sessions",
+        )
+    } else {
+        return crate::l10n::localized_format(
+            lang,
+            "statusBar.icon.noLiveSessions",
+            "monitoring active, no live sessions",
+            &[],
+        );
+    };
+    crate::l10n::localized_format(
+        lang,
+        &format!("{base}.{}", if count == 1 { "singular" } else { "plural" }),
+        if count == 1 { singular } else { plural },
+        &[crate::l10n::Arg::Int(count as i64)],
+    )
+}
+
+pub fn prioritized_action_sessions(sessions: &[SessionSummary]) -> Vec<SessionSummary> {
+    let mut sessions = sessions.to_vec();
+    let priority = |state| match state {
+        SessionState::ApprovalRequired => 0,
+        SessionState::WaitingInput => 1,
+        SessionState::Running => 2,
+        SessionState::Stuck => 3,
+    };
+    sessions.sort_by(|a, b| {
+        priority(a.state)
+            .cmp(&priority(b.state))
+            .then_with(|| b.last_activity.total_cmp(&a.last_activity))
+    });
+    sessions.truncate(MAX_LIVE_SESSIONS);
+    sessions
+}
+
+fn hero_status(sessions: &[SessionSummary], monitoring: bool, lang: crate::l10n::Lang) -> Hero {
+    let count = |state| sessions.iter().filter(|s| s.state == state).count();
+    let approvals = count(SessionState::ApprovalRequired);
+    let waiting = count(SessionState::WaitingInput);
+    let running = count(SessionState::Running);
+    let text = |key, fallback| crate::l10n::localized_format(lang, key, fallback, &[]);
+    let counted = |base: &str, count: usize, singular: &str, plural: &str| {
+        crate::l10n::localized_format(
+            lang,
+            &format!("{base}.{}", if count == 1 { "singular" } else { "plural" }),
+            if count == 1 { singular } else { plural },
+            &[crate::l10n::Arg::Int(count as i64)],
+        )
+    };
+    if approvals > 0 {
+        Hero {
+            kind: HeroKind::ApprovalRequired,
+            title: text("statusBar.hero.approvalRequired", "Approval required"),
+            detail: counted(
+                "statusBar.hero.approvalRequired.detail",
+                approvals,
+                "1 session needs approval",
+                "%d sessions need approval",
+            ),
+        }
+    } else if waiting > 0 {
+        Hero {
+            kind: HeroKind::WaitingForInput,
+            title: text("statusBar.hero.waitingForInput", "Waiting for input"),
+            detail: counted(
+                "statusBar.hero.waitingForInput.detail",
+                waiting,
+                "1 session is waiting",
+                "%d sessions are waiting",
+            ),
+        }
+    } else if !monitoring {
+        Hero {
+            kind: HeroKind::MonitoringPaused,
+            title: text("statusBar.hero.monitoringPaused", "Monitoring paused"),
+            detail: text(
+                "statusBar.hero.monitoringPaused.detail",
+                "New AI activity is not being watched",
+            ),
+        }
+    } else if running > 0 {
+        Hero {
+            kind: HeroKind::Running,
+            title: counted(
+                "statusBar.hero.running",
+                running,
+                "1 session running",
+                "%d sessions running",
+            ),
+            detail: text(
+                "statusBar.hero.running.detail",
+                "No action needed right now",
+            ),
+        }
+    } else {
+        Hero {
+            kind: HeroKind::Quiet,
+            title: text("statusBar.hero.quiet", "Quiet"),
+            detail: text("statusBar.hero.quiet.detail", "No live AI sessions"),
+        }
+    }
 }
 
 /// A pinned snippet in Quick Commands.
@@ -831,6 +968,7 @@ pub struct QuickCommand {
 pub struct PanelModel {
     pub hero: Hero,
     pub live_sessions: Vec<SessionSummary>,
+    pub action_sessions: Vec<SessionSummary>,
     pub timeline: Vec<TimelineEntry>,
     pub quick_commands: Vec<QuickCommand>,
     pub monitoring: bool,
@@ -857,48 +995,12 @@ pub fn build_panel(inputs: PanelInputs<'_>) -> PanelModel {
 
 /// Native panel and fallback menu use Swift's counted labels in the UI language.
 pub fn build_panel_localized(inputs: PanelInputs<'_>, lang: crate::l10n::Lang) -> PanelModel {
-    let attention: Vec<SessionSummary> = inputs
-        .sessions
-        .iter()
-        .filter(|s| s.needs_attention())
-        .cloned()
-        .collect();
-    let counts = BadgeCounts {
-        live: inputs.sessions.len(),
-        attention: attention.len(),
-    };
-    let hero = if counts.attention > 0 {
-        Hero::Attention {
-            summary: crate::l10n::localized_format(
-                lang,
-                "statusBar.attention.plural",
-                "%d sessions need attention",
-                &[crate::l10n::Arg::Int(counts.attention as i64)],
-            ),
-            sessions: attention.into_iter().take(MAX_ATTENTION_SHOWN).collect(),
-        }
-    } else {
-        Hero::AllClear {
-            sessions: if counts.live > 0 {
-                crate::l10n::localized_format(
-                    lang,
-                    "statusBar.session.plural",
-                    "%d sessions",
-                    &[crate::l10n::Arg::Int(counts.live as i64)],
-                )
-            } else {
-                String::new()
-            },
-            monitoring: inputs.monitoring,
-            state: if inputs.monitoring {
-                "Active"
-            } else {
-                "Paused"
-            },
-        }
-    };
+    let counts = badge_counts(&inputs.sessions);
+    let hero = hero_status(&inputs.sessions, inputs.monitoring, lang);
+    let action_sessions = prioritized_action_sessions(&inputs.sessions);
     PanelModel {
         hero,
+        action_sessions,
         live_sessions: inputs
             .sessions
             .into_iter()
@@ -924,6 +1026,8 @@ pub enum PanelCommand {
     /// The Monitoring switch.
     SetMonitoring(bool),
     OpenSettings,
+    OpenMonitoringSettings,
+    OpenSnippetSettings,
     /// "Quit" after the confirmation.
     Quit,
 }
@@ -946,34 +1050,14 @@ pub enum MenuLine {
 /// monitoring switch, All Settings and Quit.
 pub fn menu_entries(panel: &PanelModel) -> Vec<MenuLine> {
     let mut lines = Vec::new();
-    match &panel.hero {
-        Hero::Attention { summary, sessions } => {
-            lines.push(MenuLine::Info(summary.clone()));
-            for session in sessions {
-                lines.push(MenuLine::Command {
-                    title: format!("Go to {}", session.title),
-                    command: PanelCommand::FocusSession {
-                        tab_id: session.tab_id,
-                    },
-                    checked: false,
-                });
-            }
-        }
-        Hero::AllClear {
-            sessions, state, ..
-        } => {
-            let mut text = "All clear".to_string();
-            if !sessions.is_empty() {
-                text.push_str(&format!(" - {sessions}"));
-            }
-            text.push_str(&format!(" - {state}"));
-            lines.push(MenuLine::Info(text));
-        }
-    }
-    if !panel.live_sessions.is_empty() {
+    lines.push(MenuLine::Info(format!(
+        "{} - {}",
+        panel.hero.title, panel.hero.detail
+    )));
+    if !panel.action_sessions.is_empty() {
         lines.push(MenuLine::Separator);
-        lines.push(MenuLine::Info("Live Sessions".into()));
-        for session in &panel.live_sessions {
+        lines.push(MenuLine::Info("Action list".into()));
+        for session in &panel.action_sessions {
             lines.push(MenuLine::Command {
                 title: format!("{} - {}", session.title, session.state.description()),
                 command: PanelCommand::FocusSession {
@@ -1061,32 +1145,30 @@ mod tests {
     }
 
     #[test]
-    fn localized_panel_counts_all_sessions_before_truncating_cards() {
+    fn hero_counts_all_sessions_before_card_truncation_in_every_language() {
         for lang in crate::l10n::Lang::ALL {
             for count in [1, 2, 3, 11] {
-                for state in [SessionState::Running, SessionState::WaitingInput] {
+                for state in [
+                    SessionState::Running,
+                    SessionState::WaitingInput,
+                    SessionState::ApprovalRequired,
+                ] {
                     let sessions = (0..count)
                         .map(|n| summary(&format!("s-{n}"), state, 1.0))
                         .collect();
                     let panel = build_panel_localized(inputs(sessions), lang);
-                    let key = if state == SessionState::WaitingInput {
-                        "statusBar.attention.plural"
-                    } else {
-                        "statusBar.session.plural"
-                    };
-                    let expected = crate::l10n::localized_format(
-                        lang,
-                        key,
-                        "",
-                        &[crate::l10n::Arg::Int(count)],
-                    );
-                    match panel.hero {
-                        Hero::Attention { summary, sessions } => {
-                            assert_eq!(summary, expected);
-                            assert_eq!(sessions.len(), (count as usize).min(MAX_ATTENTION_SHOWN));
+                    assert_eq!(panel.counts.live, count);
+                    assert_eq!(panel.action_sessions.len(), count.min(MAX_LIVE_SESSIONS));
+                    assert!(!panel.hero.title.is_empty());
+                    assert!(!panel.hero.detail.is_empty());
+                    assert_eq!(
+                        panel.counts.attention,
+                        if state == SessionState::Running {
+                            0
+                        } else {
+                            count
                         }
-                        Hero::AllClear { sessions, .. } => assert_eq!(sessions, expected),
-                    }
+                    );
                 }
             }
         }
@@ -1104,13 +1186,13 @@ mod tests {
         e.raw_type = Some("agent-turn-complete".into());
         assert_eq!(event_kind(&e), NotificationSemanticKind::WaitingForInput);
         assert_eq!(event_icon(&e), "keyboard");
-        assert_eq!(event_title(&e), "Waiting for input");
+        assert_eq!(event_title(&e), "Codex: Waiting for input");
         assert_eq!(e.raw_type.as_deref(), Some("agent-turn-complete"));
         e.event_type = "tool_failed".into();
         e.raw_type = Some("tool-failed".into());
         assert_eq!(event_icon(&e), "wrench.and.screwdriver");
         assert_eq!(event_tone(&e), Tone::Orange);
-        assert_eq!(event_title(&e), "Tool failed");
+        assert_eq!(event_title(&e), "Codex: Tool failed");
         assert_eq!(
             human_readable_type("tool_failed", Some("tool_failed")),
             "Tool failed"
@@ -1134,65 +1216,94 @@ mod tests {
     }
 
     #[test]
-    fn attention_only_includes_sessions_waiting_for_input() {
+    fn hero_prioritizes_approval_then_waiting_then_pause_then_running_then_quiet() {
+        let states = [
+            SessionState::ApprovalRequired,
+            SessionState::WaitingInput,
+            SessionState::Running,
+            SessionState::Stuck,
+        ];
+        let panel = |states: &[SessionState], monitoring| {
+            let mut input = inputs(
+                states
+                    .iter()
+                    .enumerate()
+                    .map(|(i, state)| summary(&i.to_string(), *state, i as f64))
+                    .collect(),
+            );
+            input.monitoring = monitoring;
+            build_panel(input)
+        };
+        let approval = panel(&states, false);
+        assert_eq!(approval.hero.kind, HeroKind::ApprovalRequired);
+        assert_eq!(approval.hero.detail, "1 session needs approval");
+        assert_eq!(approval.counts.attention, 1);
+        assert_eq!(
+            panel(&states[1..], false).hero.kind,
+            HeroKind::WaitingForInput
+        );
+        assert_eq!(
+            panel(&states[2..], false).hero.kind,
+            HeroKind::MonitoringPaused
+        );
+        assert_eq!(panel(&states[2..], true).hero.kind, HeroKind::Running);
+        assert_eq!(panel(&states[3..], true).hero.kind, HeroKind::Quiet);
+        assert_eq!(panel(&[], true).hero.title, "Quiet");
+    }
+
+    #[test]
+    fn icon_status_describes_primary_attention_kind() {
+        let sessions = vec![
+            summary("approval", SessionState::ApprovalRequired, 0.0),
+            summary("waiting", SessionState::WaitingInput, 1.0),
+            summary("running", SessionState::Running, 2.0),
+        ];
+        let lang = crate::l10n::Lang::En;
+        assert_eq!(
+            menu_status_description(&sessions, lang),
+            "1 approval required"
+        );
+        assert_eq!(
+            menu_status_description(&sessions[1..], lang),
+            "1 session waiting for input"
+        );
+        assert_eq!(
+            menu_status_description(&sessions[2..], lang),
+            "1 live session"
+        );
+        assert_eq!(
+            menu_status_description(&[], lang),
+            "monitoring active, no live sessions"
+        );
+    }
+
+    #[test]
+    fn action_list_prioritizes_approval_waiting_running_stuck_then_activity() {
         let panel = build_panel(inputs(vec![
-            summary("input", SessionState::WaitingInput, 10.0),
-            summary("stuck", SessionState::Stuck, 20.0),
-            summary("running", SessionState::Running, 5.0),
+            summary("stuck", SessionState::Stuck, 999.0),
+            summary("run-old", SessionState::Running, 100.0),
+            summary("wait-old", SessionState::WaitingInput, 1.0),
+            summary("approval", SessionState::ApprovalRequired, 0.0),
+            summary("wait-new", SessionState::WaitingInput, 2.0),
+            summary("run-new", SessionState::Running, 101.0),
         ]));
-        assert_eq!(panel.counts.attention, 1);
-        match panel.hero {
-            Hero::Attention { summary, sessions } => {
-                assert_eq!(summary, "1 session needs attention");
-                assert_eq!(sessions.len(), 1);
-                assert_eq!(sessions[0].id, "input");
-            }
-            other => panic!("expected attention, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn hero_lists_at_most_three_sessions() {
-        let sessions = (0..5)
-            .map(|i| summary(&i.to_string(), SessionState::WaitingInput, i as f64))
+        let ids: Vec<_> = panel
+            .action_sessions
+            .iter()
+            .map(|s| s.id.as_str())
             .collect();
-        let panel = build_panel(inputs(sessions));
-        match panel.hero {
-            Hero::Attention { summary, sessions } => {
-                assert_eq!(summary, "5 sessions need attention");
-                assert_eq!(sessions.len(), 3);
-            }
-            other => panic!("expected attention, got {other:?}"),
-        }
+        assert_eq!(
+            ids,
+            ["approval", "wait-new", "wait-old", "run-new", "run-old"]
+        );
+        assert_eq!(panel.counts.live, 6);
+        assert_eq!(panel.counts.attention, 1);
     }
 
     #[test]
-    fn all_clear_shows_count_and_monitoring_state() {
-        let panel = build_panel(inputs(vec![summary("a", SessionState::Running, 1.0)]));
-        assert_eq!(
-            panel.hero,
-            Hero::AllClear {
-                sessions: "1 session".into(),
-                monitoring: true,
-                state: "Active"
-            }
-        );
-        let mut paused = inputs(Vec::new());
-        paused.monitoring = false;
-        assert_eq!(
-            build_panel(paused).hero,
-            Hero::AllClear {
-                sessions: String::new(),
-                monitoring: false,
-                state: "Paused"
-            }
-        );
-    }
-
-    #[test]
-    fn quick_commands_are_the_first_three_pinned() {
+    fn quick_commands_are_the_first_five_pinned() {
         let mut input = inputs(Vec::new());
-        input.pinned = (0..5)
+        input.pinned = (0..8)
             .map(|i| QuickCommand {
                 id: format!("s{i}"),
                 title: format!("Snippet {i}"),
@@ -1201,7 +1312,7 @@ mod tests {
             .collect();
         let panel = build_panel(input);
         let ids: Vec<_> = panel.quick_commands.iter().map(|q| q.id.as_str()).collect();
-        assert_eq!(ids, ["s0", "s1", "s2"]);
+        assert_eq!(ids, ["s0", "s1", "s2", "s3", "s4"]);
     }
 
     #[test]
@@ -1400,34 +1511,61 @@ mod tests {
         ];
         let timeline = unified_timeline(&[], &events, now);
         assert_eq!(timeline.len(), 3);
-        assert_eq!(timeline[0].title, "Running file write");
-        assert_eq!(timeline[0].detail, "Claude Code - main.rs");
-        assert_eq!(timeline[0].icon, "hammer");
-        assert_eq!(timeline[1].title, "Needs permission");
+        assert_eq!(timeline[0].title, "Claude Code: Update");
+        assert_eq!(timeline[0].detail, "main.rs");
+        assert_eq!(timeline[0].icon, "circle");
+        assert_eq!(timeline[1].title, "Claude Code: Permission needed");
         assert_eq!(timeline[1].icon, "exclamationmark.triangle");
         assert_eq!(timeline[1].tone, Tone::Yellow);
-        assert_eq!(timeline[1].detail, "Claude Code - shell command");
-        assert_eq!(timeline[2].title, "Session ended");
-        assert_eq!(timeline[2].tone, Tone::Red);
+        assert_eq!(timeline[1].detail, "Needs your permission to continue.");
+        assert_eq!(timeline[2].title, "Claude Code: Update");
+        assert_eq!(timeline[2].tone, Tone::Secondary);
     }
 
     #[test]
-    fn events_near_a_history_entry_are_dropped() {
+    fn timeline_deduplicates_uuid_and_preserves_distinct_nearby_events() {
         let now = Utc::now();
         let history = vec![history_entry("finished", now, false)];
-        let events = vec![
-            event(
-                "finished",
-                "Claude Code",
-                "x",
-                now + chrono::Duration::seconds(2),
-            ),
-            event("user_prompt", "", "", now - chrono::Duration::seconds(30)),
-        ];
-        let timeline = unified_timeline(&history, &events, now);
+        let mut same = event(
+            "finished",
+            "Claude Code",
+            "done",
+            now + chrono::Duration::seconds(30),
+        );
+        same.id = history[0].id;
+        let other = event("finished", "Claude Code", "done", now);
+        let other_id = other.id;
+        let timeline = unified_timeline(&history, &[same, other], now);
         assert_eq!(timeline.len(), 2);
-        assert_eq!(timeline[0].icon, "bell.fill");
-        assert_eq!(timeline[1].title, "Prompt sent");
+        assert!(timeline.iter().any(|row| row.id == other_id));
+        assert_eq!(
+            timeline
+                .iter()
+                .filter(|row| row.id == history[0].id)
+                .count(),
+            1
+        );
+        assert_eq!(
+            timeline
+                .iter()
+                .find(|row| row.id == history[0].id)
+                .unwrap()
+                .icon,
+            "bell.fill"
+        );
+    }
+
+    #[test]
+    fn timeline_compacts_unicode_and_prefers_repo_subtitle() {
+        let now = Utc::now();
+        let mut event = event("waiting_input", "", "", now);
+        event.repo_path = Some("/owned/repo/".into());
+        event.directory = Some("/owned/directory".into());
+        assert_eq!(event_detail(&event), "Repo: repo");
+        event.message = "界".repeat(61);
+        assert_eq!(event_detail(&event), format!("{}...", "界".repeat(57)));
+        event.source = AiEventSource::new(AiEventSource::COPILOT);
+        assert_eq!(source_display_name(&event), "GitHub Copilot");
     }
 
     #[test]
@@ -1480,14 +1618,13 @@ mod tests {
 
     #[test]
     fn clean_detail_shortens_messages() {
-        assert_eq!(clean_detail("t", "/a/b/config.json"), "config.json");
-        assert_eq!(clean_detail("t", "short"), "short");
+        assert_eq!(compact_detail("/a/b/config.json"), "config.json");
+        assert_eq!(compact_detail("short"), "short");
         let long = "x".repeat(80);
-        let cleaned = clean_detail("t", &long);
+        let cleaned = compact_detail(&long);
         assert_eq!(cleaned.chars().count(), 60);
         assert!(cleaned.ends_with("..."));
-        assert_eq!(clean_detail("grep", ""), "content search");
-        assert_eq!(clean_detail("", ""), "");
+        assert_eq!(compact_detail(""), "");
     }
 
     #[test]
@@ -1502,12 +1639,10 @@ mod tests {
             body: "make deploy".into(),
         }];
         let lines = menu_entries(&build_panel(input));
-        assert_eq!(lines[0], MenuLine::Info("1 session needs attention".into()));
-        assert!(lines.contains(&MenuLine::Command {
-            title: "Go to Project w".into(),
-            command: PanelCommand::FocusSession { tab_id: 1 },
-            checked: false
-        }));
+        assert_eq!(
+            lines[0],
+            MenuLine::Info("Waiting for input - 1 session is waiting".into())
+        );
         assert!(lines.contains(&MenuLine::Command {
             title: "Project r - Working".into(),
             command: PanelCommand::FocusSession { tab_id: 1 },
@@ -1537,8 +1672,11 @@ mod tests {
     #[test]
     fn menu_when_all_clear() {
         let lines = menu_entries(&build_panel(inputs(Vec::new())));
-        assert_eq!(lines[0], MenuLine::Info("All clear - Active".into()));
-        assert!(!lines.contains(&MenuLine::Info("Live Sessions".into())));
+        assert_eq!(
+            lines[0],
+            MenuLine::Info("Quiet - No live AI sessions".into())
+        );
+        assert!(!lines.contains(&MenuLine::Info("Action list".into())));
     }
 
     #[test]
@@ -1552,7 +1690,7 @@ mod tests {
             height: 24.0,
         };
         let (x, y) = popover_origin(Some(item), 900.0, (0.0, 1440.0));
-        assert_eq!(x, 1015.0 - 200.0);
+        assert_eq!(x, 1015.0 - f64::from(POPOVER_WIDTH) / 2.0);
         assert_eq!(y, 24.0 + POPOVER_GAP);
     }
 
@@ -1565,7 +1703,7 @@ mod tests {
             height: 24.0,
         };
         let (x, _) = popover_origin(Some(right), 900.0, (0.0, 1440.0));
-        assert_eq!(x, 1440.0 - 400.0 - POPOVER_MARGIN);
+        assert_eq!(x, 1440.0 - f64::from(POPOVER_WIDTH) - POPOVER_MARGIN);
         let left = Rect { x: 2.0, ..right };
         let (x, _) = popover_origin(Some(left), 900.0, (0.0, 1440.0));
         assert_eq!(x, POPOVER_MARGIN);
@@ -1574,7 +1712,7 @@ mod tests {
     #[test]
     fn popover_without_a_frame_is_at_the_right_of_the_menu_bar() {
         let (x, y) = popover_origin(None, 900.0, (0.0, 1440.0));
-        assert_eq!(x, 1440.0 - 400.0 - POPOVER_MARGIN);
+        assert_eq!(x, 1440.0 - f64::from(POPOVER_WIDTH) - POPOVER_MARGIN);
         assert_eq!(y, MENU_BAR_HEIGHT + POPOVER_GAP);
     }
 

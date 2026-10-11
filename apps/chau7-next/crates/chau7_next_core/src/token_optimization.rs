@@ -177,6 +177,18 @@ pub enum CTODecisionReason {
     Unchanged,
 }
 
+/// Origin of a flag recalculation, distinct from the resulting flag reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CTODecisionTrigger {
+    AiStateChanged,
+    ModeChanged,
+    OverrideChanged,
+    ShellInitialized,
+    SessionClosed,
+    InitialEvaluation,
+}
+
 // MARK: - Runtime health
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -206,6 +218,91 @@ pub struct CTORuntimeAssessment {
     pub summary: String,
 }
 
+/// Emitted only when the health band changes, matching current Swift summaries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CTOAssessmentTransition {
+    Initial {
+        state: CTORuntimeHealthState,
+        score: i64,
+        issues: Vec<CTORuntimeAssessmentIssue>,
+    },
+    Degraded {
+        metadata: std::collections::BTreeMap<String, String>,
+    },
+    Recovered {
+        metadata: std::collections::BTreeMap<String, String>,
+    },
+}
+impl CTOAssessmentTransition {
+    pub fn between(
+        previous: Option<&CTORuntimeAssessment>,
+        current: &CTORuntimeAssessment,
+    ) -> Option<Self> {
+        let Some(previous) = previous else {
+            return Some(Self::Initial {
+                state: current.state,
+                score: current.score,
+                issues: current.issues.clone(),
+            });
+        };
+        if previous.state == current.state {
+            return None;
+        }
+        let names = |issues: &[CTORuntimeAssessmentIssue]| {
+            issues
+                .iter()
+                .map(|i| {
+                    serde_json::to_value(i)
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .to_owned()
+                })
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        let before = names(&previous.issues);
+        let after = names(&current.issues);
+        let name = |state: CTORuntimeHealthState| {
+            serde_json::to_value(state)
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        let metadata = std::collections::BTreeMap::from([
+            ("from".into(), name(previous.state)),
+            ("to".into(), name(current.state)),
+            ("scoreFrom".into(), previous.score.to_string()),
+            ("scoreTo".into(), current.score.to_string()),
+            (
+                "scoreDelta".into(),
+                (current.score - previous.score).to_string(),
+            ),
+            (
+                "addedIssues".into(),
+                after
+                    .difference(&before)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+            (
+                "resolvedIssues".into(),
+                before
+                    .difference(&after)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+        ]);
+        Some(if current.score > previous.score {
+            Self::Recovered { metadata }
+        } else {
+            Self::Degraded { metadata }
+        })
+    }
+}
+
 // MARK: - Decision event
 
 /// Single decision event used by the debug stats panel.
@@ -232,6 +329,8 @@ pub struct CTODecisionEvent {
     pub delay_to_activate_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub debug_note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<CTODecisionTrigger>,
 }
 
 impl CTODecisionEvent {
@@ -260,6 +359,7 @@ impl CTODecisionEvent {
             deferred: false,
             delay_to_activate_ms: None,
             debug_note: None,
+            trigger: None,
         }
     }
 }
@@ -278,6 +378,14 @@ pub struct CTORuntimeSnapshot {
     pub deferred_set_count: i64,
     pub deferred_flush_count: i64,
     pub deferred_skip_count: i64,
+    #[serde(default)]
+    pub deferred_cancel_count: i64,
+    #[serde(default)]
+    pub trigger_breakdown: HashMap<String, i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gain_stats: Option<CTOGainStats>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gain_stats_last_sampled_at: Option<f64>,
     pub setup_count: i64,
     pub teardown_count: i64,
     pub mode_change_count: i64,
@@ -323,19 +431,25 @@ impl CTORuntimeSnapshot {
         (changed as f64 / self.recalc_count as f64) * 100.0
     }
 
+    pub fn deferred_eligible_count(&self) -> i64 {
+        self.deferred_set_count
+            .saturating_sub(self.deferred_cancel_count)
+            .max(0)
+    }
+
     pub fn deferred_skip_rate_percent(&self) -> f64 {
-        if self.deferred_set_count <= 0 {
+        if self.deferred_eligible_count() <= 0 {
             return 0.0;
         }
-        let ratio = self.deferred_skip_count as f64 / self.deferred_set_count as f64;
+        let ratio = self.deferred_skip_count as f64 / self.deferred_eligible_count() as f64;
         ratio.clamp(0.0, 1.0) * 100.0
     }
 
     pub fn deferred_flush_rate_percent(&self) -> f64 {
-        if self.deferred_set_count <= 0 {
+        if self.deferred_eligible_count() <= 0 {
             return 0.0;
         }
-        let ratio = self.deferred_flush_count as f64 / self.deferred_set_count as f64;
+        let ratio = self.deferred_flush_count as f64 / self.deferred_eligible_count() as f64;
         ratio.clamp(0.0, 1.0) * 100.0
     }
 
@@ -400,18 +514,22 @@ impl CTORuntimeSnapshot {
             && self.decisions_change_rate_percent() < 30.0
             && !self.is_stable_state()
         {
-            score -= 30;
+            score -=
+                CTOHealthScoring::low_change_rate_penalty(self.decisions_change_rate_percent());
             issues.push(CTORuntimeAssessmentIssue::LowChangeRate);
         }
 
         // Need enough samples (>= 5 deferred) before percentages are meaningful.
-        if self.deferred_set_count >= 5 && self.deferred_skip_rate_percent() > 35.0 {
-            score -= 30;
+        if self.deferred_eligible_count() >= 5 && self.deferred_skip_rate_percent() > 35.0 {
+            score -=
+                CTOHealthScoring::high_deferred_skips_penalty(self.deferred_skip_rate_percent());
             issues.push(CTORuntimeAssessmentIssue::HighDeferredSkips);
         }
 
-        if self.deferred_set_count >= 5 && self.deferred_flush_rate_percent() < 80.0 {
-            score -= 20;
+        if self.deferred_eligible_count() >= 5 && self.deferred_flush_rate_percent() < 80.0 {
+            score -= CTOHealthScoring::low_deferred_flush_rate_penalty(
+                self.deferred_flush_rate_percent(),
+            );
             issues.push(CTORuntimeAssessmentIssue::LowDeferredFlushRate);
         }
 
@@ -420,7 +538,9 @@ impl CTORuntimeSnapshot {
             .age_since_last_decision_seconds_at(now)
             .is_some_and(|age| age > 300);
         if stale && self.active_session_count > 0 && !self.is_stable_state() {
-            score -= 15;
+            score -= CTOHealthScoring::stale_decisions_penalty(
+                self.age_since_last_decision_seconds_at(now).unwrap_or(0),
+            );
             issues.push(CTORuntimeAssessmentIssue::StaleDecisions);
         }
 
@@ -456,14 +576,36 @@ impl CTORuntimeSnapshot {
     }
 }
 
-/// A runtime state is stable only after enough recalculations have converged
-/// and no sessions remain actively tracked as on.
+/// Stability means converged decisions, including sessions whose flag stays on.
 pub fn is_stable_cto_runtime_state(
     recalc_count: i64,
     unchanged_count: i64,
-    active_session_count: i64,
+    _active_session_count: i64,
 ) -> bool {
-    recalc_count >= 10 && unchanged_count > recalc_count / 2 && active_session_count == 0
+    recalc_count >= 10 && unchanged_count > recalc_count / 2
+}
+
+/// Current Swift continuous health penalties, rounded to the nearest integer.
+pub struct CTOHealthScoring;
+impl CTOHealthScoring {
+    fn proportional(value: f64, threshold: f64, worst: f64, maximum: i64) -> i64 {
+        ((value - threshold) / (worst - threshold))
+            .clamp(0.0, 1.0)
+            .mul_add(maximum as f64, 0.0)
+            .round() as i64
+    }
+    pub fn low_change_rate_penalty(rate: f64) -> i64 {
+        Self::proportional(rate, 30.0, 0.0, 30)
+    }
+    pub fn high_deferred_skips_penalty(rate: f64) -> i64 {
+        Self::proportional(rate, 35.0, 100.0, 30)
+    }
+    pub fn low_deferred_flush_rate_penalty(rate: f64) -> i64 {
+        Self::proportional(rate, 80.0, 0.0, 20)
+    }
+    pub fn stale_decisions_penalty(age: i64) -> i64 {
+        Self::proportional(age as f64, 300.0, 1800.0, 15)
+    }
 }
 
 // MARK: - Gain statistics
@@ -544,14 +686,21 @@ impl TabTokenConsumption {
 }
 
 /// AI token usage aggregated per provider from the telemetry database.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProviderConsumptionStats {
     pub provider: String,
     pub run_count: i64,
     pub priced_run_count: i64,
     pub missing_cost_run_count: i64,
+    /// None is legacy/unknown; Some(0) means the queried runs had no token counters.
+    #[serde(default)]
+    pub token_observed_run_count: Option<i64>,
     pub total_input_tokens: i64,
     pub total_cached_input_tokens: i64,
+    #[serde(default)]
+    pub total_cache_creation_input_tokens: i64,
+    #[serde(default)]
+    pub total_cache_read_input_tokens: i64,
     pub total_output_tokens: i64,
     pub total_reasoning_output_tokens: i64,
     pub total_cost_usd: f64,
@@ -571,12 +720,22 @@ impl ProviderConsumptionStats {
             run_count,
             priced_run_count: 0,
             missing_cost_run_count: 0,
+            token_observed_run_count: None,
             total_input_tokens,
             total_cached_input_tokens: 0,
+            total_cache_creation_input_tokens: 0,
+            total_cache_read_input_tokens: 0,
             total_output_tokens,
             total_reasoning_output_tokens: 0,
             total_cost_usd,
         }
+    }
+
+    pub fn uncategorized_cached_input_tokens(&self) -> i64 {
+        self.total_cached_input_tokens
+            .saturating_sub(self.total_cache_creation_input_tokens)
+            .saturating_sub(self.total_cache_read_input_tokens)
+            .max(0)
     }
 
     pub fn id(&self) -> &str {
@@ -681,6 +840,141 @@ impl WrapperHealth {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn assessment_transitions_only_report_changed_bands_and_sorted_issue_deltas() {
+        let healthy = CTORuntimeAssessment {
+            state: CTORuntimeHealthState::Healthy,
+            score: 100,
+            issues: vec![],
+            summary: "healthy".into(),
+        };
+        let warning = CTORuntimeAssessment {
+            state: CTORuntimeHealthState::Warning,
+            score: 70,
+            issues: vec![
+                CTORuntimeAssessmentIssue::StaleDecisions,
+                CTORuntimeAssessmentIssue::LowChangeRate,
+            ],
+            summary: "needsReview".into(),
+        };
+        assert!(matches!(
+            CTOAssessmentTransition::between(None, &healthy),
+            Some(CTOAssessmentTransition::Initial { score: 100, .. })
+        ));
+        assert!(
+            CTOAssessmentTransition::between(
+                Some(&warning),
+                &CTORuntimeAssessment {
+                    score: 75,
+                    ..warning.clone()
+                }
+            )
+            .is_none()
+        );
+        let Some(CTOAssessmentTransition::Degraded { metadata }) =
+            CTOAssessmentTransition::between(Some(&healthy), &warning)
+        else {
+            panic!("degradation expected");
+        };
+        assert_eq!(metadata["scoreDelta"], "-30");
+        assert_eq!(metadata["addedIssues"], "lowChangeRate,staleDecisions");
+        let Some(CTOAssessmentTransition::Recovered { metadata }) =
+            CTOAssessmentTransition::between(Some(&warning), &healthy)
+        else {
+            panic!("recovery expected");
+        };
+        assert_eq!(metadata["resolvedIssues"], "lowChangeRate,staleDecisions");
+    }
+
+    #[test]
+    fn current_continuous_health_penalties_match_swift_endpoints_and_rounding() {
+        assert_eq!(CTOHealthScoring::low_change_rate_penalty(0.0), 30);
+        assert_eq!(CTOHealthScoring::low_change_rate_penalty(15.0), 15);
+        assert_eq!(CTOHealthScoring::low_change_rate_penalty(29.5), 1);
+        assert_eq!(CTOHealthScoring::low_change_rate_penalty(30.0), 0);
+        assert_eq!(CTOHealthScoring::low_change_rate_penalty(100.0), 0);
+        assert_eq!(CTOHealthScoring::high_deferred_skips_penalty(35.0), 0);
+        assert_eq!(CTOHealthScoring::high_deferred_skips_penalty(50.0), 7);
+        assert_eq!(CTOHealthScoring::high_deferred_skips_penalty(100.0), 30);
+        assert_eq!(CTOHealthScoring::low_deferred_flush_rate_penalty(0.0), 20);
+        assert_eq!(CTOHealthScoring::low_deferred_flush_rate_penalty(50.0), 8);
+        assert_eq!(CTOHealthScoring::low_deferred_flush_rate_penalty(80.0), 0);
+        assert_eq!(CTOHealthScoring::stale_decisions_penalty(300), 0);
+        assert_eq!(CTOHealthScoring::stale_decisions_penalty(350), 1);
+        assert_eq!(CTOHealthScoring::stale_decisions_penalty(400), 1);
+        assert_eq!(CTOHealthScoring::stale_decisions_penalty(1800), 15);
+        assert_eq!(CTOHealthScoring::stale_decisions_penalty(10000), 15);
+    }
+    #[test]
+    fn cancelled_deferrals_do_not_penalize_sessions_that_never_could_flush() {
+        let snapshot = CTORuntimeSnapshot {
+            mode: "aiOnly".into(),
+            deferred_set_count: 10,
+            deferred_cancel_count: 8,
+            deferred_flush_count: 2,
+            ..Default::default()
+        };
+        assert_eq!(snapshot.deferred_eligible_count(), 2);
+        assert_eq!(snapshot.deferred_flush_rate_percent(), 100.0);
+        assert!(snapshot.assessment_at(0.0).issues.is_empty());
+        let overcancel = CTORuntimeSnapshot {
+            deferred_set_count: 1,
+            deferred_cancel_count: 5,
+            ..Default::default()
+        };
+        assert_eq!(overcancel.deferred_eligible_count(), 0);
+        assert_eq!(overcancel.deferred_flush_rate_percent(), 0.0);
+    }
+    #[test]
+    fn older_snapshots_and_decisions_default_additive_current_fields() {
+        let snapshot = CTORuntimeSnapshot::default();
+        let mut wire = serde_json::to_value(snapshot).unwrap();
+        wire.as_object_mut().unwrap().remove("deferredCancelCount");
+        wire.as_object_mut().unwrap().remove("triggerBreakdown");
+        let decoded: CTORuntimeSnapshot = serde_json::from_value(wire).unwrap();
+        assert_eq!(decoded.deferred_cancel_count, 0);
+        assert!(decoded.trigger_breakdown.is_empty());
+        assert!(decoded.gain_stats.is_none());
+        let mut wire = serde_json::to_value(decision_at(0.0)).unwrap();
+        wire.as_object_mut().unwrap().remove("trigger");
+        assert!(
+            serde_json::from_value::<CTODecisionEvent>(wire)
+                .unwrap()
+                .trigger
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn provider_cache_categories_preserve_legacy_defaults_and_billable_total() {
+        let mut stats = ProviderConsumptionStats::new("claude", 1, 100, 10, 0.1);
+        stats.total_cached_input_tokens = 75;
+        stats.total_cache_creation_input_tokens = 20;
+        stats.total_cache_read_input_tokens = 30;
+        stats.total_reasoning_output_tokens = 2;
+        assert_eq!(stats.uncategorized_cached_input_tokens(), 25);
+        assert_eq!(stats.total_billable_tokens(), 187);
+        let mut old = serde_json::to_value(&stats).unwrap();
+        old.as_object_mut()
+            .unwrap()
+            .remove("total_cache_creation_input_tokens");
+        old.as_object_mut()
+            .unwrap()
+            .remove("total_cache_read_input_tokens");
+        old.as_object_mut()
+            .unwrap()
+            .remove("token_observed_run_count");
+        let restored: ProviderConsumptionStats = serde_json::from_value(old).unwrap();
+        assert_eq!(restored.token_observed_run_count, None);
+        assert_eq!(restored.total_cache_creation_input_tokens, 0);
+        assert_eq!(restored.total_cache_read_input_tokens, 0);
+        assert_eq!(restored.uncategorized_cached_input_tokens(), 75);
+        assert_eq!(restored.total_billable_tokens(), 187);
+        stats.total_cache_read_input_tokens = 100;
+        assert_eq!(stats.uncategorized_cached_input_tokens(), 0);
+    }
+
     use TabTokenOptOverride as O;
     use TokenOptimizationMode as M;
     use std::collections::HashSet;
@@ -771,8 +1065,8 @@ mod tests {
     }
 
     #[test]
-    fn test_stable_runtime_state_requires_no_active_sessions() {
-        assert!(!is_stable_cto_runtime_state(12, 10, 1));
+    fn test_stable_runtime_state_includes_converged_active_sessions() {
+        assert!(is_stable_cto_runtime_state(12, 10, 1));
         assert!(is_stable_cto_runtime_state(12, 10, 0));
     }
 
@@ -1017,7 +1311,7 @@ mod tests {
                 CTORuntimeAssessmentIssue::LowDecisionThroughput,
             ]
         );
-        assert_eq!(a.score, 20);
+        assert_eq!(a.score, 55);
         assert_eq!(a.state, CTORuntimeHealthState::Critical);
         assert_eq!(a.summary, "requiresAttention");
 
@@ -1121,7 +1415,7 @@ mod tests {
         assert!((s.deferred_skip_rate_percent() - 100.0).abs() < 1e-9);
         assert!((s.deferred_flush_rate_percent() - 50.0).abs() < 1e-9);
         assert!((s.active_session_ratio_percent() - 25.0).abs() < 1e-9);
-        assert!(!s.is_stable_state());
+        assert!(s.is_stable_state());
     }
 
     #[test]

@@ -1294,7 +1294,14 @@ impl TelemetryStore {
                    COALESCE(SUM(total_cached_input_tokens),0),
                    COALESCE(SUM(total_output_tokens),0),
                    COALESCE(SUM(total_reasoning_output_tokens),0),
-                   COALESCE(SUM(cost_usd),0)
+                   COALESCE(SUM(cost_usd),0),
+                   COALESCE(SUM(total_cache_creation_input_tokens),0),
+                   COALESCE(SUM(total_cache_read_input_tokens),0),
+                   COALESCE(SUM(CASE WHEN total_input_tokens IS NOT NULL
+                     OR total_cached_input_tokens IS NOT NULL OR total_output_tokens IS NOT NULL
+                     OR total_reasoning_output_tokens IS NOT NULL
+                     OR total_cache_creation_input_tokens IS NOT NULL OR total_cache_read_input_tokens IS NOT NULL
+                     THEN 1 ELSE 0 END),0)
             FROM runs WHERE provider IS NOT NULL
               AND COALESCE(token_usage_state, 'missing') != 'invalid'"
         );
@@ -1317,6 +1324,9 @@ impl TelemetryStore {
                 p.missing_cost_run_count = r.get(3)?;
                 p.total_cached_input_tokens = r.get(5)?;
                 p.total_reasoning_output_tokens = r.get(7)?;
+                p.total_cache_creation_input_tokens = r.get(9)?;
+                p.total_cache_read_input_tokens = r.get(10)?;
+                p.token_observed_run_count = Some(r.get(11)?);
                 Ok(p)
             })?;
             Ok(rows.filter_map(Result::ok).collect())
@@ -1675,6 +1685,62 @@ mod tests {
 
         let future = store.token_usage_per_tab(Some(Utc::now() + Duration::hours(1)));
         assert!(future.is_empty());
+    }
+
+    #[test]
+    fn provider_consumption_distinguishes_missing_counters_from_measured_zero() {
+        let store = TelemetryStore::in_memory();
+        let missing = run("claude", None, None);
+        store.insert_run(&missing);
+        let p = store.consumption_per_provider(None);
+        assert_eq!(p[0].token_observed_run_count, Some(0));
+        let mut zero = run("claude", None, None);
+        zero.total_input_tokens = Some(0);
+        zero.total_output_tokens = Some(0);
+        zero.token_usage_state = TelemetryMetricState::Complete;
+        store.insert_run(&zero);
+        let p = store.consumption_per_provider(None);
+        assert_eq!(p[0].run_count, 2);
+        assert_eq!(p[0].token_observed_run_count, Some(1));
+        assert_eq!(p[0].total_billable_tokens(), 0);
+    }
+    #[test]
+    fn provider_consumption_preserves_cache_categories_without_double_counting() {
+        let store = TelemetryStore::in_memory();
+        let now = Utc::now();
+        let mut detailed = run("claude", None, None);
+        detailed.started_at = now;
+        detailed.token_usage_state = TelemetryMetricState::Complete;
+        detailed.total_input_tokens = Some(100);
+        detailed.total_cached_input_tokens = Some(75);
+        detailed.total_cache_creation_input_tokens = Some(20);
+        detailed.total_cache_read_input_tokens = Some(30);
+        detailed.total_output_tokens = Some(10);
+        detailed.total_reasoning_output_tokens = Some(2);
+        store.insert_run(&detailed);
+        let mut legacy = run("claude", None, None);
+        legacy.started_at = now;
+        legacy.token_usage_state = TelemetryMetricState::Complete;
+        legacy.total_cached_input_tokens = Some(9);
+        store.insert_run(&legacy);
+        let mut outside = detailed.clone();
+        outside.id = uuid::Uuid::new_v4().to_string();
+        outside.started_at = now - Duration::hours(1);
+        store.insert_run(&outside);
+        let mut invalid = detailed.clone();
+        invalid.id = uuid::Uuid::new_v4().to_string();
+        invalid.token_usage_state = TelemetryMetricState::Invalid;
+        store.insert_run(&invalid);
+        let providers = store.consumption_per_provider(Some(now - Duration::minutes(10)));
+        assert_eq!(providers.len(), 1);
+        let p = &providers[0];
+        assert_eq!(p.run_count, 2);
+        assert_eq!(p.token_observed_run_count, Some(2));
+        assert_eq!(p.total_cached_input_tokens, 84);
+        assert_eq!(p.total_cache_creation_input_tokens, 20);
+        assert_eq!(p.total_cache_read_input_tokens, 30);
+        assert_eq!(p.uncategorized_cached_input_tokens(), 34);
+        assert_eq!(p.total_billable_tokens(), 196);
     }
 
     #[test]

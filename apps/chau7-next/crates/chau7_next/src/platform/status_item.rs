@@ -69,6 +69,8 @@ pub trait StatusItem {
     /// Text next to the icon (a count of waiting sessions), empty for none.
     fn set_title(&self, title: &str);
     fn set_tooltip(&self, tooltip: Option<&str>);
+    /// Full status exposed by the button itself to assistive technologies.
+    fn set_accessibility_label(&self, _label: &str) {}
     /// The menu shown on click; `None` sends [`StatusItemEvent::Clicked`]
     /// instead.
     fn set_menu(&self, entries: Option<&[MenuEntry]>);
@@ -243,6 +245,18 @@ mod imp {
             if let Some(button) = self.button() {
                 let tooltip = tooltip.map(NSString::from_str);
                 button.setToolTip(tooltip.as_deref());
+            }
+        }
+
+        fn set_accessibility_label(&self, label: &str) {
+            if let Some(button) = self.button() {
+                // SAFETY: NSStatusBarButton inherits the AppKit accessibility
+                // setter. The NSString remains alive for the synchronous call;
+                // this StatusItem is only used on the main thread.
+                unsafe {
+                    let _: () =
+                        msg_send![&*button, setAccessibilityLabel: &*NSString::from_str(label)];
+                }
             }
         }
 

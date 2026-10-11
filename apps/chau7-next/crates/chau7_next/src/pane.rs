@@ -166,6 +166,9 @@ impl Render for DividerGhost {
 }
 
 pub struct PaneTree {
+    /// Complete saved payload parked until this tab is actually selected.
+    deferred_saved: Option<SavedTab>,
+    deferred_cwd: Option<PathBuf>,
     root: Option<Node<PaneItem>>,
     focused: Option<EntityId>,
     next_split_id: u64,
@@ -189,6 +192,8 @@ impl EventEmitter<PaneEvent> for PaneTree {}
 impl PaneTree {
     fn empty() -> Self {
         Self {
+            deferred_saved: None,
+            deferred_cwd: None,
             root: None,
             focused: None,
             next_split_id: 1,
@@ -213,6 +218,47 @@ impl PaneTree {
         this
     }
 
+    fn park_saved(saved: SavedTab, cwd: Option<PathBuf>) -> Self {
+        let mut this = Self::empty();
+        this.deferred_saved = Some(saved);
+        this.deferred_cwd = cwd;
+        this
+    }
+
+    /// Startup placeholders retain the complete payload without a hidden shell.
+    pub fn from_saved_deferred(
+        saved: Option<&SavedTab>,
+        cwd: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        match saved {
+            Some(saved) => Self::park_saved(saved.clone(), cwd),
+            None => Self::new(cwd, window, cx),
+        }
+    }
+    pub fn deferred_saved(&self) -> Option<&SavedTab> {
+        self.deferred_saved.as_ref()
+    }
+    pub fn is_deferred(&self) -> bool {
+        self.deferred_saved.is_some()
+    }
+
+    fn activate_deferred(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(saved) = self.deferred_saved.take() else {
+            return;
+        };
+        let cwd = self.deferred_cwd.take().or_else(|| saved.cwd.clone());
+        let owner = self.owner_tab;
+        let mut active = Self::from_saved(Some(&saved), cwd, window, cx);
+        if let Some(owner) = owner {
+            active.set_owner_tab(owner, window, cx);
+        }
+        *self = active;
+        cx.emit(PaneEvent::MetadataChanged);
+        cx.notify();
+    }
+
     /// The panes of a tab: restored from its saved split layout when it has
     /// one (`buildRestorableController`), else one shell in `cwd`.
     pub fn from_saved(
@@ -222,12 +268,20 @@ impl PaneTree {
         cx: &mut Context<Self>,
     ) -> Self {
         let layout = saved
-            .and_then(|s| s.layout.clone())
+            .and_then(|s| {
+                s.layout.clone().or_else(|| {
+                    s.panes.first().map(|p| SavedSplitNode::Terminal {
+                        id: p.id,
+                        directory: p.directory.clone(),
+                    })
+                })
+            })
             .and_then(SavedSplitNode::normalized);
         let (Some(saved), Some(layout)) = (saved, layout) else {
             return Self::new(cwd, window, cx);
         };
         let mut this = Self::empty();
+        this.deferred_cwd = cwd;
         let states: HashMap<PaneId, &SavedPane> = saved.panes.iter().map(|p| (p.id, p)).collect();
         let root = this.build_node(&layout, &states, window, cx);
         this.root = Some(root);
@@ -246,6 +300,7 @@ impl PaneTree {
                 this.pending_restore.insert(*pane, (*state).clone());
             }
         }
+        this.deferred_cwd = None;
         this.start_restore(cx);
         this
     }
@@ -265,7 +320,8 @@ impl PaneTree {
                     .and_then(|p| p.directory.clone())
                     .or_else(|| directory.clone())
                     .filter(|d| !d.is_empty())
-                    .map(PathBuf::from);
+                    .map(PathBuf::from)
+                    .or_else(|| self.deferred_cwd.clone());
                 Node::Leaf(PaneItem::Terminal(self.create_terminal(
                     dir,
                     *id,
@@ -695,11 +751,27 @@ impl PaneTree {
 
     /// Panes of every kind (`allPaneIDs.count`).
     pub fn pane_count(&self) -> usize {
-        self.leaves().len()
+        fn count(layout: &SavedSplitNode) -> usize {
+            match layout {
+                SavedSplitNode::Split { children, .. } => children.iter().map(count).sum(),
+                _ => 1,
+            }
+        }
+        self.deferred_saved.as_ref().map_or_else(
+            || self.leaves().len(),
+            |saved| {
+                saved
+                    .layout
+                    .as_ref()
+                    .map(count)
+                    .unwrap_or(saved.panes.len().max(1))
+            },
+        )
     }
 
     /// Focus the focused pane of `panes`.
     pub fn focus_entity(panes: &Entity<PaneTree>, window: &mut Window, cx: &mut App) {
+        panes.update(cx, |tree, cx| tree.activate_deferred(window, cx));
         let handle = panes
             .read(cx)
             .focused_item()
@@ -1085,12 +1157,20 @@ impl PaneTree {
 
     /// Id of the focused pane, whatever its kind (`focusedPaneID`).
     pub fn focused_pane_id(&self) -> Option<PaneId> {
+        if let Some(saved) = &self.deferred_saved {
+            return saved
+                .focused_pane
+                .or_else(|| saved.panes.first().map(|p| p.id));
+        }
         self.focused_item()
             .and_then(|item| self.pane_ids.get(&item.entity_id()).copied())
     }
 
     /// The split layout, for saving (`exportLayout`).
     pub fn export_layout(&self, cx: &App) -> Option<SavedSplitNode> {
+        if let Some(saved) = &self.deferred_saved {
+            return saved.layout.clone();
+        }
         fn path_string(path: Option<&std::path::Path>) -> Option<String> {
             path.map(|p| p.to_string_lossy().into_owned())
         }
@@ -1274,6 +1354,20 @@ impl PaneTree {
 
     /// Directory of the focused pane (for new tabs, restore).
     pub fn cwd(&self, cx: &App) -> Option<PathBuf> {
+        if let Some(saved) = &self.deferred_saved {
+            return self
+                .deferred_cwd
+                .clone()
+                .or_else(|| saved.cwd.clone())
+                .or_else(|| {
+                    saved
+                        .panes
+                        .iter()
+                        .find(|p| Some(p.id) == saved.focused_pane)
+                        .or_else(|| saved.panes.first())
+                        .and_then(|p| p.directory.as_ref().map(PathBuf::from))
+                });
+        }
         self.focused_session(cx)
             .and_then(|s| s.read(cx).cwd.clone())
     }
@@ -1684,6 +1778,35 @@ impl Focusable for PaneTree {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn deferred_restore_preserves_full_payload_without_constructing_panes() {
+        let saved = crate::session_store::SavedTab {
+            uuid: Some(uuid::Uuid::from_u128(77)),
+            cwd: Some(std::path::PathBuf::from("/repo")),
+            focused_pane: Some(8),
+            layout: Some(chau7_next_core::session_restore::SavedSplitNode::Terminal {
+                id: 8,
+                directory: Some("/repo".into()),
+            }),
+            panes: vec![crate::session_store::SavedPane {
+                id: 8,
+                scrollback: true,
+                ai_provider: Some("claude".into()),
+                ai_session_id: Some("fixture".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let tree = super::PaneTree::park_saved(saved.clone(), None);
+        assert!(tree.is_deferred());
+        assert_eq!(tree.deferred_saved(), Some(&saved));
+        assert!(tree.root.is_none());
+        assert!(tree.pane_ids.is_empty());
+        assert!(tree.subscriptions.is_empty());
+        assert_eq!(tree.pane_count(), 1);
+        assert_eq!(tree.focused_pane_id(), Some(8));
+        assert!(tree.note_task.is_none());
+    }
     use super::*;
 
     /// A stand-in leaf with a numeric key (`SplitNodeTests`).
