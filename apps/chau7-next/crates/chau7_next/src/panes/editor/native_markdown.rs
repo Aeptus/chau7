@@ -37,15 +37,37 @@ enum Action {
     Jump,
 }
 #[derive(Default)]
-struct Pending {
+pub(super) struct Pending {
     text: Option<String>,
     selection: Option<NSRange>,
     focused: bool,
     actions: Vec<Action>,
 }
 impl Pending {
-    fn clear_for_load(&mut self) {
+    pub(super) fn clear_for_load(&mut self) {
         *self = Self::default();
+    }
+    pub(super) fn text(&self) -> Option<&str> {
+        self.text.as_deref()
+    }
+    /// Drain only edits; the already-enqueued signal still owns actions/focus.
+    pub(super) fn take_edits(
+        &mut self,
+        mirrored: &str,
+    ) -> (Option<String>, Option<std::ops::Range<usize>>) {
+        let text = self.text.take();
+        let current = text.as_deref().unwrap_or(mirrored);
+        let selection = self.selection.take().map(|selection| {
+            let start = utf16_to_byte(current, selection.location);
+            let end = utf16_to_byte(current, selection.location + selection.length);
+            start..end
+        });
+        (text, selection)
+    }
+    #[cfg(test)]
+    pub(super) fn typed(&mut self, text: &str, selection: NSRange) {
+        self.text = Some(text.to_string());
+        self.selection = Some(selection);
     }
 }
 
@@ -64,7 +86,7 @@ struct Shared {
     document: RefCell<Document>,
     theme: RefCell<styles::Theme>,
     config: RefCell<EditorConfig>,
-    pending: RefCell<Pending>,
+    pending: Rc<RefCell<Pending>>,
     queued: Cell<bool>,
     sender: mpsc::UnboundedSender<()>,
     line_starts: RefCell<Vec<usize>>,
@@ -479,7 +501,11 @@ pub(super) struct NativeMarkdown {
     shared: Rc<Shared>,
 }
 impl NativeMarkdown {
-    pub(super) fn create(window: &mut Window, cx: &mut Context<EditorPane>) -> Option<Rc<Self>> {
+    pub(super) fn create(
+        window: &mut Window,
+        cx: &mut Context<EditorPane>,
+        pending: Rc<RefCell<Pending>>,
+    ) -> Option<Rc<Self>> {
         let mtm = MainThreadMarker::new()?;
         let raw = raw_view(window)?;
         let (sender, mut receiver) = mpsc::unbounded();
@@ -488,7 +514,7 @@ impl NativeMarkdown {
             document: RefCell::new(Document::default()),
             theme: RefCell::new(styles::Theme::new(config.font_size as f64, mtm)),
             config: RefCell::new(config),
-            pending: RefCell::new(Pending::default()),
+            pending,
             queued: Cell::new(false),
             sender,
             line_starts: RefCell::new(vec![0]),
@@ -536,18 +562,10 @@ impl NativeMarkdown {
                 let pending = std::mem::take(&mut *shared.pending.borrow_mut());
                 if this
                     .update_in(cx, |this, window, cx| {
-                        if let Some(text) = pending.text {
-                            this.state.update(cx, |s, cx| s.set_value(text, window, cx));
-                            this.dirty = true;
+                        let mut pending = pending;
+                        let (text, selection) = pending.take_edits(&this.state.read(cx).value());
+                        if this.mirror_native_edits(text, selection, window, cx) {
                             this.schedule_autosave(cx);
-                            cx.emit(super::SidePaneEvent::Changed);
-                        }
-                        if let Some(selection) = pending.selection {
-                            let text = this.content(cx);
-                            let start = utf16_to_byte(&text, selection.location);
-                            let end = utf16_to_byte(&text, selection.location + selection.length);
-                            this.state
-                                .update(cx, |s, cx| s.set_selected_range(start..end, cx));
                         }
                         if pending.focused {
                             window.focus(&this.focus_handle, cx);
@@ -886,6 +904,24 @@ impl Element for NativeSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn edit_flush_preserves_coalesced_actions_and_focus() {
+        let mut pending = Pending {
+            text: Some("# café😀".into()),
+            selection: Some(NSRange::new(2, 6)),
+            focused: true,
+            actions: vec![Action::Save, Action::Toggle],
+        };
+        let (text, selection) = pending.take_edits("old mirror");
+        assert_eq!(text.as_deref(), Some("# café😀"));
+        assert_eq!(selection, Some(2.."# café😀".len()));
+        assert!(pending.focused);
+        assert_eq!(pending.actions.len(), 2);
+        assert!(matches!(pending.actions[0], Action::Save));
+        assert!(matches!(pending.actions[1], Action::Toggle));
+        assert_eq!(pending.take_edits("new mirror"), (None, None));
+    }
+
     #[test]
     fn document_load_discards_old_queued_text_actions_and_selection() {
         let mut pending = Pending {

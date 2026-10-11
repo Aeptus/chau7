@@ -58,6 +58,14 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
   native queued input, reset native undo even for identical file content and
   set the requested selection; pending native edits block external replacement.
   Existing Edit menu commands route only to the focused native surface.
+  Content/dirty readers now observe pending native text immediately; save,
+  autosave, append, preview and close drain edits/UTF-16 selection before
+  using the GPUI mirror. A later coalesced signal cannot replace the saved
+  or appended text; actions/focus remain ordered in their existing queue.
+  Two actual GPUI regressions exercise the shared native pending queue without
+  native UI (temporary-file save, fenced append, preview and late delivery);
+  an additional pure queue test preserves focus/actions. All 406 app tests
+  pass (one ignored); strict workspace/all-target release Clippy passes.
   Source-window keyboard/IME, selection, split
   resize and popup acceptance remain pending; keep partial until proven.
 - The minimap setting and "highlight current line" only change the caret
