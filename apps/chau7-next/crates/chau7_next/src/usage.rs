@@ -89,6 +89,7 @@ fn init_health(cx: &mut App) {
     let state = Arc::new(Mutex::new(ProviderHealth::default()));
     cx.set_global(HealthGlobal(state.clone()));
     let executor = cx.background_executor().clone();
+    let main = crate::mcp::MainThread::start(cx);
     let timer = crate::observability::register_background_timer(
         cx,
         "usage.provider_health",
@@ -200,6 +201,12 @@ fn init_health(cx: &mut App) {
                     state.snapshots.retain(|_, s| {
                         now.signed_duration_since(s.checked_at).num_seconds() <= 300
                     });
+                }
+                // Publish new observations and stale-observation removal even
+                // when quota monitoring is disabled. One dispatch per poll;
+                // the feed request and snapshot mutex remain off the UI thread.
+                if !main.dispatch(|cx| cx.refresh_windows()) {
+                    break;
                 }
                 executor.timer(std::time::Duration::from_secs(60)).await;
             }
