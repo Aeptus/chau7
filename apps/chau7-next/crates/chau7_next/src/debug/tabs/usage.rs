@@ -96,6 +96,36 @@ fn render(cx: &mut App) -> AnyElement {
             chrome,
         ));
     }
+    let mut health = ui::group("Provider status", chrome);
+    let statuses = usage::provider_health(cx);
+    if statuses.is_empty() {
+        health = health.child(ui::caption(
+            "Status unavailable. No recent successful provider observation.",
+            chrome,
+        ));
+    }
+    for snapshot in statuses {
+        let url = snapshot.source_url.clone();
+        health = health.child(
+            div()
+                .flex()
+                .justify_between()
+                .text_xs()
+                .child(format!(
+                    "{} · {:?}: {}",
+                    snapshot.provider, snapshot.severity, snapshot.summary
+                ))
+                .child(
+                    ui::button(
+                        format!("provider-health-{}", snapshot.provider),
+                        "Open status",
+                        chrome,
+                    )
+                    .on_click(move |_, _, cx| cx.open_url(&url)),
+                ),
+        );
+    }
+    page = page.child(health);
     if view.providers.is_empty() {
         page=page.child(ui::empty_note("No provider quota snapshot yet. Enable monitoring for Codex or install Claude capture. Unknown quota remains unavailable.",chrome));
     }
