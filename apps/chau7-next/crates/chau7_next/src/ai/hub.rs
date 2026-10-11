@@ -76,8 +76,41 @@ struct MonitorIo {
 /// What one poll read.
 #[derive(Default)]
 struct Batch {
-    claude: Vec<String>,
+    claude: Vec<ResolvedClaude>,
     events: Vec<String>,
+}
+
+struct ResolvedClaude {
+    event: ClaudeCodeEvent,
+    transcript_owned: bool,
+}
+impl ResolvedClaude {
+    fn from_line(line: &str, home: &std::path::Path) -> Option<Self> {
+        let mut event = parse_event_line(line, now_secs())?;
+        let transcript = (!event.transcript_path.trim().is_empty())
+            .then(|| std::path::Path::new(event.transcript_path.trim()));
+        let metadata = chau7_next_core::monitoring::claude_resolver::metadata(
+            home,
+            &event.session_id,
+            transcript,
+        );
+        if event.cwd.trim().is_empty()
+            && let Some(project) = metadata.and_then(|candidate| candidate.project_directory)
+        {
+            event.cwd = project;
+        }
+        let transcript_owned =
+            chau7_next_core::monitoring::claude_resolver::has_restorable_transcript(
+                home,
+                &event.session_id,
+                &event.cwd,
+                transcript,
+            );
+        Some(Self {
+            event,
+            transcript_owned,
+        })
+    }
 }
 
 impl MonitorIo {
@@ -114,10 +147,16 @@ impl MonitorIo {
         );
     }
 
-    fn poll(&mut self, tick: u64) -> Batch {
+    fn poll(&mut self, tick: u64, home: &std::path::Path) -> Batch {
         let mut batch = Batch::default();
         for claude in &mut self.claude {
-            batch.claude.extend(claude.poll());
+            for line in claude.poll() {
+                if let Some(event) = ResolvedClaude::from_line(&line, home) {
+                    batch.claude.push(event);
+                } else {
+                    log::debug!("Ignoring malformed Claude hook record");
+                }
+            }
         }
         if tick.is_multiple_of(2) {
             for tailer in &mut self.events {
@@ -179,7 +218,7 @@ pub fn init(cx: &mut App) {
                 .background_executor()
                 .spawn(async move {
                     io.configure(&root2, current, restart);
-                    let batch = io.poll(tick);
+                    let batch = io.poll(tick, root2.home());
                     (io, batch)
                 })
                 .await;
@@ -196,14 +235,8 @@ pub fn init(cx: &mut App) {
 
 fn apply(batch: Batch, cx: &mut App) {
     let now = now_secs();
-    for line in batch.claude {
-        match parse_event_line(&line, now) {
-            Some(event) => handle_claude_event(event, cx),
-            None => log::warn!(
-                "Claude event parse failed: {}",
-                line.chars().take(120).collect::<String>()
-            ),
-        }
+    for record in batch.claude {
+        handle_claude_event(record.event, record.transcript_owned, cx);
     }
     for line in batch.events {
         match parse_line(&line) {
@@ -254,7 +287,7 @@ fn provider_key(tool: &str) -> String {
 
 // ----- Claude Code hooks -----------------------------------------------------
 
-fn handle_claude_event(event: ClaudeCodeEvent, cx: &mut App) {
+fn handle_claude_event(event: ClaudeCodeEvent, transcript_owned: bool, cx: &mut App) {
     log::trace!(
         "Claude event: type={} session={} tool={}",
         event.event_type.as_str(),
@@ -263,9 +296,15 @@ fn handle_claude_event(event: ClaudeCodeEvent, cx: &mut App) {
     );
     cancel_claude_fallback(&event.session_id, cx);
     cx.global_mut::<AiHub>().claude.handle_event(&event);
+    let owned_tab =
+        crate::terminal::session::adopt_claude_hook_identity(&event, transcript_owned, cx);
     // The agent runtime first, so a runtime session binds this Claude
     // session before the event is routed (RUN-013, RUN-023).
-    crate::runtime::handle_claude_event(&event, cx);
+    let known_runtime_tab =
+        crate::runtime::notification_tab_for_claude_session(&event.session_id, cx);
+    if owned_tab.is_some() || known_runtime_tab.is_some() {
+        crate::runtime::handle_claude_event(&event, cx);
+    }
     let mut ai = AiEvent::new(
         AiEventSource::claude_code(),
         event.event_type.as_str(),
@@ -281,7 +320,8 @@ fn handle_claude_event(event: ClaudeCodeEvent, cx: &mut App) {
     ai.notification_type = event.notification_type.clone();
     ai.directory = Some(event.cwd.clone()).filter(|d| !d.is_empty());
     ai.session_id = Some(event.session_id.clone()).filter(|s| !s.is_empty());
-    ai.tab_id = crate::runtime::notification_tab_for_claude_session(&event.session_id, cx);
+    ai.tab_id = owned_tab
+        .or_else(|| crate::runtime::notification_tab_for_claude_session(&event.session_id, cx));
     crate::remote::ingest_claude_event(&event, ai.tab_id.and_then(events_out::tab_from_uuid), cx);
     ai.producer = Some("claude_code_monitor".into());
     ai.reliability = AiEventReliability::Authoritative;
@@ -502,5 +542,30 @@ mod tests {
         assert_eq!(provider_key("Mystery"), "mystery");
         assert_eq!(event_source("Claude").raw_value(), "claude_code");
         assert_eq!(event_source("Unknown Tool").raw_value(), "history_monitor");
+    }
+    #[test]
+    fn hook_resolution_runs_readonly_against_isolated_stores_and_rejects_foreign_root() {
+        let home =
+            std::env::temp_dir().join(format!("chau7-next-hook-resolver-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(home.join(".claude/projects")).unwrap();
+        let transcript = home.join("s1.jsonl");
+        std::fs::write(&transcript, b"{}\n").unwrap();
+        std::fs::write(
+            home.join(".claude/history.jsonl"),
+            serde_json::json!({"sessionId":"s1","project":"/owned-repo","timestamp":1}).to_string(),
+        )
+        .unwrap();
+        let line = serde_json::json!({"type":"user_prompt","sessionId":"s1","cwd":"", "transcriptPath":transcript,"timestamp":1}).to_string();
+        let resolved = ResolvedClaude::from_line(&line, &home).unwrap();
+        assert_eq!(resolved.event.cwd, "/owned-repo");
+        assert!(resolved.transcript_owned);
+        let foreign = serde_json::json!({"type":"permission_request","sessionId":"s1","cwd":"/other-repo", "transcriptPath":transcript,"timestamp":2}).to_string();
+        assert!(
+            !ResolvedClaude::from_line(&foreign, &home)
+                .unwrap()
+                .transcript_owned
+        );
+        assert!(ResolvedClaude::from_line("invalid-json", &home).is_none());
+        std::fs::remove_dir_all(home).unwrap();
     }
 }
