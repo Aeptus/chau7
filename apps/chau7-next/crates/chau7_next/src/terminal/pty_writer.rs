@@ -20,6 +20,7 @@ use parking_lot::RwLock;
 const CHUNK: usize = 1024;
 /// How long one writability wait lasts before checking for shutdown.
 const WAIT_MS: i32 = 50;
+const MAX_CLIPBOARD_BYTES: usize = 1_048_576;
 
 /// How a session ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,10 +34,22 @@ pub enum CloseMode {
     AppQuit,
 }
 
+/// Owns the single queued/in-flight clipboard slot through success, cancellation
+/// or a disconnected receiver. Clearing it is independent of payload contents.
+struct ClipboardReply {
+    text: String,
+    pending: Arc<AtomicBool>,
+}
+impl Drop for ClipboardReply {
+    fn drop(&mut self) {
+        self.pending.store(false, Ordering::Release);
+    }
+}
+
 enum Job {
     Write(Vec<u8>),
     /// OSC 52 clipboard read answer (written by the terminal itself).
-    ClipboardResponse(String),
+    ClipboardResponse(ClipboardReply),
     Close(CloseMode),
 }
 
@@ -47,6 +60,7 @@ pub struct PtyWriter {
     /// Set by [`PtyWriter::close`]: pending writes are abandoned, so a
     /// program that never reads its input cannot keep the session alive.
     closing: Arc<AtomicBool>,
+    clipboard_pending: Arc<AtomicBool>,
 }
 
 impl PtyWriter {
@@ -62,7 +76,11 @@ impl PtyWriter {
         if let Err(err) = spawned {
             log::error!("could not start the PTY writer thread: {err}");
         }
-        Self { tx, closing }
+        Self {
+            tx,
+            closing,
+            clipboard_pending: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     /// Queues bytes; they are written in order.
@@ -73,8 +91,30 @@ impl PtyWriter {
     }
 
     /// Answers a pending OSC 52 clipboard read, in order with the input.
-    pub fn respond_clipboard(&self, text: String) {
-        let _ = self.tx.send(Job::ClipboardResponse(text));
+    pub fn has_pending_clipboard_response(&self) -> bool {
+        self.clipboard_pending.load(Ordering::Acquire)
+    }
+    pub fn respond_clipboard(&self, text: &str) -> bool {
+        if self.closing.load(Ordering::Acquire)
+            || self
+                .clipboard_pending
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+        {
+            return false;
+        }
+        // Bound before making an owned copy; never transmit a truncated secret.
+        let text = if text.len() <= MAX_CLIPBOARD_BYTES {
+            text.to_owned()
+        } else {
+            String::new()
+        };
+        self.tx
+            .send(Job::ClipboardResponse(ClipboardReply {
+                text,
+                pending: self.clipboard_pending.clone(),
+            }))
+            .is_ok()
     }
 
     /// Ends the session after the queued writes.
@@ -92,10 +132,11 @@ fn run(term: Arc<RwLock<Chau7Terminal>>, rx: Receiver<Job>, closing: Arc<AtomicB
                     write_all(&term, &bytes, &closing);
                 }
             }
-            Ok(Job::ClipboardResponse(text)) => {
+            Ok(Job::ClipboardResponse(reply)) => {
                 if !closing.load(Ordering::Acquire) && term.read().wait_input_writable(1000) {
-                    term.read().respond_clipboard_load(&text);
+                    term.read().respond_clipboard_load(&reply.text);
                 }
+                // Drop releases the slot even when closing or unwritable.
             }
             Ok(Job::Close(mode)) => {
                 close(&term, mode);
@@ -224,6 +265,75 @@ fn recv_for<T>(rx: &Receiver<T>, timeout: Duration) -> Option<T> {
 mod tests {
     use super::*;
 
+    fn isolated_queue() -> (PtyWriter, Receiver<Job>) {
+        let (tx, rx) = mpsc::channel();
+        (
+            PtyWriter {
+                tx,
+                closing: Arc::new(AtomicBool::new(false)),
+                clipboard_pending: Arc::new(AtomicBool::new(false)),
+            },
+            rx,
+        )
+    }
+    #[test]
+    fn clipboard_is_queued_once_and_remains_in_input_order() {
+        let (writer, rx) = isolated_queue();
+        writer.write(b"before".to_vec());
+        assert!(writer.respond_clipboard("é"));
+        assert!(writer.has_pending_clipboard_response());
+        assert!(!writer.respond_clipboard("duplicate"));
+        writer.write(b"after".to_vec());
+        match rx.recv().unwrap() {
+            Job::Write(bytes) => assert_eq!(bytes, b"before"),
+            _ => panic!("input reordered"),
+        }
+        match rx.recv().unwrap() {
+            Job::ClipboardResponse(reply) => {
+                assert_eq!(reply.text, "é");
+                assert!(writer.has_pending_clipboard_response());
+            }
+            _ => panic!("clipboard reordered"),
+        }
+        assert!(!writer.has_pending_clipboard_response());
+        match rx.recv().unwrap() {
+            Job::Write(bytes) => assert_eq!(bytes, b"after"),
+            _ => panic!("input reordered"),
+        }
+        assert!(rx.try_recv().is_err());
+        assert!(writer.respond_clipboard("next request"));
+    }
+    #[test]
+    fn oversized_clipboard_is_empty_and_utf8_boundaries_are_exact() {
+        let (writer, rx) = isolated_queue();
+        let maximum = "é".repeat(MAX_CLIPBOARD_BYTES / 2);
+        assert_eq!(maximum.len(), MAX_CLIPBOARD_BYTES);
+        assert!(writer.respond_clipboard(&maximum));
+        match rx.recv().unwrap() {
+            Job::ClipboardResponse(reply) => assert_eq!(reply.text, maximum),
+            _ => panic!("missing clipboard"),
+        }
+        let oversized = maximum + "x";
+        assert!(writer.respond_clipboard(&oversized));
+        match rx.recv().unwrap() {
+            Job::ClipboardResponse(reply) => assert!(reply.text.is_empty()),
+            _ => panic!("missing empty reply"),
+        }
+        assert!(!writer.has_pending_clipboard_response());
+    }
+    #[test]
+    fn clipboard_slot_releases_on_queue_drop_send_failure_and_close() {
+        let (writer, rx) = isolated_queue();
+        assert!(writer.respond_clipboard("queued"));
+        drop(rx);
+        assert!(!writer.has_pending_clipboard_response());
+        assert!(!writer.respond_clipboard("disconnected"));
+        assert!(!writer.has_pending_clipboard_response());
+        let (writer, _rx) = isolated_queue();
+        writer.close(CloseMode::AppQuit);
+        assert!(!writer.respond_clipboard("closed"));
+        assert!(!writer.has_pending_clipboard_response());
+    }
     #[test]
     fn delays_match_swift() {
         assert_eq!(

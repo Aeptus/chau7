@@ -1484,8 +1484,11 @@ impl TerminalSession {
     }
 
     /// Answer an OSC 52 clipboard read (RBK-012).
+    pub fn has_pending_clipboard_response(&self) -> bool {
+        self.writer.has_pending_clipboard_response()
+    }
     pub fn respond_clipboard(&self, text: &str) {
-        self.writer.respond_clipboard(text.to_string());
+        self.writer.respond_clipboard(text);
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
