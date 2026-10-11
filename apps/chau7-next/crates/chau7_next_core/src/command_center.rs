@@ -852,6 +852,11 @@ pub struct PanelInputs<'a> {
 
 /// `refreshSessions` plus the sections of `StatusBarPanelView`.
 pub fn build_panel(inputs: PanelInputs<'_>) -> PanelModel {
+    build_panel_localized(inputs, crate::l10n::Lang::En)
+}
+
+/// Native panel and fallback menu use Swift's counted labels in the UI language.
+pub fn build_panel_localized(inputs: PanelInputs<'_>, lang: crate::l10n::Lang) -> PanelModel {
     let attention: Vec<SessionSummary> = inputs
         .sessions
         .iter()
@@ -864,13 +869,23 @@ pub fn build_panel(inputs: PanelInputs<'_>) -> PanelModel {
     };
     let hero = if counts.attention > 0 {
         Hero::Attention {
-            summary: attention_summary(counts.attention),
+            summary: crate::l10n::localized_format(
+                lang,
+                "statusBar.attention.plural",
+                "%d sessions need attention",
+                &[crate::l10n::Arg::Int(counts.attention as i64)],
+            ),
             sessions: attention.into_iter().take(MAX_ATTENTION_SHOWN).collect(),
         }
     } else {
         Hero::AllClear {
             sessions: if counts.live > 0 {
-                session_count(counts.live)
+                crate::l10n::localized_format(
+                    lang,
+                    "statusBar.session.plural",
+                    "%d sessions",
+                    &[crate::l10n::Arg::Int(counts.live as i64)],
+                )
             } else {
                 String::new()
             },
@@ -1042,6 +1057,38 @@ mod tests {
             monitoring: true,
             version: "1.2.3",
             now: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn localized_panel_counts_all_sessions_before_truncating_cards() {
+        for lang in crate::l10n::Lang::ALL {
+            for count in [1, 2, 3, 11] {
+                for state in [SessionState::Running, SessionState::WaitingInput] {
+                    let sessions = (0..count)
+                        .map(|n| summary(&format!("s-{n}"), state, 1.0))
+                        .collect();
+                    let panel = build_panel_localized(inputs(sessions), lang);
+                    let key = if state == SessionState::WaitingInput {
+                        "statusBar.attention.plural"
+                    } else {
+                        "statusBar.session.plural"
+                    };
+                    let expected = crate::l10n::localized_format(
+                        lang,
+                        key,
+                        "",
+                        &[crate::l10n::Arg::Int(count)],
+                    );
+                    match panel.hero {
+                        Hero::Attention { summary, sessions } => {
+                            assert_eq!(summary, expected);
+                            assert_eq!(sessions.len(), (count as usize).min(MAX_ATTENTION_SHOWN));
+                        }
+                        Hero::AllClear { sessions, .. } => assert_eq!(sessions, expected),
+                    }
+                }
+            }
         }
     }
 

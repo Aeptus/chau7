@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use super::actions::{NotificationActionConfig, NotificationActionType};
 use super::pipeline::RateLimitConfig;
+use super::repo_muting::MutedRepos;
 use super::triggers::{NotificationTriggerState, TriggerCondition};
 
 /// Every notification rule (`NotificationSettings`).
@@ -33,6 +34,8 @@ pub struct NotificationSettings {
     pub group_action_bindings: BTreeMap<String, Vec<NotificationActionConfig>>,
     #[serde(rename = "groupConditions")]
     pub group_conditions: BTreeMap<String, TriggerCondition>,
+    #[serde(rename = "mutedRepos")]
+    pub muted_repos: MutedRepos,
 }
 
 impl Default for NotificationSettings {
@@ -44,6 +47,7 @@ impl Default for NotificationSettings {
             trigger_conditions: BTreeMap::new(),
             group_action_bindings: default_group_action_bindings(),
             group_conditions: BTreeMap::new(),
+            muted_repos: MutedRepos::new(),
         }
     }
 }

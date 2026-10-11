@@ -47,6 +47,7 @@ pub mod app_events;
 pub mod banner;
 pub mod executor;
 pub mod flash;
+pub mod hooks;
 pub mod routing;
 
 use std::collections::{HashMap, VecDeque};
@@ -62,9 +63,11 @@ use chau7_next_core::notifications::delivery::{
 };
 use chau7_next_core::notifications::history::NotificationHistory;
 use chau7_next_core::notifications::pipeline::{self, Decision, PipelineInput, RateLimiter};
+use chau7_next_core::notifications::repo_muting::{self, RepoMute};
 use chau7_next_core::notifications::schedule::{
     DEFAULT_COALESCING_WINDOW, notification_coalescing_key, notification_rate_limit_key,
 };
+use chrono::{DateTime, Utc};
 use gpui::{App, BorrowAppContext, Global};
 use uuid::Uuid;
 
@@ -109,6 +112,7 @@ pub fn init(cx: &mut App) {
     nc.limiter.config = Settings::get(cx).notifications.rules.rate_limit_config;
     banner::request_permission(&mut nc.banner);
     cx.set_global(nc);
+    hooks::init(cx);
     cx.spawn(async move |cx| {
         loop {
             cx.background_executor()
@@ -135,6 +139,7 @@ fn tick(cx: &mut App) {
         let nc = center(cx);
         nc.last_refresh = Some(now);
         banner::refresh(&mut nc.banner);
+        prune_repo_mutes(cx);
     }
     let config = Settings::get(cx).notifications.rules.rate_limit_config;
     let nc = center(cx);
@@ -191,6 +196,15 @@ fn record(event: AiEvent, notify: bool, log_it: bool, cx: &mut App) {
                 event.tool,
                 event.message
             );
+        }
+        // Raw debug/spine evidence remains visible. This gate precedes every
+        // accepted notification surface and the recent notification feed.
+        if event_is_muted(&event, cx) {
+            log::trace!(
+                "Notification muted for repository: type={}",
+                event.event_type
+            );
+            return;
         }
         match adapters::ingest(&event) {
             IngressDecision::Drop { reason } => log::trace!(
@@ -278,6 +292,71 @@ pub fn send_test(cx: &mut App) {
 pub fn request_permission(cx: &mut App) {
     if cx.has_global::<NotificationCenter>() {
         banner::request_permission(&mut center(cx).banner);
+    }
+}
+
+/// Mute status is shared by Settings and repository context menus.
+pub fn repo_is_muted(root: &str, cx: &App) -> bool {
+    repo_muting::is_muted(
+        Some(root),
+        None,
+        &Settings::get(cx).notifications.rules.muted_repos,
+        Utc::now(),
+    )
+}
+
+fn event_is_muted(event: &AiEvent, cx: &App) -> bool {
+    repo_muting::is_muted(
+        event.repo_path.as_deref(),
+        event.directory.as_deref(),
+        &Settings::get(cx).notifications.rules.muted_repos,
+        Utc::now(),
+    )
+}
+
+/// None is an indefinite mute; expiry is exclusive. Config persistence uses
+/// Next's existing global-settings path and never edits repository config.
+pub fn mute_repo(root: &str, until: Option<DateTime<Utc>>, cx: &mut App) {
+    let Some(root) = repo_muting::normalized_root(root) else {
+        return;
+    };
+    let key = root.to_string_lossy().into_owned();
+    crate::settings_window::update(cx, |settings| {
+        repo_muting::prune(&mut settings.notifications.rules.muted_repos, Utc::now());
+        settings.notifications.rules.muted_repos.insert(
+            key,
+            RepoMute {
+                snooze_until: until,
+            },
+        );
+    });
+    cx.refresh_windows();
+}
+
+pub fn unmute_repo(root: &str, cx: &mut App) {
+    let target = repo_muting::normalized_root(root);
+    crate::settings_window::update(cx, |settings| {
+        settings
+            .notifications
+            .rules
+            .muted_repos
+            .retain(|key, _| repo_muting::normalized_root(key) != target);
+    });
+    cx.refresh_windows();
+}
+
+fn prune_repo_mutes(cx: &mut App) {
+    let now = Utc::now();
+    if Settings::get(cx)
+        .notifications
+        .rules
+        .muted_repos
+        .values()
+        .any(|mute| !mute.is_active(now))
+    {
+        crate::settings_window::update(cx, |settings| {
+            repo_muting::prune(&mut settings.notifications.rules.muted_repos, now);
+        });
     }
 }
 
@@ -374,6 +453,14 @@ fn rate_limited(trigger_id: &str, event: &AiEvent, cx: &mut App) -> bool {
 
 /// `processEvent`.
 fn process_event(event: AiEvent, cx: &mut App) {
+    // A repo may have been muted while this event was coalescing or retrying.
+    if event_is_muted(&event, cx) {
+        let nc = center(cx);
+        nc.history
+            .mark_dropped(event.id, None, "Repository notifications are muted");
+        nc.retry_counts.remove(&event.id);
+        return;
+    }
     let now = Instant::now();
     {
         let nc = center(cx);

@@ -104,6 +104,36 @@ pub struct ImageLayer {
 }
 
 impl ImageLayer {
+    pub fn allocation_snapshot(&self) -> serde_json::Value {
+        let rgba_capacity = self
+            .images
+            .iter()
+            .map(|image| image.rgba.capacity())
+            .sum::<usize>();
+        let render_pixels = self
+            .images
+            .iter()
+            .map(|image| {
+                (0..image.render.frame_count())
+                    .map(|frame| image.render.as_bytes(frame).map_or(0, <[u8]>::len))
+                    .sum::<usize>()
+            })
+            .sum::<usize>();
+        let image_slots = self
+            .images
+            .capacity()
+            .saturating_mul(std::mem::size_of::<InlineImage>());
+        let placements = self
+            .last_placements
+            .capacity()
+            .saturating_mul(std::mem::size_of::<Placement>());
+        serde_json::json!({"image_count":self.images.len(),"rgba_capacity_bytes":rgba_capacity,
+            "retained_render_pixel_bytes":render_pixels,"image_slot_capacity_bytes":image_slots,
+            "placement_slot_capacity_bytes":placements,
+            "known_retained_bytes":rgba_capacity.saturating_add(render_pixels).saturating_add(image_slots).saturating_add(placements),
+            "gpu_texture_bytes":serde_json::Value::Null})
+    }
+
     pub fn is_empty(&self) -> bool {
         self.images.is_empty()
     }
@@ -350,6 +380,37 @@ mod tests {
         let px = |x: u32, y: u32| &rgba[((y * w + x) * 4) as usize..((y * w + x) * 4 + 3) as usize];
         assert_eq!(px(0, 63), &[0, 122, 255]);
         assert_eq!(px(127, 0), &[255, 45, 85]);
+    }
+
+    #[test]
+    fn memory_counts_retained_pixels_once_even_with_shared_placements() {
+        let mut layer = ImageLayer::default();
+        let mut settings = Settings::default();
+        settings.appearance.graphics.kitty = true;
+        layer.ingest(vec![iterm("inline=1", &png_bytes(2, 2), 0, 0)], &settings);
+        let before = layer.allocation_snapshot();
+        assert_eq!(before["image_count"], 1);
+        assert_eq!(before["rgba_capacity_bytes"], 16);
+        assert_eq!(before["retained_render_pixel_bytes"], 16);
+        let render = layer.images[0].render.clone();
+        layer.last_placements.push(Placement {
+            id: 1,
+            bounds: Bounds::default(),
+            render: render.clone(),
+        });
+        layer.last_placements.push(Placement {
+            id: 1,
+            bounds: Bounds::default(),
+            render,
+        });
+        let after = layer.allocation_snapshot();
+        assert_eq!(after["retained_render_pixel_bytes"], 16);
+        assert!(after["placement_slot_capacity_bytes"].as_u64().unwrap() > 0);
+        assert!(after["gpu_texture_bytes"].is_null());
+        layer.clear();
+        let empty = layer.allocation_snapshot();
+        assert_eq!(empty["retained_render_pixel_bytes"], 0);
+        assert_eq!(empty["rgba_capacity_bytes"], 0);
     }
 
     fn png_bytes(w: u32, h: u32) -> Vec<u8> {

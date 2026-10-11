@@ -33,6 +33,9 @@ pub const APP_NAME: &str = "Chau7 Next";
 /// The Swift app registers `chau7`; Chau7 Next must never touch that entry.
 pub const MCP_SERVER_NAME: &str = "chau7-next";
 
+/// Read-only Swift hook identity for coexistence checks and exact ownership fixtures.
+pub const SWIFT_CLAUDE_HOOK_HELPER: &str = "chau7-claude-hook";
+
 /// Folder of a repository's snippets (one JSON per snippet), relative to the
 /// git root. The repo belongs to the user, so both apps share it.
 pub const DEFAULT_REPO_SNIPPET_PATH: &str = ".chau7/snippets";
@@ -142,6 +145,19 @@ impl DataRoot {
     /// SSH connections of the connection manager.
     pub fn ssh_connections_file(&self) -> PathBuf {
         self.config_dir.join("ssh_connections.json")
+    }
+
+    /// Notification installation belongs to Next; provider and Swift files are read only.
+    pub fn notification_hooks_dir(&self) -> PathBuf {
+        self.config_dir.join("notification-hooks")
+    }
+
+    pub fn claude_hook_overlay(&self) -> PathBuf {
+        self.notification_hooks_dir().join("claude-settings.json")
+    }
+
+    pub fn next_claude_hook_events_file(&self) -> PathBuf {
+        self.state_dir.join("claude-events.jsonl")
     }
 
     pub fn bin_dir(&self) -> PathBuf {

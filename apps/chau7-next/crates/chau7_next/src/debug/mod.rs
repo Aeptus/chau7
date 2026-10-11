@@ -25,6 +25,9 @@
 //!   adds a box of rows to the Health tab (relay status, MCP server...).
 //! * [`open_console`]`(Some(Tab::Custom("id")), cx)` shows a given tab.
 
+#[path = "tabs/memory.rs"]
+mod memory;
+
 pub mod changed_files;
 pub mod console;
 pub mod registry;
@@ -50,6 +53,7 @@ pub use registry::{
 
 /// Bind the actions of the three windows.
 pub fn init(cx: &mut App) {
+    memory::register(cx);
     cx.on_action(|_: &ToggleDebugConsole, cx| console::toggle(cx));
     cx.on_action(|_: &ReportIssue, cx| report_window::open(cx));
     cx.on_action(|_: &ShowChangedFiles, cx| changed_files::open(cx));
