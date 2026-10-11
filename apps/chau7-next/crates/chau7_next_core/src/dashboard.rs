@@ -31,6 +31,8 @@ impl Usage {
 pub struct Agent {
     pub id: String,
     pub tab_id: Uuid,
+    /// Runtime/tab identity and telemetry terminal identity are distinct.
+    pub telemetry_tab: Option<String>,
     pub backend: String,
     pub directory: String,
     pub purpose: Option<String>,
@@ -39,6 +41,7 @@ pub struct Agent {
     pub state: State,
     pub turns: u64,
     pub usage: Option<Usage>,
+    pub usage_complete: bool,
     pub cost: Option<f64>,
     pub requires_approval: bool,
     pub latest_result: Option<(String, Option<String>)>,
@@ -391,6 +394,14 @@ pub struct FilesTracker {
     turn_starts: BTreeMap<String, DateTime<Utc>>,
 }
 impl FilesTracker {
+    /// After commit, retain journal/block cursors so old events are not replayed.
+    pub fn clear_committed_files(&mut self) {
+        self.files.clear();
+        self.current_files.clear();
+        self.files_by_turn.clear();
+        self.timeline.clear();
+        self.actions.clear();
+    }
     pub fn update(&mut self, journal: Option<&EventJournal>, blocks: &[CommandBlock], root: &str) {
         if let Some(journal) = journal {
             loop {
@@ -485,6 +496,210 @@ impl FilesTracker {
         }
     }
 }
+/// Next stores companion runbooks in its isolated repository overlay.
+/// Session identifiers are hashed, so an imported identifier cannot escape it.
+pub fn owned_plan_path(
+    root: &crate::data_root::DataRoot,
+    repository: &str,
+    sessions: &[&str],
+) -> std::path::PathBuf {
+    let overlay = root.repo_overlay_dir(Path::new(repository));
+    if let [session] = sessions {
+        overlay
+            .join("sessions")
+            .join(crate::data_root::repo_overlay_key(Path::new(session)))
+            .join("plan.md")
+    } else {
+        overlay.join("plan.md")
+    }
+}
+/// Locate a Swift companion plan for a read-only import. A single session
+/// selects its plan; repositories select touched plans before the companion.
+/// Canonical containment excludes outside symlinks and malformed identifiers.
+pub fn plan_source(
+    repository: &Path,
+    touched: &BTreeSet<String>,
+    sessions: &[&str],
+) -> Option<std::path::PathBuf> {
+    let metadata = crate::data_root::DataRoot::repo_metadata_file(repository);
+    let metadata = metadata.parent()?;
+    let metadata_name = metadata.file_name()?.to_str()?.to_ascii_lowercase();
+    let repo_plan = format!("{metadata_name}/plan.md");
+    let sessions_prefix = format!("{metadata_name}/sessions/");
+    let canonical_root = repository.canonicalize().ok()?;
+    let contained = |candidate: std::path::PathBuf| {
+        candidate
+            .canonicalize()
+            .ok()
+            .filter(|p| p.starts_with(&canonical_root) && p.is_file())
+    };
+    if let [session] = sessions {
+        if Path::new(session).components().count() != 1
+            || !matches!(
+                Path::new(session).components().next(),
+                Some(std::path::Component::Normal(_))
+            )
+        {
+            return None;
+        }
+        return contained(metadata.join("sessions").join(session).join("plan.md"));
+    }
+    for file in touched {
+        let normalized = file.replace('\\', "/");
+        let lower = normalized.to_ascii_lowercase();
+        let is_plan = matches!(
+            lower.as_str(),
+            "plan.md" | "todo.md" | "plan.markdown" | "todo.markdown"
+        ) || lower == repo_plan
+            || (lower.starts_with(&sessions_prefix) && lower.ends_with("/plan.md"));
+        if is_plan
+            && Path::new(&normalized)
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_)))
+            && let Some(source) = contained(repository.join(&normalized))
+        {
+            return Some(source);
+        }
+    }
+    contained(metadata.join("plan.md"))
+}
+pub fn prepare_plan(path: &Path, repository_name: &str) -> std::io::Result<()> {
+    prepare_plan_from(path, repository_name, None)
+}
+/// Import on an explicit Plan action. Existing Next edits always win, and
+/// the shared Swift source is never written.
+pub fn prepare_plan_from(
+    path: &Path,
+    repository_name: &str,
+    source: Option<&Path>,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    if path.exists() {
+        return Ok(());
+    }
+    let imported = source.map(std::fs::read).transpose()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut file = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    if let Some(contents) = imported {
+        return file.write_all(&contents);
+    }
+    write!(
+        file,
+        "# {repository_name} Runbook\n\n## Goals\n- [ ] Clarify the objective\n- [ ] Confirm scope and risks\n\n## Tasks\n- [ ] Implement the next change\n- [ ] Verify with build and tests\n\n## Notes\n- Capture blockers, follow-ups, or handoff context here.\n"
+    )
+}
+/// Validate literal git paths before a user-requested dashboard commit.
+/// Paths outside this repository and git's own metadata are never staged.
+pub fn commit_paths(repository: &str, files: &[String]) -> Result<Vec<String>, String> {
+    let mut paths = BTreeSet::new();
+    for file in files {
+        let path = Path::new(file);
+        let relative = if path.is_absolute() {
+            path.strip_prefix(repository)
+                .map_err(|_| format!("File outside repository: {file}"))?
+        } else {
+            path
+        };
+        if relative.as_os_str().is_empty()
+            || relative
+                .components()
+                .any(|c| !matches!(c, std::path::Component::Normal(_)))
+            || relative
+                .components()
+                .next()
+                .is_some_and(|c| c.as_os_str() == ".git")
+            || file.starts_with(':')
+        {
+            return Err(format!("Invalid repository file: {file}"));
+        }
+        paths.insert(relative.to_string_lossy().into_owned());
+    }
+    if paths.is_empty() {
+        return Err("No files touched by agents.".into());
+    }
+    Ok(paths.into_iter().collect())
+}
+/// Runs in a dashboard worker after an explicit commit click. --only keeps
+/// unrelated previously staged changes out of this agent's commit.
+pub fn commit_files(repository: &str, files: &[String], message: &str) -> Result<String, String> {
+    if message.trim().is_empty() {
+        return Err("Commit message cannot be empty.".into());
+    }
+    let files = commit_paths(repository, files)?;
+    let mut add = vec!["--literal-pathspecs".into(), "add".into(), "--".into()];
+    add.extend(files.iter().cloned());
+    git_checked(repository, &add).map_err(|e| format!("Stage failed: {e}"))?;
+    let mut commit = vec![
+        "--literal-pathspecs".into(),
+        "commit".into(),
+        "--only".into(),
+        "-m".into(),
+        message.trim().into(),
+        "--".into(),
+    ];
+    commit.extend(files);
+    git_checked(repository, &commit).map_err(|e| format!("Commit failed: {e}"))
+}
+fn git_checked(repository: &str, args: &[String]) -> Result<String, String> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(repository)
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let out = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(reader) = stdout {
+            let _ = reader.take(128 * 1024).read_to_end(&mut bytes);
+        }
+        bytes
+    });
+    let err = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(reader) = stderr {
+            let _ = reader.take(128 * 1024).read_to_end(&mut bytes);
+        }
+        bytes
+    });
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break Err("Git operation timed out".to_string());
+            }
+        }
+    };
+    let stdout = String::from_utf8_lossy(&out.join().unwrap_or_default()).into_owned();
+    let stderr = String::from_utf8_lossy(&err.join().unwrap_or_default()).into_owned();
+    if status?.success() {
+        Ok(stdout)
+    } else {
+        Err(stderr.trim().to_string())
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,6 +707,7 @@ mod tests {
         Agent {
             id: id.into(),
             tab_id: tab,
+            telemetry_tab: None,
             backend: "claude".into(),
             directory: "/repo".into(),
             purpose: None,
@@ -500,6 +716,7 @@ mod tests {
             state: State::Ready,
             turns: 0,
             usage: None,
+            usage_complete: false,
             cost: None,
             requires_approval: false,
             latest_result: None,
@@ -665,5 +882,183 @@ mod tests {
     fn ready_status_requires_prompt() {
         assert_eq!(live_state("done", false), State::Busy);
         assert_eq!(live_state("done", true), State::Ready);
+    }
+    #[test]
+    fn plans_are_isolated_and_ids_cannot_escape() {
+        let root = crate::data_root::DataRoot::with_home(
+            std::env::temp_dir().join(Uuid::new_v4().to_string()),
+            true,
+        );
+        let repo = "/repo";
+        let path = owned_plan_path(&root, repo, &["../../other"]);
+        assert!(path.starts_with(root.repo_overlay_dir(Path::new(repo))));
+        assert!(!path.starts_with(repo));
+        assert_ne!(path, owned_plan_path(&root, repo, &[]));
+    }
+    #[test]
+    fn plan_preparation_preserves_user_contents() {
+        let dir = std::env::temp_dir().join(format!("next-plan-{}", Uuid::new_v4()));
+        let path = dir.join("plan.md");
+        prepare_plan(&path, "Example").unwrap();
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("# Example Runbook")
+        );
+        std::fs::write(&path, "user plan").unwrap();
+        prepare_plan(&path, "Example").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "user plan");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn plan_discovery_and_import_preserve_swift_sources() {
+        let dir = std::env::temp_dir().join(format!("next-plan-import-{}", Uuid::new_v4()));
+        let repo = dir.join("repository");
+        let shared = crate::data_root::DataRoot::repo_metadata_file(&repo)
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        std::fs::create_dir_all(shared.join("sessions/session")).unwrap();
+        std::fs::write(shared.join("plan.md"), "repo plan").unwrap();
+        std::fs::write(shared.join("sessions/session/plan.md"), "session plan").unwrap();
+        std::fs::write(repo.join("TODO.markdown"), "- [x] Imported task").unwrap();
+        let touched = BTreeSet::from(["TODO.markdown".into()]);
+        let source = plan_source(&repo, &touched, &[]).unwrap();
+        assert_eq!(source, repo.join("TODO.markdown").canonicalize().unwrap());
+        let own = dir.join("next/plan.md");
+        prepare_plan_from(&own, "Example", Some(&source)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&own).unwrap(),
+            "- [x] Imported task"
+        );
+        std::fs::write(&own, "Next edit").unwrap();
+        prepare_plan_from(&own, "Example", Some(&source)).unwrap();
+        assert_eq!(std::fs::read_to_string(&own).unwrap(), "Next edit");
+        assert_eq!(
+            std::fs::read_to_string(&source).unwrap(),
+            "- [x] Imported task"
+        );
+        assert_eq!(
+            plan_source(&repo, &touched, &["session"]),
+            Some(
+                shared
+                    .join("sessions/session/plan.md")
+                    .canonicalize()
+                    .unwrap()
+            )
+        );
+        assert_eq!(plan_source(&repo, &touched, &["missing"]), None);
+        assert_eq!(plan_source(&repo, &touched, &["../other"]), None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn plan_discovery_does_not_follow_outside_symlinks() {
+        let dir = std::env::temp_dir().join(format!("next-plan-link-{}", Uuid::new_v4()));
+        let repo = dir.join("repository");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(dir.join("outside.md"), "private").unwrap();
+        std::os::unix::fs::symlink(dir.join("outside.md"), repo.join("plan.md")).unwrap();
+        assert_eq!(
+            plan_source(&repo, &BTreeSet::from(["plan.md".into()]), &[]),
+            None
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn commit_paths_are_literal_unique_and_bounded() {
+        assert_eq!(
+            commit_paths("/repo", &["x.rs".into(), "/repo/x.rs".into()]).unwrap(),
+            vec!["x.rs"]
+        );
+        for invalid in ["../outside", ":(glob)*", ".git/config", "/elsewhere/x.rs"] {
+            assert!(
+                commit_paths("/repo", &[invalid.into()]).is_err(),
+                "{invalid}"
+            );
+        }
+        assert!(commit_paths("/repo", &[]).is_err());
+        assert!(commit_files("/repo", &["x.rs".into()], " ").is_err());
+    }
+    #[test]
+    fn agent_commits_preserve_unrelated_staged_files() {
+        let dir = std::env::temp_dir().join(format!("next-commit-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let repo = dir.to_string_lossy();
+        for args in [
+            &["init"][..],
+            &["config", "user.name", "Dashboard Fixture"],
+            &["config", "user.email", "dashboard@example.invalid"],
+        ] {
+            git_checked(
+                &repo,
+                &args.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            )
+            .unwrap();
+        }
+        git_checked(
+            &repo,
+            &["config".into(), "commit.gpgSign".into(), "false".into()],
+        )
+        .unwrap();
+        let hooks = dir.join("empty-hooks");
+        std::fs::create_dir_all(&hooks).unwrap();
+        git_checked(
+            &repo,
+            &[
+                "config".into(),
+                "core.hooksPath".into(),
+                hooks.to_string_lossy().into_owned(),
+            ],
+        )
+        .unwrap();
+        std::fs::write(dir.join("agent.txt"), "a").unwrap();
+        std::fs::write(dir.join("other.txt"), "o").unwrap();
+        git_checked(&repo, &["add".into(), "other.txt".into()]).unwrap();
+        commit_files(&repo, &["agent.txt".into()], "feat: agent change").unwrap();
+        let staged = git_checked(
+            &repo,
+            &["diff".into(), "--cached".into(), "--name-only".into()],
+        )
+        .unwrap();
+        assert_eq!(staged.trim(), "other.txt");
+        let committed = git_checked(
+            &repo,
+            &[
+                "show".into(),
+                "--format=".into(),
+                "--name-only".into(),
+                "HEAD".into(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(committed.trim(), "agent.txt");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn cleared_files_do_not_replay_completed_journal_events() {
+        let journal = EventJournal::default();
+        let mut tracker = FilesTracker::default();
+        journal.append("s", Some("t1"), "tool_use", event("Edit", "", "a.rs").data);
+        tracker.update(Some(&journal), &[], "/repo");
+        let cursor = tracker.cursor;
+        tracker.clear_committed_files();
+        tracker.update(Some(&journal), &[], "/repo");
+        assert!(tracker.files.is_empty());
+        assert_eq!(tracker.cursor, cursor);
+        journal.append("s", Some("t2"), "tool_use", event("Edit", "", "b.rs").data);
+        tracker.update(Some(&journal), &[], "/repo");
+        assert_eq!(tracker.files, BTreeSet::from(["b.rs".into()]));
+    }
+    #[test]
+    fn current_source_live_status_mappings() {
+        assert_eq!(
+            live_state("approvalRequired", false),
+            State::AwaitingApproval
+        );
+        assert_eq!(live_state("waitingForInput", true), State::WaitingInput);
+        assert_eq!(live_state("idle", true), State::Ready);
+        assert_eq!(live_state("done", false), State::Busy);
+        assert_eq!(live_state("exited", false), State::Stopped);
     }
 }
