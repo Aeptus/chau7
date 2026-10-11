@@ -251,8 +251,13 @@ pub fn kind_for_notification_type(value: &str) -> Option<NotificationSemanticKin
 pub fn kind_for_raw_type(value: &str) -> Option<NotificationSemanticKind> {
     use NotificationSemanticKind as K;
     Some(match normalize(value).as_str() {
-        "finished" | "response_complete" | "responsecomplete" | "task_finished"
-        | "taskfinished" => K::TaskFinished,
+        "finished"
+        | "response_complete"
+        | "responsecomplete"
+        | "task_finished"
+        | "taskfinished"
+        | "agent_turn_complete"
+        | "agentturncomplete" => K::TaskFinished,
         "failed" | "error" | "context_limit" | "contextlimit" | "exit_failed" | "exitfailed" => {
             K::TaskFailed
         }
