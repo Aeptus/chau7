@@ -437,6 +437,14 @@ impl PaneTree {
         cx: &mut Context<Self>,
     ) -> Entity<EditorPane> {
         let editor = cx.new(|cx| EditorPane::new(window, cx));
+        let tree = cx.entity().downgrade();
+        editor.update(cx, |editor, _| {
+            editor.set_terminal_provider(move |cx| {
+                let tree = tree.upgrade()?;
+                let terminal = tree.read(cx).views().into_iter().next()?;
+                Some(terminal.read(cx).session.clone())
+            })
+        });
         let id = editor.entity_id();
         self.pane_ids.insert(id, pane_id);
         let sub = cx.subscribe_in(&editor, window, move |this, _, event, window, cx| {

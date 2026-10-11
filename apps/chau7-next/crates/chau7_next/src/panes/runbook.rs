@@ -2,7 +2,15 @@
 //! text with inline markdown, and fenced code blocks with their language
 //! tag and a Run button that types the block into the tab's first terminal.
 
+use std::collections::HashMap;
 use std::rc::Rc;
+
+#[derive(Clone, Copy)]
+pub(super) enum BlockStatus {
+    Running,
+    Succeeded,
+    Failed,
+}
 
 use chau7_next_core::editor::markdown::{MarkdownSection, parse_inline, parse_markdown};
 use gpui::{
@@ -13,16 +21,19 @@ use gpui_kit::component::{Icon, IconName};
 
 use crate::theme::Chrome;
 
-type RunHandler = Rc<dyn Fn(&String, &mut Window, &mut App)>;
+type RunHandler = Rc<dyn Fn(&(usize, String), &mut Window, &mut App)>;
 
 pub(super) fn render(
     content: &str,
+    states: &HashMap<(usize, String), BlockStatus>,
     chrome: Chrome,
     background: Hsla,
     mono: SharedString,
-    on_run: impl Fn(&String, &mut Window, &mut App) + 'static,
+    on_run: impl Fn(&(usize, String), &mut Window, &mut App) + 'static,
+    on_toggle: impl Fn(&usize, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let on_run: RunHandler = Rc::new(on_run);
+    let on_toggle = Rc::new(on_toggle);
     let mut column = div().flex().flex_col().gap_3().p_4();
     for (index, section) in parse_markdown(content).into_iter().enumerate() {
         column = column.child(match section {
@@ -41,10 +52,55 @@ pub(super) fn render(
                     .child(text)
                     .into_any_element()
             }
+            MarkdownSection::Checkbox {
+                checked,
+                text,
+                line,
+            } => {
+                let toggle = on_toggle.clone();
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .id(("runbook-checkbox", index))
+                            .cursor_pointer()
+                            .child(if checked { "☑" } else { "☐" })
+                            .on_click(move |_, window, cx| toggle(&line, window, cx)),
+                    )
+                    .child(inline_text(index, &text, chrome))
+                    .into_any_element()
+            }
+            MarkdownSection::Bullet(text) => div()
+                .flex()
+                .gap_2()
+                .child("•")
+                .child(inline_text(index, &text, chrome))
+                .into_any_element(),
+            MarkdownSection::Numbered { number, text } => div()
+                .flex()
+                .gap_2()
+                .child(format!("{number}."))
+                .child(inline_text(index, &text, chrome))
+                .into_any_element(),
+            MarkdownSection::Rule => div()
+                .w_full()
+                .border_b_1()
+                .border_color(chrome.border)
+                .into_any_element(),
             MarkdownSection::Text(text) => inline_text(index, &text, chrome).into_any_element(),
             MarkdownSection::CodeBlock { language, code } => {
-                code_block(index, language, code, chrome, mono.clone(), on_run.clone())
-                    .into_any_element()
+                let status = states.get(&(index, code.clone())).copied();
+                code_block(
+                    index,
+                    language,
+                    code,
+                    status,
+                    chrome,
+                    mono.clone(),
+                    on_run.clone(),
+                )
+                .into_any_element()
             }
         });
     }
@@ -116,18 +172,26 @@ fn code_block(
     index: usize,
     language: Option<String>,
     code: String,
+    status: Option<BlockStatus>,
     chrome: Chrome,
     mono: SharedString,
     on_run: RunHandler,
 ) -> impl IntoElement {
-    let run_code = code.clone();
+    let executable = chau7_next_core::editor::markdown::is_shell_language(language.as_deref());
+    let run_code = (index, code.clone());
+    let border = match status {
+        Some(BlockStatus::Running) => gpui::rgb(0xff9500).into(),
+        Some(BlockStatus::Succeeded) => gpui::rgb(0x34c759).into(),
+        Some(BlockStatus::Failed) => chrome.danger,
+        None => chrome.border,
+    };
     div()
         .flex()
         .flex_col()
         .rounded_md()
         .overflow_hidden()
         .border_1()
-        .border_color(chrome.border)
+        .border_color(border)
         .child(
             div()
                 .flex()
@@ -143,24 +207,34 @@ fn code_block(
                         .child(lang)
                 }))
                 .child(div().flex_1())
-                .child(
-                    div()
-                        .id(("runbook-run", index))
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .px_2()
-                        .py(px(2.0))
-                        .rounded_md()
-                        .border_1()
-                        .border_color(chrome.border)
-                        .text_size(px(11.0))
-                        .cursor_pointer()
-                        .hover(|d| d.bg(chrome.tab_hover_bg))
-                        .child(Icon::new(IconName::Play).size(px(10.0)))
-                        .child(crate::l10n::tr("Run"))
-                        .on_click(move |_, window, cx| on_run(&run_code, window, cx)),
-                ),
+                .when_some(status, |d, status| {
+                    d.child(match status {
+                        BlockStatus::Running => "Running",
+                        BlockStatus::Succeeded => "Succeeded",
+                        BlockStatus::Failed => "Failed",
+                    })
+                })
+                .when(!executable, |d| d.child(crate::l10n::tr("Display only")))
+                .when(executable, |d| {
+                    d.child(
+                        div()
+                            .id(("runbook-run", index))
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .px_2()
+                            .py(px(2.0))
+                            .rounded_md()
+                            .border_1()
+                            .border_color(chrome.border)
+                            .text_size(px(11.0))
+                            .cursor_pointer()
+                            .hover(|d| d.bg(chrome.tab_hover_bg))
+                            .child(Icon::new(IconName::Play).size(px(10.0)))
+                            .child(crate::l10n::tr("Run"))
+                            .on_click(move |_, window, cx| on_run(&run_code, window, cx)),
+                    )
+                }),
         )
         .child(
             div()
