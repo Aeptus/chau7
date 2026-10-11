@@ -65,6 +65,11 @@ pub enum SavedSplitNode {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mode: Option<String>,
     },
+    Repository {
+        id: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        directory: Option<String>,
+    },
     Split {
         id: u64,
         axis: SavedAxis,
@@ -87,7 +92,8 @@ impl SavedSplitNode {
             SavedSplitNode::Terminal { id, .. } => out.push(*id),
             SavedSplitNode::Editor { .. }
             | SavedSplitNode::Preview { .. }
-            | SavedSplitNode::Diff { .. } => {}
+            | SavedSplitNode::Diff { .. }
+            | SavedSplitNode::Repository { .. } => {}
             SavedSplitNode::Split { children, .. } => {
                 children.iter().for_each(|c| c.collect_terminal_ids(out));
             }
@@ -100,7 +106,8 @@ impl SavedSplitNode {
             SavedSplitNode::Terminal { id, .. }
             | SavedSplitNode::Editor { id, .. }
             | SavedSplitNode::Preview { id, .. }
-            | SavedSplitNode::Diff { id, .. } => Some(*id),
+            | SavedSplitNode::Diff { id, .. }
+            | SavedSplitNode::Repository { id, .. } => Some(*id),
             SavedSplitNode::Split { .. } => None,
         }
     }
@@ -125,6 +132,10 @@ impl SavedSplitNode {
                 directory,
                 mode,
             },
+            SavedSplitNode::Repository { directory, .. } => SavedSplitNode::Repository {
+                id: new_id,
+                directory,
+            },
             split @ SavedSplitNode::Split { .. } => split,
         }
     }
@@ -135,7 +146,8 @@ impl SavedSplitNode {
             SavedSplitNode::Terminal { id, .. }
             | SavedSplitNode::Editor { id, .. }
             | SavedSplitNode::Preview { id, .. }
-            | SavedSplitNode::Diff { id, .. } => *id,
+            | SavedSplitNode::Diff { id, .. }
+            | SavedSplitNode::Repository { id, .. } => *id,
             SavedSplitNode::Split { id, children, .. } => children
                 .iter()
                 .map(SavedSplitNode::max_id)
@@ -164,7 +176,8 @@ impl SavedSplitNode {
             leaf @ (SavedSplitNode::Terminal { .. }
             | SavedSplitNode::Editor { .. }
             | SavedSplitNode::Preview { .. }
-            | SavedSplitNode::Diff { .. }) => {
+            | SavedSplitNode::Diff { .. }
+            | SavedSplitNode::Repository { .. }) => {
                 let id = leaf.leaf_id().unwrap_or_default();
                 if seen.insert(id) {
                     Some(leaf)
@@ -605,6 +618,32 @@ pub fn resolve_ai_resume_metadata(
 mod tests {
     use super::*;
 
+    #[test]
+    fn repository_layout_roundtrips_and_normalizes_duplicate_ids() {
+        let node = SavedSplitNode::Repository {
+            id: 17,
+            directory: Some("/tmp/repository".into()),
+        };
+        let encoded = serde_json::to_string(&node).unwrap();
+        assert_eq!(
+            serde_json::from_str::<SavedSplitNode>(&encoded).unwrap(),
+            node
+        );
+        assert!(node.terminal_ids().is_empty());
+        let normalized = SavedSplitNode::Split {
+            id: 1,
+            axis: SavedAxis::Horizontal,
+            ratios: vec![0.5, 0.5],
+            children: vec![node.clone(), node],
+        }
+        .normalized()
+        .unwrap();
+        if let SavedSplitNode::Split { children, .. } = normalized {
+            assert_ne!(children[0].leaf_id(), children[1].leaf_id());
+        } else {
+            panic!("expected split");
+        }
+    }
     #[test]
     fn captured_scrollback_has_no_tabs() {
         let text = "alpha  delta.json\t epsilon\n$ ";

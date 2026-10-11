@@ -13,6 +13,7 @@ pub mod diff;
 pub mod editor;
 pub mod highlight;
 pub mod preview;
+pub mod repository;
 mod runbook;
 mod style_override;
 
@@ -29,11 +30,13 @@ use highlight::Palette;
 pub use diff::DiffPane;
 pub use editor::EditorPane;
 pub use preview::PreviewPane;
+pub use repository::RepositoryPane;
 
 /// Key bindings of the panes. On macOS the View > Panes shortcuts are in
 /// `actions/keymap.rs` (Swift's); elsewhere Cmd+Opt becomes Ctrl+Shift+Alt.
 pub fn bind_keys(cx: &mut App) {
     editor::bind_keys(cx);
+    repository::bind_keys(cx);
     if !cfg!(target_os = "macos") {
         use crate::actions::{
             AppendSelectionToEditor, DataExplorer, OpenDiffViewer, OpenFilePreview, OpenTextEditor,
@@ -64,6 +67,12 @@ pub enum SidePaneEvent {
     Close,
     /// Type text into the tab's first terminal (runbook Run, Run All).
     RunCommand(String),
+    OpenDiff {
+        file: String,
+        directory: std::path::PathBuf,
+        staged: bool,
+    },
+    PreviewFile(std::path::PathBuf),
     /// The shown file or its state changed (saved layout, titles).
     Changed,
 }

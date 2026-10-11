@@ -19,7 +19,7 @@ use gpui::{
 };
 
 use crate::actions::{ScrollToBottom, ScrollToTop};
-use crate::panes::{DiffPane, EditorPane, PreviewPane, SidePaneEvent};
+use crate::panes::{DiffPane, EditorPane, PreviewPane, RepositoryPane, SidePaneEvent};
 use crate::restore;
 use crate::session_store::{SavedPane, SavedTab};
 use crate::settings::Settings;
@@ -81,6 +81,7 @@ pub enum PaneItem {
     Editor(Entity<EditorPane>),
     Preview(Entity<PreviewPane>),
     Diff(Entity<DiffPane>),
+    Repository(Entity<RepositoryPane>),
 }
 
 impl PaneItem {
@@ -90,6 +91,7 @@ impl PaneItem {
             PaneItem::Editor(e) => e.entity_id(),
             PaneItem::Preview(e) => e.entity_id(),
             PaneItem::Diff(e) => e.entity_id(),
+            PaneItem::Repository(e) => e.entity_id(),
         }
     }
 
@@ -99,6 +101,7 @@ impl PaneItem {
             PaneItem::Editor(e) => e.read(cx).focus_handle(cx),
             PaneItem::Preview(e) => e.read(cx).focus_handle(cx),
             PaneItem::Diff(e) => e.read(cx).focus_handle(cx),
+            PaneItem::Repository(e) => e.read(cx).focus_handle(cx),
         }
     }
 
@@ -108,6 +111,7 @@ impl PaneItem {
             PaneItem::Editor(e) => e.clone().into_any_element(),
             PaneItem::Preview(e) => e.clone().into_any_element(),
             PaneItem::Diff(e) => e.clone().into_any_element(),
+            PaneItem::Repository(e) => e.clone().into_any_element(),
         }
     }
 
@@ -294,6 +298,13 @@ impl PaneTree {
                 }
                 Node::Leaf(PaneItem::Diff(diff))
             }
+            SavedSplitNode::Repository { id, directory } => {
+                let repository = self.create_repository(*id, window, cx);
+                if let Some(directory) = non_empty(directory) {
+                    repository.update(cx, |r, cx| r.load(directory.into(), window, cx));
+                }
+                Node::Leaf(PaneItem::Repository(repository))
+            }
             SavedSplitNode::Split {
                 axis,
                 ratios,
@@ -447,6 +458,24 @@ impl PaneTree {
                 }
             }
             SidePaneEvent::RunCommand(text) => self.send_command_to_terminal(text, cx),
+            SidePaneEvent::OpenDiff {
+                file,
+                directory,
+                staged,
+            } => self.open_diff_viewer(
+                file.clone(),
+                directory.to_string_lossy().into_owned(),
+                if *staged {
+                    DiffMode::Staged
+                } else {
+                    DiffMode::WorkingTree
+                },
+                window,
+                cx,
+            ),
+            SidePaneEvent::PreviewFile(path) => {
+                self.open_file_preview(Some(path.clone()), None, window, cx)
+            }
             SidePaneEvent::Changed => cx.notify(),
         }
     }
@@ -505,6 +534,69 @@ impl PaneTree {
         });
         self.subscriptions.push((id, vec![sub]));
         diff
+    }
+
+    fn create_repository(
+        &mut self,
+        pane_id: PaneId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<RepositoryPane> {
+        let repository = cx.new(|cx| RepositoryPane::new(window, cx));
+        let tree = cx.entity().downgrade();
+        repository.update(cx, |r, _| {
+            r.set_session_provider(move |cx| {
+                let Some(tree) = tree.upgrade() else {
+                    return (None, Vec::new(), None);
+                };
+                let tree = tree.read(cx);
+                let session = tree.owner_tab.and_then(|tab| {
+                    crate::runtime::manager()
+                        .all_sessions(true)
+                        .into_iter()
+                        .filter(|s| s.tab_id.eq_ignore_ascii_case(&tab.to_string()))
+                        .max_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)))
+                });
+                let blocks = tree
+                    .pane_sessions(cx)
+                    .iter()
+                    .flat_map(|(_, s)| s.read(cx).blocks().blocks().to_vec())
+                    .collect();
+                (session, blocks, tree.note_repository(cx))
+            })
+        });
+        let id = repository.entity_id();
+        self.pane_ids.insert(id, pane_id);
+        let sub = cx.subscribe_in(&repository, window, move |this, _, event, window, cx| {
+            this.on_side_event(id, event, window, cx)
+        });
+        self.subscriptions.push((id, vec![sub]));
+        repository
+    }
+    pub fn open_repository(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let directory = self.note_repository(cx);
+        let existing = self.leaves().into_iter().find_map(|item| {
+            if let PaneItem::Repository(r) = item {
+                Some(r)
+            } else {
+                None
+            }
+        });
+        let repository = existing.unwrap_or_else(|| {
+            let r = self.create_repository(new_pane_id(), window, cx);
+            self.insert_leaf(
+                PaneItem::Repository(r.clone()),
+                Axis::Horizontal,
+                window,
+                cx,
+            );
+            r
+        });
+        if let Some(directory) = directory {
+            repository.update(cx, |r, cx| r.load(directory, window, cx));
+        }
+        self.set_focused(repository.entity_id(), cx);
+        self.focus_own(window, cx);
     }
 
     /// Every pane, in visual order.
@@ -969,6 +1061,13 @@ impl PaneTree {
                             id,
                             path: path_string(preview.read(cx).path()),
                         },
+                        PaneItem::Repository(r) => SavedSplitNode::Repository {
+                            id,
+                            directory: r
+                                .read(cx)
+                                .directory()
+                                .map(|p| p.to_string_lossy().into_owned()),
+                        },
                         PaneItem::Diff(diff) => {
                             let diff = diff.read(cx);
                             SavedSplitNode::Diff {
@@ -1203,6 +1302,7 @@ impl PaneTree {
                 PaneItem::Editor(editor) => editor.update(cx, |e, cx| e.settings_changed(cx)),
                 PaneItem::Preview(preview) => preview.update(cx, |p, cx| p.apply_settings(cx)),
                 PaneItem::Diff(diff) => diff.update(cx, |d, cx| d.apply_settings(cx)),
+                PaneItem::Repository(_) => {}
             }
         }
     }

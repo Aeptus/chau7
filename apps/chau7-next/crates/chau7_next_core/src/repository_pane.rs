@@ -144,10 +144,12 @@ fn bounded_read(mut reader: impl Read) -> Vec<u8> {
 /// Read both pipes concurrently, bound retained output and disable interactive credential prompts.
 pub fn git(repo: &Path, args: &[String]) -> Result<Vec<u8>, String> {
     let mut child = Command::new("git")
+        .arg("--literal-pathspecs")
         .args(args)
         .current_dir(repo)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_PAGER", "cat")
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -428,6 +430,94 @@ pub fn save_draft(root: &DataRoot, repo: &Path, message: &str) -> Result<(), Str
     }
 }
 
+/// Serial background writer coalesces per-repository drafts and drains on drop.
+/// UI callers perform no filesystem IO and closing a pane cannot cancel its last edit.
+pub struct DraftWriter {
+    owners: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    state: std::sync::Arc<(std::sync::Mutex<DraftState>, std::sync::Condvar)>,
+}
+#[derive(Default)]
+struct DraftState {
+    pending: BTreeMap<PathBuf, String>,
+    closed: bool,
+    error: Option<String>,
+}
+impl DraftWriter {
+    pub fn new(root: DataRoot) -> Self {
+        let state = std::sync::Arc::new((
+            std::sync::Mutex::new(DraftState::default()),
+            std::sync::Condvar::new(),
+        ));
+        let worker = state.clone();
+        std::thread::spawn(move || {
+            loop {
+                let (lock, ready) = &*worker;
+                let mut inner = lock.lock().unwrap_or_else(|e| e.into_inner());
+                while inner.pending.is_empty() && !inner.closed {
+                    inner = ready.wait(inner).unwrap_or_else(|e| e.into_inner());
+                }
+                if inner.pending.is_empty() && inner.closed {
+                    break;
+                }
+                let pending = std::mem::take(&mut inner.pending);
+                drop(inner);
+                for (directory, message) in pending {
+                    if let Err(error) = save_draft(&root, &directory, &message) {
+                        let mut inner = lock.lock().unwrap_or_else(|e| e.into_inner());
+                        inner.error = Some(error);
+                    }
+                }
+            }
+        });
+        Self {
+            state,
+            owners: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(1)),
+        }
+    }
+    pub fn save(&self, directory: PathBuf, message: String) -> Result<(), String> {
+        let (lock, ready) = &*self.state;
+        let mut inner = lock.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.pending.len() >= 128 && !inner.pending.contains_key(&directory) {
+            return Err("Too many pending repository drafts".into());
+        }
+        inner.pending.insert(directory, message);
+        ready.notify_one();
+        Ok(())
+    }
+    pub fn take_error(&self) -> Option<String> {
+        self.state
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .error
+            .take()
+    }
+}
+impl Clone for DraftWriter {
+    fn clone(&self) -> Self {
+        self.owners
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self {
+            state: self.state.clone(),
+            owners: self.owners.clone(),
+        }
+    }
+}
+impl Drop for DraftWriter {
+    fn drop(&mut self) {
+        if self
+            .owners
+            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel)
+            != 1
+        {
+            return;
+        }
+        let (lock, ready) = &*self.state;
+        lock.lock().unwrap_or_else(|e| e.into_inner()).closed = true;
+        ready.notify_one();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,6 +604,37 @@ mod tests {
             "changed"
         );
         assert!(perform(&home, &Operation::Create("--detach".into())).is_err());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+    #[test]
+    fn drafts_are_isolated_and_latest_edit_survives_writer_drop() {
+        let home = std::env::temp_dir().join(format!("next-draft-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&home).unwrap();
+        let root = DataRoot::with_home(home.clone(), true);
+        let directory = home.join("repo");
+        let writer = DraftWriter::new(root.clone());
+        let command = writer.clone();
+        for i in 0..100 {
+            writer
+                .save(directory.clone(), format!("draft {i}"))
+                .unwrap();
+        }
+        drop(writer);
+        command
+            .save(directory.clone(), "final edit".into())
+            .unwrap();
+        drop(command);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while load_draft(&root, &directory) != "final edit" {
+            assert!(
+                Instant::now() < deadline,
+                "final queued draft must be drained"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(!directory.join(".chau7").exists());
+        save_draft(&root, &directory, "").unwrap();
+        assert_eq!(load_draft(&root, &directory), "");
         std::fs::remove_dir_all(home).unwrap();
     }
 }
