@@ -8,6 +8,7 @@
 //! candidates and active tasks per terminal (`tab_id`), which the workspace
 //! shows as a banner and a bar (`workspace/tasks.rs`).
 
+pub mod analytics;
 pub mod ipc;
 pub mod process;
 
@@ -462,6 +463,9 @@ fn tick(cx: &mut App) {
             });
         })
         .detach();
+    }
+    if !calls.is_empty() {
+        analytics::call_recorded(cx);
     }
     for call in calls {
         crate::ai::events_out::publish(timeline_event(&call), false, cx);

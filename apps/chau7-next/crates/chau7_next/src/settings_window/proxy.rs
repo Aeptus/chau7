@@ -134,6 +134,11 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         ));
     }
 
+    tracking = tracking.child(
+        button("proxy-open-analytics", "Open API Analytics", chrome)
+            .on_click(|_, _, cx| proxy::analytics::open(cx)),
+    );
+
     let privacy = titled("Privacy", chrome)
         .child(row(
             "Log Prompt Previews",

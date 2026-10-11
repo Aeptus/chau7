@@ -149,10 +149,9 @@ impl Workspace {
         let session = self.entries.get(&id)?.panes.read(cx).focused_session(cx)?;
         let session = session.read(cx);
         Some(TabSessionInfo {
-            ai_app: session.ai_app.clone().filter(|a| !a.is_empty()),
-            // An AI CLI counts as running while its command has not returned
-            // to the prompt.
-            ai_running: session.ai_app.is_some() && session.command_running,
+            ai_app: session.ai_display_app_name(),
+            // Live process observation is separate from persisted resume identity.
+            ai_running: session.is_ai_running(),
             in_git_repo: session.git_root.is_some(),
             git_branch: session.git_branch.clone(),
             vite: session

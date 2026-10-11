@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::iso8601::format_iso8601;
 
 /// Repository the prefilled issue is opened in.
-pub const GITHUB_ISSUE_OWNER: &str = "anthropics";
+pub const GITHUB_ISSUE_OWNER: &str = "Aeptus";
 pub const GITHUB_ISSUE_REPO: &str = "chau7";
 
 /// Shown in the report when the user typed nothing.
@@ -105,6 +105,8 @@ pub struct StateSnapshot {
     pub feature_flags: BTreeMap<String, bool>,
     pub recent_logs: Vec<String>,
     pub active_contexts: Vec<ContextState>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_incidents: Vec<crate::incidents::Breadcrumb>,
 }
 
 impl StateSnapshot {
@@ -199,6 +201,13 @@ pub fn local_report(
             ctx.id, ctx.operation, ctx.duration_ms
         ));
     }
+    if !snapshot.recent_incidents.is_empty() {
+        report.push_str("\n\n## Recent local incidents\n```json\n");
+        report.push_str(
+            &serde_json::to_string_pretty(&snapshot.recent_incidents).unwrap_or_default(),
+        );
+        report.push_str("\n```");
+    }
     report.push_str("\n\n\n## Feature Flags");
     for (flag, enabled) in &snapshot.feature_flags {
         report.push_str(&format!(
@@ -232,7 +241,7 @@ pub fn percent_encode(text: &str) -> String {
 /// Longest prefilled URL GitHub reliably accepts.
 pub const MAX_ISSUE_URL_LEN: usize = 7500;
 
-/// `https://github.com/anthropics/chau7/issues/new?title=..&body=..`. A body
+/// `https://github.com/Aeptus/chau7/issues/new?title=..&body=..`. A body
 /// that would make the link too long for GitHub is cut, with a note.
 pub fn prefilled_issue_url(title: &str, body: &str) -> String {
     let base = format!(
@@ -700,6 +709,7 @@ mod tests {
             .into_iter()
             .collect(),
             recent_logs: vec!["a".into(), "  ".into(), "b".into()],
+            recent_incidents: vec![],
             active_contexts: vec![ContextState {
                 id: "ABC234".into(),
                 operation: "op".into(),
@@ -796,6 +806,34 @@ mod tests {
     }
 
     #[test]
+    fn incident_evidence_is_local_and_old_snapshots_still_decode() {
+        let mut state = snapshot();
+        state
+            .recent_incidents
+            .push(crate::incidents::Breadcrumb::new(
+                state.timestamp,
+                crate::incidents::Kind::MainThreadHang,
+                crate::incidents::Severity::Warning,
+                "local incident test",
+                BTreeMap::new(),
+            ));
+        assert!(local_report(&state, "", state.timestamp).contains("local incident test"));
+        assert!(
+            !Draft::new(None)
+                .markdown(&state, "")
+                .contains("local incident test")
+        );
+        let mut old = serde_json::to_value(&state).unwrap();
+        old.as_object_mut().unwrap().remove("recentIncidents");
+        assert!(
+            serde_json::from_value::<StateSnapshot>(old)
+                .unwrap()
+                .recent_incidents
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn ai_sessions_only_for_the_selected_tab() {
         let mut draft = Draft::new(Some("t1".into()));
         draft.include_ai_session = true;
@@ -871,7 +909,7 @@ mod tests {
         let url = prefilled_issue_url("Bug report from Chau7 1.0", "a b&c\n# x");
         assert_eq!(
             url,
-            "https://github.com/anthropics/chau7/issues/new?title=Bug%20report%20from%20Chau7%201.0&body=a%20b%26c%0A%23%20x"
+            "https://github.com/Aeptus/chau7/issues/new?title=Bug%20report%20from%20Chau7%201.0&body=a%20b%26c%0A%23%20x"
         );
         let long = "x".repeat(20_000);
         let url = prefilled_issue_url("t", &long);

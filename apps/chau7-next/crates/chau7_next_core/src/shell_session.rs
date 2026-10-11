@@ -237,6 +237,7 @@ pub struct ShellSession {
     ai: AiDetectionState,
     active_app: Option<String>,
     last_detected_app: Option<String>,
+    live_agent_name: Option<String>,
     last_ai_provider: Option<String>,
     last_ai_session_id: Option<String>,
     suppress_waiting_fallback: bool,
@@ -280,6 +281,7 @@ impl ShellSession {
             ai: AiDetectionState::new(),
             active_app: None,
             last_detected_app: None,
+            live_agent_name: None,
             last_ai_provider: None,
             last_ai_session_id: None,
             suppress_waiting_fallback: false,
@@ -336,7 +338,50 @@ impl ShellSession {
 
     /// Whether the AI tool is live (not only restored from a saved tab).
     pub fn is_ai_running(&self) -> bool {
-        self.active_app.is_some() && !self.ai.is_restored()
+        self.live_agent_name.is_some() || (self.active_app.is_some() && !self.ai.is_restored())
+    }
+
+    /// Process-tree ground truth. A disappearance keeps persisted resume metadata.
+    pub fn update_live_agent(&mut self, app: Option<&str>) -> bool {
+        let app = app
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let provider = app.as_deref().and_then(resume::normalize_provider_name);
+        let metadata_matches = app.is_none()
+            || (self.last_detected_app == app
+                && provider
+                    .as_deref()
+                    .is_none_or(|p| self.last_ai_provider.as_deref() == Some(p)));
+        if self.live_agent_name == app && metadata_matches {
+            return false;
+        }
+        self.live_agent_name = app.clone();
+        if let Some(app) = app {
+            if let Some(provider) = provider {
+                if self
+                    .last_ai_provider
+                    .as_deref()
+                    .is_some_and(|old| old != provider)
+                {
+                    self.reset_feedback_for_identity(Some(&provider), None);
+                    self.last_ai_session_id = None;
+                }
+                self.last_ai_provider = Some(provider);
+            }
+            self.last_detected_app = Some(app);
+        }
+        true
+    }
+
+    pub fn live_agent_name(&self) -> Option<&str> {
+        self.live_agent_name.as_deref()
+    }
+    /// Current Swift canonical provider display; custom detections retain their name.
+    pub fn ai_display_app_name(&self) -> Option<String> {
+        display_name_from_provider(self.last_ai_provider.as_deref())
+            .or_else(|| self.last_detected_app.clone())
+            .or_else(|| self.active_app.clone())
     }
 
     pub fn last_detected_app(&self) -> Option<&str> {
@@ -572,6 +617,55 @@ impl ShellSession {
             self.last_ai_provider = Some(provider);
             self.last_ai_session_id = None;
         }
+    }
+
+    /// A history/hook identity is considered only after transcript ownership was
+    /// checked off-thread. Recheck command generation/provider on the main thread.
+    pub fn can_adopt_observed_ai_identity(
+        &self,
+        provider: &str,
+        session_id: &str,
+        observed_at: f64,
+        replace_different: bool,
+    ) -> bool {
+        let provider = resume::normalize_provider_name(provider);
+        let session_id = session_id.trim();
+        self.status != CommandStatus::Exited
+            && observed_at.is_finite()
+            && observed_at >= self.last_input_at
+            && resume::is_valid_session_id(session_id)
+            && provider.is_some()
+            && self.effective_provider() == provider
+            && (replace_different
+                || self
+                    .ai_session_id()
+                    .is_none_or(|current| current == session_id))
+    }
+
+    pub fn adopt_observed_ai_identity(
+        &mut self,
+        provider: &str,
+        session_id: &str,
+        observed_at: f64,
+        replace_different: bool,
+    ) -> bool {
+        if !self.can_adopt_observed_ai_identity(
+            provider,
+            session_id,
+            observed_at,
+            replace_different,
+        ) {
+            return false;
+        }
+        let session_id = session_id.trim();
+        let normalized = resume::normalize_provider_name(provider);
+        if self.last_ai_provider == normalized && self.ai_session_id() == Some(session_id) {
+            return false;
+        }
+        self.reset_feedback_for_identity(normalized.as_deref(), Some(session_id));
+        self.last_ai_provider = normalized;
+        self.last_ai_session_id = Some(session_id.to_owned());
+        true
     }
 
     /// Restores AI metadata of a saved tab (`restoreAIMetadata`).
@@ -1125,6 +1219,44 @@ mod tests {
         }
     }
 
+    struct ToolCtx(std::path::PathBuf);
+    impl ToolCtx {
+        fn claude() -> Self {
+            let root = std::env::temp_dir()
+                .join(format!("chau7-next-shell-tool-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&root).unwrap();
+            let executable = root.join(if cfg!(windows) {
+                "claude.exe"
+            } else {
+                "claude"
+            });
+            std::fs::write(&executable, b"fixture-only; never executed").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(executable, std::fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
+            Self(root)
+        }
+    }
+    impl ShellContext for ToolCtx {
+        fn is_dir(&self, path: &str) -> bool {
+            Ctx.is_dir(path)
+        }
+        fn search_path(&self) -> Option<String> {
+            Some(self.0.to_string_lossy().into_owned())
+        }
+        fn home(&self) -> String {
+            Ctx.home()
+        }
+    }
+    impl Drop for ToolCtx {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     fn session() -> ShellSession {
         ShellSession::new(ShellSessionConfig::default(), "/home/me", 0.0)
     }
@@ -1143,6 +1275,65 @@ mod tests {
         assert!(!s.has_pending_input());
         s.handle_input("submitted\r", false, &Ctx, 0.4);
         assert!(!s.has_pending_input());
+    }
+
+    #[test]
+    fn live_process_identity_repairs_restore_and_preserves_same_provider_resume() {
+        let mut s = session();
+        s.restore_ai_metadata(Some("claude"), Some("native-session"));
+        assert!(!s.is_ai_running());
+        assert!(s.update_live_agent(Some("Claude")));
+        assert!(s.is_ai_running());
+        assert_eq!(s.ai_session_id(), Some("native-session"));
+        assert!(!s.update_live_agent(Some("Claude")));
+        // A competing stale source cannot permanently override live ground truth.
+        s.last_ai_provider = Some("codex".into());
+        assert!(s.update_live_agent(Some("Claude")));
+        assert_eq!(s.effective_provider().as_deref(), Some("claude"));
+        s.last_ai_session_id = Some("native-session".into());
+        assert!(s.update_live_agent(None));
+        assert!(!s.is_ai_running());
+        assert_eq!(s.ai_session_id(), Some("native-session"));
+        assert_eq!(s.ai_display_app_name().as_deref(), Some("Claude"));
+        assert!(s.update_live_agent(Some("Codex")));
+        assert_eq!(s.effective_provider().as_deref(), Some("codex"));
+        assert_eq!(s.ai_display_app_name().as_deref(), Some("Codex"));
+        assert_eq!(s.ai_session_id(), None);
+    }
+
+    #[test]
+    fn process_absence_preserves_current_swift_non_restored_shell_fallback() {
+        let ctx = ToolCtx::claude();
+        let mut s = session();
+        s.handle_input("claude\r", false, &ctx, 0.0);
+        assert!(s.is_ai_running());
+        assert!(!s.update_live_agent(None));
+        // No native match is not proof of absence (SSH/remote or missed argv).
+        assert!(s.is_ai_running());
+        assert_eq!(s.effective_provider().as_deref(), Some("claude"));
+        let mut restored = session();
+        restored.restore_ai_metadata(Some("claude"), Some("native-session"));
+        assert!(!restored.update_live_agent(None));
+        assert!(!restored.is_ai_running());
+    }
+
+    #[test]
+    fn observed_identity_adoption_is_provider_time_and_native_session_fenced() {
+        let ctx = ToolCtx::claude();
+        let mut s = session();
+        s.handle_input("claude\r", false, &ctx, 10.0);
+        assert!(!s.adopt_observed_ai_identity("codex", "s1", 11.0, true));
+        assert!(!s.adopt_observed_ai_identity("claude", "bad;id", 11.0, true));
+        assert!(!s.adopt_observed_ai_identity("claude", "s1", 9.0, true));
+        assert!(s.adopt_observed_ai_identity("claude", "s1", 11.0, false));
+        assert_eq!(s.ai_session_id(), Some("s1"));
+        assert!(!s.adopt_observed_ai_identity("claude", "s1", 12.0, false));
+        assert!(!s.adopt_observed_ai_identity("claude", "s2", 12.0, false));
+        assert!(s.adopt_observed_ai_identity("claude", "s2", 12.0, true));
+        assert_eq!(s.ai_session_id(), Some("s2"));
+        assert!(!s.adopt_observed_ai_identity("claude", "s3", f64::NAN, true));
+        s.mark_exited();
+        assert!(!s.adopt_observed_ai_identity("claude", "s3", 20.0, true));
     }
 
     #[test]

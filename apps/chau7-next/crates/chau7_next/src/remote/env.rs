@@ -350,6 +350,9 @@ impl HostEnv for GpuiEnv<'_> {
         self.telemetry.push(event);
     }
 
+    fn spine_seq(&self) -> Option<u64> {
+        crate::observability::journal(self.cx).map(|journal| journal.latest_seq())
+    }
     fn now(&self) -> DateTime<Utc> {
         self.now
     }

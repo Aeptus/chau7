@@ -22,6 +22,27 @@ use std::{
 pub struct UsageProvider {
     pub snapshot: QuotaSnapshot,
     pub metrics: Vec<QuotaMetrics>,
+    pub active_warnings: Vec<chau7_next_core::telemetry::quota::QuotaWarning>,
+}
+impl UsageProvider {
+    fn from_snapshot(
+        snapshot: QuotaSnapshot,
+        recent: &[QuotaSnapshot],
+        now: DateTime<Utc>,
+    ) -> Self {
+        let age = now.signed_duration_since(snapshot.captured_at);
+        let active_warnings =
+            if (chrono::Duration::zero()..=chrono::Duration::minutes(15)).contains(&age) {
+                warnings(&snapshot, recent, now)
+            } else {
+                vec![]
+            };
+        Self {
+            metrics: metrics(&snapshot, recent, now),
+            active_warnings,
+            snapshot,
+        }
+    }
 }
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -287,10 +308,7 @@ impl UsageState {
                     .collect();
                 h.latest()
                     .into_iter()
-                    .map(|snapshot| UsageProvider {
-                        metrics: metrics(&snapshot, &recent, now),
-                        snapshot,
-                    })
+                    .map(|snapshot| UsageProvider::from_snapshot(snapshot, &recent, now))
                     .collect()
             })
             .unwrap_or_default();
@@ -622,6 +640,132 @@ mod tests {
         DataRoot::with_home(home, true)
     }
     #[test]
+    fn all_four_bucket_dashboards_share_real_activity_and_missing_latency() {
+        use chau7_next_core::telemetry::latency::{
+            ActivitySample, BucketKind, MetricKind, TimeRange,
+        };
+        let now = Utc::now();
+        let activity = vec![ActivitySample {
+            provider: "claude".into(),
+            timestamp: now,
+        }];
+        let dashboards = build_bucket_dashboards(
+            &[],
+            &activity,
+            "claude",
+            MetricKind::FirstResponse,
+            TimeRange::Week,
+            now,
+        );
+        assert_eq!(
+            dashboards.iter().map(|b| b.kind).collect::<Vec<_>>(),
+            BucketKind::ALL
+        );
+        for b in dashboards {
+            assert_eq!(b.dashboard.interaction_count, 1);
+            assert!(b.dashboard.aggregate.is_none());
+            assert_eq!(
+                b.dashboard
+                    .buckets
+                    .iter()
+                    .map(|b| b.interactions)
+                    .sum::<usize>(),
+                1
+            );
+        }
+    }
+    #[test]
+    fn usage_diagnostics_preserve_unknown_and_observed_zero() {
+        use chau7_next_core::telemetry::latency::{LatencyDashboard, MetricKind};
+        let settings = crate::settings::GeneralSettings::default();
+        let unknown = UsageDiagnostics::from_snapshots(
+            &settings,
+            UsageView::default(),
+            LatencyView::default(),
+        );
+        let json = serde_json::to_value(unknown).unwrap();
+        assert!(json["usage"]["recentConsumption"].is_null());
+        assert!(json["latency"]["dashboard"].is_null());
+        assert!(json["latency_coverage"].is_null());
+        assert!(json["latency"].get("generation").is_none());
+        let dashboard = LatencyDashboard {
+            provider: "claude".into(),
+            metric_kind: MetricKind::FirstResponse,
+            aggregate: None,
+            interaction_count: 3,
+            buckets: vec![],
+        };
+        let observed = UsageDiagnostics::from_snapshots(
+            &settings,
+            UsageView {
+                recent_consumption: Some(vec![]),
+                ..Default::default()
+            },
+            LatencyView {
+                dashboard: Some(dashboard),
+                ..Default::default()
+            },
+        );
+        let json = serde_json::to_value(observed).unwrap();
+        assert_eq!(json["usage"]["recentConsumption"], serde_json::json!([]));
+        assert_eq!(json["latency_coverage"]["sampled_count"], 0);
+        assert_eq!(json["latency_coverage"]["fraction"], 0.);
+    }
+    #[test]
+    fn latency_coverage_uses_actual_samples_and_keeps_empty_denominator_unknown() {
+        use chau7_next_core::telemetry::latency::{Aggregate, LatencyDashboard, MetricKind};
+        let mut dashboard = LatencyDashboard {
+            provider: "claude".into(),
+            metric_kind: MetricKind::FirstResponse,
+            aggregate: Some(Aggregate {
+                count: 2,
+                average_latency_ms: 10.,
+                p50_latency_ms: 10,
+                p95_latency_ms: 10,
+                min_latency_ms: 10,
+                max_latency_ms: 10,
+            }),
+            interaction_count: 4,
+            buckets: vec![],
+        };
+        let coverage = LatencyCoverage::from_dashboard(&dashboard);
+        assert_eq!(coverage.sampled_count, 2);
+        assert_eq!(coverage.fraction, Some(0.5));
+        dashboard.interaction_count = 0;
+        assert_eq!(LatencyCoverage::from_dashboard(&dashboard).fraction, None);
+    }
+    #[test]
+    fn stale_quota_snapshots_keep_observed_values_but_not_active_warnings() {
+        use chau7_next_core::telemetry::quota::QuotaWindow;
+        let now = Utc::now();
+        let snapshot = QuotaSnapshot {
+            provider: "claude".into(),
+            captured_at: now,
+            source: "test".into(),
+            plan_type: None,
+            credits: None,
+            raw_source_ref: None,
+            windows: vec![QuotaWindow {
+                id: "session".into(),
+                used_percent: 96.,
+                window_minutes: Some(300),
+                resets_at: Some(now + chrono::Duration::hours(2)),
+            }],
+        };
+        let fresh = UsageProvider::from_snapshot(snapshot.clone(), &[], now);
+        assert_eq!(fresh.active_warnings.len(), 1);
+        let stale = UsageProvider::from_snapshot(
+            snapshot.clone(),
+            &[],
+            now + chrono::Duration::minutes(16),
+        );
+        assert!(stale.active_warnings.is_empty());
+        assert_eq!(stale.metrics[0].window.used_percent, 96.);
+        let future =
+            UsageProvider::from_snapshot(snapshot, &[], now - chrono::Duration::seconds(1));
+        assert!(future.active_warnings.is_empty());
+    }
+    #[test]
     fn rendering_snapshot_stays_readable_while_worker_is_busy() {
         let root = DataRoot::with_home(
             std::env::temp_dir().join(format!("chau7-quota-cache-{}", uuid::Uuid::new_v4())),
@@ -695,6 +839,12 @@ pub struct EvidenceGroup {
     pub alternatives: usize,
 }
 #[derive(Debug, Clone, Serialize)]
+pub struct LatencyBucketDashboard {
+    pub kind: chau7_next_core::telemetry::latency::BucketKind,
+    pub dashboard: chau7_next_core::telemetry::latency::LatencyDashboard,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct LatencyView {
     pub range: chau7_next_core::telemetry::latency::TimeRange,
     pub bucket: chau7_next_core::telemetry::latency::BucketKind,
@@ -702,9 +852,11 @@ pub struct LatencyView {
     pub selected_provider: Option<String>,
     pub providers: Vec<String>,
     pub dashboard: Option<chau7_next_core::telemetry::latency::LatencyDashboard>,
+    pub bucket_dashboards: Vec<LatencyBucketDashboard>,
     pub refreshed_at: Option<DateTime<Utc>>,
     pub refreshing: bool,
     pub evidence: Option<EvidenceDiagnostics>,
+    #[serde(skip_serializing)]
     generation: u64,
 }
 impl Default for LatencyView {
@@ -716,6 +868,7 @@ impl Default for LatencyView {
             selected_provider: None,
             providers: vec![],
             dashboard: None,
+            bucket_dashboards: vec![],
             refreshed_at: None,
             refreshing: false,
             generation: 0,
@@ -723,6 +876,81 @@ impl Default for LatencyView {
         }
     }
 }
+#[derive(Debug, Clone, Serialize)]
+pub struct LatencyCoverage {
+    pub sampled_count: usize,
+    pub interaction_count: usize,
+    pub fraction: Option<f64>,
+}
+impl LatencyCoverage {
+    pub fn from_dashboard(
+        dashboard: &chau7_next_core::telemetry::latency::LatencyDashboard,
+    ) -> Self {
+        let sampled_count = dashboard.aggregate.as_ref().map_or(0, |a| a.count);
+        Self {
+            sampled_count,
+            interaction_count: dashboard.interaction_count,
+            fraction: (dashboard.interaction_count > 0)
+                .then(|| sampled_count as f64 / dashboard.interaction_count as f64),
+        }
+    }
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageDiagnostics {
+    pub schema_version: u32,
+    pub captured_at: DateTime<Utc>,
+    pub monitoring_enabled: bool,
+    pub quota_warnings_enabled: bool,
+    pub number_format: String,
+    pub usage: UsageView,
+    pub latency: LatencyView,
+    pub latency_coverage: Option<LatencyCoverage>,
+}
+impl UsageDiagnostics {
+    fn from_snapshots(
+        settings: &crate::settings::GeneralSettings,
+        usage: UsageView,
+        latency: LatencyView,
+    ) -> Self {
+        let latency_coverage = latency
+            .dashboard
+            .as_ref()
+            .map(LatencyCoverage::from_dashboard);
+        Self {
+            schema_version: 1,
+            captured_at: Utc::now(),
+            monitoring_enabled: settings.usage_monitoring,
+            quota_warnings_enabled: settings.usage_quota_warnings,
+            number_format: settings.regional_number_format.id().into(),
+            usage,
+            latency,
+            latency_coverage,
+        }
+    }
+}
+pub fn diagnostics(cx: &App) -> UsageDiagnostics {
+    UsageDiagnostics::from_snapshots(&Settings::get(cx).general, view(cx), latency_view(cx))
+}
+
+fn build_bucket_dashboards(
+    samples: &[chau7_next_core::telemetry::latency::LatencySample],
+    activity: &[chau7_next_core::telemetry::latency::ActivitySample],
+    provider: &str,
+    metric: chau7_next_core::telemetry::latency::MetricKind,
+    range: chau7_next_core::telemetry::latency::TimeRange,
+    now: DateTime<Utc>,
+) -> Vec<LatencyBucketDashboard> {
+    chau7_next_core::telemetry::latency::BucketKind::ALL
+        .into_iter()
+        .map(|kind| LatencyBucketDashboard {
+            kind,
+            dashboard: chau7_next_core::telemetry::latency::dashboard(
+                samples, activity, provider, metric, kind, range, now,
+            ),
+        })
+        .collect()
+}
+
 struct LatencyGlobal(Arc<Mutex<LatencyView>>);
 impl Global for LatencyGlobal {}
 pub fn latency_view(cx: &App) -> LatencyView {
@@ -850,17 +1078,23 @@ pub fn refresh_latency(cx: &mut App) {
                         .map(str::to_string)
                 })
                 .or_else(|| providers.first().cloned());
-            let dashboard = selected.as_ref().map(|p| {
-                chau7_next_core::telemetry::latency::dashboard(
-                    &samples,
-                    &activity,
-                    p,
-                    selection.metric,
-                    selection.bucket,
-                    selection.range,
-                    now,
-                )
-            });
+            let bucket_dashboards = selected
+                .as_ref()
+                .map(|provider| {
+                    build_bucket_dashboards(
+                        &samples,
+                        &activity,
+                        provider,
+                        selection.metric,
+                        selection.range,
+                        now,
+                    )
+                })
+                .unwrap_or_default();
+            let dashboard = bucket_dashboards
+                .iter()
+                .find(|bucket| bucket.kind == selection.bucket)
+                .map(|bucket| bucket.dashboard.clone());
             let retained = recorder.store().usage_evidence(start, 5001);
             let incomplete = retained.len() > 5000;
             let selected_records: Vec<_> = retained
@@ -936,6 +1170,7 @@ pub fn refresh_latency(cx: &mut App) {
             s.providers = providers;
             s.selected_provider = selected;
             s.dashboard = dashboard;
+            s.bucket_dashboards = bucket_dashboards;
             s.evidence = Some(evidence);
             s.refreshed_at = Some(now);
             s.refreshing = false;

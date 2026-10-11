@@ -35,30 +35,30 @@ stale table.
 |---|---|---|---|---|---|---|---|---|
 | [AI](inventory/AI.md) | 2 | 17 | 17 | 0 | 0 | 0 | 0 | 0 |
 | [Analytics](inventory/Analytics.md) | 3 | 8 | 7 | 1 | 0 | 0 | 0 | 0 |
-| [App](inventory/App.md) | 1 | 85 | 82 | 1 | 0 | 2 | 0 | 0 |
+| [App](inventory/App.md) | 1 | 85 | 83 | 0 | 0 | 2 | 0 | 0 |
 | [Appearance](inventory/Appearance.md) | 1 | 16 | 16 | 0 | 0 | 0 | 0 | 0 |
 | [CLI](inventory/CLI.md) | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 |
 | [Chau7Core](inventory/Chau7Core.md) | per row | 76 | 73 | 0 | 0 | 3 | 0 | 0 |
 | [Commands](inventory/Commands.md) | 1 | 42 | 42 | 0 | 0 | 0 | 0 | 0 |
 | [Dashboard](inventory/Dashboard.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | [DataExplorer](inventory/DataExplorer.md) | 4 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
-| [Debug](inventory/Debug.md) | 5 | 27 | 26 | 1 | 0 | 0 | 0 | 0 |
+| [Debug](inventory/Debug.md) | 5 | 27 | 27 | 0 | 0 | 0 | 0 | 0 |
 | [Editor](inventory/Editor.md) | 4 | 15 | 14 | 1 | 0 | 0 | 0 | 0 |
 | [Events](inventory/Events.md) | 2 | 10 | 10 | 0 | 0 | 0 | 0 | 0 |
 | [History](inventory/History.md) | 2 | 16 | 16 | 0 | 0 | 0 | 0 | 0 |
 | [Keyboard](inventory/Keyboard.md) | 1 | 70 | 69 | 0 | 0 | 1 | 0 | 0 |
 | [Localization](inventory/Localization.md) | 5 | 9 | 9 | 0 | 0 | 0 | 0 | 0 |
-| [Logging](inventory/Logging.md) | 5 | 30 | 26 | 2 | 0 | 2 | 0 | 0 |
+| [Logging](inventory/Logging.md) | 5 | 30 | 26 | 2 | 0 | 2 | 0 | 1 |
 | [MCP](inventory/MCP.md) | 3 | 63 | 63 | 0 | 0 | 0 | 0 | 0 |
 | [Migration](inventory/Migration.md) | 5 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
-| [Monitoring](inventory/Monitoring.md) | 2 | 24 | 20 | 4 | 0 | 0 | 0 | 0 |
-| [Notifications](inventory/Notifications.md) | 2 | 45 | 44 | 1 | 0 | 0 | 0 | 0 |
+| [Monitoring](inventory/Monitoring.md) | 2 | 24 | 21 | 3 | 0 | 0 | 0 | 0 |
+| [Notifications](inventory/Notifications.md) | 2 | 45 | 45 | 0 | 0 | 0 | 0 | 0 |
 | [Observability](inventory/Observability.md) | 3 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | [Overlay](inventory/Overlay.md) | 1 | 121 | 110 | 4 | 0 | 7 | 0 | 0 |
 | [Performance](inventory/Performance.md) | 1 | 18 | 13 | 1 | 0 | 4 | 0 | 1 |
 | [Profiles](inventory/Profiles.md) | 1 | 20 | 20 | 0 | 0 | 0 | 0 | 0 |
 | [Proxy](inventory/Proxy.md) | 3 | 22 | 22 | 0 | 0 | 0 | 0 | 0 |
-| [Remote](inventory/Remote.md) | 3 | 34 | 32 | 1 | 0 | 1 | 0 | 0 |
+| [Remote](inventory/Remote.md) | 3 | 34 | 33 | 0 | 0 | 1 | 0 | 0 |
 | [Rendering](inventory/Rendering.md) | 1 | 7 | 4 | 0 | 0 | 3 | 0 | 0 |
 | [Repository](inventory/Repository.md) | 2 | 19 | 19 | 0 | 0 | 0 | 0 | 0 |
 | [Runtime](inventory/Runtime.md) | 3 | 33 | 33 | 0 | 0 | 0 | 0 | 0 |
@@ -70,14 +70,14 @@ stale table.
 | [SplitPanes](inventory/SplitPanes.md) | 1 | 26 | 26 | 0 | 0 | 0 | 0 | 0 |
 | [StatusBar](inventory/StatusBar.md) | 5 | 17 | 15 | 1 | 0 | 1 | 0 | 0 |
 | [Telemetry](inventory/Telemetry.md) | 3 | 24 | 23 | 1 | 0 | 0 | 0 | 0 |
-| [Terminal](inventory/Terminal.md) | 1 | 68 | 64 | 1 | 0 | 3 | 0 | 0 |
+| [Terminal](inventory/Terminal.md) | 1 | 68 | 65 | 0 | 0 | 3 | 0 | 0 |
 | [TokenOptimization](inventory/TokenOptimization.md) | 3 | 24 | 22 | 1 | 0 | 1 | 0 | 0 |
 | [Usage](inventory/Usage.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | [Utilities](inventory/Utilities.md) | 1 | 13 | 6 | 0 | 0 | 7 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1303** | **1235** | **24** | **0** | **44** | **0** | |
+| **Total** | | **1303** | **1241** | **18** | **0** | **44** | **0** | |
 
-Finished (done, n/a or dropped): 1279 of 1303 rows (98%). Partial: 24.
+Finished (done, n/a or dropped): 1285 of 1303 rows (98%). Partial: 18.
 
 <!-- parity:end -->
 

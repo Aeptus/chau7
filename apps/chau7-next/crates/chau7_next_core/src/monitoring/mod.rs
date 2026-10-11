@@ -4,10 +4,13 @@
 //! tailer. Ports `apps/chau7-macos/Sources/Chau7/Monitoring`.
 
 pub mod claude_code;
+pub mod claude_resolver;
 pub mod codex_feedback;
 pub mod codex_sessions;
 pub mod conflicts;
 pub mod dev_server;
 pub mod git;
+pub mod process_tree;
+pub mod quarantine;
 pub mod shell_events;
 pub mod tailer;

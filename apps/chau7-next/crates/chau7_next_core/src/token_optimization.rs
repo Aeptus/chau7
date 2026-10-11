@@ -544,14 +544,21 @@ impl TabTokenConsumption {
 }
 
 /// AI token usage aggregated per provider from the telemetry database.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProviderConsumptionStats {
     pub provider: String,
     pub run_count: i64,
     pub priced_run_count: i64,
     pub missing_cost_run_count: i64,
+    /// None is legacy/unknown; Some(0) means the queried runs had no token counters.
+    #[serde(default)]
+    pub token_observed_run_count: Option<i64>,
     pub total_input_tokens: i64,
     pub total_cached_input_tokens: i64,
+    #[serde(default)]
+    pub total_cache_creation_input_tokens: i64,
+    #[serde(default)]
+    pub total_cache_read_input_tokens: i64,
     pub total_output_tokens: i64,
     pub total_reasoning_output_tokens: i64,
     pub total_cost_usd: f64,
@@ -571,12 +578,22 @@ impl ProviderConsumptionStats {
             run_count,
             priced_run_count: 0,
             missing_cost_run_count: 0,
+            token_observed_run_count: None,
             total_input_tokens,
             total_cached_input_tokens: 0,
+            total_cache_creation_input_tokens: 0,
+            total_cache_read_input_tokens: 0,
             total_output_tokens,
             total_reasoning_output_tokens: 0,
             total_cost_usd,
         }
+    }
+
+    pub fn uncategorized_cached_input_tokens(&self) -> i64 {
+        self.total_cached_input_tokens
+            .saturating_sub(self.total_cache_creation_input_tokens)
+            .saturating_sub(self.total_cache_read_input_tokens)
+            .max(0)
     }
 
     pub fn id(&self) -> &str {
@@ -681,6 +698,36 @@ impl WrapperHealth {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_cache_categories_preserve_legacy_defaults_and_billable_total() {
+        let mut stats = ProviderConsumptionStats::new("claude", 1, 100, 10, 0.1);
+        stats.total_cached_input_tokens = 75;
+        stats.total_cache_creation_input_tokens = 20;
+        stats.total_cache_read_input_tokens = 30;
+        stats.total_reasoning_output_tokens = 2;
+        assert_eq!(stats.uncategorized_cached_input_tokens(), 25);
+        assert_eq!(stats.total_billable_tokens(), 187);
+        let mut old = serde_json::to_value(&stats).unwrap();
+        old.as_object_mut()
+            .unwrap()
+            .remove("total_cache_creation_input_tokens");
+        old.as_object_mut()
+            .unwrap()
+            .remove("total_cache_read_input_tokens");
+        old.as_object_mut()
+            .unwrap()
+            .remove("token_observed_run_count");
+        let restored: ProviderConsumptionStats = serde_json::from_value(old).unwrap();
+        assert_eq!(restored.token_observed_run_count, None);
+        assert_eq!(restored.total_cache_creation_input_tokens, 0);
+        assert_eq!(restored.total_cache_read_input_tokens, 0);
+        assert_eq!(restored.uncategorized_cached_input_tokens(), 75);
+        assert_eq!(restored.total_billable_tokens(), 187);
+        stats.total_cache_read_input_tokens = 100;
+        assert_eq!(stats.uncategorized_cached_input_tokens(), 0);
+    }
+
     use TabTokenOptOverride as O;
     use TokenOptimizationMode as M;
     use std::collections::HashSet;

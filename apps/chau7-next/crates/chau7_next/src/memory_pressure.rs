@@ -682,6 +682,21 @@ fn reclaim_caches(selected: &HashSet<u64>, pressure: bool, cx: &mut App) {
     if critical {
         service.last_critical_reclaim = Some(Instant::now());
     }
+    if pressure
+        && let Some((_, physical)) = native::footprint()
+        && let Some(resident) = crate::platform::process::own_resident_bytes()
+    {
+        let severity = if service
+            .pressure
+            .lock()
+            .should_shed_best_effort(service.epoch.elapsed())
+        {
+            chau7_next_core::incidents::Severity::Critical
+        } else {
+            chau7_next_core::incidents::Severity::Warning
+        };
+        crate::incidents::memory(severity, resident, physical, reclaimed);
+    }
 }
 /// macOS physical footprint is distinct from resident set. Unsupported systems
 /// return unknown rather than relabeling RSS as a physical-footprint value.

@@ -204,6 +204,10 @@ pub struct TerminalSession {
     pub exited: Option<Option<i32>>,
     pub last_activity: Instant,
     pub last_command: Option<LastCommand>,
+    /// OSC9 prompt status is metadata, not a second command completion.
+    pub last_prompt_exit_code: Option<i32>,
+    pub last_prompt_exit_at: Option<Instant>,
+    osc9: chau7_next_core::osc9::Parser,
     pub command_running: bool,
     pub started_at: Instant,
     /// Suspend Background Rendering (`paint.rs`, view blink timer): while
@@ -247,6 +251,7 @@ pub struct TerminalSession {
     mouse_reporting_enabled: std::cell::Cell<bool>,
     _pump: Task<()>,
     _ticker: Task<()>,
+    process_subscription: Option<crate::monitoring::process_tree::Subscription>,
 }
 
 impl EventEmitter<SessionEvent> for TerminalSession {}
@@ -656,6 +661,9 @@ impl TerminalSession {
             .map_or(10_000, |settings| settings.terminal.scrollback_lines);
         let memory = crate::memory_pressure::register(id, &term, &root, lines);
         let _ = profile_memory.set(Arc::downgrade(&memory));
+        let process_subscription = (has_pty && pid > 0).then(|| {
+            crate::monitoring::process_tree::subscribe(pid as u32, cx.entity().downgrade(), cx)
+        });
         Self {
             id,
             term,
@@ -685,6 +693,9 @@ impl TerminalSession {
             exited: None,
             last_activity: now,
             last_command: None,
+            last_prompt_exit_code: None,
+            last_prompt_exit_at: None,
+            osc9: Default::default(),
             command_running: false,
             started_at: now,
             render_suspended,
@@ -713,6 +724,7 @@ impl TerminalSession {
             mouse_reporting_enabled: std::cell::Cell::new(false),
             _pump: pump,
             _ticker: ticker,
+            process_subscription,
         }
     }
 
@@ -772,7 +784,7 @@ impl TerminalSession {
             WorkQueue::Main,
         ));
         let started = Instant::now();
-        self.memory.set_tui(self.ai_app.is_some());
+        self.memory.set_tui(self.is_ai_running());
         let mut metadata_changed = self.retry_resize();
         let (grid, cursor, title, closed, events, bell, clipboard, clipboard_load) = {
             let term = self.term.read();
@@ -875,6 +887,7 @@ impl TerminalSession {
                 }
             };
             let prompt = mark == ShellMark::PromptStart;
+            crate::monitoring::process_tree::refresh(cx, mark == ShellMark::CommandStart);
             self.tracker.handle_mark(mark, line, now);
             if prompt {
                 // The first prompt creates the deferred token optimizer flag.
@@ -926,6 +939,7 @@ impl TerminalSession {
         }
         metadata_changed |= self.drain_tracker_events(cx);
         if !output.is_empty() {
+            metadata_changed |= self.handle_osc9(&output, cx);
             crate::telemetry::note_output(&self.tab_identifier, &output, cx);
         }
 
@@ -941,6 +955,8 @@ impl TerminalSession {
         if closed && self.exited.is_none() {
             let code = self.term.read().try_child_exit_code();
             self.exited = Some(code);
+            self.process_subscription.take();
+            self.tracker.update_live_agent(None);
             self.tracker.mark_exited();
             self.tracker.take_events();
             self.command_running = false;
@@ -981,7 +997,7 @@ impl TerminalSession {
         if metadata_changed {
             cx.emit(SessionEvent::MetadataChanged);
         }
-        self.memory.set_tui(self.ai_app.is_some());
+        self.memory.set_tui(self.is_ai_running());
         cx.emit(SessionEvent::Output);
         cx.notify();
         feature_profiler::record(
@@ -1017,7 +1033,7 @@ impl TerminalSession {
             return;
         };
         if self.tracker.apply_agent_feedback(
-            &event.event_type,
+            feedback_kind(event).unwrap_or(&event.event_type),
             &provider,
             event.session_id.as_deref(),
             date.timestamp_millis() as f64 / 1000.0,
@@ -1318,6 +1334,91 @@ impl TerminalSession {
             cx.emit(SessionEvent::MetadataChanged);
             cx.notify();
         }
+    }
+
+    fn handle_osc9(&mut self, output: &[u8], cx: &mut Context<Self>) -> bool {
+        use chau7_next_core::osc9::Event;
+        let mut changed = false;
+        for event in self.osc9.ingest(output) {
+            match event {
+                Event::Chau7 { key, value } => match key.as_str() {
+                    "exit" => {
+                        if let Ok(code) = value.parse::<i32>() {
+                            self.last_prompt_exit_code = Some(code);
+                            self.last_prompt_exit_at = Some(Instant::now());
+                            changed = true;
+                        }
+                    }
+                    "repo-root" => {
+                        let previous = self.git_root.as_deref().map(|root| root.to_string_lossy());
+                        let normalized = Path::new(value.trim())
+                            .is_absolute()
+                            .then(|| {
+                                chau7_next_core::repository::known_identity::normalize_root(
+                                    value.trim(),
+                                )
+                            })
+                            .flatten();
+                        if let Some(root) = normalized {
+                            let branch = if previous.as_deref().is_none_or(|old| old == root) {
+                                self.git_branch.clone()
+                            } else {
+                                None
+                            };
+                            if let Some(root) =
+                                crate::repository::report_shell_root(&root, branch.as_deref(), cx)
+                            {
+                                changed |= self.git_root.as_deref() != Some(Path::new(&root));
+                                self.git_root = Some(root.into());
+                                changed |= self.adopt_reported_branch(branch, cx);
+                            }
+                        }
+                    }
+                    "branch" => {
+                        let branch =
+                            chau7_next_core::repository::known_identity::branch_name(Some(&value));
+                        if let Some(root) = &self.git_root {
+                            crate::repository::report_shell_root(
+                                &root.to_string_lossy(),
+                                Some(&value),
+                                cx,
+                            );
+                        }
+                        changed |= self.adopt_reported_branch(branch, cx);
+                    }
+                    _ => {}
+                },
+                Event::Foreign { message } => {
+                    let provider = self.tracker.effective_provider();
+                    if let Some(event) = chau7_next_core::osc9::foreign_event(
+                        &message,
+                        provider.as_deref(),
+                        self.ai_app.as_deref().or(self.tracker.active_app()),
+                        self.tracker.current_directory(),
+                        self.tracker.ai_session_id(),
+                        &chau7_next_core::iso8601::now_iso8601(),
+                    ) {
+                        self.emit_ai(event, true, cx);
+                    }
+                }
+            }
+        }
+        changed
+    }
+
+    fn adopt_reported_branch(&mut self, branch: Option<String>, cx: &mut Context<Self>) -> bool {
+        if self.git_branch == branch {
+            return false;
+        }
+        let events = self
+            .monitor
+            .shell_events
+            .git_branch_changed(branch.as_deref());
+        self.git_branch = branch;
+        for event in events {
+            self.emit_ai(shell_ai_event(event), true, cx);
+        }
+        true
     }
 
     fn emit_ai(&self, event: AiEvent, notify: bool, cx: &mut Context<Self>) {
@@ -1933,7 +2034,7 @@ impl TerminalSession {
             self.poll_interrupt.wake();
             let _ = self.refresh_wake.unbounded_send(RefreshWake::Cadence);
         }
-        self.memory.set_tui(self.ai_app.is_some());
+        self.memory.set_tui(self.is_ai_running());
     }
 
     /// Actual view/window focus supplies interactive state. A zero interval
@@ -2027,6 +2128,28 @@ impl TerminalSession {
         &self.tracker
     }
 
+    pub(crate) fn ai_display_app_name(&self) -> Option<String> {
+        self.tracker.ai_display_app_name()
+    }
+    pub(crate) fn is_ai_running(&self) -> bool {
+        self.exited.is_none() && self.tracker.is_ai_running()
+    }
+    pub(crate) fn apply_live_process_snapshot(
+        &mut self,
+        provider: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.close_requested || self.exited.is_some() {
+            return;
+        }
+        if self.tracker.update_live_agent(provider) {
+            self.memory.set_tui(self.is_ai_running());
+            crate::cto::set_ai_active(&self.cto_id, self.is_ai_running());
+            cx.emit(SessionEvent::MetadataChanged);
+            cx.notify();
+        }
+    }
+
     /// The tab hosts an agent runtime session: no terminal-prompt
     /// "waiting for input" fallback (RUN-023).
     pub fn set_runtime_owned(&mut self, owned: bool) {
@@ -2048,6 +2171,7 @@ impl TerminalSession {
 
     /// Close the session: `exit`, then signals (TRM-007). Also done on drop.
     pub fn close(&mut self) {
+        self.process_subscription.take();
         if self.close_requested {
             return;
         }
@@ -2058,7 +2182,7 @@ impl TerminalSession {
             CloseMode::AppQuit
         } else {
             CloseMode::Graceful {
-                ai_running: self.ai_app.is_some(),
+                ai_running: self.is_ai_running(),
             }
         };
         if self.exited.is_none() {
@@ -2206,29 +2330,282 @@ fn apply_image_protocols(term: &Chau7Terminal, settings: &Settings) {
 }
 
 /// Apply authoritative CLI feedback to panes belonging to the explicitly bound tab.
+/// Reconcile a hook only against one exact native session, or one live Claude
+/// pane with an ownership-checked related cwd. No filesystem access occurs here.
+pub(crate) fn adopt_claude_hook_identity(
+    event: &chau7_next_core::monitoring::claude_code::ClaudeCodeEvent,
+    transcript_owned: bool,
+    cx: &mut gpui::App,
+) -> Option<uuid::Uuid> {
+    let home = cx
+        .try_global::<crate::workspace::AppData>()?
+        .root
+        .home()
+        .to_path_buf();
+    let replace = event.event_type
+        == chau7_next_core::command_detection::event_parsing::EventType::UserPrompt;
+    let mut exact = Vec::new();
+    let mut eligible = Vec::new();
+    for window in crate::mcp::windows::windows(cx) {
+        let workspace = window.workspace.read(cx);
+        for uuid in workspace.mcp_tab_uuids() {
+            let Some(tab) = workspace.mcp_find(uuid) else {
+                continue;
+            };
+            let Some(panes) = workspace.mcp_panes(tab) else {
+                continue;
+            };
+            for (_, entity) in panes.read(cx).pane_sessions(cx) {
+                let session = entity.read(cx);
+                if !session.is_ai_running()
+                    || session.exited.is_some()
+                    || !session.tracker.can_adopt_observed_ai_identity(
+                        "claude",
+                        &event.session_id,
+                        event.timestamp,
+                        replace,
+                    )
+                {
+                    continue;
+                }
+                let cwd = session.tracker.current_directory();
+                let related = chau7_next_core::monitoring::claude_resolver::related_directory(
+                    &home, &event.cwd, cwd,
+                );
+                let candidate = (crate::ai::events_out::tab_uuid(tab), entity.clone());
+                if session.tracker.ai_session_id() == Some(event.session_id.trim()) && related {
+                    exact.push(candidate);
+                } else if transcript_owned && related {
+                    eligible.push(candidate);
+                }
+            }
+        }
+    }
+    let (tab, entity) = unique_claude_owner(exact, eligible)?;
+    entity.update(cx, |session, cx| {
+        if session.tracker.adopt_observed_ai_identity(
+            "claude",
+            &event.session_id,
+            event.timestamp,
+            replace,
+        ) {
+            cx.emit(SessionEvent::MetadataChanged);
+            cx.notify();
+        }
+    });
+    Some(tab)
+}
+
+fn unique_claude_owner<T>(mut exact: Vec<T>, mut eligible: Vec<T>) -> Option<T> {
+    if exact.len() == 1 {
+        exact.pop()
+    } else if exact.is_empty() && eligible.len() == 1 {
+        eligible.pop()
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod claude_owner_tests {
+    use super::unique_claude_owner;
+    #[test]
+    fn ownership_requires_unique_exact_or_unique_eligible_candidate() {
+        assert_eq!(unique_claude_owner(vec![1], vec![2, 3]), Some(1));
+        assert_eq!(unique_claude_owner(Vec::<u8>::new(), vec![2]), Some(2));
+        assert_eq!(unique_claude_owner(vec![1, 2], vec![3]), None);
+        assert_eq!(unique_claude_owner(Vec::<u8>::new(), vec![2, 3]), None);
+        assert_eq!(unique_claude_owner(Vec::<u8>::new(), vec![]), None);
+    }
+}
+
+#[derive(Default)]
+struct FeedbackQuarantine(chau7_next_core::monitoring::quarantine::Quarantine);
+impl Global for FeedbackQuarantine {}
+
+fn feedback_kind(event: &AiEvent) -> Option<&str> {
+    Some(match event.event_type.as_str() {
+        "permission_request" => "permission",
+        "response_complete" => "turn_completed",
+        "approval_requested"
+        | "permission"
+        | "user_input_requested"
+        | "waiting_input"
+        | "approval_resolved"
+        | "permission_resolved"
+        | "user_input_resolved"
+        | "turn_completed"
+        | "finished" => &event.event_type,
+        _ => return None,
+    })
+}
+fn feedback_provider(event: &AiEvent) -> Option<String> {
+    chau7_next_core::ai::resume::normalize_provider_name(&event.tool)
+        .or_else(|| chau7_next_core::ai::resume::normalize_provider_name(event.source.raw_value()))
+}
+fn feedback_owner(
+    event: &AiEvent,
+    target: Option<uuid::Uuid>,
+    exact_only: bool,
+    cx: &mut gpui::App,
+) -> Option<(uuid::Uuid, gpui::Entity<TerminalSession>)> {
+    let provider = feedback_provider(event)?;
+    let date = chau7_next_core::telemetry::date_codec::parse_iso8601(Some(&event.ts))?;
+    let observed_at = date.timestamp_millis() as f64 / 1000.0;
+    let home = cx
+        .try_global::<crate::workspace::AppData>()?
+        .root
+        .home()
+        .to_path_buf();
+    let mut exact = Vec::new();
+    let mut unbound = Vec::new();
+    for window in crate::mcp::windows::windows(cx) {
+        let workspace = window.workspace.read(cx);
+        for uuid in workspace.mcp_tab_uuids() {
+            if target.is_some_and(|target| target != uuid) {
+                continue;
+            }
+            let Some(tab) = workspace.mcp_find(uuid) else {
+                continue;
+            };
+            let Some(panes) = workspace.mcp_panes(tab) else {
+                continue;
+            };
+            for (_, entity) in panes.read(cx).pane_sessions(cx) {
+                let session = entity.read(cx);
+                let id = event
+                    .session_id
+                    .as_deref()
+                    .or(session.tracker.ai_session_id())
+                    .unwrap_or("unbound");
+                if session.exited.is_some()
+                    || !session.tracker.can_adopt_observed_ai_identity(
+                        &provider,
+                        id,
+                        observed_at,
+                        false,
+                    )
+                {
+                    continue;
+                }
+                if let Some(directory) = event.directory.as_deref().filter(|d| !d.trim().is_empty())
+                {
+                    let cwd = session.tracker.current_directory();
+                    let anchors: Vec<_> = [
+                        Some(cwd).filter(|d| !d.is_empty()),
+                        session.git_root.as_deref().and_then(|p| p.to_str()),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect();
+                    if !anchors.is_empty()
+                        && !anchors.iter().any(|anchor| {
+                            chau7_next_core::monitoring::claude_resolver::related_directory(
+                                &home, directory, anchor,
+                            )
+                        })
+                    {
+                        continue;
+                    }
+                }
+                let candidate = (crate::ai::events_out::tab_uuid(tab), entity.clone());
+                if event
+                    .session_id
+                    .as_deref()
+                    .is_some_and(|id| session.tracker.ai_session_id() == Some(id.trim()))
+                {
+                    exact.push(candidate);
+                } else if !exact_only
+                    && session.is_ai_running()
+                    && (event.session_id.is_none()
+                        || (provider == "codex" && session.tracker.ai_session_id().is_none()))
+                {
+                    unbound.push(candidate);
+                }
+            }
+        }
+    }
+    unique_claude_owner(exact, unbound)
+}
+
+/// Final projection authority: preserve the durable raw event, but never apply
+/// its status/notification to a different session. Reconcile exactly once.
+pub(crate) fn reconcile_feedback_route(event: &mut AiEvent, cx: &mut gpui::App) -> bool {
+    if feedback_kind(event).is_none() {
+        return true;
+    }
+    let Some(tab) = event.tab_id else {
+        return true;
+    };
+    let Some(provider) = feedback_provider(event) else {
+        return true;
+    };
+    if feedback_owner(event, Some(tab), false, cx).is_some() {
+        if let Some(id) = event.session_id.as_deref() {
+            let key = chau7_next_core::monitoring::quarantine::SourceKey::new(tab, id, &provider);
+            cx.default_global::<FeedbackQuarantine>().0.clear(&key);
+        }
+        return true;
+    }
+    let Some(id) = event
+        .session_id
+        .as_deref()
+        .filter(|id| !id.trim().is_empty())
+    else {
+        return false;
+    };
+    let key = chau7_next_core::monitoring::quarantine::SourceKey::new(tab, id, &provider);
+    let decision = cx
+        .default_global::<FeedbackQuarantine>()
+        .0
+        .record_failure(key.clone(), now_secs());
+    use chau7_next_core::monitoring::quarantine::Decision;
+    match decision {
+        Decision::ReconcileAndReport => {
+            if let Some((owner, _)) = feedback_owner(event, None, true, cx) {
+                event.tab_id = Some(owner);
+                cx.default_global::<FeedbackQuarantine>().0.clear(&key);
+                log::info!("Reconciled stale provider feedback to one exact native-session owner");
+                return true;
+            }
+            log::warn!("Quarantined mismatched provider feedback source; no unique exact owner");
+        }
+        Decision::ReportSummary { suppressed_count } => {
+            log::warn!("Provider feedback remains quarantined; suppressed={suppressed_count}")
+        }
+        Decision::Suppress => (),
+    }
+    false
+}
+
 pub(crate) fn apply_agent_feedback(event: &AiEvent, cx: &mut gpui::App) {
-    if event.reliability != AiEventReliability::Authoritative {
+    if event.reliability != AiEventReliability::Authoritative || feedback_kind(event).is_none() {
         return;
     }
-    let Some(tab) = event.tab_id.and_then(crate::ai::events_out::tab_from_uuid) else {
+    let Some(tab) = event.tab_id else {
         return;
     };
-    let mut sessions = Vec::new();
-    for window in crate::mcp::windows::windows(cx) {
-        let Some(panes) = window.workspace.read(cx).mcp_panes(tab) else {
-            continue;
-        };
-        sessions.extend(
-            panes
-                .read(cx)
-                .pane_sessions(cx)
-                .into_iter()
-                .map(|(_, session)| session),
-        );
-    }
-    for session in sessions {
-        session.update(cx, |session, cx| session.handle_agent_feedback(event, cx));
-    }
+    let Some((_, entity)) = feedback_owner(event, Some(tab), false, cx) else {
+        return;
+    };
+    entity.update(cx, |session, cx| {
+        if session.tracker.ai_session_id().is_none()
+            && let (Some(id), Some(provider), Some(date)) = (
+                event.session_id.as_deref(),
+                feedback_provider(event),
+                chau7_next_core::telemetry::date_codec::parse_iso8601(Some(&event.ts)),
+            )
+            && session.tracker.adopt_observed_ai_identity(
+                &provider,
+                id,
+                date.timestamp_millis() as f64 / 1000.0,
+                false,
+            )
+        {
+            cx.emit(SessionEvent::MetadataChanged);
+        }
+        session.handle_agent_feedback(event, cx);
+    });
 }
 
 /// Shared by all UI and MCP selection callers; native selection joins soft wraps.

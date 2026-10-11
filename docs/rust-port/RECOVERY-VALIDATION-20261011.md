@@ -23,7 +23,12 @@ are visible in the owned window capture. Default grouping remains Off, matching
 current Swift; this test profile explicitly uses Auto.
 
 Real MCP performance snapshots expose both initial renderer registrations.
-The selected terminal reports requested and actual GPU rendering. The hidden,
+The selected terminal reports requested and actual GPU rendering. A separate
+launch with the owned CPU preference reports requested and actual CPU drawing,
+8,989,056 cached bitmap bytes and 35,627 CPU glyph-cache bytes. Its native
+capture preserves the same styled Unicode fixture and repository grouping.
+This proves both selectable terminal backends on this Metal-capable Mac;
+automatic startup fallback on a Mac without Metal remains unsupported. The hidden,
 never-painted view reports null actual renderer rather than inventing evidence.
 Measured grid/string capacities and explicit native-ring estimates appear per
 pane; private GPU and pending-native-image allocations remain unavailable.
@@ -46,8 +51,20 @@ concurrently, and the observation lengths differ. The candidate app measured
 or interactive input-latency result is claimed. Profiler wall-time includes
 waiting and must not be interpreted as CPU consumption.
 
+A further 287.999-second interval with both snapshots reporting no focus
+recorded 2,793 callbacks (9.698 Hz combined) and 0.717 percent of one logical
+CPU. The same comparison limits apply.
+
 The evidence directory contains `native-e6e04d75-performance-{a,b}.json`,
-`native-8fe70406-performance-{a,b,c}.json`, both grouping screenshots, the
+`native-8fe70406-performance-{a,b,c,d}.json`, both grouping screenshots, the
 candidate bundle manifest, and integrated test/Clippy/fmt/build logs. These
 numeric diagnostics contain no terminal transcript. Live-provider notification,
 manual drag, VoiceOver and paired-device acceptance remain separate checks.
+
+## Subsequent source checkpoint
+
+OSC9 shell context, Windows path portability, the explicitly approved paired
+push-frame patch, current notification reconciliation, shared native process
+monitoring and Usage diagnostics are integrated after the native checkpoint.
+Their source checks and native acceptance must be recorded separately; the
+8fe70406 bundle is not evidence for those newer source changes.

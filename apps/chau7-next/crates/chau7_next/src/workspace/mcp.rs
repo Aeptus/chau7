@@ -100,7 +100,7 @@ impl Workspace {
         let session = self.mcp_session(id, cx);
         let session = session.as_ref().map(|s| s.read(cx));
         let mode = token_optimization_mode(cx);
-        let is_ai = session.is_some_and(|s| s.ai_app.is_some());
+        let is_ai = session.is_some_and(|s| s.is_ai_running());
         out.insert("tab_id".into(), json!(uuid_string(meta.uuid)));
         out.insert("title".into(), json!(self.tab_title(id, cx)));
         // The AI CLI's history state wins over the shell's (`effectiveStatus`,
@@ -132,10 +132,14 @@ impl Workspace {
         if let Some(s) = session {
             out.insert("raw_status".into(), json!(s.status().as_str()));
             out.insert("raw_is_at_prompt".into(), json!(s.is_at_prompt()));
-            if let Some(app) = &s.ai_app {
+            if let Some(app) = s.ai_display_app_name() {
                 out.insert("active_app".into(), json!(app));
+            }
+            if let Some(app) = &s.ai_app {
                 out.insert("raw_active_app".into(), json!(app));
             }
+            out.insert("is_ai_running".into(), json!(s.is_ai_running()));
+            out.insert("live_agent_name".into(), json!(s.shell().live_agent_name()));
             if let Some(branch) = &s.git_branch {
                 out.insert("git_branch".into(), json!(branch));
             }
@@ -230,7 +234,7 @@ impl Workspace {
         let mode = token_optimization_mode(cx);
         let is_ai = self
             .mcp_session(id, cx)
-            .is_some_and(|s| s.read(cx).ai_app.is_some());
+            .is_some_and(|s| s.read(cx).is_ai_running());
         self.state.get(id)?;
         self.apply_token_opt_override(id, value, true, cx);
         cx.notify();
