@@ -97,6 +97,19 @@ pub(crate) fn shutdown(cx: &mut App) -> Option<JoinHandle<WriterStats>> {
         .map(RestoreWriter::shutdown)
 }
 fn commit(root: &DataRoot, buffers: &Mutex<BufferLedger>, request: Request) -> bool {
+    use chau7_next_core::work_profiler::{self, Key, Queue};
+    let mut work = work_profiler::begin(Key::work(
+        "save_restore_transaction",
+        if request.terminating {
+            "termination"
+        } else {
+            "autosave"
+        },
+        "unobserved",
+        "restore_writer",
+        Queue::Background,
+    ));
+    work.items(request.contexts.len());
     let result = (|| -> std::io::Result<()> {
         // Reject oversized metadata before modifying canonical contexts. Bundle
         // serialization, hashing, fsync, archiving and pruning all run here.
@@ -111,6 +124,16 @@ fn commit(root: &DataRoot, buffers: &Mutex<BufferLedger>, request: Request) -> b
             ));
         }
         write_contexts(root, &request.contexts)?;
+        // Actual successfully written context bytes, not an estimated total I/O
+        // count. Exact committed bundle sizes remain in the incident payload.
+        work.bytes(
+            request
+                .contexts
+                .values()
+                .filter_map(|buffer| buffer.text.as_ref())
+                .map(|text| text.len())
+                .sum(),
+        );
         match &request.session {
             Some(session) => {
                 crate::session_store::save_for_measured(root, session, request.terminating)?;
@@ -322,6 +345,37 @@ mod tests {
                 .map(String::as_str),
             Some("new pending")
         );
+        let _ = std::fs::remove_dir_all(root.home());
+    }
+    #[test]
+    fn actual_save_duration_is_exposed_as_background_work() {
+        let root = root();
+        let buffers = Mutex::new(BufferLedger::default());
+        assert!(commit(
+            &root,
+            &buffers,
+            Request {
+                session: None,
+                contexts: HashMap::new(),
+                keep: HashSet::new(),
+                terminating: true
+            }
+        ));
+        if chau7_next_core::work_profiler::enabled() {
+            let snapshot = chau7_next_core::work_profiler::snapshot();
+            let entry = snapshot["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| {
+                    entry["operation"] == "save_restore_transaction"
+                        && entry["phase"] == "termination"
+                })
+                .expect("actual restore save work");
+            assert_eq!(entry["queue"], "background");
+            assert!(entry["lifetime"]["sample_count"].as_u64().unwrap() >= 1);
+            assert!(entry["lifetime"]["total_ms"].as_f64().unwrap() >= 0.0);
+        }
         let _ = std::fs::remove_dir_all(root.home());
     }
     #[test]
