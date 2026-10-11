@@ -682,6 +682,10 @@ pub fn latency_view(cx: &App) -> LatencyView {
         .unwrap_or_default()
 }
 pub fn init_latency(cx: &mut App) {
+    cx.set_global(RetentionGlobal(Arc::new(Mutex::new(RetentionView {
+        selected_days: Settings::get(cx).general.telemetry_retention_days,
+        ..Default::default()
+    }))));
     cx.set_global(LatencyGlobal(Arc::new(Mutex::new(LatencyView::default()))));
     refresh_latency(cx);
     cx.spawn(async move |cx| {
@@ -733,6 +737,7 @@ pub fn refresh_latency(cx: &mut App) {
         s.clone()
     };
     let root = cx.global::<AppData>().root.clone();
+    let retention_days = Settings::get(cx).general.telemetry_retention_days;
     cx.background_executor()
         .spawn(async move {
             let now = Utc::now();
@@ -740,6 +745,25 @@ pub fn refresh_latency(cx: &mut App) {
             let retained = chau7_next_core::proxy::ProxyAnalyticsStore::new(&root.proxy_db())
                 .evidence_batch(recorder.store().evidence_cursor(), 100);
             recorder.store().ingest_evidence_batch(&retained);
+            if retention_days > 0 {
+                let protected = recorder
+                    .all_active_runs()
+                    .into_iter()
+                    .map(|r| r.id)
+                    .collect::<Vec<_>>();
+                match recorder
+                    .store()
+                    .prune_retained(retention_days, &protected, 100, now)
+                {
+                    Ok(report) if report.rows() > 0 => log::info!(
+                        "Opt-in telemetry retention: removed {} runs and {} independent records",
+                        report.runs,
+                        report.rows() - report.runs
+                    ),
+                    Err(error) => log::warn!("Opt-in telemetry retention failed: {error}"),
+                    _ => {}
+                }
+            }
             recorder.store().backfill_latency_batch(100);
             recorder.store().backfill_cost_batch(100);
             let mut samples = recorder.store().latency_samples(start);
@@ -860,4 +884,150 @@ pub fn refresh_latency(cx: &mut App) {
             s.refreshing = false;
         })
         .detach();
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RetentionView {
+    pub selected_days: i64,
+    pub preview: Option<chau7_next_core::telemetry::retention::RetentionPreview>,
+    pub previewed_at: Option<DateTime<Utc>>,
+    pub working: bool,
+    pub error: Option<String>,
+    pub compact_confirmation: bool,
+    pub compacted_at: Option<DateTime<Utc>>,
+    generation: u64,
+}
+struct RetentionGlobal(Arc<Mutex<RetentionView>>);
+impl Global for RetentionGlobal {}
+pub fn retention_state(cx: &App) -> Option<Arc<Mutex<RetentionView>>> {
+    cx.try_global::<RetentionGlobal>().map(|s| s.0.clone())
+}
+pub fn retention_view(cx: &App) -> RetentionView {
+    cx.try_global::<RetentionGlobal>()
+        .map(|s| s.0.lock().clone())
+        .unwrap_or_default()
+}
+/// Selecting an expiry only previews its effects. No setting or data is changed.
+pub fn preview_retention(days: i64, cx: &mut App) {
+    let (Some(global), Some(recorder)) = (
+        cx.try_global::<RetentionGlobal>(),
+        crate::telemetry::recorder(cx),
+    ) else {
+        return;
+    };
+    let days = chau7_next_core::telemetry::retention::normalize_days(days);
+    let shared = global.0.clone();
+    let generation = {
+        let mut s = shared.lock();
+        s.selected_days = days;
+        s.preview = None;
+        s.previewed_at = None;
+        s.error = None;
+        s.working = true;
+        s.generation += 1;
+        s.generation
+    };
+    cx.spawn(async move |cx| {
+        let result = cx
+            .background_executor()
+            .spawn(async move {
+                let protected = recorder
+                    .all_active_runs()
+                    .into_iter()
+                    .map(|r| r.id)
+                    .collect::<Vec<_>>();
+                recorder
+                    .store()
+                    .retention_preview(days, &protected, Utc::now())
+                    .map_err(|e| e.to_string())
+            })
+            .await;
+        cx.update(|cx| {
+            let mut s = shared.lock();
+            if s.generation != generation {
+                return;
+            }
+            s.working = false;
+            match result {
+                Ok(preview) => {
+                    s.preview = Some(preview);
+                    s.previewed_at = Some(Utc::now());
+                }
+                Err(error) => s.error = Some(error),
+            }
+            cx.refresh_windows();
+        });
+    })
+    .detach();
+}
+/// This separate click is required after the read-only preview completes.
+pub fn apply_retention(cx: &mut App) {
+    let view = retention_view(cx);
+    if view.working
+        || view.preview.is_none()
+        || view
+            .previewed_at
+            .is_none_or(|at| Utc::now().signed_duration_since(at).num_seconds() > 300)
+    {
+        return;
+    }
+    crate::settings_window::update(cx, |s| {
+        s.general.telemetry_retention_days = view.selected_days
+    });
+    refresh_latency(cx);
+}
+pub fn request_compaction(cx: &mut App) {
+    if let Some(global) = cx.try_global::<RetentionGlobal>() {
+        let mut s = global.0.lock();
+        if !s.working {
+            s.compact_confirmation = true;
+        }
+    }
+    cx.refresh_windows();
+}
+pub fn cancel_compaction(cx: &mut App) {
+    if let Some(global) = cx.try_global::<RetentionGlobal>() {
+        global.0.lock().compact_confirmation = false;
+    }
+    cx.refresh_windows();
+}
+/// No automatic VACUUM. The user explicitly confirms this separate operation.
+pub fn compact_confirmed(cx: &mut App) {
+    let (Some(global), Some(recorder)) = (
+        cx.try_global::<RetentionGlobal>(),
+        crate::telemetry::recorder(cx),
+    ) else {
+        return;
+    };
+    let shared = global.0.clone();
+    {
+        let mut s = shared.lock();
+        if !s.compact_confirmation || s.working {
+            return;
+        }
+        s.compact_confirmation = false;
+        s.working = true;
+        s.error = None;
+    }
+    cx.spawn(async move |cx| {
+        let result = cx
+            .background_executor()
+            .spawn(async move {
+                recorder
+                    .store()
+                    .compact_confirmed()
+                    .map_err(|e| e.to_string())
+            })
+            .await;
+        cx.update(|cx| {
+            let mut s = shared.lock();
+            s.working = false;
+            match result {
+                Ok(()) => s.compacted_at = Some(Utc::now()),
+                Err(e) => s.error = Some(e),
+            }
+            cx.refresh_windows();
+        });
+    })
+    .detach();
 }
