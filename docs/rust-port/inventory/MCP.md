@@ -36,7 +36,7 @@ Chau7 runs an MCP server on a Unix socket so AI agents (Claude Code, Codex, Curs
 | MCP-023 | Tool `tab_submit_prompt`: presses Enter in a tab | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/tools/tabs.rs` | done |  |
 | MCP-024 | Tool `tab_close`: closes a tab without the warning; refuses if a process is running or waiting for input unless `force` | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/tools/tabs.rs`, `chau7_next/src/workspace/mcp.rs` | done |  |
 | MCP-025 | Tool `tab_output`: last N lines (default 50, max 10,000, 512 KB cap) from the scrollback, or from the ANSI-stripped AI PTY log with `source=pty_log`; `wait_for_stable_ms` (max 30 s) waits until output stops changing | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/tools/tabs.rs`, `chau7_next_core/src/mcp/output.rs`, `chau7_next/src/ai/session_log.rs` (last_ai_log_path) | done |  |
-| MCP-026 | Tool `tab_set_cto`: per-tab token optimization override `default`/`forceOn`/`forceOff`; refused when token optimization is off globally (partial: the global mode is the TokenOptimization stub (off), so it is always refused; flag file recalculation waits for TokenOptimization) | `MCP/TerminalControlService.swift` |  | chau7_next/src/workspace/mcp.rs | done |  |
+| MCP-026 | Tool tab_set_cto: per-tab token optimization override default/forceOn/forceOff; refused when token optimization is off globally | `MCP/TerminalControlService.swift` |  | chau7_next/src/workspace/mcp.rs; chau7_next/src/cto/mod.rs | done |  |
 | MCP-027 | Tool `tab_rename`: sets or clears (empty string) a tab's custom title on every split of the tab | `MCP/TerminalControlService.swift` | `TerminalControlServiceTests` | `chau7_next/src/mcp/tools/tabs.rs`, `chau7_next/src/workspace/mcp.rs` | done |  |
 | MCP-028 | Tool `repo_get_metadata`: description, labels, favorite files, top 10 frequent commands and repo stats (commands, success rate, runs, tokens, cost, top tools) | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/tools/repo.rs`, `chau7_next/src/seams.rs` (HistoryDb with the telemetry store), `chau7_next/src/telemetry.rs` (ai_repo_stats) | done |  |
 | MCP-029 | Tool `repo_set_metadata`: updates only the given fields (description, labels, favorite files); Rust writes them to its own metadata overlay, never to the repo | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/tools/repo.rs` | done |  |
@@ -60,21 +60,21 @@ Chau7 runs an MCP server on a Unix socket so AI agents (Claude Code, Codex, Curs
 | MCP-047 | "Require Approval" setting (default off): Allow/Deny dialog before an agent opens a tab | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/approval.rs`, `chau7_next/src/settings/mcp.rs`, `chau7_next/src/settings_window/mcp.rs` | done | NSAlert |
 | MCP-048 | MCP tab limit setting (default 4, hard max 50), counted per window over MCP-created tabs | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/tools/tabs.rs`, `chau7_next/src/settings/mcp.rs`, `chau7_next/src/settings_window/mcp.rs` | done |  |
 | MCP-049 | MCP-created tabs stay attached to a live terminal even when far from the selected tab (not render-suspended) so agents can read them | `Overlay/OverlayTabsModel.swift` |  | `chau7_next/src/terminal/session.rs` | done |  |
-| MCP-050 | "Show Tab Indicator" setting (default on) | `Settings/Views/MCPSettingsView.swift` |  | `chau7_next/src/settings/mcp.rs`, `chau7_next/src/settings_window/mcp.rs` | n/a |  |
+| MCP-050 | "Show Tab Indicator" setting (default on) | `Settings/Views/MCPSettingsView.swift` |  | chau7_next/src/settings/mcp.rs; chau7_next/src/settings_window/mcp.rs; chau7_next/src/workspace/tab_bar_view.rs | done |  |
 | MCP-051 | Stable `window_id` per window (0, 1, 2...) that does not shift when a window closes; tab lookups search all windows | `MCP/TerminalControlService.swift` | `TerminalControlServiceTests` | `chau7_next/src/mcp/windows.rs` | done |  |
 | MCP-052 | MCP actions are logged (tab created, exec, input, key press, close, blocked/allowed commands) | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/tools/tabs.rs`, `chau7_next/src/mcp/approval.rs` | done |  |
 
-| MCP-053 | chau7_runtime_info and chau7_mcp_session_info: runtime identity/build/protocol/features plus client connection metadata | `MCP/MCPSession.swift` | MCPProtocolCompatibilityTests; MCPSessionTests |  | missing |  |
-| MCP-054 | chau7_state_snapshot: coherent windows/tabs/runtime/services/permissions snapshot from immutable projection | `MCP/Chau7StateSnapshotService.swift`; `MCP/MCPSession.swift` | Chau7ObservabilityServiceTests |  | missing |  |
-| MCP-055 | chau7_runtime_events and chau7_timer_inventory expose canonical recent events and actual running timers | `MCP/MCPSession.swift`; `Observability/Chau7ObservabilityService.swift` | Chau7ObservabilityServiceTests |  | missing |  |
-| MCP-056 | chau7_subscribe/unsubscribe: connection-scoped topic filters, cursors and change delivery without leaking cross-client subscriptions | `MCP/MCPSession.swift`; `MCP/MCPClientConnections.swift` | MCPClientConnectionsTests |  | missing |  |
-| MCP-057 | tab_request_control/release_control: explicit control ownership and client identity; reject conflicting mutation, release on disconnect | `MCP/MCPSession.swift`; `MCP/TerminalControlService.swift` | TerminalControlServiceTests; MCPSessionTransportTests |  | missing |  |
-| MCP-058 | tab_wait_ready: wait for shell/interactive readiness with bounded timeout and useful diagnostics | `MCP/MCPSession.swift`; `MCP/TerminalControlService.swift` | TerminalControlServiceTests |  | missing |  |
-| MCP-059 | agent_launch: provider/model/prompt/environment launch readiness, optional existing tab and shell-safe command construction | `MCP/MCPSession.swift`; `MCP/TerminalControlService.swift` | TerminalControlServiceTests |  | missing |  |
-| MCP-060 | repo_get_events: repository-scoped chronological events from sessions/AI/journal with query limit and cursor semantics | `MCP/MCPRepositoryQueryService.swift`; `MCP/MCPSession.swift` | MCPRepositoryQueryServiceTests; RepoEventQueryTests |  | missing |  |
-| MCP-061 | runtime_session_children/cancel_children/retry and runtime_turn_result/wait with current schemas, statuses, timeout and structured results | `MCP/MCPSession.swift`; `Runtime/RuntimeControlService.swift` | RuntimeControlServiceTests |  | missing |  |
-| MCP-062 | Per-tool bounded rate limits, client connection lifetime, handshake diagnostics and stable unique tab IDs across windows/restores | `Chau7Core/MCPToolRateLimiter.swift`; `Chau7Core/MCPConnectionLifetimePolicy.swift`; `Chau7Core/MCPHandshakeDiagnostic.swift`; `Chau7Core/MCPTabIDAllocator.swift` | MCPToolRateLimiterTests; MCPConnectionLifetimePolicyTests; MCPTabIDAllocatorTests |  | missing |  |
-| MCP-063 | Codex MCP config formatter preserves unrelated TOML/comments/other servers and idempotently updates only Next registration | `MCP/CodexMCPConfigFormatter.swift` | CodexMCPConfigFormatterTests |  | missing |  |
+| MCP-053 | chau7_runtime_info and chau7_mcp_session_info: runtime identity/build/protocol/features plus client connection metadata | `MCP/MCPSession.swift` | MCPProtocolCompatibilityTests; MCPSessionTests | chau7_next/src/mcp/tools/observability.rs; chau7_next/src/performance.rs; chau7_next_core/src/mcp/handshake.rs | done |  |
+| MCP-054 | chau7_state_snapshot returns the current Swift schema: runtime info, tabs, approvals, repository events, active telemetry and timers, with observer contract and cursor | `MCP/Chau7StateSnapshotService.swift`; `MCP/MCPSession.swift` | Chau7ObservabilityServiceTests | chau7_next/src/mcp/observer.rs (state_snapshot) | done |  |
+| MCP-055 | chau7_runtime_events and chau7_timer_inventory expose canonical recent events and actual running timers | `MCP/MCPSession.swift`; `Observability/Chau7ObservabilityService.swift` | Chau7ObservabilityServiceTests | chau7_next/src/mcp/tools/observability.rs; chau7_next/src/observability/mod.rs | done |  |
+| MCP-056 | chau7_subscribe/unsubscribe: connection-scoped topic filters, cursors and change delivery without leaking cross-client subscriptions | `MCP/MCPSession.swift`; `MCP/MCPClientConnections.swift` | MCPClientConnectionsTests | chau7_next/src/mcp/observer.rs; chau7_next/src/mcp/server.rs | done |  |
+| MCP-057 | tab_request_control/release_control: explicit control ownership and client identity; reject conflicting mutation, release on disconnect | `MCP/MCPSession.swift`; `MCP/TerminalControlService.swift` | TerminalControlServiceTests; MCPSessionTransportTests | chau7_next_core/src/mcp/control_plane.rs; chau7_next/src/mcp/control.rs; chau7_next/src/workspace/mcp.rs | done |  |
+| MCP-058 | tab_wait_ready: wait for shell/interactive readiness with bounded timeout and useful diagnostics | `MCP/MCPSession.swift`; `MCP/TerminalControlService.swift` | TerminalControlServiceTests | chau7_next_core/src/mcp/control_plane.rs; chau7_next/src/mcp/tools/tabs.rs; chau7_next/src/workspace/mcp.rs | done |  |
+| MCP-059 | agent_launch: provider/model/prompt/environment launch readiness, optional existing tab and shell-safe command construction | `MCP/MCPSession.swift`; `MCP/TerminalControlService.swift` | TerminalControlServiceTests | chau7_next_core/src/mcp/control_plane.rs; chau7_next/src/mcp/tools/tabs.rs; chau7_next/src/workspace/mcp.rs | done |  |
+| MCP-060 | repo_get_events: repository-scoped chronological events from sessions/AI/journal with query limit and cursor semantics | `MCP/MCPRepositoryQueryService.swift`; `MCP/MCPSession.swift` | MCPRepositoryQueryServiceTests; RepoEventQueryTests | chau7_next/src/observability/mod.rs (repo_get_events); chau7_next/src/mcp/tools/observability.rs | done |  |
+| MCP-061 | runtime_session_children/cancel_children/retry and runtime_turn_result/wait with current schemas, statuses, timeout and structured results | `MCP/MCPSession.swift`; `Runtime/RuntimeControlService.swift` | RuntimeControlServiceTests | chau7_next_core/src/runtime/session.rs; chau7_next/src/runtime/control.rs; chau7_next/src/mcp/tools/runtime.rs | done |  |
+| MCP-062 | Per-tool bounded rate limits, client connection lifetime, handshake diagnostics and stable unique tab IDs across windows/restores | `Chau7Core/MCPToolRateLimiter.swift`; `Chau7Core/MCPConnectionLifetimePolicy.swift`; `Chau7Core/MCPHandshakeDiagnostic.swift`; `Chau7Core/MCPTabIDAllocator.swift` | MCPToolRateLimiterTests; MCPConnectionLifetimePolicyTests; MCPTabIDAllocatorTests | chau7_next_core/src/mcp/rate_limiter.rs; chau7_next_core/src/mcp/handshake.rs; chau7_next/src/mcp/server.rs; chau7_next/src/workspace/mcp.rs | done |  |
+| MCP-063 | Codex MCP config formatter preserves unrelated TOML/comments/other servers and idempotently updates only Next registration | `MCP/CodexMCPConfigFormatter.swift` | CodexMCPConfigFormatterTests | chau7_next_core/src/mcp/client_config.rs (try_merge_codex_toml, register); Cargo.toml (existing locked toml_edit) | done |  |
 
 ## Notes
 
@@ -134,7 +134,7 @@ Chau7 runs an MCP server on a Unix socket so AI agents (Claude Code, Codex, Curs
 - `tab_status` extras: `processes[{pid,name,cpu_percent,rss_bytes}]`,
   `active_run{run_id, provider, started_at, session_id, duration_so_far_ms}`.
 - Telemetry tools return the `TelemetryRun`/turn/tool-call Codable structs
-  (ISO 8601 dates, sorted keys); Telemetry is not ported, so match its inventory.
+  (ISO 8601 dates); current projected telemetry state and evidence are described in Telemetry.md.
 
 ### Client config registration
 
@@ -166,8 +166,7 @@ Chau7 runs an MCP server on a Unix socket so AI agents (Claude Code, Codex, Curs
   command. Keep or fix deliberately.
 - Input is validated on the main thread and sent asynchronously to avoid a
   deadlock with the Rust PTY lock; Chau7 Next has a different threading model.
-- MCP-050 is `n/a`: the setting is stored and shown in settings but nothing in
-  the Swift app reads it.
+- MCP-050 controls the actual Next MCP tab styling in workspace/tab_bar_view.rs; the persisted setting defaults on.
 - `chau7_next_core/src/key_encoding.rs` already encodes xterm keys and
   modifiers; reuse it for `tab_press_key`.
 
@@ -221,3 +220,8 @@ Chau7 runs an MCP server on a Unix socket so AI agents (Claude Code, Codex, Curs
   prompt, which cuts long details.
 - A socket path longer than the OS limit (104 bytes on macOS, 108 on Linux)
   cannot be bound; the error is logged.
+
+## Current-source verification
+MCP-053 through MCP-062 are registered and routed implementations, not schema placeholders. Per-connection origin/grant checks survive runtime deferred prompts and are checked again at delivery; disconnected clients cannot attach/mutate/retry/cancel/approve sessions. Cursor subscriptions serialize frames, report expired replay, and bound delivery to one total deadline. Snapshot cursor is captured before component reads so concurrent changes remain replayable; the actual Swift snapshot schema does not promise separate windows/services/permissions/runtime-session datasets.
+MCP-063 uses the already locked toml_edit 0.22.27. Only Next registration is edited. Semantic idempotence preserves original formatting; commented/quoted headers, multiline string/comment brackets, inline/dotted tables and changing argument counts retain unrelated syntax. Invalid documents/server shapes are skipped without writing. Checkpoint 0bf02f6b: all 23 client-config tests and strict release core Clippy pass.
+Evidence: mcp::control_plane::tests::{grants_bind_owner_and_terminal_and_are_process_local,confirmed_transfer_and_release_are_exact,readiness_matches_current_swift_priority,launch_bounds_and_command,prompt_checks_report_unverified_handoffs}; mcp::rate_limiter::tests::{exact_swift_budgets_are_independent_and_refill,polling_and_unsubscribe_have_the_current_catalog_budgets}; mcp::handshake::tests::{supported_negotiation_requires_initialized_and_refuses_repeat,diagnostics_are_bounded_and_connection_specific}; mcp observer frame/deadline tests; runtime caller-origin headless regressions. Native external-client acceptance remains separate.
