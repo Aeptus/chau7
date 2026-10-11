@@ -34,7 +34,7 @@ Depends on: Terminal (shell environment, first prompt, input lines), AI (AI CLI 
 | TOK-021 | MCP control: `tab_set_cto` sets a tab's override (refused when mode is Off); tab status reports `cto_active` and `cto_override` | `MCP/TerminalControlService.swift` |  | chau7_next/src/workspace/mcp.rs | done |  |
 | TOK-022 | Legacy RTK folders `rtk_bin`, `rtk_data`, `rtk_active` renamed to `cto_*` on setup; legacy keys `rtk.mode`, `feature.rtkPrefix` migrated | `TokenOptimization/CTOManager.swift`, `Settings/FeatureSettings.swift` | | | n/a | |
 
-| TOK-023 | CTO wrappers honor CHAU7_CTO_OPTIM_ACTIVE before invoking optimizer to prevent recursion, while keeping isolated wrapper PATH | `TokenOptimization/CTOManager.swift`; `rust/chau7_optim/src/main.rs` |  | chau7_next_core/src/cto_wrappers.rs | partial |  |
+| TOK-023 | CTO wrappers honor CHAU7_CTO_OPTIM_ACTIVE before invoking optimizer to prevent recursion, while keeping isolated wrapper PATH | `TokenOptimization/CTOManager.swift`; `rust/chau7_optim/src/main.rs` |  | chau7_next_core/src/cto_wrappers.rs | done |  |
 | TOK-024 | CTO runtime state JSON exposes per-tab overrides/session activation to wrappers, monitors and external clients without writing Swift state | `TokenOptimization/CTORuntimeMonitor.swift`; `TokenOptimization/CTOStateFile.swift` |  | chau7_next/src/cto/mod.rs; chau7_next_core/src/cto_wrappers.rs | partial |  |
 
 ## Notes

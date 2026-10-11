@@ -14,14 +14,14 @@ the code.
 
 | ID | Feature | Swift source | Tests | Rust | Status | macOS API |
 |---|---|---|---|---|---|---|
-| L10-001 | Interface in English, French, Arabic, Hebrew or Spanish, or System Default; Spanish is absent in audit Next baseline | `Localization/Localization.swift`; `Resources/*.lproj` | `LocalizationTests` | crates/chau7_next_core/src/l10n/mod.rs | partial | Bundle localizations |
+| L10-001 | Interface in English, French, Arabic, Hebrew or Spanish, or System Default | `Localization/Localization.swift`; `Resources/*.lproj` | `LocalizationTests` | crates/chau7_next_core/src/l10n/mod.rs | done | Bundle localizations |
 | L10-002 | App Language picker in Settings > General, saved as `app.language` (note: "Some changes may require restarting the app") | `Settings/Views/GeneralSettingsView.swift`, `Settings/FeatureSettings.swift` (`appLanguage`) |  | crates/chau7_next/src/settings_window/general.rs | done |  |
 | L10-003 | Changing the language refreshes the settings window at once; menus and other views pick it up after a restart | `Localization/Localization.swift` (`refreshToken`, `LocalizedViewModifier`, `languageDidChange`) |  | crates/chau7_next/src/l10n.rs | done |  |
 | L10-004 | Right-to-left layout for Arabic and Hebrew (applied to the settings window and other views using `.localized()`) | `Localization/Localization.swift` (`isRTL`, `layoutDirection`) |  | crates/chau7_next/src/l10n.rs | done |  |
 | L10-005 | Strings missing from a language fall back to the English default from the code | `Localization/Localization.swift` (`localizedString`) |  | crates/chau7_next_core/src/l10n/mod.rs | done |  |
 | L10-006 | Dates, numbers, percentages and file sizes formatted for the chosen language | `Localization/Localization.swift` (`LocalizedFormatters`) |  | crates/chau7_next_core/src/l10n/formatters.rs | done |  |
 
-| L10-007 | Spanish is selectable and follows System Default language matching with English fallback | `Localization/Localization.swift`; `Resources/es.lproj/Localizable.strings` | LocalizationTests |  | missing |  |
+| L10-007 | Spanish is selectable and follows System Default language matching with English fallback | `Localization/Localization.swift`; `Resources/es.lproj/Localizable.strings` | LocalizationTests |  | done |  |
 | L10-008 | Plural rules in all language stringsdict tables format counts with locale-specific singular/plural rather than raw English substitutions | `Localization/Localization.swift`; `Resources/*.lproj/Localizable.stringsdict` | LocalizationTests | chau7_next_core/src/l10n/formatters.rs | partial |  |
 
 | L10-009 | Regional Number Format independent from interface language affects integer/decimal/percent/currency, persists and invalidates cached formatters | `Localization/Localization.swift`; `Utilities/RegionalNumberFormat.swift`; `Settings/TerminalBehaviorStore.swift` |  | chau7_next_core/src/l10n/formatters.rs | partial |  |
