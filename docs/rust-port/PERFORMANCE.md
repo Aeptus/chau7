@@ -56,6 +56,12 @@ JSON schema version 1 contains:
   monitoring, remote output, terminal painting and dangerous-command scans.
   The monitoring feature includes AI and dev-server monitoring. Empty feature
   arrays mean no instrumented work in that window; missing work is not zero.
+- On macOS, measured feature scopes also emit paired `os_signpost` intervals
+  under subsystem `com.chau7.next`, category `performance`, for Instruments.
+  Begin/end IDs match even when a scope exits early. Emission skips disabled
+  signpost logs, and no terminal content enters interval names. Plain recorded
+  elapsed values remain numeric aggregates; they are not fabricated intervals.
+  Linux and Windows explicitly report native signposts as unsupported.
 
 Snapshots include up to 128 panes and report `terminal_count` and
 `terminals_truncated` explicitly. They exclude terminal output, command text,

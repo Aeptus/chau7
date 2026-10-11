@@ -35,17 +35,31 @@ pub fn log(category: &str, level: OsLogLevel, message: &str) {
     imp::log(category, level, message)
 }
 
+/// Install real feature intervals in the macOS Instruments performance category.
+/// Other platforms keep the numeric profiler without pretending to emit os_signpost.
+pub fn install_feature_intervals() {
+    #[cfg(target_os = "macos")]
+    let _ = chau7_next_core::feature_profiler::install_interval_observer(
+        chau7_next_core::feature_profiler::IntervalObserver {
+            begin: imp::begin_interval,
+            end: imp::end_interval,
+        },
+    );
+}
+
 #[cfg(target_os = "macos")]
 mod imp {
     use std::collections::HashMap;
     use std::ffi::{CString, c_char, c_int, c_void};
-    use std::sync::Mutex;
+    use std::sync::{Mutex, OnceLock};
 
     use super::OsLogLevel;
 
     unsafe extern "C" {
         fn chau7_os_log_create(subsystem: *const c_char, category: *const c_char) -> *mut c_void;
         fn chau7_os_log(log: *mut c_void, level: c_int, message: *const c_char);
+        fn chau7_signpost_begin(log: *mut c_void, feature: u32) -> u64;
+        fn chau7_signpost_end(log: *mut c_void, feature: u32, token: u64);
     }
 
     /// One `os_log_t` per category, created on first use (they live for the
@@ -67,6 +81,20 @@ mod imp {
         }
         map.insert(category.to_string(), created as usize);
         Some(created)
+    }
+
+    fn performance_handle() -> *mut c_void {
+        static HANDLE: OnceLock<usize> = OnceLock::new();
+        *HANDLE.get_or_init(|| handle("performance").map_or(0, |log| log as usize)) as *mut c_void
+    }
+    pub fn begin_interval(feature: chau7_next_core::feature_profiler::Feature) -> u64 {
+        // SAFETY: the cached handle is a lifetime os_log_t; the C shim checks
+        // availability and uses a static name selected by the enum key.
+        unsafe { chau7_signpost_begin(performance_handle(), feature as u32) }
+    }
+    pub fn end_interval(feature: chau7_next_core::feature_profiler::Feature, token: u64) {
+        // SAFETY: token was generated for this same log by begin_interval.
+        unsafe { chau7_signpost_end(performance_handle(), feature as u32, token) };
     }
 
     pub fn log(category: &str, level: OsLogLevel, message: &str) {

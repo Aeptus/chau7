@@ -94,6 +94,7 @@ fn main() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
     }
     logging::init(&root);
+    platform::oslog::install_feature_intervals();
     logging::ai_pty::purge_large_logs(root.ai_logs_dir());
     protected_paths::init(&root);
     match root.import_from_swift_app() {

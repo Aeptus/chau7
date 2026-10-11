@@ -120,6 +120,9 @@ pub fn capture(cx: &App) -> Value {
         "window_count": live.len(), "terminal_count": terminal_count,
         "terminals_truncated": terminal_count > terminals.len(), "terminals": terminals,
         "features": feature_profiler::snapshot().to_json(80),
+        "instrumentation": {"os_signpost_supported":cfg!(target_os="macos"),
+            "signpost_subsystem":if cfg!(target_os="macos") {Some("com.chau7.next")} else {None},
+            "signpost_category":if cfg!(target_os="macos") {Some("performance")} else {None}},
         "persistence": {"interval_seconds": INTERVAL.as_secs(), "history_file_count": 2,
             "max_history_file_bytes": MAX_HISTORY_BYTES, "max_snapshot_bytes": MAX_RECORD_BYTES}
     })
