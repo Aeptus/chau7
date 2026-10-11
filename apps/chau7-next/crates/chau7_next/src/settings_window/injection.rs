@@ -79,13 +79,14 @@ impl InjectionState {
             }
         });
         let mut tasks = Vec::new();
+        let known_roots = crate::repository::known_roots(cx);
         if loading {
             let root = root.clone();
             let load = cx.background_spawn(async move {
                 let file = rules::load(&root);
                 let mut locals = BTreeMap::new();
                 let mut errors = Vec::new();
-                for repo in chau7_next_core::repo_metadata::load_recent(&root.recent_repos_file()) {
+                for repo in known_roots {
                     let path = Path::new(&repo);
                     if crate::protected_paths::should_skip(path) {
                         continue;
@@ -151,6 +152,7 @@ impl InjectionState {
                                 .keys()
                                 .cloned()
                                 .collect::<std::collections::BTreeSet<_>>(),
+                            crate::repository::known_roots(cx),
                         )
                     });
                     if let Some(error) = cache.writer.take_error() {
@@ -164,7 +166,7 @@ impl InjectionState {
                 if ticks % 5 != 0 {
                     continue;
                 }
-                let Some((revision, known)) = catalog else {
+                let Some((revision, known, roots)) = catalog else {
                     continue;
                 };
                 let root = root.clone();
@@ -172,9 +174,7 @@ impl InjectionState {
                     .background_executor()
                     .spawn(async move {
                         let mut found = BTreeMap::new();
-                        for repo in
-                            chau7_next_core::repo_metadata::load_recent(&root.recent_repos_file())
-                        {
+                        for repo in roots {
                             if known.contains(&repo)
                                 || crate::protected_paths::should_skip(Path::new(&repo))
                             {
