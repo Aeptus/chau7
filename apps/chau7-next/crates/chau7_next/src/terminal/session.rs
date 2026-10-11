@@ -2458,6 +2458,18 @@ fn feedback_provider(event: &AiEvent) -> Option<String> {
 fn feedback_owner_accepts_kind(kind: &str, is_live: bool) -> bool {
     is_live || matches!(kind, "turn_completed" | "finished")
 }
+fn feedback_target_matches(
+    target: Option<uuid::Uuid>,
+    metadata_uuid: uuid::Uuid,
+    tab: crate::tab_bar::TabId,
+    native_tab_identifier: &str,
+) -> bool {
+    target.is_none_or(|target| {
+        target == metadata_uuid
+            || target == crate::ai::events_out::tab_uuid(tab)
+            || uuid::Uuid::parse_str(native_tab_identifier).ok() == Some(target)
+    })
+}
 fn feedback_owner(
     event: &AiEvent,
     target: Option<uuid::Uuid>,
@@ -2478,9 +2490,6 @@ fn feedback_owner(
     for window in crate::mcp::windows::windows(cx) {
         let workspace = window.workspace.read(cx);
         for uuid in workspace.mcp_tab_uuids() {
-            if target.is_some_and(|target| target != uuid) {
-                continue;
-            }
             let Some(tab) = workspace.mcp_find(uuid) else {
                 continue;
             };
@@ -2489,6 +2498,9 @@ fn feedback_owner(
             };
             for (_, entity) in panes.read(cx).pane_sessions(cx) {
                 let session = entity.read(cx);
+                if !feedback_target_matches(target, uuid, tab, &session.tab_identifier) {
+                    continue;
+                }
                 let id = event
                     .session_id
                     .as_deref()
@@ -2547,7 +2559,42 @@ fn feedback_owner(
 
 #[cfg(test)]
 mod feedback_owner_tests {
-    use super::{AiEvent, feedback_kind, feedback_owner_accepts_kind};
+    use super::{AiEvent, feedback_kind, feedback_owner_accepts_kind, feedback_target_matches};
+
+    #[test]
+    fn current_publishers_and_native_pane_aliases_match_only_the_actual_tab() {
+        let metadata = uuid::Uuid::new_v4();
+        let native = uuid::Uuid::new_v4();
+        let encoded = crate::ai::events_out::tab_uuid(7);
+        for target in [None, Some(metadata), Some(encoded), Some(native)] {
+            assert!(feedback_target_matches(
+                target,
+                metadata,
+                7,
+                &native.to_string()
+            ));
+        }
+        for target in [uuid::Uuid::new_v4(), crate::ai::events_out::tab_uuid(8)] {
+            assert!(!feedback_target_matches(
+                Some(target),
+                metadata,
+                7,
+                &native.to_string()
+            ));
+        }
+        assert!(!feedback_target_matches(
+            Some(native),
+            metadata,
+            7,
+            "invalid native id"
+        ));
+        assert!(feedback_target_matches(
+            Some(encoded),
+            metadata,
+            7,
+            "invalid native id"
+        ));
+    }
 
     #[test]
     fn inactive_exact_owner_only_accepts_completion_not_requests_or_resolutions() {
