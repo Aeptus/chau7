@@ -53,7 +53,12 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
   line gutter are wired. The optional `markdown_native_attributes` example
   uses the production styler in a hidden owned AppKit window: H1 22.1pt at
   body13, task indent29.7324pt, unchanged text/selection, and preserved native
-  user-insertion undo passed. Source-window keyboard/IME, selection, split
+  user-insertion undo passed. File loads now open source by default, preserving
+  the chosen preview mode on same-file reload. Explicit loads cancel stale
+  native queued input, reset native undo even for identical file content and
+  set the requested selection; pending native edits block external replacement.
+  Existing Edit menu commands route only to the focused native surface.
+  Source-window keyboard/IME, selection, split
   resize and popup acceptance remain pending; keep partial until proven.
 - The minimap setting and "highlight current line" only change the caret
   color in Swift; there is no minimap drawing. Chau7 Next draws both (a

@@ -266,6 +266,30 @@ impl EditorPane {
         }
     }
 
+    fn has_pending_native_edits(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        if let Some(native) = &self.native_markdown {
+            return native.has_pending_edits();
+        }
+        false
+    }
+
+    #[cfg(target_os = "macos")]
+    fn native_menu_command(
+        &mut self,
+        command: native_markdown::MenuCommand,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.markdown_mode
+            && self
+                .native_markdown
+                .as_ref()
+                .is_some_and(|native| native.menu_command(command))
+        {
+            cx.stop_propagation();
+        }
+    }
+
     fn toggle_markdown_mode(&mut self, cx: &mut Context<Self>) {
         if self.is_markdown_file() {
             self.markdown_mode = !self.markdown_mode;
@@ -404,6 +428,10 @@ impl EditorPane {
         if let Some(line) = line {
             self.select_line(&text, line, cx);
         }
+        #[cfg(target_os = "macos")]
+        if let Some(native) = &self.native_markdown {
+            native.loaded(&text, &self.config, self.state.read(cx).selected_range());
+        }
         self.watch_file(path.clone(), window, cx);
         self.schedule_autosave(cx);
         log::info!("Loaded file: {}", path.display());
@@ -457,7 +485,8 @@ impl EditorPane {
                     let Ok(bytes) = bytes else {
                         return;
                     };
-                    match edtext::external_change(this.loaded_hash, &bytes, this.dirty) {
+                    let dirty = this.dirty || this.has_pending_native_edits();
+                    match edtext::external_change(this.loaded_hash, &bytes, dirty) {
                         edtext::ExternalChange::Unchanged => {}
                         edtext::ExternalChange::Conflict => {
                             this.autosave_task = None;
@@ -469,6 +498,10 @@ impl EditorPane {
                         edtext::ExternalChange::Reload => match String::from_utf8(bytes) {
                             Ok(text) => {
                                 this.loaded_hash = Some(edtext::content_hash(text.as_bytes()));
+                                #[cfg(target_os = "macos")]
+                                if let Some(native) = &this.native_markdown {
+                                    native.loaded(&text, &this.config, 0..0);
+                                }
                                 this.programmatic = true;
                                 this.state
                                     .update(cx, |state, cx| state.set_value(text, window, cx));
@@ -1237,6 +1270,44 @@ impl Render for EditorPane {
             .on_any_mouse_down(cx.listener(|_, _, _, cx| cx.emit(SidePaneEvent::Focused)))
             .capture_action(cx.listener(Self::on_enter))
             .capture_action(cx.listener(Self::on_outdent))
+            .map(|pane| {
+                #[cfg(target_os = "macos")]
+                let pane = pane
+                    .on_action(cx.listener(|this, _: &crate::actions::Cut, _, cx| {
+                        this.native_menu_command(native_markdown::MenuCommand::Cut, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &crate::actions::Copy, _, cx| {
+                        this.native_menu_command(native_markdown::MenuCommand::Copy, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &crate::actions::Paste, _, cx| {
+                        this.native_menu_command(native_markdown::MenuCommand::Paste, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &crate::actions::SelectAll, _, cx| {
+                        this.native_menu_command(native_markdown::MenuCommand::SelectAll, cx)
+                    }))
+                    .on_action(
+                        cx.listener(|this, _: &crate::actions::ToggleSearch, _, cx| {
+                            this.native_menu_command(native_markdown::MenuCommand::Find, cx)
+                        }),
+                    )
+                    .on_action(cx.listener(|this, _: &crate::actions::FindNext, _, cx| {
+                        this.native_menu_command(native_markdown::MenuCommand::FindNext, cx)
+                    }))
+                    .on_action(
+                        cx.listener(|this, _: &crate::actions::FindPrevious, _, cx| {
+                            this.native_menu_command(native_markdown::MenuCommand::FindPrevious, cx)
+                        }),
+                    )
+                    .on_action(cx.listener(
+                        |this, _: &crate::actions::UseSelectionForFind, _, cx| {
+                            this.native_menu_command(
+                                native_markdown::MenuCommand::UseSelectionForFind,
+                                cx,
+                            )
+                        },
+                    ));
+                pane
+            })
             .on_action(cx.listener(|this, _: &ToggleMarkdownMode, _, cx| {
                 this.toggle_markdown_mode(cx);
             }))
