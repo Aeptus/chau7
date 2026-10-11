@@ -153,6 +153,8 @@ pub struct Workspace {
     panel_drag: Option<panel::PanelDrag>,
     /// Bumped when a panel opens, to replay its slide-in animation.
     panel_generation: usize,
+    /// Recent identity roots cached for cwd fallback; refreshed with settings.
+    known_repo_roots: Vec<String>,
 }
 
 impl Focusable for Workspace {
@@ -212,6 +214,9 @@ impl Workspace {
             last_visual_state: None,
             panel_drag: None,
             panel_generation: 0,
+            known_repo_roots: chau7_next_core::repo_metadata::load_recent(
+                &cx.global::<AppData>().root.recent_repos_file(),
+            ),
         }
     }
 
@@ -219,11 +224,17 @@ impl Workspace {
         let mut this = Self::new_empty(window, cx);
         match saved {
             Some(saved) if !saved.tabs.is_empty() => {
-                for tab in &saved.tabs {
-                    this.add_tab(Some(tab.clone()), false, window, cx);
+                let selected_index = saved.selected.min(saved.tabs.len().saturating_sub(1));
+                let mut selected_id = None;
+                for (index, tab) in saved.tabs.iter().enumerate() {
+                    let id = this.add_tab(Some(tab.clone()), false, window, cx);
+                    if index == selected_index {
+                        selected_id = Some(id);
+                    }
                 }
-                let index = saved.selected.min(this.state.len().saturating_sub(1));
-                if let Some(id) = this.state.tabs().get(index).map(|t| t.id) {
+                // Seeding/coalescing groups can reorder tabs during hydration.
+                // Select the restored identity, not its former array position.
+                if let Some(id) = selected_id {
                     this.state.select(id);
                 }
             }
@@ -248,7 +259,13 @@ impl Workspace {
             Some(saved) => saved.cwd.clone(),
             None => self.inherited_start_directory(cx),
         };
-        self.add_tab_with(saved, cwd, select, false, window, cx)
+        self.add_tab_with(saved, cwd, select, (false, true), window, cx)
+    }
+
+    /// The plus button opens at the configured default directory, without
+    /// inheriting the selected tab's directory, group or insertion position.
+    fn add_default_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> TabId {
+        self.add_tab_with(None, None, true, (false, false), window, cx)
     }
 
     /// `newTab(at:selectNewTab:)`: a new tab started in `directory` (or the
@@ -262,7 +279,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> TabId {
         let at_directory = directory.is_some();
-        let id = self.add_tab_with(None, directory, select, at_directory, window, cx);
+        let id = self.add_tab_with(None, directory, select, (at_directory, true), window, cx);
         if select {
             self.focus_selected(window, cx);
         }
@@ -293,18 +310,21 @@ impl Workspace {
         saved: Option<SavedTab>,
         cwd: Option<PathBuf>,
         select: bool,
-        at_directory: bool,
+        origin: (bool, bool),
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> TabId {
+        let (at_directory, inherit_group) = origin;
         let id = AppData::next_tab_id(cx);
         let panes = cx.new(|cx| PaneTree::from_saved(saved.as_ref(), cwd.clone(), window, cx));
         let mut meta = TabMeta::new(id, self.state.next_color());
         meta.last_activity = AppData::now(cx);
         meta.created_at = meta.last_activity;
-        meta.git_root = cwd
-            .as_deref()
-            .and_then(procinfo::git_root)
+        meta.git_root = panes
+            .read(cx)
+            .focused_session(cx)
+            .and_then(|session| session.read(cx).git_root.clone())
+            .or_else(|| cwd.as_deref().and_then(procinfo::git_root))
             .map(|p| p.to_string_lossy().to_string());
         if let Some(saved) = &saved {
             if let Some(uuid) = saved.uuid {
@@ -323,13 +343,34 @@ impl Workspace {
                 meta.created_at = meta.last_activity - (unix_now() - created).max(0.0);
             }
         }
-        self.insert_entry(id, panes, cx);
+        self.insert_entry(id, panes.clone(), cx);
         let restored_override = meta.token_opt_override;
-        if saved.is_some() {
+        if saved.is_some() || !inherit_group {
             self.state.push(meta, select);
         } else {
-            self.state.add(meta, select);
+            let directory = panes
+                .read(cx)
+                .focused_session(cx)
+                .and_then(|session| session.read(cx).cwd.clone())
+                .or_else(|| cwd.clone());
+            if let Some(directory) = directory {
+                self.state.add_in_directory(meta, &directory, select);
+            } else {
+                self.state.push(meta, select);
+            }
         }
+        if let Some(root) = self.state.get(id).and_then(|tab| tab.git_root.clone())
+            && !self.known_repo_roots.contains(&root)
+        {
+            crate::settings_window::record_recent_repo(&root, cx);
+            self.known_repo_roots.push(root);
+        }
+        let directory = panes
+            .read(cx)
+            .focused_session(cx)
+            .and_then(|session| session.read(cx).cwd.clone());
+        self.state
+            .setup_repo_group_in_directory(id, directory.as_deref(), &self.known_repo_roots);
         // A saved token optimizer override goes to the tab's shells (the
         // flag is created at their first prompt).
         if restored_override != chau7_next_core::token_optimization::TabTokenOptOverride::Default {
@@ -387,8 +428,20 @@ impl Workspace {
                     && this.state.get(id).and_then(|t| t.git_root.as_ref()) != Some(root)
                 {
                     crate::settings_window::record_recent_repo(root, cx);
+                    if !this.known_repo_roots.contains(root) {
+                        this.known_repo_roots.push(root.clone());
+                    }
                 }
-                this.state.set_git_root(id, root);
+                let directory = session
+                    .as_ref()
+                    .and_then(|session| session.read(cx).cwd.clone());
+
+                this.state.set_git_root_in_directory(
+                    id,
+                    root,
+                    directory.as_deref(),
+                    &this.known_repo_roots,
+                );
                 // `updateAutoColor`: color the tab after the AI tool it runs.
                 let app = session.and_then(|s| s.read(cx).ai_app.clone());
                 if let Some(entry) = this.entries.get_mut(&id)
@@ -1148,7 +1201,26 @@ impl Workspace {
         self.state.new_tab_position = settings.tabs.new_tab_position;
         self.state.idle_threshold_secs = settings.tabs.idle_threshold_minutes as f64 * 60.0;
         self.state.group_idle_tabs = settings.tabs.group_idle_tabs;
-        self.state.auto_repo_grouping = settings.tabs.auto_repo_grouping();
+        let directories = self
+            .entries
+            .iter()
+            .filter_map(|(id, entry)| {
+                entry
+                    .panes
+                    .read(cx)
+                    .focused_session(cx)
+                    .and_then(|session| session.read(cx).cwd.clone())
+                    .map(|directory| (*id, directory))
+            })
+            .collect::<Vec<_>>();
+        self.known_repo_roots = chau7_next_core::repo_metadata::load_recent(
+            &cx.global::<AppData>().root.recent_repos_file(),
+        );
+        self.state.set_auto_repo_grouping_in_directories(
+            settings.tabs.auto_repo_grouping(),
+            &directories,
+            &self.known_repo_roots,
+        );
         self.font_size = settings.appearance.zoomed_font_size();
         for entry in self.entries.values() {
             entry.panes.update(cx, |p, cx| p.reload_settings(cx));
