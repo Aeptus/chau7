@@ -59,6 +59,11 @@ impl Workspace {
         if self.drag.as_ref().is_some_and(|d| d.active) {
             return;
         }
+        if self.state.selected() != Some(id)
+            && let Some(panes) = self.entries.get(&id).map(|entry| entry.panes.clone())
+        {
+            panes.update(cx, |panes, cx| panes.prewarm_surface(hovered, cx));
+        }
         if hovered {
             let anchor_x = anchor.unwrap_or_else(|| {
                 self.frames

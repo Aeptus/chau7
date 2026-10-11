@@ -1,11 +1,43 @@
 //! Current Swift deferred restore, surface reveal and resume delivery policies.
 //! These decisions perform no filesystem or terminal I/O.
 use std::path::{Component, Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const SELECTION_QUIET_PERIOD: Duration = Duration::from_millis(450);
 pub const REACTIVATION_COALESCING_DELAY: Duration = Duration::from_millis(50);
 pub const NEARBY_SNAPSHOT_DISTANCE: usize = 2;
+
+pub const PREWARM_DURATION: Duration = Duration::from_secs(2);
+pub const PREWARM_EXIT_GRACE: Duration = Duration::from_millis(500);
+/// Prewarm is presentation work only. It never changes selection, visibility,
+/// restore intent readiness or background terminal state retention.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SurfacePrewarm {
+    until: Option<Instant>,
+    hovering: bool,
+}
+impl SurfacePrewarm {
+    pub fn begin(&mut self, now: Instant) -> bool {
+        if self.hovering && self.remaining(now).is_some() {
+            return false;
+        }
+        self.hovering = true;
+        self.until = Some(now + PREWARM_DURATION);
+        true
+    }
+    pub fn end(&mut self, now: Instant) {
+        self.hovering = false;
+        self.until = Some(now + PREWARM_EXIT_GRACE);
+    }
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+    pub fn remaining(&self, now: Instant) -> Option<Duration> {
+        self.until
+            .and_then(|until| until.checked_duration_since(now))
+            .filter(|remaining| !remaining.is_zero())
+    }
+}
 
 /// Visibility comes from selected pane/window ownership, never a paint timer.
 /// A stationary visible terminal remains live even with cursor blink disabled.
@@ -441,5 +473,45 @@ mod surface_visibility_tests {
         ));
         assert!(suspend_hidden_surface(false, Some(delay), true, delay));
         assert!(!suspend_hidden_surface(false, Some(delay), false, delay));
+    }
+}
+
+#[cfg(test)]
+mod prewarm_tests {
+    use super::*;
+    #[test]
+    fn prewarm_is_bounded_and_repeated_hover_does_not_extend_it() {
+        let now = Instant::now();
+        let mut state = SurfacePrewarm::default();
+        assert!(state.begin(now));
+        assert_eq!(state.remaining(now), Some(PREWARM_DURATION));
+        assert!(!state.begin(now + Duration::from_secs(1)));
+        assert_eq!(
+            state.remaining(now + Duration::from_secs(1)),
+            Some(Duration::from_secs(1))
+        );
+        assert_eq!(state.remaining(now + PREWARM_DURATION), None);
+    }
+    #[test]
+    fn leaving_has_half_second_grace_and_reentering_starts_new_bounded_prewarm() {
+        let now = Instant::now();
+        let mut state = SurfacePrewarm::default();
+        state.begin(now);
+        let leave = now + Duration::from_millis(100);
+        state.end(leave);
+        assert_eq!(state.remaining(leave), Some(PREWARM_EXIT_GRACE));
+        assert!(state.begin(leave + Duration::from_millis(100)));
+        assert_eq!(
+            state.remaining(leave + Duration::from_millis(100)),
+            Some(PREWARM_DURATION)
+        );
+    }
+    #[test]
+    fn actual_selection_clears_prewarm_without_a_deadline() {
+        let now = Instant::now();
+        let mut state = SurfacePrewarm::default();
+        state.begin(now);
+        state.clear();
+        assert_eq!(state.remaining(now), None);
     }
 }
