@@ -127,6 +127,10 @@ type Agent struct {
 	macSpineSeq      uint64
 	pendingApprovals map[string]ApprovalNotificationPayload
 	pendingPrompts   map[string]RemoteInteractivePrompt
+
+	// Read-only viewers (viewer.go), created on first use.
+	viewersOnce sync.Once
+	viewers     *viewerHub
 }
 
 type HelloPayload struct {
@@ -552,12 +556,19 @@ func (a *Agent) relayLoop(ctx context.Context) {
 				log.Printf("send hello: %v", err)
 			}
 		}
+		// Register the share code again: the relay forgets it when the
+		// Mac's connection ends.
+		if share := a.viewerHub().relayConnected(); share != nil {
+			share.Seq = a.nextSeq()
+			a.sendToRelay(ctx, share)
+		}
 		a.readRelay(ctx, conn)
 		a.wsMu.Lock()
 		a.wsConn = nil
 		a.wsMu.Unlock()
 		a.updateRelayStatus("reconnecting", 2*time.Second)
 		a.resetSession()
+		a.dispatchViewerFrames(ctx, a.viewerHub().relayLost())
 		a.sendSessionStatus("disconnected")
 		log.Printf("relay disconnected, reconnecting in %v", 2*time.Second)
 		select {
@@ -583,8 +594,41 @@ func (a *Agent) readRelay(ctx context.Context, conn *websocket.Conn) {
 	}
 }
 
+// viewerHub returns the read-only viewer state (created on first use).
+func (a *Agent) viewerHub() *viewerHub {
+	a.viewersOnce.Do(func() {
+		if a.viewers == nil {
+			a.viewers = newViewerHub()
+		}
+	})
+	return a.viewers
+}
+
+func (a *Agent) dispatchViewerFrames(ctx context.Context, out viewerFrames) {
+	for _, f := range out.toRelay {
+		f.Seq = a.nextSeq()
+		a.sendToRelay(ctx, f)
+	}
+	for _, f := range out.toIPC {
+		f.Seq = a.nextSeq()
+		a.sendToIPC(f)
+	}
+}
+
 func (a *Agent) handleIPCFrame(ctx context.Context, frame *protocol.Frame) {
+	// Approved viewers get a cleartext copy of the live frames, whatever the
+	// phone's stream mode is. Only Chau7 Next approves viewers.
+	for _, viewerFrame := range a.viewerHub().liveCopies(frame) {
+		viewerFrame.Seq = a.nextSeq()
+		a.sendToRelay(ctx, viewerFrame)
+	}
 	switch frame.Type {
+	case protocol.TypeViewerShare:
+		a.dispatchViewerFrames(ctx, a.viewerHub().share(frame.Payload))
+	case protocol.TypeViewerDecision:
+		a.dispatchViewerFrames(ctx, a.viewerHub().decide(frame.Payload))
+	case protocol.TypeViewerLeave:
+		a.dispatchViewerFrames(ctx, a.viewerHub().leaveFromApp(frame.Payload))
 	case protocol.TypeApprovalRequest:
 		a.updatePendingApproval(ctx, frame.Payload)
 		if a.isSessionReady() {
@@ -642,6 +686,16 @@ func (a *Agent) handleRelayFrame(ctx context.Context, frame *protocol.Frame) {
 	switch frame.Type {
 	case protocol.TypeHello:
 		a.handleHello(ctx, frame.Payload)
+	case protocol.TypeViewerJoin, protocol.TypeViewerLeave:
+		// Viewer frames come from the relay in cleartext, never encrypted.
+		if wasEncrypted {
+			return
+		}
+		if frame.Type == protocol.TypeViewerJoin {
+			a.dispatchViewerFrames(ctx, a.viewerHub().join(frame.Payload))
+		} else {
+			a.dispatchViewerFrames(ctx, a.viewerHub().leaveFromRelay(frame.Payload))
+		}
 	case protocol.TypePairRequest:
 		a.handlePairRequest(ctx, frame.Payload)
 	case protocol.TypeSessionReady:

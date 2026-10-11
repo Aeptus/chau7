@@ -20,6 +20,8 @@ an encrypted WebSocket connection to the relay.
 | `internal/agent/agent.go` | Core agent — socket listener, WebSocket relay, encryption, pairing |
 | `internal/agent/state.go` | Persistent pairing state (JSON file) |
 | `internal/agent/agent_test.go` | Agent tests |
+| `internal/agent/viewer.go` | Read-only viewers of a terminal shared by Chau7 Next |
+| `internal/viewer/` | `chau7-remote viewer` client (debug) and its end-to-end test |
 | `internal/protocol/` | Frame format definitions and message type constants |
 | `docs/PROTOCOL.md` | Full protocol specification (frame format, encryption, nonce construction) |
 
@@ -93,3 +95,14 @@ to that identifier and the state file.
 
 See [`docs/PROTOCOL.md`](docs/PROTOCOL.md) for the frame format, encryption, nonce
 construction, and message type definitions.
+
+## Read-only viewer (debug)
+
+```bash
+./chau7-remote viewer -relay "wss://relay.example.com/connect" abcd1234
+```
+
+Joins the terminal shared with code `abcd1234` (a Chau7 Next share link),
+waits for the owner to approve, then prints the output. Viewers need no relay
+credential. See `docs/remote-control/VIEWER-PROTOCOL.md`. The Swift app never
+shares, so for it the agent rejects every join.

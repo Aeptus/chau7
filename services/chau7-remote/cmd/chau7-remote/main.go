@@ -8,6 +8,9 @@
 //	CHAU7_RELAY_URL      — WebSocket URL of the Cloudflare relay
 //	CHAU7_MAC_NAME       — Display name for this Mac (sent during pairing)
 //	CHAU7_REMOTE_STATE   — Path for persistent pairing state JSON
+//
+// `chau7-remote viewer <code>` is a read-only viewer of a terminal shared by
+// Chau7 Next (docs/remote-control/VIEWER-PROTOCOL.md).
 package main
 
 import (
@@ -45,6 +48,9 @@ func watchParentProcess() {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "viewer" {
+		os.Exit(runViewer(os.Args[2:]))
+	}
 	if len(os.Args) > 1 {
 		if err := runManagementCommand(os.Args[1:], os.Stdout); err != nil {
 			log.Fatalf("remote configuration: %v", err)
