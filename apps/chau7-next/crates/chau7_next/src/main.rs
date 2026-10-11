@@ -22,6 +22,7 @@ mod migration;
 mod monitoring;
 mod monitoring_status;
 mod notifications;
+mod observability;
 mod pane;
 mod panes;
 mod performance;
@@ -128,6 +129,7 @@ fn main() {
             &Settings::get(cx).clone(),
             cx,
         );
+        observability::init(cx);
         ai::init(cx);
         history::init(cx);
         telemetry::init(cx);
@@ -171,7 +173,10 @@ fn main() {
         // Console, history, MCP, remote control).
         seams::init(cx);
         status_bar::init(cx);
+        let poll_timer =
+            observability::register_timer(cx, "app.poll", "App actions polling", "app", 150);
         cx.spawn(async move |cx| {
+            let _timer = poll_timer;
             loop {
                 cx.background_executor()
                     .timer(std::time::Duration::from_millis(150))
@@ -205,11 +210,24 @@ fn main() {
             // Shells get SIGTERM at once (`closeSessionForTermination`).
             terminal::session::terminate_all_for_quit();
             logging::flush();
-            async {}
+            let worker = observability::shutdown(cx);
+            cx.background_spawn(async move {
+                if let Some(worker) = worker {
+                    let _ = worker.join();
+                }
+            })
         })
         .detach();
         // Save periodically too, so a crash loses at most a few seconds.
+        let save_timer = observability::register_timer(
+            cx,
+            "restore.save",
+            "Periodic session save",
+            "restore",
+            15_000,
+        );
         cx.spawn(async move |cx| {
+            let _timer = save_timer;
             loop {
                 cx.background_executor()
                     .timer(std::time::Duration::from_secs(15))

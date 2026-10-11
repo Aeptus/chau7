@@ -47,7 +47,7 @@ impl StructuralEvent {
 #[serde(tag = "kind", content = "event", rename_all = "snake_case")]
 pub enum EventPayload {
     Ai(Box<AiEvent>),
-    Structural(StructuralEvent),
+    Structural(Box<StructuralEvent>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -224,7 +224,7 @@ impl EventSpine {
             occurred_at.unwrap_or(ingested_at),
             ingested_at,
             false,
-            EventPayload::Structural(event),
+            EventPayload::Structural(Box::new(event)),
         )
     }
     fn ingest(

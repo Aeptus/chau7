@@ -112,6 +112,9 @@ mod tests {
                 "session_current",
                 "chau7_runtime_info",
                 "chau7_performance_snapshot",
+                "chau7_runtime_events",
+                "chau7_timer_inventory",
+                "repo_get_events",
                 "tab_list",
                 "tab_create",
                 "tab_exec",
@@ -134,6 +137,11 @@ mod tests {
                 "runtime_turn_status",
                 "runtime_events_poll",
                 "runtime_approval_respond",
+                "runtime_session_children",
+                "runtime_session_cancel_children",
+                "runtime_session_retry",
+                "runtime_turn_result",
+                "runtime_turn_wait",
             ]
         );
         for tool in definitions() {

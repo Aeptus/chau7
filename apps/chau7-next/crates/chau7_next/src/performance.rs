@@ -153,7 +153,15 @@ pub fn start(cx: &mut App) {
         }
     }
     let _ = persist(capture(cx), cx);
+    let timer = crate::observability::register_timer(
+        cx,
+        "performance.capture",
+        "Numeric performance capture",
+        "performance",
+        INTERVAL.as_millis() as u64,
+    );
     cx.spawn(async move |cx| {
+        let _timer = timer;
         loop {
             let due = Instant::now() + INTERVAL;
             cx.background_executor().timer(INTERVAL).await;

@@ -5,7 +5,8 @@
 //! app and AI CLI hooks write these JSON lines, so the accepted keys match
 //! Swift exactly: `source`, `type`, `tool`, `message`, `ts`, `directory` or
 //! `cwd`, `tabID` / `tabId` / `tab_id`, `sessionID` / `sessionId` /
-//! `session_id`. All other keys are ignored.
+//! `session_id`, repo attribution, producer, reliability and notification metadata.
+//! Unrecognized fields are ignored.
 //!
 //! The em dash in the repo prefix of the notification title is written as a
 //! `\u{2014}` escape to keep source files free of the literal character.
