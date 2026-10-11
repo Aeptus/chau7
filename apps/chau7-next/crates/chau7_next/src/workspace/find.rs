@@ -412,7 +412,7 @@ impl Workspace {
                 }))
                 .into_any_element()
         };
-        let count = format!("{} matches", search.matches.len());
+        let count = crate::l10n::count("search.matches", "%d matches", search.matches.len());
         let content = div()
             .flex()
             .flex_col()

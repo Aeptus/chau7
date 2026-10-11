@@ -111,7 +111,15 @@ impl Render for WizardView {
             Step::Welcome => self.welcome_page(chrome, cx).into_any_element(),
             Step::Scanning => note("Scanning...", chrome).into_any_element(),
             Step::Selection => self.selection_page(chrome, cx).into_any_element(),
-            Step::Importing => note(&self.wizard.importing_label(), chrome).into_any_element(),
+            Step::Importing => note(
+                &crate::l10n::count(
+                    "migration.importing",
+                    "Importing %d profiles...",
+                    self.wizard.selected_count(),
+                ),
+                chrome,
+            )
+            .into_any_element(),
             Step::Complete => self.complete_page(chrome).into_any_element(),
         };
 
@@ -229,7 +237,11 @@ impl WizardView {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(div().text_sm().child(self.wizard.found_label()))
+                    .child(div().text_sm().child(crate::l10n::count(
+                        "migration.foundProfiles",
+                        "Found %d profiles",
+                        self.wizard.profiles.len(),
+                    )))
                     .child(div().flex_1())
                     .child(
                         button("import-all", "Select All", chrome).on_click(cx.listener(
@@ -267,14 +279,26 @@ impl WizardView {
                         div()
                             .text_xs()
                             .text_color(chrome.text_muted)
-                            .child(self.wizard.selected_label()),
+                            .child(crate::l10n::count(
+                                "migration.selectedCount",
+                                "%d selected",
+                                self.wizard.selected_count(),
+                            )),
                     )
                     .child(div().flex_1())
                     .child(
-                        button("import-go", self.wizard.import_button(), chrome)
-                            .when(enabled, |d| d.bg(chrome.accent).text_color(gpui::white()))
-                            .when(!enabled, |d| d.opacity(0.4).cursor_default())
-                            .on_click(cx.listener(|this, _, _, cx| this.import(cx))),
+                        button(
+                            "import-go",
+                            crate::l10n::count(
+                                "migration.importButton",
+                                "Import %d Profiles",
+                                self.wizard.selected_count(),
+                            ),
+                            chrome,
+                        )
+                        .when(enabled, |d| d.bg(chrome.accent).text_color(gpui::white()))
+                        .when(!enabled, |d| d.opacity(0.4).cursor_default())
+                        .on_click(cx.listener(|this, _, _, cx| this.import(cx))),
                     ),
             )
     }

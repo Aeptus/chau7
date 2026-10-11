@@ -6,6 +6,7 @@
 //! there; the rest only Chau7 Next reads, under `[next]`.
 
 use chau7_next_core::config::RawValue;
+use chau7_next_core::l10n::numbers::RegionalNumberFormat;
 
 use super::{ConfigSink, ConfigSource, SettingsDomain};
 
@@ -71,6 +72,8 @@ pub struct GeneralSettings {
     /// `app.language` (`[next] app_language`). Stored and applied by the
     /// Localization module; the interface strings are English until then.
     pub app_language: AppLanguage,
+    /// usage.regionalNumberFormat: numeric display independent of language.
+    pub regional_number_format: RegionalNumberFormat,
     /// `app.launchAtLogin` (`[next] launch_at_login`). The login item itself
     /// is registered with the OS (`platform::login_item`).
     pub launch_at_login: bool,
@@ -97,6 +100,7 @@ impl Default for GeneralSettings {
         Self {
             default_directory: None,
             app_language: AppLanguage::System,
+            regional_number_format: RegionalNumberFormat::default(),
             launch_at_login: false,
             load_config_files: true,
             icloud_sync: false,
@@ -166,6 +170,13 @@ impl SettingsDomain for GeneralSettings {
         {
             self.app_language = language;
         }
+        if let Some(format) = src
+            .next("regional_number_format")
+            .and_then(RawValue::as_str)
+            .and_then(RegionalNumberFormat::from_id)
+        {
+            self.regional_number_format = format;
+        }
         if let Some(v) = src.next("launch_at_login").and_then(RawValue::as_bool) {
             self.launch_at_login = v;
         }
@@ -204,6 +215,10 @@ impl SettingsDomain for GeneralSettings {
         let general = out.file.general.get_or_insert_with(Default::default);
         general.default_directory = Some(self.default_directory.clone().unwrap_or_default());
         out.set_next("app_language", format!("\"{}\"", self.app_language.id()));
+        out.set_next(
+            "regional_number_format",
+            format!("\"{}\"", self.regional_number_format.id()),
+        );
         out.set_next("launch_at_login", self.launch_at_login);
         out.set_next("load_config_files", self.load_config_files);
         out.set_next("icloud_sync", self.icloud_sync);
@@ -248,6 +263,7 @@ mod tests {
         let changed = GeneralSettings {
             default_directory: None,
             app_language: AppLanguage::French,
+            regional_number_format: RegionalNumberFormat::European,
             launch_at_login: true,
             load_config_files: false,
             icloud_sync: true,
@@ -281,6 +297,21 @@ mod tests {
         assert!(d.load_config_files);
         assert!(!d.icloud_sync);
         assert!(d.allow_protected_folder_access);
+    }
+
+    #[test]
+    fn number_format_defaults_and_persistence_match_swift() {
+        assert_eq!(
+            GeneralSettings::default().regional_number_format,
+            RegionalNumberFormat::French
+        );
+        for format in RegionalNumberFormat::ALL {
+            let settings = GeneralSettings {
+                regional_number_format: format,
+                ..Default::default()
+            };
+            assert_eq!(round_trip(&settings).regional_number_format, format);
+        }
     }
 
     #[test]

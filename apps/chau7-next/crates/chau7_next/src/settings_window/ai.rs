@@ -4,6 +4,7 @@
 //! list of built-in detected CLIs.
 
 use chau7_next_core::ai::llm_client::{test_connection_request, test_connection_result};
+use chau7_next_core::l10n::numbers::RegionalNumberFormat;
 use chau7_next_core::llm_provider::LLMProviderType;
 use chau7_next_core::tabs_state::TabColor;
 use gpui::{App, Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
@@ -320,6 +321,25 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             chrome,
         ));
 
+    let formats = RegionalNumberFormat::ALL.into_iter().map(|format| {
+        chip(
+            SharedString::from(format!("number-format-{}", format.id())),
+            format!(
+                "{} ({})",
+                crate::l10n::tr(format.display_name()),
+                format.example()
+            ),
+            ctx.settings.general.regional_number_format == format,
+            chrome,
+        )
+        .on_click(move |_, _, cx| update(cx, |s| s.general.regional_number_format = format))
+    });
+    let usage_display = titled(crate::l10n::l("settings.ai.usageDisplay", "Usage Display"), chrome)
+        .child(row(crate::l10n::l("settings.ai.numberFormat", "Number Format"),
+            div().flex().flex_wrap().gap_1().children(formats), chrome))
+        .child(description(crate::l10n::l("settings.ai.numberFormat.help",
+            "Controls token, cost, and dashboard number formatting independently from app language."), chrome));
+
     // LLM provider.
     let providers = LLMProviderType::ALL.into_iter().map(|provider| {
         let entity = entity.clone();
@@ -470,6 +490,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         .flex()
         .flex_col()
         .child(rules_block)
+        .child(usage_display)
         .child(llm_block)
         .child(explain_block)
         .child(built_in)
