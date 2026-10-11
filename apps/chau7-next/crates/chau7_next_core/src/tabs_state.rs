@@ -12,6 +12,46 @@
 use crate::tab_bar_layout::{TabBarLayoutItem, TabBarLayoutTab, coalesced_order, display_items};
 use crate::token_optimization::{TabTokenOptOverride, TokenOptimizationMode};
 use std::collections::HashSet;
+use std::path::{Component, Path, PathBuf};
+
+fn normalized_path(path: &Path) -> PathBuf {
+    let mut result = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                result.pop();
+            }
+            other => result.push(other.as_os_str()),
+        }
+    }
+    result
+}
+
+/// Preferred enclosing root first, otherwise the most specific recent root
+/// (`KnownRepoRootResolver`). Components avoid sibling-prefix matches.
+pub fn known_repo_root(
+    directory: &Path,
+    preferred: Option<&str>,
+    recent: &[String],
+) -> Option<String> {
+    let directory = normalized_path(directory);
+    if directory.as_os_str().is_empty() {
+        return None;
+    }
+    if let Some(root) = preferred {
+        let root = normalized_path(Path::new(root));
+        if !root.as_os_str().is_empty() && directory.starts_with(&root) {
+            return Some(root.to_string_lossy().into_owned());
+        }
+    }
+    recent
+        .iter()
+        .map(|root| normalized_path(Path::new(root)))
+        .filter(|root| !root.as_os_str().is_empty() && directory.starts_with(root))
+        .max_by_key(|root| root.as_os_str().len())
+        .map(|root| root.to_string_lossy().into_owned())
+}
 
 pub type TabId = u64;
 
@@ -87,6 +127,8 @@ pub struct TabMeta {
     pub custom_title: Option<String>,
     pub color: TabColor,
     pub repo_group_id: Option<String>,
+    /// Inherited tags are provisional until the shell resolves its repository.
+    pub has_inherited_repo_group: bool,
     /// Git root of the tab's working directory, when known.
     pub git_root: Option<String>,
     /// Seconds (any monotonic clock) of the last terminal activity.
@@ -116,6 +158,7 @@ impl TabMeta {
             custom_title: None,
             color,
             repo_group_id: None,
+            has_inherited_repo_group: false,
             git_root: None,
             last_activity: 0.0,
             created_at: 0.0,
@@ -314,13 +357,29 @@ impl TabsState {
     /// Insert a new tab like `newTab`: it inherits the selected tab's repo
     /// group, and goes right after the selected tab when it does (or when the
     /// position setting says so), otherwise at the end.
-    pub fn add(&mut self, mut meta: TabMeta, select: bool) {
+    pub fn add(&mut self, meta: TabMeta, select: bool) {
+        self.add_with_inheritance(meta, None, select);
+    }
+
+    /// Actual shell tabs only inherit a group when their starting directory
+    /// is within that repository (`RepoGroupInheritance`).
+    pub fn add_in_directory(&mut self, meta: TabMeta, directory: &Path, select: bool) {
+        self.add_with_inheritance(meta, Some(directory), select);
+    }
+
+    fn add_with_inheritance(&mut self, mut meta: TabMeta, directory: Option<&Path>, select: bool) {
         let inherited = self
             .selected
             .and_then(|id| self.get(id))
-            .and_then(|t| t.repo_group_id.clone());
+            .and_then(|t| t.repo_group_id.clone())
+            .filter(|root| {
+                directory.is_none_or(|cwd| {
+                    normalized_path(cwd).starts_with(normalized_path(Path::new(root)))
+                })
+            });
         if meta.repo_group_id.is_none() {
             meta.repo_group_id = inherited.clone();
+            meta.has_inherited_repo_group = inherited.is_some();
         }
         let current = self.selected.and_then(|id| self.index_of(id));
         let index = match (inherited.is_some(), self.new_tab_position, current) {
@@ -530,6 +589,7 @@ impl TabsState {
         };
         if let Some(tab) = self.get_mut(id) {
             tab.repo_group_id = Some(root.clone());
+            tab.has_inherited_repo_group = false;
         }
         self.coalesce_group(&root);
     }
@@ -537,6 +597,7 @@ impl TabsState {
     pub fn remove_from_repo_group(&mut self, id: TabId) {
         if let Some(tab) = self.get_mut(id) {
             tab.repo_group_id = None;
+            tab.has_inherited_repo_group = false;
         }
     }
 
@@ -545,6 +606,7 @@ impl TabsState {
         for tab in &mut self.tabs {
             if tab.repo_group_id.as_deref() == Some(group) {
                 tab.repo_group_id = None;
+                tab.has_inherited_repo_group = false;
             }
         }
     }
@@ -557,27 +619,129 @@ impl TabsState {
         for tab in &mut self.tabs {
             if tab.git_root.as_deref() == Some(root.as_str()) {
                 tab.repo_group_id = Some(root.clone());
+                tab.has_inherited_repo_group = false;
             }
         }
         self.coalesce_group(&root);
     }
 
-    /// Record a new git root for a tab. In auto mode this regroups the tab,
-    /// like `observeGitRootForAutoGrouping`.
-    pub fn set_git_root(&mut self, id: TabId, root: Option<String>) {
-        let auto = self.auto_repo_grouping;
-        let Some(tab) = self.get_mut(id) else {
-            return;
-        };
-        if tab.git_root == root {
-            return;
-        }
-        tab.git_root = root.clone();
-        if auto {
-            tab.repo_group_id = root.clone();
-            if let Some(root) = root {
-                self.coalesce_group(&root);
+    /// Switching into Auto immediately reconciles every known root, rather
+    /// than waiting for a shell to change directories. Off/Manual keep tags.
+    pub fn set_auto_repo_grouping(&mut self, automatic: bool) {
+        self.set_auto_repo_grouping_in_directories(automatic, &[], &[]);
+    }
+
+    pub fn set_auto_repo_grouping_in_directories(
+        &mut self,
+        automatic: bool,
+        directories: &[(TabId, PathBuf)],
+        recent: &[String],
+    ) {
+        let changed = self.auto_repo_grouping != automatic;
+        self.auto_repo_grouping = automatic;
+        if automatic && changed {
+            let ids: Vec<_> = self.tabs.iter().map(|tab| tab.id).collect();
+            for id in ids {
+                let directory = directories
+                    .iter()
+                    .find(|(tab_id, _)| *tab_id == id)
+                    .map(|(_, cwd)| cwd.as_path());
+                self.setup_repo_group_in_directory(id, directory, recent);
             }
+        }
+    }
+
+    /// `setupRepoGroupingForTab`: seed newly attached/restored tabs even in
+    /// Off/Manual, while Auto replaces persisted tags with the live root.
+    pub fn setup_repo_group(&mut self, id: TabId) {
+        self.setup_repo_group_in_directory(id, None, &[]);
+    }
+
+    pub fn setup_repo_group_in_directory(
+        &mut self,
+        id: TabId,
+        directory: Option<&Path>,
+        recent: &[String],
+    ) {
+        let automatic = self.auto_repo_grouping;
+        let Some(tab) = self.get_mut(id) else { return };
+        if automatic || tab.repo_group_id.is_none() {
+            tab.repo_group_id = tab.git_root.clone().or_else(|| {
+                directory.and_then(|cwd| known_repo_root(cwd, tab.repo_group_id.as_deref(), recent))
+            });
+            if automatic {
+                tab.has_inherited_repo_group = false;
+            }
+        }
+        let group = tab.repo_group_id.clone();
+        if let Some(group) = group {
+            self.coalesce_group(&group);
+        }
+    }
+
+    /// Record a session root, including unchanged values: a tab may have a
+    /// preinitialized git root but a missing or stale group tag.
+    pub fn set_git_root(&mut self, id: TabId, root: Option<String>) {
+        self.set_git_root_in_directory(id, root, None, &[]);
+    }
+
+    pub fn set_git_root_in_directory(
+        &mut self,
+        id: TabId,
+        root: Option<String>,
+        directory: Option<&Path>,
+        recent: &[String],
+    ) {
+        self.reconcile_git_root_with_known(id, root, directory, recent, |path| {
+            Path::new(path).exists()
+        });
+    }
+
+    /// Heal tags whose old repository vanished, without altering a live
+    /// manual group. Injectable filesystem probe matches Swift's tests.
+    pub fn reconcile_git_root(
+        &mut self,
+        id: TabId,
+        root: Option<String>,
+        directory_exists: impl Fn(&str) -> bool,
+    ) {
+        self.reconcile_git_root_with_known(id, root, None, &[], directory_exists);
+    }
+
+    fn reconcile_git_root_with_known(
+        &mut self,
+        id: TabId,
+        root: Option<String>,
+        directory: Option<&Path>,
+        recent: &[String],
+        directory_exists: impl Fn(&str) -> bool,
+    ) {
+        let automatic = self.auto_repo_grouping;
+        let Some(tab) = self.get_mut(id) else { return };
+        let resolved = root.clone().or_else(|| {
+            directory.and_then(|cwd| known_repo_root(cwd, tab.repo_group_id.as_deref(), recent))
+        });
+        let previous_group = tab.repo_group_id.clone();
+        tab.git_root = root.clone();
+        if automatic {
+            tab.repo_group_id = resolved;
+            tab.has_inherited_repo_group = false;
+        } else if tab.has_inherited_repo_group && tab.repo_group_id != resolved {
+            tab.repo_group_id = None;
+            tab.has_inherited_repo_group = false;
+        } else if let (Some(old), Some(live)) = (&tab.repo_group_id, &root)
+            && !directory_exists(old)
+            && old != live
+            && directory_exists(live)
+        {
+            tab.repo_group_id = root;
+            tab.has_inherited_repo_group = false;
+        }
+        let group = tab.repo_group_id.clone();
+        if group != previous_group
+            && let Some(group) = group
+        {
+            self.coalesce_group(&group);
         }
     }
 
@@ -909,6 +1073,154 @@ mod tests {
         s.set_git_root(1, Some("/r".into()));
         assert_eq!(s.group_members("/r"), vec![1, 3]);
         assert_eq!(ids(&s), vec![1, 3, 2]);
+    }
+
+    #[test]
+    fn attached_and_restored_tabs_seed_groups_even_with_automatic_mode_off() {
+        let mut s = state_with(3);
+        s.get_mut(1).unwrap().git_root = Some("/repo".into());
+        s.get_mut(2).unwrap().git_root = Some("/repo".into());
+        s.get_mut(3).unwrap().git_root = Some("/other".into());
+        s.get_mut(3).unwrap().repo_group_id = Some("/manual".into());
+        for id in 1..=3 {
+            s.setup_repo_group(id);
+        }
+        assert_eq!(s.group_members("/repo"), vec![1, 2]);
+        assert_eq!(s.get(3).unwrap().repo_group_id.as_deref(), Some("/manual"));
+    }
+
+    #[test]
+    fn enabling_automatic_grouping_reconciles_existing_roots_and_stale_restore_tags() {
+        let mut s = state_with(3);
+        s.get_mut(1).unwrap().git_root = Some("/repo".into());
+        s.get_mut(3).unwrap().git_root = Some("/repo".into());
+        s.get_mut(2).unwrap().repo_group_id = Some("/stale".into());
+        s.set_auto_repo_grouping(true);
+        assert_eq!(s.group_members("/repo"), vec![1, 3]);
+        assert_eq!(ids(&s), vec![1, 3, 2]);
+        assert_eq!(s.get(2).unwrap().repo_group_id, None);
+        s.set_auto_repo_grouping(false);
+        assert_eq!(s.group_members("/repo"), vec![1, 3]);
+    }
+
+    #[test]
+    fn unchanged_known_root_repairs_missing_automatic_group() {
+        let mut s = state_with(1);
+        s.auto_repo_grouping = true;
+        s.get_mut(1).unwrap().git_root = Some("/repo".into());
+        s.set_git_root(1, Some("/repo".into()));
+        assert_eq!(s.get(1).unwrap().repo_group_id.as_deref(), Some("/repo"));
+        s.set_git_root(1, None);
+        assert_eq!(s.get(1).unwrap().repo_group_id, None);
+    }
+
+    #[test]
+    fn inherited_groups_require_a_directory_inside_the_selected_repo() {
+        let mut s = state_with(1);
+        s.get_mut(1).unwrap().repo_group_id = Some("/repo".into());
+        s.add_in_directory(
+            TabMeta::new(2, TabColor::Blue),
+            Path::new("/repo/src/../tests"),
+            false,
+        );
+        assert_eq!(s.get(2).unwrap().repo_group_id.as_deref(), Some("/repo"));
+        assert!(s.get(2).unwrap().has_inherited_repo_group);
+        s.add_in_directory(
+            TabMeta::new(3, TabColor::Blue),
+            Path::new("/repository"),
+            false,
+        );
+        assert_eq!(s.get(3).unwrap().repo_group_id, None);
+        s.add_in_directory(
+            TabMeta::new(4, TabColor::Blue),
+            Path::new("/repo/../elsewhere"),
+            false,
+        );
+        assert_eq!(s.get(4).unwrap().repo_group_id, None);
+    }
+
+    #[test]
+    fn inherited_groups_detach_after_the_shell_leaves_but_manual_groups_stay() {
+        let mut s = state_with(1);
+        s.get_mut(1).unwrap().repo_group_id = Some("/repo".into());
+        s.add_in_directory(
+            TabMeta::new(2, TabColor::Blue),
+            Path::new("/repo/src"),
+            false,
+        );
+        s.reconcile_git_root(2, Some("/different".into()), |_| true);
+        assert_eq!(s.get(2).unwrap().repo_group_id, None);
+        assert!(!s.get(2).unwrap().has_inherited_repo_group);
+        s.reconcile_git_root(1, Some("/different".into()), |_| true);
+        assert_eq!(s.get(1).unwrap().repo_group_id.as_deref(), Some("/repo"));
+    }
+
+    #[test]
+    fn vanished_manual_repo_group_heals_to_a_live_root_and_coalesces() {
+        let mut s = state_with(3);
+        s.get_mut(1).unwrap().repo_group_id = Some("/old".into());
+        s.get_mut(3).unwrap().repo_group_id = Some("/new".into());
+        s.reconcile_git_root(1, Some("/new".into()), |root| root == "/new");
+        assert_eq!(s.group_members("/new"), vec![1, 3]);
+        assert_eq!(ids(&s), vec![1, 3, 2]);
+        s.get_mut(2).unwrap().repo_group_id = Some("/other-missing".into());
+        s.reconcile_git_root(2, Some("/also-missing".into()), |_| false);
+        assert_eq!(
+            s.get(2).unwrap().repo_group_id.as_deref(),
+            Some("/other-missing")
+        );
+    }
+
+    #[test]
+    fn explicitly_grouped_tabs_stop_being_provisional() {
+        let mut s = state_with(1);
+        s.get_mut(1).unwrap().repo_group_id = Some("/repo".into());
+        s.add_in_directory(TabMeta::new(2, TabColor::Blue), Path::new("/repo"), false);
+        s.get_mut(2).unwrap().git_root = Some("/repo".into());
+        s.add_to_repo_group(2);
+        assert!(!s.get(2).unwrap().has_inherited_repo_group);
+        s.reconcile_git_root(2, Some("/different".into()), |_| true);
+        assert_eq!(s.get(2).unwrap().repo_group_id.as_deref(), Some("/repo"));
+    }
+
+    #[test]
+    fn known_root_fallback_prefers_existing_enclosing_root_then_most_specific_recent_root() {
+        let roots = vec!["/repo".into(), "/repo/nested".into()];
+        assert_eq!(
+            known_repo_root(Path::new("/repo/nested/src"), None, &roots).as_deref(),
+            Some("/repo/nested")
+        );
+        assert_eq!(
+            known_repo_root(Path::new("/repo/nested/src"), Some("/repo"), &roots).as_deref(),
+            Some("/repo")
+        );
+        assert_eq!(
+            known_repo_root(Path::new("/repository"), Some("/repo"), &roots),
+            None
+        );
+        assert_eq!(
+            known_repo_root(Path::new("/repo/../elsewhere"), Some("/repo"), &roots),
+            None
+        );
+    }
+
+    #[test]
+    fn automatic_mode_uses_known_roots_without_falsifying_live_git_metadata() {
+        let mut s = state_with(2);
+        s.get_mut(1).unwrap().repo_group_id = Some("/repo".into());
+        let directories = vec![
+            (1, PathBuf::from("/repo/src")),
+            (2, PathBuf::from("/repo/nested/test")),
+        ];
+        s.set_auto_repo_grouping_in_directories(true, &directories, &["/repo/nested".into()]);
+        assert_eq!(s.get(1).unwrap().repo_group_id.as_deref(), Some("/repo"));
+        assert_eq!(
+            s.get(2).unwrap().repo_group_id.as_deref(),
+            Some("/repo/nested")
+        );
+        assert_eq!(s.get(1).unwrap().git_root, None);
+        s.set_git_root_in_directory(1, None, Some(Path::new("/different")), &[]);
+        assert_eq!(s.get(1).unwrap().repo_group_id, None);
     }
 
     #[test]

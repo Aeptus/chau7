@@ -678,7 +678,7 @@ impl Workspace {
                             .child("+")
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .on_click(cx.listener(|this, _, window, cx| {
-                                this.add_tab(None, true, window, cx);
+                                this.add_default_tab(window, cx);
                                 this.focus_selected(window, cx);
                             })),
                     );
