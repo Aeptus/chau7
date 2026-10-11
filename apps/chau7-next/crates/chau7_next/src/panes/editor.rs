@@ -82,7 +82,7 @@ pub struct EditorPane {
     dirty: bool,
     loading: bool,
     error: Option<String>,
-    /// Rendered runbook instead of the source (`.md` files open rendered).
+    /// Rendered runbook instead of the source; files open in source mode.
     markdown_mode: bool,
     copied_until: Option<Instant>,
     language: &'static EditorLanguage,
@@ -390,8 +390,11 @@ impl EditorPane {
         self.language = EditorLanguage::detect(&path.to_string_lossy());
         self.path = Some(path.clone());
         self.dirty = untitled.is_some();
-        // A markdown file opens as a runbook (`isMarkdownMode` follows the path).
-        self.markdown_mode = self.is_markdown_file();
+        // Swift resets the preview when the file path changes, while a reload
+        // of the same Markdown file preserves the chosen source/preview mode.
+        if different_file || !self.is_markdown_file() {
+            self.markdown_mode = false;
+        }
         self.install_highlighter(cx);
         self.programmatic = true;
         let state = self.state.clone();
@@ -1388,6 +1391,47 @@ mod markdown_live_tests {
         })
         .unwrap();
         cx.update(|cx| assert_eq!(pane.read(cx).markdown_styles.text(), "**café!"));
+    }
+
+    #[gpui::test]
+    fn actual_markdown_load_opens_source_and_preserves_same_file_preview(cx: &mut TestAppContext) {
+        let directory =
+            std::env::temp_dir().join(format!("chau7-next-markdown-load-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let first = directory.join("NOTE.MARKDOWN");
+        let second = directory.join("OTHER.md");
+        std::fs::write(&first, "# café\n").unwrap();
+        std::fs::write(&second, "# other\n").unwrap();
+        let (handle, pane) = editor(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.finish_load(first.clone(), "# café\n".into(), None, window, cx);
+                assert!(!pane.markdown_mode);
+                assert!(!pane.dirty);
+                pane.toggle_markdown_mode(cx);
+                assert!(pane.markdown_mode);
+                pane.finish_load(first.clone(), "# reloaded\n".into(), None, window, cx);
+                assert!(pane.markdown_mode);
+                assert_eq!(pane.content(cx), "# reloaded\n");
+                assert!(!pane.dirty);
+            });
+        })
+        .unwrap();
+        // Verify the event boundary too: a programmatic load is not a user edit.
+        cx.update(|cx| assert!(!pane.read(cx).dirty));
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.finish_load(second, "# other\n".into(), None, window, cx);
+                assert!(!pane.markdown_mode);
+                assert!(!pane.dirty);
+                assert_eq!(pane.markdown_styles.text(), "# other\n");
+                pane.file_monitor = None;
+                pane.file_monitor_task = None;
+            });
+        })
+        .unwrap();
+        cx.update(|cx| assert!(!pane.read(cx).dirty));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[gpui::test]
