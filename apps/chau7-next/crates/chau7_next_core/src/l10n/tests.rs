@@ -82,16 +82,16 @@ fn other_languages_only_miss_the_known_keys() {
 fn fallback_to_the_english_default() {
     // Missing key: the default from the code.
     assert_eq!(localized(Lang::Fr, "no.such.key", "Fallback"), "Fallback");
-    // Missing in fr/ar/he but present in English: the default (L10-005).
-    assert_eq!(
-        localized(Lang::Ar, "settings.about.stackSummary", "Stack"),
-        "Stack"
-    );
-    // No default: the English table, then the key.
-    assert_eq!(
-        localized(Lang::Fr, "settings.about.stackSummary", ""),
-        table(Lang::En)["settings.about.stackSummary"]
-    );
+    // Missing in fr/ar/he but present in English: the default (L10-005),
+    // and with no default the English text. The Swift tables of October
+    // 2026 translate every key, so this only runs when one is missing.
+    for lang in [Lang::Fr, Lang::Ar, Lang::He] {
+        let en = table(Lang::En);
+        if let Some(key) = en.keys().find(|k| !table(lang).contains_key(*k)) {
+            assert_eq!(localized(lang, key, "Fallback"), "Fallback");
+            assert_eq!(localized(lang, key, ""), en[key]);
+        }
+    }
     assert_eq!(localized(Lang::He, "no.such.key", ""), "no.such.key");
     // Present: the translation wins over the default.
     assert_eq!(localized(Lang::Fr, "action.cancel", "Cancel"), "Annuler");
@@ -136,7 +136,9 @@ fn system_default_is_not_a_language_outside_the_language_picker() {
 #[test]
 fn all_caps_headers_stay_in_capitals() {
     assert_eq!(translate(Lang::Fr, "TERMINAL"), "TERMINAL");
-    assert_eq!(translate(Lang::Fr, "Terminal"), "Terminal");
+    // Swift's French for the "Terminal" section ("Console" since 2026).
+    let key = key_for_english("Terminal").unwrap();
+    assert_eq!(translate(Lang::Fr, "Terminal"), table(Lang::Fr)[key]);
 }
 
 fn l10n_fr(key: &str, default: &str) -> String {
