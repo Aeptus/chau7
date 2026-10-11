@@ -150,4 +150,41 @@ mod tests {
         }
         std::fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn public_identity_survives_disk_reopen_and_legacy_records_still_parse() {
+        use crate::ai::event::{AiEvent, AiEventSource};
+        let dir = std::env::temp_dir().join(format!(
+            "chau7-next-spine-identity-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("journal.sqlite");
+        let public = uuid::Uuid::new_v4();
+        let live = crate::notifications::tab_resolver::tab_uuid(1);
+        let mut event = AiEvent::new(
+            AiEventSource::codex(),
+            "finished",
+            "Codex",
+            "done",
+            "2026-10-11T10:00:00Z",
+        );
+        event.tab_id = Some(live);
+        let spine = EventSpine::new(8, 0);
+        let envelope = spine.ingest_ai_attributed(event, None, false, Some(public));
+        {
+            let store = SpineJournalStore::open(&path, 8).unwrap();
+            store.persist(&envelope).unwrap();
+        }
+        let store = SpineJournalStore::open(&path, 8).unwrap();
+        let reopened = store.envelopes(0, 8).unwrap();
+        assert_eq!(reopened[0].public_tab_id, Some(public));
+        assert_eq!(reopened[0].ai_event().unwrap().tab_id, Some(live));
+        let mut legacy = serde_json::to_value(&envelope).unwrap();
+        legacy.as_object_mut().unwrap().remove("public_tab_id");
+        let legacy: EventEnvelope = serde_json::from_value(legacy).unwrap();
+        assert_eq!(legacy.public_tab_id, None);
+        assert_eq!(legacy.ai_event().unwrap().tab_id, Some(live));
+        drop(store);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

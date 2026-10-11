@@ -55,6 +55,10 @@ pub struct EventEnvelope {
     pub seq: u64,
     pub event_id: Uuid,
     pub correlation_id: Option<String>,
+    /// Captured at admission, independently of the process-local routing ID in
+    /// AiEvent. Legacy records have no public attribution and keep their raw ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_tab_id: Option<Uuid>,
     pub occurred_at: DateTime<Utc>,
     pub ingested_at: DateTime<Utc>,
     pub topics: Vec<String>,
@@ -198,17 +202,29 @@ impl EventSpine {
         correlation_id: Option<String>,
         delivery_requested: bool,
     ) -> EventEnvelope {
+        self.ingest_ai_attributed(event, correlation_id, delivery_requested, None)
+    }
+    pub fn ingest_ai_attributed(
+        &self,
+        event: AiEvent,
+        correlation_id: Option<String>,
+        delivery_requested: bool,
+        public_tab_id: Option<Uuid>,
+    ) -> EventEnvelope {
         let ingested_at = Utc::now();
         let occurred_at =
             crate::telemetry::date_codec::parse_iso8601(Some(&event.ts)).unwrap_or(ingested_at);
-        self.ingest(
-            event.id,
+        self.ingest(EventEnvelope {
+            seq: 0,
+            event_id: event.id,
             correlation_id,
+            public_tab_id,
             occurred_at,
             ingested_at,
             delivery_requested,
-            EventPayload::Ai(Box::new(event)),
-        )
+            topics: Vec::new(),
+            payload: EventPayload::Ai(Box::new(event)),
+        })
     }
     pub fn ingest_structural(
         &self,
@@ -218,39 +234,26 @@ impl EventSpine {
         occurred_at: Option<DateTime<Utc>>,
     ) -> EventEnvelope {
         let ingested_at = Utc::now();
-        self.ingest(
-            event_id.unwrap_or_else(Uuid::new_v4),
+        self.ingest(EventEnvelope {
+            seq: 0,
+            event_id: event_id.unwrap_or_else(Uuid::new_v4),
             correlation_id,
-            occurred_at.unwrap_or(ingested_at),
+            public_tab_id: None,
+            occurred_at: occurred_at.unwrap_or(ingested_at),
             ingested_at,
-            false,
-            EventPayload::Structural(Box::new(event)),
-        )
+            delivery_requested: false,
+            topics: Vec::new(),
+            payload: EventPayload::Structural(Box::new(event)),
+        })
     }
-    fn ingest(
-        &self,
-        event_id: Uuid,
-        correlation_id: Option<String>,
-        occurred_at: DateTime<Utc>,
-        ingested_at: DateTime<Utc>,
-        delivery_requested: bool,
-        payload: EventPayload,
-    ) -> EventEnvelope {
+    fn ingest(&self, mut envelope: EventEnvelope) -> EventEnvelope {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.next_seq = state
             .next_seq
             .checked_add(1)
             .expect("event sequence exhausted");
-        let envelope = EventEnvelope {
-            seq: state.next_seq,
-            event_id,
-            correlation_id,
-            occurred_at,
-            ingested_at,
-            topics: payload_topics(&payload),
-            delivery_requested,
-            payload,
-        };
+        envelope.seq = state.next_seq;
+        envelope.topics = payload_topics(&envelope.payload);
         state.envelopes.push_back(envelope.clone());
         while state.envelopes.len() > self.capacity {
             state.envelopes.pop_front();

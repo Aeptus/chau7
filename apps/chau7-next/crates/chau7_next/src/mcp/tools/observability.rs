@@ -121,24 +121,10 @@ pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<
             if arg_str(args, "repo_path").is_none() {
                 return Some(json_error("repo_path is required"));
             }
-            let state = ctx.main.read(|cx| {
-                let journal = crate::observability::journal(cx);
-                let mut aliases = std::collections::HashMap::new();
-                for window in crate::mcp::windows::windows(cx) {
-                    let workspace = window.workspace.read(cx);
-                    for uuid in workspace.mcp_tab_uuids() {
-                        if let Some(tab) = workspace.mcp_find(uuid) {
-                            aliases.insert(crate::ai::events_out::tab_uuid(tab), uuid.to_string());
-                        }
-                    }
-                }
-                (journal, aliases)
-            });
+            let state = ctx.main.read(|cx| crate::observability::journal(cx));
             Some(match state {
-                Ok((Some(journal), aliases)) => match journal.persisted_events(0, 50_000) {
-                    Ok(events) => {
-                        encode_sorted(&crate::observability::repo_events(&events, args, &aliases))
-                    }
+                Ok(Some(journal)) => match journal.persisted_events(0, 50_000) {
+                    Ok(events) => encode_sorted(&crate::observability::repo_events(&events, args)),
                     Err(error) => json_error(&error),
                 },
                 Err(error) => encode_sorted(&error.payload()),

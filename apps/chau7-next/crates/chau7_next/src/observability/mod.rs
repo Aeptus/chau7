@@ -213,7 +213,24 @@ pub fn publish(event: AiEvent, notify: bool, cx: &App) -> bool {
     let Some(host) = cx.try_global::<Observability>() else {
         return false;
     };
-    host.journal.spine.ingest_ai(event, None, notify);
+    let public_tab_id = event.tab_id.and_then(|raw| {
+        for (_, workspace) in crate::workspace::AppData::live(cx) {
+            let workspace = workspace.read(cx);
+            for uuid in workspace.mcp_tab_uuids() {
+                if uuid == raw
+                    || workspace
+                        .mcp_find(uuid)
+                        .is_some_and(|tab| crate::ai::events_out::tab_uuid(tab) == raw)
+                {
+                    return Some(uuid);
+                }
+            }
+        }
+        None
+    });
+    host.journal
+        .spine
+        .ingest_ai_attributed(event, None, notify, public_tab_id);
     true
 }
 pub fn record(event: StructuralEvent, cx: &App) {
@@ -341,11 +358,7 @@ pub fn timer_inventory(cx: &App) -> Value {
     json!({"timers":timers,"latest_seq":host.journal.latest_seq(),"coverage":"registered Chau7 Next tasks"})
 }
 
-pub fn repo_events(
-    envelopes: &[EventEnvelope],
-    args: &serde_json::Map<String, Value>,
-    aliases: &std::collections::HashMap<uuid::Uuid, String>,
-) -> Value {
+pub fn repo_events(envelopes: &[EventEnvelope], args: &serde_json::Map<String, Value>) -> Value {
     let repo = args
         .get("repo_path")
         .and_then(Value::as_str)
@@ -370,15 +383,15 @@ pub fn repo_events(
             .and_then(Value::as_str)
             .is_none_or(|value| actual.is_some_and(|actual| actual.eq_ignore_ascii_case(value)))
     };
-    let events = envelopes.iter().filter_map(|envelope| envelope.ai_event()).filter(|event| {
+    let events = envelopes.iter().filter_map(|envelope| envelope.ai_event().map(|event| (envelope, event))).filter(|(envelope, event)| {
         let matches_repo = event.repo_path.as_deref().is_some_and(|path|normalize(path)==expected);
-        let tab = event.tab_id.map(|id|aliases.get(&id).cloned().unwrap_or_else(||id.to_string()));
+        let tab = envelope.public_tab_id.or(event.tab_id).map(|id| id.to_string());
         matches_repo && filter("tab_id",tab.as_deref()) && filter("tool",Some(&event.tool)) && filter("producer",event.producer.as_deref()) && filter("session_id",event.session_id.as_deref()) && args.get("event_types").and_then(Value::as_array).is_none_or(|types|types.iter().any(|kind|kind.as_str()==Some(&event.event_type)))
-    }).map(|event| {
+    }).map(|(envelope, event)| {
         let message = if truncate {event.message.chars().take(200).collect::<String>()} else {event.message.clone()};
         let mut value = json!({"id":event.id,"source":event.source.0,"type":event.event_type,"tool":event.tool,"message":message,"ts":event.ts,"reliability":event.reliability});
         let object = value.as_object_mut().unwrap();
-        for (key,value) in [("directory",event.directory.clone()),("tab_id",event.tab_id.map(|id|aliases.get(&id).cloned().unwrap_or_else(||id.to_string()))),("session_id",event.session_id.clone()),("producer",event.producer.clone())] { if let Some(value)=value {object.insert(key.into(),json!(value));} }
+        for (key,value) in [("directory",event.directory.clone()),("tab_id",envelope.public_tab_id.or(event.tab_id).map(|id| id.to_string())),("session_id",event.session_id.clone()),("producer",event.producer.clone())] { if let Some(value)=value {object.insert(key.into(),json!(value));} }
         value
     }).collect::<Vec<_>>();
     let events = events
@@ -411,7 +424,10 @@ pub fn runtime_projection(envelope: &EventEnvelope) -> Value {
         EventPayload::Ai(event) => (
             "ai_event",
             event.source.0.as_str(),
-            event.tab_id.map(|id| id.to_string()),
+            envelope
+                .public_tab_id
+                .or(event.tab_id)
+                .map(|id| id.to_string()),
             event.session_id.clone(),
             None,
             event.repo_path.clone(),
@@ -452,7 +468,7 @@ pub fn shutdown(cx: &mut App) -> Option<JoinHandle<()>> {
 mod tests {
     use super::*;
     #[test]
-    fn repo_query_uses_attributed_root_aliases_filters_and_unicode_limit() {
+    fn repo_query_uses_admitted_stable_identity_filters_and_unicode_limit() {
         let spine = EventSpine::new(16, 0);
         let tab = uuid::Uuid::new_v4();
         let mut ai = AiEvent::new(
@@ -465,13 +481,16 @@ mod tests {
         ai.repo_path = Some("/repo/".into());
         ai.tab_id = Some(tab);
         ai.session_id = Some("session-1".into());
-        spine.ingest_ai(ai, None, true);
+        let public = uuid::Uuid::new_v4();
+        spine.ingest_ai_attributed(ai, None, true, Some(public));
         let events = spine.replay(0, 16).envelopes;
-        let aliases = std::collections::HashMap::from([(tab, "public-tab".to_string())]);
-        let args = json!({"repo_path":"/repo","tab_id":"public-tab","tool":"codex","event_types":["finished"]});
-        let value = repo_events(&events, args.as_object().unwrap(), &aliases);
+        let args =
+            json!({"repo_path":"/repo","tab_id":public,"tool":"codex","event_types":["finished"]});
+        let value = repo_events(&events, args.as_object().unwrap());
         assert_eq!(value["count"], 1);
-        assert_eq!(value["events"][0]["tab_id"], "public-tab");
+        assert_eq!(value["events"][0]["tab_id"], public.to_string());
+        assert_eq!(runtime_projection(&events[0])["tab_id"], public.to_string());
+        assert_eq!(events[0].ai_event().unwrap().tab_id, Some(tab));
         assert_eq!(
             value["events"][0]["message"]
                 .as_str()
@@ -481,15 +500,9 @@ mod tests {
             200
         );
         let args = json!({"repo_path":"/other"});
-        assert_eq!(
-            repo_events(&events, args.as_object().unwrap(), &aliases)["count"],
-            0
-        );
+        assert_eq!(repo_events(&events, args.as_object().unwrap())["count"], 0);
         let args = json!({"repo_path":"/repo","session_id":"other"});
-        assert_eq!(
-            repo_events(&events, args.as_object().unwrap(), &aliases)["count"],
-            0
-        );
+        assert_eq!(repo_events(&events, args.as_object().unwrap())["count"], 0);
     }
 
     #[test]
@@ -506,5 +519,49 @@ mod tests {
         assert_eq!(value["repo_path"], "/repo");
         assert!(value.get("session_id").is_none());
         assert_eq!(value["detail"]["reason"], "test");
+    }
+    #[test]
+    fn reused_live_ids_do_not_relabel_events_from_a_prior_session() {
+        let spine = EventSpine::new(8, 0);
+        let live = crate::ai::events_out::tab_uuid(1);
+        let prior = uuid::Uuid::new_v4();
+        let current = uuid::Uuid::new_v4();
+        for public in [prior, current] {
+            let mut event = AiEvent::new(
+                chau7_next_core::ai::event::AiEventSource::codex(),
+                "finished",
+                "Codex",
+                public.to_string(),
+                "2026-10-11T10:00:00Z",
+            );
+            event.tab_id = Some(live);
+            event.repo_path = Some("/repo".into());
+            spine.ingest_ai_attributed(event, None, false, Some(public));
+        }
+        let events = spine.replay(0, 8).envelopes;
+        for public in [prior, current] {
+            let args = json!({"repo_path":"/repo", "tab_id":public});
+            let value = repo_events(&events, args.as_object().unwrap());
+            assert_eq!(value["count"], 1);
+            assert_eq!(value["events"][0]["message"], public.to_string());
+        }
+    }
+    #[test]
+    fn legacy_unattributed_records_keep_their_original_id() {
+        let spine = EventSpine::new(8, 0);
+        let live = crate::ai::events_out::tab_uuid(1);
+        let mut event = AiEvent::new(
+            chau7_next_core::ai::event::AiEventSource::codex(),
+            "finished",
+            "Codex",
+            "legacy",
+            "2026-10-11T10:00:00Z",
+        );
+        event.tab_id = Some(live);
+        event.repo_path = Some("/repo".into());
+        let envelope = spine.ingest_ai(event, None, false);
+        let args = json!({"repo_path":"/repo"});
+        let value = repo_events(&[envelope], args.as_object().unwrap());
+        assert_eq!(value["events"][0]["tab_id"], live.to_string());
     }
 }
