@@ -65,6 +65,12 @@ pub enum SavedSplitNode {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mode: Option<String>,
     },
+    /// Repository-scoped agent dashboard; absent scope restores an empty dashboard.
+    Dashboard {
+        id: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        directory: Option<String>,
+    },
     Repository {
         id: u64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -93,6 +99,7 @@ impl SavedSplitNode {
             SavedSplitNode::Editor { .. }
             | SavedSplitNode::Preview { .. }
             | SavedSplitNode::Diff { .. }
+            | SavedSplitNode::Dashboard { .. }
             | SavedSplitNode::Repository { .. } => {}
             SavedSplitNode::Split { children, .. } => {
                 children.iter().for_each(|c| c.collect_terminal_ids(out));
@@ -107,6 +114,7 @@ impl SavedSplitNode {
             | SavedSplitNode::Editor { id, .. }
             | SavedSplitNode::Preview { id, .. }
             | SavedSplitNode::Diff { id, .. }
+            | SavedSplitNode::Dashboard { id, .. }
             | SavedSplitNode::Repository { id, .. } => Some(*id),
             SavedSplitNode::Split { .. } => None,
         }
@@ -132,6 +140,10 @@ impl SavedSplitNode {
                 directory,
                 mode,
             },
+            SavedSplitNode::Dashboard { directory, .. } => SavedSplitNode::Dashboard {
+                id: new_id,
+                directory,
+            },
             SavedSplitNode::Repository { directory, .. } => SavedSplitNode::Repository {
                 id: new_id,
                 directory,
@@ -147,6 +159,7 @@ impl SavedSplitNode {
             | SavedSplitNode::Editor { id, .. }
             | SavedSplitNode::Preview { id, .. }
             | SavedSplitNode::Diff { id, .. }
+            | SavedSplitNode::Dashboard { id, .. }
             | SavedSplitNode::Repository { id, .. } => *id,
             SavedSplitNode::Split { id, children, .. } => children
                 .iter()
@@ -177,6 +190,7 @@ impl SavedSplitNode {
             | SavedSplitNode::Editor { .. }
             | SavedSplitNode::Preview { .. }
             | SavedSplitNode::Diff { .. }
+            | SavedSplitNode::Dashboard { .. }
             | SavedSplitNode::Repository { .. }) => {
                 let id = leaf.leaf_id().unwrap_or_default();
                 if seen.insert(id) {
@@ -732,6 +746,73 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn dashboard_layout_roundtrips_scopes_and_missing_scope() {
+        for directory in [None, Some(String::new()), Some("/tmp/project".into())] {
+            let node = SavedSplitNode::Dashboard { id: 17, directory };
+            let encoded = serde_json::to_string(&node).unwrap();
+            assert_eq!(
+                serde_json::from_str::<SavedSplitNode>(&encoded).unwrap(),
+                node
+            );
+            assert!(node.terminal_ids().is_empty());
+            assert_eq!(node.leaf_id(), Some(17));
+        }
+        assert_eq!(
+            serde_json::from_str::<SavedSplitNode>(r#"{"type":"dashboard","id":42}"#).unwrap(),
+            SavedSplitNode::Dashboard {
+                id: 42,
+                directory: None
+            }
+        );
+    }
+    #[test]
+    fn dashboard_normalization_preserves_scope_repository_editor_and_terminal() {
+        let dashboard = SavedSplitNode::Dashboard {
+            id: 2,
+            directory: Some("/tmp/project".into()),
+        };
+        let node = SavedSplitNode::Split {
+            id: 1,
+            axis: SavedAxis::Horizontal,
+            ratios: vec![0.25; 4],
+            children: vec![
+                dashboard,
+                SavedSplitNode::Repository {
+                    id: 2,
+                    directory: Some("/tmp/other".into()),
+                },
+                SavedSplitNode::Editor {
+                    id: 2,
+                    path: Some("/tmp/plan.md".into()),
+                },
+                SavedSplitNode::Terminal {
+                    id: 2,
+                    directory: Some("/tmp/shell".into()),
+                },
+            ],
+        }
+        .normalized()
+        .unwrap();
+        assert_eq!(node.terminal_ids().len(), 1);
+        let SavedSplitNode::Split { children, .. } = node else {
+            panic!("expected split")
+        };
+        let ids: HashSet<_> = children
+            .iter()
+            .filter_map(SavedSplitNode::leaf_id)
+            .collect();
+        assert_eq!(ids.len(), 4);
+        assert!(
+            matches!(&children[0],SavedSplitNode::Dashboard{directory:Some(root),..} if root=="/tmp/project")
+        );
+        assert!(
+            matches!(&children[1],SavedSplitNode::Repository{directory:Some(root),..} if root=="/tmp/other")
+        );
+        assert!(
+            matches!(&children[2],SavedSplitNode::Editor{path:Some(path),..} if path=="/tmp/plan.md")
+        );
+    }
     #[test]
     fn repository_layout_roundtrips_and_normalizes_duplicate_ids() {
         let node = SavedSplitNode::Repository {

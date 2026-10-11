@@ -36,6 +36,14 @@ impl Workspace {
                     this.focus_selected(window, cx);
                     cx.notify();
                 }
+                SidePaneEvent::OpenDashboard(root) => {
+                    let root = root.clone();
+                    this.dashboard.dismiss();
+                    if let Some(panes) = this.selected_panes() {
+                        panes.update(cx, |p, cx| p.open_dashboard(root, window, cx));
+                    }
+                    cx.notify();
+                }
                 SidePaneEvent::OpenEditor(path) => {
                     this.dashboard.dismiss();
                     this.open_file_in_editor(path.clone(), None, window, cx);
@@ -49,6 +57,19 @@ impl Workspace {
             self.idle_open = false;
         }
         cx.notify();
+    }
+    /// Actual current presentation, including group overlays, for timer suspension.
+    pub(crate) fn dashboard_contains(&self, id: gpui::EntityId, cx: &App) -> bool {
+        if let Some(overlay) = &self.dashboard.view {
+            return overlay.entity_id() == id;
+        }
+        self.selected_panes().is_some_and(|panes| {
+            panes
+                .read(cx)
+                .leaves()
+                .iter()
+                .any(|pane| pane.entity_id() == id)
+        })
     }
     pub(crate) fn dashboard_live_sessions(
         &self,
