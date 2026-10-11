@@ -58,6 +58,7 @@ pub mod monitoring;
 pub mod notifications;
 pub mod option_text_routing;
 pub mod path_rank;
+pub mod permission_center;
 pub mod procargs;
 pub mod profile_rules;
 pub mod protected_path;

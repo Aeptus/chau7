@@ -5,8 +5,8 @@
 //! Folders picked in the "Grant access" dialog are kept as security-scoped
 //! bookmarks (`DataRoot::protected_folder_bookmarks_file`, base64 per root),
 //! started again at launch and refreshed when stale, so they stay readable
-//! without a new prompt. A root without a bookmark is probed once; a denied
-//! one is retried after 5 minutes. Reset Checks stops the bookmarks in use
+//! without a new prompt. A root without a bookmark needs an explicit grant;
+//! a failed activation is retried after 5 minutes. Reset Checks stops bookmarks
 //! and forgets the decisions (the bookmarks stay saved, as in Swift).
 
 use std::collections::{BTreeMap, HashSet};
@@ -17,7 +17,10 @@ use std::time::Instant;
 
 use base64::Engine;
 use chau7_next_core::data_root::DataRoot;
-use chau7_next_core::protected_path::{AccessPolicy, protected_root_for};
+use chau7_next_core::permission_center::{
+    ProtectedEvidence, ProtectedSnapshot, ProtectedState, protected_snapshot,
+};
+use chau7_next_core::protected_path::{AccessPolicy, protected_root_for, protected_roots};
 
 use crate::platform::{PlatformError, bookmarks};
 
@@ -26,12 +29,14 @@ static ALLOW: AtomicBool = AtomicBool::new(true);
 
 /// Where the bookmarks are saved (set by [`init`]).
 static BOOKMARKS_FILE: OnceLock<PathBuf> = OnceLock::new();
+static HOME_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// Saved bookmarks by protected root, and the roots started this launch.
 #[derive(Default)]
 struct Bookmarks {
     by_root: BTreeMap<String, Vec<u8>>,
     started: HashSet<String>,
+    stale: HashSet<String>,
 }
 
 fn bookmarks_state() -> &'static Mutex<Bookmarks> {
@@ -50,13 +55,19 @@ fn clock() -> f64 {
 }
 
 fn home() -> String {
-    std::env::var("HOME").unwrap_or_default()
+    HOME_DIR
+        .get()
+        .cloned()
+        .unwrap_or_else(|| DataRoot::from_env().home().to_path_buf())
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Load the saved bookmarks and start them in the background
 /// (`activatePersistedBookmarks`), so repo detection in a granted folder
 /// works on the first check.
 pub fn init(root: &DataRoot) {
+    let _ = HOME_DIR.set(root.home().to_path_buf());
     let file = root.protected_folder_bookmarks_file();
     let saved = load(&file);
     let _ = BOOKMARKS_FILE.set(file);
@@ -140,10 +151,12 @@ fn start_bookmark(root: &str, source: &str) -> bool {
                 log::info!("ProtectedPathPolicy: refreshed stale bookmark for {root}");
             }
             state.started.insert(root.to_string());
+            state.stale.remove(root);
             true
         }
         Err(PlatformError::Failed(message)) if message.starts_with("resolve bookmark") => {
             state.by_root.remove(root);
+            state.stale.insert(root.to_string());
             save(&state.by_root);
             log::warn!("ProtectedPathPolicy: failed to resolve bookmark for {root}, removed");
             false
@@ -160,28 +173,80 @@ pub fn set_allowed(allowed: bool) {
     ALLOW.store(allowed, Ordering::Relaxed);
 }
 
-/// Whether to leave `path` alone (`shouldSkipAutoAccess`).
-pub fn should_skip(path: &Path) -> bool {
-    let Some(text) = path.to_str() else {
-        return false;
+/// Snapshot only known state; never probe a protected folder from a settings render.
+pub fn snapshot(path: &Path, known_repo_roots: &[String]) -> ProtectedSnapshot {
+    let root = path
+        .to_str()
+        .and_then(|path| protected_root_for(path, &home()));
+    let Some(root) = root else {
+        return protected_snapshot(None, ProtectedEvidence::default());
     };
-    let mut policy = policy().lock().unwrap_or_else(|e| e.into_inner());
-    policy.should_skip(
-        text,
-        &home(),
-        ALLOW.load(Ordering::Relaxed),
-        clock(),
-        |root| {
-            if start_bookmark(root, "auto") {
-                return true;
-            }
-            // Only a permission error means denied; a missing folder is fine.
-            match std::fs::read_dir(root) {
-                Ok(_) => true,
-                Err(err) => err.kind() != std::io::ErrorKind::PermissionDenied,
-            }
+    let (active_scope, bookmark, stale) = {
+        let state = bookmarks_state().lock().unwrap_or_else(|e| e.into_inner());
+        (
+            state.started.contains(&root),
+            state.by_root.contains_key(&root),
+            state.stale.contains(&root),
+        )
+    };
+    let denied_by_cooldown = policy()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .denied_by_cooldown(&root, clock());
+    let root_path = Path::new(&root);
+    let known_identity = known_repo_roots
+        .iter()
+        .any(|path| Path::new(path).starts_with(root_path));
+    protected_snapshot(
+        Some(root.into()),
+        ProtectedEvidence {
+            feature_enabled: ALLOW.load(Ordering::Relaxed),
+            active_scope,
+            bookmark,
+            denied_by_cooldown,
+            known_identity,
+            bookmark_resolve_failed: stale,
         },
     )
+}
+pub fn snapshots_with_known_roots(known_repo_roots: &[String]) -> Vec<ProtectedSnapshot> {
+    if !cfg!(target_os = "macos") {
+        return Vec::new();
+    }
+    protected_roots(&home())
+        .iter()
+        .map(|root| snapshot(Path::new(root), known_repo_roots))
+        .collect()
+}
+
+/// Current Swift policy: a saved bookmark may be activated; a missing grant is
+/// never probed automatically. Active scopes remain available if the toggle is off.
+pub fn should_skip(path: &Path) -> bool {
+    if !cfg!(target_os = "macos") {
+        return false;
+    }
+    let initial = snapshot(path, &[]);
+    if initial.state != ProtectedState::AvailableBookmarkedScope {
+        return !initial.can_probe_live;
+    }
+    let Some(root) = initial
+        .root
+        .and_then(|path| path.into_os_string().into_string().ok())
+    else {
+        return true;
+    };
+    if start_bookmark(&root, "auto") {
+        policy()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .grant(&root);
+    } else {
+        policy()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .mark_denied(&root, clock());
+    }
+    !snapshot(path, &[]).can_probe_live
 }
 
 /// The user picked these folders in the grant dialog: each one under a
@@ -207,6 +272,7 @@ pub fn grant(paths: &[PathBuf]) -> Vec<String> {
                     let mut state = bookmarks_state().lock().unwrap_or_else(|e| e.into_inner());
                     state.by_root.insert(root.clone(), data);
                     state.started.remove(&root);
+                    state.stale.remove(&root);
                     save(&state.by_root);
                 }
                 start_bookmark(&root, "grant")
@@ -233,10 +299,10 @@ pub fn grant(paths: &[PathBuf]) -> Vec<String> {
 /// Forget every decision and stop the bookmarks in use (`resetAccessChecks`).
 pub fn reset() {
     bookmarks::stop_all();
-    bookmarks_state()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .started
-        .clear();
+    {
+        let mut state = bookmarks_state().lock().unwrap_or_else(|e| e.into_inner());
+        state.started.clear();
+        state.stale.clear();
+    }
     policy().lock().unwrap_or_else(|e| e.into_inner()).reset();
 }

@@ -26,6 +26,7 @@ mod observability;
 mod pane;
 mod panes;
 mod performance;
+mod permission_center;
 mod platform;
 mod profiles;
 mod protected_paths;
