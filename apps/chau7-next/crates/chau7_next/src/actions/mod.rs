@@ -160,6 +160,9 @@ pub struct GroupMenu {
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum GroupMenuOp {
+    MuteNotifications,
+    SnoozeNotifications(u32),
+    UnmuteNotifications,
     Ungroup,
     CloseGroup,
     MoveToWindow(Option<usize>),

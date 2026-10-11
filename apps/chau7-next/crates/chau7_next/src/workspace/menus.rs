@@ -98,7 +98,7 @@ impl Workspace {
                 op,
             }) as Box<dyn gpui::Action>
         };
-        NativeMenu::new()
+        let mut menu = NativeMenu::new()
             .submenu(
                 format!("Move \"{}\" to Window", repo_group_name(&group)),
                 self.window_submenu(cx, |index| op(GroupMenuOp::MoveToWindow(index))),
@@ -109,10 +109,47 @@ impl Workspace {
             )
             .separator()
             .menu(
-                format!("Close Group ({count} tabs)"),
+                crate::l10n::count("context.closeGroup", "Close Group (%d tabs)", count as i64),
                 op(GroupMenuOp::CloseGroup),
-            )
-            .show(position, window, cx);
+            );
+        if let Some(root) = self.notification_repo_for_group(&group) {
+            let mut notifications = NativeMenu::new();
+            if crate::notifications::repo_is_muted(&root, cx) {
+                notifications = notifications
+                    .menu("Unmute Notifications", op(GroupMenuOp::UnmuteNotifications));
+            } else {
+                notifications =
+                    notifications.menu("Mute Notifications", op(GroupMenuOp::MuteNotifications));
+            }
+            notifications = notifications
+                .menu(
+                    "Snooze for 15 Minutes",
+                    op(GroupMenuOp::SnoozeNotifications(15)),
+                )
+                .menu(
+                    "Snooze for 1 Hour",
+                    op(GroupMenuOp::SnoozeNotifications(60)),
+                )
+                .menu(
+                    "Snooze for 8 Hours",
+                    op(GroupMenuOp::SnoozeNotifications(480)),
+                );
+            menu = menu.separator().submenu("Notifications", notifications);
+        }
+        menu.show(position, window, cx);
+    }
+
+    /// A mixed manual group must not silently mute only one of its repositories.
+    fn notification_repo_for_group(&self, group: &str) -> Option<String> {
+        let mut root: Option<String> = None;
+        for id in self.state.group_members(group) {
+            let repo = self.state.get(id)?.git_root.as_ref()?;
+            if root.as_ref().is_some_and(|root| root != repo) {
+                return None;
+            }
+            root = Some(repo.clone());
+        }
+        root
     }
 
     /// "New Window", then every other open window by title.
@@ -195,6 +232,28 @@ impl Workspace {
     ) {
         log::info!("TABBAR menu group={} op={:?}", action.group, action.op);
         match &action.op {
+            GroupMenuOp::MuteNotifications
+            | GroupMenuOp::SnoozeNotifications(_)
+            | GroupMenuOp::UnmuteNotifications => {
+                if let Some(root) = self.notification_repo_for_group(&action.group) {
+                    match action.op {
+                        GroupMenuOp::UnmuteNotifications => {
+                            crate::notifications::unmute_repo(&root, cx)
+                        }
+                        GroupMenuOp::SnoozeNotifications(minutes) => {
+                            crate::notifications::mute_repo(
+                                &root,
+                                Some(
+                                    chrono::Utc::now()
+                                        + chrono::Duration::minutes(i64::from(minutes)),
+                                ),
+                                cx,
+                            )
+                        }
+                        _ => crate::notifications::mute_repo(&root, None, cx),
+                    }
+                }
+            }
             GroupMenuOp::Ungroup => self.state.ungroup(&action.group),
             GroupMenuOp::CloseGroup => {
                 let ids = self.state.group_members(&action.group);
