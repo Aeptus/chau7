@@ -167,6 +167,11 @@ pub struct PaneTree {
     /// AI session a restored pane was running, kept for the life of the pane
     /// so that it is saved again (`restoreAIMetadata`).
     resume_meta: HashMap<PaneId, (String, String)>,
+    owner_tab: Option<uuid::Uuid>,
+    presentation_terminal: Option<EntityId>,
+    note_binding: Option<(PathBuf, uuid::Uuid)>,
+    note_task: Option<gpui::Task<()>>,
+    note_generation: u64,
 }
 
 impl EventEmitter<PaneEvent> for PaneTree {}
@@ -181,6 +186,11 @@ impl PaneTree {
             pane_ids: HashMap::new(),
             pending_restore: HashMap::new(),
             resume_meta: HashMap::new(),
+            owner_tab: None,
+            presentation_terminal: None,
+            note_binding: None,
+            note_task: None,
+            note_generation: 0,
         }
     }
 
@@ -188,6 +198,7 @@ impl PaneTree {
         let mut this = Self::empty();
         let view = this.create_terminal(cwd, new_pane_id(), DEFAULT_SIZE, window, cx);
         this.focused = Some(view.entity_id());
+        this.presentation_terminal = this.focused;
         this.root = Some(Node::Leaf(PaneItem::Terminal(view)));
         this
     }
@@ -336,48 +347,55 @@ impl PaneTree {
         let view_id = view.entity_id();
         self.pane_ids.insert(view_id, pane_id);
         let subs = vec![
-            cx.subscribe(&session, move |this, _, event, cx| match event {
-                SessionEvent::Output => cx.emit(PaneEvent::Activity),
-                SessionEvent::MetadataChanged => {
-                    if this.focused == Some(view_id) {
-                        cx.emit(PaneEvent::MetadataChanged);
-                    }
-                    // Shell loading overlay.
-                    cx.notify();
-                }
-                SessionEvent::Bell => {
-                    cx.emit(PaneEvent::Bell);
-                    cx.notify();
-                }
-                SessionEvent::Exited(_) => {
-                    if Settings::get(cx).tabs.close_on_exit {
-                        this.remove(view_id, cx);
-                    } else {
+            cx.subscribe_in(
+                &session,
+                window,
+                move |this, _, event, window, cx| match event {
+                    SessionEvent::Output => cx.emit(PaneEvent::Activity),
+                    SessionEvent::MetadataChanged => {
+                        this.attach_session_notes(window, cx);
+                        if this.focused == Some(view_id) {
+                            cx.emit(PaneEvent::MetadataChanged);
+                        }
+                        // Shell loading overlay.
                         cx.notify();
                     }
-                }
-                SessionEvent::CommandFinished(code) => cx.emit(PaneEvent::CommandFinished(*code)),
-                SessionEvent::CommandStarted(command) => {
-                    cx.emit(PaneEvent::CommandStarted(command.clone()))
-                }
-                SessionEvent::Ai {
-                    event,
-                    notify,
-                    tab_name_as_tool,
-                } => cx.emit(PaneEvent::Ai {
-                    event: event.clone(),
-                    notify: *notify,
-                    tab_name_as_tool: *tab_name_as_tool,
-                }),
-                SessionEvent::ChangedFiles(files) => {
-                    cx.emit(PaneEvent::ChangedFiles(files.clone()))
-                }
-                SessionEvent::PermissionResolved => cx.emit(PaneEvent::PermissionResolved),
-                SessionEvent::ClipboardStore(_)
-                | SessionEvent::ClipboardLoad
-                | SessionEvent::DirectoryChanged(_)
-                | SessionEvent::WaitingInput { .. } => {}
-            }),
+                    SessionEvent::Bell => {
+                        cx.emit(PaneEvent::Bell);
+                        cx.notify();
+                    }
+                    SessionEvent::Exited(_) => {
+                        if Settings::get(cx).tabs.close_on_exit {
+                            this.remove(view_id, cx);
+                        } else {
+                            cx.notify();
+                        }
+                    }
+                    SessionEvent::CommandFinished(code) => {
+                        cx.emit(PaneEvent::CommandFinished(*code))
+                    }
+                    SessionEvent::CommandStarted(command) => {
+                        cx.emit(PaneEvent::CommandStarted(command.clone()))
+                    }
+                    SessionEvent::Ai {
+                        event,
+                        notify,
+                        tab_name_as_tool,
+                    } => cx.emit(PaneEvent::Ai {
+                        event: event.clone(),
+                        notify: *notify,
+                        tab_name_as_tool: *tab_name_as_tool,
+                    }),
+                    SessionEvent::ChangedFiles(files) => {
+                        cx.emit(PaneEvent::ChangedFiles(files.clone()))
+                    }
+                    SessionEvent::PermissionResolved => cx.emit(PaneEvent::PermissionResolved),
+                    SessionEvent::ClipboardStore(_)
+                    | SessionEvent::ClipboardLoad
+                    | SessionEvent::DirectoryChanged(_)
+                    | SessionEvent::WaitingInput { .. } => {}
+                },
+            ),
             cx.subscribe_in(
                 &view,
                 window,
@@ -395,6 +413,9 @@ impl PaneTree {
     }
 
     fn set_focused(&mut self, id: EntityId, cx: &mut Context<Self>) {
+        if self.views().iter().any(|v| v.entity_id() == id) {
+            self.presentation_terminal = Some(id);
+        }
         if self.focused != Some(id) {
             self.focused = Some(id);
             cx.emit(PaneEvent::MetadataChanged);
@@ -570,6 +591,9 @@ impl PaneTree {
             (Some(root), None) => Some(root),
             (None, _) => Some(Node::Leaf(item)),
         };
+        if self.views().iter().any(|v| v.entity_id() == new_id) {
+            self.presentation_terminal = Some(new_id);
+        }
         self.focused = Some(new_id);
         self.focus_own(window, cx);
         // A new side pane's editor exists only once drawn: focus it again then.
@@ -608,6 +632,105 @@ impl PaneTree {
 
     // ----- side panes ---------------------------------------------------
 
+    /// Workspace passes its persistent tab UUID after new/restore/reopen construction.
+    #[allow(dead_code)] // Coordinator wires the shared workspace constructor seam.
+    pub fn set_owner_tab(&mut self, tab: uuid::Uuid, window: &mut Window, cx: &mut Context<Self>) {
+        if self.owner_tab != Some(tab) {
+            self.owner_tab = Some(tab);
+            self.note_binding = None;
+        }
+        self.attach_session_notes(window, cx);
+    }
+    fn note_repository(&self, cx: &App) -> Option<PathBuf> {
+        let views = self.views();
+        let root_for = |id: Option<EntityId>| {
+            id.and_then(|id| views.iter().find(|v| v.entity_id() == id))
+                .and_then(|v| v.read(cx).session.read(cx).git_root.clone())
+        };
+        let candidates = [
+            root_for(self.focused),
+            root_for(self.presentation_terminal),
+            views
+                .first()
+                .and_then(|v| v.read(cx).session.read(cx).git_root.clone()),
+        ];
+        chau7_next_core::editor::session_note::selected_repository(&candidates)
+    }
+    fn attach_session_notes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (Some(tab), Some(repo)) = (self.owner_tab, self.note_repository(cx)) else {
+            return;
+        };
+        let editors: Vec<_> = self
+            .leaves()
+            .into_iter()
+            .filter_map(|p| {
+                if let PaneItem::Editor(e) = p {
+                    Some(e)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let untitled = editors
+            .iter()
+            .any(|e| e.read(cx).path().is_none() && !e.read(cx).is_loading());
+        let binding = (repo.clone(), tab);
+        if self.note_binding.as_ref() == Some(&binding) && (self.note_task.is_some() || !untitled) {
+            return;
+        }
+        self.note_binding = Some(binding.clone());
+        self.note_generation += 1;
+        let generation = self.note_generation;
+        let root = cx.global::<AppData>().root.clone();
+        let task = cx.background_spawn(async move {
+            if crate::protected_paths::should_skip(&repo) {
+                return None;
+            }
+            if untitled {
+                chau7_next_core::editor::session_note::prepare(&root, &repo, tab)
+            } else {
+                chau7_next_core::editor::session_note::existing(&root, &repo, tab)
+            }
+        });
+        self.note_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = task.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if this.note_generation != generation {
+                    return;
+                }
+                this.note_task = None;
+                let Some(path) = result else {
+                    return;
+                };
+                let current: Vec<_> = this
+                    .leaves()
+                    .into_iter()
+                    .filter_map(|p| {
+                        if let PaneItem::Editor(e) = p {
+                            Some(e)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if current.is_empty() {
+                    let focus = this.focused;
+                    this.open_text_editor(Some(path), None, window, cx);
+                    this.focused = focus;
+                    this.focus_own(window, cx);
+                } else {
+                    for editor in current {
+                        if editor.read(cx).path().is_none() {
+                            editor.update(cx, |e, cx| {
+                                e.attach_session_note(path.clone(), window, cx)
+                            });
+                        }
+                    }
+                }
+            });
+        }));
+    }
+
     /// `splitWithTextEditor(.horizontal)`: works with split panes off too.
     pub fn open_text_editor(
         &mut self,
@@ -626,6 +749,7 @@ impl PaneTree {
             window,
             cx,
         );
+        self.attach_session_notes(window, cx);
         editor
     }
 
@@ -707,12 +831,12 @@ impl PaneTree {
         cx.notify();
     }
 
-    /// `appendSelectionToEditor`: needs an open editor pane.
+    /// Selection append opens an editor on demand; pending note attachment merges typed text.
     pub fn append_to_editor(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
-        match self.first_editor() {
-            Some(editor) => editor.update(cx, |e, cx| e.append_text(text, window, cx)),
-            None => log::warn!("No text editor pane open to append to"),
-        }
+        let editor = self
+            .first_editor()
+            .unwrap_or_else(|| self.open_text_editor(None, None, window, cx));
+        editor.update(cx, |e, cx| e.append_text(text, window, cx));
     }
 
     /// Selected text of the focused (or first) terminal.
@@ -795,6 +919,9 @@ impl PaneTree {
             .and_then(|id| leaves.iter().position(|v| v.entity_id() == id))
             .unwrap_or(0);
         let next = (current as isize + delta).rem_euclid(leaves.len() as isize) as usize;
+        if matches!(leaves[next], PaneItem::Terminal(_)) {
+            self.presentation_terminal = Some(leaves[next].entity_id());
+        }
         self.focused = Some(leaves[next].entity_id());
         let handle = leaves[next].focus_handle(cx);
         window.focus(&handle, cx);
