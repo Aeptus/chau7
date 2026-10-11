@@ -16,7 +16,7 @@ mod cpu_renderer;
 
 pub use cpu_renderer::init as init_cpu_text_system;
 use cpu_renderer::{FrameCache, GridCanvas};
-pub(crate) use cpu_renderer::{glyph_cache_bytes, release_glyph_cache};
+pub(crate) use cpu_renderer::{glyph_cache_bytes, glyph_cache_entries, release_glyph_cache};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;
@@ -145,7 +145,9 @@ impl Default for Overlays {
 
 impl Overlays {
     pub fn renderer_diagnostics(&self) -> serde_json::Value {
-        self.cpu_frame.lock().diagnostics()
+        let mut value = self.cpu_frame.lock().diagnostics();
+        value["inline_images"] = self.images.allocation_snapshot();
+        value
     }
     pub fn cache_bytes(&self) -> u64 {
         self.cpu_frame.lock().bytes()
