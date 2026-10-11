@@ -3,7 +3,7 @@
 //! The patterns and the enable switch come from the settings; the allow,
 //! block and per-directory lists live in `dangerous_guard.json`.
 
-use chau7_next_core::command_risk::{CheckResult, DangerousCommandGuard};
+use chau7_next_core::command_risk::{DangerousCommandGuard, GuardVerdict, self_protect};
 use chau7_next_core::dangerous_guard_store;
 use chau7_next_core::guard_line;
 use gpui::{App, Global};
@@ -34,15 +34,75 @@ pub fn init(cx: &mut App) {
 }
 
 /// Verdict on the line being typed at the prompt.
-pub fn check_line(line: &str, directory: Option<&str>, cx: &mut App) -> CheckResult {
+pub fn check_line(
+    line: &str,
+    directory: Option<&str>,
+    shell_pid: u64,
+    cx: &mut App,
+) -> GuardVerdict {
     sync(cx);
-    guard_line::check_line(&cx.global::<GuardState>().0, line, directory)
+    let context = protection_context(shell_pid, cx);
+    let settings = &Settings::get(cx).dangerous_commands;
+    let protection = settings
+        .protect_chau7_enabled
+        .then_some((settings.protect_chau7_level, &context));
+    let guard = &cx.global::<GuardState>().0;
+    for candidate in guard_line::candidates(line) {
+        let verdict = guard.check_with_self_protection(&candidate, directory, protection);
+        if verdict.self_protection.is_some() {
+            log_protection(&verdict, settings.protect_chau7_level);
+            return verdict;
+        }
+    }
+    guard_line::check_line(guard, line, directory).into()
 }
 
 /// Verdict on pasted text: it is the command itself, so no prompt to strip.
-pub fn check_text(text: &str, directory: Option<&str>, cx: &mut App) -> CheckResult {
+pub fn check_text(
+    text: &str,
+    directory: Option<&str>,
+    shell_pid: u64,
+    cx: &mut App,
+) -> GuardVerdict {
     sync(cx);
-    cx.global::<GuardState>().0.check(text, directory)
+    let context = protection_context(shell_pid, cx);
+    let settings = &Settings::get(cx).dangerous_commands;
+    let protection = settings
+        .protect_chau7_enabled
+        .then_some((settings.protect_chau7_level, &context));
+    let verdict = cx
+        .global::<GuardState>()
+        .0
+        .check_with_self_protection(text, directory, protection);
+    log_protection(&verdict, settings.protect_chau7_level);
+    verdict
+}
+
+fn protection_context(shell_pid: u64, cx: &App) -> self_protect::Context {
+    let patterns = &Settings::get(cx)
+        .dangerous_commands
+        .protected_process_patterns;
+    let pids = [
+        i32::try_from(std::process::id()).ok(),
+        i32::try_from(shell_pid).ok(),
+    ]
+    .into_iter()
+    .flatten();
+    let names = patterns.iter().cloned().chain([
+        chau7_next_core::data_root::BUNDLE_ID.to_string(),
+        "Chau7Next".to_string(),
+    ]);
+    let observed = u32::try_from(shell_pid)
+        .ok()
+        .map(|pid| crate::monitoring::process_tree::observed_names(pid, cx))
+        .unwrap_or_default();
+    self_protect::Context::new(pids, names).with_observed_names(patterns, &observed)
+}
+fn log_protection(verdict: &GuardVerdict, level: self_protect::ProtectionLevel) {
+    if let Some(detail) = &verdict.self_protection {
+        // A real verbose-logging response, without persisting typed secrets.
+        log::warn!("Managed-process protection {:?}: {}", level, detail.reason);
+    }
 }
 
 /// Write the lists to disk.

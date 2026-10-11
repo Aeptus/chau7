@@ -2,7 +2,7 @@
 //! paste) of a risky command waits for a confirmation
 //! (`DangerousCommandConfirmationView.swift`).
 
-use chau7_next_core::command_risk::CheckResult;
+use chau7_next_core::command_risk::{CheckResult, GuardVerdict};
 use gpui::{
     AnyElement, Context, FontWeight, KeyDownEvent, MouseButton, SharedString, Window, deferred,
     div, prelude::*, px,
@@ -22,6 +22,7 @@ pub(super) struct GuardPrompt {
     pending: Vec<u8>,
     /// "Do not warn for this command again".
     dont_warn: bool,
+    reason: Option<String>,
 }
 
 impl TerminalView {
@@ -62,7 +63,8 @@ impl TerminalView {
             return false;
         };
         let directory = self.directory(cx);
-        let result = command_guard::check_line(&line, directory.as_deref(), cx);
+        let shell_pid = session.shell_pid();
+        let result = command_guard::check_line(&line, directory.as_deref(), shell_pid, cx);
         self.guard_hold(result, b"\r".to_vec(), window, cx)
     }
 
@@ -74,24 +76,35 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.guard_prompt.is_some() || !text.trim().contains('\n') {
+        if self.guard_prompt.is_some() || !text.contains(['\n', '\r']) {
             return false;
         }
         let directory = self.directory(cx);
-        let result = command_guard::check_text(text, directory.as_deref(), cx);
+        let shell_pid = self.session.read(cx).shell_pid();
+        let result = command_guard::check_text(text, directory.as_deref(), shell_pid, cx);
         self.guard_hold(result, bytes, window, cx)
     }
 
     fn guard_hold(
         &mut self,
-        result: CheckResult,
+        verdict: GuardVerdict,
         pending: Vec<u8>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let (command, pattern) = match result {
+        let reason = verdict
+            .self_protection
+            .as_ref()
+            .map(|detail| detail.reason.to_string());
+        let (command, pattern) = match verdict.result {
             CheckResult::Safe | CheckResult::Allowed => return false,
-            CheckResult::Blocked => (String::new(), None),
+            CheckResult::Blocked => (
+                verdict
+                    .self_protection
+                    .map(|detail| detail.command)
+                    .unwrap_or_default(),
+                None,
+            ),
             CheckResult::NeedsConfirmation {
                 command,
                 matched_pattern,
@@ -102,6 +115,7 @@ impl TerminalView {
             pattern,
             pending,
             dont_warn: false,
+            reason,
         });
         window.focus(&self.guard_focus, cx);
         cx.notify();
@@ -142,6 +156,7 @@ impl TerminalView {
         } else {
             "This command matches a risky pattern and may cause irreversible changes."
         };
+        let subtitle = prompt.reason.as_deref().unwrap_or(subtitle);
         let button = |id: &'static str, label: &'static str, primary: bool| {
             div()
                 .id(id)
@@ -173,8 +188,17 @@ impl TerminalView {
                 div()
                     .text_xs()
                     .text_color(chrome.text_muted)
-                    .child(subtitle),
+                    .child(SharedString::from(subtitle.to_string())),
             );
+        if blocked && !prompt.command.is_empty() {
+            body = body.child(
+                div()
+                    .text_sm()
+                    .font_family("monospace")
+                    .text_color(chrome.danger)
+                    .child(SharedString::from(prompt.command.clone())),
+            );
+        }
         if !blocked {
             body = body
                 .child(
