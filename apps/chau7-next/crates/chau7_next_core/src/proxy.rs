@@ -482,6 +482,7 @@ pub enum ProxyMessage {
         tab_id: Option<String>,
         project_path: Option<String>,
         token_rate: Option<crate::telemetry::token_rate::TokenRateReading>,
+        evidence: Box<crate::telemetry::evidence::UsageEvidence>,
     },
     GenerationProgress {
         tab_id: String,
@@ -499,6 +500,16 @@ pub enum ProxyMessage {
 
 #[derive(Deserialize)]
 struct ApiCallData {
+    #[serde(default)]
+    request_id: Option<String>,
+    #[serde(default)]
+    cache_creation_input_tokens: Option<i64>,
+    #[serde(default)]
+    cache_read_input_tokens: Option<i64>,
+    #[serde(default)]
+    reasoning_output_tokens: Option<i64>,
+    #[serde(default)]
+    pricing_version: Option<String>,
     session_id: String,
     provider: String,
     model: String,
@@ -616,6 +627,30 @@ pub fn parse_message(line: &str, now: DateTime<Utc>) -> Result<ProxyMessage, Str
             let token_rate = rate_store
                 .reading(d.tab_id.as_deref().unwrap_or(""))
                 .cloned();
+            let mut evidence = crate::telemetry::evidence::UsageEvidence::empty(
+                &d.provider,
+                crate::telemetry::evidence::SourceKind::Proxy,
+                parse_time(&d.timestamp).unwrap_or(now),
+            );
+            evidence.session_id = Some(d.session_id.clone());
+            evidence.model = Some(d.model.clone());
+            evidence.endpoint = Some(d.endpoint.clone());
+            evidence.project_path = d.project_path.clone();
+            evidence.input_tokens = d.input_tokens;
+            evidence.output_tokens = d.output_tokens;
+            evidence.cache_creation_input_tokens = d.cache_creation_input_tokens;
+            evidence.cache_read_input_tokens = d.cache_read_input_tokens;
+            evidence.reasoning_output_tokens = d.reasoning_output_tokens;
+            evidence.cost_usd = d.cost_usd;
+            evidence.pricing_version = d.pricing_version.clone();
+            if let Some(tab) = &d.tab_id {
+                evidence.metadata.insert("tab_id".into(), tab.clone());
+            }
+            evidence.finish_proxy_identity(d.request_id.as_deref());
+            if d.output_tokens_estimated {
+                evidence.token_usage_state =
+                    crate::telemetry::token_metrics::TelemetryMetricState::Estimated;
+            }
             let error = d.error_message.filter(|m| !m.is_empty());
             ProxyMessage::ApiCall {
                 event: ApiCallEvent {
@@ -635,6 +670,7 @@ pub fn parse_message(line: &str, now: DateTime<Utc>) -> Result<ProxyMessage, Str
                 tab_id: d.tab_id.filter(|t| !t.is_empty()),
                 project_path: d.project_path.filter(|p| !p.is_empty()),
                 token_rate,
+                evidence: Box::new(evidence),
             }
         }
         "generation_progress" => {
@@ -999,6 +1035,58 @@ impl<'a> ProxyAnalyticsStore<'a> {
             return fallback;
         };
         f(&conn).unwrap_or(fallback)
+    }
+
+    /// Bounded cursor walk over retained requests, including optional columns
+    /// added by newer Go proxies. Historical missing values remain unknown.
+    pub fn evidence_batch(
+        &self,
+        after_id: i64,
+        limit: usize,
+    ) -> Vec<(i64, crate::telemetry::evidence::UsageEvidence)> {
+        use crate::telemetry::evidence::{SourceKind, UsageEvidence};
+        self.with(vec![], |conn| {
+            let mut stmt =
+                conn.prepare("SELECT * FROM api_calls WHERE id>?1 ORDER BY id LIMIT ?2")?;
+            let rows = stmt.query_map(params![after_id, limit.clamp(1, 500) as i64], |row| {
+                fn field<T: rusqlite::types::FromSql>(
+                    row: &rusqlite::Row<'_>,
+                    name: &str,
+                ) -> Option<T> {
+                    row.get::<_, Option<T>>(name).ok().flatten()
+                }
+                let id: i64 = row.get("id")?;
+                let provider: String = row.get("provider")?;
+                let timestamp: String = row.get("timestamp")?;
+                let at = parse_time(&timestamp).ok_or(rusqlite::Error::InvalidQuery)?;
+                let mut e = UsageEvidence::empty(&provider, SourceKind::Proxy, at);
+                e.session_id = field(row, "session_id");
+                e.model = field(row, "model");
+                e.endpoint = field(row, "endpoint");
+                e.project_path = field(row, "project_path");
+                e.input_tokens = field(row, "input_tokens");
+                e.output_tokens = field(row, "output_tokens");
+                e.cache_creation_input_tokens = field(row, "cache_creation_input_tokens");
+                e.cache_read_input_tokens = field(row, "cache_read_input_tokens");
+                e.reasoning_output_tokens = field(row, "reasoning_output_tokens");
+                e.cost_usd = field(row, "cost_usd");
+                e.pricing_version = field(row, "pricing_version");
+                if let Some(tab) = field::<String>(row, "tab_id").filter(|s| !s.is_empty()) {
+                    e.metadata.insert("tab_id".into(), tab);
+                }
+                let request: Option<String> = field(row, "request_id");
+                e.finish_proxy_identity(request.as_deref());
+                // Persist a cursor for failed rows too, but preserve failure evidence as unknown.
+                if !field::<i64>(row, "status_code").is_some_and(|s| (200..300).contains(&s)) {
+                    e.metadata.insert(
+                        "request_status".into(),
+                        field::<i64>(row, "status_code").unwrap_or(0).to_string(),
+                    );
+                }
+                Ok((id, e))
+            })?;
+            rows.collect()
+        })
     }
 
     pub fn activity_samples(

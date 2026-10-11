@@ -300,6 +300,62 @@ fn render(cx: &mut App) -> AnyElement {
         timing=timing.child(ui::caption(format!("Updated {} · Terminal timing is an estimate; transcript rounds replace it. API response uses TTFT when observed.",at.with_timezone(&chrono::Local).format("%H:%M:%S")),chrome));
     }
     page = page.child(timing);
+    if let Some(evidence) = latency.evidence {
+        let mut group = ui::group("Reconciled usage evidence", chrome);
+        group = group.child(ui::caption(
+            format!(
+                "{} retained observations · {} reconciled groups · {} unassigned requests",
+                numbers::integer(evidence.retained_records as i64),
+                numbers::integer(evidence.reconciled_groups as i64),
+                evidence
+                    .unassigned_requests
+                    .map(|n| numbers::integer(n as i64))
+                    .unwrap_or_else(|| "Unavailable".into())
+            ),
+            chrome,
+        ));
+        group = group.child(ui::caption(
+            format!(
+                "{} billable tokens · {} · {} groups without cost",
+                if evidence.token_groups > 0 {
+                    numbers::integer(evidence.token_usage.total_billable_tokens())
+                } else {
+                    "Unavailable".into()
+                },
+                evidence
+                    .total_cost_usd
+                    .map(numbers::cost_precise)
+                    .unwrap_or_else(|| "Cost unavailable".into()),
+                numbers::integer(evidence.missing_cost_groups as i64)
+            ),
+            chrome,
+        ));
+        if evidence.incomplete_window {
+            group=group.child(ui::caption("Incomplete evidence window: retained query budget exceeded. Totals describe only the displayed retained observations.",chrome));
+        }
+        for evidence in evidence.groups {
+            group = group.child(ui::caption(
+                format!(
+                    "{} · {} · {} · {} tokens · {} · {} alternatives",
+                    evidence.scope,
+                    evidence.source,
+                    evidence.confidence,
+                    evidence
+                        .tokens
+                        .map(numbers::integer)
+                        .unwrap_or_else(|| "Unavailable".into()),
+                    evidence
+                        .cost_usd
+                        .map(numbers::cost_precise)
+                        .unwrap_or_else(|| "Cost unavailable".into()),
+                    numbers::integer(evidence.alternatives as i64)
+                ),
+                chrome,
+            ));
+        }
+        page = page.child(group);
+    }
+
     if view.providers.is_empty() {
         page=page.child(ui::empty_note("No provider quota snapshot yet. Enable monitoring for Codex or install Claude capture. Unknown quota remains unavailable.",chrome));
     }
