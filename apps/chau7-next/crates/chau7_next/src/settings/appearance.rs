@@ -261,7 +261,12 @@ impl AppearanceSettings {
 
     /// Cursor blink phase length.
     pub fn blink_interval(&self) -> std::time::Duration {
-        std::time::Duration::from_secs_f32(self.cursor_blink_rate.unwrap_or(0.5))
+        let seconds = self
+            .cursor_blink_rate
+            .filter(|value| value.is_finite())
+            .unwrap_or(0.5)
+            .clamp(0.3, 2.0);
+        std::time::Duration::from_secs_f32(seconds)
     }
 }
 
@@ -293,7 +298,9 @@ pub fn fallback_fonts() -> Vec<String> {
 }
 
 fn number(v: &RawValue) -> Option<f64> {
-    v.as_double().or(v.as_int().map(|i| i as f64))
+    v.as_double()
+        .or(v.as_int().map(|i| i as f64))
+        .filter(|value| value.is_finite())
 }
 
 /// TOML literal string for a `[next]` value (no escapes are read back).
@@ -414,7 +421,10 @@ impl SettingsDomain for AppearanceSettings {
             self.rendering.inactive_view_max_fps = (v as i64).clamp(1, 120) as u32;
         }
         if let Some(v) = num("suspend_render_delay_seconds") {
-            self.rendering.suspend_delay_secs = (v as f32).max(0.0);
+            let seconds = (v as f32).max(0.0);
+            if std::time::Duration::try_from_secs_f32(seconds).is_ok() {
+                self.rendering.suspend_delay_secs = seconds;
+            }
         }
     }
 
@@ -585,6 +595,42 @@ mod tests {
         assert_eq!(a.default_zoom_percent, 200);
         assert_eq!(a.font_weight, 0);
         assert_eq!(a.graphics.kitty_cache_limit_mb, 64);
+    }
+
+    #[test]
+    fn invalid_timing_numbers_preserve_safe_defaults() {
+        for value in ["nan", "inf", "-inf", "1e200", "1e20"] {
+            let appearance: AppearanceSettings = load_text(&format!(
+                "[next]\ncursor_blink_rate = {value}\nsuspend_render_delay_seconds = {value}\n"
+            ));
+            assert_eq!(appearance.rendering.suspend_delay_secs, 5.0, "{value}");
+            assert!(appearance.blink_interval().as_secs_f32().is_finite());
+            if matches!(value, "nan" | "inf" | "-inf") {
+                assert_eq!(appearance.blink_interval().as_millis(), 500);
+            }
+        }
+        let negative: AppearanceSettings =
+            load_text("[next]\ncursor_blink_rate = -1.0\nsuspend_render_delay_seconds = -1.0\n");
+        assert_eq!(negative.blink_interval().as_millis(), 300);
+        assert_eq!(negative.rendering.suspend_delay_secs, 0.0);
+    }
+
+    #[test]
+    fn blink_interval_handles_invalid_in_memory_values() {
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let appearance = AppearanceSettings {
+                cursor_blink_rate: Some(value),
+                ..Default::default()
+            };
+            assert_eq!(appearance.blink_interval().as_millis(), 500);
+        }
+        for (value, expected_ms) in [(-1.0, 300), (0.0, 300), (f32::MAX, 2000)] {
+            let appearance = AppearanceSettings {
+                cursor_blink_rate: Some(value),
+                ..Default::default()
+            };
+            assert_eq!(appearance.blink_interval().as_millis(), expected_ms);
+        }
     }
 
     #[test]
