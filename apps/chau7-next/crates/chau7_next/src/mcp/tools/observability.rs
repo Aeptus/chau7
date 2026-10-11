@@ -40,6 +40,9 @@ pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<
             ctx.main
                 .call(|cx| {
                     let mut info = crate::performance::runtime_info();
+                    info["codex_feedback"] =
+                        serde_json::to_value(crate::runtime::codex_feedback::health(cx))
+                            .unwrap_or(Value::Null);
                     info["event_journal"] = crate::observability::journal(cx)
                         .map(|journal| journal.status())
                         .unwrap_or(Value::Null);

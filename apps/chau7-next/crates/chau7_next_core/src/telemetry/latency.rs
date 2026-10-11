@@ -501,7 +501,7 @@ mod tests {
     fn activity_survives_absent_request_latency() {
         let s = sample(100);
         let d = dashboard(
-            &[s.clone()],
+            std::slice::from_ref(&s),
             &[ActivitySample {
                 provider: s.provider.clone(),
                 timestamp: s.timestamp,

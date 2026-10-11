@@ -648,6 +648,9 @@ impl TerminalSession {
             }
         }
         metadata_changed |= self.drain_tracker_events(cx);
+        if !output.is_empty() {
+            crate::telemetry::note_output(&self.tab_identifier, &output, cx);
+        }
 
         if bell {
             self.ring_bell(cx);
@@ -723,17 +726,59 @@ impl TerminalSession {
         }
     }
 
+    fn handle_agent_feedback(&mut self, event: &AiEvent, cx: &mut Context<Self>) {
+        let Some(provider) = chau7_next_core::ai::resume::normalize_provider_name(&event.tool)
+            .or_else(|| {
+                chau7_next_core::ai::resume::normalize_provider_name(event.source.raw_value())
+            })
+        else {
+            return;
+        };
+        let Some(date) = chau7_next_core::telemetry::date_codec::parse_iso8601(Some(&event.ts))
+        else {
+            return;
+        };
+        if self.tracker.apply_agent_feedback(
+            &event.event_type,
+            &provider,
+            event.session_id.as_deref(),
+            date.timestamp_millis() as f64 / 1000.0,
+        ) {
+            self.drain_tracker_events(cx);
+            cx.notify();
+        }
+    }
+
     /// Apply the tracker's events. Returns true when metadata changed.
     fn drain_tracker_events(&mut self, cx: &mut Context<Self>) -> bool {
         let mut changed = false;
         for event in self.tracker.take_events() {
             match event {
                 ShellSessionEvent::StatusChanged(status) => {
+                    let mut event = chau7_next_core::events::StructuralEvent::new(
+                        "terminal_status_changed",
+                        "terminal",
+                    );
+                    event.session_id = self.tracker.ai_session_id().map(str::to_string);
+                    event.repo_path = self
+                        .git_root
+                        .as_ref()
+                        .map(|path| path.to_string_lossy().into_owned());
+                    event.detail.insert(
+                        "terminal_session_id".into(),
+                        serde_json::json!(self.tab_identifier),
+                    );
+                    event
+                        .detail
+                        .insert("status".into(), serde_json::json!(status.as_str()));
+                    crate::observability::record(event, cx);
+
                     self.command_running = matches!(
                         status,
                         CommandStatus::Running
                             | CommandStatus::Stuck
                             | CommandStatus::WaitingForInput
+                            | CommandStatus::ApprovalRequired
                     );
                     changed = true;
                 }
@@ -835,6 +880,12 @@ impl TerminalSession {
                             log::info!("AI detected: {tool}");
                             let command = self.tracker.pending_command().map(str::to_string);
                             self.start_ai_run(tool, command.as_deref(), cx);
+                            if command
+                                .as_deref()
+                                .is_some_and(|line| !line.trim().is_empty())
+                            {
+                                crate::telemetry::note_prompt(&self.tab_identifier, cx);
+                            }
                         }
                         None => self.finish_ai_run(None, cx),
                     }
@@ -854,6 +905,9 @@ impl TerminalSession {
                     changed = true;
                 }
                 ShellSessionEvent::HistoryLine { command, sensitive } => {
+                    if !sensitive && !command.trim().is_empty() {
+                        crate::telemetry::note_prompt(&self.tab_identifier, cx);
+                    }
                     log::debug!(
                         "session {}: typed line ({} chars, sensitive={sensitive})",
                         self.id,
@@ -1781,4 +1835,30 @@ fn apply_image_protocols(term: &Chau7Terminal, settings: &Settings) {
         appearance.graphics.kitty,
         appearance.display.inline_images,
     );
+}
+
+/// Apply authoritative CLI feedback to panes belonging to the explicitly bound tab.
+pub(crate) fn apply_agent_feedback(event: &AiEvent, cx: &mut gpui::App) {
+    if event.reliability != AiEventReliability::Authoritative {
+        return;
+    }
+    let Some(tab) = event.tab_id.and_then(crate::ai::events_out::tab_from_uuid) else {
+        return;
+    };
+    let mut sessions = Vec::new();
+    for window in crate::mcp::windows::windows(cx) {
+        let Some(panes) = window.workspace.read(cx).mcp_panes(tab) else {
+            continue;
+        };
+        sessions.extend(
+            panes
+                .read(cx)
+                .pane_sessions(cx)
+                .into_iter()
+                .map(|(_, session)| session),
+        );
+    }
+    for session in sessions {
+        session.update(cx, |session, cx| session.handle_agent_feedback(event, cx));
+    }
 }

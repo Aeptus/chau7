@@ -82,7 +82,6 @@ pub struct Health {
 #[derive(Default)]
 struct MonitorHealth(Vec<Health>);
 impl Global for MonitorHealth {}
-#[allow(dead_code)] // Read-only diagnostics seam for runtime_info; coordinator wires the shared MCP module.
 pub fn health(cx: &App) -> Vec<Health> {
     cx.try_global::<MonitorHealth>()
         .map(|h| h.0.clone())
@@ -92,7 +91,15 @@ pub fn health(cx: &App) -> Vec<Health> {
 pub fn start(cx: &mut App) {
     let sessions = cx.global::<AppData>().root.home().join(".codex/sessions");
     cx.default_global::<AppServerTrackers>();
+    let timer = crate::observability::register_timer(
+        cx,
+        "runtime.codex_feedback",
+        "Codex structured feedback",
+        "runtime",
+        200,
+    );
     cx.spawn(async move |cx| {
+        let _timer = timer;
         let began = Instant::now();
         let mut watches: Watches = HashMap::new();
         loop {

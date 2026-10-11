@@ -75,6 +75,7 @@ pub fn publish(mut event: AiEvent, notify: bool, cx: &mut App) {
 
 /// The sole spine pump calls this after ordered ingestion.
 pub(crate) fn project(event: AiEvent, notify: bool, cx: &mut App) {
+    crate::terminal::session::apply_agent_feedback(&event, cx);
     if matches!(
         event.event_type.as_str(),
         "process_started" | "process_ended"

@@ -596,7 +596,12 @@ pub(crate) fn close_tab(tab_id: &str, force: bool, cx: &mut App) -> String {
             .read(cx)
             .mcp_session(tab.tab, cx)
             .map(|s| s.read(cx).status());
-        if let Some(status @ (CommandStatus::Running | CommandStatus::WaitingForInput)) = status {
+        if let Some(
+            status @ (CommandStatus::Running
+            | CommandStatus::WaitingForInput
+            | CommandStatus::ApprovalRequired),
+        ) = status
+        {
             return json_error(&format!(
                 "Tab has a running process (status: {}). Use force=true to close anyway.",
                 status.as_str()
