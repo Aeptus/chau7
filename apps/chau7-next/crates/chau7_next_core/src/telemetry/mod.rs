@@ -7,6 +7,7 @@ pub mod codex_rollout;
 pub mod date_codec;
 pub mod metrics_sanitizer;
 pub mod providers;
+pub mod pricing;
 pub mod recorder;
 pub mod remote_client_event;
 pub mod run;

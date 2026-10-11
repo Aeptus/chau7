@@ -68,6 +68,10 @@ impl CostSource {
 pub struct TokenUsage {
     pub input_tokens: i64,
     pub cached_input_tokens: i64,
+    #[serde(default)]
+    pub cache_creation_input_tokens: i64,
+    #[serde(default)]
+    pub cache_read_input_tokens: i64,
     pub output_tokens: i64,
     pub reasoning_output_tokens: i64,
 }
@@ -78,11 +82,69 @@ impl TokenUsage {
         Self {
             input_tokens: input.max(0),
             cached_input_tokens: cached_input.max(0),
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
             output_tokens: output.max(0),
             reasoning_output_tokens: reasoning_output.max(0),
         }
     }
 
+    /// Already canonical counters from persistence. Preserve uncategorized
+    /// legacy cache without subtracting inclusive input a second time.
+    pub fn canonical(
+        input: i64,
+        cached: i64,
+        creation: i64,
+        read: i64,
+        output: i64,
+        reasoning: i64,
+    ) -> Self {
+        let mut usage = Self::new(input, cached, output, reasoning);
+        usage.cache_creation_input_tokens = creation.max(0);
+        usage.cache_read_input_tokens = read.max(0);
+        usage.cached_input_tokens = usage
+            .cached_input_tokens
+            .max(usage.cache_creation_input_tokens + usage.cache_read_input_tokens);
+        usage
+    }
+    pub fn provider(
+        provider: &str,
+        input: Option<i64>,
+        output: Option<i64>,
+        creation: Option<i64>,
+        read: Option<i64>,
+        reasoning: Option<i64>,
+    ) -> Self {
+        let key = provider.trim().to_ascii_lowercase();
+        let read = read.unwrap_or(0).max(0);
+        let creation = creation.unwrap_or(0).max(0);
+        let reasoning = reasoning.unwrap_or(0).max(0);
+        let input = input.unwrap_or(0).max(0);
+        let output = output.unwrap_or(0).max(0);
+        Self {
+            input_tokens: if matches!(
+                key.as_str(),
+                "openai" | "codex" | "chatgpt" | "gemini" | "google"
+            ) {
+                (input - read).max(0)
+            } else {
+                input
+            },
+            output_tokens: if matches!(key.as_str(), "openai" | "codex" | "chatgpt") {
+                (output - reasoning).max(0)
+            } else {
+                output
+            },
+            cache_creation_input_tokens: creation,
+            cache_read_input_tokens: read,
+            cached_input_tokens: creation + read,
+            reasoning_output_tokens: reasoning,
+        }
+    }
+    pub fn uncategorized_cache(&self) -> i64 {
+        (self.cached_input_tokens - self.cache_creation_input_tokens - self.cache_read_input_tokens)
+            .max(0)
+    }
     pub fn has_any_tokens(&self) -> bool {
         self.total_tokens() > 0
     }
@@ -108,6 +170,8 @@ impl TokenUsage {
     pub fn add(&mut self, other: &TokenUsage) {
         self.input_tokens += other.input_tokens;
         self.cached_input_tokens += other.cached_input_tokens;
+        self.cache_creation_input_tokens += other.cache_creation_input_tokens;
+        self.cache_read_input_tokens += other.cache_read_input_tokens;
         self.output_tokens += other.output_tokens;
         self.reasoning_output_tokens += other.reasoning_output_tokens;
     }
@@ -116,6 +180,31 @@ impl TokenUsage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_inclusive_counters_are_normalized_once() {
+        let codex = TokenUsage::provider(" CODEX ", Some(100), Some(40), None, Some(30), Some(10));
+        assert_eq!(codex.input_tokens, 70);
+        assert_eq!(codex.output_tokens, 30);
+        assert_eq!(codex.cache_read_input_tokens, 30);
+        assert_eq!(codex.reasoning_output_tokens, 10);
+        assert_eq!(codex.total_billable_tokens(), 140);
+        let claude = TokenUsage::provider(
+            "anthropic",
+            Some(100),
+            Some(40),
+            Some(20),
+            Some(30),
+            Some(10),
+        );
+        assert_eq!(claude.input_tokens, 100);
+        assert_eq!(claude.output_tokens, 40);
+        assert_eq!(claude.cached_input_tokens, 50);
+        assert_eq!(claude.total_billable_tokens(), 200);
+        let gemini = TokenUsage::provider("google", Some(10), Some(5), None, Some(20), Some(9));
+        assert_eq!(gemini.input_tokens, 0);
+        assert_eq!(gemini.output_tokens, 5);
+    }
 
     #[test]
     fn new_clamps_negatives() {
