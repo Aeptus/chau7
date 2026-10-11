@@ -997,6 +997,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sys-locale",
+ "unicode-segmentation",
  "uuid",
 ]
 

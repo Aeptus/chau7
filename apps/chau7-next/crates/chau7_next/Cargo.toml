@@ -30,6 +30,7 @@ base64.workspace = true
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"] }
 chrono.workspace = true
 regex.workspace = true
+unicode-segmentation = "1"
 # File watching (FSEvents/kqueue on macOS, inotify on Linux); the version
 # gpui-component already uses.
 notify = { version = "8.2.0", features = ["macos_kqueue"] }
