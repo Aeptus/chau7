@@ -13,7 +13,6 @@ use gpui_kit::component::input::{Input, InputState, Textarea, TextareaState};
 use super::SectionContext;
 use super::widgets::section as titled;
 use crate::theme::Chrome;
-use crate::workspace::AppData;
 
 /// The editor fields, created with the settings window.
 pub(crate) struct RepoInputs {
@@ -75,17 +74,13 @@ fn save(root: &str, inputs: &RepoInputs, cx: &mut App) {
         &inputs.favorites.read(cx).value(),
         now_iso8601(),
     );
-    let data = cx.global::<crate::workspace::AppData>().root.clone();
-    if let Err(err) = repo_metadata::save(&data, Path::new(root), &metadata) {
-        log::warn!("repo metadata for {root}: {err}");
-    }
-    crate::repository::adopt_metadata(root, metadata, cx);
+    crate::repository::save_metadata(root, metadata, cx);
     cx.refresh_windows();
 }
 
 pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     let chrome = ctx.chrome;
-    let recent = repo_metadata::load_recent(&ctx.root.recent_repos_file());
+    let recent = &ctx.known_repo_roots;
     let section = titled("Recent Repositories", chrome);
     if recent.is_empty() {
         return section.child(
@@ -277,16 +272,5 @@ pub(super) fn selected_repo(cx: &App) -> Option<String> {
 
 /// Remember that a tab entered `root` (`recordRecentRepo`).
 pub(crate) fn record_recent_repo(root: &str, cx: &App) {
-    let file = cx.global::<AppData>().root.recent_repos_file();
-    let root = root.to_string();
-    std::thread::spawn(move || {
-        let mut list = repo_metadata::load_recent(&file);
-        if list.first() == Some(&root) {
-            return;
-        }
-        repo_metadata::record_recent(&mut list, &root);
-        if let Err(err) = repo_metadata::save_recent(&file, &list) {
-            log::warn!("recent repositories: {err}");
-        }
-    });
+    crate::repository::record_recent(root, cx);
 }

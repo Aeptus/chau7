@@ -465,7 +465,10 @@ impl TerminalSession {
         }
         let writer = PtyWriter::spawn(term.clone());
         let git_root = cwd.as_deref().and_then(procinfo::git_root);
-        let git_branch = git_root.as_deref().and_then(procinfo::git_branch);
+        let git_branch = git_root.as_deref().and_then(|root| {
+            crate::repository::resolve(root, cx)
+                .and_then(|shared| crate::repository::branch(&shared, cx))
+        });
         let grid = term.read().grid_copy();
         let now = Instant::now();
         let directory = cwd
@@ -990,7 +993,7 @@ impl TerminalSession {
             let branch = match self.git_root.as_deref() {
                 Some(root) => match crate::repository::resolve(root, cx) {
                     Some(shared) => crate::repository::branch(&shared, cx),
-                    None => procinfo::git_branch(root),
+                    None => None,
                 },
                 None => None,
             };
@@ -1233,7 +1236,11 @@ impl TerminalSession {
             return;
         }
         self.git_root = procinfo::git_root(&cwd);
-        self.git_branch = self.git_root.as_deref().and_then(procinfo::git_branch);
+        self.git_branch = None;
+        // New directory: reconcile on the next existing monitor tick, off UI.
+        self.last_branch_check = Instant::now()
+            .checked_sub(Duration::from_secs(2))
+            .unwrap_or_else(Instant::now);
         self.cwd = Some(cwd);
     }
 

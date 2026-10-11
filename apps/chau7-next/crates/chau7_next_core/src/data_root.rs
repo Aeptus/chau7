@@ -306,6 +306,11 @@ impl DataRoot {
         self.state_dir.join("recent-repos.json")
     }
 
+    /// Confirmed repository roots and branch evidence, isolated from Swift defaults.
+    pub fn known_repo_identities_file(&self) -> PathBuf {
+        self.state_dir.join("known-repo-identities.json")
+    }
+
     /// A repository's metadata (description, labels, favorite files). It
     /// lives in the user's repo and belongs to the Swift app, which migrates
     /// it: Chau7 Next only reads it and keeps its own edits in

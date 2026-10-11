@@ -69,6 +69,7 @@ pub(crate) struct SectionContext<'a> {
     pub view: &'a SettingsView,
     /// Repositories section: the repository being edited.
     pub selected_repo: Option<String>,
+    pub known_repo_roots: Vec<String>,
     /// Config file state (General).
     pub config: &'a ConfigFiles,
     /// iCloud sync state (Sync & Backup).
@@ -535,6 +536,7 @@ impl Render for SettingsView {
             root: &root,
             view: self,
             selected_repo: repositories::selected_repo(cx),
+            known_repo_roots: crate::repository::known_roots(cx),
             config: files,
             sync,
             monitoring: MonitoringStatus::get(cx),
