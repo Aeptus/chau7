@@ -108,7 +108,7 @@ pub fn capture_tab(
         let session = session.read(cx);
         let directory = crate::pane::live_cwd(session).map(|p| p.to_string_lossy().to_string());
         let scrollback = if max_lines > 0 {
-            let styled = session.with_terminal(|term| term.full_buffer_ansi_text());
+            let styled = session.styled_buffer_for_restore();
             let styled = strip_restore_commands(&styled);
             capture_styled_scrollback(
                 Some(&styled),

@@ -111,6 +111,7 @@ pub fn capture(cx: &App) -> Value {
     json!({"schema_version": 1, "captured_at": chrono::Utc::now().to_rfc3339(),
         "runtime": runtime_info(), "uptime_seconds": identity().started.elapsed().as_secs_f64(),
         "process": process,
+        "memory_retention": crate::memory_pressure::diagnostics(cx),
         "main_thread": {"timer_delay_ms": heartbeat.and_then(|h| h.last_delay_ms),
             "max_timer_delay_ms": heartbeat.map(|h| h.max_delay_ms),
             "sample_count": heartbeat.map(|h| h.sample_count),
