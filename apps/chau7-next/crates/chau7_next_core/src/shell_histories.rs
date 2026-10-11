@@ -59,13 +59,24 @@ fn open_regular(path: &Path, write: bool, create: bool) -> io::Result<File> {
     }
     let file = options.open(path)?;
     let named = fs::symlink_metadata(path)?;
-    if !named.is_file() || named.file_type().is_symlink() || !same_file(&named, &file.metadata()?) {
+    let valid =
+        named.is_file() && !named.file_type().is_symlink() && same_file(&named, &file.metadata()?);
+    #[cfg(windows)]
+    let valid = valid && same_named_handle(&file, path)?;
+    if !valid {
         return Err(io::Error::other(
             "shell history target is not a regular file",
         ));
     }
     Ok(file)
 }
+#[cfg(windows)]
+fn same_named_handle(file: &File, path: &Path) -> io::Result<bool> {
+    // Size and timestamps cannot establish ownership after a Windows rotation.
+    // An unavailable physical identity fails the operation instead of guessing.
+    Ok(crate::file_identity::for_file(file)? == crate::file_identity::for_path(path)?)
+}
+
 fn same_file(a: &Metadata, b: &Metadata) -> bool {
     #[cfg(unix)]
     {
@@ -311,6 +322,22 @@ pub fn prune(
         }
     }
     Ok(report)
+}
+
+#[cfg(all(test, windows))]
+#[test]
+fn windows_history_handle_rejects_same_size_path_replacement() {
+    let dir = std::env::temp_dir().join(format!("c7n-history-identity-{}", Uuid::new_v4()));
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("history");
+    fs::write(&path, b"before").unwrap();
+    let handle = open_regular(&path, false, false).unwrap();
+    assert!(same_named_handle(&handle, &path).unwrap());
+    fs::rename(&path, dir.join("old")).unwrap();
+    fs::write(&path, b"after!").unwrap();
+    assert!(!same_named_handle(&handle, &path).unwrap());
+    drop(handle);
+    fs::remove_dir_all(dir).unwrap();
 }
 
 #[cfg(test)]
