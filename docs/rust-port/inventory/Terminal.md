@@ -83,7 +83,7 @@ reported to notifications, telemetry and remote control.
 
 | TRM-065 | Shell launcher uses own per-tab history files, Codex proxy wrapper and transport-attribution env, safely removes inherited Swift wrapper/history paths | `Terminal/Session/ShellLaunchConfigurator.swift` | Isolated shell/Codex launcher and owned history regressions | chau7_next_core/src/{shell_env,shell_integration,codex_proxy_wrapper.sh}; chau7_next/src/history/shell_file.rs; chau7_next/src/terminal/session.rs | done |  |
 
-| TRM-066 | Selection copy reconstructs soft-wrapped logical text, trims row padding and joins TUI hard wraps without breaking paths/URLs or merging whitespace-separated arguments | `Chau7Core/TerminalClipboard.swift`; `RustBackend/RustTerminalView+Input.swift` | TerminalClipboardTests | chau7_next/src/terminal/input.rs; chau7_next/src/terminal/session.rs | partial |  |
+| TRM-066 | Selection copy reconstructs soft-wrapped logical text, trims row padding and joins TUI hard wraps without breaking paths/URLs or merging whitespace-separated arguments | `Chau7Core/TerminalClipboard.swift`; `RustBackend/RustTerminalView+Input.swift` | TerminalClipboardTests | chau7_next_core/src/terminal_clipboard.rs; chau7_next/src/terminal/session.rs; chau7_next/src/terminal/input.rs | done |  |
 
 | TRM-067 | Bounded incremental OSC9 parser supports BEL/ST split across PTY chunks; distinguish chau7 key/value messages from foreign program notifications | `Chau7Core/TerminalOSC9Parser.swift`; `Terminal/Session/TerminalSessionModel+ShellIntegration.swift` | TerminalOSC9ParserTests | chau7_next_core/src/shell_integration.rs | partial |  |
 
@@ -139,3 +139,5 @@ reported to notifications, telemetry and remote control.
   `process_ended`, `command_finished`, `command_failed`, `exit_code_match`,
   `directory_changed`, `git_branch_changed`, `long_running` and output pattern
   matches.
+
+TRM-066 actual selection evidence: all UI/MCP selection callers share `clipboard_selection`. The same native Alacritty backend as current Swift reconstructs soft wraps and row padding. Six pure Swift policy regressions preserve normal bytes, CRLF/Unicode boundaries, paths and argument whitespace; three real headless native selection regressions prove soft-wrap spaces, hard-wrapped paths/arguments and alternate-screen TUIs without detected AI. Native desktop selection acceptance remains part of the overall hand-test checklist.

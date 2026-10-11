@@ -1791,7 +1791,7 @@ impl TerminalSession {
     }
 
     pub fn selection_text(&self) -> Option<String> {
-        self.term.read().selection_text().filter(|t| !t.is_empty())
+        clipboard_selection(&self.term.read(), self.tracker.is_ai_running())
     }
 
     pub fn clear_scrollback(&self) {
@@ -2190,6 +2190,71 @@ pub(crate) fn apply_agent_feedback(event: &AiEvent, cx: &mut gpui::App) {
     }
     for session in sessions {
         session.update(cx, |session, cx| session.handle_agent_feedback(event, cx));
+    }
+}
+
+/// Shared by all UI and MCP selection callers; native selection joins soft wraps.
+fn clipboard_selection(terminal: &Chau7Terminal, live_ai: bool) -> Option<String> {
+    terminal
+        .selection_text()
+        .map(|text| {
+            chau7_next_core::terminal_clipboard::copied_text(
+                &text,
+                live_ai || terminal.is_alt_screen(),
+            )
+            .into_owned()
+        })
+        .filter(|text| !text.is_empty())
+}
+
+#[cfg(test)]
+mod clipboard_tests {
+    use super::*;
+    #[test]
+    fn actual_native_selection_preserves_soft_wrap_spaces_and_trims_padding() {
+        let term = Chau7Terminal::new_headless(5, 2).unwrap();
+        term.inject_output(b"echo hello");
+        term.selection_start(0, 0, 0);
+        term.selection_update(4, 1);
+        let native = term.selection_text().unwrap();
+        assert_eq!(native.trim_end_matches('\n'), "echo hello");
+        assert_eq!(clipboard_selection(&term, false).unwrap(), native);
+        assert_eq!(clipboard_selection(&term, true).unwrap(), "echo hello");
+    }
+    #[test]
+    fn actual_tui_hard_wrapped_path_and_argument_selection() {
+        for (raw, end, expected) in [
+            (
+                &b"cat /tmp/very\r\nlongpath"[..],
+                7,
+                "cat /tmp/verylongpath",
+            ),
+            (&b"echo hello\r\n    --flag"[..], 9, "echo hello --flag"),
+        ] {
+            let term = Chau7Terminal::new_headless(40, 2).unwrap();
+            term.inject_output(raw);
+            term.selection_start(0, 0, 0);
+            term.selection_update(end, 1);
+            assert_eq!(clipboard_selection(&term, true).unwrap(), expected);
+            assert_eq!(
+                clipboard_selection(&term, false).unwrap(),
+                term.selection_text().unwrap()
+            );
+        }
+    }
+    #[test]
+    fn actual_alternate_screen_is_tui_without_detected_ai() {
+        let term = Chau7Terminal::new_headless(40, 2).unwrap();
+        term.inject_output(b"\x1b[?1049hecho hello\r\n    --flag");
+        assert!(term.is_alt_screen());
+        term.selection_start(0, 0, 0);
+        term.selection_update(9, 1);
+        assert_eq!(
+            clipboard_selection(&term, false).unwrap(),
+            "echo hello --flag"
+        );
+        term.selection_clear();
+        assert_eq!(clipboard_selection(&term, false), None);
     }
 }
 

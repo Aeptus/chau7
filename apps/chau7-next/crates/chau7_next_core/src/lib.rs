@@ -106,6 +106,7 @@ pub mod tab_target;
 pub mod tabs_state;
 pub mod telemetry;
 pub mod terminal_analytics;
+pub mod terminal_clipboard;
 pub mod terminal_import;
 pub mod terminal_key_press;
 pub mod terminal_prompt_notification;
