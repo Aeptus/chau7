@@ -35,7 +35,7 @@ stale table.
 |---|---|---|---|---|---|---|---|---|
 | [AI](inventory/AI.md) | 2 | 17 | 17 | 0 | 0 | 0 | 0 | 0 |
 | [Analytics](inventory/Analytics.md) | 3 | 8 | 7 | 1 | 0 | 0 | 0 | 0 |
-| [App](inventory/App.md) | 1 | 85 | 82 | 1 | 0 | 2 | 0 | 0 |
+| [App](inventory/App.md) | 1 | 85 | 83 | 0 | 0 | 2 | 0 | 0 |
 | [Appearance](inventory/Appearance.md) | 1 | 16 | 16 | 0 | 0 | 0 | 0 | 0 |
 | [CLI](inventory/CLI.md) | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 |
 | [Chau7Core](inventory/Chau7Core.md) | per row | 76 | 73 | 0 | 0 | 3 | 0 | 0 |
@@ -48,7 +48,7 @@ stale table.
 | [History](inventory/History.md) | 2 | 16 | 16 | 0 | 0 | 0 | 0 | 0 |
 | [Keyboard](inventory/Keyboard.md) | 1 | 70 | 69 | 0 | 0 | 1 | 0 | 0 |
 | [Localization](inventory/Localization.md) | 5 | 9 | 9 | 0 | 0 | 0 | 0 | 0 |
-| [Logging](inventory/Logging.md) | 5 | 30 | 26 | 2 | 0 | 2 | 0 | 0 |
+| [Logging](inventory/Logging.md) | 5 | 30 | 26 | 2 | 0 | 2 | 0 | 1 |
 | [MCP](inventory/MCP.md) | 3 | 63 | 63 | 0 | 0 | 0 | 0 | 0 |
 | [Migration](inventory/Migration.md) | 5 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | [Monitoring](inventory/Monitoring.md) | 2 | 24 | 21 | 3 | 0 | 0 | 0 | 0 |
@@ -75,9 +75,9 @@ stale table.
 | [Usage](inventory/Usage.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | [Utilities](inventory/Utilities.md) | 1 | 13 | 6 | 0 | 0 | 7 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1303** | **1240** | **19** | **0** | **44** | **0** | |
+| **Total** | | **1303** | **1241** | **18** | **0** | **44** | **0** | |
 
-Finished (done, n/a or dropped): 1284 of 1303 rows (98%). Partial: 19.
+Finished (done, n/a or dropped): 1285 of 1303 rows (98%). Partial: 18.
 
 <!-- parity:end -->
 

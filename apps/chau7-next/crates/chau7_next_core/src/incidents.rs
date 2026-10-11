@@ -279,7 +279,7 @@ impl Store {
         Ok(true)
     }
 }
-fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let pending = path.with_extension("pending");
     fs::write(&pending, bytes)?;
     #[cfg(not(target_os = "windows"))]

@@ -17,6 +17,7 @@ mod debug;
 mod hang_watchdog;
 mod history;
 mod incidents;
+mod instance;
 mod l10n;
 mod logging;
 mod mcp;
@@ -89,13 +90,25 @@ fn main() {
         std::process::exit(code);
     }
     clean_inherited_environment();
-    platform::defaults::disable_press_and_hold();
     let root = DataRoot::from_env();
     if let Err(err) = root.ensure_dirs() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
     }
+    let instance = match instance::acquire(&root) {
+        Ok(Some(instance)) => std::sync::Arc::new(instance),
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("Chau7 Next: cannot acquire application instance lock: {error}");
+            std::process::exit(1);
+        }
+    };
+    platform::defaults::disable_press_and_hold();
     logging::init(&root);
     incidents::start(&root);
+    if let Err(error) = instance::begin(&instance) {
+        log::error!("Cannot record launch continuity: {error}");
+        std::process::exit(1);
+    }
     platform::oslog::install_feature_intervals();
     logging::ai_pty::purge_large_logs(root.ai_logs_dir());
     protected_paths::init(&root);
@@ -215,7 +228,8 @@ fn main() {
         permission_center::start(cx);
         performance::start(cx);
 
-        cx.on_app_quit(|cx| {
+        cx.on_app_quit(move |cx| {
+            let instance = instance.clone();
             memory_pressure::stop(cx);
             permission_center::stop(cx);
             save_session(cx, true);
@@ -244,6 +258,10 @@ fn main() {
                     let _ = worker.join();
                 }
                 incidents::shutdown();
+                if let Err(error) = instance.mark_clean() {
+                    log::warn!("Cannot mark clean termination: {error}");
+                }
+                logging::flush();
             })
         })
         .detach();

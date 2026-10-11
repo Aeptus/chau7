@@ -44,6 +44,7 @@ pub mod incidents;
 pub mod injection_rules;
 pub mod inline_image;
 pub mod input;
+pub mod instance;
 pub mod interactive_prompt_detector;
 pub mod iso8601;
 pub mod issue_privacy;
