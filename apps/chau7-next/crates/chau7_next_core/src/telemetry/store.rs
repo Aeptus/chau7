@@ -565,6 +565,35 @@ impl TelemetryStore {
         }
     }
 
+    /// Read-only preview for an explicit retention choice. Zero keeps forever.
+    pub fn retention_preview(
+        &self,
+        days: i64,
+        protected: &[String],
+        now: DateTime<Utc>,
+    ) -> rusqlite::Result<super::retention::RetentionPreview> {
+        let guard = self.conn.lock();
+        let conn = guard.as_ref().ok_or(rusqlite::Error::InvalidQuery)?;
+        super::retention::preview(conn, days, protected, now)
+    }
+    pub fn prune_retained(
+        &self,
+        days: i64,
+        protected: &[String],
+        limit: usize,
+        now: DateTime<Utc>,
+    ) -> rusqlite::Result<super::retention::PruneReport> {
+        let guard = self.conn.lock();
+        let conn = guard.as_ref().ok_or(rusqlite::Error::InvalidQuery)?;
+        super::retention::prune(conn, days, protected, limit, now)
+    }
+    /// Only called following the user's separate compaction confirmation.
+    pub fn compact_confirmed(&self) -> rusqlite::Result<()> {
+        let guard = self.conn.lock();
+        let conn = guard.as_ref().ok_or(rusqlite::Error::InvalidQuery)?;
+        conn.execute_batch("VACUUM")
+    }
+
     // MARK: write
 
     /// Insert a new run (`INSERT OR IGNORE`: safe to call twice).
