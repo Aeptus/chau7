@@ -7,7 +7,7 @@ use chau7_next_core::shell_env::ShellType;
 use gpui::{App, Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 
-use super::widgets::{chip, row, section as titled, stepper, toggle};
+use super::widgets::{chip, row, section as titled, toggle};
 use super::{SectionContext, SettingsView, update};
 use crate::settings::{BellSound, Settings};
 
@@ -182,27 +182,15 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             chrome,
         ))
         .child(row(
+            "Bell",
+            toggle("bell-enabled", t.bell_enabled, chrome, |s, v| {
+                s.terminal.bell_enabled = v
+            }),
+            chrome,
+        ))
+        .child(row(
             "Bell sound",
             div().flex().gap_1().children(bells),
-            chrome,
-        ))
-        .child(row(
-            "Scrollback lines",
-            stepper(
-                "scrollback",
-                format!("{}", t.scrollback_lines),
-                chrome,
-                |s, d| {
-                    s.terminal.scrollback_lines = scrollback_step(s.terminal.scrollback_lines, d)
-                },
-            ),
-            chrome,
-        ))
-        .child(row(
-            "Smart scroll",
-            toggle("smart-scroll", t.smart_scroll, chrome, |s, v| {
-                s.terminal.smart_scroll = v
-            }),
             chrome,
         ))
 }

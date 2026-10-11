@@ -28,7 +28,27 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     } else {
         format!("{} lines", s.restored_scrollback_lines)
     };
-    titled("Panes and restore", chrome)
+    titled("Scrollback", chrome)
+        .child(row(
+            "Scrollback lines",
+            stepper(
+                "scrollback",
+                format!("{}", s.scrollback_lines),
+                chrome,
+                |s, d| {
+                    s.terminal.scrollback_lines =
+                        super::shell::scrollback_step(s.terminal.scrollback_lines, d)
+                },
+            ),
+            chrome,
+        ))
+        .child(row(
+            "Smart scroll",
+            toggle("smart-scroll", s.smart_scroll, chrome, |s, v| {
+                s.terminal.smart_scroll = v
+            }),
+            chrome,
+        ))
         .child(row(
             "Restored scrollback when tabs are recovered",
             stepper("restored-scrollback", lines, chrome, |s, d| {

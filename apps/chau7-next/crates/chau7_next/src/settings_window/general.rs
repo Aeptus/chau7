@@ -219,14 +219,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             ),
     );
 
-    // Reset
-    let reset = titled("Reset", chrome).child(
-        div().flex().justify_end().child(
-            button("reset-all", "Reset All Settings to Defaults", chrome)
-                .on_click(|_, window, cx| confirm_reset_all(window, cx)),
-        ),
-    );
-
     div()
         .flex()
         .flex_col()
@@ -236,7 +228,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         .child(repo)
         .child(status)
         .child(actions)
-        .child(reset)
 }
 
 /// Register or remove the login item, then keep the setting in step with
@@ -307,7 +298,7 @@ pub(super) fn reset_window_positions(cx: &mut App) {
 }
 
 /// "Reset All Settings?" (`resetAllToDefaults`).
-fn confirm_reset_all(window: &mut Window, cx: &mut App) {
+pub(super) fn confirm_reset_all(window: &mut Window, cx: &mut App) {
     let answer = crate::l10n::prompt(
         window,
         PromptLevel::Warning,
