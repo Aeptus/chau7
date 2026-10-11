@@ -1097,6 +1097,11 @@ impl TerminalSession {
             self.tracker.ai_session_id(),
             cx,
         );
+        crate::telemetry::register_live_log(
+            &self.tab_identifier,
+            self.monitor.ai_log.last_log_path.clone(),
+            cx,
+        );
     }
 
     /// TRM-046: the AI CLI exited (`finishAILogging`): the run ends with the
