@@ -11,6 +11,14 @@
 //! `view.rs` builds a [`FrameInputs`] in `render`, [`prepaint`] turns it
 //! into a [`PaintState`] once the bounds are known, and [`paint_grid`] draws.
 
+#[path = "cpu_renderer.rs"]
+mod cpu_renderer;
+
+pub use cpu_renderer::init as init_cpu_text_system;
+use cpu_renderer::{FrameCache, GridCanvas};
+pub(crate) use cpu_renderer::{glyph_cache_bytes, release_glyph_cache};
+use parking_lot::Mutex;
+
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
@@ -118,6 +126,7 @@ pub struct Overlays {
     /// Last time the view was painted (a hidden tab is not).
     pub last_paint: Instant,
     last_history: u32,
+    cpu_frame: Arc<Mutex<FrameCache>>,
 }
 
 impl Default for Overlays {
@@ -129,11 +138,27 @@ impl Default for Overlays {
             last_activity: now,
             last_paint: now,
             last_history: 0,
+            cpu_frame: Arc::new(Mutex::new(FrameCache::default())),
         }
     }
 }
 
 impl Overlays {
+    pub fn renderer_diagnostics(&self) -> serde_json::Value {
+        self.cpu_frame.lock().diagnostics()
+    }
+    pub fn cache_bytes(&self) -> u64 {
+        self.cpu_frame.lock().bytes()
+    }
+    pub fn reclaim_cache(&mut self, cx: &mut App) -> u64 {
+        let bytes = self.cache_bytes();
+        self.release_cpu_frame(cx);
+        bytes
+    }
+    pub fn release_cpu_frame(&mut self, cx: &mut App) {
+        self.cpu_frame.lock().release(cx);
+    }
+
     /// After each output batch: take decoded images, follow the scrollback,
     /// stamp new lines.
     pub fn on_output(&mut self, session: &TerminalSession, settings: &Settings) {
@@ -184,6 +209,7 @@ impl Overlays {
 
 /// What `render` knows before layout.
 pub struct FrameInputs {
+    pub gpu_renderer: bool,
     pub metrics: CellMetrics,
     pub focused: bool,
     pub show_cursor: bool,
@@ -223,6 +249,7 @@ impl FrameInputs {
         let background = scheme_color(scheme.background);
         let dark = background.l < 0.5;
         Self {
+            gpu_renderer: appearance.rendering.gpu_renderer,
             metrics,
             focused,
             show_cursor: cursor_on || !focused || !appearance.cursor_blink,
@@ -280,6 +307,7 @@ pub fn link_color(dark: bool) -> Hsla {
 
 /// Everything the paint closure needs, computed in prepaint.
 pub struct PaintState {
+    cpu_frame: Arc<Mutex<FrameCache>>,
     inputs: FrameInputs,
     cols: u16,
     rows: u16,
@@ -372,6 +400,7 @@ pub fn prepaint(
         }
     }
     PaintState {
+        cpu_frame: overlays.cpu_frame.clone(),
         clusters,
         cols: grid.cols,
         rows: grid.rows,
@@ -406,38 +435,73 @@ pub fn with_local_echo(
     cells
 }
 
-/// Keep ASCII runs batched, but anchor each full or wide grapheme at its
-/// actual terminal column. GPUI's forced width counts shaped base glyphs,
-/// which need not equal terminal columns for emoji or combining sequences.
+/// A Unicode grapheme may span several native terminal cells. Keep the
+/// original column range for positioning while shaping the sequence together.
+#[derive(Debug, PartialEq, Eq)]
+struct TextChunk {
+    columns: Range<usize>,
+    natural: bool,
+}
 fn text_chunks(
     cells: &[OwnedCell],
     clusters: &HashMap<usize, String>,
     start: usize,
-) -> Vec<Range<usize>> {
-    let mut chunks = Vec::new();
-    let mut col = 0;
-    while col < cells.len() {
-        if cells[col].continuation {
-            col += 1;
+) -> Vec<TextChunk> {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut text = String::new();
+    let mut spans = Vec::new();
+    for (col, cell) in cells.iter().enumerate() {
+        if cell.continuation {
             continue;
         }
-        let first = col;
-        col += 1;
-        if cells[first].width <= 1 && !clusters.contains_key(&(start + first)) {
-            while col < cells.len()
-                && !cells[col].continuation
-                && cells[col].width <= 1
-                && !clusters.contains_key(&(start + col))
-            {
-                col += 1;
-            }
+        let offset = text.len();
+        text.push_str(&cell_text(cell, clusters.get(&(start + col))));
+        spans.push((col, offset, text.len()));
+    }
+    let mut chunks: Vec<TextChunk> = Vec::new();
+    let mut span = 0;
+    for (offset, grapheme) in text.grapheme_indices(true) {
+        while span < spans.len() && spans[span].2 <= offset {
+            span += 1;
         }
-        chunks.push(first..col);
+        if span == spans.len() {
+            break;
+        }
+        let first = span;
+        let end = offset + grapheme.len();
+        while span + 1 < spans.len() && spans[span + 1].1 < end {
+            span += 1;
+        }
+        let first_col = spans[first].0;
+        let last_col = spans[span].0;
+        if chunks.last().is_some_and(|previous| {
+            previous.columns.start <= first_col && previous.columns.end > last_col
+        }) {
+            continue;
+        }
+        let natural = first != span
+            || cells[first_col].width > 1
+            || clusters.contains_key(&(start + first_col));
+        if !natural
+            && let Some(previous) = chunks.last_mut()
+            && !previous.natural
+            && previous.columns.end == first_col
+        {
+            previous.columns.end = last_col + 1;
+        } else {
+            chunks.push(TextChunk {
+                columns: first_col..last_col + 1,
+                natural,
+            });
+        }
     }
     chunks
 }
 
 fn cell_text(cell: &OwnedCell, cluster: Option<&String>) -> String {
+    if cell.flags & CELL_FLAG_HIDDEN != 0 {
+        return " ".to_string();
+    }
     cluster.cloned().unwrap_or_else(|| match cell.character {
         '\0' => " ".to_string(),
         c => c.to_string(),
@@ -498,12 +562,23 @@ fn underline_for(cell: &OwnedCell, color: Hsla, link_color: Hsla) -> (Option<Und
 }
 
 pub fn paint_grid(bounds: Bounds<Pixels>, state: PaintState, window: &mut Window, cx: &mut App) {
+    if crate::hang_watchdog::render_blocked() {
+        return;
+    }
     feature_profiler::measure(Feature::TerminalRender, 0, || {
         paint_grid_inner(bounds, state, window, cx)
     })
 }
 
 fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Window, cx: &mut App) {
+    let mut canvas = GridCanvas::new(
+        window,
+        bounds,
+        state.inputs.gpu_renderer,
+        state.cpu_frame.clone(),
+        cx,
+    );
+    let window = &mut canvas;
     let inputs = &state.inputs;
     let m = &inputs.metrics;
     let cols = state.cols as usize;
@@ -586,12 +661,22 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
         // Text runs.
         let mut decorations: Vec<Decoration> = Vec::new();
         for chunk in text_chunks(row_cells, &state.clusters, start) {
-            let mut text = String::with_capacity(chunk.len());
+            let mut text = String::with_capacity(chunk.columns.len());
             let mut runs: Vec<TextRun> = Vec::new();
             let mut any_visible = false;
-            for col in chunk.clone() {
+            for col in chunk.columns.clone() {
                 let cell = &row_cells[col];
+                if cell.continuation {
+                    continue;
+                }
                 let contents = cell_text(cell, state.clusters.get(&(start + col)));
+                // One extended grapheme uses its leading cell style. Style
+                // boundaries inside a ZWJ sequence must not split its shaping.
+                let cell = if chunk.natural {
+                    &row_cells[chunk.columns.start]
+                } else {
+                    cell
+                };
                 let (fg, bg) = cell_colors(cell);
                 let mut color = rgb_tuple(if cell.flags & CELL_FLAG_HIDDEN != 0 {
                     bg
@@ -602,6 +687,9 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
                     color.a *= 0.6;
                 }
                 let mut run_font = m.font.clone();
+                if chunk.natural {
+                    run_font.features = FontFeatures::default();
+                }
                 if cell.flags & CELL_FLAG_BOLD != 0 {
                     run_font.weight = FontWeight(run_font.weight.0.max(FontWeight::BOLD.0));
                 }
@@ -660,15 +748,13 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
                     &runs,
                     // Full clusters are shaped naturally, independently of the
                     // next chunk's position. Normal runs keep the fast grid layout.
-                    (chunk.len() > 1 || !state.clusters.contains_key(&(start + chunk.start)))
-                        .then_some(m.cell_width),
+                    (!chunk.natural).then_some(m.cell_width),
                 );
-                let _ = line.paint(
-                    point(bounds.left() + m.cell_width * chunk.start as f32, y),
+                let _ = window.paint_line(
+                    &line,
+                    point(bounds.left() + m.cell_width * chunk.columns.start as f32, y),
                     m.line_height,
-                    gpui::TextAlign::Left,
-                    None,
-                    window,
+                    &runs,
                     cx,
                 );
             }
@@ -707,16 +793,18 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
                 underline: None,
                 strikethrough: None,
             };
-            let line = window
-                .text_system()
-                .shape_line(label.clone(), font_size, &[run], None);
+            let line = window.text_system().shape_line(
+                label.clone(),
+                font_size,
+                std::slice::from_ref(&run),
+                None,
+            );
             let x = bounds.right() - line.width - px(2.0);
-            let _ = line.paint(
+            let _ = window.paint_line(
+                &line,
                 point(x, bounds.top() + m.line_height * *row as f32),
                 m.line_height,
-                gpui::TextAlign::Left,
-                None,
-                window,
+                std::slice::from_ref(&run),
                 cx,
             );
         }
@@ -735,21 +823,22 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
             underline: None,
             strikethrough: None,
         };
-        let line = window
-            .text_system()
-            .shape_line(label, m.font_size, &[run], None);
-        let _ = line.paint(
+        let line =
+            window
+                .text_system()
+                .shape_line(label, m.font_size, std::slice::from_ref(&run), None);
+        let _ = window.paint_line(
+            &line,
             point(
                 bounds.left() + px(4.0),
                 bounds.bottom() - m.line_height - px(4.0),
             ),
             m.line_height,
-            gpui::TextAlign::Left,
-            None,
-            window,
+            std::slice::from_ref(&run),
             cx,
         );
     }
+    canvas.finish(cx);
 }
 
 fn scheme_fg_muted(background: Hsla) -> Hsla {
@@ -761,7 +850,13 @@ fn scheme_fg_muted(background: Hsla) -> Hsla {
 }
 
 /// Double, dotted and dashed underlines (`RustGridView.draw` decorations).
-fn paint_decoration(d: &Decoration, left: Pixels, y: Pixels, m: &CellMetrics, window: &mut Window) {
+fn paint_decoration(
+    d: &Decoration,
+    left: Pixels,
+    y: Pixels,
+    m: &CellMetrics,
+    window: &mut GridCanvas<'_>,
+) {
     let x0 = left + m.cell_width * d.col as f32;
     let width = m.cell_width * d.len as f32;
     let uy = y + m.underline_y;
@@ -797,7 +892,12 @@ fn paint_decoration(d: &Decoration, left: Pixels, y: Pixels, m: &CellMetrics, wi
     }
 }
 
-fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window, cx: &mut App) {
+fn paint_cursor(
+    bounds: Bounds<Pixels>,
+    state: &PaintState,
+    window: &mut GridCanvas<'_>,
+    cx: &mut App,
+) {
     let inputs = &state.inputs;
     let m = &inputs.metrics;
     let cols = state.cols as usize;
@@ -839,15 +939,17 @@ fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window,
                         underline: None,
                         strikethrough: None,
                     };
-                    let line = window
-                        .text_system()
-                        .shape_line(s, m.font_size, &[run], None);
-                    let _ = line.paint(
+                    let line = window.text_system().shape_line(
+                        s,
+                        m.font_size,
+                        std::slice::from_ref(&run),
+                        None,
+                    );
+                    let _ = window.paint_line(
+                        &line,
                         origin,
                         m.line_height,
-                        gpui::TextAlign::Left,
-                        None,
-                        window,
+                        std::slice::from_ref(&run),
                         cx,
                     );
                 }
@@ -889,17 +991,13 @@ fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window,
             }),
             strikethrough: None,
         };
-        let line = window
-            .text_system()
-            .shape_line(s, m.font_size, &[run], Some(m.cell_width));
-        let _ = line.paint(
-            origin,
-            m.line_height,
-            gpui::TextAlign::Left,
-            None,
-            window,
-            cx,
+        let line = window.text_system().shape_line(
+            s,
+            m.font_size,
+            std::slice::from_ref(&run),
+            Some(m.cell_width),
         );
+        let _ = window.paint_line(&line, origin, m.line_height, std::slice::from_ref(&run), cx);
     }
 }
 
@@ -907,6 +1005,15 @@ fn paint_cursor(bounds: Bounds<Pixels>, state: &PaintState, window: &mut Window,
 mod tests {
     use super::*;
 
+    #[test]
+    fn concealed_color_emoji_never_reaches_either_renderer() {
+        let cell = OwnedCell {
+            character: '👩',
+            flags: CELL_FLAG_HIDDEN,
+            ..Default::default()
+        };
+        assert_eq!(cell_text(&cell, Some(&"👩‍💻".to_string())), " ");
+    }
     #[test]
     fn full_graphemes_are_anchored_to_grid_columns() {
         let mut cells = vec![OwnedCell::default(); 7];
@@ -923,7 +1030,10 @@ mod tests {
         cells[6].character = 'z';
         let clusters = HashMap::from([(8, "e\u{301}".to_string()), (9, "👩‍💻".to_string())]);
         assert_eq!(
-            text_chunks(&cells, &clusters, 7),
+            text_chunks(&cells, &clusters, 7)
+                .into_iter()
+                .map(|chunk| chunk.columns)
+                .collect::<Vec<_>>(),
             vec![0..1, 1..2, 2..3, 4..5, 6..7]
         );
         assert_eq!(cell_text(&cells[1], clusters.get(&8)), "e\u{301}");
@@ -937,7 +1047,10 @@ mod tests {
         let grid = term.grid_copy();
         let mut painted = String::new();
         for chunk in text_chunks(&grid.cells, &grid.clusters, 0) {
-            for index in chunk {
+            for index in chunk.columns {
+                if grid.cells[index].continuation {
+                    continue;
+                }
                 painted.push_str(&cell_text(&grid.cells[index], grid.clusters.get(&index)));
             }
         }
@@ -945,9 +1058,61 @@ mod tests {
     }
 
     #[test]
+    fn native_grid_emoji_sequences_are_each_one_naturally_shaped_chunk() {
+        let term = chau7_terminal::Chau7Terminal::new_headless(80, 1).unwrap();
+        term.inject_output("A👩🏽‍💻B👨‍👩‍👧‍👦C🇫🇷Da\u{20dd}E".as_bytes());
+        let grid = term.grid_copy();
+        let chunks = text_chunks(&grid.cells, &grid.clusters, 0);
+        let rendered: Vec<(String, Range<usize>, bool)> = chunks
+            .iter()
+            .map(|chunk| {
+                let text = chunk
+                    .columns
+                    .clone()
+                    .filter(|index| !grid.cells[*index].continuation)
+                    .map(|index| cell_text(&grid.cells[index], grid.clusters.get(&index)))
+                    .collect::<String>();
+                (text, chunk.columns.clone(), chunk.natural)
+            })
+            .collect();
+        for sequence in ["👩🏽‍💻", "👨‍👩‍👧‍👦", "🇫🇷", "a\u{20dd}"] {
+            let matching: Vec<_> = rendered
+                .iter()
+                .filter(|(text, _, _)| text == sequence)
+                .collect();
+            assert_eq!(matching.len(), 1, "{sequence}: {rendered:?}");
+            assert!(matching[0].2);
+        }
+        let woman = rendered.iter().find(|(text, _, _)| text == "👩🏽‍💻").unwrap();
+        assert_eq!(woman.1, 1..6);
+        let family = rendered.iter().find(|(text, _, _)| text == "👨‍👩‍👧‍👦").unwrap();
+        assert_eq!(family.1, 8..15);
+        assert!(
+            rendered
+                .iter()
+                .any(|(text, range, natural)| text == "B" && range.start == 7 && !*natural)
+        );
+    }
+
+    #[test]
+    fn control_boundaries_inside_one_native_cell_do_not_duplicate_its_paint() {
+        let cells = vec![OwnedCell::default()];
+        let clusters = HashMap::from([(0, "a\u{200b}".to_string())]);
+        let chunks = text_chunks(&cells, &clusters, 0);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].columns, 0..1);
+        assert!(chunks[0].natural);
+    }
+    #[test]
     fn ascii_rows_still_shape_in_one_batch() {
         let cells = vec![OwnedCell::default(); 80];
-        assert_eq!(text_chunks(&cells, &HashMap::new(), 0), vec![0..80]);
+        assert_eq!(
+            text_chunks(&cells, &HashMap::new(), 0)
+                .into_iter()
+                .map(|chunk| chunk.columns)
+                .collect::<Vec<_>>(),
+            vec![0..80]
+        );
     }
 
     #[test]

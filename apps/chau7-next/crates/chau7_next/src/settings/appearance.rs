@@ -116,9 +116,9 @@ impl Default for GraphicsOptions {
 /// Rendering options (`ScrollbackPerfSettingsView.swift`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderingOptions {
-    /// `feature.useMetalRenderer` (on). GPUI always draws on the GPU (Metal
-    /// on macOS); off draws new tabs without GPU-only extras (no ligatures,
-    /// no image layer), the closest thing to Swift's CPU renderer.
+    /// `feature.useMetalRenderer` (on). Off rasterizes the terminal grid,
+    /// including text and inline images, into a bounded CPU bitmap. GPUI
+    /// composites the bitmap; terminal ligatures follow Swift and are off.
     pub gpu_renderer: bool,
     /// `isSuspendBackgroundRendering` (off).
     pub suspend_background: bool,

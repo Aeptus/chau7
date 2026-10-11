@@ -969,7 +969,7 @@ func TestNextRepoOverridesPreserveSharedLocalAndDisableFallsBack(t *testing.T) {
 	if got := string(next.InjectContent(ProviderOpenAI, body, repo, nil)); !strings.Contains(got, "GLOBAL") || strings.Contains(got, "SHARED") {
 		t.Fatal("disabled local did not fall back to global")
 	}
-	if got, err := os.ReadFile(shared); err != nil || !bytes.Equal(got, original) {
+	if got, err := os.ReadFile(shared); err != nil || !bytes.Equal(got, original) { // #nosec G304 -- isolated t.TempDir fixture verifies original bytes remain unchanged.
 		t.Fatal("shared original changed")
 	}
 	if err := os.WriteFile(overlay, []byte(`broken`), 0600); err != nil {

@@ -1,7 +1,7 @@
 //! Settings sections, groups and the settings search.
 //!
-//! Port of `Settings/SettingsSearch.swift`: the 23 sections of the settings
-//! window in 6 groups, and the 66 searchable entries (title, keywords,
+//! Port of `Settings/SettingsSearch.swift`: the 24 sections of the settings
+//! window in 6 groups, and the 67 searchable entries (title, keywords,
 //! description) that filter the sidebar and give the per-section match
 //! counts. English strings only; translations are the Localization module.
 //!
@@ -28,6 +28,7 @@ pub enum SettingsSection {
     Editor,
     MinimalMode,
     AiDetection,
+    PromptInjection,
     TokenOptimization,
     McpControl,
     RemoteControl,
@@ -97,6 +98,7 @@ impl SettingsGroup {
             ],
             SettingsGroup::Integrations => &[
                 SettingsSection::AiDetection,
+                SettingsSection::PromptInjection,
                 SettingsSection::TokenOptimization,
                 SettingsSection::McpControl,
                 SettingsSection::RemoteControl,
@@ -111,7 +113,7 @@ impl SettingsGroup {
 
 impl SettingsSection {
     /// Every section in declaration order (`allCases`).
-    pub const ALL: [SettingsSection; 23] = [
+    pub const ALL: [SettingsSection; 24] = [
         SettingsSection::General,
         SettingsSection::ProfilesBackup,
         SettingsSection::About,
@@ -129,6 +131,7 @@ impl SettingsSection {
         SettingsSection::Editor,
         SettingsSection::MinimalMode,
         SettingsSection::AiDetection,
+        SettingsSection::PromptInjection,
         SettingsSection::TokenOptimization,
         SettingsSection::McpControl,
         SettingsSection::RemoteControl,
@@ -157,6 +160,7 @@ impl SettingsSection {
             SettingsSection::Editor => "editor",
             SettingsSection::MinimalMode => "minimalMode",
             SettingsSection::AiDetection => "aiDetection",
+            SettingsSection::PromptInjection => "promptInjection",
             SettingsSection::TokenOptimization => "tokenOptimization",
             SettingsSection::McpControl => "mcpControl",
             SettingsSection::RemoteControl => "remoteControl",
@@ -185,6 +189,7 @@ impl SettingsSection {
             SettingsSection::Editor => "Text Editor",
             SettingsSection::MinimalMode => "Minimal Mode",
             SettingsSection::AiDetection => "AI Detection",
+            SettingsSection::PromptInjection => "AI Context",
             SettingsSection::TokenOptimization => "Token Optimization (CTO)",
             SettingsSection::McpControl => "MCP Control",
             SettingsSection::RemoteControl => "Remote Control",
@@ -214,6 +219,7 @@ impl SettingsSection {
             SettingsSection::Editor => "doc.text",
             SettingsSection::MinimalMode => "rectangle.compress.vertical",
             SettingsSection::AiDetection => "sparkles",
+            SettingsSection::PromptInjection => "text.insert",
             SettingsSection::TokenOptimization => "bolt.horizontal.circle",
             SettingsSection::McpControl => "face.dashed",
             SettingsSection::RemoteControl => "antenna.radiowaves.left.and.right",
@@ -244,6 +250,7 @@ impl SettingsSection {
             SettingsSection::Editor => "Built-in text editor font, indentation, and display",
             SettingsSection::MinimalMode => "Hide tab bar, title bar, and status elements",
             SettingsSection::AiDetection => "AI CLI detection, theming, and LLM provider",
+            SettingsSection::PromptInjection => "Add repository context to AI requests",
             SettingsSection::TokenOptimization => {
                 "CTO wrapper scripts, per-tab control, and prefix"
             }
@@ -274,6 +281,7 @@ impl SettingsSection {
             SettingsSection::Editor => SettingsGroup::InputProductivity,
             SettingsSection::MinimalMode => SettingsGroup::LookAndFeel,
             SettingsSection::AiDetection => SettingsGroup::Integrations,
+            SettingsSection::PromptInjection => SettingsGroup::Integrations,
             SettingsSection::TokenOptimization => SettingsGroup::Integrations,
             SettingsSection::McpControl => SettingsGroup::Integrations,
             SettingsSection::RemoteControl => SettingsGroup::Integrations,
@@ -310,6 +318,13 @@ impl SearchableSetting {
 
 /// The searchable settings (`FeatureSettings.searchableSettings`).
 pub const SEARCHABLE_SETTINGS: &[SearchableSetting] = &[
+    SearchableSetting {
+        id: "promptInjection",
+        section: SettingsSection::PromptInjection,
+        title: "AI Context",
+        keywords: "context,injection,prompt,rules,repository,prepend,append,compact,clear",
+        description: "Add repository context to matching AI requests",
+    },
     SearchableSetting {
         id: "language",
         section: SettingsSection::General,
@@ -802,12 +817,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn has_23_sections_in_6_groups_and_66_entries() {
-        assert_eq!(SettingsSection::ALL.len(), 23);
+    fn has_24_sections_in_6_groups_and_67_entries() {
+        assert_eq!(SettingsSection::ALL.len(), 24);
         assert_eq!(SettingsGroup::ALL.len(), 6);
         let grouped: usize = SettingsGroup::ALL.iter().map(|g| g.sections().len()).sum();
-        assert_eq!(grouped, 23);
-        assert_eq!(SEARCHABLE_SETTINGS.len(), 66);
+        assert_eq!(grouped, 24);
+        assert_eq!(SEARCHABLE_SETTINGS.len(), 67);
         for section in SettingsSection::ALL {
             assert!(section.group().sections().contains(&section));
         }
@@ -838,5 +853,22 @@ mod tests {
                 .iter()
                 .any(|(s, c)| *s == SettingsSection::ProfilesBackup && *c >= 1)
         );
+    }
+    #[test]
+    fn context_rules_have_current_source_identity_and_search() {
+        assert_eq!(SettingsSection::PromptInjection.id(), "promptInjection");
+        assert_eq!(SettingsSection::PromptInjection.title(), "AI Context");
+        assert!(
+            SettingsGroup::Integrations
+                .sections()
+                .contains(&SettingsSection::PromptInjection)
+        );
+        for query in ["injection", "compact", "prepend"] {
+            assert!(
+                sections_matching(query)
+                    .iter()
+                    .any(|(section, _)| *section == SettingsSection::PromptInjection)
+            );
+        }
     }
 }

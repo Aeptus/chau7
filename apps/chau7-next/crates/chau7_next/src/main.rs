@@ -14,10 +14,12 @@ mod commands;
 mod cto;
 mod data_explorer;
 mod debug;
+mod hang_watchdog;
 mod history;
 mod l10n;
 mod logging;
 mod mcp;
+mod memory_pressure;
 mod migration;
 mod monitoring;
 mod monitoring_status;
@@ -82,6 +84,9 @@ fn clean_inherited_environment() {
 pub(crate) use logging::log_file_path;
 
 fn main() {
+    if let Some(code) = hang_watchdog::run_cli_if_requested() {
+        std::process::exit(code);
+    }
     clean_inherited_environment();
     platform::defaults::disable_press_and_hold();
     let root = DataRoot::from_env();
@@ -89,6 +94,7 @@ fn main() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
     }
     logging::init(&root);
+    platform::oslog::install_feature_intervals();
     logging::ai_pty::purge_large_logs(root.ai_logs_dir());
     protected_paths::init(&root);
     match root.import_from_swift_app() {
@@ -106,7 +112,9 @@ fn main() {
     let restored = session_store::load(&root);
 
     // The bundled icons (find bar, side pane headers, palette rows).
-    let app = gpui_kit::application().with_assets(assets::AppAssets);
+    let platform = gpui_kit::platform::current_platform(false);
+    let terminal_text_system = platform.text_system();
+    let app = gpui::Application::with_platform(platform).with_assets(assets::AppAssets);
     // macOS: clicking the Dock icon with no window open brings the hidden
     // window back (or opens one).
     app.on_reopen(|cx| {
@@ -118,6 +126,7 @@ fn main() {
     // from its timer (`app_actions::poll`).
     app.on_open_urls(app_actions::queue_open_urls);
     app.run(move |cx: &mut App| {
+        terminal::paint::init_cpu_text_system(terminal_text_system, cx);
         gpui_kit::init(cx);
         cx.set_app_identity("com.chau7.next", "Chau7 Next");
         app_icon::apply();
@@ -197,12 +206,15 @@ fn main() {
         }
 
         // The welcome screen the first time, else the splash.
+        memory_pressure::start(cx);
         views::launch(cx);
         permission_center::start(cx);
+        hang_watchdog::start(cx);
         performance::start(cx);
 
         cx.on_app_quit(|cx| {
             permission_center::stop(cx);
+            memory_pressure::stop(cx);
             save_session(cx, true);
             repository::flush(cx);
             history::recorder::flush_on_quit();
@@ -213,8 +225,16 @@ fn main() {
             // Shells get SIGTERM at once (`closeSessionForTermination`).
             terminal::session::terminate_all_for_quit();
             logging::flush();
+            let performance_worker = performance::stop(cx);
+            let hang_worker = hang_watchdog::stop(cx);
             let worker = observability::shutdown(cx);
             cx.background_spawn(async move {
+                if let Some(worker) = performance_worker {
+                    let _ = worker.join();
+                }
+                if let Some(worker) = hang_worker {
+                    let _ = worker.join();
+                }
                 if let Some(worker) = worker {
                     let _ = worker.join();
                 }

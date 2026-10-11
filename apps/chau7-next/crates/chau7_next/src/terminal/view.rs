@@ -36,10 +36,30 @@ pub enum TerminalViewEvent {
     },
 }
 
+#[derive(Clone, PartialEq)]
+struct MetricSettings {
+    family: String,
+    weight: i32,
+    ligatures: bool,
+    line_height: f32,
+}
+impl MetricSettings {
+    fn new(settings: &Settings) -> Self {
+        let a = &settings.appearance;
+        Self {
+            family: a.font_family.clone(),
+            weight: a.font_weight,
+            ligatures: a.ligatures && a.rendering.gpu_renderer,
+            line_height: a.line_height,
+        }
+    }
+}
+
 pub struct TerminalView {
     pub session: Entity<TerminalSession>,
     focus_handle: FocusHandle,
     metrics: Option<CellMetrics>,
+    metrics_settings: Option<MetricSettings>,
     font_size: f32,
     bounds: Option<Bounds<Pixels>>,
     selecting: bool,
@@ -85,9 +105,11 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        crate::memory_pressure::register_view(cx.entity().downgrade(), cx);
         let focus_handle = cx.focus_handle();
         let font_size = Settings::get(cx).appearance.zoomed_font_size();
         let mut subscriptions = vec![cx.observe(&session, |_, _, cx| cx.notify())];
+        subscriptions.push(cx.on_release(|this, cx| this.overlays.release_cpu_frame(cx)));
         subscriptions.push(cx.subscribe(&session, |this, _, event, cx| {
             if let SessionEvent::ClipboardStore(text) = event {
                 crate::workspace::record_clipboard(text, cx);
@@ -137,11 +159,14 @@ impl TerminalView {
                 }
             }
         });
-        let scrollback = Settings::get(cx).terminal.scrollback_lines;
+        let scrollback = chau7_next_core::memory_pressure::tracker_cap(
+            Settings::get(cx).terminal.scrollback_lines,
+        );
         let mut this = Self {
             session,
             focus_handle,
             metrics: None,
+            metrics_settings: None,
             font_size,
             bounds: None,
             selecting: false,
@@ -166,6 +191,10 @@ impl TerminalView {
     /// The selection, for macOS Services (`platform::services`, RBK-042).
     fn publish_selection(&self, cx: &App) {
         crate::platform::services::set_selection(self.session.read(cx).selection_text());
+    }
+
+    pub(crate) fn memory_session_id(&self, cx: &App) -> u64 {
+        self.session.read(cx).id
     }
 
     pub fn set_font_size(&mut self, size: f32, cx: &mut Context<Self>) {
@@ -210,12 +239,11 @@ impl TerminalView {
     }
 
     fn metrics(&mut self, window: &mut Window, cx: &App) -> CellMetrics {
-        if self.metrics.is_none() {
-            self.metrics = Some(CellMetrics::measure(
-                Settings::get(cx),
-                self.font_size,
-                window,
-            ));
+        let settings = Settings::get(cx);
+        let key = MetricSettings::new(settings);
+        if self.metrics.is_none() || self.metrics_settings.as_ref() != Some(&key) {
+            self.metrics_settings = Some(key);
+            self.metrics = Some(CellMetrics::measure(settings, self.font_size, window));
         }
         self.metrics.clone().unwrap()
     }
@@ -346,6 +374,9 @@ fn png_name(name: &str) -> String {
 
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if window.is_visible() {
+            self.session.read(cx).mark_memory_visible(cx);
+        }
         let metrics = self.metrics(window, cx);
         let guard_overlay = self.render_guard(cx);
         let settings = Settings::get(cx);
@@ -437,6 +468,19 @@ impl Render for TerminalView {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn switching_renderer_refreshes_existing_terminal_font_metrics() {
+        let mut settings = crate::settings::Settings::default();
+        settings.appearance.ligatures = true;
+        let before = super::MetricSettings::new(&settings);
+        settings.appearance.rendering.gpu_renderer = false;
+        assert!(before != super::MetricSettings::new(&settings));
+        let cpu = super::MetricSettings::new(&settings);
+        settings.appearance.ligatures = false;
+        assert!(cpu == super::MetricSettings::new(&settings));
+        settings.appearance.line_height += 0.1;
+        assert!(cpu != super::MetricSettings::new(&settings));
+    }
     #[test]
     fn saved_images_are_png() {
         assert_eq!(super::png_name("cat.jpg"), "cat.png");

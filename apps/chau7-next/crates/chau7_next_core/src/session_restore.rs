@@ -242,20 +242,28 @@ pub const MAX_RESTORED_SCROLLBACK_LINES: usize = 10_000;
 pub const DEFAULT_RESTORED_SCROLLBACK_LINES: usize = 500;
 
 /// The last `max_lines` lines of a terminal buffer, ready to be replayed
-/// (`captureScrollback`). Trailing whitespace is stripped from every line
-/// (the grid pads rows to the full width), blank lines at the end are
-/// dropped, and a buffer that is all whitespace gives `None`.
+/// (`captureScrollback`). ANSI exports keep their styles and column spacing.
+/// Plain fallback rows drop padding; restore artifacts and trailing empty rows
+/// are removed, and the persisted UTF-8 buffer never exceeds the byte limit.
 pub fn capture_scrollback(text: &str, max_lines: usize) -> Option<String> {
     if max_lines == 0 {
         return None;
     }
-    // The grid keeps a tab character in the first cell a tab moved over,
-    // followed by blank cells: replayed as is, the tab would jump to the
-    // next tab stop and widen the gap (`ls` columns). One space keeps the
-    // column.
-    let text = text.replace('\t', " ");
-    let mut lines: Vec<&str> = text.split('\n').map(str::trim_end).collect();
-    while lines.last().is_some_and(|l| l.is_empty()) {
+    let styled = text.contains('\u{1b}');
+    let text = if styled {
+        text.to_string()
+    } else {
+        text.replace('\t', " ")
+    };
+    let mut lines: Vec<&str> = text
+        .split('\n')
+        .map(|line| if styled { line } else { line.trim_end() })
+        .filter(|line| !is_restore_artifact(&visible_for_restore(line)))
+        .collect();
+    while lines
+        .last()
+        .is_some_and(|line| visible_for_restore(line).is_empty())
+    {
         lines.pop();
     }
     if lines.is_empty() {
@@ -264,17 +272,80 @@ pub fn capture_scrollback(text: &str, max_lines: usize) -> Option<String> {
     if lines.len() > max_lines {
         lines = lines.split_off(lines.len() - max_lines);
     }
-    let mut restored = lines.join("\n");
-    if restored.trim().is_empty() {
+    if visible_for_restore(&lines.join("\n")).trim().is_empty() {
         return None;
     }
-    if restored.len() > MAX_SCROLLBACK_BYTES {
-        let reduced = (max_lines / 2).max(1);
-        let all: Vec<&str> = restored.split('\n').collect();
-        let start = all.len().saturating_sub(reduced);
-        restored = all[start..].join("\n");
+    // Keep halving old rows until the strict byte bound is met. A single
+    // oversized row cannot be persisted safely without splitting ANSI or UTF-8.
+    loop {
+        let restored = lines.join("\n");
+        if restored.len() <= MAX_SCROLLBACK_BYTES {
+            return Some(restored);
+        }
+        if lines.len() <= 1 {
+            return None;
+        }
+        lines = lines.split_off(lines.len() - (lines.len() / 2).max(1));
     }
-    Some(restored)
+}
+
+/// Prefer the ANSI export and only capture a plain fallback when it is empty.
+pub fn capture_styled_scrollback(
+    styled: Option<&str>,
+    fallback: impl FnOnce() -> String,
+    max_lines: usize,
+) -> Option<String> {
+    if max_lines == 0 {
+        return None;
+    }
+    match styled.filter(|text| !text.is_empty()) {
+        Some(text) => capture_scrollback(text, max_lines),
+        None => capture_scrollback(&fallback(), max_lines),
+    }
+}
+
+/// Strip terminal control sequences without collapsing spaces. Matching restore
+/// artifacts must not rewrite actual styled output or column alignment.
+pub fn visible_for_restore(text: &str) -> String {
+    let mut chars = text.chars().peekable();
+    let mut result = String::with_capacity(text.len());
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            if matches!(c, '\n' | '\r' | '\t') || (c >= ' ' && c != '\u{7f}') {
+                result.push(c);
+            }
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' {
+                        break;
+                    }
+                    if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    result
+}
+fn is_restore_artifact(line: &str) -> bool {
+    let line = line.trim_matches(crate::escape_sanitizer::is_foundation_whitespace);
+    (line.contains("stty -echo") && line.contains("stty echo"))
+        || (line.contains(" cd '") && line.ends_with("&& clear"))
+        || (line.contains("%  cd '/") && line.ends_with('\''))
+        || (line.contains("stty -echo; cd '") && line.contains("; stty echo"))
 }
 
 /// Name of the temporary replay files (`restore-<token>-<pane>.txt`); the
@@ -298,7 +369,9 @@ pub fn strip_restore_commands(text: &str) -> String {
                 continue;
             }
         }
-        out.push(lines[i]);
+        if !is_restore_artifact(&visible_for_restore(lines[i])) {
+            out.push(lines[i]);
+        }
         i += 1;
     }
     out.join("\n")
@@ -616,6 +689,47 @@ pub fn resolve_ai_resume_metadata(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn styled_restore_prefers_ansi_and_removes_only_visible_restore_artifacts() {
+        let red = "\x1b[31mred output\x1b[0m";
+        let green = "\x1b[32mgreen output\x1b[0m";
+        let artifact =
+            "\x1b[2m stty -echo && cat '/tmp/chau7_restore.txt' && clear && stty echo\x1b[0m";
+        let bare_cd = "\x1b[2m%  cd '/some/repository'\x1b[0m";
+        let source = [red, artifact, bare_cd, green].join("\n");
+        let expected = [red, green].join("\n");
+        assert_eq!(super::strip_restore_commands(&source), expected);
+        assert_eq!(
+            super::capture_styled_scrollback(
+                Some(&source),
+                || panic!("styled snapshot must not request fallback"),
+                10
+            ),
+            Some(expected)
+        );
+        assert_eq!(
+            super::capture_styled_scrollback(Some(""), || "plain output".into(), 10),
+            Some("plain output".into())
+        );
+        assert_eq!(super::capture_scrollback("\x1b[0m", 10), None);
+    }
+    #[test]
+    fn persisted_scrollback_has_a_strict_utf8_byte_cap() {
+        let rows = (0..8)
+            .map(|i| format!("line-{i}-{}", "界".repeat(100_000)))
+            .collect::<Vec<_>>();
+        let retained = super::capture_scrollback(&rows.join("\n"), 8).unwrap();
+        assert!(retained.len() <= super::MAX_SCROLLBACK_BYTES);
+        assert_eq!(retained, rows[7]);
+        assert!(
+            super::capture_scrollback(&"x".repeat(super::MAX_SCROLLBACK_BYTES + 1), 10).is_none()
+        );
+        assert_eq!(
+            super::visible_for_restore("\x1b]8;;https://example.invalid\x1b\\a   b\x1b]8;;\x07"),
+            "a   b"
+        );
+    }
+
     use super::*;
 
     #[test]
