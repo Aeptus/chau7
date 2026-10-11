@@ -1348,7 +1348,7 @@ impl Render for Workspace {
         let bookmarks = self.render_bookmarks(chrome, cx);
         let timeline = self.render_timeline(chrome, cx);
         let tasks = self.render_tasks(chrome, window, cx);
-        let dashboard = self.render_dashboard(chrome, cx);
+        let dashboard = self.render_dashboard(chrome, window, cx);
         let picker = self.render_picker(chrome, cx);
         let shortcut_hint = self.render_shortcut_hint(chrome, cx);
         let drag_listener = self.drag_listener(cx);
