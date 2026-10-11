@@ -38,6 +38,11 @@ pub fn set_app_bool(key: &str, value: Option<bool>) -> super::Result<()> {
     imp::set_app_bool(key, value)
 }
 
+/// Sets or removes a local string app default (never the cloud store).
+pub fn set_app_string(key: &str, value: Option<&str>) -> super::Result<()> {
+    imp::set_app_string(key, value)
+}
+
 /// A value read from the app defaults.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Value {
@@ -91,6 +96,30 @@ mod imp {
             .map(|text| Value::Text(text.to_string()))
     }
 
+    pub fn set_app_string(key: &str, value: Option<&str>) -> Result<()> {
+        let key = CFString::new(key);
+        let value = value.map(CFString::new);
+        let raw = value
+            .as_ref()
+            .map_or(std::ptr::null(), |value| value.as_CFTypeRef());
+        // SAFETY: owned property-list strings and the static current app ID.
+        let success = unsafe {
+            CFPreferencesSetAppValue(
+                key.as_concrete_TypeRef(),
+                raw,
+                kCFPreferencesCurrentApplication,
+            );
+            CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
+        };
+        if success != 0 {
+            Ok(())
+        } else {
+            Err(crate::platform::PlatformError::Failed(
+                "could not persist local app default".into(),
+            ))
+        }
+    }
+
     pub fn set_app_bool(key: &str, value: Option<bool>) -> Result<()> {
         let key = CFString::new(key);
         let flag = value.map(CFBoolean::from);
@@ -118,6 +147,10 @@ mod imp {
 
     pub fn app_value(_key: &str) -> Option<Value> {
         None
+    }
+
+    pub fn set_app_string(_key: &str, _value: Option<&str>) -> Result<()> {
+        unsupported("app defaults")
     }
 
     pub fn set_app_bool(_key: &str, _value: Option<bool>) -> Result<()> {

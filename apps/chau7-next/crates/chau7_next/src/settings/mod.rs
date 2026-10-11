@@ -11,6 +11,7 @@
 
 mod ai;
 mod appearance;
+mod cloud_freshness;
 pub mod config_files;
 pub mod dangerous_commands;
 mod editor;

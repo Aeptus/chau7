@@ -279,6 +279,12 @@ pub fn export_json(settings: &Settings, home: &str) -> String {
     set("ctoTabOverrides", json!(cto.tab_overrides));
 
     current::export(settings, &mut map);
+    map.insert(
+        "exportedAt".into(),
+        json!(super::cloud_freshness::export_timestamp(
+            std::time::SystemTime::now()
+        )),
+    );
     serde_json::to_string_pretty(&Value::Object(map)).unwrap_or_default()
 }
 
