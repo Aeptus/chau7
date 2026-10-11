@@ -300,9 +300,28 @@ impl Settings {
                 self.dangerous_commands = DangerousCommandSettings::default();
                 self.dangerous_commands.guard_enabled = guard_enabled;
             }
-            S::DangerousCommands => self.dangerous_commands = DangerousCommandSettings::default(),
-            S::KeyboardMouse => self.input = InputSettings::default(),
-            S::SnippetsTools => self.productivity = ProductivitySettings::default(),
+            S::DangerousCommands => {
+                self.reset_section(S::Shell);
+                self.dangerous_commands.guard_enabled = true;
+            }
+            S::KeyboardMouse => {
+                self.input = InputSettings::default();
+                let defaults = ProductivitySettings::default();
+                self.productivity.cmd_click_paths = defaults.cmd_click_paths;
+                self.productivity.cmd_click_internal_editor = defaults.cmd_click_internal_editor;
+                self.productivity.default_editor = defaults.default_editor;
+                self.productivity.url_handler = defaults.url_handler;
+            }
+            S::SnippetsTools => {
+                // Link preferences belong to Input in current Swift.
+                let previous = self.productivity.clone();
+                self.productivity = ProductivitySettings::default();
+                self.productivity.cmd_click_paths = previous.cmd_click_paths;
+                self.productivity.cmd_click_internal_editor = previous.cmd_click_internal_editor;
+                self.productivity.default_editor = previous.default_editor;
+                self.productivity.url_handler = previous.url_handler;
+                self.general.allow_protected_folder_access = false;
+            }
             // Swift resets the trigger conditions (`ConditionRow` reset).
             S::Notifications => self.notifications.reset_conditions(),
             S::Editor => self.editor = EditorSettings::default(),
@@ -546,5 +565,74 @@ mod tests {
         assert!(!settings.appearance.rendering.gpu_renderer);
         assert!(!settings.tabs.always_show_toolbar_in_fullscreen);
         assert!(settings.terminal.split_panes_enabled);
+    }
+    #[test]
+    fn input_and_productivity_resets_follow_current_domain_ownership() {
+        let mut settings = Settings::default();
+        settings.productivity.cmd_click_paths = false;
+        settings.productivity.cmd_click_internal_editor = false;
+        settings.productivity.default_editor = "code --wait".into();
+        settings.productivity.url_handler = productivity::UrlHandler::Firefox;
+        settings.productivity.clipboard_history_max = 73;
+        settings.general.allow_protected_folder_access = true;
+        settings.input.copy_on_select = false;
+        settings.reset_section(SettingsSection::KeyboardMouse);
+        let defaults = Settings::default();
+        assert_eq!(settings.input, defaults.input);
+        assert_eq!(
+            settings.productivity.cmd_click_paths,
+            defaults.productivity.cmd_click_paths
+        );
+        assert_eq!(
+            settings.productivity.cmd_click_internal_editor,
+            defaults.productivity.cmd_click_internal_editor
+        );
+        assert_eq!(
+            settings.productivity.default_editor,
+            defaults.productivity.default_editor
+        );
+        assert_eq!(
+            settings.productivity.url_handler,
+            defaults.productivity.url_handler
+        );
+        assert_eq!(settings.productivity.clipboard_history_max, 73);
+        assert!(settings.general.allow_protected_folder_access);
+        settings.productivity.cmd_click_paths = false;
+        settings.productivity.default_editor = "vim".into();
+        settings.productivity.url_handler = productivity::UrlHandler::Brave;
+        settings.reset_section(SettingsSection::SnippetsTools);
+        assert!(!settings.productivity.cmd_click_paths);
+        assert_eq!(settings.productivity.default_editor, "vim");
+        assert_eq!(
+            settings.productivity.url_handler,
+            productivity::UrlHandler::Brave
+        );
+        assert_eq!(
+            settings.productivity.clipboard_history_max,
+            defaults.productivity.clipboard_history_max
+        );
+        assert!(!settings.general.allow_protected_folder_access);
+    }
+
+    #[test]
+    fn dangerous_commands_reset_also_restores_shared_terminal_preferences() {
+        let mut settings = Settings::default();
+        settings.terminal.scrollback_lines = 333;
+        settings.terminal.startup_command = "echo custom".into();
+        settings.dangerous_commands.guard_enabled = false;
+        settings.dangerous_commands.patterns.clear();
+        settings.appearance.font_size = 22.0;
+        settings.reset_section(SettingsSection::DangerousCommands);
+        let defaults = Settings::default();
+        assert_eq!(
+            settings.terminal.scrollback_lines,
+            defaults.terminal.scrollback_lines
+        );
+        assert_eq!(
+            settings.terminal.startup_command,
+            defaults.terminal.startup_command
+        );
+        assert_eq!(settings.dangerous_commands, defaults.dangerous_commands);
+        assert_eq!(settings.appearance.font_size, 22.0);
     }
 }

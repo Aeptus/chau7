@@ -115,7 +115,7 @@ impl Default for GeneralSettings {
             launch_at_login: false,
             load_config_files: true,
             icloud_sync: false,
-            allow_protected_folder_access: true,
+            allow_protected_folder_access: false,
             full_disk_access_guard_enabled: true,
             bug_report_contact_name: String::new(),
             bug_report_contact_handle: String::new(),
@@ -360,7 +360,7 @@ mod tests {
         // `feature.configFile` defaults to on.
         assert!(d.load_config_files);
         assert!(!d.icloud_sync);
-        assert!(d.allow_protected_folder_access);
+        assert!(!d.allow_protected_folder_access);
         assert!(d.full_disk_access_guard_enabled);
     }
 

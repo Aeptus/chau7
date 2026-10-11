@@ -231,9 +231,13 @@ pub(super) fn export(settings: &Settings, map: &mut Map<String, Value>) {
     );
     // Only domain-owned preferences are serialized. Existing config text,
     // Keychain credentials, history, hooks and external files are not read.
+    let mut portable = settings.clone();
+    portable
+        .general
+        .restore_bug_report_fields(Default::default());
     map.insert(
         NEXT_KEY.into(),
-        json!({"version":1,"config":settings.to_profile_text(), "legacyShell":settings.terminal.shell, "legacyClipboardDisabled":settings.productivity.clipboard_history_max==0}),
+        json!({"version":1,"config":portable.to_profile_text(), "legacyShell":settings.terminal.shell, "legacyClipboardDisabled":settings.productivity.clipboard_history_max==0}),
     );
 }
 
@@ -271,6 +275,10 @@ pub(super) fn import_extension(
             restored.productivity.clipboard_history_enabled = false;
             restored.productivity.clipboard_history_max = 0;
         }
+        // Remembered report details are local to this installation, as in Swift.
+        restored
+            .general
+            .restore_bug_report_fields(settings.general.remembered_bug_report_fields());
         *settings = restored;
     }
     Ok(map.contains_key(NEXT_KEY))
@@ -502,6 +510,35 @@ mod tests {
         import_json(&mut actual, &export_json(&source, HOME), HOME).unwrap();
         assert_eq!(actual, source);
         assert_eq!(actual.to_profile_text(), source.to_profile_text());
+    }
+
+    #[test]
+    fn portable_settings_exclude_contact_and_preserve_local_report_details() {
+        let mut source = Settings::default();
+        source.general.restore_bug_report_fields((
+            "Export contact".into(),
+            "export-contact@example.invalid".into(),
+            "https://export-contact.invalid/private".into(),
+        ));
+        source.appearance.font_size = 21.0;
+        let encoded = export_json(&source, HOME);
+        assert!(!encoded.contains("Export contact"));
+        assert!(!encoded.contains("export-contact"));
+        let mut actual = Settings::default();
+        let local = (
+            "Local contact".into(),
+            "local-contact@example.invalid".into(),
+            "https://local-contact.invalid/private".into(),
+        );
+        actual.general.restore_bug_report_fields(local.clone());
+        import_json(&mut actual, &encoded, HOME).unwrap();
+        assert_eq!(actual.general.remembered_bug_report_fields(), local);
+        assert_eq!(actual.appearance.font_size, 21.0);
+        // Older version-one documents may still contain contact fields.
+        let mut old = document(&source);
+        old[NEXT_KEY]["config"] = json!(source.to_profile_text());
+        import_json(&mut actual, &serde_json::to_string(&old).unwrap(), HOME).unwrap();
+        assert_eq!(actual.general.remembered_bug_report_fields(), local);
     }
 
     #[test]
