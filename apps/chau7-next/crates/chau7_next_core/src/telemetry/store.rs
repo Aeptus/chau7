@@ -224,6 +224,15 @@ pub struct RepoRunStats {
     pub total_runs: i64,
     pub total_tokens: i64,
     pub total_cost: f64,
+    pub raw_run_cost: f64,
+    pub retained_proxy_cost: f64,
+    pub attributed_proxy_cost: f64,
+    pub priced_run_count: i64,
+    pub estimated_run_count: i64,
+    pub missing_cost_run_count: i64,
+    pub partial_run_count: i64,
+    pub priced_proxy_request_count: i64,
+    pub missing_cost_proxy_request_count: i64,
     pub total_turns: i64,
     pub last_run_at: Option<DateTime<Utc>>,
 }
@@ -700,6 +709,7 @@ impl TelemetryStore {
                 let Some(price)=super::pricing::pricing(run.model.as_deref(),Some(&run.provider)) else {continue;};
                 let mut metadata=run.metadata.clone();metadata.insert("pricing_catalog_version".into(),super::pricing::VERSION.into());
                 tx.execute("UPDATE runs SET cost_usd=?1,cost_source='estimated',cost_state='estimated',metadata=?2 WHERE run_id=?3 AND (cost_usd IS NULL OR cost_source='estimated')",params![price.estimate(&usage),encode_json(&metadata),run.id])?;
+                let mut priced=run.clone();priced.cost_usd=Some(price.estimate(&usage));priced.cost_source=Some(super::token_metrics::CostSource::Estimated);priced.cost_state=TelemetryMetricState::Estimated;priced.metadata=metadata;insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(&priced))?;
             }
             let last=runs.last().unwrap();tx.execute("INSERT INTO maintenance_state(name,cursor) VALUES (?1,?2) ON CONFLICT(name) DO UPDATE SET cursor=excluded.cursor",params![key,format!("{}|{}",iso(&last.started_at),last.id)])?;
             tx.commit()?;Ok(runs.len())
@@ -846,7 +856,8 @@ impl TelemetryStore {
     /// Clear a run's tokens and cost and mark them invalid.
     pub fn invalidate_run_metrics(&self, run_id: &str, reason: Option<&str>) {
         self.with((), |c| {
-            c.execute(
+            let tx=c.unchecked_transaction()?;
+            tx.execute(
                 "UPDATE runs
                 SET total_input_tokens = NULL,
                     total_cached_input_tokens = NULL, total_cache_creation_input_tokens = NULL, total_cache_read_input_tokens = NULL,
@@ -860,8 +871,10 @@ impl TelemetryStore {
                     error_message = COALESCE(?, error_message)
                 WHERE run_id = ?",
                 params![reason, run_id],
-            )
-            .map(|_| ())
+            )?;
+            let run:Option<TelemetryRun>=tx.query_row("SELECT * FROM runs WHERE run_id=?1",[run_id],|row|Ok(parse_run(row))).optional()?.flatten();
+            if let Some(run)=run {insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(&run))?;tx.execute("DELETE FROM proxy_run_baselines WHERE run_id=?1",[run_id])?;}
+            tx.commit()
         });
     }
 
@@ -1040,24 +1053,18 @@ impl TelemetryStore {
     /// `runStatsForRepo`.
     pub fn run_stats_for_repo(&self, repo_path: &str) -> RepoRunStats {
         self.with(RepoRunStats::default(), |c| {
+            let (proxy_cost,priced_proxy,missing_proxy):(f64,i64,i64)=c.query_row("SELECT COALESCE(SUM(cost_usd),0),COALESCE(SUM(cost_usd IS NOT NULL),0),COALESCE(SUM(cost_usd IS NULL),0) FROM usage_evidence WHERE project_path=?1 AND source_kind='proxy' AND unique_event_key NOT LIKE 'run|%'",[repo_path],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
             c.query_row(
                 "SELECT COUNT(*),
-                        COALESCE(SUM(total_input_tokens + total_output_tokens), 0),
-                        COALESCE(SUM(cost_usd), 0),
-                        COALESCE(SUM(turn_count), 0),
-                        MAX(started_at)
-                 FROM runs WHERE repo_path = ?",
-                [repo_path],
-                |r| {
-                    Ok(RepoRunStats {
-                        total_runs: r.get(0)?,
-                        total_tokens: r.get(1)?,
-                        total_cost: r.get(2)?,
-                        total_turns: r.get(3)?,
-                        last_run_at: parse_date(r.get(4)?),
-                    })
-                },
-            )
+                  COALESCE(SUM(COALESCE(total_input_tokens,0)+COALESCE(total_cached_input_tokens,0)+COALESCE(total_output_tokens,0)+COALESCE(total_reasoning_output_tokens,0)),0),
+                  COALESCE(SUM(cost_usd),0),COALESCE(SUM(turn_count),0),MAX(started_at),
+                  COALESCE(SUM(CASE WHEN token_usage_source='proxy' THEN cost_usd ELSE 0 END),0),
+                  COALESCE(SUM(cost_usd IS NOT NULL),0),COALESCE(SUM(cost_source='estimated'),0),COALESCE(SUM(cost_usd IS NULL),0),
+                  COALESCE(SUM(token_usage_state='partial' OR cost_state='partial'),0)
+                 FROM runs WHERE repo_path=?1",[repo_path],|r| {
+                    let raw_run_cost:f64=r.get(2)?;let attributed_proxy_cost:f64=r.get(5)?;
+                    Ok(RepoRunStats {total_runs:r.get(0)?,total_tokens:r.get(1)?,total_cost:super::query_projection::combined_repository_cost(raw_run_cost,proxy_cost,attributed_proxy_cost),raw_run_cost,retained_proxy_cost:proxy_cost,attributed_proxy_cost,priced_run_count:r.get(6)?,estimated_run_count:r.get(7)?,missing_cost_run_count:r.get(8)?,partial_run_count:r.get(9)?,priced_proxy_request_count:priced_proxy,missing_cost_proxy_request_count:missing_proxy,total_turns:r.get(3)?,last_run_at:parse_date(r.get(4)?)})
+                })
         })
     }
 
@@ -1861,5 +1868,47 @@ mod tests {
         assert_eq!(store.get_run(&r.id).unwrap().total_input_tokens, Some(10));
         store.ingest_evidence_batch(&[(4, scoped)]);
         assert_eq!(store.evidence_cursor(), 4);
+    }
+    #[test]
+    fn repository_cost_removes_only_retained_overlap_and_keeps_missing_quality() {
+        use super::super::evidence::{SourceKind, UsageEvidence};
+        let store = TelemetryStore::in_memory();
+        let now = Utc::now();
+        let mut r = run("claude", Some("/repo"), None);
+        r.started_at = now - chrono::Duration::seconds(1);
+        r.cost_usd = Some(5.);
+        r.cost_source = Some(CostSource::Estimated);
+        store.insert_run(&r);
+        let mut e = UsageEvidence::empty("anthropic", SourceKind::Proxy, now);
+        e.project_path = Some("/repo".into());
+        e.input_tokens = Some(10);
+        e.output_tokens = Some(20);
+        e.cost_usd = Some(2.);
+        e.run_id = Some("wrong".into());
+        e.finish_proxy_identity(Some("unassigned"));
+        store.record_usage_evidence(&e);
+        assert_eq!(store.run_stats_for_repo("/repo").total_cost, 7.);
+        e.run_id = Some(r.id.clone());
+        e.cost_usd = Some(1.);
+        e.cache_creation_input_tokens = Some(2);
+        e.cache_read_input_tokens = Some(3);
+        e.reasoning_output_tokens = Some(4);
+        e.finish_proxy_identity(Some("assigned"));
+        store.record_usage_evidence(&e);
+        let mut missing = run("codex", Some("/repo"), None);
+        missing.started_at += chrono::Duration::seconds(2);
+        missing.total_input_tokens = Some(50);
+        missing.total_output_tokens = None;
+        missing.cost_usd = None;
+        store.insert_run(&missing);
+        let totals = store.run_stats_for_repo("/repo");
+        assert_eq!(totals.total_cost, 3.);
+        assert_eq!(totals.raw_run_cost, 1.);
+        assert_eq!(totals.retained_proxy_cost, 3.);
+        assert_eq!(totals.attributed_proxy_cost, 1.);
+        assert_eq!(totals.total_tokens, 89);
+        assert_eq!(totals.partial_run_count, 1);
+        assert_eq!(totals.missing_cost_run_count, 1);
+        assert_eq!(totals.priced_proxy_request_count, 2);
     }
 }
