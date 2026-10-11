@@ -168,6 +168,10 @@ pub struct AppearanceSettings {
     pub app_theme: AppTheme,
     /// `window.floating`: windows stay above other apps.
     pub window_floating: bool,
+    /// Current Windows page: menu bar only takes effect after restart.
+    pub menu_bar_only: bool,
+    /// Current independent window material toggle, enabled by default.
+    pub window_blur_enabled: bool,
     pub display: DisplayOptions,
     pub graphics: GraphicsOptions,
     pub rendering: RenderingOptions,
@@ -193,6 +197,8 @@ impl Default for AppearanceSettings {
             cursor_blink_rate: None,
             app_theme: AppTheme::System,
             window_floating: false,
+            menu_bar_only: false,
+            window_blur_enabled: true,
             display: DisplayOptions::default(),
             graphics: GraphicsOptions::default(),
             rendering: RenderingOptions::default(),
@@ -319,6 +325,14 @@ impl SettingsDomain for AppearanceSettings {
         if let Some(v) = flag("window_floating") {
             self.window_floating = v;
         }
+        if let Some(v) = flag("menu_bar_only")
+            .or_else(|| crate::platform::defaults::app_bool("window.menuBarOnlyMode"))
+        {
+            self.menu_bar_only = v;
+        }
+        if let Some(v) = flag("window_blur_enabled") {
+            self.window_blur_enabled = v;
+        }
         let d = &mut self.display;
         if let Some(v) = flag("syntax_highlight") {
             d.syntax_highlight = v;
@@ -385,6 +399,8 @@ impl SettingsDomain for AppearanceSettings {
         }
         out.set_next("app_theme", literal(self.app_theme.raw()));
         out.set_next("window_floating", self.window_floating);
+        out.set_next("menu_bar_only", self.menu_bar_only);
+        out.set_next("window_blur_enabled", self.window_blur_enabled);
         let d = &self.display;
         out.set_next("syntax_highlight", d.syntax_highlight);
         out.set_next("clickable_urls", d.clickable_urls);
@@ -427,6 +443,8 @@ mod tests {
             cursor_blink_rate: Some(0.8),
             app_theme: AppTheme::Light,
             window_floating: true,
+            menu_bar_only: true,
+            window_blur_enabled: false,
             display: DisplayOptions {
                 syntax_highlight: false,
                 clickable_urls: false,

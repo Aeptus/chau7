@@ -7,12 +7,15 @@ use crate::settings::Settings;
 use crate::theme::Chrome;
 
 pub(super) fn section(title: impl Into<SharedString>, chrome: Chrome) -> gpui::Div {
+    let title = title.into();
     div().flex().flex_col().gap_2().pb_4().child(
         div()
+            .id(SharedString::from(format!("setting-header-{title}")))
+            .anchor_scroll(super::anchors::for_title(&title))
             .text_xs()
             .font_weight(gpui::FontWeight::SEMIBOLD)
             .text_color(chrome.text_muted)
-            .child(crate::l10n::tr(&title.into()).to_uppercase()),
+            .child(crate::l10n::tr(&title).to_uppercase()),
     )
 }
 
@@ -21,7 +24,8 @@ pub(super) fn row(
     control: impl IntoElement,
     chrome: Chrome,
 ) -> gpui::Div {
-    crate::l10n::row_direction(div().flex().items_center().justify_between())
+    let label = label.into();
+    let element = crate::l10n::row_direction(div().flex().items_center().justify_between())
         .gap_4()
         .min_h(px(30.0))
         .child(
@@ -31,9 +35,10 @@ pub(super) fn row(
                 .text_sm()
                 .text_color(chrome.text)
                 .when(crate::l10n::is_rtl(), |d| d.text_right())
-                .child(crate::l10n::ui(&label.into())),
+                .child(crate::l10n::ui(&label)),
         )
-        .child(div().flex_none().child(control))
+        .child(div().flex_none().child(control));
+    super::anchors::label_target(&label, element)
 }
 
 pub(super) fn chip(
