@@ -175,7 +175,7 @@ fn update_icon(cx: &mut App) {
     let description = if monitoring {
         bar.active_description.clone()
     } else {
-        chau7_next_core::l10n::l("statusBar.icon.monitoringPaused", "monitoring paused")
+        chau7_next_core::l10n::l("statusbar.monitoringPaused", "monitoring paused")
     };
     if bar.shown.as_ref() == Some(&icon) && bar.shown_description.as_ref() == Some(&description) {
         return;
