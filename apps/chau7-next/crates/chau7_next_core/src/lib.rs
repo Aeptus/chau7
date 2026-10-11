@@ -88,6 +88,7 @@ pub mod shell_restore;
 pub mod shell_session;
 pub mod shell_tips;
 pub mod shortcut_display;
+pub mod skills;
 pub mod snippet_parsing;
 pub mod snippet_store;
 pub mod ssh_config;
