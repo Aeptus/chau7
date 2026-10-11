@@ -143,7 +143,7 @@ impl AiEventReliability {
 }
 
 /// A tool-agnostic event from any monitored source (`AIEvent`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AiEvent {
     pub id: Uuid,
     pub source: AiEventSource,
@@ -160,6 +160,8 @@ pub struct AiEvent {
     /// ISO8601 timestamp string.
     pub ts: String,
     pub directory: Option<String>,
+    #[serde(default)]
+    pub repo_path: Option<String>,
     pub tab_id: Option<Uuid>,
     /// AI session ID for tab disambiguation.
     pub session_id: Option<String>,
@@ -190,6 +192,7 @@ impl AiEvent {
             notification_type: None,
             ts: ts.into(),
             directory: None,
+            repo_path: None,
             tab_id: None,
             session_id: None,
             producer: None,
@@ -422,6 +425,18 @@ pub fn parse_line(line: &str) -> Result<AiEvent, AiEventParseError> {
 
     let mut event = AiEvent::new(source, event_type, tool, message, ts);
     event.directory = directory;
+    event.repo_path = first_string(&dict, &["repoPath", "repo_path"]);
+    event.raw_type = first_string(&dict, &["rawType", "raw_type"]);
+    event.title = first_string(&dict, &["title"]);
+    event.notification_type = first_string(&dict, &["notificationType", "notification_type"]);
+    event.producer = first_string(&dict, &["producer"]);
+    if let Some(value) = dict
+        .get("reliability")
+        .cloned()
+        .and_then(|v| serde_json::from_value(v).ok())
+    {
+        event.reliability = value;
+    }
     event.tab_id = tab_id;
     event.session_id = session_id;
     Ok(event)

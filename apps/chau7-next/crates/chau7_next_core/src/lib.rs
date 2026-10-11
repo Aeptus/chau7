@@ -27,6 +27,7 @@ pub mod debug_context;
 pub mod editor;
 pub mod env_vars;
 pub mod escape_sanitizer;
+pub mod events;
 pub mod feature_profiler;
 pub mod file_tailer;
 pub mod font_catalog;
