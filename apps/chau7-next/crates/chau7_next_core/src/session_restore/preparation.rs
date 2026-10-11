@@ -16,6 +16,8 @@ pub struct PreparedPane {
     pub context: Option<String>,
     pub identity: Option<ResumeIdentity>,
     pub command: Option<String>,
+    /// True only when directory history supplied the missing persisted ID.
+    pub discovered_identity: bool,
 }
 pub struct PreparedTab {
     pub saved: SavedTab,
@@ -30,9 +32,154 @@ struct Claim {
 type Claims = HashMap<Claim, (uuid::Uuid, u64)>;
 static CLAIMS: std::sync::LazyLock<std::sync::Mutex<Claims>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+/// Saved IDs are metadata reservations, distinct from admitted live PTY claims.
+/// Registration uses only the already loaded schema; no provider/context I/O.
+#[derive(Default)]
+struct IdentityHints {
+    generation: u64,
+    owners: HashMap<String, HashSet<uuid::Uuid>>,
+}
+static IDENTITY_HINTS: std::sync::LazyLock<std::sync::Mutex<HashMap<PathBuf, IdentityHints>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+static NEXT_HINT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn insert_hints(hints: &mut IdentityHints, owner: uuid::Uuid, saved: &SavedTab) {
+    for pane in &saved.panes {
+        // Swift reservations honor a persisted ID even when autosave lost its
+        // provider. Directory discovery must not steal that sibling identity.
+        if let Some(id) = pane
+            .ai_session_id
+            .as_deref()
+            .filter(|id| !id.trim().is_empty())
+        {
+            hints.owners.entry(id.to_owned()).or_default().insert(owner);
+        }
+        for identity in candidates(pane) {
+            hints
+                .owners
+                .entry(identity.session_id)
+                .or_default()
+                .insert(owner);
+        }
+    }
+}
+pub fn register_saved_identity_hints<'a>(
+    root: &DataRoot,
+    tabs: impl IntoIterator<Item = &'a SavedTab>,
+) {
+    let mut hints = IdentityHints {
+        generation: NEXT_HINT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        ..Default::default()
+    };
+    for saved in tabs {
+        if let Some(owner) = saved.uuid {
+            insert_hints(&mut hints, owner, saved);
+        }
+    }
+    IDENTITY_HINTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(root.state_dir().to_path_buf(), hints);
+}
+/// Reopened/moved parked tabs join the current reservation generation before
+/// preparation. This is cached schema admission, never filesystem inspection.
+pub fn register_owner_identity_hints(root: &DataRoot, owner: uuid::Uuid, saved: &SavedTab) {
+    let mut all = IDENTITY_HINTS.lock().unwrap_or_else(|e| e.into_inner());
+    let hints = all.entry(root.state_dir().to_path_buf()).or_default();
+    hints.owners.retain(|_, owners| {
+        owners.remove(&owner);
+        !owners.is_empty()
+    });
+    insert_hints(hints, owner, saved);
+}
+pub fn identity_hint_generation(root: &DataRoot) -> u64 {
+    IDENTITY_HINTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(root.state_dir())
+        .map_or(0, |hints| hints.generation)
+}
+fn identity_available(
+    root: &DataRoot,
+    owner: Option<uuid::Uuid>,
+    pane: u64,
+    identity: &ResumeIdentity,
+    discovered: bool,
+) -> bool {
+    if discovered
+        && IDENTITY_HINTS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(root.state_dir())
+            .and_then(|hints| hints.owners.get(&identity.session_id))
+            .is_some_and(|owners| owners.iter().any(|id| Some(*id) != owner))
+    {
+        return false;
+    }
+    let key = Claim {
+        root: root.state_dir().to_path_buf(),
+        provider: identity.provider.clone(),
+        session_id: identity.session_id.clone(),
+    };
+    !CLAIMS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&key)
+        .is_some_and(|old| Some(old.0) != owner || old.1 != pane)
+}
+/// Final metadata admission fences replacement registrations and active owners.
+/// It never grants PTY control or delivers the saved resume command.
+pub fn admit_identity_metadata(
+    root: &DataRoot,
+    owner: uuid::Uuid,
+    generation: u64,
+    prepared: &mut PreparedTab,
+) -> bool {
+    let mut all = IDENTITY_HINTS.lock().unwrap_or_else(|e| e.into_inner());
+    let hints = all.entry(root.state_dir().to_path_buf()).or_default();
+    if hints.generation != generation {
+        return false;
+    }
+    // Lock order is always hints then claims, including owner release.
+    let claims = CLAIMS.lock().unwrap_or_else(|e| e.into_inner());
+    for pane in &mut prepared.saved.panes {
+        let Some(item) = prepared.panes.get_mut(&pane.id) else {
+            continue;
+        };
+        let Some(identity) = &item.identity else {
+            continue;
+        };
+        let key = Claim {
+            root: root.state_dir().to_path_buf(),
+            provider: identity.provider.clone(),
+            session_id: identity.session_id.clone(),
+        };
+        if claims.get(&key).is_some_and(|old| *old != (owner, pane.id))
+            || (item.discovered_identity
+                && hints
+                    .owners
+                    .get(&identity.session_id)
+                    .is_some_and(|owners| owners.iter().any(|id| *id != owner)))
+        {
+            pane.ai_provider = item.discovered_identity.then(|| identity.provider.clone());
+            item.identity = None;
+            item.command = None;
+            pane.ai_session_id = None;
+            pane.ai_resume_command = None;
+        }
+    }
+    hints.owners.retain(|_, owners| {
+        owners.remove(&owner);
+        !owners.is_empty()
+    });
+    insert_hints(hints, owner, &prepared.saved);
+    true
+}
 /// Admission runs on the app thread only after a live pane tree accepted the
 /// prepared result. Closing a tab while validation runs cannot leak ownership.
 pub fn claim(root: &DataRoot, owner: uuid::Uuid, prepared: &mut PreparedTab) {
+    let all_hints = IDENTITY_HINTS.lock().unwrap_or_else(|e| e.into_inner());
+    let hints = all_hints.get(root.state_dir());
     let mut claims = CLAIMS.lock().unwrap_or_else(|e| e.into_inner());
     for pane in &mut prepared.saved.panes {
         let Some(item) = prepared.panes.get_mut(&pane.id) else {
@@ -46,10 +193,15 @@ pub fn claim(root: &DataRoot, owner: uuid::Uuid, prepared: &mut PreparedTab) {
             provider: identity.provider.clone(),
             session_id: identity.session_id.clone(),
         };
-        if claims.get(&key).is_some_and(|old| *old != (owner, pane.id)) {
+        if claims.get(&key).is_some_and(|old| *old != (owner, pane.id))
+            || (item.discovered_identity
+                && hints
+                    .and_then(|hints| hints.owners.get(&identity.session_id))
+                    .is_some_and(|owners| owners.iter().any(|id| *id != owner)))
+        {
+            pane.ai_provider = item.discovered_identity.then(|| identity.provider.clone());
             item.identity = None;
             item.command = None;
-            pane.ai_provider = None;
             pane.ai_session_id = None;
             pane.ai_resume_command = None;
         } else {
@@ -58,6 +210,16 @@ pub fn claim(root: &DataRoot, owner: uuid::Uuid, prepared: &mut PreparedTab) {
     }
 }
 pub fn release_owner(root: &DataRoot, owner: uuid::Uuid) {
+    if let Some(hints) = IDENTITY_HINTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_mut(root.state_dir())
+    {
+        hints.owners.retain(|_, owners| {
+            owners.remove(&owner);
+            !owners.is_empty()
+        });
+    }
     CLAIMS
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -181,10 +343,29 @@ pub fn prepare(root: &DataRoot, saved: SavedTab, fallback: Option<PathBuf>) -> P
 /// provider and canonical-file inspection still runs on the background task.
 pub fn prepare_with_contexts(
     root: &DataRoot,
-    mut saved: SavedTab,
+    saved: SavedTab,
     fallback: Option<PathBuf>,
     contexts: HashMap<u64, Option<std::sync::Arc<String>>>,
 ) -> PreparedTab {
+    prepare_profile(root, saved, fallback, contexts, true)
+}
+/// Validate and hydrate parked identity only. Full payload flags/layout survive;
+/// scrollback files and captured contexts are deliberately not loaded.
+pub fn prepare_identity(
+    root: &DataRoot,
+    saved: SavedTab,
+    fallback: Option<PathBuf>,
+) -> PreparedTab {
+    prepare_profile(root, saved, fallback, HashMap::new(), false)
+}
+fn prepare_profile(
+    root: &DataRoot,
+    mut saved: SavedTab,
+    fallback: Option<PathBuf>,
+    contexts: HashMap<u64, Option<std::sync::Arc<String>>>,
+    load_contexts: bool,
+) -> PreparedTab {
+    let owner = saved.uuid;
     let fallback = fallback
         .or_else(|| saved.cwd.clone())
         .unwrap_or_else(|| root.home().to_path_buf());
@@ -249,7 +430,19 @@ pub fn prepare_with_contexts(
             };
             let available: Vec<_> = found
                 .into_iter()
-                .filter(|m| !claims.contains(&(provider.clone(), m.session_id.clone())))
+                .filter(|m| {
+                    !claims.contains(&(provider.clone(), m.session_id.clone()))
+                        && identity_available(
+                            root,
+                            owner,
+                            pane.id,
+                            &ResumeIdentity {
+                                provider: provider.clone(),
+                                session_id: m.session_id.clone(),
+                            },
+                            true,
+                        )
+                })
                 .collect();
             if let Some(id) = crate::ai::resume::best_session_match(&available, reference) {
                 resume_candidates.push(ResumeIdentity {
@@ -267,9 +460,9 @@ pub fn prepare_with_contexts(
                 synthetic,
                 &mut codex,
             )?;
-            claims
-                .insert((valid.provider.clone(), valid.session_id.clone()))
-                .then_some(valid)
+            (identity_available(root, owner, pane.id, &valid, provider_only.is_some())
+                && claims.insert((valid.provider.clone(), valid.session_id.clone())))
+            .then_some(valid)
         });
         if let Some(identity) = &identity
             && identity.provider == "claude"
@@ -285,18 +478,22 @@ pub fn prepare_with_contexts(
         let command = identity
             .as_ref()
             .and_then(|m| build_ai_resume_command(Some(&m.provider), Some(&m.session_id)));
-        let context = match contexts.get(&pane.id) {
-            Some(text) => text
-                .as_ref()
-                .filter(|s| s.len() <= MAX_SCROLLBACK_BYTES)
-                .map(|s| s.as_ref().clone()),
-            None => read_context(root, pane),
+        let context = if !load_contexts {
+            None
+        } else {
+            match contexts.get(&pane.id) {
+                Some(text) => text
+                    .as_ref()
+                    .filter(|s| s.len() <= MAX_SCROLLBACK_BYTES)
+                    .map(|s| s.as_ref().clone()),
+                None => read_context(root, pane),
+            }
         };
         pane.directory = Some(directory.to_string_lossy().into_owned());
         pane.ai_provider = identity
             .as_ref()
             .map(|m| m.provider.clone())
-            .or(provider_only);
+            .or_else(|| provider_only.clone());
         pane.ai_session_id = identity.as_ref().map(|m| m.session_id.clone());
         pane.ai_resume_command = command.clone();
         pane.agent_launch_command = None;
@@ -307,8 +504,15 @@ pub fn prepare_with_contexts(
                 context,
                 identity,
                 command,
+                discovered_identity: provider_only.is_some(),
             },
         );
+    }
+    if let Some(pane) = saved
+        .focused_terminal()
+        .and_then(|pane| prepared.get(&pane.id))
+    {
+        saved.cwd = Some(pane.directory.clone());
     }
     if let Some(layout) = &mut saved.layout {
         rewrite_layout(layout, &prepared);
@@ -322,6 +526,205 @@ pub fn prepare_with_contexts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn identity_only_preserves_full_payload_and_repairs_directory_without_contexts() {
+        let f = Fixture::new();
+        let nested = f.directory.join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        f.claude("owned-session", &nested);
+        std::fs::create_dir_all(f.root.scrollback_dir()).unwrap();
+        std::fs::write(
+            f.root.scrollback_dir().join("1.txt"),
+            "retained full scrollback",
+        )
+        .unwrap();
+        let mut pane = f.pane(1, "claude", "owned-session");
+        pane.scrollback = true;
+        let saved = SavedTab {
+            uuid: Some(uuid::Uuid::new_v4()),
+            focused_pane: Some(1),
+            custom_title: Some("Keep title".into()),
+            layout: Some(SavedSplitNode::Terminal {
+                id: 1,
+                directory: None,
+            }),
+            ..f.tab(vec![pane])
+        };
+        let identity = prepare_identity(&f.root, saved.clone(), None);
+        assert!(identity.panes[&1].context.is_none());
+        assert!(identity.saved.panes[0].scrollback);
+        assert_eq!(identity.saved.custom_title, saved.custom_title);
+        assert_eq!(identity.saved.uuid, saved.uuid);
+        assert_eq!(identity.saved.cwd, Some(canonical(&nested)));
+        assert_eq!(
+            identity.saved.layout.as_ref().unwrap().terminal_ids(),
+            vec![1]
+        );
+        assert_eq!(
+            identity.saved.panes[0].ai_resume_command.as_deref(),
+            Some("claude --resume owned-session")
+        );
+        let full = prepare(&f.root, identity.saved, None);
+        assert_eq!(
+            full.panes[&1].context.as_deref(),
+            Some("retained full scrollback")
+        );
+        assert!(
+            CLAIMS
+                .lock()
+                .unwrap()
+                .keys()
+                .all(|key| key.root != f.root.state_dir())
+        );
+    }
+    #[test]
+    fn parked_saved_owner_is_excluded_from_provider_only_history_discovery() {
+        let f = Fixture::new();
+        f.claude("parked-session", &f.directory);
+        let owner = uuid::Uuid::new_v4();
+        let parked = SavedTab {
+            uuid: Some(owner),
+            ..f.tab(vec![SavedPane {
+                ai_provider: None,
+                ..f.pane(2, "codex", "parked-session")
+            }])
+        };
+        register_saved_identity_hints(&f.root, [&parked]);
+        let seeker = SavedTab {
+            uuid: Some(uuid::Uuid::new_v4()),
+            ..f.tab(vec![SavedPane {
+                id: 1,
+                directory: Some(f.directory.to_string_lossy().into_owned()),
+                ai_provider: Some("claude".into()),
+                ..Default::default()
+            }])
+        };
+        let blocked = prepare_identity(&f.root, seeker.clone(), None);
+        assert!(blocked.panes[&1].identity.is_none());
+        release_owner(&f.root, owner);
+        let available = prepare_identity(&f.root, seeker, None);
+        assert_eq!(
+            available.panes[&1].identity.as_ref().unwrap().session_id,
+            "parked-session"
+        );
+    }
+    #[test]
+    fn reopened_parked_owner_joins_existing_generation_without_invalidating_other_workers() {
+        let f = Fixture::new();
+        let owner = uuid::Uuid::new_v4();
+        register_saved_identity_hints(&f.root, std::iter::empty());
+        let generation = identity_hint_generation(&f.root);
+        let saved = SavedTab {
+            uuid: Some(owner),
+            ..f.tab(vec![f.pane(1, "codex", "thread-reopened")])
+        };
+        register_owner_identity_hints(&f.root, owner, &saved);
+        assert_eq!(identity_hint_generation(&f.root), generation);
+        let identity = ResumeIdentity {
+            provider: "codex".into(),
+            session_id: "thread-reopened".into(),
+        };
+        assert!(!identity_available(
+            &f.root,
+            Some(uuid::Uuid::new_v4()),
+            2,
+            &identity,
+            true
+        ));
+        assert!(identity_available(&f.root, Some(owner), 1, &identity, true));
+        release_owner(&f.root, owner);
+        assert!(identity_available(
+            &f.root,
+            Some(uuid::Uuid::new_v4()),
+            2,
+            &identity,
+            true
+        ));
+    }
+    #[test]
+    fn metadata_reservations_are_root_scoped_and_generation_fenced() {
+        let f = Fixture::new();
+        let other = Fixture::new();
+        let owner = uuid::Uuid::new_v4();
+        let saved = SavedTab {
+            uuid: Some(owner),
+            ..f.tab(vec![f.pane(1, "codex", "thread-owned")])
+        };
+        register_saved_identity_hints(&f.root, [&saved]);
+        let old = identity_hint_generation(&f.root);
+        let mut prepared = prepare_identity(&f.root, saved.clone(), None);
+        register_saved_identity_hints(&other.root, [&saved]);
+        assert!(admit_identity_metadata(&f.root, owner, old, &mut prepared));
+        register_saved_identity_hints(&f.root, [&saved]);
+        assert!(!admit_identity_metadata(&f.root, owner, old, &mut prepared));
+        assert!(
+            CLAIMS
+                .lock()
+                .unwrap()
+                .keys()
+                .all(|key| key.root != f.root.state_dir())
+        );
+    }
+    #[test]
+    fn concurrent_discovery_results_cannot_reserve_one_session_for_two_owners() {
+        let f = Fixture::new();
+        f.claude("discovered-session", &f.directory);
+        let make = |id| SavedTab {
+            uuid: Some(uuid::Uuid::new_v4()),
+            ..f.tab(vec![SavedPane {
+                id,
+                directory: Some(f.directory.to_string_lossy().into_owned()),
+                ai_provider: Some("claude".into()),
+                ..Default::default()
+            }])
+        };
+        let a = make(1);
+        let b = make(2);
+        register_saved_identity_hints(&f.root, [&a, &b]);
+        let generation = identity_hint_generation(&f.root);
+        let mut pa = prepare_identity(&f.root, a.clone(), None);
+        let mut pb = prepare_identity(&f.root, b.clone(), None);
+        assert!(pa.panes[&1].identity.is_some());
+        assert!(pb.panes[&2].identity.is_some());
+        assert!(admit_identity_metadata(
+            &f.root,
+            a.uuid.unwrap(),
+            generation,
+            &mut pa
+        ));
+        assert!(admit_identity_metadata(
+            &f.root,
+            b.uuid.unwrap(),
+            generation,
+            &mut pb
+        ));
+        assert!(pa.panes[&1].identity.is_some());
+        assert!(pb.panes[&2].identity.is_none());
+        assert!(pb.saved.panes[0].ai_resume_command.is_none());
+    }
+    #[test]
+    fn live_admission_after_preparation_fences_late_metadata_without_claiming_a_pty() {
+        let f = Fixture::new();
+        let owner = uuid::Uuid::new_v4();
+        let saved = SavedTab {
+            uuid: Some(owner),
+            ..f.tab(vec![f.pane(1, "codex", "thread-live")])
+        };
+        register_saved_identity_hints(&f.root, [&saved]);
+        let generation = identity_hint_generation(&f.root);
+        let mut late = prepare_identity(&f.root, saved, None);
+        let mut live = prepare(
+            &f.root,
+            f.tab(vec![f.pane(2, "codex", "thread-live")]),
+            None,
+        );
+        claim(&f.root, uuid::Uuid::new_v4(), &mut live);
+        assert!(admit_identity_metadata(
+            &f.root, owner, generation, &mut late
+        ));
+        assert!(late.panes[&1].identity.is_none());
+        assert!(late.saved.panes[0].ai_resume_command.is_none());
+    }
     #[test]
     fn pending_context_and_tombstone_override_old_durable_file() {
         let fixture = Fixture::new();
@@ -403,6 +806,10 @@ mod tests {
     }
     impl Drop for Fixture {
         fn drop(&mut self) {
+            IDENTITY_HINTS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(self.root.state_dir());
             CLAIMS
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())

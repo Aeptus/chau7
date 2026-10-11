@@ -178,6 +178,8 @@ pub struct PaneTree {
     restore_selected: Cell<bool>,
     restore_prepared: Option<crate::restore::preparation::PreparedTab>,
     restore_activation: Option<gpui::Task<()>>,
+    identity_hydration: Option<gpui::Task<()>>,
+    identity_generation: u64,
     restore_override: chau7_next_core::token_optimization::TabTokenOptOverride,
     restore_release_registered: bool,
     restored_metadata: HashMap<PaneId, SavedPane>,
@@ -209,6 +211,8 @@ impl PaneTree {
             restore_selected: Cell::new(false),
             restore_prepared: None,
             restore_activation: None,
+            identity_hydration: None,
+            identity_generation: 0,
             restore_override: chau7_next_core::token_optimization::TabTokenOptOverride::Default,
             restore_release_registered: false,
             restored_metadata: HashMap::new(),
@@ -273,6 +277,100 @@ impl PaneTree {
         self.deferred_saved.is_some()
     }
 
+    /// BackgroundIdentityOnly validates metadata without creating a PTY/view,
+    /// loading scrollback or delivering a resume. Selection performs a fresh
+    /// full preparation; a weak late result cannot overwrite that activation.
+    pub(crate) fn hydrate_deferred_identity(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Option<futures::channel::oneshot::Receiver<bool>> {
+        if self.restore_selected.get() || self.restore_activation.is_some() {
+            return None;
+        }
+        let mut saved = self.deferred_saved.clone()?;
+        let owner = self.owner_tab?;
+        saved.uuid = Some(owner);
+        self.identity_generation = self.identity_generation.wrapping_add(1);
+        let generation = self.identity_generation;
+        let root = cx.global::<AppData>().root.clone();
+        let hint_generation = crate::restore::preparation::identity_hint_generation(&root);
+        let cwd = self.deferred_cwd.clone();
+        let task = cx.background_spawn(async move {
+            use chau7_next_core::work_profiler::{self, Key, Queue};
+            let mut work = work_profiler::begin(Key::work(
+                "restore_identity",
+                "metadata",
+                "parked",
+                "deferred_restore",
+                Queue::Background,
+            ));
+            work.items(saved.panes.len());
+            crate::restore::preparation::prepare_identity(&root, saved, cwd)
+        });
+        let (tx, rx) = futures::channel::oneshot::channel();
+        self.identity_hydration = Some(cx.spawn(async move |this, cx| {
+            let mut prepared = task.await;
+            let admitted = this
+                .update(cx, |this, cx| {
+                    if !this.apply_deferred_identity(
+                        owner,
+                        generation,
+                        hint_generation,
+                        &cx.global::<AppData>().root,
+                        &mut prepared,
+                    ) {
+                        return false;
+                    }
+                    this.identity_hydration = None;
+                    cx.emit(PaneEvent::MetadataChanged);
+                    cx.notify();
+                    true
+                })
+                .unwrap_or(false);
+            let _ = tx.send(admitted);
+        }));
+        Some(rx)
+    }
+
+    fn apply_deferred_identity(
+        &mut self,
+        owner: uuid::Uuid,
+        generation: u64,
+        hint_generation: u64,
+        root: &chau7_next_core::data_root::DataRoot,
+        prepared: &mut crate::restore::preparation::PreparedTab,
+    ) -> bool {
+        if self.deferred_saved.is_none()
+            || self.restore_selected.get()
+            || self.restore_activation.is_some()
+            || self.owner_tab != Some(owner)
+            || self.identity_generation != generation
+        {
+            return false;
+        }
+        if !crate::restore::preparation::admit_identity_metadata(
+            root,
+            owner,
+            hint_generation,
+            prepared,
+        ) {
+            return false;
+        }
+        self.deferred_cwd = prepared
+            .saved
+            .cwd
+            .clone()
+            .or_else(|| self.deferred_cwd.clone());
+        self.restored_metadata = prepared
+            .saved
+            .panes
+            .iter()
+            .map(|p| (p.id, p.clone()))
+            .collect();
+        self.deferred_saved = Some(prepared.saved.clone());
+        true
+    }
+
     pub(crate) fn set_restore_surface(&self, selected: bool, visible: bool, cx: &App) {
         self.restore_selected.set(selected);
         for (_, session) in self.pane_sessions(cx) {
@@ -290,6 +388,8 @@ impl PaneTree {
         let Some(saved) = self.deferred_saved.clone() else {
             return;
         };
+        self.identity_generation = self.identity_generation.wrapping_add(1);
+        self.identity_hydration = None;
         if let Some(mut prepared) = self.restore_prepared.take() {
             if !self.restore_selected.get() || !window.is_visible() {
                 self.restore_prepared = Some(prepared);
@@ -1032,6 +1132,13 @@ impl PaneTree {
         if self.owner_tab != Some(tab) {
             self.owner_tab = Some(tab);
             self.note_binding = None;
+        }
+        if let Some(saved) = &self.deferred_saved {
+            crate::restore::preparation::register_owner_identity_hints(
+                &cx.global::<AppData>().root,
+                tab,
+                saved,
+            );
         }
         self.attach_session_notes(window, cx);
     }
@@ -1870,6 +1977,104 @@ mod tests {
         for status in [Idle, Done, Exited] {
             assert!(!super::close_warning_status(status));
         }
+    }
+    #[test]
+    fn parked_identity_result_keeps_full_payload_and_rejects_selection_owner_and_generation_changes()
+     {
+        let home = std::env::temp_dir().join(format!(
+            "chau7-next-identity-admission-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        let root = chau7_next_core::data_root::DataRoot::with_home(home.clone(), true);
+        let owner = uuid::Uuid::new_v4();
+        let saved = SavedTab {
+            uuid: Some(owner),
+            cwd: Some(home.clone()),
+            focused_pane: Some(8),
+            panes: vec![SavedPane {
+                id: 8,
+                scrollback: true,
+                ai_provider: Some("codex".into()),
+                ai_session_id: Some("thread-fixture".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut prepared =
+            crate::restore::preparation::prepare_identity(&root, saved.clone(), None);
+        crate::restore::preparation::register_saved_identity_hints(&root, [&saved]);
+        let hint_generation = crate::restore::preparation::identity_hint_generation(&root);
+        let mut tree = super::PaneTree::park_saved(saved.clone(), None);
+        tree.owner_tab = Some(owner);
+        tree.identity_generation = 3;
+        assert!(!tree.apply_deferred_identity(owner, 2, hint_generation, &root, &mut prepared));
+        assert!(!tree.apply_deferred_identity(
+            uuid::Uuid::new_v4(),
+            3,
+            hint_generation,
+            &root,
+            &mut prepared
+        ));
+        tree.restore_selected.set(true);
+        assert!(!tree.apply_deferred_identity(owner, 3, hint_generation, &root, &mut prepared));
+        tree.restore_selected.set(false);
+        assert!(tree.apply_deferred_identity(owner, 3, hint_generation, &root, &mut prepared));
+        assert!(tree.root.is_none());
+        assert!(tree.views().is_empty());
+        assert!(tree.subscriptions.is_empty());
+        assert!(tree.deferred_saved().unwrap().panes[0].scrollback);
+        assert_eq!(
+            tree.deferred_saved().unwrap().panes[0]
+                .ai_resume_command
+                .as_deref(),
+            Some("codex resume thread-fixture")
+        );
+        assert!(tree.restore_prepared.is_none());
+        assert!(tree.resume_meta.is_empty());
+        tree.deferred_saved = None;
+        assert!(!tree.apply_deferred_identity(owner, 3, hint_generation, &root, &mut prepared));
+        crate::restore::preparation::release_owner(&root, owner);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+    #[test]
+    fn background_identity_is_wired_before_activation_and_never_delivers_a_resume() {
+        let pane = include_str!("pane.rs");
+        let start = pane
+            .find("    pub(crate) fn hydrate_deferred_identity(")
+            .unwrap();
+        let end = pane[start..]
+            .find("    pub(crate) fn set_restore_surface(")
+            .unwrap()
+            + start;
+        let hydration = &pane[start..end];
+        assert!(hydration.contains("cx.background_spawn"));
+        assert!(hydration.contains("prepare_identity(&root"));
+        assert!(
+            hydration
+                .split_whitespace()
+                .collect::<String>()
+                .contains("this.update(cx")
+        );
+        assert!(hydration.contains("apply_deferred_identity"));
+        for forbidden in [
+            "create_terminal(",
+            "queue_restored_resume(",
+            "replay_restored_context(",
+            "write_input(",
+            "from_saved_prepared(",
+        ] {
+            assert!(!hydration.contains(forbidden), "{forbidden}");
+        }
+        let startup = include_str!("main.rs");
+        let load = startup
+            .find("let mut restored = session_store::load")
+            .unwrap();
+        let hints = startup.find("register_saved_identity_hints(").unwrap();
+        let app = startup.find("Application::with_platform").unwrap();
+        assert!(load < hints && hints < app);
+        let scheduler = include_str!("workspace/restore_lifecycle.rs");
+        assert!(scheduler.contains("prepared.await"));
     }
     #[test]
     fn deferred_restore_preserves_full_payload_without_constructing_panes() {
