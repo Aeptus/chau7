@@ -30,6 +30,7 @@ mod ai;
 mod app_data;
 mod bookmarks;
 mod command_center;
+mod dashboard;
 mod debug;
 mod drag;
 mod find;
@@ -143,6 +144,7 @@ pub struct Workspace {
     timeline_panel: Option<timeline::TimelinePanel>,
     /// API analytics task panel (PRX-014).
     task_ui: tasks::TaskUi,
+    dashboard: dashboard::DashboardUi,
     next_bookmark_id: u64,
     /// Split layout, scrollback and AI sessions of the closed tabs, by tab
     /// UUID, for Reopen Closed Tab (`captureClosedTabSnapshot`).
@@ -209,6 +211,7 @@ impl Workspace {
             bookmarks_panel: None,
             timeline_panel: None,
             task_ui: tasks::TaskUi::default(),
+            dashboard: dashboard::DashboardUi::default(),
             next_bookmark_id: 1,
             closed_snapshots: HashMap::new(),
             last_visual_state: None,
@@ -629,6 +632,8 @@ impl Workspace {
     }
 
     pub fn select_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
+        self.dashboard.dismiss();
+        cx.notify();
         let previous = self.state.selected().and_then(|p| self.state.index_of(p));
         if self.state.select(id) {
             // The incoming terminal slides 30 pt in from the side of travel
@@ -1343,6 +1348,7 @@ impl Render for Workspace {
         let bookmarks = self.render_bookmarks(chrome, cx);
         let timeline = self.render_timeline(chrome, cx);
         let tasks = self.render_tasks(chrome, window, cx);
+        let dashboard = self.render_dashboard(chrome, cx);
         let picker = self.render_picker(chrome, cx);
         let shortcut_hint = self.render_shortcut_hint(chrome, cx);
         let drag_listener = self.drag_listener(cx);
@@ -1414,7 +1420,8 @@ impl Render for Workspace {
                     .children(bookmarks)
                     .children(explain)
                     .children(tasks)
-                    .children(timeline),
+                    .children(timeline)
+                    .children(dashboard),
             )
             .children(hover_card)
             .children(idle_popover)
