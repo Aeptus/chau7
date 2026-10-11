@@ -1297,6 +1297,14 @@ impl PaneTree {
             .collect()
     }
 
+    /// Only already constructed live sessions prewarm. Parked restores retain
+    /// their full saved payload without creating invisible PTYs on hover.
+    pub(crate) fn prewarm_surface(&mut self, hovered: bool, cx: &mut Context<Self>) {
+        for (_, session) in self.pane_sessions(cx) {
+            session.update(cx, |session, cx| session.prewarm_surface(hovered, cx));
+        }
+    }
+
     /// Id of the focused pane, whatever its kind (`focusedPaneID`).
     pub fn focused_pane_id(&self) -> Option<PaneId> {
         if let Some(saved) = &self.deferred_saved {

@@ -292,12 +292,14 @@ impl TerminalView {
         } else {
             Duration::from_secs(5)
         };
-        let suspend = chau7_next_core::session_restore::lifecycle::suspend_hidden_surface(
-            visible,
-            self.session.read(cx).surface_hidden_for(),
-            rendering.suspend_background,
-            delay,
-        );
+        let prewarm = self.session.read(cx).surface_prewarm_remaining();
+        let suspend = prewarm.is_none()
+            && chau7_next_core::session_restore::lifecycle::suspend_hidden_surface(
+                visible,
+                self.session.read(cx).surface_hidden_for(),
+                rendering.suspend_background,
+                delay,
+            );
         let session = self.session.read(cx);
         session.set_refresh_pacing(
             self.refresh_interactive && visible,
@@ -308,6 +310,9 @@ impl TerminalView {
             session.set_render_suspended(suspend);
         }
         if !visible {
+            if let Some(remaining) = prewarm {
+                return interval.min(remaining.max(Duration::from_millis(1)));
+            }
             // Wake at the configured suspension deadline rather than adding an
             // arbitrary cursor-blink interval to the actual hidden duration.
             if rendering.suspend_background
