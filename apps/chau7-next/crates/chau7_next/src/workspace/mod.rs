@@ -92,6 +92,22 @@ use rename::RenameState;
 use tab_bar_view::TabScroll;
 use window::global_bounds;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TabCloseFence {
+    owner: uuid::Uuid,
+    sessions: Vec<String>,
+    busy_panes: usize,
+    last_tab: bool,
+}
+impl TabCloseFence {
+    fn admits(&self, current: &Self) -> bool {
+        self.owner == current.owner
+            && self.sessions == current.sessions
+            && current.busy_panes <= self.busy_panes
+            && self.last_tab == current.last_tab
+    }
+}
+
 struct TabEntry {
     panes: Entity<PaneTree>,
     notification: Option<NotificationStyle>,
@@ -770,6 +786,21 @@ impl Workspace {
         self.close_with_confirmation(id, window, cx).detach();
     }
 
+    fn tab_close_fence(&self, id: TabId, cx: &App) -> Option<TabCloseFence> {
+        let meta = self.state.get(id)?;
+        let panes = self.entries.get(&id)?.panes.read(cx);
+        Some(TabCloseFence {
+            owner: meta.uuid,
+            sessions: panes
+                .pane_sessions(cx)
+                .iter()
+                .map(|(_, session)| session.read(cx).tab_identifier.clone())
+                .collect(),
+            busy_panes: panes.running_process_count(cx),
+            last_tab: self.state.len() == 1,
+        })
+    }
+
     /// Like [`Self::request_close_tab`]; the task ends once the tab is
     /// closed or the user answered (closing a group asks tab by tab).
     fn close_with_confirmation(
@@ -778,7 +809,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Task<()> {
-        if self.state.get(id).is_none() {
+        if self.last_tab_prompt || self.state.get(id).is_none() {
             return Task::ready(());
         }
         if self.state.len() == 1 {
@@ -807,6 +838,10 @@ impl Workspace {
         } else {
             &["Close Tab", "Cancel"]
         };
+        let Some(fence) = self.tab_close_fence(id, cx) else {
+            return Task::ready(());
+        };
+        self.last_tab_prompt = true;
         let answer = crate::l10n::prompt(
             window,
             gpui::PromptLevel::Warning,
@@ -817,15 +852,20 @@ impl Workspace {
         );
         cx.spawn_in(window, async move |this, cx| {
             let answer = answer.await.ok();
-            if answer == Some(2) {
-                let _ = this.update(cx, |_, cx| {
-                    crate::settings_window::update(cx, |s| s.tabs.confirm_close = false)
-                });
-            }
-            if matches!(answer, Some(0) | Some(2)) {
-                let _ =
-                    this.update_in(cx, |this, window, cx| this.close_tab(id, false, window, cx));
-            }
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.last_tab_prompt = false;
+                if !matches!(answer, Some(0) | Some(2))
+                    || !this
+                        .tab_close_fence(id, cx)
+                        .is_some_and(|current| fence.admits(&current))
+                {
+                    return;
+                }
+                if answer == Some(2) {
+                    crate::settings_window::update(cx, |s| s.tabs.confirm_close = false);
+                }
+                this.close_tab(id, false, window, cx);
+            });
         })
     }
 
@@ -840,6 +880,9 @@ impl Workspace {
         if self.last_tab_prompt {
             return Task::ready(());
         }
+        let Some(fence) = self.tab_close_fence(id, cx) else {
+            return Task::ready(());
+        };
         self.last_tab_prompt = true;
         self.hover = None;
         let answer = crate::l10n::prompt(
@@ -851,10 +894,17 @@ impl Workspace {
             cx,
         );
         cx.spawn_in(window, async move |this, cx| {
-            let close_window = answer.await.ok() == Some(0);
+            let answer = answer.await.ok();
             let _ = this.update_in(cx, |this, window, cx| {
                 this.last_tab_prompt = false;
-                if close_window {
+                if !matches!(answer, Some(0) | Some(1))
+                    || !this
+                        .tab_close_fence(id, cx)
+                        .is_some_and(|current| fence.admits(&current))
+                {
+                    return;
+                }
+                if answer == Some(0) {
                     log::info!("closeTab: last tab - user chose to close window");
                     this.entries.remove(&id);
                     window.remove_window();
@@ -976,6 +1026,9 @@ impl Workspace {
     /// `closeOtherTabs`: one confirmation for all the other tabs (running
     /// processes, or "always warn"), then close them.
     fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.last_tab_prompt {
+            return;
+        }
         let Some(current) = self.state.selected() else {
             return;
         };
@@ -999,6 +1052,10 @@ impl Workspace {
         let tabs = &Settings::get(cx).tabs;
         let warn_for_process = tabs.warn_on_close_running && processes > 0;
         let warn_always = tabs.confirm_close;
+        let target_fences = others
+            .iter()
+            .filter_map(|id| self.tab_close_fence(*id, cx).map(|fence| (*id, fence)))
+            .collect::<HashMap<_, _>>();
         let close_all = move |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
             // Rightmost first, so the remaining indexes stay valid.
             for id in others.iter().rev() {
@@ -1018,6 +1075,7 @@ impl Workspace {
         } else {
             &["Close Tabs", "Cancel"]
         };
+        self.last_tab_prompt = true;
         let answer = crate::l10n::prompt(
             window,
             gpui::PromptLevel::Warning,
@@ -1028,18 +1086,28 @@ impl Workspace {
         );
         cx.spawn_in(window, async move |this, cx| {
             let answer = answer.await.ok();
-            if answer == Some(2) {
-                let _ = this.update(cx, |_, cx| {
-                    crate::settings_window::update(cx, |s| s.tabs.confirm_close = false)
-                });
-            }
-            if matches!(answer, Some(0) | Some(2)) {
-                let _ = this.update_in(cx, |this, window, cx| {
-                    if this.state.get(current).is_some() {
-                        close_all(this, window, cx);
-                    }
-                });
-            }
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.last_tab_prompt = false;
+                let remaining = target_fences
+                    .iter()
+                    .filter(|(id, _)| this.state.get(**id).is_some())
+                    .collect::<Vec<_>>();
+                if !matches!(answer, Some(0) | Some(2))
+                    || this.state.selected() != Some(current)
+                    || this.state.get(current).is_none()
+                    || remaining.is_empty()
+                    || !remaining.iter().all(|(id, fence)| {
+                        this.tab_close_fence(**id, cx)
+                            .is_some_and(|current| fence.admits(&current))
+                    })
+                {
+                    return;
+                }
+                if answer == Some(2) {
+                    crate::settings_window::update(cx, |s| s.tabs.confirm_close = false);
+                }
+                close_all(this, window, cx);
+            });
         })
         .detach();
     }
@@ -1629,5 +1697,41 @@ mod tests {
             close_tab_prompt_text(3).0,
             "Close tab with 3 running processes?"
         );
+    }
+}
+
+#[cfg(test)]
+mod close_confirmation_tests {
+    use super::TabCloseFence;
+    fn captured() -> TabCloseFence {
+        TabCloseFence {
+            owner: uuid::Uuid::from_u128(10),
+            sessions: vec!["pane-a".into()],
+            busy_panes: 1,
+            last_tab: false,
+        }
+    }
+    #[test]
+    fn confirmed_identity_allows_completed_work_but_rejects_new_busy_panes() {
+        let before = captured();
+        assert!(before.admits(&before));
+        let mut after = before.clone();
+        after.busy_panes = 0;
+        assert!(before.admits(&after));
+        after.busy_panes = 2;
+        assert!(!before.admits(&after));
+    }
+    #[test]
+    fn confirmation_cannot_target_replaced_sessions_tabs_or_last_tab_state() {
+        let before = captured();
+        let mut after = before.clone();
+        after.sessions = vec!["replacement".into()];
+        assert!(!before.admits(&after));
+        after = before.clone();
+        after.owner = uuid::Uuid::from_u128(11);
+        assert!(!before.admits(&after));
+        after = before.clone();
+        after.last_tab = true;
+        assert!(!before.admits(&after));
     }
 }
