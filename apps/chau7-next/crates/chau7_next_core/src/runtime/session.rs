@@ -6,7 +6,7 @@
 //! its own, like the Swift class.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Condvar, Mutex, MutexGuard};
 
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value, json};
@@ -70,6 +70,7 @@ struct Inner {
     usage_known_turns: u64,
     completed_turn_count: u64,
     native_session_id: Option<String>,
+    pending_initial_prompt: Option<String>,
 }
 
 /// One runtime session.
@@ -86,6 +87,7 @@ pub struct RuntimeSession {
     pub adopted: bool,
     pub journal: EventJournal,
     inner: Mutex<Inner>,
+    readiness_changed: Condvar,
 }
 
 /// `"rs_" + UUID().uuidString.prefix(8).lowercased()`.
@@ -131,6 +133,7 @@ impl RuntimeSession {
             adopted,
             journal: EventJournal::new(capacity),
             inner: Mutex::new(Inner::default()),
+            readiness_changed: Condvar::new(),
         }
     }
 
@@ -198,6 +201,40 @@ impl RuntimeSession {
     pub fn has_observed_turn_activity(&self) -> bool {
         self.lock().observed_turn_activity
     }
+    pub fn pending_initial_prompt(&self) -> Option<String> {
+        self.lock().pending_initial_prompt.clone()
+    }
+    pub fn queue_initial_prompt(&self, prompt: String) {
+        self.lock().pending_initial_prompt = Some(prompt);
+        self.readiness_changed.notify_all();
+    }
+    pub fn clear_pending_initial_prompt(&self) {
+        self.lock().pending_initial_prompt = None;
+        self.readiness_changed.notify_all();
+    }
+    /// Sleeps without polling until real readiness, cancellation, or terminal state.
+    /// Prompt is cleared atomically by start_turn, so a concurrent manual turn wins safely.
+    pub fn wait_for_pending_initial_prompt(&self) -> Result<Option<String>, State> {
+        let mut inner = self.lock();
+        loop {
+            if inner.pending_initial_prompt.is_none() {
+                return Ok(None);
+            }
+            if inner.machine.is_terminal() {
+                let state = inner.machine.state();
+                inner.pending_initial_prompt = None;
+                return Err(state);
+            }
+            if inner.machine.can_accept_turn() {
+                return Ok(inner.pending_initial_prompt.clone());
+            }
+            inner = self
+                .readiness_changed
+                .wait(inner)
+                .unwrap_or_else(|e| e.into_inner());
+        }
+    }
+
     pub fn native_session_id(&self) -> Option<String> {
         self.lock().native_session_id.clone()
     }
@@ -276,6 +313,7 @@ impl RuntimeSession {
             )
         };
         if accepted {
+            self.readiness_changed.notify_all();
             self.record(
                 turn.as_deref(),
                 RuntimeEventType::STATE_CHANGED.raw_value(),
@@ -318,6 +356,7 @@ impl RuntimeSession {
                 log::error!("RuntimeSession {}: turnSubmitted rejected", self.id);
                 return None;
             }
+            inner.pending_initial_prompt = None;
             inner.turn_count += 1;
             let turn_id = format!("t_{}", inner.turn_count);
             inner.current_turn_id = Some(turn_id.clone());
@@ -331,6 +370,7 @@ impl RuntimeSession {
             inner.was_interrupted = false;
             (turn_id, inner.machine.state())
         };
+        self.readiness_changed.notify_all();
         self.record(
             Some(&turn_id),
             RuntimeEventType::STATE_CHANGED.raw_value(),
@@ -584,6 +624,13 @@ impl RuntimeSession {
             json!(format_iso8601_fractional(&self.created_at)),
         );
         out.insert("cursor".into(), json!(self.journal.latest_cursor()));
+        if let Some(native) = self.native_session_id() {
+            out.insert("provider_session_id".into(), json!(native));
+        }
+        out.insert(
+            "initial_prompt_pending".into(),
+            json!(self.pending_initial_prompt().is_some()),
+        );
         out.insert("token_usage".into(), json!(self.cumulative_token_usage()));
         out.insert("token_usage_state".into(), json!(self.token_usage_state()));
         out.insert(
@@ -654,6 +701,45 @@ mod tests {
             .into_iter()
             .map(|e| e.event_type)
             .collect()
+    }
+
+    #[test]
+    fn pending_initial_prompt_wakes_on_real_readiness_or_cancellation() {
+        use std::sync::{Arc, mpsc};
+        let session = Arc::new(RuntimeSession::new(
+            "tab",
+            Box::new(crate::runtime::backends::GenericShellBackend),
+            SessionConfig::new("/c", "shell"),
+            false,
+            false,
+        ));
+        session.queue_initial_prompt("queued".into());
+        let (tx, rx) = mpsc::channel();
+        let worker = session.clone();
+        let thread =
+            std::thread::spawn(move || tx.send(worker.wait_for_pending_initial_prompt()).unwrap());
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(10))
+                .is_err()
+        );
+        session.transition(Trigger::BackendReady);
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap(),
+            Ok(Some("queued".into()))
+        );
+        thread.join().unwrap();
+        session.start_turn("manual");
+        assert!(session.pending_initial_prompt().is_none());
+        session.queue_initial_prompt("cancel".into());
+        session.clear_pending_initial_prompt();
+        assert_eq!(session.wait_for_pending_initial_prompt(), Ok(None));
+        session.queue_initial_prompt("stop".into());
+        session.transition(Trigger::TabClosed);
+        assert_eq!(
+            session.wait_for_pending_initial_prompt(),
+            Err(State::Stopped)
+        );
+        assert!(session.pending_initial_prompt().is_none());
     }
 
     #[test]

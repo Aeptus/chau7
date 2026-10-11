@@ -23,7 +23,7 @@ pub fn definitions() -> Vec<Value> {
                     "resume_session_id": {"type": "string", "description": "Resume an existing agent session by ID"},
                     "env": {"type": "object", "description": "Extra environment variables"},
                     "backend_args": {"type": "array", "items": {"type": "string"}, "description": "Additional CLI arguments"},
-                    "initial_prompt": {"type": "string", "description": "Prompt to send immediately after backend starts. Delivered with retry (up to ~60s) to handle backend startup time."},
+                    "initial_prompt": {"type": "string", "description": "Prompt held until actual backend readiness; cleared on a manual turn or terminal session state."},
                     "auto_approve": {"type": "boolean", "description": "Auto-approve safe tool use requests. For claude: --dangerously-skip-permissions. For codex: --full-auto."},
                     "attach_tab_id": {"type": "string", "description": "Attach to existing tab instead of creating new one"},
                     "purpose": {"type":"string"}, "parent_session_id": {"type":"string"}, "parent_run_id": {"type":"string"},
