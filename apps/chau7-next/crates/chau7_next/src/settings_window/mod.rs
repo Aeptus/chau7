@@ -572,6 +572,9 @@ impl SettingsView {
                                                 guard.clear_block_list();
                                             });
                                         }
+                                        if section == SettingsSection::SnippetsTools {
+                                            crate::repository::reset_discovered_repositories(cx);
+                                        }
                                         update(cx, |s| s.reset_section(section))
                                     }),
                             )
