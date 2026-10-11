@@ -174,7 +174,17 @@ fn rewrite_layout(node: &mut SavedSplitNode, panes: &HashMap<u64, PreparedPane>)
         _ => {}
     }
 }
-pub fn prepare(root: &DataRoot, mut saved: SavedTab, fallback: Option<PathBuf>) -> PreparedTab {
+pub fn prepare(root: &DataRoot, saved: SavedTab, fallback: Option<PathBuf>) -> PreparedTab {
+    prepare_with_contexts(root, saved, fallback, HashMap::new())
+}
+/// Captured but not yet committed contexts cover close/reopen races. All
+/// provider and canonical-file inspection still runs on the background task.
+pub fn prepare_with_contexts(
+    root: &DataRoot,
+    mut saved: SavedTab,
+    fallback: Option<PathBuf>,
+    contexts: HashMap<u64, Option<std::sync::Arc<String>>>,
+) -> PreparedTab {
     let fallback = fallback
         .or_else(|| saved.cwd.clone())
         .unwrap_or_else(|| root.home().to_path_buf());
@@ -275,7 +285,13 @@ pub fn prepare(root: &DataRoot, mut saved: SavedTab, fallback: Option<PathBuf>) 
         let command = identity
             .as_ref()
             .and_then(|m| build_ai_resume_command(Some(&m.provider), Some(&m.session_id)));
-        let context = read_context(root, pane);
+        let context = match contexts.get(&pane.id) {
+            Some(text) => text
+                .as_ref()
+                .filter(|s| s.len() <= MAX_SCROLLBACK_BYTES)
+                .map(|s| s.as_ref().clone()),
+            None => read_context(root, pane),
+        };
         pane.directory = Some(directory.to_string_lossy().into_owned());
         pane.ai_provider = identity
             .as_ref()
@@ -306,6 +322,30 @@ pub fn prepare(root: &DataRoot, mut saved: SavedTab, fallback: Option<PathBuf>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pending_context_and_tombstone_override_old_durable_file() {
+        let fixture = Fixture::new();
+        std::fs::create_dir_all(fixture.root.scrollback_dir()).unwrap();
+        std::fs::write(fixture.root.scrollback_dir().join("1.txt"), "old durable").unwrap();
+        let tab = fixture.tab(vec![SavedPane {
+            id: 1,
+            scrollback: true,
+            ..Default::default()
+        }]);
+        let prepared = prepare_with_contexts(
+            &fixture.root,
+            tab.clone(),
+            None,
+            HashMap::from([(1, Some(std::sync::Arc::new("new pending".into())))]),
+        );
+        assert_eq!(prepared.panes[&1].context.as_deref(), Some("new pending"));
+        let cleared = prepare_with_contexts(&fixture.root, tab, None, HashMap::from([(1, None)]));
+        assert!(cleared.panes[&1].context.is_none());
+        assert_eq!(
+            std::fs::read_to_string(fixture.root.scrollback_dir().join("1.txt")).unwrap(),
+            "old durable"
+        );
+    }
     struct Fixture {
         root: DataRoot,
         directory: PathBuf,
