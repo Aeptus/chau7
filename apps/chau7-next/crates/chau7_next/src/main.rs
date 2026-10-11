@@ -100,6 +100,7 @@ fn main() {
     }
     let settings = Settings::load(&root);
     l10n::apply_setting(settings.general.app_language);
+    chau7_next_core::l10n::numbers::set_current(settings.general.regional_number_format);
     let restored = session_store::load(&root);
 
     // The bundled icons (find bar, side pane headers, palette rows).

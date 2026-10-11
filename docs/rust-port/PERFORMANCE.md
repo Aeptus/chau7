@@ -15,9 +15,9 @@
 Automatic persistence starts at launch and samples every five seconds:
 
 ```text
-~/Library/Application Support/Chau7 Next/reports/performance/latest.json
-~/Library/Application Support/Chau7 Next/reports/performance/history.jsonl
-~/Library/Application Support/Chau7 Next/reports/performance/history.1.jsonl
+~/.chau7-next/reports/performance/latest.json
+~/.chau7-next/reports/performance/history.jsonl
+~/.chau7-next/reports/performance/history.1.jsonl
 ```
 
 Paths come from `DataRoot`; Linux, Windows and isolated test roots use their
