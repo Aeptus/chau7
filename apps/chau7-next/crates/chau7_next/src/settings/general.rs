@@ -176,9 +176,15 @@ impl SettingsDomain for GeneralSettings {
         {
             self.app_language = language;
         }
-        if let Some(v)=src.next("usage_monitoring").and_then(RawValue::as_bool){self.usage_monitoring=v;}
-        if let Some(v)=src.next("claude_quota_capture").and_then(RawValue::as_bool){self.claude_quota_capture=v;}
-        if let Some(v)=src.next("usage_quota_warnings").and_then(RawValue::as_bool){self.usage_quota_warnings=v;}
+        if let Some(v) = src.next("usage_monitoring").and_then(RawValue::as_bool) {
+            self.usage_monitoring = v;
+        }
+        if let Some(v) = src.next("claude_quota_capture").and_then(RawValue::as_bool) {
+            self.claude_quota_capture = v;
+        }
+        if let Some(v) = src.next("usage_quota_warnings").and_then(RawValue::as_bool) {
+            self.usage_quota_warnings = v;
+        }
         if let Some(format) = src
             .next("regional_number_format")
             .and_then(RawValue::as_str)
@@ -223,9 +229,15 @@ impl SettingsDomain for GeneralSettings {
     fn save(&self, out: &mut ConfigSink) {
         let general = out.file.general.get_or_insert_with(Default::default);
         general.default_directory = Some(self.default_directory.clone().unwrap_or_default());
-        out.set_next("usage_monitoring",self.usage_monitoring.to_string());
-        out.set_next("claude_quota_capture",self.claude_quota_capture.to_string());
-        out.set_next("usage_quota_warnings",self.usage_quota_warnings.to_string());
+        out.set_next("usage_monitoring", self.usage_monitoring.to_string());
+        out.set_next(
+            "claude_quota_capture",
+            self.claude_quota_capture.to_string(),
+        );
+        out.set_next(
+            "usage_quota_warnings",
+            self.usage_quota_warnings.to_string(),
+        );
         out.set_next("app_language", format!("\"{}\"", self.app_language.id()));
         out.set_next(
             "regional_number_format",
