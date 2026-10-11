@@ -69,6 +69,7 @@ struct Inner {
     current_usage_evidence: bool,
     usage_known_turns: u64,
     completed_turn_count: u64,
+    native_session_id: Option<String>,
 }
 
 /// One runtime session.
@@ -197,6 +198,13 @@ impl RuntimeSession {
     pub fn has_observed_turn_activity(&self) -> bool {
         self.lock().observed_turn_activity
     }
+    pub fn native_session_id(&self) -> Option<String> {
+        self.lock().native_session_id.clone()
+    }
+    pub fn bind_native_session_id(&self, native: &str) {
+        self.lock().native_session_id = Some(native.into());
+    }
+
     pub fn completed_turn_count(&self) -> u64 {
         self.lock().completed_turn_count
     }
@@ -495,6 +503,24 @@ impl RuntimeSession {
             ]),
         );
         Some(approval)
+    }
+
+    /// An authoritative backend resolution carries no approve/deny verdict.
+    pub fn reconcile_approval_resolution(&self, source: &str) -> bool {
+        let (turn, approval) = {
+            let mut inner = self.lock();
+            (inner.current_turn_id.clone(), inner.pending_approval.take())
+        };
+        let Some(approval) = approval else {
+            return false;
+        };
+        self.transition(Trigger::ApprovalResolved);
+        self.record(
+            turn.as_deref(),
+            RuntimeEventType::APPROVAL_RESOLVED.raw_value(),
+            data(&[("approval_id", approval.id), ("source", source.into())]),
+        );
+        true
     }
 
     /// Resolve the pending approval with this id: back to `busy`, journals
