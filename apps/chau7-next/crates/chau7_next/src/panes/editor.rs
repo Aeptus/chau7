@@ -725,6 +725,18 @@ impl EditorPane {
             return;
         };
         let addition = updated[content.len()..].to_string();
+        #[cfg(target_os = "macos")]
+        if self.is_markdown_file()
+            && let Some(native) = &self.native_markdown
+            && native.append(&content, &addition)
+        {
+            self.flush_native_edits(window, cx);
+            self.dirty = true;
+            self.schedule_autosave(cx);
+            cx.emit(SidePaneEvent::Changed);
+            cx.notify();
+            return;
+        }
         self.programmatic = true;
         let state = self.state.clone();
         state.update(cx, |s, cx| {
