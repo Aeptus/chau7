@@ -5,7 +5,7 @@ Swift tests: `EditorLanguageTests`, `SyntaxHighlighterTests` (both in `Tests/Cha
 Wave: 4
 Depends on: SplitPanes (the panes that would host it), Settings
 
-Text highlighting and editing building blocks. `SyntaxHighlighter` colors terminal-style text (used by the file preview pane and the menu bar panel log), `SemanticOutputDetector` records command blocks for semantic search, and `EnhancedEditorView` is an IDE-like editor (line numbers, language highlighting, auto-indent, bracket matching) that no pane currently uses.
+Text highlighting and editing building blocks. `SyntaxHighlighter` colors terminal-style text (used by the file preview pane and the menu bar panel log), `SemanticOutputDetector` records command blocks for semantic search, and `EnhancedEditorView` is the current reachable editor pane (line numbers, language highlighting, auto-indent, bracket matching and live Markdown source styling).
 
 ## Features
 
@@ -24,7 +24,7 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
 | EDT-011 | Word wrap on/off (off scrolls horizontally) | `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs | done |  |
 | EDT-012 | Editor settings: font size (13), tab size (4), use spaces, word wrap, line numbers, auto-indent, bracket matching, highlight current line, minimap, theme; stored in UserDefaults `editor.config` | `Settings/EditorConfig.swift`, `Settings/Views/EditorSettingsView.swift` |  | chau7_next_core/src/editor/config.rs,chau7_next/src/settings/editor.rs,chau7_next/src/settings_window/editor.rs,chau7_next/src/panes/editor.rs | done |  |
 
-| EDT-013 | Markdown source/live styling retains original text, updates spans without breaking selection/undo and supports session note/runbook headers | `Editor/MarkdownLiveStyler.swift`; `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs; chau7_next/src/panes/runbook.rs | partial |  |
+| EDT-013 | Markdown source/live styling retains original text, updates spans without breaking selection/undo and supports session note/runbook headers | `Editor/MarkdownLiveStyler.swift`; `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs; chau7_next/src/panes/editor/live_markdown.rs; chau7_next_core/src/editor/live_markdown.rs; chau7_next/src/panes/runbook.rs | partial | Attribute-only source styles, incremental fence-aware parsing and scoped preview binding implemented; real heading fonts and hanging indent remain. |
 
 | EDT-014 | Named editor autosave toggle, 2.5 s debounce, 2 s Auto-saved status and discard cancellation; automatic defaults for Next-owned plans/notes and stable owner-tab session note locator/UI | `SplitPanes/EditorAutoSaver.swift`; `SplitPanes/SplitPaneController.swift` | EditorAutoSaverTests | chau7_next/src/panes/editor.rs; chau7_next_core/src/editor/text.rs | done | 6943290c + coordinator e2cb9f62 complete isolated note attachment; 47 focused editor tests and strict macOS Clippy passed. Native UI acceptance remains unverified. |
 
@@ -32,15 +32,21 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
 
 ## Notes
 
-- **EDT-004 to EDT-012 are not reachable in the Swift app.**
-  `EnhancedEditorView` is never instantiated: the editor pane
-  (SPL-011) uses a plain `NSTextView` (`TextEditorContent`), and the file
-  preview (SPL-018) uses `SyntaxHighlighter` (output-style), not
-  `EditorLanguage`. The Editor settings tab still edits `EditorConfig`, which
-  nothing reads. Decision (2026-10-10): port them as designed. Chau7 Next's
-  editor pane is the IDE-style editor: the gpui-kit code editor with the
-  Swift language rules as its highlighter, and every `EditorConfig` value
-  applied (settings in `[next]` as `editor_*`, not UserDefaults).
+- **EDT-004 to EDT-012 are reachable in current Swift.**
+  `SplitPanes/SplitPaneViews.swift` now instantiates `EnhancedEditorView`.
+  The original April inventory's unreachable note was stale. Next's
+  gpui-kit editor applies the configured language rules and editor settings.
+- **EDT-013 remains partial.** Markdown source styles now apply immediately
+  as UTF-8 text decorations, preserving markers, selection and undo history.
+  The parser carries fence state, restyles edited paragraphs with neighbors,
+  and falls back to a full pass when an old or new fence delimiter changes.
+  Source/preview uses `.md` and `.markdown` case insensitively, with scoped
+  Cmd+Shift+P (Ctrl+Shift+P elsewhere); the existing note/runbook filename
+  header and source buffer remain shared. GPUI's pinned `HighlightStyle`
+  cannot vary font family, heading size or paragraph hanging indentation.
+  The native Rust AppKit source editor seam is being implemented for these
+  remaining layout attributes; do not mark this row done from color-only
+  rendering. Native visual acceptance remains pending.
 - The minimap setting and "highlight current line" only change the caret
   color in Swift; there is no minimap drawing. Chau7 Next draws both (a
   minimap column of line bars that scrolls on click, and a current line
