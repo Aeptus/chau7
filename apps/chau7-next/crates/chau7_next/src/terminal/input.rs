@@ -415,12 +415,19 @@ impl TerminalView {
         if lines.is_empty() {
             return;
         }
-        let (tab, echo_off, row) = {
+        let (tab, echo_off, row, active_ai, session_id, tab_id) = {
             let session = self.session.read(cx);
             // A password prompt (echo off, canonical mode): never recorded.
             let echo_off = session.is_echo_disabled();
             let row = session.grid.scrollback_rows as i64 + session.cursor.1 as i64;
-            (session.id, echo_off, row)
+            (
+                session.id,
+                echo_off,
+                row,
+                session.shell().effective_provider().is_some() || session.ai_app.is_some(),
+                session.cto_id().to_owned(),
+                session.tab_identifier.clone(),
+            )
         };
         for line in lines {
             if line.trim().is_empty() {
@@ -430,6 +437,9 @@ impl TerminalView {
             self.input.input_lines.record(row);
             self.danger_note_input_line(&line, row, cx);
             prompt_history(cx).record(&line, tab, echo_off);
+            if let Some(event) = context_session_event(&line, echo_off, active_ai) {
+                crate::proxy::record_context_session_event(event, &session_id, &tab_id, cx);
+            }
         }
     }
 
@@ -735,5 +745,38 @@ impl EntityInputHandler for TerminalView {
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
         None
+    }
+}
+
+/// Slash commands only affect proxy context inside an AI tool, never passwords.
+fn context_session_event(
+    line: &str,
+    echo_off: bool,
+    active_ai: bool,
+) -> Option<chau7_next_core::injection_rules::SessionEvent> {
+    if echo_off || !active_ai {
+        return None;
+    }
+    chau7_next_core::injection_rules::SessionEvent::detect(line)
+}
+
+#[cfg(test)]
+mod context_event_tests {
+    use super::context_session_event;
+    use chau7_next_core::injection_rules::SessionEvent;
+    #[test]
+    fn events_require_ai_echo_on_and_exact_slash_command() {
+        assert_eq!(
+            context_session_event(" /compact preserve tasks", false, true),
+            Some(SessionEvent::AfterCompact)
+        );
+        assert_eq!(
+            context_session_event("/CLEAR", false, true),
+            Some(SessionEvent::AfterClear)
+        );
+        assert_eq!(context_session_event("/clear", true, true), None);
+        assert_eq!(context_session_event("/clear", false, false), None);
+        assert_eq!(context_session_event("/clearance", false, true), None);
+        assert_eq!(context_session_event("echo /clear", false, true), None);
     }
 }

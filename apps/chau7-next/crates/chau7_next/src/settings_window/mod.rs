@@ -1,4 +1,4 @@
-//! Settings window (Cmd+,): a sidebar of 23 sections in 6 groups with search,
+//! Settings window (Cmd+,): a sidebar of 24 sections in 6 groups with search,
 //! and the section's controls next to it (`MainPanelView.swift`,
 //! `SettingsSearch.swift`). Changes are written to
 //! `~/.chau7-next/config.toml` and applied immediately.
@@ -18,6 +18,7 @@ mod files;
 mod general;
 mod graphics;
 mod hover_card;
+mod injection;
 mod keyboard;
 mod logs;
 mod mcp;
@@ -122,6 +123,7 @@ fn renderers(section: SettingsSection) -> &'static [Section] {
         S::SnippetsTools => &[mine::productivity::section],
         S::Notifications => &[notifications::section],
         S::AiDetection => &[ai::section],
+        S::PromptInjection => &[injection::section],
         S::McpControl => &[mcp::section],
         S::RemoteControl => &[remote::section, remote::viewers],
         S::ApiProxy => &[proxy::section],
@@ -206,6 +208,7 @@ pub struct SettingsView {
     remote_inputs: remote::RemoteInputs,
     /// API Analytics: the port field.
     proxy_inputs: proxy::ProxyInputs,
+    injection: injection::InjectionState,
     search_input: Entity<InputState>,
     query: String,
     selected: SettingsSection,
@@ -302,6 +305,7 @@ impl SettingsView {
             logs_inputs: logs::LogsInputs::new(window, cx),
             remote_inputs: remote::RemoteInputs::new(window, cx),
             proxy_inputs: proxy::ProxyInputs::new(window, cx),
+            injection: injection::InjectionState::new(window, cx),
             search_input,
             query: String::new(),
             selected: SettingsSection::General,

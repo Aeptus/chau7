@@ -519,6 +519,52 @@ fn running_port(cx: &App) -> Option<u16> {
     manager(cx).filter(|m| m.process.is_some()).map(|m| m.port)
 }
 
+/// Record real user slash commands using the proxy's shell correlation IDs.
+/// This fire-and-forget request never waits on the terminal/UI thread.
+pub fn record_context_session_event(
+    event: chau7_next_core::injection_rules::SessionEvent,
+    session_id: &str,
+    tab_id: &str,
+    cx: &mut App,
+) {
+    let Some(port) = running_port(cx) else {
+        return;
+    };
+    let Some(body) = context_event_body(event, session_id, tab_id) else {
+        return;
+    };
+    cx.background_executor()
+        .spawn(async move {
+            match core::http_request(
+                port,
+                "POST",
+                "/injection/session-event",
+                Some(&body),
+                Duration::from_millis(500),
+            ) {
+                Ok((200, _)) => {}
+                Ok((status, _)) => log::warn!("Context session event: HTTP {status}"),
+                Err(error) => log::warn!("Context session event: {error}"),
+            }
+        })
+        .detach();
+}
+
+fn context_event_body(
+    event: chau7_next_core::injection_rules::SessionEvent,
+    session_id: &str,
+    tab_id: &str,
+) -> Option<serde_json::Value> {
+    if session_id.trim().is_empty() {
+        return None;
+    }
+    let event = match event {
+        chau7_next_core::injection_rules::SessionEvent::AfterCompact => "after_compact",
+        chau7_next_core::injection_rules::SessionEvent::AfterClear => "after_clear",
+    };
+    Some(json!({"event": event, "session_id": session_id, "tab_id": tab_id}))
+}
+
 /// Run a request to the proxy off the main thread, then `done` with the
 /// answer's body when it returned 200.
 fn request(
@@ -675,6 +721,26 @@ pub fn refresh_current_task(tab_id: &str, cx: &mut App) {
 mod tests {
     use super::*;
     use chau7_next_core::proxy::parse_message;
+
+    #[test]
+    fn context_events_preserve_proxy_correlation_and_reject_unknown_sessions() {
+        use chau7_next_core::injection_rules::SessionEvent;
+        assert_eq!(
+            context_event_body(SessionEvent::AfterClear, " ", "tab"),
+            None
+        );
+        for (event, name) in [
+            (SessionEvent::AfterClear, "after_clear"),
+            (SessionEvent::AfterCompact, "after_compact"),
+        ] {
+            assert_eq!(
+                context_event_body(event, "proxy-shell-id", "proxy-tab-id"),
+                Some(
+                    json!({"event": name, "session_id": "proxy-shell-id", "tab_id": "proxy-tab-id"})
+                )
+            );
+        }
+    }
 
     fn manager() -> ProxyManager {
         ProxyManager {
