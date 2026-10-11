@@ -100,6 +100,8 @@ hooks) and owns the notification permission state.
 | APP-083 | Claude Code hook events drive session state, and a "waiting for input" event is synthesized when Claude finishes without a hook notification | `App/AppModel.swift` (`startClaudeCodeMonitor`, `scheduleClaudeWaitingInputFallback`) | `AppModelEventRoutingTests` | chau7_next/src/ai/hub.rs (schedule_claude_fallback), chau7_next_core/src/monitoring/claude_code.rs | done |  |
 | APP-084 | API proxy calls (provider, model, tokens, cost) appear in the event timeline | `App/AppModel.swift` (`handleAPICallEvent`) |  | chau7_next/src/proxy/mod.rs (timeline_event) | done |  |
 
+| APP-085 | Single application instance lock and launch continuity distinguish deliberate relaunch from crash; Next locks and restoration data remain independent | `App/ApplicationInstanceLock.swift`; `App/LaunchContinuityTracker.swift`; `Chau7Core/LaunchContinuityPolicy.swift` | LaunchContinuityPolicyTests | chau7_next/src/session_store.rs | partial |  |
+
 ## Notes
 
 - Menus compared with `chau7_next/src/actions/` (`app_menus`). Chau7 Next

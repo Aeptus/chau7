@@ -24,6 +24,8 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
 | EDT-011 | Word wrap on/off (off scrolls horizontally) | `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs | done |  |
 | EDT-012 | Editor settings: font size (13), tab size (4), use spaces, word wrap, line numbers, auto-indent, bracket matching, highlight current line, minimap, theme; stored in UserDefaults `editor.config` | `Settings/EditorConfig.swift`, `Settings/Views/EditorSettingsView.swift` |  | chau7_next_core/src/editor/config.rs,chau7_next/src/settings/editor.rs,chau7_next/src/settings_window/editor.rs,chau7_next/src/panes/editor.rs | done |  |
 
+| EDT-013 | Markdown source/live styling retains original text, updates spans without breaking selection/undo and supports session note/runbook headers | `Editor/MarkdownLiveStyler.swift`; `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs; chau7_next/src/panes/runbook.rs | partial |  |
+
 ## Notes
 
 - **EDT-004 to EDT-012 are not reachable in the Swift app.**

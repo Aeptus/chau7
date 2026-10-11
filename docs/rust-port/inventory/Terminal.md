@@ -81,6 +81,8 @@ reported to notifications, telemetry and remote control.
 | TRM-063 | Hidden tabs stop rendering unless an AI tool runs; a cached frame image makes switching back instant | `Terminal/Session/TerminalSessionModel.swift` (`shouldKeepLiveRenderingInBackground`, `lastRenderedSnapshot`) | | | n/a | |
 | TRM-064 | Metal GPU renderer toggle with CPU fallback; highlight layer kept above it | `Terminal/Views/TerminalViewRepresentable.swift` (`RustTerminalContainerView`) | | | n/a | Metal |
 
+| TRM-065 | Shell launcher uses own per-tab history files, Codex proxy wrapper and transport-attribution env, safely removes inherited Swift wrapper/history paths | `Terminal/Session/ShellLaunchConfigurator.swift` |  | chau7_next_core/src/shell_env.rs; chau7_next/src/history/shell_file.rs | partial |  |
+
 ## Notes
 
 - **Startup files.** Swift writes `.zshrc`, `.bashrc` and `.config/fish/config.fish`
