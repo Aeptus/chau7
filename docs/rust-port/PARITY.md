@@ -43,7 +43,7 @@ stale table.
 | [Dashboard](inventory/Dashboard.md) | 3 | 8 | 0 | 0 | 8 | 0 | 0 | 0 |
 | [DataExplorer](inventory/DataExplorer.md) | 4 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | [Debug](inventory/Debug.md) | 5 | 27 | 25 | 1 | 1 | 0 | 0 | 0 |
-| [Editor](inventory/Editor.md) | 4 | 15 | 12 | 1 | 2 | 0 | 0 | 0 |
+| [Editor](inventory/Editor.md) | 4 | 15 | 13 | 2 | 0 | 0 | 0 | 0 |
 | [Events](inventory/Events.md) | 2 | 10 | 10 | 0 | 0 | 0 | 0 | 0 |
 | [History](inventory/History.md) | 2 | 16 | 16 | 0 | 0 | 0 | 0 | 0 |
 | [Keyboard](inventory/Keyboard.md) | 1 | 70 | 69 | 0 | 0 | 1 | 0 | 0 |
@@ -51,7 +51,7 @@ stale table.
 | [Logging](inventory/Logging.md) | 5 | 30 | 26 | 2 | 0 | 2 | 0 | 0 |
 | [MCP](inventory/MCP.md) | 3 | 63 | 51 | 0 | 11 | 1 | 0 | 0 |
 | [Migration](inventory/Migration.md) | 5 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
-| [Monitoring](inventory/Monitoring.md) | 2 | 23 | 18 | 4 | 1 | 0 | 0 | 0 |
+| [Monitoring](inventory/Monitoring.md) | 2 | 24 | 19 | 4 | 1 | 0 | 0 | 0 |
 | [Notifications](inventory/Notifications.md) | 2 | 44 | 39 | 1 | 4 | 0 | 0 | 0 |
 | [Observability](inventory/Observability.md) | 3 | 5 | 0 | 1 | 4 | 0 | 0 | 0 |
 | [Overlay](inventory/Overlay.md) | 1 | 121 | 110 | 4 | 0 | 7 | 0 | 0 |
@@ -67,7 +67,7 @@ stale table.
 | [Settings](inventory/Settings.md) | 1 | 140 | 130 | 3 | 2 | 5 | 0 | 1 |
 | [Skills](inventory/Skills.md) | 3 | 6 | 0 | 0 | 6 | 0 | 0 | 0 |
 | [Snippets](inventory/Snippets.md) | 1 | 37 | 37 | 0 | 0 | 0 | 0 | 0 |
-| [SplitPanes](inventory/SplitPanes.md) | 1 | 25 | 21 | 2 | 2 | 0 | 0 | 0 |
+| [SplitPanes](inventory/SplitPanes.md) | 1 | 26 | 24 | 0 | 2 | 0 | 0 | 0 |
 | [StatusBar](inventory/StatusBar.md) | 5 | 17 | 15 | 1 | 0 | 1 | 0 | 0 |
 | [Telemetry](inventory/Telemetry.md) | 3 | 24 | 15 | 6 | 3 | 0 | 0 | 0 |
 | [Terminal](inventory/Terminal.md) | 1 | 68 | 61 | 3 | 1 | 3 | 0 | 0 |
@@ -75,9 +75,9 @@ stale table.
 | [Usage](inventory/Usage.md) | 3 | 8 | 0 | 0 | 8 | 0 | 0 | 0 |
 | [Utilities](inventory/Utilities.md) | 1 | 13 | 6 | 0 | 0 | 7 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1297** | **1139** | **49** | **64** | **45** | **0** | |
+| **Total** | | **1299** | **1144** | **48** | **62** | **45** | **0** | |
 
-Finished (done, n/a or dropped): 1184 of 1297 rows (91%). Partial: 49.
+Finished (done, n/a or dropped): 1189 of 1299 rows (91%). Partial: 48.
 
 <!-- parity:end -->
 
