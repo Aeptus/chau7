@@ -679,6 +679,32 @@ impl Workspace {
             .collect()
     }
 
+    /// AppKit editors must never cover GPUI overlays or modal interactions.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn native_editor_allowed(&self, cx: &App) -> bool {
+        self.hover.is_none()
+            && !self.idle_open
+            && self.rename.is_none()
+            && self.search.is_none()
+            && self.picker.is_none()
+            && !self.last_tab_prompt
+            && self.bookmarks_panel.is_none()
+            && self.timeline_panel.is_none()
+            && !self.dashboard.is_open()
+            && self.state.selected().is_none_or(|id| {
+                self.selected_panes()
+                    .and_then(|p| p.read(cx).focused_session(cx))
+                    .map(|s| s.read(cx).tab_identifier.clone())
+                    .is_none_or(|tab| {
+                        crate::proxy::candidate_for(&tab, cx).is_none()
+                            && crate::proxy::task_for(&tab, cx).is_none()
+                    })
+                    && cx
+                        .try_global::<crate::ai::explain::ExplainPanels>()
+                        .is_none_or(|p| !p.0.contains_key(&id))
+            })
+    }
+
     pub(crate) fn selected_panes(&self) -> Option<Entity<PaneTree>> {
         self.state
             .selected()
