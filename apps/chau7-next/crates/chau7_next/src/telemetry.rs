@@ -8,6 +8,9 @@
 //! tools, repository stats (hover card), Data Explorer, Debug Console
 //! Analytics and the iOS client events of remote control.
 
+#[path = "usage.rs"]
+pub mod usage;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -88,6 +91,7 @@ impl Global for TelemetryGlobal {}
 
 /// Open the store (Chau7 Next's own file) and set up the recorder.
 pub fn init(cx: &mut App) {
+    usage::init(cx);
     let root = cx.global::<AppData>().root.clone();
     let store = Arc::new(TelemetryStore::open(&root.telemetry_db()));
     let recorder = TelemetryRecorder::new(store, default_providers(root.home()));
@@ -111,6 +115,10 @@ pub fn init(cx: &mut App) {
                 (String, PathBuf),
                 (JsonlTail, TranscriptRateState),
             > = std::collections::HashMap::new();
+            let mut paths_cache: std::collections::HashMap<
+                String,
+                (String, std::time::Instant, Vec<PathBuf>),
+            > = std::collections::HashMap::new();
             loop {
                 rate_executor
                     .timer(std::time::Duration::from_millis(200))
@@ -119,25 +127,48 @@ pub fn init(cx: &mut App) {
                 let active: std::collections::HashSet<_> =
                     runs.iter().filter_map(|r| r.tab_id.clone()).collect();
                 files.retain(|(tab, _), _| active.contains(tab));
+                paths_cache.retain(|tab, _| active.contains(tab));
                 for run in runs {
                     let (Some(tab), Some(session)) = (run.tab_id, run.session_id) else {
                         continue;
                     };
-                    let paths = if matches!(run.provider.as_str(), "claude" | "anthropic") {
-                        claude.transcript_files(&run.cwd, &session)
-                    } else if matches!(run.provider.as_str(), "codex" | "openai") {
-                        codex
-                            .find_rollout(&session, run.started_at)
-                            .into_iter()
-                            .collect()
+                    let cached = paths_cache
+                        .get(&tab)
+                        .filter(|(id, at, _)| {
+                            id == &session && at.elapsed() < std::time::Duration::from_secs(2)
+                        })
+                        .map(|(_, _, paths)| paths.clone());
+                    let paths = if let Some(paths) = cached {
+                        paths
                     } else {
-                        vec![]
+                        let discovered = if matches!(run.provider.as_str(), "claude" | "anthropic")
+                        {
+                            claude.transcript_files(&run.cwd, &session)
+                        } else if matches!(run.provider.as_str(), "codex" | "openai") {
+                            codex
+                                .find_rollout(&session, run.started_at)
+                                .into_iter()
+                                .collect()
+                        } else {
+                            vec![]
+                        };
+                        paths_cache.insert(
+                            tab.clone(),
+                            (
+                                session.clone(),
+                                std::time::Instant::now(),
+                                discovered.clone(),
+                            ),
+                        );
+                        discovered
                     };
                     for path in paths {
                         let state = files.entry((tab.clone(), path.clone())).or_default();
                         if let Ok(text) = state.0.read(&path) {
                             for line in text.lines() {
-                                if let Some(r) = state.1.consume(&run.provider, line) {
+                                if let Some(r) = state.1.consume(&run.provider, line)
+                                    && r.updated_at >= run.started_at
+                                {
                                     rates.lock().record_rate(
                                         &tab,
                                         &r.provider,

@@ -28,6 +28,14 @@ pub(super) struct TaskUi {
     show_note: bool,
 }
 
+fn signed_saved(saved: i64) -> String {
+    format!(
+        "{}{}",
+        if saved > 0 { "+" } else { "" },
+        numbers::integer(saved)
+    )
+}
+
 fn green() -> gpui::Hsla {
     gpui::hsla(0.36, 0.65, 0.45, 1.0)
 }
@@ -207,11 +215,7 @@ impl Workspace {
                     } else {
                         "\u{2191}"
                     },
-                    format!(
-                        "{}{}",
-                        if task.tokens_saved > 0 { "+" } else { "" },
-                        numbers::integer(task.tokens_saved)
-                    )
+                    signed_saved(task.tokens_saved)
                 )));
             }
             let note = self.task_ui.note.clone().filter(|_| self.task_ui.show_note);
@@ -350,14 +354,7 @@ impl Workspace {
                             div()
                                 .text_size(px(10.0))
                                 .text_color(saved_color)
-                                .child(format!(
-                                    "({})",
-                                    format!(
-                                        "{}{}",
-                                        if task.tokens_saved > 0 { "+" } else { "" },
-                                        numbers::integer(task.tokens_saved)
-                                    )
-                                )),
+                                .child(format!("({})", signed_saved(task.tokens_saved))),
                         )
                     })
                     .child(
