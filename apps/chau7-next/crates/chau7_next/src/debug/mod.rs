@@ -32,6 +32,8 @@ pub mod report_window;
 pub mod snapshot;
 pub mod tabs;
 pub mod ui;
+#[path = "tabs/usage.rs"]
+pub mod usage;
 
 use gpui::App;
 

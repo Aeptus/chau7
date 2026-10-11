@@ -21,6 +21,7 @@ fn positive(value: i64) -> Option<i64> {
 }
 
 fn transcript_content(
+    provider: &str,
     model: Option<String>,
     turns: Vec<TelemetryTurn>,
     usage: TokenUsage,
@@ -30,7 +31,7 @@ fn transcript_content(
 ) -> ExtractedRunContent {
     let estimated_cost = usage
         .has_any_tokens()
-        .then(|| super::pricing::pricing(model.as_deref(), None))
+        .then(|| super::pricing::pricing(model.as_deref(), Some(provider)))
         .flatten()
         .map(|p| p.estimate(&usage));
     ExtractedRunContent {
@@ -192,6 +193,7 @@ impl RunContentProvider for ClaudeCodeContentProvider {
             return None;
         }
         Some(transcript_content(
+            "claude",
             state.model,
             state.turns,
             state.token_usage,
@@ -252,6 +254,7 @@ impl CodexContentProvider {
             return None;
         }
         Some(transcript_content(
+            "codex",
             parsed.model,
             parsed.turns,
             parsed.token_usage,
@@ -475,4 +478,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(home);
     }
 }
-

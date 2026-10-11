@@ -125,9 +125,9 @@ impl TokenRateStore {
                         TokenRateSource::ProxyUsage | TokenRateSource::ProxyRequestUsage
                     )
                     && at.signed_duration_since(old.updated_at).num_milliseconds() < 5000))
-            {
-                return false;
-            }
+        {
+            return false;
+        }
         self.readings.insert(
             tab.to_owned(),
             TokenRateReading {
@@ -169,9 +169,10 @@ impl TranscriptRateState {
         }
         self.order.push_back(key);
         if self.order.len() > 512
-            && let Some(k) = self.order.pop_front() {
-                self.seen.remove(&k);
-            }
+            && let Some(k) = self.order.pop_front()
+        {
+            self.seen.remove(&k);
+        }
         true
     }
     pub fn consume(&mut self, provider: &str, line: &str) -> Option<TokenRateReading> {
@@ -205,17 +206,11 @@ impl TranscriptRateState {
                 .pointer("/usage/output_tokens")
                 .and_then(Value::as_i64)
                 .unwrap_or(0);
-            let key = format!(
-                "{}|{}",
-                v.get("requestId")
-                    .or_else(|| v.get("request_id"))
-                    .and_then(Value::as_str)
-                    .unwrap_or(""),
-                m.get("id")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| format!("{at}|{output}"))
-            );
+            let key = v
+                .as_object()
+                .zip(m.as_object())
+                .and_then(|(o, m)| super::claude_transcript::request_usage_key(o, m))
+                .unwrap_or_else(|| format!("{at}|{output}"));
             if output <= 0 || !self.remember(key) {
                 return None;
             }

@@ -164,6 +164,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn provider_inclusive_counters_are_normalized_once() {
+        let codex = TokenUsage::provider(" CODEX ", Some(100), Some(40), None, Some(30), Some(10));
+        assert_eq!(codex.input_tokens, 70);
+        assert_eq!(codex.output_tokens, 30);
+        assert_eq!(codex.cache_read_input_tokens, 30);
+        assert_eq!(codex.reasoning_output_tokens, 10);
+        assert_eq!(codex.total_billable_tokens(), 140);
+        let claude = TokenUsage::provider(
+            "anthropic",
+            Some(100),
+            Some(40),
+            Some(20),
+            Some(30),
+            Some(10),
+        );
+        assert_eq!(claude.input_tokens, 100);
+        assert_eq!(claude.output_tokens, 40);
+        assert_eq!(claude.cached_input_tokens, 50);
+        assert_eq!(claude.total_billable_tokens(), 200);
+        let gemini = TokenUsage::provider("google", Some(10), Some(5), None, Some(20), Some(9));
+        assert_eq!(gemini.input_tokens, 0);
+        assert_eq!(gemini.output_tokens, 5);
+    }
+
+    #[test]
     fn new_clamps_negatives() {
         let u = TokenUsage::new(-1, -2, 3, -4);
         assert_eq!(u, TokenUsage::new(0, 0, 3, 0));

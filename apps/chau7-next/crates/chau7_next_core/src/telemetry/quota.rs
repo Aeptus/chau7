@@ -156,9 +156,10 @@ pub fn metrics(
                 .filter_map(|s| {
                     let w = s.windows.iter().find(|w| w.key() == window.key())?;
                     if let (Some(a), Some(b)) = (w.resets_at, window.resets_at)
-                        && a.signed_duration_since(b).num_seconds().abs() > 1 {
-                            return None;
-                        }
+                        && a.signed_duration_since(b).num_seconds().abs() > 1
+                    {
+                        return None;
+                    }
                     Some((s.captured_at, w.used_percent))
                 })
                 .collect();
@@ -235,11 +236,83 @@ pub fn warnings(
         .collect()
 }
 /// Bounded snapshot history with cached per-provider deduplication.
-pub struct QuotaHistory {path:std::path::PathBuf,pub snapshots:Vec<QuotaSnapshot>}
+pub struct QuotaHistory {
+    path: std::path::PathBuf,
+    pub snapshots: Vec<QuotaSnapshot>,
+}
 impl QuotaHistory {
- pub fn open(path:std::path::PathBuf)->std::io::Result<Self>{use std::io::{Read,Seek,SeekFrom};let snapshots=match std::fs::File::open(&path){Ok(mut file)=>{let size=file.metadata()?.len();let start=size.saturating_sub(8*1024*1024);file.seek(SeekFrom::Start(start))?;let mut bytes=Vec::new();file.take(8*1024*1024).read_to_end(&mut bytes)?;if start>0 {if let Some(i)=bytes.iter().position(|b|*b==b'\n'){bytes.drain(..=i);}}String::from_utf8_lossy(&bytes).lines().filter_map(|l|serde_json::from_str(l).ok()).collect()},Err(e)if e.kind()==std::io::ErrorKind::NotFound=>vec![],Err(e)=>return Err(e)};Ok(Self{path,snapshots})}
- pub fn append(&mut self,snapshot:QuotaSnapshot)->std::io::Result<bool>{use std::io::Write;let previous=self.snapshots.iter().rev().find(|s|s.provider.eq_ignore_ascii_case(&snapshot.provider));if previous.is_some_and(|s|snapshot.captured_at<=s.captured_at||snapshot.equivalent_usage(s)){return Ok(false);}if let Some(parent)=self.path.parent(){std::fs::create_dir_all(parent)?;}let mut file=std::fs::OpenOptions::new().create(true).append(true).open(&self.path)?;serde_json::to_writer(&mut file,&snapshot)?;file.write_all(b"\n")?;file.flush()?;self.snapshots.push(snapshot);if self.snapshots.len()>10_000||file.metadata()?.len()>8*1024*1024{let drain=self.snapshots.len().saturating_sub(5000);self.snapshots.drain(..drain);let temp=self.path.with_extension("jsonl.tmp");let mut file=std::fs::File::create(&temp)?;for s in &self.snapshots{serde_json::to_writer(&mut file,s)?;file.write_all(b"\n")?;}file.sync_all()?;std::fs::rename(temp,&self.path)?;}Ok(true)}
- pub fn latest(&self)->Vec<QuotaSnapshot>{let mut latest=std::collections::BTreeMap::new();for s in &self.snapshots{let key=s.provider.to_lowercase();let entry=latest.entry(key).or_insert(s);if s.captured_at>entry.captured_at{*entry=s;}}latest.into_values().cloned().collect()}
+    pub fn open(path: std::path::PathBuf) -> std::io::Result<Self> {
+        use std::io::{Read, Seek, SeekFrom};
+        let snapshots = match std::fs::File::open(&path) {
+            Ok(mut file) => {
+                let size = file.metadata()?.len();
+                let start = size.saturating_sub(8 * 1024 * 1024);
+                file.seek(SeekFrom::Start(start))?;
+                let mut bytes = Vec::new();
+                file.take(8 * 1024 * 1024).read_to_end(&mut bytes)?;
+                if start > 0
+                    && let Some(i) = bytes.iter().position(|b| *b == b'\n')
+                {
+                    bytes.drain(..=i);
+                }
+                String::from_utf8_lossy(&bytes)
+                    .lines()
+                    .filter_map(|l| serde_json::from_str(l).ok())
+                    .collect()
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => vec![],
+            Err(e) => return Err(e),
+        };
+        Ok(Self { path, snapshots })
+    }
+    pub fn append(&mut self, snapshot: QuotaSnapshot) -> std::io::Result<bool> {
+        use std::io::Write;
+        let previous = self
+            .snapshots
+            .iter()
+            .rev()
+            .find(|s| s.provider.eq_ignore_ascii_case(&snapshot.provider));
+        if previous
+            .is_some_and(|s| snapshot.captured_at <= s.captured_at || snapshot.equivalent_usage(s))
+        {
+            return Ok(false);
+        }
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
+        serde_json::to_writer(&mut file, &snapshot)?;
+        file.write_all(b"\n")?;
+        file.flush()?;
+        self.snapshots.push(snapshot);
+        if self.snapshots.len() > 10_000 || file.metadata()?.len() > 8 * 1024 * 1024 {
+            let drain = self.snapshots.len().saturating_sub(5000);
+            self.snapshots.drain(..drain);
+            let temp = self.path.with_extension("jsonl.tmp");
+            let mut file = std::fs::File::create(&temp)?;
+            for s in &self.snapshots {
+                serde_json::to_writer(&mut file, s)?;
+                file.write_all(b"\n")?;
+            }
+            file.sync_all()?;
+            std::fs::rename(temp, &self.path)?;
+        }
+        Ok(true)
+    }
+    pub fn latest(&self) -> Vec<QuotaSnapshot> {
+        let mut latest = std::collections::BTreeMap::new();
+        for s in &self.snapshots {
+            let key = s.provider.to_lowercase();
+            let entry = latest.entry(key).or_insert(s);
+            if s.captured_at > entry.captured_at {
+                *entry = s;
+            }
+        }
+        latest.into_values().cloned().collect()
+    }
 }
 
 #[cfg(test)]
@@ -247,12 +320,36 @@ mod tests {
     use super::*;
     use chrono::Duration;
     #[test]
+    fn history_deduplicates_without_replay_and_reloads() {
+        let path = std::env::temp_dir().join(format!("chau7-quota-{}.jsonl", uuid::Uuid::new_v4()));
+        let now = Utc::now();
+        let value = serde_json::json!({"rate_limits":{"five_hour":{"used_percent":25}}});
+        let snapshot = QuotaSnapshot::parse_claude(&value, now, None).unwrap();
+        let mut history = QuotaHistory::open(path.clone()).unwrap();
+        assert!(history.append(snapshot.clone()).unwrap());
+        let mut duplicate = snapshot.clone();
+        duplicate.captured_at += Duration::seconds(30);
+        assert!(!history.append(duplicate).unwrap());
+        let mut changed = snapshot;
+        changed.captured_at += Duration::seconds(60);
+        changed.windows[0].used_percent = 30.;
+        assert!(history.append(changed).unwrap());
+        let restored = QuotaHistory::open(path.clone()).unwrap();
+        assert_eq!(restored.snapshots.len(), 2);
+        assert_eq!(restored.latest()[0].windows[0].used_percent, 30.);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn parse_usage_and_reset_scoped_warnings() {
         let now = Utc::now();
         let v = serde_json::json!({"plan_type":"max","rate_limits":{"five_hour":{"used_percentage":95,"resets_at":(now+Duration::hours(1)).timestamp()}}});
         let s = QuotaSnapshot::parse_claude(&v, now, None).unwrap();
         assert_eq!(s.windows[0].remaining(), 5.);
-        assert_eq!(warnings(&s, std::slice::from_ref(&s), now)[0].kind, "remaining5");
+        assert_eq!(
+            warnings(&s, std::slice::from_ref(&s), now)[0].kind,
+            "remaining5"
+        );
         assert!(warnings(&s, &[], now + Duration::minutes(55)).is_empty());
         assert!(QuotaSnapshot::parse_claude(&serde_json::json!({}), now, None).is_none());
     }
