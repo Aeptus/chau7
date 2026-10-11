@@ -48,6 +48,7 @@ pub struct Document {
     lines: Vec<Line>,
     runs: Vec<Run>,
     indents: Vec<Indent>,
+    restyled: Range<usize>,
 }
 impl Document {
     pub fn runs(&self) -> &[Run] {
@@ -56,11 +57,16 @@ impl Document {
     pub fn indents(&self) -> &[Indent] {
         &self.indents
     }
+    /// Last update window, on UTF-8 boundaries; empty when text did not change.
+    pub fn restyled_range(&self) -> Range<usize> {
+        self.restyled.clone()
+    }
     pub fn text(&self) -> &str {
         &self.text
     }
     pub fn update(&mut self, text: &str) -> Update {
         if text == self.text {
+            self.restyled = 0..0;
             return Update::default();
         }
         if self.lines.is_empty() {
@@ -112,6 +118,7 @@ impl Document {
         }));
         self.text = text.into();
         self.lines = lines;
+        self.restyled = start..end;
         self.flatten();
         Update {
             full: false,
@@ -121,6 +128,7 @@ impl Document {
     fn replace(&mut self, text: &str) -> Update {
         self.text = text.into();
         self.lines = parse_lines(text, 0, false);
+        self.restyled = 0..text.len();
         self.flatten();
         Update {
             full: true,
@@ -234,7 +242,15 @@ fn parse_lines(text: &str, offset: usize, mut inside: bool) -> Vec<Line> {
             let raw = &text[range.start - offset..range.end - offset];
             let body = line_body(raw);
             let mut runs = Vec::new();
-            let mut indent = None;
+            let indent = TASK
+                .captures(body)
+                .and_then(|c| c.get(3))
+                .or_else(|| LIST.captures(body).and_then(|c| c.get(2)))
+                .or_else(|| QUOTE.captures(body).and_then(|c| c.get(2)))
+                .map(|content| Indent {
+                    prefix: range.start..range.start + content.start(),
+                    paragraph: range.clone(),
+                });
             let before = inside;
             // All semantic ranges use bytes, preserving GPUI caret/selection coordinates.
             let absolute = |local: Range<usize>| range.start + local.start..range.start + local.end;
@@ -284,10 +300,6 @@ fn parse_lines(text: &str, offset: usize, mut inside: bool) -> Vec<Line> {
                             range: absolute(content.clone()),
                         });
                     }
-                    indent = Some(Indent {
-                        prefix: range.start..range.start + content.start,
-                        paragraph: whole.clone(),
-                    });
                 } else if let Some(c) = TASK.captures(body) {
                     runs.push(Run {
                         kind: Kind::ListMarker,
@@ -306,20 +318,12 @@ fn parse_lines(text: &str, offset: usize, mut inside: bool) -> Vec<Line> {
                             range: absolute(content.clone()),
                         });
                     }
-                    indent = Some(Indent {
-                        prefix: range.start..range.start + content.start,
-                        paragraph: whole.clone(),
-                    });
                 } else if let Some(c) = LIST.captures(body) {
                     runs.push(Run {
                         kind: Kind::ListMarker,
                         range: absolute(c.get(1).unwrap().range()),
                     });
                     content = c.get(2).unwrap().range();
-                    indent = Some(Indent {
-                        prefix: range.start..range.start + content.start,
-                        paragraph: whole.clone(),
-                    });
                 }
                 let content_text = &body[content.clone()];
                 let base = range.start + content.start;
@@ -417,6 +421,26 @@ mod tests {
             .map(|r| &text[r.range])
             .collect()
     }
+    #[test]
+    fn native_update_window_and_fenced_indentation_preserve_unicode_edges() {
+        let mut doc = Document::default();
+        let initial = "# hé👩🏽‍💻\n\n```\n- [x] fenced list\n> quote\n```\nlast\n";
+        let result = doc.update(initial);
+        assert!(result.full);
+        assert_eq!(doc.restyled_range(), 0..initial.len());
+        assert_eq!(doc.indents().len(), 2);
+        assert_eq!(&initial[doc.indents()[0].prefix.clone()], "- [x] ");
+        assert_eq!(&initial[doc.indents()[1].prefix.clone()], "> ");
+        let modified = initial.replace("last", "café");
+        let result = doc.update(&modified);
+        assert!(!result.full);
+        let range = doc.restyled_range();
+        assert!(modified.is_char_boundary(range.start) && modified.is_char_boundary(range.end));
+        assert!(modified[range].contains("café"));
+        doc.update(&modified);
+        assert!(doc.restyled_range().is_empty());
+    }
+
     #[test]
     fn constructs_match_current_light_markdown() {
         let text =

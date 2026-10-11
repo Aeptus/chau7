@@ -10,6 +10,8 @@
 //! asks Save / Don't Save / Cancel.
 
 mod live_markdown;
+#[cfg(target_os = "macos")]
+mod native_markdown;
 
 use crate::monitoring::file_monitor::FileMonitor;
 use crate::terminal::session::TerminalSession;
@@ -94,6 +96,10 @@ pub struct EditorPane {
     bracket: Option<RangeDecorationCollection>,
     markdown_styles: chau7_next_core::editor::live_markdown::Document,
     markdown_decorations: Option<TextDecorationCollection>,
+    #[cfg(target_os = "macos")]
+    native_markdown: Option<Rc<native_markdown::NativeMarkdown>>,
+    #[cfg(target_os = "macos")]
+    native_guard_subscriptions: Vec<Subscription>,
     bracket_clear: Option<Task<()>>,
     last_cursor: usize,
     /// Settings changed; applied at the next render (it needs the window).
@@ -178,6 +184,10 @@ impl EditorPane {
             bracket: None,
             markdown_styles: Default::default(),
             markdown_decorations: None,
+            #[cfg(target_os = "macos")]
+            native_markdown: None,
+            #[cfg(target_os = "macos")]
+            native_guard_subscriptions: Vec::new(),
             bracket_clear: None,
             last_cursor: 0,
             settings_pending: false,
@@ -724,6 +734,14 @@ impl EditorPane {
     }
 
     fn jump_to_matching_bracket(&mut self, cx: &mut Context<Self>) {
+        #[cfg(target_os = "macos")]
+        if self.is_markdown_file()
+            && !self.markdown_mode
+            && let Some(native) = &self.native_markdown
+        {
+            native.jump();
+            return;
+        }
         let (text, cursor) = {
             let s = self.state.read(cx);
             (s.text().to_string(), s.cursor())
@@ -1095,51 +1113,117 @@ impl Render for EditorPane {
         if std::mem::take(&mut self.settings_pending) {
             self.apply_settings(window, cx);
         }
+        #[cfg(target_os = "macos")]
+        if self.is_markdown_file() && !self.markdown_mode && !self.loading {
+            if self.native_markdown.is_none() {
+                self.native_markdown = native_markdown::NativeMarkdown::create(window, cx);
+            }
+            if let Some(native) = &self.native_markdown {
+                native.sync(&self.content(cx), &self.config);
+            }
+            if self.native_markdown.is_some()
+                && self.native_guard_subscriptions.is_empty()
+                && let Some(Some(root)) = window.root::<gpui_kit::base::Root>()
+            {
+                if let Ok(workspace) = root
+                    .read(cx)
+                    .view()
+                    .clone()
+                    .downcast::<crate::workspace::Workspace>()
+                {
+                    self.native_guard_subscriptions.push(cx.observe_in(
+                        &workspace,
+                        window,
+                        |this, workspace, _, cx| {
+                            if !workspace.read(cx).native_editor_allowed(cx)
+                                && let Some(native) = &this.native_markdown
+                            {
+                                native.detach();
+                            }
+                            cx.notify();
+                        },
+                    ));
+                }
+                self.native_guard_subscriptions.push(cx.on_focus_out(
+                    &self.focus_handle,
+                    window,
+                    |this, _, window, cx| {
+                        if window
+                            .context_stack()
+                            .iter()
+                            .any(|c| c.contains("PopupMenu"))
+                            && let Some(native) = &this.native_markdown
+                        {
+                            native.detach();
+                        }
+                        cx.notify();
+                    },
+                ));
+                self.native_guard_subscriptions.push(cx.observe_in(
+                    &root,
+                    window,
+                    |this, _, window, cx| {
+                        use gpui_kit::component::WindowExt;
+                        if (window.has_active_dialog(cx) || window.has_active_sheet(cx))
+                            && let Some(native) = &this.native_markdown
+                        {
+                            native.detach();
+                        }
+                        cx.notify();
+                    },
+                ));
+            }
+        }
         let chrome = Chrome::get(cx);
         let palette = self.palette;
         let header = self.render_header(chrome, cx);
-        let body =
-            if self.loading {
-                loading(chrome).into_any_element()
-            } else if let Some(error) = self.error.clone().filter(|_| self.path.is_none()) {
-                placeholder(IconName::TriangleAlert, None, error, None, chrome).into_any_element()
-            } else if self.markdown_mode && self.is_markdown_file() {
-                let content = self.content(cx);
-                super::runbook::render(
-                    &content,
-                    &self.run_states,
-                    chrome,
-                    super::text_background(palette, cx),
-                    super::mono_family(window, cx),
-                    cx.listener(|this, code: &(usize, String), _, cx| {
-                        this.run_block(code.clone(), cx)
-                    }),
-                    cx.listener(|this, line: &usize, window, cx| {
-                        this.toggle_checkbox(*line, window, cx)
-                    }),
-                )
-                .into_any_element()
+        let body = if self.loading {
+            loading(chrome).into_any_element()
+        } else if let Some(error) = self.error.clone().filter(|_| self.path.is_none()) {
+            placeholder(IconName::TriangleAlert, None, error, None, chrome).into_any_element()
+        } else if self.markdown_mode && self.is_markdown_file() {
+            let content = self.content(cx);
+            super::runbook::render(
+                &content,
+                &self.run_states,
+                chrome,
+                super::text_background(palette, cx),
+                super::mono_family(window, cx),
+                cx.listener(|this, code: &(usize, String), _, cx| this.run_block(code.clone(), cx)),
+                cx.listener(|this, line: &usize, window, cx| {
+                    this.toggle_checkbox(*line, window, cx)
+                }),
+            )
+            .into_any_element()
+        } else {
+            let style = super::editor_style(palette, self.config.highlight_current_line, cx);
+            let editor = Editor::new(&self.state)
+                .appearance(false)
+                .h_full()
+                .font_family(super::mono_family(window, cx))
+                .text_size(px(self.config.font_size as f32));
+            let minimap = self
+                .config
+                .show_minimap
+                .then(|| self.render_minimap(palette, cx));
+            let editor =
+                super::style_override::with_style(editor, &self.state, style).into_any_element();
+            #[cfg(target_os = "macos")]
+            let editor = if self.is_markdown_file()
+                && let Some(native) = &self.native_markdown
+            {
+                native_markdown::element(native.clone(), editor).into_any_element()
             } else {
-                let style = super::editor_style(palette, self.config.highlight_current_line, cx);
-                let editor = Editor::new(&self.state)
-                    .appearance(false)
-                    .h_full()
-                    .font_family(super::mono_family(window, cx))
-                    .text_size(px(self.config.font_size as f32));
-                let minimap = self
-                    .config
-                    .show_minimap
-                    .then(|| self.render_minimap(palette, cx));
-                div()
-                    .size_full()
-                    .flex()
-                    .bg(super::text_background(palette, cx))
-                    .child(div().flex_1().min_w_0().h_full().child(
-                        super::style_override::with_style(editor, &self.state, style),
-                    ))
-                    .children(minimap)
-                    .into_any_element()
+                editor
             };
+            div()
+                .size_full()
+                .flex()
+                .bg(super::text_background(palette, cx))
+                .child(div().flex_1().min_w_0().h_full().child(editor))
+                .children(minimap)
+                .into_any_element()
+        };
         div()
             .id("editor-pane")
             .key_context(CONTEXT)

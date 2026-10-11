@@ -1,0 +1,802 @@
+//! Real AppKit source layout; raw text, selection and undo belong to NSTextView.
+//! The NSScrollView is attached only while its GPUI source element is mounted.
+mod styles;
+
+use super::{EditorPane, SaveEditor, ToggleMarkdownMode};
+use chau7_next_core::editor::{config::EditorConfig, live_markdown::Document, text as edtext};
+use futures::{StreamExt, channel::mpsc};
+use gpui::{
+    AnyElement, App, Bounds, Context, Element, ElementId, GlobalElementId, InspectorElementId,
+    IntoElement, LayoutId, Pixels, Window,
+};
+use gpui_kit::{base::Root, component::WindowExt};
+use objc2::{
+    DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send,
+    rc::{Retained, Weak},
+    runtime::AnyObject,
+};
+use objc2_app_kit::{
+    NSAutoresizingMaskOptions, NSClipView, NSColor, NSEvent, NSEventModifierFlags, NSFont,
+    NSFontAttributeName, NSForegroundColorAttributeName, NSMenuItem, NSRulerOrientation,
+    NSRulerView, NSScrollView, NSStringDrawing, NSTextInputClient, NSTextView, NSView,
+};
+use objc2_foundation::{
+    NSDictionary, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString,
+};
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
+
+#[derive(Clone, Copy)]
+enum Action {
+    Save,
+    Toggle,
+    Jump,
+}
+#[derive(Default)]
+struct Pending {
+    text: Option<String>,
+    selection: NSRange,
+    focused: bool,
+    actions: Vec<Action>,
+}
+struct Shared {
+    document: RefCell<Document>,
+    theme: RefCell<styles::Theme>,
+    config: RefCell<EditorConfig>,
+    pending: RefCell<Pending>,
+    queued: Cell<bool>,
+    sender: mpsc::UnboundedSender<()>,
+    line_starts: RefCell<Vec<usize>>,
+    ruler: RefCell<Option<Weak<LineRuler>>>,
+    mirroring: Cell<bool>,
+    gpui_view: RefCell<Option<Weak<NSView>>>,
+}
+impl Shared {
+    fn signal(&self) {
+        if !self.queued.replace(true) && self.sender.unbounded_send(()).is_err() {
+            self.queued.set(false);
+        }
+    }
+    fn changed(&self, view: &SourceTextView, text_changed: bool) {
+        if self.mirroring.get() {
+            return;
+        }
+        if text_changed {
+            let text = view.string().to_string();
+            let mut doc = self.document.borrow_mut();
+            doc.update(&text);
+            *self.line_starts.borrow_mut() = line_starts(&text);
+            if let Some(ruler) = self.ruler.borrow().as_ref().and_then(Weak::load) {
+                ruler.resize(self.line_starts.borrow().len());
+                ruler.setNeedsDisplay(true);
+            }
+            if let Some(storage) = unsafe { view.textStorage() } {
+                self.theme
+                    .borrow()
+                    .apply(&storage, &doc, doc.restyled_range());
+            }
+            self.pending.borrow_mut().text = Some(text);
+        }
+        let mut pending = self.pending.borrow_mut();
+        pending.selection = view.selectedRange();
+        drop(pending);
+        self.signal();
+    }
+}
+struct SourceIvars {
+    shared: Rc<Shared>,
+}
+define_class!(
+    #[unsafe(super = NSTextView)]
+    #[name = "Chau7NextMarkdownSourceTextView"]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = SourceIvars]
+    struct SourceTextView;
+    unsafe impl NSObjectProtocol for SourceTextView {}
+    impl SourceTextView {
+        #[unsafe(method(didChangeText))]
+        fn changed(&self) {
+            // SAFETY: exact NSTextView superclass selector and signature.
+            unsafe { let _: ()=msg_send![super(self),didChangeText]; }
+            self.ivars().shared.changed(self,true);
+        }
+        #[unsafe(method(setSelectedRange:))]
+        fn selected(&self, range:NSRange) {
+            unsafe { let _: ()=msg_send![super(self),setSelectedRange:range]; }
+            self.ivars().shared.changed(self,false);
+        }
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self,event:&NSEvent) {
+            self.ivars().shared.pending.borrow_mut().focused=true;
+            self.ivars().shared.signal();
+            if self.toggle_checkbox(event) {return;}
+            unsafe { let _: ()=msg_send![super(self),mouseDown:event]; }
+            self.ivars().shared.changed(self,false);
+            self.highlight_bracket();
+        }
+        #[unsafe(method(keyDown:))]
+        fn key_down(&self,event:&NSEvent) {
+            unsafe {let _: ()=msg_send![super(self),keyDown:event];}
+            self.ivars().shared.changed(self,false);
+            self.highlight_bracket();
+        }
+        #[unsafe(method(insertTab:))]
+        fn tab(&self,_sender:Option<&AnyObject>) { self.insert(&self.ivars().shared.config.borrow().tab_string(),self.selectedRange()); }
+        #[unsafe(method(insertBacktab:))]
+        fn backtab(&self,_sender:Option<&AnyObject>) {
+            let text=self.string().to_string();let selected=self.selectedRange();let byte=utf16_to_byte(&text,selected.location);
+            let tab=self.ivars().shared.config.borrow().tab_string();
+            if let Some((start,len))=edtext::outdent(&text,byte,&tab) {
+                self.insert("",bytes_to_range(&text,start..start+len));
+                let shift=|n:usize| if n>=start+len {n-len} else {n.min(start)};
+                let end=utf16_to_byte(&text,selected.location+selected.length);
+                let now=self.string().to_string();self.setSelectedRange(bytes_to_range(&now,shift(byte)..shift(end)));
+            }
+        }
+        #[unsafe(method(insertNewline:))]
+        fn newline(&self,_sender:Option<&AnyObject>) {
+            let text=self.string().to_string();let selected=self.selectedRange();
+            let insert=if self.ivars().shared.config.borrow().auto_indent {edtext::newline_with_indent(&text,utf16_to_byte(&text,selected.location))} else {"\n".into()};
+            self.insert(&insert,selected);
+        }
+        #[unsafe(method(performKeyEquivalent:))]
+        fn equivalent(&self,event:&NSEvent)->bool {
+            self.handle_equivalent(event)
+        }
+    }
+);
+impl SourceTextView {
+    fn handle_equivalent(&self, event: &NSEvent) -> bool {
+        let flags = event.modifierFlags();
+        let key = event
+            .charactersIgnoringModifiers()
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        if flags.contains(NSEventModifierFlags::Command) {
+            let shift = flags.contains(NSEventModifierFlags::Shift);
+            // GPUI's application Edit menu targets its own editor model. Native
+            // source editing must consume these shortcuts with NSTextView's undo.
+            match key.to_lowercase().as_str() {
+                "z" => {
+                    if let Some(undo) = self.undoManager() {
+                        if shift {
+                            undo.redo();
+                        } else {
+                            undo.undo();
+                        }
+                    }
+                    return true;
+                }
+                "c" if !shift => {
+                    unsafe {
+                        self.copy(None);
+                    }
+                    return true;
+                }
+                "x" if !shift => {
+                    unsafe {
+                        self.cut(None);
+                    }
+                    return true;
+                }
+                "v" if !shift => {
+                    unsafe {
+                        self.paste(None);
+                    }
+                    return true;
+                }
+                "a" if !shift => {
+                    unsafe {
+                        self.selectAll(None);
+                    }
+                    self.ivars().shared.changed(self, false);
+                    return true;
+                }
+                "g" => {
+                    let item = NSMenuItem::new(self.mtm());
+                    item.setTag(if shift { 3 } else { 2 });
+                    unsafe {
+                        self.performFindPanelAction(Some(&item));
+                    }
+                    return true;
+                }
+                _ => {}
+            }
+
+            let action = match (key.to_lowercase().as_str(), shift) {
+                ("s", false) => Some(Action::Save),
+                ("p", true) => Some(Action::Toggle),
+                ("\\", true) => Some(Action::Jump),
+                _ => None,
+            };
+            if let Some(action) = action {
+                self.ivars()
+                    .shared
+                    .pending
+                    .borrow_mut()
+                    .actions
+                    .push(action);
+                self.ivars().shared.signal();
+                return true;
+            }
+            if key.eq_ignore_ascii_case("f") && !shift {
+                let item = NSMenuItem::new(self.mtm());
+                item.setTag(1);
+                unsafe {
+                    self.performFindPanelAction(Some(&item));
+                }
+                return true;
+            }
+        }
+        let handled: bool = unsafe { msg_send![super(self),performKeyEquivalent:event] };
+        if handled {
+            return true;
+        }
+        // Unhandled application shortcuts retain GPUI's normal dispatch path.
+        self.ivars()
+            .shared
+            .gpui_view
+            .borrow()
+            .as_ref()
+            .and_then(Weak::load)
+            .is_some_and(|v| v.performKeyEquivalent(event))
+    }
+
+    fn new(mtm: MainThreadMarker, shared: Rc<Shared>) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(SourceIvars { shared });
+        unsafe {
+            msg_send![super(this),initWithFrame:NSRect::new(NSPoint::new(0.,0.),NSSize::new(400.,400.))]
+        }
+    }
+    fn toggle_checkbox(&self, event: &NSEvent) -> bool {
+        let Some(layout) = (unsafe { self.layoutManager() }) else {
+            return false;
+        };
+        let Some(container) = (unsafe { self.textContainer() }) else {
+            return false;
+        };
+        let origin = self.textContainerOrigin();
+        let local = self.convertPoint_fromView(event.locationInWindow(), None);
+        let point = NSPoint::new(local.x - origin.x, local.y - origin.y);
+        let range = {
+            let doc = self.ivars().shared.document.borrow();
+            doc.runs()
+                .iter()
+                .filter(|r| {
+                    matches!(
+                        r.kind,
+                        chau7_next_core::editor::live_markdown::Kind::TaskCheckbox(_)
+                    )
+                })
+                .find_map(|r| {
+                    let range = bytes_to_range(doc.text(), r.range.clone());
+                    let glyphs = unsafe {
+                        layout.glyphRangeForCharacterRange_actualCharacterRange(
+                            range,
+                            std::ptr::null_mut(),
+                        )
+                    };
+                    let rect = layout.boundingRectForGlyphRange_inTextContainer(glyphs, &container);
+                    (point.x >= rect.origin.x
+                        && point.x < rect.origin.x + rect.size.width
+                        && point.y >= rect.origin.y
+                        && point.y < rect.origin.y + rect.size.height)
+                        .then_some(range)
+                })
+        };
+        let Some(range) = range else {
+            return false;
+        };
+        let text = self.string().to_string();
+        let byte = utf16_to_byte(&text, range.location);
+        let checked = text
+            .get(byte..)
+            .is_some_and(|s| s.starts_with("[x]") || s.starts_with("[X]"));
+        let selected = self.selectedRange();
+        self.insert(if checked { "[ ]" } else { "[x]" }, range);
+        self.setSelectedRange(selected);
+        true
+    }
+    fn highlight_bracket(&self) {
+        if !self.ivars().shared.config.borrow().bracket_matching {
+            return;
+        }
+        let text = self.string().to_string();
+        let cursor = utf16_to_byte(&text, self.selectedRange().location);
+        if let Some(target) = edtext::matching_bracket(&text, cursor)
+            && let Some(c) = text[target..].chars().next()
+        {
+            self.showFindIndicatorForRange(bytes_to_range(&text, target..target + c.len_utf8()));
+        }
+    }
+    fn insert(&self, text: &str, range: NSRange) {
+        // Actual user insertion API registers native undo and preserves IME semantics.
+        unsafe {
+            self.insertText_replacementRange(&NSString::from_str(text), range);
+        }
+    }
+}
+
+define_class!(
+    #[unsafe(super = NSScrollView)]
+    #[name = "Chau7NextMarkdownSourceScrollView"]
+    #[thread_kind = MainThreadOnly]
+    struct SourceScrollView;
+    impl SourceScrollView {
+        #[unsafe(method(reflectScrolledClipView:))]
+        fn scrolled(&self,clip:&NSClipView) {
+            unsafe {let _: ()=msg_send![super(self),reflectScrolledClipView:clip];}
+            if let Some(ruler)=self.verticalRulerView() {ruler.setNeedsDisplay(true);}
+        }
+    }
+);
+impl SourceScrollView {
+    fn new(mtm: MainThreadMarker) -> Retained<Self> {
+        unsafe {
+            msg_send![super(Self::alloc(mtm).set_ivars(())),initWithFrame:NSRect::new(NSPoint::new(0.,0.),NSSize::new(400.,400.))]
+        }
+    }
+}
+struct RulerIvars {
+    text: Weak<SourceTextView>,
+    shared: Rc<Shared>,
+}
+define_class!(
+    #[unsafe(super = NSRulerView)]
+    #[name = "Chau7NextMarkdownLineRuler"]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = RulerIvars]
+    struct LineRuler;
+    impl LineRuler {
+        #[unsafe(method(drawHashMarksAndLabelsInRect:))]
+        fn draw_numbers(&self,_rect:NSRect) {self.draw_lines();}
+    }
+);
+impl LineRuler {
+    fn new(
+        mtm: MainThreadMarker,
+        scroll: &NSScrollView,
+        text: &SourceTextView,
+        shared: Rc<Shared>,
+    ) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(RulerIvars {
+            text: Weak::new(text),
+            shared,
+        });
+        let this: Retained<Self> = unsafe {
+            msg_send![super(this),initWithScrollView:scroll,orientation:NSRulerOrientation::VerticalRuler]
+        };
+        this.setClientView(Some(text));
+        this.setRuleThickness(40.);
+        this
+    }
+    fn resize(&self, lines: usize) {
+        let width = (lines.max(1).to_string().len().max(3) as f64) * 8. + 16.;
+        if self.ruleThickness() != width {
+            self.setRuleThickness(width);
+            if let Some(scroll) = self.scrollView() {
+                scroll.tile();
+            }
+        }
+    }
+    fn draw_lines(&self) {
+        let Some(text) = self.ivars().text.load() else {
+            return;
+        };
+        let Some(layout) = (unsafe { text.layoutManager() }) else {
+            return;
+        };
+        let Some(container) = (unsafe { text.textContainer() }) else {
+            return;
+        };
+        NSColor::controlBackgroundColor().setFill();
+        objc2_app_kit::NSRectFill(self.bounds());
+        let visible =
+            layout.glyphRangeForBoundingRect_inTextContainer(text.visibleRect(), &container);
+        let chars = unsafe {
+            layout.characterRangeForGlyphRange_actualGlyphRange(visible, std::ptr::null_mut())
+        };
+        let font = NSFont::monospacedSystemFontOfSize_weight(11., 0.);
+        let color = NSColor::secondaryLabelColor();
+        let attrs = unsafe {
+            NSDictionary::<NSString, AnyObject>::from_slices(
+                &[NSFontAttributeName, NSForegroundColorAttributeName],
+                &[&*font, &*color],
+            )
+        };
+        let starts = self.ivars().shared.line_starts.borrow();
+        let first = starts
+            .partition_point(|s| *s < chars.location)
+            .saturating_sub(1);
+        let end = starts.partition_point(|s| *s <= chars.location + chars.length);
+        for (i, char_start) in starts[first..end].iter().enumerate() {
+            if *char_start >= text.string().len() {
+                continue;
+            }
+            let glyph = layout.glyphIndexForCharacterAtIndex(*char_start);
+            let mut rect = unsafe {
+                layout.lineFragmentRectForGlyphAtIndex_effectiveRange(glyph, std::ptr::null_mut())
+            };
+            let origin = text.textContainerOrigin();
+            rect.origin.x += origin.x;
+            rect.origin.y += origin.y;
+            let rect = self.convertRect_fromView(rect, Some(&text));
+            let label = NSString::from_str(&(first + i + 1).to_string());
+            let size = unsafe { label.sizeWithAttributes(Some(&attrs)) };
+            unsafe {
+                label.drawAtPoint_withAttributes(
+                    NSPoint::new(
+                        self.ruleThickness() - size.width - 8.,
+                        rect.origin.y + (rect.size.height - size.height) * 0.5,
+                    ),
+                    Some(&attrs),
+                );
+            }
+        }
+    }
+}
+fn line_starts(text: &str) -> Vec<usize> {
+    let mut starts = vec![0];
+    let mut units = 0;
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        units += c.len_utf16();
+        if c == '\r' && chars.peek() == Some(&'\n') {
+            chars.next();
+            units += 1;
+            starts.push(units);
+        } else if matches!(c, '\n' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}') {
+            starts.push(units);
+        }
+    }
+    starts
+}
+
+pub(super) struct NativeMarkdown {
+    scroll: Retained<SourceScrollView>,
+    text: Retained<SourceTextView>,
+    shared: Rc<Shared>,
+}
+impl NativeMarkdown {
+    pub(super) fn create(window: &mut Window, cx: &mut Context<EditorPane>) -> Option<Rc<Self>> {
+        let mtm = MainThreadMarker::new()?;
+        let raw = raw_view(window)?;
+        let (sender, mut receiver) = mpsc::unbounded();
+        let config = Settings::get(cx).editor.config.clone();
+        let shared = Rc::new(Shared {
+            document: RefCell::new(Document::default()),
+            theme: RefCell::new(styles::Theme::new(config.font_size as f64, mtm)),
+            config: RefCell::new(config),
+            pending: RefCell::new(Pending::default()),
+            queued: Cell::new(false),
+            sender,
+            line_starts: RefCell::new(vec![0]),
+            ruler: RefCell::new(None),
+            mirroring: Cell::new(false),
+            gpui_view: RefCell::new(Some(Weak::new(&raw))),
+        });
+        let text = SourceTextView::new(mtm, shared.clone());
+        text.setFont(Some(&NSFont::systemFontOfSize(
+            shared.config.borrow().font_size as f64,
+        )));
+        text.setEditable(true);
+        text.setSelectable(true);
+        text.setRichText(false);
+        text.setAllowsUndo(true);
+        text.setUsesFindBar(true);
+        text.setIncrementalSearchingEnabled(true);
+        text.setAutomaticQuoteSubstitutionEnabled(false);
+        text.setAutomaticDashSubstitutionEnabled(false);
+        text.setAutomaticTextReplacementEnabled(false);
+        text.setAutomaticSpellingCorrectionEnabled(false);
+        text.setTextContainerInset(NSSize::new(8., 8.));
+        text.setVerticallyResizable(true);
+        text.setMinSize(NSSize::new(0., 0.));
+        text.setMaxSize(NSSize::new(f64::MAX, f64::MAX));
+        let scroll = SourceScrollView::new(mtm);
+        scroll.setDocumentView(Some(&text));
+        scroll.setHasVerticalScroller(true);
+        scroll.setAutohidesScrollers(true);
+        let ruler = LineRuler::new(mtm, &scroll, &text, shared.clone());
+        scroll.setVerticalRulerView(Some(&ruler));
+        *shared.ruler.borrow_mut() = Some(Weak::new(&ruler));
+        let result = Rc::new(Self {
+            scroll,
+            text,
+            shared: shared.clone(),
+        });
+        let weak_shared = Rc::downgrade(&shared);
+        cx.spawn_in(window, async move |this, cx| {
+            while receiver.next().await.is_some() {
+                let Some(shared) = weak_shared.upgrade() else {
+                    break;
+                };
+                shared.queued.set(false);
+                let pending = std::mem::take(&mut *shared.pending.borrow_mut());
+                if this
+                    .update_in(cx, |this, window, cx| {
+                        if let Some(text) = pending.text {
+                            this.state.update(cx, |s, cx| s.set_value(text, window, cx));
+                            this.dirty = true;
+                            this.schedule_autosave(cx);
+                            cx.emit(super::SidePaneEvent::Changed);
+                        }
+                        let text = this.content(cx);
+                        let start = utf16_to_byte(&text, pending.selection.location);
+                        let end = utf16_to_byte(
+                            &text,
+                            pending.selection.location + pending.selection.length,
+                        );
+                        this.state
+                            .update(cx, |s, cx| s.set_selected_range(start..end, cx));
+                        if pending.focused {
+                            window.focus(&this.focus_handle, cx);
+                            cx.emit(super::SidePaneEvent::Focused);
+                        }
+                        for action in pending.actions {
+                            match action {
+                                Action::Save => window.dispatch_action(Box::new(SaveEditor), cx),
+                                Action::Toggle => {
+                                    window.dispatch_action(Box::new(ToggleMarkdownMode), cx)
+                                }
+                                Action::Jump => {
+                                    if let Some(native) = &this.native_markdown {
+                                        native.jump();
+                                    }
+                                }
+                            }
+                        }
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+        Some(result)
+    }
+    pub(super) fn sync(&self, text: &str, config: &EditorConfig) {
+        if self.shared.pending.borrow().text.is_some() {
+            return;
+        }
+        let size = config.font_size as f64;
+        let size_changed = self.shared.theme.borrow().size() != size;
+        if size_changed && let Some(mtm) = MainThreadMarker::new() {
+            *self.shared.theme.borrow_mut() = styles::Theme::new(size, mtm);
+        }
+        *self.shared.config.borrow_mut() = config.clone();
+        self.scroll.setHasVerticalRuler(config.show_line_numbers);
+        self.scroll.setRulersVisible(config.show_line_numbers);
+        self.text.setHorizontallyResizable(!config.word_wrap);
+        self.text.setAutoresizingMask(if config.word_wrap {
+            NSAutoresizingMaskOptions::ViewWidthSizable
+        } else {
+            NSAutoresizingMaskOptions::empty()
+        });
+        self.scroll.setHasHorizontalScroller(!config.word_wrap);
+        if let Some(container) = unsafe { self.text.textContainer() } {
+            container.setWidthTracksTextView(config.word_wrap);
+            if !config.word_wrap {
+                container.setContainerSize(NSSize::new(f64::MAX, f64::MAX));
+            }
+        }
+        let same = self.shared.document.borrow().text() == text;
+        if !same {
+            *self.shared.line_starts.borrow_mut() = line_starts(text);
+            if let Some(ruler) = self.shared.ruler.borrow().as_ref().and_then(Weak::load) {
+                ruler.resize(self.shared.line_starts.borrow().len());
+                ruler.setNeedsDisplay(true);
+            }
+            self.shared.mirroring.set(true);
+            self.text.setString(&NSString::from_str(text));
+            self.shared.mirroring.set(false);
+            // Programmatic loads start a fresh native edit history; style updates never do.
+            if let Some(undo) = self.text.undoManager() {
+                undo.removeAllActions();
+            }
+        }
+        let mut doc = self.shared.document.borrow_mut();
+        doc.update(text);
+        let range = if size_changed {
+            0..text.len()
+        } else {
+            doc.restyled_range()
+        };
+        if let Some(storage) = unsafe { self.text.textStorage() } {
+            self.shared.theme.borrow().apply(&storage, &doc, range);
+        }
+    }
+    pub(super) fn jump(&self) {
+        let text = self.text.string().to_string();
+        let cursor = utf16_to_byte(&text, self.text.selectedRange().location);
+        if let Some(target) = edtext::matching_bracket(&text, cursor) {
+            self.text
+                .setSelectedRange(bytes_to_range(&text, target..target));
+            self.text.scrollRangeToVisible(self.text.selectedRange());
+        }
+    }
+    fn attach(&self, window: &Window, bounds: Bounds<Pixels>) {
+        if bounds.size.width <= gpui::px(0.) || bounds.size.height <= gpui::px(0.) {
+            self.detach();
+            return;
+        }
+        let Some(view) = raw_view(window) else {
+            return;
+        };
+        let mut y = f64::from(f32::from(bounds.origin.y));
+        let height = f64::from(f32::from(bounds.size.height));
+        if !view.isFlipped() {
+            y = view.bounds().size.height - y - height;
+        }
+        self.scroll.setFrame(NSRect::new(
+            NSPoint::new(f64::from(f32::from(bounds.origin.x)), y),
+            NSSize::new(f64::from(f32::from(bounds.size.width)), height),
+        ));
+        if unsafe { self.scroll.superview() }
+            .as_ref()
+            .is_none_or(|v| !std::ptr::eq::<NSView>(&**v, &*view))
+        {
+            view.addSubview(&self.scroll);
+        }
+        if self.shared.config.borrow().word_wrap {
+            let mut frame = self.text.frame();
+            frame.size.width = self.scroll.contentView().bounds().size.width;
+            self.text.setFrame(frame);
+        }
+        self.scroll.setHidden(false);
+    }
+    pub(super) fn detach(&self) {
+        if let Some(window) = self.scroll.window() {
+            let native_focused = window
+                .firstResponder()
+                .and_then(|r| r.downcast::<NSView>().ok())
+                .is_some_and(|v| v.isDescendantOf(&self.scroll));
+            if native_focused
+                && let Some(view) = self.shared.gpui_view.borrow().as_ref().and_then(Weak::load)
+            {
+                window.makeFirstResponder(Some(&view));
+            }
+        }
+        self.scroll.setHidden(true);
+        self.scroll.removeFromSuperview();
+    }
+}
+use crate::settings::Settings;
+fn raw_view(window: &Window) -> Option<Retained<NSView>> {
+    let handle = HasWindowHandle::window_handle(window).ok()?;
+    let RawWindowHandle::AppKit(raw) = handle.as_raw() else {
+        return None;
+    };
+    unsafe { Retained::retain(raw.ns_view.cast::<NSView>().as_ptr()) }
+}
+fn utf16_to_byte(text: &str, target: usize) -> usize {
+    let mut units = 0;
+    for (byte, c) in text.char_indices() {
+        if units >= target {
+            return byte;
+        }
+        units += c.len_utf16();
+    }
+    text.len()
+}
+fn bytes_to_range(text: &str, range: std::ops::Range<usize>) -> NSRange {
+    let start = text[..range.start].encode_utf16().count();
+    NSRange::new(start, text[range].encode_utf16().count())
+}
+
+impl Drop for NativeMarkdown {
+    fn drop(&mut self) {
+        self.detach();
+    }
+}
+
+struct Attachment(Rc<NativeMarkdown>);
+impl Drop for Attachment {
+    fn drop(&mut self) {
+        self.0.detach();
+    }
+}
+pub(super) struct NativeSource {
+    native: Rc<NativeMarkdown>,
+    child: AnyElement,
+}
+pub(super) fn element(native: Rc<NativeMarkdown>, child: impl IntoElement) -> NativeSource {
+    NativeSource {
+        native,
+        child: child.into_any_element(),
+    }
+}
+impl IntoElement for NativeSource {
+    type Element = Self;
+    fn into_element(self) -> Self {
+        self
+    }
+}
+impl Element for NativeSource {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+    fn id(&self) -> Option<ElementId> {
+        Some("native-markdown-source".into())
+    }
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, ()) {
+        (self.child.request_layout(window, cx), ())
+    }
+    fn prepaint(
+        &mut self,
+        id: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.child.prepaint(window, cx);
+        let allowed = !window.has_active_prompt()
+            && !window
+                .context_stack()
+                .iter()
+                .any(|c| c.contains("PopupMenu"))
+            && !window.has_active_dialog(cx)
+            && !window.has_active_sheet(cx)
+            && Root::read(window, cx)
+                .view()
+                .clone()
+                .downcast::<crate::workspace::Workspace>()
+                .is_ok_and(|w| w.read(cx).native_editor_allowed(cx));
+        if allowed {
+            if let Some(id) = id {
+                window.with_element_state(id, |previous: Option<Attachment>, _| {
+                    (
+                        (),
+                        previous.unwrap_or_else(|| Attachment(self.native.clone())),
+                    )
+                });
+            }
+            self.native
+                .attach(window, bounds.intersect(&window.content_mask().bounds));
+        } else {
+            self.native.detach();
+        }
+    }
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        _: &mut (),
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.child.paint(window, cx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn native_indices_and_cached_line_starts_handle_surrogates_and_all_newlines() {
+        let text = "é👩🏽‍💻\r\n漢\u{2028}z\n";
+        for (byte, _) in text.char_indices() {
+            let range = bytes_to_range(text, byte..byte);
+            assert_eq!(utf16_to_byte(text, range.location), byte);
+        }
+        assert_eq!(line_starts(text), vec![0, 10, 12, 14]);
+        assert_eq!(utf16_to_byte(text, usize::MAX), text.len());
+    }
+}

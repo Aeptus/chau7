@@ -24,7 +24,7 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
 | EDT-011 | Word wrap on/off (off scrolls horizontally) | `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs | done |  |
 | EDT-012 | Editor settings: font size (13), tab size (4), use spaces, word wrap, line numbers, auto-indent, bracket matching, highlight current line, minimap, theme; stored in UserDefaults `editor.config` | `Settings/EditorConfig.swift`, `Settings/Views/EditorSettingsView.swift` |  | chau7_next_core/src/editor/config.rs,chau7_next/src/settings/editor.rs,chau7_next/src/settings_window/editor.rs,chau7_next/src/panes/editor.rs | done |  |
 
-| EDT-013 | Markdown source/live styling retains original text, updates spans without breaking selection/undo and supports session note/runbook headers | `Editor/MarkdownLiveStyler.swift`; `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs; chau7_next/src/panes/editor/live_markdown.rs; chau7_next_core/src/editor/live_markdown.rs; chau7_next/src/panes/runbook.rs | partial | Attribute-only source styles, incremental fence-aware parsing and scoped preview binding implemented; real heading fonts and hanging indent remain. |
+| EDT-013 | Markdown source/live styling retains original text, updates spans without breaking selection/undo and supports session note/runbook headers | `Editor/MarkdownLiveStyler.swift`; `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs; chau7_next/src/panes/editor/live_markdown.rs; chau7_next/src/panes/editor/native_markdown.rs; chau7_next_core/src/editor/live_markdown.rs; chau7_next/src/panes/runbook.rs | partial | Attribute-only source styles, incremental fence-aware parsing and scoped preview binding implemented; macOS native heading fonts and measured hanging indentation implemented; selected-window input/popup acceptance remains pending. |
 
 | EDT-014 | Named editor autosave toggle, 2.5 s debounce, 2 s Auto-saved status and discard cancellation; automatic defaults for Next-owned plans/notes and stable owner-tab session note locator/UI | `SplitPanes/EditorAutoSaver.swift`; `SplitPanes/SplitPaneController.swift` | EditorAutoSaverTests | chau7_next/src/panes/editor.rs; chau7_next_core/src/editor/text.rs | done | 6943290c + coordinator e2cb9f62 complete isolated note attachment; 47 focused editor tests and strict macOS Clippy passed. Native UI acceptance remains unverified. |
 
@@ -44,9 +44,17 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
   Cmd+Shift+P (Ctrl+Shift+P elsewhere); the existing note/runbook filename
   header and source buffer remain shared. GPUI's pinned `HighlightStyle`
   cannot vary font family, heading size or paragraph hanging indentation.
-  The native Rust AppKit source editor seam is being implemented for these
-  remaining layout attributes; do not mark this row done from color-only
-  rendering. Native visual acceptance remains pending.
+  macOS now mounts a real Rust AppKit `NSTextView`/`NSScrollView` only for the
+  current source viewport. It applies all six heading sizes, body/code fonts
+  and measured prefix hanging indentation, preserving native undo and
+  selection. The widget is retained across preview toggles and detached for
+  unmounted sources, GPUI prompts/dialogs/menus and workspace overlays. Native
+  Tab/outdent/newline, find, bracket indication, checkbox glyph hit targets and
+  line gutter are wired. The optional `markdown_native_attributes` example
+  uses the production styler in a hidden owned AppKit window: H1 22.1pt at
+  body13, task indent29.7324pt, unchanged text/selection, and preserved native
+  user-insertion undo passed. Source-window keyboard/IME, selection, split
+  resize and popup acceptance remain pending; keep partial until proven.
 - The minimap setting and "highlight current line" only change the caret
   color in Swift; there is no minimap drawing. Chau7 Next draws both (a
   minimap column of line bars that scrolls on click, and a current line
