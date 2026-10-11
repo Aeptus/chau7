@@ -83,6 +83,12 @@ reported to notifications, telemetry and remote control.
 
 | TRM-065 | Shell launcher uses own per-tab history files, Codex proxy wrapper and transport-attribution env, safely removes inherited Swift wrapper/history paths | `Terminal/Session/ShellLaunchConfigurator.swift` |  | chau7_next_core/src/shell_env.rs; chau7_next/src/history/shell_file.rs | partial |  |
 
+| TRM-066 | Selection copy reconstructs soft-wrapped logical text, trims row padding and joins TUI hard wraps without breaking paths/URLs or merging whitespace-separated arguments | `Chau7Core/TerminalClipboard.swift`; `RustBackend/RustTerminalView+Input.swift` | TerminalClipboardTests | chau7_next/src/terminal/input.rs; chau7_next/src/terminal/session.rs | partial |  |
+
+| TRM-067 | Bounded incremental OSC9 parser supports BEL/ST split across PTY chunks; distinguish chau7 key/value messages from foreign program notifications | `Chau7Core/TerminalOSC9Parser.swift`; `Terminal/Session/TerminalSessionModel+ShellIntegration.swift` | TerminalOSC9ParserTests | chau7_next_core/src/shell_integration.rs | partial |  |
+
+| TRM-068 | Stable display title removes spinner prefixes and suppresses redundant updates while preserving substantive title changes | `Chau7Core/TerminalTitleChurnPolicy.swift`; `Terminal/Session/TerminalSessionModel+TerminalUIState.swift` | TerminalTitleChurnPolicyTests |  | missing |  |
+
 ## Notes
 
 - **Startup files.** Swift writes `.zshrc`, `.bashrc` and `.config/fish/config.fish`

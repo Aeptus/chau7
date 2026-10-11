@@ -24,6 +24,8 @@ the code.
 | L10-007 | Spanish is selectable and follows System Default language matching with English fallback | `Localization/Localization.swift`; `Resources/es.lproj/Localizable.strings` | LocalizationTests |  | missing |  |
 | L10-008 | Plural rules in all language stringsdict tables format counts with locale-specific singular/plural rather than raw English substitutions | `Localization/Localization.swift`; `Resources/*.lproj/Localizable.stringsdict` | LocalizationTests | chau7_next_core/src/l10n/formatters.rs | partial |  |
 
+| L10-009 | Regional Number Format independent from interface language affects integer/decimal/percent/currency, persists and invalidates cached formatters | `Localization/Localization.swift`; `Utilities/RegionalNumberFormat.swift`; `Settings/TerminalBehaviorStore.swift` |  | chau7_next_core/src/l10n/formatters.rs | partial |  |
+
 ## Notes
 
 - String counts (`Localizable.strings`): English 1219 keys; French, Arabic and

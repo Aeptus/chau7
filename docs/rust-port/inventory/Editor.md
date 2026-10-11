@@ -26,6 +26,10 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
 
 | EDT-013 | Markdown source/live styling retains original text, updates spans without breaking selection/undo and supports session note/runbook headers | `Editor/MarkdownLiveStyler.swift`; `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs; chau7_next/src/panes/runbook.rs | partial |  |
 
+| EDT-014 | Named file editor auto-save toggle, session notes auto-enable; debounce 2.5 s, Auto-saved status clears after 2 s, discard cancels pending save | `SplitPanes/EditorAutoSaver.swift`; `SplitPanes/SplitPaneController.swift` | EditorAutoSaverTests |  | missing |  |
+
+| EDT-015 | Detect file modification on disk, reload clean editor; dirty editor warns File changed externally. Reload? and never silently overwrites newer content | `SplitPanes/SplitPaneController.swift`; `SplitPanes/SplitPaneViews.swift` |  |  | missing |  |
+
 ## Notes
 
 - **EDT-004 to EDT-012 are not reachable in the Swift app.**

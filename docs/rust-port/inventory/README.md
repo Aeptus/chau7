@@ -114,13 +114,13 @@ Found while inventorying; each must hold when the module is ported (see
   local proxy `OPENAI_BASE_URL`. `shell_env::inherited_cleanup` drops or
   restores each of them at startup.
 
-## Never-run Swift features (all to be ported)
+## Historical Swift reachability notes
 
-These Swift features exist in the code but never run in the Swift app today (no
-caller or no way to open them), checked by an independent pass. Decision
-(user, 2026-10-10): port all of them, none is dropped. Port them as designed
-and wire them where the design intends (for example "Explain This Error" on a
-failed command), since there is no working Swift behavior to copy.
+This table describes the April Swift reachability audit. It must not be read
+as a claim about current Swift callers. The earlier decision to port designed
+features remains recorded, but re-check current sources before changing a row.
+Current Next implementations are already present for many of these features.
+The verified current TUI prompt-injection TODO is recorded separately in REP-018.
 
 | Rows | Feature |
 |---|---|
@@ -134,3 +134,11 @@ failed command), since there is no working Swift behavior to copy.
 | PRO-004, PRO-005 | Profile auto-switch rules on SSH host and environment variables |
 | APR-008, APR-009, KBD-016 | Minimal mode, high contrast, Kitty keyboard protocol |
 | PRF-002 | "Metal Renderer" on/off setting (GPUI always renders on the GPU) |
+
+## Audit evidence
+
+The pinned source manifest is [`audit/current-swift-sources.tsv`](audit/current-swift-sources.tsv).
+It indexes every current Swift source file and direct row citations; absence of
+a direct citation flags module-level review, not feature completion. Cohesive
+implementation batches, source mappings, Next seams and validation are in
+[`../REBASE-ON-AEPTUS.md`](../REBASE-ON-AEPTUS.md#6-current-source-inventory-audit-2026-10-11).

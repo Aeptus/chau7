@@ -43,18 +43,18 @@ stale table.
 | [Dashboard](inventory/Dashboard.md) | 3 | 8 | 0 | 0 | 8 | 0 | 0 | 0 |
 | [DataExplorer](inventory/DataExplorer.md) | 4 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | [Debug](inventory/Debug.md) | 5 | 27 | 25 | 1 | 1 | 0 | 0 | 0 |
-| [Editor](inventory/Editor.md) | 4 | 13 | 12 | 1 | 0 | 0 | 0 | 0 |
+| [Editor](inventory/Editor.md) | 4 | 15 | 12 | 1 | 2 | 0 | 0 | 0 |
 | [Events](inventory/Events.md) | 2 | 10 | 10 | 0 | 0 | 0 | 0 | 0 |
 | [History](inventory/History.md) | 2 | 16 | 16 | 0 | 0 | 0 | 0 | 0 |
 | [Keyboard](inventory/Keyboard.md) | 1 | 70 | 69 | 0 | 0 | 1 | 0 | 0 |
-| [Localization](inventory/Localization.md) | 5 | 8 | 5 | 2 | 1 | 0 | 0 | 1 |
-| [Logging](inventory/Logging.md) | 5 | 29 | 26 | 1 | 0 | 2 | 0 | 0 |
+| [Localization](inventory/Localization.md) | 5 | 9 | 5 | 3 | 1 | 0 | 0 | 1 |
+| [Logging](inventory/Logging.md) | 5 | 30 | 26 | 2 | 0 | 2 | 0 | 0 |
 | [MCP](inventory/MCP.md) | 3 | 63 | 51 | 0 | 11 | 1 | 0 | 0 |
 | [Migration](inventory/Migration.md) | 5 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
-| [Monitoring](inventory/Monitoring.md) | 2 | 22 | 17 | 3 | 2 | 0 | 0 | 0 |
+| [Monitoring](inventory/Monitoring.md) | 2 | 23 | 17 | 4 | 2 | 0 | 0 | 0 |
 | [Notifications](inventory/Notifications.md) | 2 | 44 | 39 | 1 | 4 | 0 | 0 | 0 |
 | [Observability](inventory/Observability.md) | 3 | 5 | 0 | 1 | 4 | 0 | 0 | 0 |
-| [Overlay](inventory/Overlay.md) | 1 | 120 | 108 | 5 | 0 | 7 | 0 | 0 |
+| [Overlay](inventory/Overlay.md) | 1 | 121 | 108 | 6 | 0 | 7 | 0 | 0 |
 | [Performance](inventory/Performance.md) | 1 | 18 | 7 | 5 | 2 | 4 | 0 | 3 |
 | [Profiles](inventory/Profiles.md) | 1 | 20 | 20 | 0 | 0 | 0 | 0 | 0 |
 | [Proxy](inventory/Proxy.md) | 3 | 22 | 20 | 2 | 0 | 0 | 0 | 0 |
@@ -62,22 +62,22 @@ stale table.
 | [Rendering](inventory/Rendering.md) | 1 | 7 | 4 | 0 | 0 | 3 | 0 | 0 |
 | [Repository](inventory/Repository.md) | 2 | 19 | 10 | 3 | 6 | 0 | 0 | 0 |
 | [Runtime](inventory/Runtime.md) | 3 | 32 | 24 | 2 | 6 | 0 | 0 | 0 |
-| [RustBackend](inventory/RustBackend.md) | 1 | 60 | 56 | 0 | 0 | 4 | 0 | 0 |
+| [RustBackend](inventory/RustBackend.md) | 1 | 62 | 56 | 2 | 0 | 4 | 0 | 0 |
 | [Scripting](inventory/Scripting.md) | 3 | 15 | 15 | 0 | 0 | 0 | 0 | 0 |
 | [Settings](inventory/Settings.md) | 1 | 140 | 130 | 3 | 2 | 5 | 0 | 1 |
 | [Skills](inventory/Skills.md) | 3 | 6 | 0 | 0 | 6 | 0 | 0 | 0 |
 | [Snippets](inventory/Snippets.md) | 1 | 37 | 37 | 0 | 0 | 0 | 0 | 0 |
 | [SplitPanes](inventory/SplitPanes.md) | 1 | 25 | 21 | 2 | 2 | 0 | 0 | 0 |
 | [StatusBar](inventory/StatusBar.md) | 5 | 17 | 15 | 1 | 0 | 1 | 0 | 0 |
-| [Telemetry](inventory/Telemetry.md) | 3 | 23 | 15 | 5 | 3 | 0 | 0 | 0 |
-| [Terminal](inventory/Terminal.md) | 1 | 65 | 61 | 1 | 0 | 3 | 0 | 0 |
+| [Telemetry](inventory/Telemetry.md) | 3 | 24 | 15 | 6 | 3 | 0 | 0 | 0 |
+| [Terminal](inventory/Terminal.md) | 1 | 68 | 61 | 3 | 1 | 3 | 0 | 0 |
 | [TokenOptimization](inventory/TokenOptimization.md) | 3 | 24 | 21 | 2 | 0 | 1 | 0 | 0 |
 | [Usage](inventory/Usage.md) | 3 | 8 | 0 | 0 | 8 | 0 | 0 | 0 |
 | [Utilities](inventory/Utilities.md) | 1 | 13 | 6 | 0 | 0 | 7 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1285** | **1124** | **47** | **69** | **45** | **0** | |
+| **Total** | | **1297** | **1124** | **56** | **72** | **45** | **0** | |
 
-Finished (done, n/a or dropped): 1169 of 1285 rows (90%). Partial: 47.
+Finished (done, n/a or dropped): 1169 of 1297 rows (90%). Partial: 56.
 
 <!-- parity:end -->
 
