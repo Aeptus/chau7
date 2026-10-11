@@ -43,8 +43,9 @@ Lets the user watch and drive Chau7 tabs from the Chau7 iOS app over the interne
 
 | RMT-030 | Validate own relay credentials are regular owner-only 0600/0400 file, bounded to 8192 bytes, match device identity and strong distinct secrets; display identity/provision instructions on error | `Sidecar/ManagedGoSidecar.swift`; `Remote/RemoteControlManager.swift`; `Remote/RemoteRelayCredentials.swift`; `services/chau7-remote/docs/CREDENTIALS.md` | Relay credential descriptor/key fixtures; isolated identity worker and stale-start tests | chau7_next_core/src/remote/relay_credentials.rs; chau7_next/src/remote/agent.rs; chau7_next/src/remote/mod.rs | done |  |
 | RMT-031 | CHG2 generation-based grid deltas with full resync on reset/tab/size change, skip unchanged snapshots and capture off UI thread | `Chau7Core/Remote/RemoteGridSnapshotCache.swift`; `Chau7Core/Remote/RemoteGridDeliveryPolicy.swift`; `Remote/RemoteGridSnapshotWorker.swift` | RemoteGridSnapshotCacheTests | chau7_next/src/remote/snapshot.rs; chau7_next_core/src/remote/grid_snapshot.rs | partial |  |
-| RMT-032 | Structured prompt ID storage, duplicate replay guard, pending reconciliation and response validation before typing selected answer | `Chau7Core/Remote/StructuredPromptStore.swift`; `Chau7Core/Remote/RemoteReplayGuard.swift`; `Chau7Core/Remote/PendingStateReconciler.swift`; `Chau7Core/Remote/RemotePromptResponse.swift` | StructuredPromptStoreTests | chau7_next_core/src/remote/interactive_prompt.rs | partial |  |
+| RMT-032 | Mac structured Claude questions and plan waiting state, bounded stable prompt IDs, answered-prompt reconciliation, scoped response validation and authoritative tool/session clears | `Chau7Core/Remote/StructuredPromptStore.swift`; `Chau7Core/Remote/RemotePromptResponse.swift`; `Remote/RemoteControlManager.swift` | Structured prompt binding/TTL/capacity/clear tests; scoped response and actual host replay tests | chau7_next_core/src/remote/structured_prompt.rs; chau7_next_core/src/remote/prompt_response.rs; chau7_next/src/remote/host.rs; chau7_next/src/ai/hub.rs | done |  |
 | RMT-033 | Push payload composition includes safe tab/project/approval context, reconnect exponential backoff and bounded telemetry buffer | `Chau7Core/Remote/RemotePushComposition.swift`; `Chau7Core/Remote/RemoteReconnectBackoff.swift`; `Chau7Core/Remote/RemoteTelemetryBuffer.swift` |  | chau7_next/src/remote/mod.rs | partial |  |
+| RMT-034 | Typed KEY_INPUT and PANE_INPUT with exact live pane targeting, unsupported-key rejection, 32-key cap and provider-aware submit delay | `Chau7Core/Remote/RemotePromptResponse.swift`; `Chau7Core/Remote/RemoteWirePayloads.swift`; `Chau7Core/AIAutomationStrategy.swift`; `Remote/RemoteControlManager.swift` | Key/navigation/text plans; actual host stale-pane/replay tests | chau7_next_core/src/remote/key_input.rs; chau7_next_core/src/remote/prompt_response.rs; chau7_next/src/remote/env.rs; chau7_next/src/remote/host.rs | done |  |
 
 ## Notes
 
@@ -90,3 +91,23 @@ generation guards reject completions after relay changes, disable or quit.
 Owned helper shutdown is asynchronous. Non-Unix builds explicitly report the
 unsupported owner/mode boundary of the current Go relay helper rather than
 claim validation. No production relay pairing is claimed by local tests.
+
+**RMT-032 and RMT-034 current Mac behavior.** Claude hook intake binds structured
+questions to the runtime tab and provider session. AskUserQuestion supplies
+stable tool/session/question IDs and multi-select choices; ExitPlanMode drives
+waiting activity and uses actual terminal choices. Store capacity is 128 and
+TTL one hour. Authoritative tool completion/failure and session stop/failure
+clear entries. Responses derive text from the currently advertised choice and
+require the live pane identity; successful non-toggle answers suppress replay.
+Protected approvals retain the intended pane and its context. Actual GPUI input
+writes through that pane's view, preserves input/history bookkeeping, sends
+semantic keys separately, and delays trailing Enter by 60 ms (120 ms after
+Codex text). Submitted text replaces the line; bare Enter preserves prefill.
+Capabilities are advertised to the phone. Unit and host tests pass; a paired
+phone hand test remains on the native acceptance checklist.
+
+The earlier RMT-032 row also named RemoteReplayGuard and PendingStateReconciler.
+Those Swift types belong to the iOS client (encrypted WebSocket epochs and REST
+`/pending` arbitration), not the Mac host. Next keeps the existing shared Go
+agent for relay encryption, sequence handling and pending snapshots. The Mac
+inventory now describes the code that the Mac app actually invokes.

@@ -1024,6 +1024,9 @@ mod tests {
     ) -> ClaudeCodeEvent {
         ClaudeCodeEvent {
             event_type: kind,
+            raw_type: kind.as_str().into(),
+            tool_use_id: String::new(),
+            tool_input_json: None,
             hook: String::new(),
             session_id: session.into(),
             transcript_path: String::new(),

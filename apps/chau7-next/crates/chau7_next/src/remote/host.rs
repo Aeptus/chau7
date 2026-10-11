@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 
 use chau7_next_core::interactive_prompt_detector;
+use chau7_next_core::monitoring::claude_code::ClaudeCodeEvent;
 use chau7_next_core::remote::activity_state::{
     self, RemoteActivityApproval, RemoteActivityCandidate, RemoteActivityState,
     RemoteActivityStatus,
@@ -18,13 +19,16 @@ use chau7_next_core::remote::frame::{RemoteFrame, RemoteFrameType};
 use chau7_next_core::remote::interactive_prompt::{
     RemoteInteractivePrompt, RemoteInteractivePromptListPayload,
 };
+use chau7_next_core::remote::key_input::{RemoteKey, RemoteKeyInput, navigation_keys};
 use chau7_next_core::remote::models::{
     ApprovalRequestPayload, ApprovalResponsePayload, RemoteClientAppState,
     RemoteClientStatePayload, RemoteClientStreamMode, RemoteErrorPayload, RemotePairingInfo,
     RemoteSessionStatus, RemoteTabDescriptor, RemoteTabListPayload, RemoteTabSwitchPayload,
 };
 use chau7_next_core::remote::output_buffering::RemoteOutputTuning;
+use chau7_next_core::remote::prompt_response::{Action, RemotePaneInput, RemotePromptResponse};
 use chau7_next_core::remote::protection;
+use chau7_next_core::remote::structured_prompt::StructuredPromptStore;
 use chau7_next_core::remote::tab_registry::{RemoteTabRegistry, RemoteTabRegistryEntry};
 use chau7_next_core::remote::viewer_protocol::{
     ViewerFrame, ViewerJoinPayload, ViewerLeavePayload,
@@ -118,6 +122,12 @@ pub trait HostEnv {
     fn pane_text(&mut self, key: TabKey, pane_id: u64) -> Option<String>;
     /// Type `text` in the tab's main pane. False when it cannot.
     fn write_input(&mut self, key: TabKey, text: &str) -> bool;
+    fn write_pane_input(&mut self, _key: TabKey, _pane_id: u64, _text: &str) -> bool {
+        false
+    }
+    fn write_keys(&mut self, _key: TabKey, _pane_id: Option<u64>, _keys: &[RemoteKey]) -> bool {
+        false
+    }
     /// Clear the tab's persistent notification style (approval answered).
     fn clear_persistent_style(&mut self, key: TabKey);
     /// Answer an MCP command approval (`TerminalControlService.resolveApproval`).
@@ -142,6 +152,7 @@ impl FrameSink for Vec<RemoteFrame> {
 #[derive(Debug, Clone)]
 struct ProtectedInput {
     tab_id: u32,
+    pane_id: Option<u64>,
     text: String,
     created_at: DateTime<Utc>,
 }
@@ -323,6 +334,8 @@ pub struct RemoteHost {
     approvals: HashMap<String, ApprovalContext>,
     pub activity: Option<RemoteActivityState>,
     pub prompts: Vec<RemoteInteractivePrompt>,
+    structured: StructuredPromptStore,
+    answered_prompts: HashMap<String, DateTime<Utc>>,
     last_tab_list: Option<Vec<RemoteTabDescriptor>>,
     selected_tab_id: Option<u32>,
     /// Output of the selected tab not sent yet, with its tab ID.
@@ -506,6 +519,11 @@ impl RemoteHost {
                 }
             }
             RemoteFrameType::Input => self.handle_input(frame, env, sink),
+            RemoteFrameType::KeyInput => self.handle_keys(frame, env, sink),
+            RemoteFrameType::PaneInput => self.handle_pane_input(frame, env, sink),
+            RemoteFrameType::InteractivePromptResponse => {
+                self.handle_prompt_response(frame, env, sink)
+            }
             RemoteFrameType::RemoteTelemetry => {
                 if let Some(event) =
                     decode::<RemoteClientTelemetryEvent>(&frame, "remote telemetry")
@@ -601,7 +619,7 @@ impl RemoteHost {
         };
         if let Some(flagged) = protection::flagged_termination_action(&text) {
             let request_id = uuid::Uuid::new_v4().to_string().to_uppercase();
-            self.queue_protected_input(env, sink, request_id, text, resolved, flagged);
+            self.queue_protected_input(env, sink, request_id, text, (resolved, None), flagged);
             return;
         }
         if !env.write_input(key, &text) {
@@ -612,6 +630,157 @@ impl RemoteHost {
                 tab_id,
             );
         }
+    }
+
+    pub fn ingest_claude_event(
+        &mut self,
+        event: &ClaudeCodeEvent,
+        tab: Option<TabKey>,
+        now: DateTime<Utc>,
+    ) {
+        self.structured.apply(event, tab, now);
+    }
+
+    fn handle_keys(&mut self, frame: RemoteFrame, env: &mut dyn HostEnv, sink: &mut dyn FrameSink) {
+        let Ok(input) = serde_json::from_slice::<RemoteKeyInput>(&frame.payload) else {
+            return;
+        };
+        let Some((key, _)) = self.resolve_input_target(env, frame.tab_id) else {
+            return;
+        };
+        if !env.write_keys(key, None, &input.keys) {
+            self.send_error(
+                sink,
+                "tab_unavailable",
+                "That tab cannot receive keys right now.",
+                frame.tab_id,
+            );
+        }
+    }
+    fn handle_pane_input(
+        &mut self,
+        frame: RemoteFrame,
+        env: &mut dyn HostEnv,
+        sink: &mut dyn FrameSink,
+    ) {
+        let Ok(input) = serde_json::from_slice::<RemotePaneInput>(&frame.payload) else {
+            return;
+        };
+        let Some((key, resolved)) = self.resolve_input_target(env, frame.tab_id) else {
+            return;
+        };
+        let tabs = env.tabs();
+        let Some(pane) = tabs.iter().find(|tab| tab.key == key).and_then(|tab| {
+            tab.panes
+                .iter()
+                .find(|pane| uuid::Uuid::from_u64_pair(0, pane.pane_id) == input.pane_id)
+        }) else {
+            return;
+        };
+        match (input.text, input.keys) {
+            (Some(text), None) if text.len() <= 16384 => {
+                if let Some(flagged) = protection::flagged_termination_action(&text) {
+                    self.queue_protected_input(
+                        env,
+                        sink,
+                        uuid::Uuid::new_v4().to_string(),
+                        text,
+                        (resolved, Some(pane.pane_id)),
+                        flagged,
+                    );
+                } else {
+                    env.write_pane_input(key, pane.pane_id, &text);
+                }
+            }
+            (None, Some(keys)) => {
+                env.write_keys(key, Some(pane.pane_id), &keys);
+            }
+            _ => {}
+        }
+    }
+    fn handle_prompt_response(
+        &mut self,
+        frame: RemoteFrame,
+        env: &mut dyn HostEnv,
+        sink: &mut dyn FrameSink,
+    ) {
+        let Ok(response) = serde_json::from_slice::<RemotePromptResponse>(&frame.payload) else {
+            return;
+        };
+        if self.answered_prompts.contains_key(&response.prompt_id) {
+            self.send_error(
+                sink,
+                "stale_prompt",
+                "That prompt has already been answered. Refresh before answering.",
+                frame.tab_id,
+            );
+            self.send_activity(env, sink, true);
+            return;
+        }
+        let Some((key, resolved)) = self.resolve_input_target(env, frame.tab_id) else {
+            return;
+        };
+        let tabs = env.tabs();
+        let now = env.now();
+        let prompts = self.current_prompts(env, &tabs, now);
+        let Some(prompt) = prompts
+            .iter()
+            .find(|prompt| prompt.id == response.prompt_id)
+        else {
+            self.send_error(
+                sink,
+                "stale_prompt",
+                "That prompt or terminal pane is no longer available. Refresh before answering.",
+                frame.tab_id,
+            );
+            self.send_activity(env, sink, true);
+            return;
+        };
+        let panes: Vec<uuid::Uuid> = tabs
+            .iter()
+            .filter(|tab| tab.key == key)
+            .flat_map(|tab| &tab.panes)
+            .map(|pane| uuid::Uuid::from_u64_pair(0, pane.pane_id))
+            .collect();
+        let Some(text) = response.response_text(prompt, resolved, &panes) else {
+            self.send_error(
+                sink,
+                "stale_prompt",
+                "That prompt or terminal pane is no longer available. Refresh before answering.",
+                frame.tab_id,
+            );
+            self.send_activity(env, sink, true);
+            return;
+        };
+        let pane = response.pane_id.as_u64_pair().1;
+        let written = if let Some(flagged) = protection::flagged_termination_action(&text) {
+            self.queue_protected_input(
+                env,
+                sink,
+                uuid::Uuid::new_v4().to_string(),
+                text,
+                (resolved, Some(pane)),
+                flagged,
+            );
+            return;
+        } else if let Some(keys) = navigation_keys(&text) {
+            env.write_keys(key, Some(pane), &keys)
+        } else {
+            env.write_pane_input(key, pane, &text)
+        };
+        if written && response.action != Action::Toggle {
+            if self.answered_prompts.len() >= 128
+                && let Some(oldest) = self
+                    .answered_prompts
+                    .iter()
+                    .min_by_key(|(_, at)| *at)
+                    .map(|(id, _)| id.clone())
+            {
+                self.answered_prompts.remove(&oldest);
+            }
+            self.answered_prompts.insert(response.prompt_id, env.now());
+        }
+        self.send_activity(env, sink, true);
     }
 
     // ----- approvals --------------------------------------------------------
@@ -725,9 +894,10 @@ impl RemoteHost {
         sink: &mut dyn FrameSink,
         request_id: String,
         text: String,
-        tab_id: u32,
+        target: (u32, Option<u64>),
         flagged: &str,
     ) {
+        let (tab_id, pane_id) = target;
         let now = env.now();
         self.purge_expired(now);
         if self.pending_protected.len() >= MAX_PENDING_PROTECTED_INPUTS {
@@ -747,6 +917,7 @@ impl RemoteHost {
             request_id.clone(),
             ProtectedInput {
                 tab_id,
+                pane_id,
                 text: text.clone(),
                 created_at: now,
             },
@@ -754,11 +925,16 @@ impl RemoteHost {
         let command = text.trim().to_string();
         let mut request = ApprovalRequestPayload::new(&request_id, &command, flagged, iso8601(now));
         let tabs = env.tabs();
-        if let Some(tab) = self.tab_and_main(&tabs, tab_id)
-            && let Some(context) = self.context_for(&tab, tab_id, &request, now)
-        {
-            request = context.payload();
-            self.approvals.insert(request_id.clone(), context);
+        if let Some(mut tab) = self.tab_and_main(&tabs, tab_id) {
+            if let Some(pane) = pane_id
+                && let Some(index) = tab.panes.iter().position(|value| value.pane_id == pane)
+            {
+                tab.main_pane = index;
+            }
+            if let Some(context) = self.context_for(&tab, tab_id, &request, now) {
+                request = context.payload();
+                self.approvals.insert(request_id.clone(), context);
+            }
         }
         self.send_approval_request(&request, env, sink);
         log::warn!("Remote: queued protected action approval for tab {tab_id}");
@@ -785,7 +961,11 @@ impl RemoteHost {
             if response.approved
                 && let Some(key) = key
             {
-                env.write_input(key, &input.text);
+                if let Some(pane) = input.pane_id {
+                    env.write_pane_input(key, pane, &input.text);
+                } else {
+                    env.write_input(key, &input.text);
+                }
                 log::info!("Remote: protected action approved for tab {}", input.tab_id);
             } else {
                 log::info!("Remote: protected action denied for tab {}", input.tab_id);
@@ -864,6 +1044,9 @@ impl RemoteHost {
             return false;
         }
         let payload = RemoteTabListPayload {
+            capabilities: ["key_input", "scoped_prompt_response", "pane_input"]
+                .map(str::to_string)
+                .to_vec(),
             tabs: descriptors.clone(),
         };
         self.last_tab_list = Some(descriptors);
@@ -997,24 +1180,35 @@ impl RemoteHost {
                 {
                     continue;
                 }
-                let (status, detail) = match pane.status {
-                    CommandStatus::ApprovalRequired => (
+                let structured = pane
+                    .ai_session_id
+                    .as_deref()
+                    .and_then(|session| self.structured.entry(tab.key, session, now));
+                let (status, detail) = if let Some(entry) = structured {
+                    (
                         RemoteActivityStatus::WaitingInput,
-                        Some("Approval required".into()),
-                    ),
-                    CommandStatus::WaitingForInput => (
-                        RemoteActivityStatus::WaitingInput,
-                        pane.at_prompt.then(|| "Waiting at prompt".to_string()),
-                    ),
-                    CommandStatus::Running => (RemoteActivityStatus::Running, None),
-                    CommandStatus::Stuck => (
-                        RemoteActivityStatus::Running,
-                        Some("No output for a while".to_string()),
-                    ),
-                    CommandStatus::Idle | CommandStatus::Done | CommandStatus::Exited => {
-                        match recent_completion(tab, now) {
-                            Some(outcome) => outcome,
-                            None => continue,
+                        Some(entry.prompt.clone()),
+                    )
+                } else {
+                    match pane.status {
+                        CommandStatus::ApprovalRequired => (
+                            RemoteActivityStatus::WaitingInput,
+                            Some("Approval required".into()),
+                        ),
+                        CommandStatus::WaitingForInput => (
+                            RemoteActivityStatus::WaitingInput,
+                            pane.at_prompt.then(|| "Waiting at prompt".to_string()),
+                        ),
+                        CommandStatus::Running => (RemoteActivityStatus::Running, None),
+                        CommandStatus::Stuck => (
+                            RemoteActivityStatus::Running,
+                            Some("No output for a while".to_string()),
+                        ),
+                        CommandStatus::Idle | CommandStatus::Done | CommandStatus::Exited => {
+                            match recent_completion(tab, now) {
+                                Some(outcome) => outcome,
+                                None => continue,
+                            }
                         }
                     }
                 };
@@ -1049,24 +1243,57 @@ impl RemoteHost {
                 continue;
             };
             for pane in &tab.panes {
-                if !matches!(
-                    pane.status,
-                    CommandStatus::WaitingForInput | CommandStatus::ApprovalRequired
-                ) {
+                let structured = pane
+                    .ai_session_id
+                    .as_deref()
+                    .and_then(|session| self.structured.entry(tab.key, session, now));
+                if structured.is_none()
+                    && !matches!(
+                        pane.status,
+                        CommandStatus::WaitingForInput | CommandStatus::ApprovalRequired
+                    )
+                {
                     continue;
                 }
                 let tool = tool_name(pane, tab);
-                let Some(text) = env.pane_text(tab.key, pane.pane_id) else {
-                    continue;
-                };
-                let Some(detected) = interactive_prompt_detector::detect(&text, &tool) else {
-                    continue;
-                };
+                let detected = env
+                    .pane_text(tab.key, pane.pane_id)
+                    .and_then(|text| interactive_prompt_detector::detect(&text, &tool));
+                let (signature, prompt, detail, options, detected_at, multi) =
+                    if let Some(entry) = structured {
+                        let options = if entry.options.is_empty() {
+                            detected.map(|value| value.options).unwrap_or_default()
+                        } else {
+                            entry.options.clone()
+                        };
+                        if options.is_empty() {
+                            continue;
+                        }
+                        (
+                            entry.signature.clone(),
+                            entry.prompt.clone(),
+                            entry.detail.clone(),
+                            options,
+                            entry.created_at,
+                            Some(entry.is_multi_select),
+                        )
+                    } else if let Some(detected) = detected {
+                        (
+                            detected.signature,
+                            detected.prompt,
+                            detected.detail,
+                            detected.options,
+                            updated_at(pane, tab, now),
+                            None,
+                        )
+                    } else {
+                        continue;
+                    };
                 prompts.push(RemoteInteractivePrompt {
                     id: format!(
                         "tab-{tab_id}-pane-{}-{}",
                         pane_uuid(pane.pane_id),
-                        detected.signature
+                        signature
                     ),
                     tab_id,
                     tab_title: tab.activity_title(),
@@ -1074,10 +1301,12 @@ impl RemoteHost {
                     project_name: project_name(pane),
                     branch_name: trimmed(pane.git_branch.as_deref()),
                     current_directory: trimmed(pane.cwd.as_deref()),
-                    prompt: detected.prompt,
-                    detail: detected.detail,
-                    options: detected.options,
-                    detected_at: updated_at(pane, tab, now),
+                    prompt,
+                    detail,
+                    options,
+                    detected_at,
+                    pane_id: Some(uuid::Uuid::from_u64_pair(0, pane.pane_id)),
+                    is_multi_select: multi,
                 });
             }
         }
@@ -1119,7 +1348,12 @@ impl RemoteHost {
         force: bool,
     ) {
         let now = env.now();
-        let next = self.current_prompts(env, tabs, now);
+        let mut next = self.current_prompts(env, tabs, now);
+        self.answered_prompts.retain(|id, answered| {
+            *answered > now - chrono::Duration::hours(1)
+                && next.iter().any(|prompt| &prompt.id == id)
+        });
+        next.retain(|prompt| !self.answered_prompts.contains_key(&prompt.id));
         if !force && next == self.prompts {
             return;
         }
@@ -1168,6 +1402,7 @@ pub(crate) mod tests {
         pub texts: HashMap<TabKey, String>,
         pub pane_texts: HashMap<(TabKey, u64), String>,
         pub typed: Vec<(TabKey, String)>,
+        pub pane_typed: Vec<(TabKey, u64, String)>,
         pub resolved: Vec<(String, bool)>,
         pub cleared: Vec<TabKey>,
         pub telemetry: Vec<RemoteClientTelemetryEvent>,
@@ -1215,6 +1450,7 @@ pub(crate) mod tests {
                 texts,
                 pane_texts: HashMap::new(),
                 typed: Vec::new(),
+                pane_typed: Vec::new(),
                 resolved: Vec::new(),
                 cleared: Vec::new(),
                 telemetry: Vec::new(),
@@ -1249,6 +1485,36 @@ pub(crate) mod tests {
         }
         fn write_input(&mut self, key: TabKey, text: &str) -> bool {
             self.typed.push((key, text.to_string()));
+            true
+        }
+        fn write_pane_input(&mut self, key: TabKey, pane: u64, text: &str) -> bool {
+            if !self
+                .tabs
+                .iter()
+                .any(|tab| tab.key == key && tab.panes.iter().any(|value| value.pane_id == pane))
+            {
+                return false;
+            }
+            self.pane_typed.push((key, pane, text.into()));
+            true
+        }
+        fn write_keys(&mut self, key: TabKey, pane: Option<u64>, keys: &[RemoteKey]) -> bool {
+            let pane = pane.or_else(|| {
+                self.tabs
+                    .iter()
+                    .find(|tab| tab.key == key)
+                    .and_then(|tab| tab.panes.get(tab.main_pane))
+                    .map(|pane| pane.pane_id)
+            });
+            let Some(pane) = pane else {
+                return false;
+            };
+            let steps = chau7_next_core::remote::key_input::key_steps(keys, false);
+            for step in steps {
+                if !self.write_pane_input(key, pane, std::str::from_utf8(&step.bytes).unwrap()) {
+                    return false;
+                }
+            }
             true
         }
         fn clear_persistent_style(&mut self, key: TabKey) {
@@ -1683,5 +1949,57 @@ pub(crate) mod tests {
             iso8601(Utc.timestamp_opt(0, 500).unwrap()),
             "1970-01-01T00:00:00Z"
         );
+    }
+    #[test]
+    fn structured_response_targets_pane_and_rejects_replay_or_stale_pane() {
+        let mut env = FakeEnv::new();
+        let mut host = RemoteHost::new();
+        let mut out = Vec::new();
+        env.tabs[0].panes.push(pane(3, 300));
+        env.tabs[0].panes[1].ai_session_id = Some("s".into());
+        host.handle_frame(
+            frame(RemoteFrameType::SessionReady, 0, ""),
+            &mut env,
+            &mut out,
+        );
+        let event=chau7_next_core::monitoring::claude_code::parse_event_line(r#"{"type":"tool_start","sessionId":"s","toolName":"AskUserQuestion","toolUseID":"q","toolInput":{"questions":[{"question":"Choose","options":[{"label":"Keep"},{"label":"Cancel"}]}]}}"#,0.).unwrap();
+        host.ingest_claude_event(&event, Some(10), env.now);
+        host.refresh(&mut env, &mut out);
+        let prompt = host.prompts[0].clone();
+        assert_eq!(prompt.pane_id, Some(uuid::Uuid::from_u64_pair(0, 3)));
+        let payload=serde_json::json!({"prompt_id":prompt.id,"pane_id":prompt.pane_id,"action":"select","option_id":"1"}).to_string();
+        host.handle_frame(
+            frame(
+                RemoteFrameType::InteractivePromptResponse,
+                prompt.tab_id,
+                &payload,
+            ),
+            &mut env,
+            &mut out,
+        );
+        assert_eq!(env.pane_typed, vec![(10, 3, "1".into())]);
+        assert!(env.typed.is_empty());
+        assert!(host.prompts.is_empty());
+        host.handle_frame(
+            frame(
+                RemoteFrameType::InteractivePromptResponse,
+                prompt.tab_id,
+                &payload,
+            ),
+            &mut env,
+            &mut out,
+        );
+        assert_eq!(env.pane_typed.len(), 1);
+        env.tabs[0].panes.pop();
+        host.handle_frame(
+            frame(
+                RemoteFrameType::PaneInput,
+                prompt.tab_id,
+                &serde_json::json!({"pane_id":prompt.pane_id,"text":"stale"}).to_string(),
+            ),
+            &mut env,
+            &mut out,
+        );
+        assert_eq!(env.pane_typed.len(), 1);
     }
 }

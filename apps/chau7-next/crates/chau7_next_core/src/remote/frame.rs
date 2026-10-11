@@ -142,6 +142,9 @@ pub enum RemoteFrameType {
     Input = 0x21,
     Snapshot = 0x22,
     TerminalGridSnapshot = 0x23,
+    KeyInput = 0x24,
+    InteractivePromptResponse = 0x26,
+    PaneInput = 0x27,
     ApprovalRequest = 0x50,
     ApprovalResponse = 0x51,
     /// Read-only viewers (RMT-027, `docs/remote-control/VIEWER-PROTOCOL.md`);
@@ -158,7 +161,7 @@ pub enum RemoteFrameType {
 
 impl RemoteFrameType {
     /// Every case, in Swift declaration order.
-    pub const ALL: [RemoteFrameType; 29] = [
+    pub const ALL: [RemoteFrameType; 32] = [
         Self::Hello,
         Self::PairRequest,
         Self::PairAccept,
@@ -178,6 +181,9 @@ impl RemoteFrameType {
         Self::Input,
         Self::Snapshot,
         Self::TerminalGridSnapshot,
+        Self::KeyInput,
+        Self::InteractivePromptResponse,
+        Self::PaneInput,
         Self::ApprovalRequest,
         Self::ApprovalResponse,
         Self::ViewerShare,
