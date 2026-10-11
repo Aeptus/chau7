@@ -5,6 +5,7 @@
 pub mod claude_transcript;
 pub mod codex_rollout;
 pub mod date_codec;
+pub mod evidence;
 pub mod metrics_sanitizer;
 pub mod providers;
 pub mod recorder;

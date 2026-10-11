@@ -132,6 +132,14 @@ CREATE TABLE IF NOT EXISTS provider_latency_samples (
 );
 CREATE INDEX IF NOT EXISTS idx_provider_latency_samples_time ON provider_latency_samples(observed_at);
 CREATE INDEX IF NOT EXISTS idx_provider_latency_samples_provider ON provider_latency_samples(provider,metric_kind,observed_at);
+CREATE TABLE IF NOT EXISTS proxy_run_baselines (run_id TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,snapshot TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS usage_evidence (
+ ingest_seq INTEGER PRIMARY KEY AUTOINCREMENT,evidence_id TEXT NOT NULL UNIQUE,unique_event_key TEXT NOT NULL UNIQUE,reconciliation_key TEXT NOT NULL,source_kind TEXT NOT NULL,provider TEXT NOT NULL,model TEXT,session_id TEXT,run_id TEXT,endpoint TEXT,project_path TEXT,input_tokens INTEGER,cache_creation_input_tokens INTEGER,cache_read_input_tokens INTEGER,output_tokens INTEGER,reasoning_output_tokens INTEGER,cost_usd REAL,token_usage_source TEXT,token_usage_state TEXT NOT NULL,cost_source TEXT,cost_state TEXT NOT NULL,pricing_version TEXT,source_ref TEXT,metadata TEXT,observed_at TEXT NOT NULL,payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_usage_evidence_provider ON usage_evidence(provider,observed_at);
+CREATE INDEX IF NOT EXISTS idx_usage_evidence_reconciliation ON usage_evidence(reconciliation_key,source_kind);
+CREATE INDEX IF NOT EXISTS idx_usage_evidence_run ON usage_evidence(run_id);
+CREATE INDEX IF NOT EXISTS idx_usage_evidence_observed ON usage_evidence(observed_at);
 CREATE TABLE IF NOT EXISTS maintenance_state (name TEXT PRIMARY KEY, cursor TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY,
@@ -276,6 +284,103 @@ fn replace_completed_latency(
     Ok(())
 }
 
+fn insert_evidence(conn: &Connection, e: &super::evidence::UsageEvidence) -> rusqlite::Result<()> {
+    conn.execute("INSERT INTO usage_evidence(evidence_id,unique_event_key,reconciliation_key,source_kind,provider,model,session_id,run_id,endpoint,project_path,input_tokens,cache_creation_input_tokens,cache_read_input_tokens,output_tokens,reasoning_output_tokens,cost_usd,token_usage_source,token_usage_state,cost_source,cost_state,pricing_version,source_ref,metadata,observed_at,payload) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25) ON CONFLICT(unique_event_key) DO UPDATE SET reconciliation_key=excluded.reconciliation_key,source_kind=excluded.source_kind,provider=excluded.provider,model=excluded.model,session_id=excluded.session_id,run_id=excluded.run_id,endpoint=excluded.endpoint,project_path=excluded.project_path,input_tokens=excluded.input_tokens,cache_creation_input_tokens=excluded.cache_creation_input_tokens,cache_read_input_tokens=excluded.cache_read_input_tokens,output_tokens=excluded.output_tokens,reasoning_output_tokens=excluded.reasoning_output_tokens,cost_usd=excluded.cost_usd,token_usage_source=excluded.token_usage_source,token_usage_state=excluded.token_usage_state,cost_source=excluded.cost_source,cost_state=excluded.cost_state,pricing_version=excluded.pricing_version,source_ref=excluded.source_ref,metadata=excluded.metadata,observed_at=excluded.observed_at,payload=excluded.payload",params![e.id,e.unique_event_key,e.reconciliation_key,raw(&e.source_kind),e.provider,e.model,e.session_id,e.run_id,e.endpoint,e.project_path,e.input_tokens,e.cache_creation_input_tokens,e.cache_read_input_tokens,e.output_tokens,e.reasoning_output_tokens,e.cost_usd,e.token_usage_source.as_ref().and_then(raw),raw(&e.token_usage_state),e.cost_source.as_ref().and_then(raw),raw(&e.cost_state),e.pricing_version,e.source_ref,encode_json(&e.metadata),iso(&e.observed_at),encode_json(e)])?;
+    Ok(())
+}
+fn update_run_usage(conn: &Connection, run: &TelemetryRun) -> rusqlite::Result<()> {
+    conn.execute("UPDATE runs SET total_input_tokens=?1,total_cached_input_tokens=?2,total_cache_creation_input_tokens=?3,total_cache_read_input_tokens=?4,total_output_tokens=?5,total_reasoning_output_tokens=?6,cost_usd=?7,token_usage_source=?8,token_usage_state=?9,cost_source=?10,cost_state=?11,metadata=?12 WHERE run_id=?13",params![run.total_input_tokens,run.total_cached_input_tokens,run.total_cache_creation_input_tokens,run.total_cache_read_input_tokens,run.total_output_tokens,run.total_reasoning_output_tokens,run.cost_usd,run.token_usage_source.as_ref().and_then(raw),raw(&run.token_usage_state),run.cost_source.as_ref().and_then(raw),raw(&run.cost_state),encode_json(&run.metadata),run.id])?;
+    insert_evidence(conn, &super::evidence::UsageEvidence::run_summary(run))
+}
+fn restore_baseline(mut run: TelemetryRun, baseline: TelemetryRun) -> TelemetryRun {
+    run.total_input_tokens = baseline.total_input_tokens;
+    run.total_cached_input_tokens = baseline.total_cached_input_tokens;
+    run.total_cache_creation_input_tokens = baseline.total_cache_creation_input_tokens;
+    run.total_cache_read_input_tokens = baseline.total_cache_read_input_tokens;
+    run.total_output_tokens = baseline.total_output_tokens;
+    run.total_reasoning_output_tokens = baseline.total_reasoning_output_tokens;
+    run.cost_usd = baseline.cost_usd;
+    run.token_usage_source = baseline.token_usage_source;
+    run.token_usage_state = baseline.token_usage_state;
+    run.cost_source = baseline.cost_source;
+    run.cost_state = baseline.cost_state;
+    run.metadata.retain(|key, _| !key.starts_with("proxy_"));
+    run
+}
+fn reconcile_proxy_window(conn: &Connection, at: DateTime<Utc>) -> rusqlite::Result<bool> {
+    use super::evidence::{apply_attribution, attributed};
+    fn runs(
+        conn: &Connection,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> rusqlite::Result<Vec<TelemetryRun>> {
+        let mut stmt=conn.prepare("SELECT * FROM runs WHERE julianday(started_at)<=julianday(?1) AND (ended_at IS NULL OR julianday(ended_at)>=julianday(?2)) LIMIT 501")?;
+        let rows = stmt.query_map(
+            params![
+                iso(&(end + chrono::Duration::seconds(1))),
+                iso(&(start - chrono::Duration::seconds(1)))
+            ],
+            |row| Ok(parse_run(row)),
+        )?;
+        rows.filter_map(|r| r.transpose()).collect()
+    }
+    let candidates = runs(conn, at, at)?;
+    if candidates.is_empty() {
+        return Ok(true);
+    }
+    if candidates.len() > 500 {
+        return Ok(false);
+    }
+    let start = candidates.iter().map(|r| r.started_at).min().unwrap();
+    let end = candidates
+        .iter()
+        .map(|r| r.ended_at.unwrap_or_else(Utc::now))
+        .max()
+        .unwrap();
+    let candidates = runs(conn, start, end)?;
+    if candidates.len() > 500 {
+        return Ok(false);
+    }
+    let mut stmt=conn.prepare("SELECT payload FROM usage_evidence WHERE source_kind='proxy' AND unique_event_key NOT LIKE 'run|%' AND julianday(observed_at)>=julianday(?1) AND julianday(observed_at)<=julianday(?2) ORDER BY observed_at,ingest_seq LIMIT 5001")?;
+    let observations: Vec<_> = stmt
+        .query_map(
+            params![
+                iso(&(start - chrono::Duration::seconds(1))),
+                iso(&(end + chrono::Duration::seconds(1)))
+            ],
+            |row| {
+                let json: String = row.get(0)?;
+                Ok(serde_json::from_str::<super::evidence::UsageEvidence>(&json).ok())
+            },
+        )?
+        .filter_map(|r| r.transpose())
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if observations.len() > 5000 {
+        return Ok(false);
+    }
+    let attributed = attributed(&observations, &candidates);
+    for run in candidates {
+        if let Some(a) = attributed.get(&run.id) {
+            if run.token_usage_source != Some(super::token_metrics::TokenUsageSource::Proxy) {
+                conn.execute("INSERT INTO proxy_run_baselines(run_id,snapshot) VALUES (?1,?2) ON CONFLICT(run_id) DO UPDATE SET snapshot=excluded.snapshot",params![run.id,encode_json(&run)])?;
+            }
+            update_run_usage(conn, &apply_attribution(&run, a))?;
+        } else if run.token_usage_source == Some(super::token_metrics::TokenUsageSource::Proxy) {
+            let json: Option<String> = conn
+                .query_row(
+                    "SELECT snapshot FROM proxy_run_baselines WHERE run_id=?1",
+                    [&run.id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let baseline = json
+                .and_then(|j| serde_json::from_str(&j).ok())
+                .unwrap_or_else(|| TelemetryRun::new(&run.provider, &run.cwd));
+            update_run_usage(conn, &restore_baseline(run, baseline))?;
+        }
+    }
+    Ok(true)
+}
 /// A column by name, `None` when absent or NULL.
 fn col<T: rusqlite::types::FromSql>(row: &Row, name: &str) -> Option<T> {
     row.get::<_, Option<T>>(name).ok().flatten()
@@ -456,7 +561,8 @@ impl TelemetryStore {
     /// Insert a new run (`INSERT OR IGNORE`: safe to call twice).
     pub fn insert_run(&self, run: &TelemetryRun) {
         self.with((), |c| {
-            c.execute(
+            let tx=c.unchecked_transaction()?;
+            tx.execute(
                 "INSERT OR IGNORE INTO runs
                 (run_id, session_id, tab_id, provider, model, cwd, repo_path,
                  started_at, ended_at, duration_ms, exit_status,
@@ -494,13 +600,55 @@ impl TelemetryStore {
                     run.parent_run_id,
                     run.error_message,
                 ],
-            )
-            .map(|_| ())
+            )?;
+            insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
+            reconcile_proxy_window(&tx,run.started_at)?;
+            tx.commit()
         });
     }
 
     /// Finish a run: update its row and add its turns and tool calls in one
     /// transaction (UPDATE, never delete and insert, so children survive).
+    pub fn evidence_cursor(&self) -> i64 {
+        self.with(0, |conn| {
+            let cursor: Option<String> = conn
+                .query_row(
+                    "SELECT cursor FROM maintenance_state WHERE name='proxy_evidence_v1'",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            Ok(cursor.and_then(|s| s.parse().ok()).unwrap_or(0))
+        })
+    }
+    /// Cursor and observations commit atomically; a crash safely repeats IDs.
+    pub fn ingest_evidence_batch(&self, rows: &[(i64, super::evidence::UsageEvidence)]) {
+        if rows.is_empty() {
+            return;
+        }
+        self.with((),|conn|{let tx=conn.unchecked_transaction()?;for (_,e) in rows {insert_evidence(&tx,e)?;}let oldest=rows.iter().map(|(_,e)|e.observed_at).min().unwrap();let newest=rows.iter().map(|(_,e)|e.observed_at).max().unwrap();reconcile_proxy_window(&tx,oldest)?;if newest!=oldest{reconcile_proxy_window(&tx,newest)?;}tx.execute("INSERT INTO maintenance_state(name,cursor) VALUES ('proxy_evidence_v1',?1) ON CONFLICT(name) DO UPDATE SET cursor=excluded.cursor",[rows.iter().map(|(id,_)|*id).max().unwrap().to_string()])?;tx.commit()});
+    }
+    /// Request-scoped retained observations are independent from run projections.
+    pub fn record_usage_evidence(&self, e: &super::evidence::UsageEvidence) {
+        self.with((), |conn| {
+            let tx = conn.unchecked_transaction()?;
+            insert_evidence(&tx, e)?;
+            if !reconcile_proxy_window(&tx, e.observed_at)? {
+                log::warn!(
+                    "Proxy usage reconciliation deferred: retained window exceeds query budget"
+                );
+            }
+            tx.commit()
+        });
+    }
+    pub fn usage_evidence(
+        &self,
+        after: Option<DateTime<Utc>>,
+        limit: usize,
+    ) -> Vec<super::evidence::UsageEvidence> {
+        self.with(vec![],|conn|{let mut stmt=conn.prepare("SELECT payload FROM usage_evidence WHERE (?1 IS NULL OR observed_at>=?1) ORDER BY observed_at,ingest_seq LIMIT ?2")?;let rows=stmt.query_map(params![after.as_ref().map(iso),limit.clamp(1,100_000) as i64],|row|{let json:String=row.get(0)?;Ok(serde_json::from_str(&json).ok())})?;rows.filter_map(|r|r.transpose()).collect()})
+    }
+
     /// Latency writes are idempotent and preserve the original ingest order.
     pub fn insert_latency_sample(&self, sample: &super::latency::LatencySample) {
         self.with((), |conn| insert_latency(conn, sample));
@@ -625,6 +773,8 @@ impl TelemetryStore {
                 insert_tool_call(&tx, call);
             }
             replace_completed_latency(&tx, run, turns)?;
+            insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
+            reconcile_proxy_window(&tx,run.started_at)?;
             tx.commit()
         });
     }
@@ -687,6 +837,8 @@ impl TelemetryStore {
                 insert_tool_call(&tx, call);
             }
             replace_completed_latency(&tx, run, turns)?;
+            insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
+            reconcile_proxy_window(&tx,run.started_at)?;
             tx.commit()
         });
     }
@@ -732,12 +884,23 @@ impl TelemetryStore {
     }
 
     pub fn update_run_session_id(&self, run_id: &str, session_id: &str) {
-        self.with((), |c| {
-            c.execute(
-                "UPDATE runs SET session_id = ? WHERE run_id = ?",
+        self.with((), |conn| {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute(
+                "UPDATE runs SET session_id=?1 WHERE run_id=?2",
                 params![session_id, run_id],
-            )
-            .map(|_| ())
+            )?;
+            let run: Option<TelemetryRun> = tx
+                .query_row("SELECT * FROM runs WHERE run_id=?1", [run_id], |row| {
+                    Ok(parse_run(row))
+                })
+                .optional()?
+                .flatten();
+            if let Some(run) = run {
+                insert_evidence(&tx, &super::evidence::UsageEvidence::run_summary(&run))?;
+                reconcile_proxy_window(&tx, run.started_at)?;
+            }
+            tx.commit()
         });
     }
 
@@ -1657,5 +1820,46 @@ mod tests {
         assert_eq!(store.backfill_cost_batch(1), 1);
         assert_eq!(store.backfill_cost_batch(1), 0);
         assert_eq!(store.get_run(&b.id).unwrap().cost_usd, Some(42.));
+    }
+    #[test]
+    fn scoped_evidence_revokes_ambiguous_projection_and_restores_baseline() {
+        use super::super::evidence::{SourceKind, UsageEvidence};
+        let store = TelemetryStore::in_memory();
+        let now = Utc::now();
+        let mut r = run("claude", None, None);
+        r.started_at = now - chrono::Duration::seconds(1);
+        r.session_id = Some("s".into());
+        r.total_input_tokens = Some(900);
+        r.cost_usd = Some(5.);
+        r.cost_source = Some(CostSource::Estimated);
+        r.cost_state = TelemetryMetricState::Estimated;
+        store.insert_run(&r);
+        let mut e = UsageEvidence::empty("anthropic", SourceKind::Proxy, now);
+        e.session_id = Some("s".into());
+        e.input_tokens = Some(10);
+        e.output_tokens = Some(20);
+        e.cost_usd = Some(1.);
+        e.finish_proxy_identity(Some("request"));
+        store.record_usage_evidence(&e);
+        store.record_usage_evidence(&e);
+        let measured = store.get_run(&r.id).unwrap();
+        assert_eq!(measured.total_input_tokens, Some(10));
+        assert_eq!(measured.token_usage_state, TelemetryMetricState::Partial);
+        assert_eq!(store.usage_evidence(None, 100).len(), 2);
+        let mut overlapping = r.clone();
+        overlapping.id = "overlap".into();
+        store.insert_run(&overlapping);
+        let restored = store.get_run(&r.id).unwrap();
+        assert_eq!(restored.total_input_tokens, Some(900));
+        assert_eq!(restored.cost_usd, Some(5.));
+        assert!(!restored.metadata.contains_key("proxy_coverage"));
+        let mut scoped = e.clone();
+        scoped.run_id = Some(r.id.clone());
+        scoped.unique_event_key = "request2".into();
+        scoped.id = "request2".into();
+        store.record_usage_evidence(&scoped);
+        assert_eq!(store.get_run(&r.id).unwrap().total_input_tokens, Some(10));
+        store.ingest_evidence_batch(&[(4, scoped)]);
+        assert_eq!(store.evidence_cursor(), 4);
     }
 }

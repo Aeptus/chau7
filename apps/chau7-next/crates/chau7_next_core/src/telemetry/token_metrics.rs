@@ -8,14 +8,16 @@ use serde::{Deserialize, Serialize};
 pub enum TelemetryMetricState {
     Complete,
     Estimated,
+    Partial,
     Missing,
     Invalid,
 }
 
 impl TelemetryMetricState {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Complete,
         Self::Estimated,
+        Self::Partial,
         Self::Missing,
         Self::Invalid,
     ];

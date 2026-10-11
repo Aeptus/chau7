@@ -623,6 +623,29 @@ mod tests {
 
 /// Cached latency read model. History reads and aggregation stay off the UI thread.
 #[derive(Debug, Clone, Serialize)]
+pub struct EvidenceDiagnostics {
+    pub retained_records: usize,
+    pub reconciled_groups: usize,
+    pub priced_groups: usize,
+    pub missing_cost_groups: usize,
+    pub unassigned_requests: Option<usize>,
+    pub total_cost_usd: Option<f64>,
+    pub token_groups: usize,
+    pub token_usage: chau7_next_core::telemetry::token_metrics::TokenUsage,
+    pub incomplete_window: bool,
+    pub groups: Vec<EvidenceGroup>,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct EvidenceGroup {
+    pub provider: String,
+    pub scope: String,
+    pub source: String,
+    pub confidence: String,
+    pub tokens: Option<i64>,
+    pub cost_usd: Option<f64>,
+    pub alternatives: usize,
+}
+#[derive(Debug, Clone, Serialize)]
 pub struct LatencyView {
     pub range: chau7_next_core::telemetry::latency::TimeRange,
     pub bucket: chau7_next_core::telemetry::latency::BucketKind,
@@ -632,6 +655,7 @@ pub struct LatencyView {
     pub dashboard: Option<chau7_next_core::telemetry::latency::LatencyDashboard>,
     pub refreshed_at: Option<DateTime<Utc>>,
     pub refreshing: bool,
+    pub evidence: Option<EvidenceDiagnostics>,
     generation: u64,
 }
 impl Default for LatencyView {
@@ -646,6 +670,7 @@ impl Default for LatencyView {
             refreshed_at: None,
             refreshing: false,
             generation: 0,
+            evidence: None,
         }
     }
 }
@@ -712,6 +737,9 @@ pub fn refresh_latency(cx: &mut App) {
         .spawn(async move {
             let now = Utc::now();
             let start = selection.range.start(now);
+            let retained = chau7_next_core::proxy::ProxyAnalyticsStore::new(&root.proxy_db())
+                .evidence_batch(recorder.store().evidence_cursor(), 100);
+            recorder.store().ingest_evidence_batch(&retained);
             recorder.store().backfill_latency_batch(100);
             recorder.store().backfill_cost_batch(100);
             let mut samples = recorder.store().latency_samples(start);
@@ -752,6 +780,74 @@ pub fn refresh_latency(cx: &mut App) {
                     now,
                 )
             });
+            let retained = recorder.store().usage_evidence(start, 5001);
+            let incomplete = retained.len() > 5000;
+            let selected_records: Vec<_> = retained
+                .iter()
+                .take(5000)
+                .filter(|e| selected.as_ref().is_none_or(|p| e.provider == *p))
+                .cloned()
+                .collect();
+            let report = chau7_next_core::telemetry::evidence::reconcile(&selected_records);
+            let runs =
+                recorder
+                    .store()
+                    .list_runs(&chau7_next_core::telemetry::run::TelemetryRunFilter {
+                        limit: Some(501),
+                        ..Default::default()
+                    });
+            let attributed =
+                chau7_next_core::telemetry::evidence::attributed(&selected_records, &runs);
+            let assigned: HashSet<_> = attributed
+                .values()
+                .flat_map(|a| a.evidence_ids.iter().cloned())
+                .collect();
+            let unassigned = selected_records
+                .iter()
+                .filter(|e| {
+                    e.source_kind == chau7_next_core::telemetry::evidence::SourceKind::Proxy
+                        && !e.unique_event_key.starts_with("run|")
+                        && !assigned.contains(&e.id)
+                })
+                .count();
+            let priced_groups = report
+                .groups
+                .iter()
+                .filter(|g| g.selected.evidence.cost_usd.is_some())
+                .count();
+            let evidence = EvidenceDiagnostics {
+                retained_records: selected_records.len(),
+                reconciled_groups: report.groups.len(),
+                priced_groups,
+                missing_cost_groups: report.groups.len() - priced_groups,
+                unassigned_requests: (runs.len() <= 500).then_some(unassigned),
+                token_groups: report
+                    .groups
+                    .iter()
+                    .filter(|g| g.selected.evidence.has_tokens())
+                    .count(),
+                total_cost_usd: (priced_groups > 0).then_some(report.total_cost_usd),
+                token_usage: report.total_token_usage,
+                incomplete_window: incomplete || runs.len() > 500,
+                groups: report
+                    .groups
+                    .iter()
+                    .take(32)
+                    .map(|g| EvidenceGroup {
+                        provider: g.provider.clone(),
+                        scope: g.reconciliation_key.clone(),
+                        source: format!("{:?}", g.selected.evidence.source_kind),
+                        confidence: g.confidence.clone(),
+                        tokens: g
+                            .selected
+                            .evidence
+                            .has_tokens()
+                            .then_some(g.selected.usage().total_billable_tokens()),
+                        cost_usd: g.selected.evidence.cost_usd,
+                        alternatives: g.alternatives.len(),
+                    })
+                    .collect(),
+            };
             let mut s = shared.lock();
             if s.generation != selection.generation {
                 return;
@@ -759,6 +855,7 @@ pub fn refresh_latency(cx: &mut App) {
             s.providers = providers;
             s.selected_provider = selected;
             s.dashboard = dashboard;
+            s.evidence = Some(evidence);
             s.refreshed_at = Some(now);
             s.refreshing = false;
         })
