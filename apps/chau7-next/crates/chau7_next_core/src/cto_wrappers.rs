@@ -772,7 +772,7 @@ mod tests {
             flag_dir: PathBuf::from("/h/.chau7-next/cto_active"),
             bin_dir: PathBuf::from("/h/.chau7-next/bin"),
             data_dir: PathBuf::from("/h/.chau7-next/cto_data"),
-            swift_wrapper_dir: PathBuf::from("/h/.chau7/cto_bin"),
+            swift_wrapper_dir: PathBuf::from("/swift/cto_bin"),
         }
     }
 
