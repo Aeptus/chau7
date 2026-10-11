@@ -37,7 +37,7 @@ use chau7_next_core::shell_session::{
 };
 use chau7_next_core::work_profiler::{self, Key as WorkKey, Kind as WorkKind, Queue as WorkQueue};
 use chau7_next_core::{shell_env, shell_integration, shell_tips};
-use chau7_terminal::{Chau7Terminal, GridCopy, graphics::ShellIntegrationEvent};
+use chau7_terminal::{Chau7Terminal, GridCopy, OutputInterrupt, graphics::ShellIntegrationEvent};
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
 use gpui::{AppContext, Context, EventEmitter, Global, Task};
@@ -47,6 +47,8 @@ use super::pty_writer::{CloseMode, PtyWriter, Signal, signal_group};
 use crate::monitoring::session::{SessionMonitor, shell_ai_event};
 use crate::platform::process as procinfo;
 use crate::settings::{ActivePollingRateCap, BellSound, Settings};
+
+const PTY_READINESS_MAX_WAIT_MS: u64 = 200;
 
 #[derive(Clone, Copy)]
 enum RefreshWake {
@@ -169,6 +171,8 @@ pub struct TerminalSession {
     memory: Arc<crate::memory_pressure::SessionMemory>,
     writer: PtyWriter,
     stop: Arc<AtomicBool>,
+    poll_interrupt: OutputInterrupt,
+    poll_interactive: AtomicBool,
     /// Raw output collected by the poll thread since the last refresh, and
     /// when the first of it arrived (latency).
     output: Arc<Mutex<(Vec<u8>, Option<Instant>)>>,
@@ -465,6 +469,7 @@ impl TerminalSession {
         let echo_fd = term.echo_fd();
         let has_pty = term.has_pty();
         let pid = term.shell_pid() as i32;
+        let (readiness, poll_interrupt) = term.output_readiness();
         let term = Arc::new(RwLock::new(term));
         let stop = Arc::new(AtomicBool::new(false));
         let output = Arc::new(Mutex::new((Vec::new(), None)));
@@ -486,6 +491,26 @@ impl TerminalSession {
                 .name("chau7-next-poll".into())
                 .spawn(move || {
                     while !stop.load(Ordering::Acquire) {
+                        // Reader-channel readiness never dequeues output and owns
+                        // no terminal/parser lock. Input/focus/stop interrupts are
+                        // coalesced; PTY arrival wakes this wait immediately.
+                        let wait_visibility = profile_memory
+                            .get()
+                            .and_then(std::sync::Weak::upgrade)
+                            .map_or("unobserved", |memory| memory.profiling_phase());
+                        let wait_key = WorkKey::work(
+                            "pty_readiness_wait",
+                            "readiness",
+                            wait_visibility,
+                            "pty_poll",
+                            WorkQueue::Background,
+                        );
+                        let _ready = work_profiler::measure(wait_key, || {
+                            readiness.wait(Duration::from_millis(PTY_READINESS_MAX_WAIT_MS))
+                        });
+                        if stop.load(Ordering::Acquire) {
+                            break;
+                        }
                         let visibility = profile_memory
                             .get()
                             .and_then(std::sync::Weak::upgrade)
@@ -505,7 +530,7 @@ impl TerminalSession {
                                     "pty_poll",
                                     WorkQueue::Background,
                                 ),
-                                || term.poll(16),
+                                || term.poll(0),
                             );
                             let mut extraction = work_profiler::begin(WorkKey::work(
                                 "get_last_output",
@@ -637,6 +662,8 @@ impl TerminalSession {
             memory,
             writer,
             stop,
+            poll_interrupt,
+            poll_interactive: AtomicBool::new(true),
             output,
             pending_input: RefCell::new(Vec::new()),
             latency: RefCell::new(LatencyTracker::new()),
@@ -724,6 +751,8 @@ impl TerminalSession {
             "known_session_capacity_bytes":grid_cells.saturating_add(clusters).saturating_add(output_capacity).saturating_add(pending_input).saturating_add(preview),
             "refresh_cap_interval_ms":self.refresh_interval_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0,
             "display_native_refresh":self.refresh_interval_ns.load(Ordering::Relaxed) == 0,
+            "refresh_interactive":self.poll_interactive.load(Ordering::Relaxed),
+            "pty_readiness_max_wait_ms":PTY_READINESS_MAX_WAIT_MS,
             "render_suspended":self.is_render_suspended(),
             "native_pending_image_bytes":serde_json::Value::Null,
             "unavailable_reason":"Native pending images and private GPUI GPU resources expose no allocation accessor; native ring bytes are estimated. Known capacities exclude allocator/HashMap overhead."
@@ -1681,6 +1710,9 @@ impl TerminalSession {
     /// Raw bytes for the program (key and mouse reports, replies). Written
     /// in order on the writer thread.
     pub fn write(&self, bytes: &[u8]) {
+        if !bytes.is_empty() {
+            self.poll_interrupt.wake();
+        }
         self.writer.write(bytes.to_vec());
     }
 
@@ -1898,6 +1930,7 @@ impl TerminalSession {
     /// Suspend Background Rendering for a hidden tab (see `render_suspended`).
     pub fn set_render_suspended(&self, suspended: bool) {
         if self.render_suspended.swap(suspended, Ordering::Relaxed) != suspended {
+            self.poll_interrupt.wake();
             let _ = self.refresh_wake.unbounded_send(RefreshWake::Cadence);
         }
         self.memory.set_tui(self.ai_app.is_some());
@@ -1913,7 +1946,10 @@ impl TerminalSession {
     ) {
         let interval = refresh_interval(interactive, active, inactive_fps);
         let ns = interval.as_nanos().min(u128::from(u64::MAX)) as u64;
-        if self.refresh_interval_ns.swap(ns, Ordering::Relaxed) != ns {
+        let focus_changed =
+            self.poll_interactive.swap(interactive, Ordering::Relaxed) != interactive;
+        if self.refresh_interval_ns.swap(ns, Ordering::Relaxed) != ns || focus_changed {
+            self.poll_interrupt.wake();
             let _ = self.refresh_wake.unbounded_send(RefreshWake::Cadence);
         }
     }
@@ -2016,6 +2052,7 @@ impl TerminalSession {
             return;
         }
         self.close_requested = true;
+        self.poll_interrupt.wake();
         unregister_shell(self.id);
         let mode = if APP_QUITTING.load(Ordering::Acquire) {
             CloseMode::AppQuit
@@ -2079,6 +2116,7 @@ impl Drop for TerminalSession {
         }
         self.close();
         self.stop.store(true, Ordering::Release);
+        self.poll_interrupt.wake();
     }
 }
 
