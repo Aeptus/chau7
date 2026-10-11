@@ -122,7 +122,9 @@ impl TerminalView {
                 this.danger_note_output(cx);
             }
             // OSC 52 read: answer with the clipboard text (RBK-012).
-            if matches!(event, SessionEvent::ClipboardLoad) {
+            if matches!(event, SessionEvent::ClipboardLoad)
+                && !this.session.read(cx).has_pending_clipboard_response()
+            {
                 let text = cx
                     .read_from_clipboard()
                     .and_then(|item| item.text())
