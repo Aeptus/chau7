@@ -353,6 +353,7 @@ pub fn uninstall(root: &DataRoot, provider: HookProvider) -> Result<(), String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_root::SWIFT_CLAUDE_HOOK_HELPER;
 
     #[cfg(unix)]
     #[test]
@@ -374,7 +375,7 @@ mod tests {
     #[test]
     fn overlay_preserves_swift_mixed_hooks_and_permissions_and_is_idempotent() {
         let helper = Path::new("/owned/a'b/next-hook");
-        let previous = json!({"permissions":{"deny":["Bash(rm *)"]}, "hooks":{"Stop":[{"matcher":".*", "hooks":[{"type":"command","command":"/legacy/chau7-claude-hook"},{"type":"command","command":command(helper)},{"type":"command","command":"custom-chau7-metrics"}]}]}});
+        let previous = json!({"permissions":{"deny":["Bash(rm *)"]}, "hooks":{"Stop":[{"matcher":".*", "hooks":[{"type":"command","command":format!("/legacy/{SWIFT_CLAUDE_HOOK_HELPER}")},{"type":"command","command":command(helper)},{"type":"command","command":"custom-chau7-metrics"}]}]}});
         let once = claude_overlay(Some(previous.to_string().as_bytes()), helper).unwrap();
         let twice = claude_overlay(Some(once.as_bytes()), helper).unwrap();
         assert_eq!(once, twice);
@@ -386,7 +387,7 @@ mod tests {
         );
         assert_eq!(
             value["hooks"]["Stop"][0]["hooks"][0]["command"],
-            "/legacy/chau7-claude-hook"
+            format!("/legacy/{SWIFT_CLAUDE_HOOK_HELPER}")
         );
         assert!(claude_overlay_installed(once.as_bytes(), helper));
         assert!(!claude_overlay_installed(

@@ -33,6 +33,9 @@ pub const APP_NAME: &str = "Chau7 Next";
 /// The Swift app registers `chau7`; Chau7 Next must never touch that entry.
 pub const MCP_SERVER_NAME: &str = "chau7-next";
 
+/// Read-only Swift hook identity for coexistence checks and exact ownership fixtures.
+pub const SWIFT_CLAUDE_HOOK_HELPER: &str = "chau7-claude-hook";
+
 /// Folder of a repository's snippets (one JSON per snippet), relative to the
 /// git root. The repo belongs to the user, so both apps share it.
 pub const DEFAULT_REPO_SNIPPET_PATH: &str = ".chau7/snippets";
