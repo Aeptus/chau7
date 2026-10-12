@@ -52,13 +52,14 @@ jobs:
           - name: Windows
             os: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
+          toolchain: 1.99.0
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/chau7-next
           cache-on-failure: true
@@ -82,7 +83,7 @@ jobs:
 
       # The remote control agent (services/chau7-remote) and the API
       # analytics proxy (apps/chau7-macos/chau7-proxy) ship inside the app.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: runner.os == 'macOS'
         with:
           go-version-file: services/chau7-remote/go.mod
@@ -111,7 +112,7 @@ jobs:
 
       - name: Upload Chau7 Next.app
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Chau7-Next-macOS-arm64
           path: apps/chau7-next/target/bundle/Chau7-Next-macOS-arm64.zip

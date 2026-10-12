@@ -135,7 +135,7 @@ def main():
     )
     parser.add_argument(
         "--toolchain",
-        default="1.96.0",
+        default="1.99.0",
         help="Exact already installed Rust release; never installed or upgraded by this script",
     )
     args = parser.parse_args()

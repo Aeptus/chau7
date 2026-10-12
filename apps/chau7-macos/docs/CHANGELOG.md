@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 
+- Pin Chau7 Next and Rust helpers to Rust 1.99.0 and pin the Next CI actions to reviewed current releases. Native parity keeps its existing deadlines and requires the exact installed compiler.
+
 - Review and pin the new GPUI source inventory for duplication checks, retaining the 2% threshold and checks on modified or added files. Clarify initial rebase hashes versus the complete final modification ledger.
 
 - Upgrade Chau7 Next to GPUI Kit 0.7.3 and the matching GPUI 0.3.9 family, rebasing the complete Software window backend and native ownership fixes. Preserve verified fork provenance, historical patches and packaged license notices; full-app native acceptance of the upgraded engine remains in progress.

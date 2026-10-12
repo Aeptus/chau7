@@ -3,7 +3,7 @@
 node = "26.11.1"
 go = "1.27.2"
 python = "3.15.0"
-rust = "1.96.0"
+rust = "1.99.0"
 "npm:pnpm" = "12.11.2"
 "aqua:nicklockwood/SwiftFormat" = "0.63.1"
 "aqua:realm/SwiftLint" = "0.65.1"

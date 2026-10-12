@@ -1,0 +1,4 @@
+# Build the Next app and its vendored GPUI fork with the reviewed compiler.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]

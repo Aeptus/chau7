@@ -185,7 +185,7 @@ Windows, and builds the macOS app bundle.
 
 ## Owned native parity fixtures (macOS)
 
-From a clean committed checkout, with Rust 1.96.0 already installed:
+From a clean committed checkout, with Rust 1.99.0 already installed:
 
 ```bash
 python3 apps/chau7-next/scripts/native-parity.py
