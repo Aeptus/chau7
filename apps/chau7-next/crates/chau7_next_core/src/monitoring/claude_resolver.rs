@@ -236,6 +236,74 @@ fn normalized_directory(home: &Path, directory: &str) -> PathBuf {
     }
     normalized
 }
+/// Claude Code 2.1.296's installed project codec operates on JS UTF-16 units:
+/// non-ASCII-alphanumeric units become dashes, capped at 200 with a base36
+/// absolute signed-32-bit polynomial hash of the original directory appended.
+fn cli_project_component(directory: &str) -> String {
+    let mut encoded = String::new();
+    let mut hash = 0i32;
+    for unit in directory.encode_utf16() {
+        hash = hash.wrapping_mul(31).wrapping_add(i32::from(unit));
+        encoded.push(if unit < 128 && (unit as u8).is_ascii_alphanumeric() {
+            unit as u8 as char
+        } else {
+            '-'
+        });
+    }
+    if encoded.len() > 200 {
+        encoded.truncate(200);
+        encoded.push('-');
+        let mut value = hash.unsigned_abs();
+        let mut digits = Vec::new();
+        loop {
+            let digit = (value % 36) as u8;
+            digits.push(if digit < 10 {
+                b'0' + digit
+            } else {
+                b'a' + digit - 10
+            });
+            value /= 36;
+            if value == 0 {
+                break;
+            }
+        }
+        encoded.extend(digits.into_iter().rev().map(char::from));
+    }
+    encoded
+}
+
+/// A project key must be one ordinary filename, never an absolute path,
+/// drive-relative path, prefix, parent traversal or nested directory.
+fn safe_project_component(component: &str) -> bool {
+    let mut components = Path::new(component).components();
+    if !matches!(components.next(), Some(Component::Normal(name)) if name == component)
+        || components.next().is_some()
+    {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        // Win32 aliases and normalization cannot serve as literal project keys.
+        if component.ends_with(['.', ' ']) || component.contains(':') {
+            return false;
+        }
+        let stem = component
+            .split('.')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_uppercase();
+        if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CLOCK$")
+            || stem
+                .strip_prefix("COM")
+                .or_else(|| stem.strip_prefix("LPT"))
+                .is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"))
+        {
+            return false;
+        }
+    }
+    true
+}
+
 fn project_folders(home: &Path, directory: &str) -> Vec<PathBuf> {
     if directory.trim().is_empty() {
         return Vec::new();
@@ -243,12 +311,18 @@ fn project_folders(home: &Path, directory: &str) -> Vec<PathBuf> {
     let directory = normalized_directory(home, directory)
         .to_string_lossy()
         .into_owned();
-    let current = directory.replace('/', "-");
+    let swift = directory.replace('/', "-");
+    let cli = cli_project_component(&directory);
     let legacy = crate::session_restore::claude_project_dir_name(&directory);
     let root = home.join(".claude/projects");
-    let mut folders = vec![root.join(&current)];
-    if current != legacy {
-        folders.push(root.join(legacy));
+    let mut folders = Vec::new();
+    for component in [swift, cli, legacy] {
+        if safe_project_component(&component) {
+            let folder = root.join(component);
+            if !folders.contains(&folder) {
+                folders.push(folder);
+            }
+        }
     }
     folders
 }
@@ -380,6 +454,10 @@ mod tests {
         }
         fn transcript(&self, project: &str, id: &str) -> PathBuf {
             let folder = project_folders(&self.0, project).remove(0);
+            assert_eq!(
+                folder.parent(),
+                Some(self.0.join(".claude/projects").as_path())
+            );
             fs::create_dir_all(&folder).unwrap();
             let path = folder.join(format!("{id}.jsonl"));
             fs::write(&path, b"{}\n").unwrap();
@@ -567,5 +645,85 @@ mod tests {
         fs::create_dir_all(&legacy).unwrap();
         fs::write(legacy.join("s1.jsonl"), b"{}").unwrap();
         assert_eq!(session_candidates(&home.0, "/repo.with-dot").len(), 2);
+    }
+    #[test]
+    fn installed_cli_codec_handles_windows_unicode_and_long_directory_keys() {
+        assert_eq!(
+            cli_project_component(r"C:\Users\Me\repo.with-dot"),
+            "C--Users-Me-repo-with-dot"
+        );
+        assert_eq!(
+            cli_project_component(r"\\server\share\repo"),
+            "--server-share-repo"
+        );
+        assert_eq!(cli_project_component("/repo/é😀"), "-repo----");
+        let long = format!("C:\\{}", "a".repeat(240));
+        let encoded = cli_project_component(&long);
+        assert_eq!(encoded, format!("C--{}-qu8739", "a".repeat(197)));
+        assert_eq!(&encoded[..200], format!("C--{}", "a".repeat(197)));
+        assert!(safe_project_component(&encoded));
+        assert_ne!(encoded, cli_project_component(&format!("{long}b")));
+        // JavaScript Math.abs(-2147483648) remains a positive 2147483648.
+        let minimum_hash = format!("{}polygenelubricants", "\0".repeat(201));
+        assert_eq!(
+            cli_project_component(&minimum_hash),
+            format!("{}-zik0zk", "-".repeat(200))
+        );
+        for key in ["", ".", "..", "/repo", "a/b", "foo/", "foo/."] {
+            assert!(!safe_project_component(key), "unsafe key {key:?}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_project_keys_are_confined_and_native_sessions_are_discoverable() {
+        let home = Home::new();
+        let root = home.0.join(".claude/projects");
+        for (index, project) in [
+            r"C:\Users\Me\repo.with-dot",
+            r"C:/Users/Me/repo",
+            r"\\server\share\repo",
+            r"C:\CON\AUX.txt\repo",
+            "/repo",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let folders = project_folders(&home.0, project);
+            assert!(!folders.is_empty());
+            for folder in &folders {
+                assert_eq!(folder.parent(), Some(root.as_path()));
+            }
+            let id = format!("native-{index}");
+            let transcript = home.transcript(project, &id);
+            let mut resolver = Resolver::default();
+            assert_eq!(
+                resolver
+                    .metadata(&home.0, &id, None)
+                    .unwrap()
+                    .transcript_path,
+                Some(transcript)
+            );
+            assert!(
+                session_candidates(&home.0, project)
+                    .iter()
+                    .any(|s| s.session_id == id)
+            );
+        }
+        for key in [
+            r"C:\repo",
+            r"C:repo",
+            r"\\server\share",
+            r"a\b",
+            "CON",
+            "aux.txt",
+            "NUL",
+            "COM1",
+            "LPT9",
+            "trailing.",
+            "trailing ",
+        ] {
+            assert!(!safe_project_component(key), "unsafe native key {key:?}");
+        }
     }
 }

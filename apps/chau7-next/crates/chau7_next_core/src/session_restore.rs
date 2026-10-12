@@ -1108,19 +1108,28 @@ mod tests {
     #[test]
     fn finds_claude_session_in_project_folder() {
         let home = temp_home("claude");
-        let folder = home.join(".claude/projects/-work-app");
+        let project = home.join("work/app");
+        let directory = project.to_string_lossy();
+        let folder = home
+            .join(".claude/projects")
+            .join(claude_project_dir_name(&directory));
         std::fs::create_dir_all(&folder).unwrap();
         std::fs::write(folder.join("sess-1.jsonl"), "{}\n").unwrap();
-        let found = find_ai_resume_session_id(&home, "claude", "/work/app", None, &HashSet::new());
+        let found = find_ai_resume_session_id(&home, "claude", &directory, None, &HashSet::new());
         assert_eq!(found.as_deref(), Some("sess-1"));
         // A sub directory finds the session started above it.
-        let found =
-            find_ai_resume_session_id(&home, "claude", "/work/app/src", None, &HashSet::new());
+        let found = find_ai_resume_session_id(
+            &home,
+            "claude",
+            &project.join("src").to_string_lossy(),
+            None,
+            &HashSet::new(),
+        );
         assert_eq!(found.as_deref(), Some("sess-1"));
         // Claimed by another pane: nothing is guessed.
         let claimed: HashSet<String> = ["sess-1".to_string()].into();
         assert_eq!(
-            find_ai_resume_session_id(&home, "claude", "/work/app", None, &claimed),
+            find_ai_resume_session_id(&home, "claude", &directory, None, &claimed),
             None
         );
         let _ = std::fs::remove_dir_all(&home);
@@ -1129,12 +1138,17 @@ mod tests {
     #[test]
     fn two_claude_sessions_without_reference_are_not_guessed() {
         let home = temp_home("claude2");
-        let folder = home.join(".claude/projects/-work-app");
+        let project = home.join("work/app");
+        let directory = project.to_string_lossy();
+        let folder = home
+            .join(".claude/projects")
+            .join(claude_project_dir_name(&directory));
         std::fs::create_dir_all(&folder).unwrap();
         std::fs::write(folder.join("a.jsonl"), "{}\n").unwrap();
         std::fs::write(folder.join("b.jsonl"), "{}\n").unwrap();
+        assert_eq!(claude_session_candidates(&home, &directory).len(), 2);
         assert_eq!(
-            find_ai_resume_session_id(&home, "claude", "/work/app", None, &HashSet::new()),
+            find_ai_resume_session_id(&home, "claude", &directory, None, &HashSet::new()),
             None
         );
         let _ = std::fs::remove_dir_all(&home);
@@ -1178,22 +1192,26 @@ mod tests {
     #[test]
     fn resolve_metadata_needs_a_known_tool() {
         let home = temp_home("resolve");
-        let folder = home.join(".claude/projects/-work-app");
+        let project = home.join("work/app");
+        let directory = project.to_string_lossy();
+        let folder = home
+            .join(".claude/projects")
+            .join(claude_project_dir_name(&directory));
         std::fs::create_dir_all(&folder).unwrap();
         std::fs::write(folder.join("s1.jsonl"), "{}\n").unwrap();
         let m =
-            resolve_ai_resume_metadata(&home, Some("Claude"), "/work/app", None, &HashSet::new())
+            resolve_ai_resume_metadata(&home, Some("Claude"), &directory, None, &HashSet::new())
                 .unwrap();
         assert_eq!(
             (m.provider.as_str(), m.session_id.as_str()),
             ("claude", "s1")
         );
         assert!(
-            resolve_ai_resume_metadata(&home, Some("Gemini"), "/work/app", None, &HashSet::new())
+            resolve_ai_resume_metadata(&home, Some("Gemini"), &directory, None, &HashSet::new())
                 .is_none()
         );
         assert!(
-            resolve_ai_resume_metadata(&home, None, "/work/app", None, &HashSet::new()).is_none()
+            resolve_ai_resume_metadata(&home, None, &directory, None, &HashSet::new()).is_none()
         );
         let _ = std::fs::remove_dir_all(&home);
     }
