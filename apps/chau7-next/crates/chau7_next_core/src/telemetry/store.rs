@@ -237,11 +237,33 @@ pub struct RepoRunStats {
     pub last_run_at: Option<DateTime<Utc>>,
 }
 
-/// The telemetry database.
+/// Memory-only initialization state. Reading this never takes the SQLite lock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreReadiness {
+    Loading,
+    Ready,
+    Failed,
+    Closed,
+}
+impl StoreReadiness {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Loading => "loading",
+            Self::Ready => "ready",
+            Self::Failed => "failed",
+            Self::Closed => "closed",
+        }
+    }
+}
+
+/// The telemetry database. Synchronous SQL access is for background callers.
 pub struct TelemetryStore {
     conn: Mutex<Option<Connection>>,
     path: Option<PathBuf>,
     failures: std::sync::atomic::AtomicU64,
+    readiness: std::sync::atomic::AtomicU8,
+    initialization: std::sync::Mutex<()>,
+    initialized: std::sync::Condvar,
 }
 
 /// A Swift raw value (`rawValue`) of a string enum.
@@ -493,59 +515,115 @@ fn parse_remote_event(row: &Row) -> Option<RemoteClientTelemetryEvent> {
 const PRICED: &str = "SUM(CASE WHEN COALESCE(cost_state, 'missing') IN ('complete', 'estimated') AND cost_usd IS NOT NULL THEN 1 ELSE 0 END)";
 const MISSING_COST: &str = "SUM(CASE WHEN COALESCE(cost_state, 'missing') = 'missing' OR cost_usd IS NULL THEN 1 ELSE 0 END)";
 
+struct InitializationGuard<'a>(&'a TelemetryStore);
+impl Drop for InitializationGuard<'_> {
+    fn drop(&mut self) {
+        // A failed or unwinding initializer must wake readers rather than leave
+        // them waiting forever. No SQLite handle is created or closed on UI.
+        self.0.fail_initialization();
+    }
+}
+
 impl TelemetryStore {
+    /// A memory-only placeholder; no directories, files or SQL are touched.
+    pub(super) fn pending(path: &Path) -> Self {
+        Self {
+            conn: Mutex::new(None),
+            path: Some(path.to_owned()),
+            failures: Default::default(),
+            readiness: std::sync::atomic::AtomicU8::new(0),
+            initialization: std::sync::Mutex::new(()),
+            initialized: std::sync::Condvar::new(),
+        }
+    }
+    pub fn readiness(&self) -> StoreReadiness {
+        match self.readiness.load(std::sync::atomic::Ordering::Acquire) {
+            0 => StoreReadiness::Loading,
+            1 => StoreReadiness::Ready,
+            2 => StoreReadiness::Failed,
+            _ => StoreReadiness::Closed,
+        }
+    }
+    fn publish_readiness(&self, state: StoreReadiness) {
+        let _held = self
+            .initialization
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        self.readiness.store(
+            match state {
+                StoreReadiness::Loading => 0,
+                StoreReadiness::Ready => 1,
+                StoreReadiness::Failed => 2,
+                StoreReadiness::Closed => 3,
+            },
+            std::sync::atomic::Ordering::Release,
+        );
+        self.initialized.notify_all();
+    }
+    pub(super) fn fail_initialization(&self) {
+        if self.readiness() == StoreReadiness::Loading {
+            self.record_failure();
+            self.publish_readiness(StoreReadiness::Failed);
+        }
+    }
+    /// Background-only readiness barrier. UI uses the atomic snapshot instead.
+    pub fn wait_until_initialized(&self) -> rusqlite::Result<()> {
+        let mut held = self
+            .initialization
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        while self.readiness() == StoreReadiness::Loading {
+            held = self
+                .initialized
+                .wait(held)
+                .unwrap_or_else(|e| e.into_inner());
+        }
+        if self.readiness() == StoreReadiness::Ready {
+            Ok(())
+        } else {
+            Err(rusqlite::Error::InvalidQuery)
+        }
+    }
+    /// First ordered writer job: open/check/migrate before admitted run writes.
+    pub(super) fn initialize_background(&self) -> rusqlite::Result<()> {
+        let _guard = InitializationGuard(self);
+        let path = self.path.as_deref().ok_or(rusqlite::Error::InvalidQuery)?;
+        let connection = open_checked(path)?;
+        let mut held = self.conn.lock();
+        if self.readiness() != StoreReadiness::Loading {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        *held = Some(connection);
+        self.publish_readiness(StoreReadiness::Ready);
+        Ok(())
+    }
     /// Open (or create) the store at `path`. A database that fails
     /// `PRAGMA quick_check` is deleted and created again (TEL-008).
     pub fn open(path: &Path) -> Self {
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
+        let store = Self::pending(path);
+        if let Err(error) = store.initialize_background() {
+            log::warn!("Telemetry store initialization failed: {error}");
         }
-        let mut conn = match Connection::open(path) {
-            Ok(conn) => Some(conn),
-            Err(err) => {
-                log::error!(
-                    "TelemetryStore: failed to open database at {}: {err}",
-                    path.display()
-                );
-                None
-            }
-        };
-        if let Some(c) = &conn {
-            configure(c);
-            if !integrity_ok(c) {
-                log::error!("TelemetryStore: database integrity check failed, recreating it");
-                drop(conn.take());
-                let _ = std::fs::remove_file(path);
-                let _ = std::fs::remove_file(path.with_extension("db-wal"));
-                let _ = std::fs::remove_file(path.with_extension("db-shm"));
-                conn = Connection::open(path).ok();
-                if let Some(c) = &conn {
-                    configure(c);
-                    log::info!("TelemetryStore: recreated database after corruption");
-                }
-            }
-        }
-        if let Some(c) = &conn {
-            setup(c);
-        }
-        Self {
-            conn: Mutex::new(conn),
-            path: Some(path.to_path_buf()),
-            failures: Default::default(),
-        }
+        store
     }
 
     /// A throwaway store (tests).
     pub fn in_memory() -> Self {
-        let conn = Connection::open_in_memory().ok();
-        if let Some(c) = &conn {
-            configure(c);
-            setup(c);
-        }
+        let conn = Connection::open_in_memory()
+            .and_then(|connection| {
+                configure_checked(&connection)?;
+                setup_checked(&connection)?;
+                Ok(connection)
+            })
+            .ok();
+        let ready = conn.is_some();
         Self {
             conn: Mutex::new(conn),
             path: None,
             failures: Default::default(),
+            readiness: std::sync::atomic::AtomicU8::new(if ready { 1 } else { 2 }),
+            initialization: std::sync::Mutex::new(()),
+            initialized: std::sync::Condvar::new(),
         }
     }
 
@@ -555,6 +633,10 @@ impl TelemetryStore {
     }
 
     fn with<T>(&self, fallback: T, f: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> T {
+        if self.wait_until_initialized().is_err() {
+            self.record_failure();
+            return fallback;
+        }
         let guard = self.conn.lock();
         let Some(conn) = guard.as_ref() else {
             self.record_failure();
@@ -583,10 +665,14 @@ impl TelemetryStore {
     ) -> rusqlite::Result<()> {
         let mut held = self.conn.lock();
         let Some(connection) = held.take() else {
+            self.publish_readiness(StoreReadiness::Closed);
             return Ok(());
         };
         match close(connection) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                self.publish_readiness(StoreReadiness::Closed);
+                Ok(())
+            }
             Err(returned) => {
                 let (connection, error) = *returned;
                 *held = Some(connection);
@@ -619,6 +705,10 @@ impl TelemetryStore {
         &self,
         f: impl FnOnce(&Connection) -> rusqlite::Result<T>,
     ) -> rusqlite::Result<T> {
+        if let Err(error) = self.wait_until_initialized() {
+            self.record_failure();
+            return Err(error);
+        }
         let guard = self.conn.lock();
         let result = guard
             .as_ref()
@@ -1516,40 +1606,63 @@ impl TelemetryStore {
     /// Apply the open-time migrations again (tests of TEL-007).
     #[doc(hidden)]
     pub fn reapply_migrations(&self) {
-        self.with((), |c| {
-            migrate(c);
-            Ok(())
-        });
+        self.with((), migrate_checked);
     }
 }
 
-fn configure(conn: &Connection) {
-    let _: Option<String> = conn
-        .query_row("PRAGMA journal_mode=WAL", [], |r| r.get(0))
-        .optional()
-        .ok()
-        .flatten();
-    let _ = conn.execute_batch("PRAGMA foreign_keys=ON");
+fn open_checked(path: &Path) -> rusqlite::Result<Connection> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|_| rusqlite::Error::InvalidPath(path.to_owned()))?;
+    }
+    let mut connection = Connection::open(path)?;
+    let integrity = check_integrity(&connection)?;
+    if integrity == IntegrityCheck::ConfirmedCorruption {
+        drop(connection);
+        std::fs::remove_file(path).map_err(|_| rusqlite::Error::InvalidPath(path.to_owned()))?;
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+        connection = Connection::open(path)?;
+    }
+    configure_checked(&connection)?;
+    setup_checked(&connection)?;
+    Ok(connection)
 }
 
-fn integrity_ok(conn: &Connection) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IntegrityCheck {
+    Healthy,
+    ConfirmedCorruption,
+}
+fn check_integrity(conn: &Connection) -> rusqlite::Result<IntegrityCheck> {
+    // A busy/unreadable database is unavailable, not evidence of corruption.
     match conn.query_row("PRAGMA quick_check", [], |r| r.get::<_, String>(0)) {
-        Ok(result) => result == "ok",
-        Err(err) => {
-            log::error!("TelemetryStore: quick_check failed: {err}");
-            false
+        Ok(result) => Ok(if result == "ok" {
+            IntegrityCheck::Healthy
+        } else {
+            IntegrityCheck::ConfirmedCorruption
+        }),
+        Err(rusqlite::Error::SqliteFailure(error, _))
+            if matches!(
+                error.code,
+                rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
+            ) =>
+        {
+            Ok(IntegrityCheck::ConfirmedCorruption)
         }
+        Err(error) => Err(error),
     }
 }
-
-fn setup(conn: &Connection) {
-    if let Err(err) = conn.execute_batch(SCHEMA) {
-        log::error!("TelemetryStore: schema creation failed: {err}");
-    }
-    migrate(conn);
+fn configure_checked(conn: &Connection) -> rusqlite::Result<()> {
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.execute_batch("PRAGMA foreign_keys=ON")
+}
+fn setup_checked(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(SCHEMA)?;
+    migrate_checked(conn)
 }
 
-fn migrate(conn: &Connection) {
+fn migrate_checked(conn: &Connection) -> rusqlite::Result<()> {
     for (table, name, definition) in [
         ("runs", "total_cached_input_tokens", "INTEGER"),
         ("runs", "total_cache_creation_input_tokens", "INTEGER"),
@@ -1564,29 +1677,29 @@ fn migrate(conn: &Connection) {
         ("turns", "cache_read_input_tokens", "INTEGER"),
         ("turns", "reasoning_output_tokens", "INTEGER"),
     ] {
-        ensure_column(conn, table, name, definition);
+        ensure_column(conn, table, name, definition)?;
     }
-    let _ = conn.execute_batch(BACKFILL_STATES);
-    let _ = conn.execute_batch(INVALIDATE_IMPLAUSIBLE);
+    conn.execute_batch(BACKFILL_STATES)?;
+    conn.execute_batch(INVALIDATE_IMPLAUSIBLE)?;
+    Ok(())
 }
 
-fn ensure_column(conn: &Connection, table: &str, name: &str, definition: &str) {
-    let exists = conn
-        .prepare(&format!("PRAGMA table_info({table})"))
-        .and_then(|mut stmt| {
-            let names = stmt.query_map([], |r| r.get::<_, String>(1))?;
-            Ok(names.filter_map(Result::ok).any(|n| n == name))
-        })
-        .unwrap_or(true);
-    if !exists
-        && conn
-            .execute_batch(&format!(
-                "ALTER TABLE {table} ADD COLUMN {name} {definition}"
-            ))
-            .is_err()
-    {
-        log::warn!("TelemetryStore: failed to add column {table}.{name}");
+fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    name: &str,
+    definition: &str,
+) -> rusqlite::Result<()> {
+    let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let names = statement
+        .query_map([], |r| r.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !names.iter().any(|n| n == name) {
+        conn.execute_batch(&format!(
+            "ALTER TABLE {table} ADD COLUMN {name} {definition}"
+        ))?;
     }
+    Ok(())
 }
 
 fn insert_turn(conn: &Connection, turn: &TelemetryTurn) {
@@ -2225,5 +2338,102 @@ mod ordered_failure_tests {
         assert!(store.try_finalize_run(&run, &[turn], &[]).is_err());
         assert!(store.get_run(&run.id).unwrap().ended_at.is_none());
         assert_eq!(store.failure_count(), 1);
+    }
+}
+
+#[cfg(test)]
+mod checked_initialization_tests {
+    use super::*;
+    use std::sync::Arc;
+    #[test]
+    fn malformed_schema_fails_checked_initialization_without_recreating_owned_records() {
+        let directory =
+            std::env::temp_dir().join(format!("next-schema-failure-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("owned.db");
+        let original = Connection::open(&path).unwrap();
+        original.execute_batch("CREATE TABLE owned_preserved(value TEXT); INSERT INTO owned_preserved VALUES('owned-value'); CREATE VIEW runs AS SELECT 1 AS sentinel").unwrap();
+        original.close().unwrap();
+        let store = Arc::new(TelemetryStore::pending(&path));
+        let initializing = store.clone();
+        assert!(
+            std::thread::spawn(move || initializing.initialize_background())
+                .join()
+                .unwrap()
+                .is_err()
+        );
+        assert_eq!(store.readiness(), StoreReadiness::Failed);
+        assert_eq!(store.failure_count(), 1);
+        let preserved = Connection::open(&path).unwrap();
+        assert_eq!(
+            preserved
+                .query_row("SELECT value FROM owned_preserved", [], |r| r
+                    .get::<_, String>(0))
+                .unwrap(),
+            "owned-value"
+        );
+        preserved.close().unwrap();
+        store.close().unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn actual_busy_integrity_check_preserves_database_bytes_and_never_labels_it_corrupt() {
+        let directory =
+            std::env::temp_dir().join(format!("next-integrity-busy-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("owned.db");
+        let owner = Connection::open(&path).unwrap();
+        owner.execute_batch("CREATE TABLE owned_preserved(value TEXT); INSERT INTO owned_preserved VALUES('owned-value'); BEGIN EXCLUSIVE").unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let store = Arc::new(TelemetryStore::pending(&path));
+        let initializing = store.clone();
+        let error = std::thread::spawn(move || initializing.initialize_background())
+            .join()
+            .unwrap()
+            .unwrap_err();
+        assert!(
+            matches!(error, rusqlite::Error::SqliteFailure(ref e, _) if matches!(e.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked))
+        );
+        assert_eq!(store.readiness(), StoreReadiness::Failed);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(!path.with_extension("db-wal").exists());
+        assert!(!path.with_extension("db-shm").exists());
+        owner.execute_batch("ROLLBACK").unwrap();
+        assert_eq!(
+            owner
+                .query_row("SELECT COUNT(*) FROM owned_preserved", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        owner.close().unwrap();
+        store.close().unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn confirmed_corruption_recreates_only_the_owned_database_and_publishes_ready() {
+        let directory =
+            std::env::temp_dir().join(format!("next-confirmed-corrupt-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("owned.db");
+        std::fs::write(
+            &path,
+            b"owned synthetic invalid sqlite contents, sufficiently long",
+        )
+        .unwrap();
+        let connection = Connection::open(&path).unwrap();
+        assert_eq!(
+            check_integrity(&connection).unwrap(),
+            IntegrityCheck::ConfirmedCorruption
+        );
+        connection.close().unwrap();
+        let store = TelemetryStore::open(&path);
+        assert_eq!(store.readiness(), StoreReadiness::Ready);
+        store
+            .try_insert_run(&TelemetryRun::new("owned-fake", "/synthetic"))
+            .unwrap();
+        assert_eq!(store.run_count(), 1);
+        store.close().unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

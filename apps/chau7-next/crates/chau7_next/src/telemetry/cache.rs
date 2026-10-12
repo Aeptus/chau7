@@ -36,6 +36,10 @@ impl Activity {
             limit,
         })
     }
+    pub(super) fn diagnostics(&self) -> serde_json::Value {
+        let pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        serde_json::json!({"accepting": !pending.stopped, "in_flight":pending.count, "limit":self.limit})
+    }
     pub(super) fn stop(self: &Arc<Self>) -> Drain {
         self.pending
             .lock()
@@ -76,6 +80,16 @@ impl<K: Eq + Hash + Clone, V: Clone> Cache<K, V> {
             entries: Mutex::new(HashMap::new()),
             work: Activity::new(MAX_IN_FLIGHT),
         }
+    }
+    pub(super) fn diagnostics(&self) -> serde_json::Value {
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let (keys, successful, errors) = (
+            entries.len(),
+            entries.values().filter(|e| e.value.is_some()).count(),
+            entries.values().filter(|e| e.error).count(),
+        );
+        drop(entries);
+        serde_json::json!({"keys":keys,"successful_keys":successful,"error_keys":errors,"activity":self.work.diagnostics()})
     }
     /// No I/O: bounded capture with short locks, weak/fenced apply.
     pub(super) fn begin(self: &Arc<Self>, key: K) -> (Snapshot<V>, Option<Ticket<K, V>>) {
@@ -209,6 +223,21 @@ impl Drain {
 mod tests {
     use super::*;
     use chau7_next_core::telemetry::{run::TelemetryRun, store::TelemetryStore};
+    #[test]
+    fn numeric_diagnostics_observe_real_activity_without_exporting_keys_or_values() {
+        let cache = Arc::new(Cache::<String, u64>::new());
+        let (_, ticket) = cache.begin("owned-private-key".into());
+        assert_eq!(cache.diagnostics()["activity"]["in_flight"], 1);
+        ticket.unwrap().apply(Ok(987654321));
+        let data = cache.diagnostics();
+        assert_eq!(data["keys"], 1);
+        assert_eq!(data["successful_keys"], 1);
+        assert_eq!(data["activity"]["in_flight"], 0);
+        assert!(!data.to_string().contains("owned-private-key"));
+        assert!(!data.to_string().contains("987654321"));
+        cache.stop().finish();
+        assert_eq!(cache.diagnostics()["activity"]["accepting"], false);
+    }
     #[test]
     fn real_sql_snapshot_coalesces_preserves_last_success_on_error_and_stops() {
         let directory =

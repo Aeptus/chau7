@@ -26,7 +26,7 @@ use chau7_next_core::repository::AiRepoStats;
 use chau7_next_core::telemetry::providers::default_providers;
 use chau7_next_core::telemetry::recorder::TelemetryRecorder;
 use chau7_next_core::telemetry::run::{TelemetryRun, TelemetryRunFilter};
-use chau7_next_core::telemetry::store::TelemetryStore;
+use chau7_next_core::telemetry::store::{StoreReadiness, TelemetryStore};
 use chau7_next_core::telemetry::turn::{TelemetryToolCall, TelemetryTurn};
 use gpui::{App, Global};
 use parking_lot::Mutex;
@@ -99,7 +99,14 @@ pub(crate) fn shutdown(cx: &mut App) -> Option<Shutdown> {
     let store = recorder(cx).map(|recorder| recorder.store().clone());
     let mut reads = cx
         .try_global::<ReadSnapshots>()
-        .map(|s| vec![s.hover.stop(), s.analytics.stop(), s.repairs.stop()])
+        .map(|s| {
+            vec![
+                s.hover.stop(),
+                s.analytics.stop(),
+                s.repairs.stop(),
+                s.bootstrap.stop(),
+            ]
+        })
         .unwrap_or_default();
     if let Some(quota) = usage::shutdown_quota(cx) {
         reads.push(quota);
@@ -119,6 +126,7 @@ struct ReadSnapshots {
     hover: Arc<cache::Cache<Vec<String>, HoverValue>>,
     analytics: Arc<cache::Cache<(), AnalyticsData>>,
     repairs: Arc<cache::Activity>,
+    bootstrap: Arc<cache::Activity>,
 }
 impl Global for ReadSnapshots {}
 struct TelemetryGlobal(Arc<TelemetryRecorder>);
@@ -187,7 +195,7 @@ pub fn record_token_rate(
 
 impl Global for TelemetryGlobal {}
 
-/// Open the store (Chau7 Next's own file) and set up the recorder.
+/// Set up memory-only globals; the first writer job opens/migrates off UI.
 pub fn init(cx: &mut App) {
     cx.set_global(PromptTimings(Mutex::new(Default::default())));
     cx.set_global(LiveTranscriptsGlobal(Arc::new(LiveTranscripts::new(
@@ -195,8 +203,8 @@ pub fn init(cx: &mut App) {
     ))));
     usage::init(cx);
     let root = cx.global::<AppData>().root.clone();
-    let store = Arc::new(TelemetryStore::open(&root.telemetry_db()));
-    let recorder = TelemetryRecorder::new(store, default_providers(root.home()));
+    let recorder =
+        TelemetryRecorder::open_background(&root.telemetry_db(), default_providers(root.home()));
     let recorder = Arc::new(recorder);
     let rates = Arc::new(Mutex::new(
         chau7_next_core::telemetry::token_rate::TokenRateStore::default(),
@@ -206,9 +214,33 @@ pub fn init(cx: &mut App) {
         hover: Arc::new(cache::Cache::new()),
         analytics: Arc::new(cache::Cache::new()),
         repairs: cache::Activity::new(1),
+        bootstrap: cache::Activity::new(1),
     });
     cx.set_global(TokenRates(rates.clone()));
     usage::init_latency(cx);
+    let initializing = recorder.store().clone();
+    let active = cx
+        .global::<ReadSnapshots>()
+        .bootstrap
+        .begin()
+        .expect("new initialization observer accepts one worker");
+    cx.spawn(async move |cx| {
+        let initialized = cx
+            .background_executor()
+            .spawn(async move {
+                let _active = active;
+                initializing.wait_until_initialized().is_ok()
+            })
+            .await;
+        cx.update(|cx| {
+            usage::refresh_latency(cx);
+            if !initialized {
+                log::warn!("Telemetry initialization unavailable");
+            }
+            cx.refresh_windows();
+        });
+    })
+    .detach();
     let home = root.home().to_owned();
     let rate_executor = cx.background_executor().clone();
     let timer = crate::observability::register_background_timer(
@@ -312,6 +344,30 @@ pub fn init(cx: &mut App) {
         task: Some(task),
         activity,
     });
+}
+
+/// Numeric, memory-only state for the existing MCP/performance diagnostics.
+/// No run IDs, commands, context, database paths or SQL are captured here.
+pub fn diagnostics(cx: &App) -> Value {
+    let Some(recorder) = recorder(cx) else {
+        return serde_json::json!({"store_state":"unavailable", "writer":null, "store_failures":null,
+            "snapshots":null, "maintenance":usage::maintenance_diagnostics(cx)});
+    };
+    let writer = recorder.writer_status();
+    let snapshots = cx.try_global::<ReadSnapshots>().map(|s| {
+        serde_json::json!({
+            "hover":s.hover.diagnostics(), "analytics":s.analytics.diagnostics(),
+            "repair":s.repairs.diagnostics(), "initialization":s.bootstrap.diagnostics(),
+        })
+    });
+    serde_json::json!({"store_state":recorder.store().readiness().as_str(),
+        "store_failures":recorder.store().failure_count(),
+        "writer":{"accepted":writer.accepted, "completed":writer.processed,
+            "pending":writer.accepted.saturating_sub(writer.processed),
+            "pending_bytes":writer.pending_bytes,"rejected":writer.rejected,"failed":writer.failed,
+            "accepting":writer.accepting,"last_error":writer.last_error,
+            "acknowledgement":"admission is queued; completed includes failed jobs; failed is separate"},
+        "snapshots":snapshots,"maintenance":usage::maintenance_diagnostics(cx)})
 }
 
 /// The shared recorder (and through it the store).
@@ -422,6 +478,9 @@ pub fn hover_summary(tab_ids: &[String], cx: &App) -> Option<(TelemetryRun, Vec<
     let live = tab_ids
         .iter()
         .find_map(|id| recorder.active_run_for_tab(id));
+    if recorder.store().readiness() != StoreReadiness::Ready {
+        return live.map(|run| (run, Vec::new()));
+    }
     let mut key = tab_ids.to_vec();
     // A restarted tab never displays the tools of its previous invocation.
     key.push(live.as_ref().map(|r| r.id.clone()).unwrap_or_default());
@@ -582,6 +641,15 @@ pub fn connect(cx: &mut App) {
 
 /// Everything the Debug Console Analytics tab shows.
 fn analytics_data(cx: &App) -> (Option<AnalyticsData>, Option<String>) {
+    if let Some(recorder) = recorder(cx) {
+        match recorder.store().readiness() {
+            StoreReadiness::Loading => return (None, Some("Loading telemetry database".into())),
+            StoreReadiness::Failed | StoreReadiness::Closed => {
+                return (None, Some("Telemetry database is unavailable".into()));
+            }
+            StoreReadiness::Ready => (),
+        }
+    }
     let Some(snapshots) = cx.try_global::<ReadSnapshots>() else {
         return (None, Some("Analytics is unavailable".into()));
     };
