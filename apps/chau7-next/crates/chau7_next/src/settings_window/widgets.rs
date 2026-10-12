@@ -15,7 +15,7 @@ pub(super) fn section(title: impl Into<SharedString>, chrome: Chrome) -> gpui::D
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .text_color(chrome.text_muted)
         .child(crate::l10n::tr(&title).to_uppercase());
-    #[cfg(test)]
+    #[cfg(any(test, feature = "native-parity-fixture"))]
     let header = {
         use gpui_kit::test::TestSupportExt;
         header.test_support()
