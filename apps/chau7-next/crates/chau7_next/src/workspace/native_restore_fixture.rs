@@ -629,6 +629,7 @@ async fn verify_surfaces(
     });
     wait_until(cx, "actual ordered-front surface reveal", |cx| {
         native.isVisible()
+            && native.isKeyWindow()
             && sessions
                 .iter()
                 .all(|(_, s)| s.read(cx).restore_surface_visible())
@@ -658,6 +659,7 @@ async fn verify_surfaces(
     wait_until(cx, "actual deminiaturized surface reveal", |cx| {
         !native.isMiniaturized()
             && native.isVisible()
+            && native.isKeyWindow()
             && sessions
                 .iter()
                 .all(|(_, s)| s.read(cx).restore_surface_visible())
@@ -758,7 +760,7 @@ async fn verify_surfaces(
     Ok(
         serde_json::json!({"hover_live_budget_ms":2000,"hover_exit_budget_ms":500,
         "hover_parked_ptys":0,"hidden_raw_grid_updated":true,"hidden_remote_grid_updated":true,
-        "ordered_out_front":true,"native_mini_demini":true,"actual_reveal_frames":true,
+        "ordered_out_front":true,"native_mini_demini":true,"native_key_window":true,"actual_reveal_frames":true,
         "critical_pressure_source":"fixture_policy_injection","os_pressure_delivery_tested":false,
         "critical_cache_bytes_reclaimed":reclaimed,"native_history_preserved":true,
         "distant_split_cache_bytes":0,"neighbor_cpu_cache_bytes":neighbor_before,
