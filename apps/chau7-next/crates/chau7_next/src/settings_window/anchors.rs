@@ -62,6 +62,12 @@ fn present(id: Option<&'static str>, element: impl IntoElement) -> gpui::Div {
             canvas(
                 move |value, _, _| {
                     bounds.0.borrow_mut().insert(id, value);
+                    #[cfg(any(test, feature = "native-parity-fixture"))]
+                    if highlighted {
+                        HIGHLIGHTED.with(|seen| {
+                            seen.borrow_mut().insert(id);
+                        });
+                    }
                 },
                 |_, _, _, _| {},
             )
@@ -83,6 +89,12 @@ pub(super) fn title_target(title: &str, element: impl IntoElement) -> gpui::Div 
     present(title_id(title), element)
 }
 #[cfg(any(test, feature = "native-parity-fixture"))]
+thread_local! { static HIGHLIGHTED: RefCell<std::collections::HashSet<&'static str>> = RefCell::new(Default::default()); }
+#[cfg(any(test, feature = "native-parity-fixture"))]
+pub(super) fn highlighted_targets() -> std::collections::HashSet<&'static str> {
+    HIGHLIGHTED.with(|seen| seen.borrow().clone())
+}
+#[cfg(any(test, feature = "native-parity-fixture"))]
 thread_local! { static RENDERED: RefCell<std::collections::HashSet<&'static str>> = RefCell::new(Default::default()); }
 #[cfg(any(test, feature = "native-parity-fixture"))]
 thread_local! { static OBSERVATION_IDS: RefCell<HashMap<&'static str, std::collections::HashSet<String>>> = RefCell::new(Default::default()); }
@@ -102,6 +114,7 @@ fn record_observation_ids(id: &'static str, ids: impl IntoIterator<Item = String
 #[cfg(any(test, feature = "native-parity-fixture"))]
 pub(super) fn take_rendered_targets() -> std::collections::HashSet<&'static str> {
     OBSERVATION_IDS.with(|ids| ids.borrow_mut().clear());
+    HIGHLIGHTED.with(|seen| seen.borrow_mut().clear());
     RENDERED.with(|seen| std::mem::take(&mut *seen.borrow_mut()))
 }
 #[cfg(any(test, feature = "native-parity-fixture"))]

@@ -118,7 +118,51 @@ async fn verify(cx: &mut AsyncApp) -> Result<Value> {
                 "viewport":{"x":f32::from(bounds.origin.x),"y":f32::from(bounds.origin.y),"width":f32::from(bounds.size.width),"height":f32::from(bounds.size.height)},
                 "target":{"x":f32::from(target.origin.x),"y":f32::from(target.origin.y),"width":f32::from(target.size.width),"height":f32::from(target.size.height)}}));
         }
+        let input = cx.update(|cx| view.read(cx).search_input.clone());
+        let mut queries = Vec::new();
+        // Exercise the actual InputState subscription. These are owned app
+        // events, without OS keyboard input or a direct navigation shortcut.
+        for query in ["restored", "cursor", "no-such-current-setting-12345", ""] {
+            anchors::take_rendered_targets();
+            let previous = cx.update(|cx| view.read(cx).navigation.selection);
+            cx.update_window(handle, |_, window, cx| input.update(cx, |input, cx| {
+                input.set_value(query, window, cx);
+                cx.emit(InputEvent::Change);
+            })).context("owned settings query window disappeared")?;
+            for _ in 0..4 {
+                crate::native_parity_fixture::next_frame(handle, cx).await.map_err(anyhow::Error::msg)?;
+            }
+            let (selection, explicit, active, target, viewport, offset, maximum) = cx.update(|cx| {
+                let settings = view.read(cx);
+                let active = settings.active_search_anchor_id();
+                (settings.navigation.selection, settings.navigation.anchor_id.clone(), active,
+                 active.and_then(|id| settings.target_bounds.get(id)), settings.scroll_handle.bounds(),
+                 settings.scroll_handle.offset(), settings.scroll_handle.max_offset())
+            });
+            ensure!(explicit.is_none(), "automatic query created an explicit anchor: {query}");
+            let first = sections_matching(query).first().map(|(section, _)| *section);
+            if query.is_empty() || first.is_none() {
+                ensure!(selection == previous && active.is_none(), "empty/unmatched query changed selection: {query}");
+                ensure!(anchors::highlighted_targets().is_empty(), "empty/unmatched query retained highlight: {query}");
+                queries.push(json!({"query":query,"section":selection.id(),"retained_selection":true,"active_anchor":null,"highlighted_targets":0}));
+            } else {
+                ensure!(Some(selection) == first, "automatic query did not select first matching section: {query}");
+                let expected = matching_settings(selection, query)[0].anchor_id;
+                ensure!(active == Some(expected), "automatic query did not derive first matching anchor: {query}");
+                ensure!(anchors::highlighted_targets() == std::collections::HashSet::from([expected]), "actual first-match highlight did not prepaint: {query}");
+                let target = target.context("first-match query has no actual layout")?;
+                ensure!(target.bottom() > viewport.top() && target.top() < viewport.bottom(), "automatic query target is outside viewport: {query}");
+                ensure!(offset.y >= -maximum.y && offset.y <= px(0.0), "automatic query offset is out of bounds: {query}");
+                let center_error = f32::from(target.center().y - viewport.center().y).abs();
+                let clamped = offset.y == px(0.0) || offset.y == -maximum.y;
+                ensure!(clamped || center_error < 2.0, "automatic query was not centered: {query}: {center_error}");
+                queries.push(json!({"query":query,"section":selection.id(),"active_anchor":expected,"derived_anchor":true,
+                    "highlight_prepaint":true,"visible":true,"center_error_px":center_error,"clamped_to_content":clamped,
+                    "offset_y":f32::from(offset.y),"max_offset_y":f32::from(maximum.y)}));
+            }
+        }
         Ok(json!({"case":"settings-search", "targets":SEARCHABLE_SETTINGS.len(), "visible_targets":evidence.len(), "target_evidence":evidence,
+            "automatic_query_evidence":queries,"query_event_delivery":"production_InputState_Change","query_frames":4,"highlight_pixel_acceptance":false,
             "frame_delivery":"real_native_platform", "frames_per_target":3, "synthetic_frame_delivery":false,
             "keyboard_or_pointer_acceptance":false, "interface_language":chau7_next_core::l10n::current().code()}))
     }.await;
