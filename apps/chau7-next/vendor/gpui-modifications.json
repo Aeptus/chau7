@@ -153,9 +153,15 @@
           "before_sha256": "a330c14da4492c1a020b18de770f1718a4c141050852b09ee2a6c677325bb21a",
           "description": "Prepare immutable complete window backend before NSWindow/atlas exposure, match native packed atlas/filtering with retained snapshots, add actual seven-family zero-error Metal comparison; expose submission rather than display-completion counters",
           "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Bulk-quantize only full-coverage integer opaque unrounded/borderless Solid quads; preserve all fractional/edge/alpha scalar paths; exact destination-alpha/color/clip equivalence regression",
+          "before_sha256": "3601e44560f9db6f9a60fcb0e8568ca7fa3548d4b4cb3650190008c8ba668102",
+          "after_sha256": "5dafab9290700e8c77519ccbf5e3d32f752b6f5ed903f247b7d30cfc6596900b"
         }
       ],
-      "current_sha256": "3601e44560f9db6f9a60fcb0e8568ca7fa3548d4b4cb3650190008c8ba668102",
+      "current_sha256": "5dafab9290700e8c77519ccbf5e3d32f752b6f5ed903f247b7d30cfc6596900b",
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/software_renderer/canvas.rs"
@@ -259,9 +265,15 @@
           "description": "Make native shadow comparison visible on contrasting background with isolated probe; preserve equivalence thresholds",
           "before_sha256": "0fa33c69c3f175554666f5f6169b596e3efbf56ae910f1177996a72c3bcdda6c",
           "after_sha256": "6aef9c6730f085ba1a47faad21f25cbba7cc5b2fa50805d0b77b1812bfce5f33"
+        },
+        {
+          "kind": "semantic",
+          "description": "Bulk-quantize only full-coverage integer opaque unrounded/borderless Solid quads; preserve all fractional/edge/alpha scalar paths; exact destination-alpha/color/clip equivalence regression",
+          "before_sha256": "6aef9c6730f085ba1a47faad21f25cbba7cc5b2fa50805d0b77b1812bfce5f33",
+          "after_sha256": "1962e50d69e3b75799a26e734ddc4c663392e8020784cbdcd6465afb12d42eaa"
         }
       ],
-      "current_sha256": "6aef9c6730f085ba1a47faad21f25cbba7cc5b2fa50805d0b77b1812bfce5f33",
+      "current_sha256": "1962e50d69e3b75799a26e734ddc4c663392e8020784cbdcd6465afb12d42eaa",
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/software_renderer/scene.rs"
