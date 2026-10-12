@@ -32,6 +32,9 @@ use RGB coverage with neutral gamma/contrast; ordinary macOS text remains graysc
 The byte-identical historical 0.3.8 original inventory and complete modification
 ledger are preserved under `history/0.3.8/`. `gpui-rebase-0.3.8-to-0.3.9.json`
 records verified input archives, old patch bytes and genuine new original hashes.
+Its `rebased_sha256` values describe the initial three-way rebase before SDK
+and formatting adaptations. Final source hashes and every intervening change
+are recorded by `gpui-modifications.json`; historical endpoints remain intact.
 Current hash chains begin at the verified 0.3.9 originals; they never rewrite
 historical chain endpoints. The Software surface adapter follows upstream
 `CFRetained<CVPixelBuffer>` ownership and preserves scoped read-only plane locks.

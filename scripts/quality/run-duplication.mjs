@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 // Immutable original package inventory. Updating the locked upstream snapshot
 // requires a reviewed update here; editing a manifest cannot hide new sources.
-const PROVENANCE_SHA256 = "600e884a3e4d59802466e27c5e9a8c0a97546faaaae3d4806c8d2d3d55ecef76";
+const PROVENANCE_SHA256 = "0ab833b0f01a27104c0a9ef4b6770809a4e702b6585f0e321d405e1d526815ff";
 const vendor = "apps/chau7-next/vendor";
 const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 

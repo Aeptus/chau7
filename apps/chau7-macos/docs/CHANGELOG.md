@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 
+- Review and pin the new GPUI source inventory for duplication checks, retaining the 2% threshold and checks on modified or added files. Clarify initial rebase hashes versus the complete final modification ledger.
+
 - Upgrade Chau7 Next to GPUI Kit 0.7.3 and the matching GPUI 0.3.9 family, rebasing the complete Software window backend and native ownership fixes. Preserve verified fork provenance, historical patches and packaged license notices; full-app native acceptance of the upgraded engine remains in progress.
 - Use Base64 0.23 runtime-detected AVX2/NEON decoding for Kitty image payloads with scalar fallback, preserving padded STANDARD bytes, malformed-input rejection and existing image limits. No measured speedup is claimed.
 
