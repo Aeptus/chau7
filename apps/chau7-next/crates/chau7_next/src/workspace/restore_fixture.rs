@@ -275,6 +275,14 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
             });
             assert!(profile.received(index).is_empty());
         }
+        cx.update(|cx| {
+            let (elapsed, slow) = ws
+                .read(cx)
+                .shell_loading_state(cx)
+                .expect("actual unready PTY");
+            assert!(elapsed > Duration::ZERO);
+            assert!(!slow);
+        });
         // Exercise actual select_tab and weak preparation callbacks. The two
         // briefly selected tabs may prepare metadata, but never acquire a PTY.
         advance(cx, Duration::from_millis(180));
@@ -360,6 +368,27 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
                 "prefill delivered exactly once"
             );
         }
+        // Readiness comes from the real session, not its currently painted
+        // grid. A clear-screen escape leaves (0,0) and a blank first row but
+        // must not restart startup UI or its animation clock.
+        let focused = &selected_panes[1].1;
+        cx.update(|cx| {
+            assert!(ws.read(cx).shell_loading_state(cx).is_none());
+            focused.update(cx, |session, cx| {
+                session.with_terminal(|term| term.inject_output(b"\x1b[2J\x1b[H"));
+                session.refresh(cx);
+                assert_eq!(session.cursor, (0, 0));
+                assert!(
+                    session
+                        .line_text(0)
+                        .is_none_or(|line| line.trim().is_empty())
+                );
+                assert!(!session.is_loading());
+            });
+            assert!(ws.read(cx).shell_loading_state(cx).is_none());
+        });
+        settle(cx, handle);
+        cx.update(|cx| assert!(ws.read(cx).shell_loading_tick.is_none()));
     }));
     // All subprocesses belong to this fixture and close through the normal
     // production close path before the owned app/profile are disposed.

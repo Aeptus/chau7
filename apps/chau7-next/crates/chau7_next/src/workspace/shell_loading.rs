@@ -1,8 +1,7 @@
-//! Shell loading indicator (`ShellLoadingBar`): while a new shell has not
-//! drawn anything yet, an ASCII bar sweeps back and forth with "Loading
-//! shell…" (after 0.2 s); when startup is slow (no output after 5 s, the
-//! design intent of Swift's never-set `shellStartupSlow`), a centered
-//! "Shell initializing…" with a spinner replaces it.
+//! Shell startup indicator (`ShellLoadingBar`), driven by the session's
+//! authoritative prompt/output readiness. An ASCII bar appears after 0.2s;
+//! the session's no-output slow-start signal selects the centered spinner.
+//! Clearing an already ready terminal must never restart this indicator.
 
 use std::time::Duration;
 
@@ -34,14 +33,12 @@ fn bar(step: usize) -> String {
 }
 
 impl Workspace {
-    fn shell_loading_elapsed(&self, cx: &App) -> Option<Duration> {
+    pub(super) fn shell_loading_state(&self, cx: &App) -> Option<(Duration, bool)> {
         let session = self.selected_panes()?.read(cx).focused_session(cx)?;
         let session = session.read(cx);
-        let blank = session.cursor == (0, 0)
-            && session
-                .line_text(0)
-                .is_none_or(|line| line.trim().is_empty());
-        (session.exited.is_none() && blank).then(|| session.started_at.elapsed())
+        session
+            .is_loading()
+            .then(|| (session.started_at.elapsed(), session.shell_slow))
     }
 
     /// One cancellable clock per visible loading workspace. The visual bar
@@ -51,7 +48,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !window.is_visible() || self.shell_loading_elapsed(cx).is_none() {
+        if !window.is_visible() || self.shell_loading_state(cx).is_none() {
             self.shell_loading_tick = None;
             return;
         }
@@ -80,8 +77,7 @@ impl Workspace {
                             "refresh",
                             Queue::Main,
                         );
-                        let active =
-                            window.is_visible() && this.shell_loading_elapsed(cx).is_some();
+                        let active = window.is_visible() && this.shell_loading_state(cx).is_some();
                         cost.idle(!active);
                         if active {
                             cost.items(1);
@@ -105,11 +101,11 @@ impl Workspace {
         chrome: Chrome,
         cx: &App,
     ) -> Option<gpui::AnyElement> {
-        let elapsed = self.shell_loading_elapsed(cx)?;
+        let (elapsed, slow) = self.shell_loading_state(cx)?;
         if elapsed < Duration::from_millis(200) {
             return None;
         }
-        if elapsed >= Duration::from_secs(5) {
+        if slow {
             let spinner = ["◐", "◓", "◑", "◒"][(elapsed.as_millis() / 150) as usize % 4];
             return Some(
                 div()
