@@ -683,9 +683,15 @@ actual Metal comparisons; combined root gates remain pending.
 Checked background initialization and memory-only telemetry diagnostics are
 integrated at `584c40a6`, with confirmed-corruption documentation at `93b3dfdd`.
 The author reports 2,959 workspace tests and both strict variants passing.
-Independent review finds one blocking shutdown path: if the writer thread
-cannot start, the absent JoinHandle can incorrectly authorize a clean marker.
-The correction and combined validation remain pending; TEL-024 stays partial.
+Independent review found one blocking shutdown path: if the writer thread
+cannot start, the absent JoinHandle could incorrectly authorize a clean marker.
+The focused correction `a80350049d0cde392e3df64b9f259d162155065b` is published,
+independently reviewed and integrated at `2e905aef`. The author reports 2,961
+workspace tests plus two existing ignored tests, both strict variants and two
+focused failure regressions passing. Actual SQLite close must retain the
+missing-writer error; failed initialization cannot become successful shutdown.
+Combined-root validation and normal app verification remain pending; TEL-024
+stays partial.
 
 Native Software Settings still has an actual 500 ms negative, including a
 prior run without concurrent compilation. The first optimized-source editor
@@ -711,3 +717,13 @@ distinguish timeout, truncation, read failure or cancellation. Current code
 already uses bounded retry backoff and one warning per outage. The root adds
 actual result flags/status/static caller/byte counts to that warning without
 changing capture or acknowledgement behavior.
+
+The byte-equivalent opaque-pixel store followup
+`bd00bfe7f5ba117bf8c7e74a269428c931921ffb` is independently reviewed and
+integrated at `5ec3472b`. The author reports 38 software renderer tests, strict
+checks and 26 ledger chains passing. The native Software editor scenario
+passes on that exact author source. A quiet Software Settings run still fails
+the original 500 ms limit at 529,208 us over seven frames (26,772 us latest
+CPU submission, zero failed frames). A separate Restore scenario fails its
+application activation deadline. These distinct negatives remain preserved;
+neither permits promoting PRF-002. The eight-case matrix remains incomplete.
