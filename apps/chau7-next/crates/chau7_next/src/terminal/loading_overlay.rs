@@ -80,14 +80,18 @@ pub fn overlay(session: &TerminalSession, key: u64, chrome: Chrome) -> Option<An
             .text_size(px(12.0))
             .font_family("Menlo")
             .text_color(chrome.text_muted)
-            .child(div().id(("shell-loading", key as usize)).with_animation(
-                ("shell-loading-bar", key as usize),
-                Animation::new(total).repeat(),
-                |el, delta| {
-                    let step = (delta * POSITIONS as f32) as usize;
-                    el.child(format!("{}Loading shell\u{2026}", bar_string(step)))
-                },
-            ))
+            .child(
+                div().id(("shell-loading", key as usize)).with_animation(
+                    ("shell-loading-bar", key as usize),
+                    Animation::new(total)
+                        .repeat()
+                        .with_max_fps(1.0 / STEP.as_secs_f32()),
+                    |el, delta| {
+                        let step = (delta * POSITIONS as f32) as usize;
+                        el.child(format!("{}Loading shell\u{2026}", bar_string(step)))
+                    },
+                ),
+            )
             .into_any_element(),
     )
 }
