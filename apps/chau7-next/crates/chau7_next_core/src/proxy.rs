@@ -1074,7 +1074,7 @@ impl<'a> ProxyAnalyticsStore<'a> {
         self.failures.load(std::sync::atomic::Ordering::Relaxed)
     }
     fn failed(&self) {
-        let _ = self.failures.fetch_update(
+        let _ = self.failures.try_update(
             std::sync::atomic::Ordering::Relaxed,
             std::sync::atomic::Ordering::Relaxed,
             |v| Some(v.saturating_add(1)),

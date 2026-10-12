@@ -686,7 +686,7 @@ impl TelemetryStore {
         self.failures.load(std::sync::atomic::Ordering::Relaxed)
     }
     fn record_failure(&self) {
-        let _ = self.failures.fetch_update(
+        let _ = self.failures.try_update(
             std::sync::atomic::Ordering::Relaxed,
             std::sync::atomic::Ordering::Relaxed,
             |value| Some(value.saturating_add(1)),
