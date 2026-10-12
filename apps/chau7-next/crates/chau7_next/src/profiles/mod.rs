@@ -2,6 +2,7 @@
 //! operations the settings window, the SSH manager and the terminal tabs use
 //! (`FeatureSettings` profile management, `ProfileAutoSwitcher`).
 
+pub mod ssh_config_sync;
 pub mod ssh_manager;
 
 use std::collections::HashMap;
@@ -50,6 +51,7 @@ pub fn init(cx: &mut App) {
         store,
         switcher: AutoSwitcher::default(),
     });
+    ssh_config_sync::start(cx);
 }
 
 fn save_store(store: &ProfileStore, cx: &App) {
