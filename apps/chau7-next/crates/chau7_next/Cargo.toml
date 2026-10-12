@@ -144,8 +144,10 @@ objc2-service-management = { version = "0.3.2", default-features = false, featur
 security-framework = "3.7.0"
 core-foundation = "0.10.1"
 core-foundation-sys = "0.8.7"
-# Single recursive user-snippets event stream; reuse the locked native backend.
-fsevent-sys = "4"
+# Single recursive snippets stream through current typed SDK bindings/GCD.
+objc2-core-services = { version = "0.3.2", default-features = false, features = ["std", "FSEvents", "dispatch2"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFArray", "CFString"] }
+dispatch2 = { version = "0.3.1", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 # Deterministic actual EditorState events, selection and undo regression.

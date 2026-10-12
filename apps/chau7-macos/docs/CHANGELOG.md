@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 
+- Replace Chau7 Next's legacy snippets event binding with current typed FSEvents and dispatch SDK bindings, preserving one recursive stream, bounded snapshots and background teardown. Release callback state after native delivery finishes; verify in-place changes, start failure and in-flight disposal with owned files.
+
 - Pin Chau7 Next and Rust helpers to Rust 1.99.0 and pin the Next CI actions to reviewed current releases. Native parity keeps its existing deadlines and requires the exact installed compiler.
 
 - Review and pin the new GPUI source inventory for duplication checks, retaining the 2% threshold and checks on modified or added files. Clarify initial rebase hashes versus the complete final modification ledger.

@@ -1,15 +1,21 @@
 //! One macOS FSEvents stream for all owned user snippets. Unlike per-file
 //! kqueue watches, adding snippets does not add one open descriptor per file.
-//! Construction runs off UI; disposal signals a run-loop source and joins the
-//! sole event thread. There is no polling timer or unbounded event queue.
-use core_foundation_sys::{array, base, runloop, string};
-use fsevent_sys as fs;
+//! Construction and Stop/Invalidate/callback barrier/Release run on the sole
+//! owner thread, off UI. A serial dispatch queue delivers events; no timer or
+//! unbounded event queue is added. Disposal joins only this owned subscription.
+use dispatch2::{DispatchQueue, DispatchRetained};
+use objc2_core_foundation::{CFArray, CFString};
+use objc2_core_services as fs;
 use std::{
     ffi::{CStr, c_void},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
-    ptr,
-    sync::{Arc, mpsc},
+    ptr::{self, NonNull},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     thread::{self, JoinHandle},
 };
 
@@ -17,161 +23,124 @@ type Callback = Arc<dyn Fn() + Send + Sync>;
 struct Handler {
     target: PathBuf,
     callback: Callback,
+    stopped: AtomicBool,
 }
-extern "C" fn events(
-    _: fs::FSEventStreamRef,
+unsafe extern "C-unwind" fn events(
+    _: fs::ConstFSEventStreamRef,
     info: *mut c_void,
     count: usize,
-    paths: *mut c_void,
-    _: *const fs::FSEventStreamEventFlags,
-    _: *const fs::FSEventStreamEventId,
+    paths: NonNull<c_void>,
+    _: NonNull<fs::FSEventStreamEventFlags>,
+    _: NonNull<fs::FSEventStreamEventId>,
 ) {
-    // FSEvents supplies count NUL-terminated filesystem paths. Handler stays
-    // owned by Resources until Stop/Invalidate/Release have completed.
-    let relevant = unsafe {
+    // UseCFTypes is deliberately absent: eventPaths is an array of count
+    // NUL-terminated filesystem paths, not a CFArray/CFString collection.
+    // The Box stays stable until Invalidate and the serial callback barrier.
+    // Never unwind through native delivery; the consumer only coalesces work.
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
         let handler = &*info.cast::<Handler>();
-        let paths = paths.cast::<*const std::ffi::c_char>();
-        (0..count).any(|index| {
+        if handler.stopped.load(Ordering::Acquire) {
+            return;
+        }
+        let paths = paths.as_ptr().cast::<*const std::ffi::c_char>();
+        let relevant = (0..count).any(|index| {
             let bytes = CStr::from_ptr(*paths.add(index)).to_bytes();
             let path = Path::new(std::ffi::OsStr::from_bytes(bytes));
             path.starts_with(&handler.target) || handler.target.starts_with(path)
-        })
-    };
-    if relevant {
-        // Never unwind through a C callback; the consumer only coalesces work.
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-            ((*info.cast::<Handler>()).callback)();
-        }));
-    }
-}
-extern "C" fn stop_loop(_: *const c_void) {
-    unsafe { runloop::CFRunLoopStop(runloop::CFRunLoopGetCurrent()) };
+        });
+        if relevant && !handler.stopped.load(Ordering::Acquire) {
+            (handler.callback)();
+        }
+    }));
 }
 struct Resources {
     stream: fs::FSEventStreamRef,
-    source: runloop::CFRunLoopSourceRef,
-    runloop: runloop::CFRunLoopRef,
+    queue: DispatchRetained<DispatchQueue>,
     started: bool,
     handler: Box<Handler>,
 }
 impl Drop for Resources {
     fn drop(&mut self) {
+        self.handler.stopped.store(true, Ordering::Release);
         unsafe {
             if !self.stream.is_null() {
                 if self.started {
                     fs::FSEventStreamStop(self.stream);
                 }
                 fs::FSEventStreamInvalidate(self.stream);
+                // Always on the separate owner thread, never this serial
+                // callback queue. In-flight delivery completes before context
+                // release, including partial construction/start failures.
+                self.queue.exec_sync(|| {});
                 fs::FSEventStreamRelease(self.stream);
-            }
-            if !self.source.is_null() {
-                runloop::CFRunLoopRemoveSource(
-                    self.runloop,
-                    self.source,
-                    runloop::kCFRunLoopDefaultMode,
-                );
-                runloop::CFRunLoopSourceInvalidate(self.source);
-                base::CFRelease(self.source.cast());
             }
         }
     }
 }
 impl Resources {
     fn create(watched: &Path, target: PathBuf, callback: Callback) -> Result<Self, String> {
+        Self::create_with_start(watched, target, callback, |stream| unsafe {
+            fs::FSEventStreamStart(stream)
+        })
+    }
+
+    fn create_with_start(
+        watched: &Path,
+        target: PathBuf,
+        callback: Callback,
+        start: impl FnOnce(fs::FSEventStreamRef) -> bool,
+    ) -> Result<Self, String> {
         let path = watched
             .to_str()
             .ok_or("Snippet watcher path is not UTF-8")?;
+        let path_string = CFString::from_str(path);
+        let paths = CFArray::from_objects(&[&*path_string]);
         let mut owner = Self {
             stream: ptr::null_mut(),
-            source: ptr::null_mut(),
-            runloop: unsafe { runloop::CFRunLoopGetCurrent() },
+            queue: DispatchQueue::new("chau7-next.settings.snippet-events", None),
             started: false,
-            handler: Box::new(Handler { target, callback }),
+            handler: Box::new(Handler {
+                target,
+                callback,
+                stopped: AtomicBool::new(false),
+            }),
         };
-        // All CF objects are created and released on this dedicated thread.
+        let mut context = fs::FSEventStreamContext {
+            version: 0,
+            info: (&mut *owner.handler as *mut Handler).cast(),
+            retain: None,
+            release: None,
+            copyDescription: None,
+        };
+        // Typed CFArray contains CFStrings; callbacks use raw filesystem paths
+        // because UseCFTypes is not enabled. The stream owns copied watch data.
         unsafe {
-            let path_string = string::CFStringCreateWithBytes(
-                base::kCFAllocatorDefault,
-                path.as_ptr(),
-                path.len() as isize,
-                string::kCFStringEncodingUTF8,
-                false as u8,
-            );
-            if path_string.is_null() {
-                return Err("Could not encode snippet watch path".into());
-            }
-            let values = [path_string.cast::<c_void>()];
-            let paths = array::CFArrayCreate(
-                base::kCFAllocatorDefault,
-                values.as_ptr(),
-                1,
-                &array::kCFTypeArrayCallBacks,
-            );
-            base::CFRelease(path_string.cast());
-            if paths.is_null() {
-                return Err("Could not create snippet watch paths".into());
-            }
-            let context = fs::FSEventStreamContext {
-                version: 0,
-                info: (&mut *owner.handler as *mut Handler).cast(),
-                retain: None,
-                release: None,
-                copy_description: None,
-            };
             owner.stream = fs::FSEventStreamCreate(
-                ptr::null_mut(),
-                events,
-                &context,
-                paths.cast_mut().cast(),
+                None,
+                Some(events),
+                &mut context,
+                paths.as_opaque(),
                 fs::kFSEventStreamEventIdSinceNow,
                 0.05,
                 fs::kFSEventStreamCreateFlagFileEvents
                     | fs::kFSEventStreamCreateFlagWatchRoot
                     | fs::kFSEventStreamCreateFlagNoDefer,
             );
-            base::CFRelease(paths.cast());
             if owner.stream.is_null() {
                 return Err("Could not create snippet event stream".into());
             }
-            let mut context = runloop::CFRunLoopSourceContext {
-                version: 0,
-                info: ptr::null_mut(),
-                retain: None,
-                release: None,
-                copyDescription: None,
-                equal: None,
-                hash: None,
-                schedule: None,
-                cancel: None,
-                perform: stop_loop,
-            };
-            owner.source =
-                runloop::CFRunLoopSourceCreate(base::kCFAllocatorDefault, 0, &mut context);
-            if owner.source.is_null() {
-                return Err("Could not create snippet stop source".into());
-            }
-            runloop::CFRunLoopAddSource(
-                owner.runloop,
-                owner.source,
-                runloop::kCFRunLoopDefaultMode,
-            );
-            fs::FSEventStreamScheduleWithRunLoop(
-                owner.stream,
-                owner.runloop.cast(),
-                runloop::kCFRunLoopDefaultMode.cast_mut().cast(),
-            );
-            owner.started = fs::FSEventStreamStart(owner.stream) != 0;
-            if !owner.started {
-                return Err("Could not start snippet event stream".into());
-            }
+            fs::FSEventStreamSetDispatchQueue(owner.stream, Some(&owner.queue));
+        }
+        owner.started = start(owner.stream);
+        if !owner.started {
+            return Err("Could not start snippet event stream".into());
         }
         Ok(owner)
     }
 }
 
 pub(super) struct SnippetWatch {
-    runloop: usize,
-    source: usize,
+    stop: mpsc::SyncSender<()>,
     thread: Option<JoinHandle<()>>,
 }
 impl SnippetWatch {
@@ -193,6 +162,7 @@ impl SnippetWatch {
                 .map_err(|error| error.to_string())?,
         );
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        let (stop, stopped) = mpsc::sync_channel(1);
         let thread = thread::Builder::new()
             .name("chau7-settings-snippet-events".into())
             .spawn(move || {
@@ -203,22 +173,18 @@ impl SnippetWatch {
                         return;
                     }
                 };
-                if ready_tx
-                    .send(Ok((owner.runloop as usize, owner.source as usize)))
-                    .is_err()
-                {
+                if ready_tx.send(Ok(())).is_err() {
                     return;
                 }
-                // The installed stop source keeps this loop alive. A stop signal
-                // submitted even before Run is retained and handled on entry.
-                unsafe { runloop::CFRunLoopRun() };
+                // Sender disconnection is also a stop request. No poll/timer;
+                // delivery continues independently on the owned serial queue.
+                let _ = stopped.recv();
                 drop(owner);
             })
             .map_err(|error| error.to_string())?;
         match ready_rx.recv() {
-            Ok(Ok((runloop, source))) => Ok(Self {
-                runloop,
-                source,
+            Ok(Ok(())) => Ok(Self {
+                stop,
                 thread: Some(thread),
             }),
             Ok(Err(error)) => {
@@ -234,13 +200,7 @@ impl SnippetWatch {
 }
 impl Drop for SnippetWatch {
     fn drop(&mut self) {
-        // The worker owns both objects until its stop source executes. These
-        // cross-thread CF signal/wake operations are safe, and join finishes
-        // stream/context release before the subscription is considered gone.
-        unsafe {
-            runloop::CFRunLoopSourceSignal(self.source as runloop::CFRunLoopSourceRef);
-            runloop::CFRunLoopWakeUp(self.runloop as runloop::CFRunLoopRef);
-        }
+        let _ = self.stop.try_send(());
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -255,6 +215,61 @@ mod tests {
         sync::atomic::{AtomicUsize, Ordering},
         time::Duration,
     };
+
+    #[test]
+    fn failed_stream_start_releases_its_callback_owner() {
+        let root = std::env::temp_dir().join(format!(
+            "chau7-next-fsevents-start-failure-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let callback: Callback = Arc::new(|| {});
+        let result = Resources::create_with_start(&root, root.clone(), callback.clone(), |_| false);
+        assert!(result.is_err());
+        assert_eq!(Arc::strong_count(&callback), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn disposal_waits_for_actual_inflight_callback_on_another_thread() {
+        let root = std::env::temp_dir().join(format!(
+            "chau7-next-fsevents-callback-barrier-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        let (release_tx, release_rx) = mpsc::sync_channel(1);
+        let release_rx = std::sync::Mutex::new(release_rx);
+        let first = AtomicBool::new(true);
+        let callback: Callback = Arc::new(move || {
+            if first.swap(false, Ordering::AcqRel) {
+                entered_tx.send(thread::current().id()).unwrap();
+                release_rx
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
+            }
+        });
+        let watch = SnippetWatch::new(&root, &root, callback.clone()).unwrap();
+        std::fs::write(root.join("owned.json"), "{}").unwrap();
+        let delivery_thread = entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_ne!(delivery_thread, thread::current().id());
+        let (finished_tx, finished_rx) = mpsc::sync_channel(1);
+        let join = thread::spawn(move || {
+            drop(watch);
+            finished_tx.send(()).unwrap();
+        });
+        assert!(matches!(
+            finished_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        release_tx.send(()).unwrap();
+        finished_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        join.join().unwrap();
+        assert_eq!(Arc::strong_count(&callback), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn actual_stream_observes_in_place_changes_rename_and_disposal() {
