@@ -811,6 +811,7 @@ async fn verify_retention(
     profile: &Profile,
     cx: &mut AsyncApp,
 ) -> Result<serde_json::Value, String> {
+    cx.update(crate::memory_pressure::start);
     select(handle, ws, ids[4], cx)?;
     settle(handle, cx).await?;
     let (ordinary, memory_id) = cx.update(|cx| -> Result<_, String> {
@@ -838,6 +839,7 @@ async fn verify_retention(
     })
     .await?;
     let before = cx.update(|cx| ordinary.read(cx).buffer_text());
+    let pty_bytes_before = cx.update(|cx| ordinary.read(cx).with_terminal(|term| term.stats().1));
     let cursor_before = cx.update(|cx| {
         ordinary
             .read(cx)
@@ -854,6 +856,11 @@ async fn verify_retention(
     )?;
     select(handle, ws, ids[1], cx)?;
     settle(handle, cx).await?;
+    wait_until(cx, "ordinary background Warm without pressure", |cx| {
+        let sample = memory_sample(memory_id, cx);
+        sample["phase"] == "warm" && sample["retained_on_disk"] == false && sample["flushes"] == 0
+    })
+    .await?;
     let protected_before: Vec<_> = cx.update(|cx| {
         protected
             .iter()
@@ -938,11 +945,30 @@ async fn verify_retention(
         "missing_history_rows":(0..200).filter(|i| !restored.contains(&format!("OWNED_HISTORY_{i:03}"))).collect::<Vec<_>>(),
         "before_cursor":cursor_before,"after_cursor":cx.update(|cx| ordinary.read(cx).with_terminal(|term| term.cursor_position()))
     });
+    // The shared Swift/Next replay retains the final content row terminator.
+    // A prompt at the viewport bottom can therefore add exactly one final LF.
+    // Permit only that documented grid-padding case, preserving every byte in
+    // its original order; never normalize arbitrary terminal whitespace.
+    let raw_exact = restored == before;
     ensure(
-        restored == before,
+        raw_exact || restored == format!("{before}\n"),
         &format!(
             "real retained history reload changed ordinary native contents: {content_evidence}"
         ),
+    )?;
+    ensure(
+        (0..200).all(|i| {
+            restored
+                .matches(format!("OWNED_HISTORY_{i:03}").as_str())
+                .count()
+                == 1
+        }),
+        "retained worker did not preserve all 200 rows exactly once",
+    )?;
+    let pty_bytes_after = cx.update(|cx| ordinary.read(cx).with_terminal(|term| term.stats().1));
+    ensure(
+        pty_bytes_after == pty_bytes_before && profile.received(5).is_empty(),
+        "ordinary fake PTY output or input changed during retention comparison",
     )?;
     let reloaded = cx.update(|cx| memory_sample(memory_id, cx));
     select(handle, ws, ids[1], cx)?;
@@ -951,7 +977,10 @@ async fn verify_retention(
         serde_json::json!({"pressure_source":"fixture_policy_injection","real_tick":true,
         "ordinary_worker_flushes":flushed["flushes"],"ordinary_worker_reloads":reloaded["reloads"],
         "native_history_rows_before":history_rows_before,"native_hidden_ring_rows":hidden_rows,
-        "native_history_round_trip_exact":true,"selected_history_preserved":true,
+        "raw_native_history_exact":raw_exact,"native_history_round_trip_with_final_lf_padding":true,
+        "content_evidence":content_evidence,"synthetic_rows_preserved_once":200,
+        "ordinary_pty_bytes_before":pty_bytes_before,"ordinary_pty_bytes_after":pty_bytes_after,
+        "ordinary_input_bytes":0,"ordinary_background_warm":true,"selected_history_preserved":true,
         "worker_failures":reloaded["failures"],"os_pressure_delivery_tested":false}),
     )
 }
