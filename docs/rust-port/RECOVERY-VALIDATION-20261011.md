@@ -192,3 +192,28 @@ candidate panels, hardware input and accessibility are not established here.
 Local evidence includes `native-f9e4c1-manifest.json`, case stdout/stderr pairs,
 build log and `source-f9e4c1-*` checks. Each case records its owned PID/profile.
 No existing user session, permission or provider setting changed.
+
+## Native key-state checkpoint 29ac30b3 (2026-10-12)
+
+Clean source `29ac30b38e1cfd865a8260f9e49f73310d61c95e` passes
+2,888 release workspace tests with two existing ignored tests. Strict default
+and optional-native-feature release workspace/all-target Clippy, formatting,
+parity and diff checks pass with fixed Rust1.96.
+
+The separate actual native runner still passes all99 explicit settings target
+jumps and the editor case. Editor stderr is empty after the production UTF-16
+ruler bounds fix. The bounded workspace animation clock and real pane animation
+FPS cap are integrated; these results do not establish a matched CPU benchmark.
+
+The strengthened restore case fails its actual AppKit key-window assertion in
+an inactive fixture process. Visible/front/frame checks had passed in the prior
+agent-native checkpoint, but makeKeyWindow alone did not make this inactive
+process's window key. The failure emits explicit false JSON, exits nonzero and
+removes its profile. It is preserved as negative acceptance evidence. The next
+fixture must exercise ordinary activation of its own isolated application;
+the key assertion is retained rather than substituted with a successful API
+call. No production key/reactivation defect is established by this failure.
+
+Evidence: `native-29ac-manifest.json`, case stdout/stderr/build logs and
+`source-29ac-*` default/optional check logs in the local recovery directory.
+The overall native manifest remains false and inventory rows are not promoted.
