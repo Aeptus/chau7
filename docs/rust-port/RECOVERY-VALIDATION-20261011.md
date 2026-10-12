@@ -400,3 +400,44 @@ pixel acceptance and full accessibility acceptance remain separate hand tests.
 Agent-source release tests pass (505 app + 2,399 core, two existing ignored),
 strict Clippy with default and optional native features and formatting pass.
 These are exact agent-source checks; combined root checks follow integration.
+
+## Integrated restore clock regression (2026-10-12)
+
+Official3c4caf73 has mixed CI results: Next push38199570549 passes macOS,
+Linux and Windows; PR38199574152 fails one macOS restore test while its Linux
+and Windows jobs pass. The failing parked-metadata assertion used real
+Instant time alongside virtual executor timers, so an assertion intended
+before450ms could run after450ms. Agent `aec3542c482b`, integrated as root
+`fccea88e6b49b8ab58c3dc3100577dc29ca155a8`, uses the same executor monotonic
+clock for selection timestamps and timer deadlines, including production.
+Profiler wall time is unchanged. The real-PTY regression retains its exact
+resume bytes/once-only assertions and adds delayed dispatch: stale at449ms
+before/after draining, metadata admitted at450ms with zero parked PTYs.
+No retry, extra sleep, skipped assertion or relaxed gate is introduced.
+
+Exact combined root source passes 2,908 release workspace tests (509 app and
+2,399 core), with two pre-existing ignored tests, strict release all-target
+Clippy for default and optional native builds, and formatting. All three
+actual owned native cases pass using original binary SHA256
+`8225ccc549738a290f439815caca51e2af38780fd265716b58bd371889c7935a`.
+Restore PID76026 is admitted at460ms against450ms, retains two exact resume
+prefills without terminators or duplicates, starts no transient/parked PTYs
+and closes all five owned PTYs. Settings PID81839 retains99/99 visible
+targets/28 summaries/114 cards/five queries. Editor PID1645 retains native
+composition/undo/redo/save and owned-surface disposal. All actual PIDs are
+verified gone and owned profiles/resources are removed/closed. The restore
+application exit code remains unknown; its LaunchServices waiter exits0.
+The existing one finalLF history difference remains explicitly recorded.
+Evidence prefixes: `native-fccea88e6-*` and `source-fccea88e6-*`; original
+macOS CI negative remains `ci-3c4-macos-pr-failed.log`.
+
+Quality38199574215 runs all affected/full-suite/staged gates successfully,
+then fails its check that staged gates did not rewrite source. Ruff reformats
+`apps/chau7-next/scripts/native-parity.py`; this is a separate format-only
+correction and must be verified in a later official CI run.
+
+The proposed three GPUI forks have a separate independent provenance audit:
+all195 original files/9,848,773 bytes match their manifest SHA256/length and
+the locked local registry byte for byte. The two subsequent normalization
+changes have matching before/after hashes and preserve non-whitespace bytes.
+This verifies provenance only; it is not software-backend acceptance.
