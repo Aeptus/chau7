@@ -59,6 +59,27 @@ warn once until that kind succeeds. Successful list/poll operations do not
 reset an incomplete claim/complete sequence. Shutdown cancellation produces no
 outage warning. An incomplete capture is not proof of a particular cause.
 
+## Delivery acceptance and history shutdown
+
+An in-memory Aethyme acceptance ledger prevents rewriting a prompt after an
+accepted terminal write whose CLI completion acknowledgement was incomplete.
+It matches canonical root, item, parsed tab UUID, native AI session, and the
+formatted prompt SHA256/byte length. Reclaimed generations acknowledge their
+current validated claim without writing the accepted prompt again. Only a fully
+captured successful Ready completion removes the acceptance record. A changed
+prompt cannot overwrite an earlier accepted fingerprint. The ledger caps entries
+at2,048 and key/digest payload at1MiB, rejects new writes when full, and never
+silently evicts pending acknowledgements. This is a running-process safeguard;
+it does not claim durable deduplication after a restart or exactly-once delivery
+by an external protocol. Metadata overhead is additional to the payload budget.
+
+Normal quit also closes history admission on the UI thread after producer
+shutdown. The existing background quit worker joins the actual history writer,
+then releases its observer and SQLite connection before reporting clean quit.
+Accepted and failed records remain distinguished. Joining a writer is separate
+from observing that a Weak reference no longer upgrades: SQLite destruction can
+still be running, particularly with Windows file locks.
+
 ## Measurements and limits
 
 JSON schema version 1 contains:

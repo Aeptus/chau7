@@ -499,3 +499,55 @@ Independent final GPUI prerequisite-ledger audit at2e2179b0627e verifies all
 four modified package paths, original/current SHA256 and complete before/after
 change chains. Provenance acceptance remains separate from software rendering.
 Evidence: `chau7-gpui-2e-ledger-root-audit.json`.
+
+## Integrated shutdown, acknowledgement and Windows correction (2026-10-12)
+
+Exact root1814234842f6e6d6d14a0ddb9b1ef8f1016ee13a passes2,947 release
+workspace tests (544 app,2 public GPUI prerequisite integration,2,401 core;
+two existing ignored), strict default and optional-native all-target Clippy,
+formatting and diff checks. This integrates normal history shutdown/drain,
+nonblocking descriptor-checked snapshot reads, the bounded Aethyme acceptance
+ledger and a Windows test cleanup correction. Focused fake-CLI tests retain
+accepted prompts across incomplete completion and changed-generation reclaim;
+FIFO tests use producer-free pipes and a deterministic file-to-FIFO replacement.
+No real provider, paired device or existing app/profile was changed in testing.
+
+Officialc514f379 passes quality run38204650284 and Next macOS/Linux jobs in
+PR run38204650295 and push run38204646194. Both Next runs fail their Windows
+history observer test while deleting an owned SQLite folder. The test previously
+waited for Weak disappearance rather than completed destruction. The integrated
+039265a78665 test-only change joins the actual writer on a background thread,
+keeps both outside-store-lock observer assertions, and asserts processed1/failed0
+before deletion. Actual Windows confirmation is pending a later official run.
+
+The provenance-aware duplication check excludes only191 byte-identical locked
+upstream originals, verified by pinned manifest SHA256, regular ancestors and
+file hashes. Modified originals and new sources remain scanned at the unchanged
+2% threshold. Seven fail-closed regressions pass; the actual root181 scan reports
+0.90% duplicated lines. No blanket vendor ignore or threshold increase.
+
+The full local JavaScript quality suite remains negative: first run110/111,
+second109/111, with unchanged Swift package-graph tests timing out at120seconds.
+All four tests pass in an isolated invocation. An owned manifest-process sample
+shows a CoreServices bootstrap wait during Foundation directory enumeration;
+it does not establish a TCC, working-directory or source-code cause. No test,
+gate, timeout, OS permission or Swift manifest was changed to conceal this.
+Both failures, the isolated success and the owned process sample are retained.
+
+The earlier rootd0e12e54b prerequisite source passes2,936 release workspace tests
+and8 actual Apple initialization/ownership tests. These validate nullable initial
+Metal device/library/pipeline resources, not a usable software window. Original
+Cocoa deprecation warnings and the missing precompiled-Metal-toolchain result
+remain visible; no component installation or warning suppression was added.
+
+After the user reports granting removable-volume access, bounded read-only
+inspection of the old797 app at05:10UTC still finds347 warnings,343 incomplete
+captures and zero errors in the trailing256KiB window. Its separate performance
+capture reports PID3607,79,233,024 resident bytes,6.814% of one logical CPU,
+healthy watchdog and zero stalls/recoveries. Permission delivery and restored
+terminal readiness are unproven; this is neither a benchmark nor new-source
+acceptance. Only bounded numeric summaries are retained for this observation.
+
+Evidence: `source-181423-*`, `source-d0e12-*`, the named local quality/test/sample
+logs, `chau7-ci-c514-next-failed.log` and
+`chau7-old797-after-volume-consent-summary.json` in the private evidence folder.
