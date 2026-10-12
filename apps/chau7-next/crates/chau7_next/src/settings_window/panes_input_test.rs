@@ -51,6 +51,11 @@ fn actual_scrollback_input_preserves_drafts_and_commits_owned_settings(
     cx.update_window(window.into(), |_, window, cx| window.render_frame(cx))
         .unwrap();
 
+    cx.update(|cx| {
+        let expected = super::number::NumberFormat::current().format(0);
+        assert_eq!(view.read(cx).pane_inputs.format_summary_count(0), expected);
+    });
+
     // Exercise the real InputState event subscription in an owned GPUI window.
     window
         .update(cx, |_, window, cx| {

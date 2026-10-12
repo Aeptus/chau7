@@ -115,11 +115,10 @@ pub(super) fn splits(ctx: &SectionContext) -> gpui::Div {
 pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     let chrome = ctx.chrome;
     let s = &ctx.settings.terminal;
-    let lines = if s.restored_scrollback_lines == 0 {
-        "Off".to_string()
-    } else {
-        format!("{} lines", s.restored_scrollback_lines)
-    };
+    let lines = ctx
+        .view
+        .pane_inputs
+        .format_summary_count(s.restored_scrollback_lines);
     titled("Scrollback", chrome)
         .child(row(
             "Scrollback lines",

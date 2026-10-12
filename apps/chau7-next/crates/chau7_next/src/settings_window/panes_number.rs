@@ -119,12 +119,13 @@ mod imp {
         use super::*;
         #[test]
         fn native_region_and_numbering_system_display_match_foundation() {
-            for (locale, small, large) in [
-                ("es_ES", "1234", "10.000"),
-                ("he_IL", "1,234", "10,000"),
-                ("ar_EG", "١٬٢٣٤", "١٠٬٠٠٠"),
+            for (locale, zero, small, large) in [
+                ("es_ES", "0", "1234", "10.000"),
+                ("he_IL", "0", "1,234", "10,000"),
+                ("ar_EG", "٠", "١٬٢٣٤", "١٠٬٠٠٠"),
             ] {
                 let format = NumberFormat::new(Some(locale));
+                assert_eq!(format.format(0), zero, "{locale}");
                 assert_eq!(format.format(1234), small, "{locale}");
                 assert_eq!(format.format(10000), large, "{locale}");
                 assert_eq!(format.parse(small), Some(1234), "{locale}");
@@ -140,6 +141,7 @@ mod imp {
                 ("ar", "10,000", 10000),
             ] {
                 let format = NumberFormat::new(Some(locale));
+                assert_eq!(format.format(0), "0", "{locale}");
                 assert_eq!(format.format(10000), display, "{locale}");
                 assert_eq!(format.parse(display), Some(10000), "{locale}");
                 assert_eq!(format.parse("10,000"), Some(comma), "{locale}");
@@ -279,10 +281,12 @@ mod portable {
         use super::*;
         #[test]
         fn portable_spanish_and_arabic_regional_formats_roundtrip() {
-            for (locale, small, large) in
-                [("es_ES", "1234", "10.000"), ("ar_EG", "١٬٢٣٤", "١٠٬٠٠٠")]
-            {
+            for (locale, zero, small, large) in [
+                ("es_ES", "0", "1234", "10.000"),
+                ("ar_EG", "٠", "١٬٢٣٤", "١٠٬٠٠٠"),
+            ] {
                 let format = NumberFormat::for_locale(locale);
+                assert_eq!(format.format(0), zero, "{locale}");
                 assert_eq!(format.format(1234), small);
                 assert_eq!(format.format(10000), large);
                 assert_eq!(format.parse(small), Some(1234));
@@ -301,6 +305,7 @@ mod portable {
                 ("ar", "10,000", 10000),
             ] {
                 let format = NumberFormat::for_locale(locale);
+                assert_eq!(format.format(0), "0", "{locale}");
                 assert_eq!(format.format(10000), display);
                 assert_eq!(format.parse("10,000"), Some(comma));
                 for (input, expected) in [

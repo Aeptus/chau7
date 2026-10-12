@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Display the restored-scrollback counter with the current OS number format, including localized zero, matching Swift without untranslated suffixes. Preserve configured values and stepper bounds.
+
+
 - Exercise Spanish Settings search and independently selected regional usage formats through visible controls in an owned native window, verifying persistence and summary values while retaining the animation deadline.
 
 
