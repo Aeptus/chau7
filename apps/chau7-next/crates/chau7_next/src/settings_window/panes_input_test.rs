@@ -100,8 +100,8 @@ fn actual_scrollback_input_preserves_drafts_and_commits_owned_settings(
         ("99", 100),
         ("100001", 100_000),
         ("+", 100_000),
-        ("13.5", 100_000),
-        ("99999999999999999999999999999999999999999999", 100_000),
+        ("13.5", 100),
+        ("99999999999999999999999999999999999999999999", 100),
     ] {
         window
             .update(cx, |_, window, cx| {
@@ -119,7 +119,10 @@ fn actual_scrollback_input_preserves_drafts_and_commits_owned_settings(
                 expected,
                 "{text}"
             );
-            assert_eq!(input.read(cx).value().as_str(), expected.to_string());
+            assert_eq!(
+                input.read(cx).value().as_str(),
+                view.read(cx).pane_inputs.number_format.format(expected)
+            );
         });
     }
 
@@ -147,7 +150,10 @@ fn actual_scrollback_input_preserves_drafts_and_commits_owned_settings(
     cx.run_until_parked();
     cx.update(|cx| {
         assert_eq!(Settings::get(cx).terminal.scrollback_lines, 2500);
-        assert_eq!(input.read(cx).value().as_str(), "2500");
+        assert_eq!(
+            input.read(cx).value().as_str(),
+            view.read(cx).pane_inputs.number_format.format(2500)
+        );
         assert!(!Settings::get(cx).input.copy_on_select);
         assert_eq!(Settings::get(cx).terminal.restored_scrollback_lines, 333);
     });
@@ -162,7 +168,41 @@ fn actual_scrollback_input_preserves_drafts_and_commits_owned_settings(
         })
         .unwrap();
     cx.run_until_parked();
-    cx.update(|cx| assert_eq!(input.read(cx).value().as_str(), "3000"));
+    cx.update(|cx| {
+        assert_eq!(
+            input.read(cx).value().as_str(),
+            view.read(cx).pane_inputs.number_format.format(3000)
+        )
+    });
+    for (text, expected) in [
+        ("١٠٠٠٠".to_string(), 10000),
+        (
+            cx.update(|cx| view.read(cx).pane_inputs.number_format.format(12345)),
+            12345,
+        ),
+    ] {
+        window
+            .update(cx, |_, window, cx| {
+                input.update(cx, |state, cx| {
+                    state.set_value(text, window, cx);
+                    cx.emit(InputEvent::Change);
+                    cx.emit(InputEvent::PressEnter {
+                        secondary: false,
+                        shift: false,
+                    });
+                })
+            })
+            .unwrap();
+        cx.run_until_parked();
+        cx.update(|cx| {
+            assert_eq!(Settings::get(cx).terminal.scrollback_lines, expected);
+            assert_eq!(Settings::load(&root).terminal.scrollback_lines, expected);
+            assert_eq!(
+                input.read(cx).value().as_str(),
+                view.read(cx).pane_inputs.number_format.format(expected)
+            );
+        });
+    }
 
     assert!(cx.update(crate::observability::shutdown).is_none());
     cx.run_until_parked();
