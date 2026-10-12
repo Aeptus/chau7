@@ -183,6 +183,15 @@ pub(in crate::panes::editor) async fn verify(
         ensure(
             native.text.hasMarkedText(),
             "AppKit did not enter marked-text composition",
+        )?;
+        // Force the production text-change and mirror paths while marked.
+        // Neither styling nor a stale mirror is allowed to remove composition.
+        native.shared.changed(&native.text, true);
+        let config = native.shared.config.borrow().clone();
+        native.sync(initial, &config);
+        ensure(
+            native.text.hasMarkedText(),
+            "text-change/mirror stripped marked text",
         )
     })
     .map_err(error)?;
@@ -190,7 +199,13 @@ pub(in crate::panes::editor) async fn verify(
     cx.update(|_| {
         ensure(
             native.text.hasMarkedText(),
-            "restyling/repaint discarded marked composition",
+            &format!(
+                "restyling/repaint discarded marked composition (attached={}, native_matches={}, document_matches={}, pending_text={})",
+                attached(&native),
+                native.text.string().to_string() == format!("{initial}に"),
+                native.shared.document.borrow().text() == format!("{initial}に"),
+                native.has_pending_edits(),
+            ),
         )?;
         ensure(
             native.text.string().to_string() == format!("{initial}に"),
