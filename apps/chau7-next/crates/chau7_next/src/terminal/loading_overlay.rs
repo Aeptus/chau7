@@ -60,7 +60,10 @@ pub fn overlay(session: &TerminalSession, key: u64, chrome: Chrome) -> Option<An
                         .text_size(px(12.0))
                         .font_family("Menlo")
                         .text_color(chrome.text_muted)
-                        .child("Shell initializing\u{2026}"),
+                        .child(crate::l10n::l(
+                            "overlay.shellInitializing",
+                            "Shell initializing\u{2026}",
+                        )),
                 )
                 .into_any_element(),
         );
