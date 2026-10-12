@@ -183,10 +183,10 @@ fn report(case: &str, home: &Path, outcome: Result<Value, String>) -> i32 {
     let code = i32::from(outcome.is_err() || !cleaned);
     let evidence = match outcome {
         Ok(details) => {
-            json!({"case":case,"passed":code==0,"details":details,"frames":"native on_next_frame","profile_isolated":true,"owned_profile_removed":cleaned,"owned_resources_closed":true})
+            json!({"case":case,"pid":std::process::id(),"passed":code==0,"details":details,"frames":"native on_next_frame","profile_isolated":true,"owned_profile_removed":cleaned,"owned_resources_closed":true})
         }
         Err(error) => {
-            json!({"case":case,"passed":false,"error":error,"profile_isolated":true,"owned_profile_removed":cleaned})
+            json!({"case":case,"pid":std::process::id(),"passed":false,"error":error,"profile_isolated":true,"owned_profile_removed":cleaned})
         }
     };
     println!("{evidence}");
