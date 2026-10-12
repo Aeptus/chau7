@@ -176,7 +176,7 @@ fn inspect(window: &Window) -> Result<Value, String> {
         Value::Null
     };
     Ok(
-        json!({"actual_backend":diagnostics.backend,"software_image":dimensions,"display_completion":Value::Null}),
+        json!({"actual_backend":diagnostics.backend,"actual_gpui_visibility":window.is_visible(),"software_image":dimensions,"display_completion":Value::Null}),
     )
 }
 
@@ -206,11 +206,6 @@ pub(super) async fn verify(cx: &mut AsyncApp) -> Result<Value, String> {
             )
         })
         .map_err(|error| error.to_string())?;
-    crate::native_parity_fixture::next_frame(handle.into(), cx).await?;
-    let initial = cx
-        .update_window(handle.into(), |_, window, _| inspect(window))
-        .map_err(|error| error.to_string())??;
-    // The real native setContentSize produces the normal GPUI resize callback.
     let native = cx
         .update_window(handle.into(), |_, window, _| {
             raw_view(window)?
@@ -218,14 +213,33 @@ pub(super) async fn verify(cx: &mut AsyncApp) -> Result<Value, String> {
                 .ok_or_else(|| "owned backend NSWindow missing".to_string())
         })
         .map_err(|error| error.to_string())??;
+    // An inactive app's test window may otherwise be occluded by the existing
+    // foreground application; upstream correctly stops display-link frames in
+    // that state. Order only this owned window forward, without activating it.
+    let visible_window = native.clone();
+    cx.foreground_executor()
+        .spawn(async move {
+            visible_window.orderFrontRegardless();
+        })
+        .await;
+    crate::native_parity_fixture::next_frame(handle.into(), cx)
+        .await
+        .map_err(|error| format!("backend surface initial frame: {error}"))?;
+    let initial = cx
+        .update_window(handle.into(), |_, window, _| inspect(window))
+        .map_err(|error| error.to_string())??;
+    // The real native setContentSize produces the normal GPUI resize callback.
     // setContentSize synchronously calls GPUI's resize callback. Like the
     // NSMenu action below, it must run after the App borrow has ended.
     cx.foreground_executor()
         .spawn(async move {
             native.setContentSize(NSSize::new(420., 260.));
+            native.orderFrontRegardless();
         })
         .await;
-    crate::native_parity_fixture::next_frame(handle.into(), cx).await?;
+    crate::native_parity_fixture::next_frame(handle.into(), cx)
+        .await
+        .map_err(|error| format!("backend surface resized frame: {error}"))?;
     let resized = cx
         .update_window(handle.into(), |_, window, _| {
             let content = window.viewport_size();

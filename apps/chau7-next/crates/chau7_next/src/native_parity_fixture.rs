@@ -153,7 +153,8 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                     "editor" => crate::panes::editor::verify_native_fixture(cx).await,
                     "cache" => crate::settings_window::verify_native_cache_fixture(cx).await,
                     _ => Err("unknown native case".into()),
-                }?;
+                }
+                .map_err(|error| format!("existing {case} case: {error}"))?;
                 let mut details = details;
                 if let Some(object) = details.as_object_mut() {
                     object.insert(
