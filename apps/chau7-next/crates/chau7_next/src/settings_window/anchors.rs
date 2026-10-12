@@ -15,6 +15,7 @@ type MeasuredTargets = HashMap<&'static str, (Bounds<Pixels>, Pixels)>;
 #[derive(Clone, Default)]
 pub(super) struct TargetBounds(Rc<RefCell<MeasuredTargets>>);
 impl TargetBounds {
+    #[cfg(any(test, feature = "native-parity-fixture"))]
     pub(super) fn get(&self, id: &str) -> Option<Bounds<Pixels>> {
         self.0.borrow().get(id).map(|(bounds, _)| *bounds)
     }

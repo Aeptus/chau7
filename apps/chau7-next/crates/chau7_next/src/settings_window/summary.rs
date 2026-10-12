@@ -3,6 +3,7 @@
 use super::{SectionContext, SettingsSection, anchors};
 use chau7_next_core::l10n::{Arg, l, lf};
 use gpui::{Role, SharedString, div, prelude::*, px};
+use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Tone {
@@ -115,6 +116,27 @@ impl Card {
         card
     }
 }
+fn compact_path(path: &str, home: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return l("status.unconfigured", "Unconfigured");
+    }
+    let abbreviated = trimmed.replace(home, "~");
+    if abbreviated.graphemes(true).count() <= 42 {
+        return abbreviated;
+    }
+    let tail: Vec<_> = abbreviated.graphemes(true).rev().take(39).collect();
+    format!("...{}", tail.into_iter().rev().collect::<String>())
+}
+fn history_summary_budget(stored: usize) -> usize {
+    use chau7_next_core::history_store::{DEFAULT_MAX_RECORDS, MAX_MAX_RECORDS, MIN_MAX_RECORDS};
+    (if stored == 0 {
+        DEFAULT_MAX_RECORDS
+    } else {
+        stored
+    })
+    .clamp(MIN_MAX_RECORDS, MAX_MAX_RECORDS)
+}
 fn shell_name(s: &crate::settings::Settings, compact: &impl Fn(&str) -> String) -> String {
     use chau7_next_core::shell_env::ShellType;
     let (shell, custom) = s.terminal.effective_shell_type();
@@ -138,14 +160,7 @@ fn items(section: SettingsSection, ctx: &SectionContext) -> Vec<Card> {
         .filter(|p| !(p.name == "Default" && p.icon == "house.fill"))
         .map(|p| p.name.clone())
         .unwrap_or_else(|| l("settings.profileBar.defaultSettings", "Default Settings"));
-    let compact = |path: &str| {
-        let path = path.trim();
-        if path.is_empty() {
-            l("status.unconfigured", "Unconfigured")
-        } else {
-            path.replace(&ctx.home, "~")
-        }
-    };
+    let compact = |path: &str| compact_path(path, &ctx.home);
     let count = |value: usize| Count {
         raw: value,
         text: ctx.view.pane_inputs.format_summary_count(value),
@@ -945,7 +960,7 @@ fn items(section: SettingsSection, ctx: &SectionContext) -> Vec<Card> {
                 "maxRecords",
                 "settings.history.maxRecords",
                 "Maximum Records",
-                count(s.history.max_records),
+                count(history_summary_budget(s.history.max_records)),
             ),
             Card::value(
                 "telemetry",
@@ -1273,4 +1288,48 @@ thread_local! {static OBSERVED:std::cell::RefCell<std::collections::HashMap<Sett
 #[cfg(any(test, feature = "native-parity-fixture"))]
 pub(super) fn observed(section: SettingsSection) -> Vec<(&'static str, String)> {
     OBSERVED.with(|seen| seen.borrow().get(&section).cloned().unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn source_compact_path_abbreviates_and_truncates_graphemes() {
+        assert_eq!(compact_path(" /owned/home/repo ", "/owned/home"), "~/repo");
+        assert_eq!(
+            compact_path(" ", "/owned/home"),
+            l("status.unconfigured", "Unconfigured")
+        );
+        assert_eq!(compact_path(&"é".repeat(42), "/owned/home"), "é".repeat(42));
+        assert_eq!(
+            compact_path(&"é".repeat(43), "/owned/home"),
+            format!("...{}", "é".repeat(39))
+        );
+        let cluster = "👩🏽‍💻";
+        assert_eq!(
+            compact_path(&cluster.repeat(43), "/owned/home"),
+            format!("...{}", cluster.repeat(39))
+        );
+        let swift = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../chau7-macos/Sources/Chau7/Settings/Views/SettingsPageSummaryView.swift"
+        ));
+        assert!(swift.contains("abbreviated.count > 42"));
+        assert!(swift.contains("abbreviated.suffix(39)"));
+    }
+    #[test]
+    fn summary_history_budget_keeps_current_swift_fallback_and_bounds() {
+        assert_eq!(history_summary_budget(0), 50_000);
+        assert_eq!(history_summary_budget(9_999), 10_000);
+        assert_eq!(history_summary_budget(10_000), 10_000);
+        assert_eq!(history_summary_budget(87_654), 87_654);
+        assert_eq!(history_summary_budget(100_000), 100_000);
+        assert_eq!(history_summary_budget(100_001), 100_000);
+        assert_eq!(history_summary_budget(usize::MAX), 100_000);
+        let swift = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../chau7-macos/Sources/Chau7/Settings/Views/SettingsPageSummaryView.swift"
+        ));
+        assert!(swift.contains("max(10000, min(stored > 0 ? stored : 50000, 100_000))"));
+    }
 }
