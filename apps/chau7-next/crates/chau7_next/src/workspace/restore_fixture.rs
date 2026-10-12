@@ -182,13 +182,7 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
         ));
         cx.set_global(settings);
         cx.set_global(ManuallyDrivenRestoreFixture);
-        crate::observability::init(cx);
-        // Keep the real timer registry, but drain its journal before the mock
-        // foreground executor starts polling. A real worker cannot wake the
-        // deterministic scheduler; native acceptance keeps the live journal.
-        if let Some(worker) = crate::observability::shutdown(cx) {
-            worker.join().unwrap();
-        }
+        crate::observability::init_for_test(cx);
     });
     let (handle, ws) = cx.update(|cx| {
         gpui_kit::open_window(
