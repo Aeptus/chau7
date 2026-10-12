@@ -412,6 +412,7 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
     select(handle, &ws, ids[3], cx)?;
     settle(handle, cx).await?;
     verify_hover(handle, &ws, &ids, &selected_panes, cx).await?;
+    let mut loading_clock = verify_loading_clock(handle, cx).await?;
     profile.release_prompt(1)?;
     profile.release_prompt(2)?;
     wait_until(cx, "native OSC133 readiness", |cx| {
@@ -446,6 +447,11 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
             "resume prefill repeated after next production tick",
         )?;
     }
+    wait_until(cx, "loading clock stopped at real prompt", |cx| {
+        loading_timers(cx).is_empty()
+    })
+    .await?;
+    loading_clock["ready_active_timers"] = serde_json::json!(0);
     let surface = verify_surfaces(handle, &ws, &ids, &selected_panes, &profile, cx).await?;
     // Let every owned output subprocess finish before normal PTY disposal.
     for directory in &profile.directories {
@@ -460,12 +466,93 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
     })
     .await?;
     let closed = dispose(cx).await?;
+    wait_until(cx, "loading clock cleanup", |cx| {
+        loading_timers(cx).is_empty()
+    })
+    .await?;
+    loading_clock["cleanup_active_timers"] = serde_json::json!(0);
     ensure(
         closed == 5,
         "cleanup did not close all five actual owned PTYs",
     )?;
     Ok(
-        serde_json::json!({"restored_tabs":6,"selected_initial_ptys":2,"preserved_split_leaves":2,"native_identities":2,"quiet_period_ms":450,"observed_identity_admission_ms":admission_ms,"transient_selection_ptys":0,"parked_metadata_ptys":0,"resume_deliveries":2,"resume_line_terminators":0,"duplicate_deliveries":0,"closed_owned_ptys":closed,"surfaces":surface,"manual_polling":false,"simulated_frames":false}),
+        serde_json::json!({"restored_tabs":6,"selected_initial_ptys":2,"preserved_split_leaves":2,"native_identities":2,"quiet_period_ms":450,"observed_identity_admission_ms":admission_ms,"transient_selection_ptys":0,"parked_metadata_ptys":0,"resume_deliveries":2,"resume_line_terminators":0,"duplicate_deliveries":0,"closed_owned_ptys":closed,"surfaces":surface,"loading_clock":loading_clock,"manual_polling":false,"simulated_frames":false}),
+    )
+}
+
+/// Inspect the actual registry; fixture execution never creates a timer here.
+fn loading_timers(cx: &App) -> Vec<serde_json::Value> {
+    crate::observability::timer_inventory(cx)["timers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|timer| {
+            timer["active"] == true
+                && timer["id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("shell.loading."))
+        })
+        .cloned()
+        .collect()
+}
+fn loading_callback_samples() -> u64 {
+    chau7_next_core::work_profiler::snapshot()["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|entry| {
+            entry["kind"] == "wakeup" && entry["operation"] == "shell_loading_animation"
+        })
+        .map(|entry| entry["lifetime"]["sample_count"].as_u64().unwrap_or(0))
+        .sum()
+}
+async fn verify_loading_clock(
+    handle: WindowHandle<Root>,
+    cx: &mut AsyncApp,
+) -> Result<serde_json::Value, String> {
+    let native = native_window(handle, cx)?;
+    wait_until(cx, "one visible loading clock", |cx| {
+        loading_timers(cx).len() == 1
+    })
+    .await?;
+    let initial = cx.update(|cx| loading_timers(cx));
+    ensure(initial[0]["interval_ms"] == 80, "loading clock is not 80ms")?;
+    let samples_before = loading_callback_samples();
+    cx.update(|_| native.orderOut(None));
+    wait_until(cx, "loading clock cancellation while ordered out", |cx| {
+        !native.isVisible() && loading_timers(cx).is_empty()
+    })
+    .await?;
+    let hidden_samples = loading_callback_samples();
+    // Allow more than two ordinary intervals, proving the cancelled clock
+    // stays dormant instead of repeatedly waking the hidden workspace.
+    pause(cx, Duration::from_millis(240)).await;
+    ensure(
+        loading_callback_samples() == hidden_samples,
+        "hidden workspace continued running loading callbacks",
+    )?;
+    cx.update(|_| native.orderFront(None));
+    settle(handle, cx).await?;
+    wait_until(cx, "one replacement loading clock", |cx| {
+        native.isVisible() && loading_timers(cx).len() == 1
+    })
+    .await?;
+    pause(cx, Duration::from_millis(320)).await;
+    let shown = cx.update(|cx| loading_timers(cx));
+    ensure(
+        shown.len() == 1 && shown[0]["interval_ms"] == 80,
+        "replacement clock was duplicated or deactivated by its old generation",
+    )?;
+    let samples_after = loading_callback_samples();
+    ensure(
+        samples_after > hidden_samples && samples_after > samples_before,
+        "real loading callbacks produced no profiler samples",
+    )?;
+    Ok(
+        serde_json::json!({"interval_ms":80,"initial_active_timers":1,
+        "hidden_active_timers":0,"shown_active_timers":1,
+        "hidden_callback_delta":0,"observed_callback_samples":samples_after-samples_before,
+        "callback_cost_unit":"wall_ms","timer_wait_in_callback_cost":false}),
     )
 }
 
