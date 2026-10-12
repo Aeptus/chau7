@@ -65,7 +65,7 @@ export function runDuplication(root, outputDirectory) {
   try {
     const configuration = path.join(temporary, "jscpd.json");
     fs.writeFileSync(configuration, `${JSON.stringify(config, null, 2)}\n`);
-    console.log(`Duplication: ${excludedPaths.length} byte-identical locked upstream files excluded; modified/new sources and threshold unchanged`);
+    process.stdout.write(`Duplication: ${excludedPaths.length} byte-identical locked upstream files excluded; modified/new sources and threshold unchanged\n`);
     const result = spawnSync("jscpd", ["--config", configuration], { cwd: root, stdio: "inherit" });
     if (result.error) throw result.error;
     return result.status ?? 1;

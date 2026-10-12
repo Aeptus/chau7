@@ -1057,26 +1057,52 @@ pub fn query_escape(value: &str) -> String {
 /// empty results.
 pub struct ProxyAnalyticsStore<'a> {
     path: &'a Path,
+    failures: std::sync::atomic::AtomicU64,
 }
 
 impl<'a> ProxyAnalyticsStore<'a> {
     pub fn new(path: &'a Path) -> Self {
-        Self { path }
+        Self {
+            path,
+            failures: Default::default(),
+        }
     }
 
+    /// Missing database is normal; unreadable files and SQL errors are not an
+    /// empty observation. Readers can preserve their last successful snapshot.
+    pub fn failure_count(&self) -> u64 {
+        self.failures.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    fn failed(&self) {
+        let _ = self.failures.fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |v| Some(v.saturating_add(1)),
+        );
+    }
     fn with<T>(&self, fallback: T, f: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> T {
-        if !self.path.is_file() {
-            return fallback;
+        match std::fs::metadata(self.path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return fallback,
+            Ok(m) if m.is_file() => {}
+            _ => {
+                self.failed();
+                return fallback;
+            }
         }
         let Ok(conn) = Connection::open_with_flags(self.path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         else {
-            log::warn!(
-                "ProxyAnalyticsStore: failed to open database at {}",
-                self.path.display()
-            );
+            self.failed();
+            log::warn!("ProxyAnalyticsStore: database is unavailable");
             return fallback;
         };
-        f(&conn).unwrap_or(fallback)
+        match f(&conn) {
+            Ok(value) => value,
+            Err(_) => {
+                self.failed();
+                log::warn!("ProxyAnalyticsStore: query failed");
+                fallback
+            }
+        }
     }
 
     /// Bounded cursor walk over retained requests, including optional columns
@@ -1642,5 +1668,37 @@ mod tests {
             assert_eq!(samples[0].latency_ms, if ttft { 100 } else { 500 });
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+}
+
+#[cfg(test)]
+mod analytics_failure_tests {
+    use super::*;
+    #[test]
+    fn missing_is_normal_but_owned_invalid_database_and_sql_errors_are_unknown() {
+        let directory =
+            std::env::temp_dir().join(format!("next-proxy-failure-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("owned.db");
+        let store = ProxyAnalyticsStore::new(&path);
+        let _ = store.overall_stats(None);
+        assert_eq!(store.failure_count(), 0);
+        std::fs::write(&path, b"invalid owned fixture, no user records").unwrap();
+        let _ = store.overall_stats(None);
+        assert_eq!(store.failure_count(), 1);
+        std::fs::remove_file(&path).unwrap();
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch("CREATE TABLE owned(value INTEGER)")
+            .unwrap();
+        drop(connection);
+        let _ = store.overall_stats(None);
+        assert_eq!(store.failure_count(), 2);
+        store
+            .failures
+            .store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
+        store.failed();
+        assert_eq!(store.failure_count(), u64::MAX);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

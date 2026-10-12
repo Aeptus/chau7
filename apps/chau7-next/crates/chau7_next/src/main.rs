@@ -102,6 +102,7 @@ fn main() {
     }
     clean_inherited_environment();
     let root = DataRoot::from_env();
+    let installation = settings::installation::FreshInstallation::capture(&root);
     if let Err(err) = root.ensure_dirs() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
     }
@@ -113,6 +114,11 @@ fn main() {
             std::process::exit(1);
         }
     };
+    if installation.initialize().is_err() {
+        eprintln!(
+            "Chau7 Next: installation policy unavailable; preserving legacy retention default"
+        );
+    }
     platform::defaults::disable_press_and_hold();
     logging::init(&root);
     incidents::start(&root);
@@ -282,6 +288,7 @@ fn main() {
             // Shells get SIGTERM at once (`closeSessionForTermination`).
             terminal::session::terminate_all_for_quit();
             let history_writer = history::shutdown(cx);
+            let telemetry_writer = telemetry::shutdown(cx);
             logging::flush();
             let performance_worker = performance::stop(cx);
             let hang_worker = hang_watchdog::stop(cx);
@@ -309,6 +316,12 @@ fn main() {
                 if let Some(worker) = cto_worker {
                     let _ = worker.join();
                 }
+                let telemetry_closed = telemetry_writer
+                    .map(|writer| writer.finish())
+                    .unwrap_or(Ok(()));
+                if let Err(error) = &telemetry_closed {
+                    log::warn!("Telemetry shutdown incomplete: {error}");
+                }
                 if let Some(history_writer) = history_writer {
                     match history_writer.finish() {
                         Ok(outcome) if outcome.failed > 0 => log::warn!(
@@ -325,8 +338,12 @@ fn main() {
                     }
                 }
                 incidents::shutdown();
-                if let Err(error) = instance.mark_clean() {
-                    log::warn!("Cannot mark clean termination: {error}");
+                if telemetry_closed.is_ok() {
+                    if let Err(error) = instance.mark_clean() {
+                        log::warn!("Cannot mark clean termination: {error}");
+                    }
+                } else {
+                    log::warn!("Clean shutdown marker withheld after telemetry failure");
                 }
                 logging::flush();
             })

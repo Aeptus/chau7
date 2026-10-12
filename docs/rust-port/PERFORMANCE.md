@@ -75,7 +75,9 @@ by an external protocol. Metadata overhead is additional to the payload budget.
 
 Normal quit also closes history admission on the UI thread after producer
 shutdown. The existing background quit worker joins the actual history writer,
-then releases its observer and SQLite connection before reporting clean quit.
+then releases its writer-owned observer/store references before reporting clean
+quit. Live readers may retain the store until their own teardown; normal shutdown
+does not require exclusive ownership of every reader.
 Accepted and failed records remain distinguished. Joining a writer is separate
 from observing that a Weak reference no longer upgrades: SQLite destruction can
 still be running, particularly with Windows file locks.
@@ -213,3 +215,39 @@ Native dee8163a additionally proves the actual80ms loading task cancels hidden,
 has zero hidden callbacks, resumes once and stops at real prompt/disposal.
 Its callback wall-time excludes interval waiting. Exact evidence and limits:
 [recovery validation](RECOVERY-VALIDATION-20261011.md).
+
+## Whole-window renderer diagnostics
+
+Runtime and performance MCP exports include window_renderer with immutable
+startup policy, selected backend, bounded initial failure stage and whether an
+optional fixture injected it. Per-window records expose actual backend,
+submitted/failed image counts, last primitive counts, measured CPU submission
+microseconds and retained software image/atlas pixel bytes. GPU and compositor
+allocations and OS display completion are null when unmeasured. Image submission
+to an ordinary CALayer does not establish completed display presentation.
+
+A normal feature-free 7bd54649 owned app requests Software from the saved
+use_metal_renderer=false preference; both windows and the CPU terminal run,
+receive exact synthetic MCP Unicode input and quit normally with three saved
+tabs. Latest main-window submit 139,217 us and 42.101% app-process CPU after 66.88s
+show that software rendering has a measurable cost. Concurrent compilation and
+the synthetic workload prevent a controlled idle comparison. Intermittent native
+frame/resize barriers remain under investigation. See the recovery validation
+for exact source, observations and limits.
+
+### Telemetry startup and Aethyme capture diagnostics (2026-10-12)
+
+The additive `telemetry` object in the existing performance snapshot reads
+atomic store state, ordered writer counters and bounded in-memory cache/activity
+counts. It performs no SQLite query and exports no keys, values, repository
+paths or transcript content. Store states distinguish loading, ready, failed
+and closed; accepted queue jobs are not presented as durable writes. Combined
+validation and the reviewed missing-writer shutdown correction remain pending.
+
+Aethyme incomplete-capture warnings now include the actual timeout, output-limit,
+read-failure and cancellation flags, optional exit status, static caller and
+stdout/stderr byte lengths. They contain no command, root, prompt or output
+bytes. Existing 15-second/4 MiB bounds, one-warning outage suppression and
+30-to-300-second retry backoff are retained. The work profiler separately
+measures actual `aethyme.delivery` subprocess capture wall time on background
+workers. Old generic warnings cannot retrospectively identify those flags.

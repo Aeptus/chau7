@@ -8,6 +8,8 @@
 //! tools, repository stats (hover card), Data Explorer, Debug Console
 //! Analytics and the iOS client events of remote control.
 
+mod cache;
+
 #[path = "usage.rs"]
 pub mod usage;
 
@@ -24,7 +26,7 @@ use chau7_next_core::repository::AiRepoStats;
 use chau7_next_core::telemetry::providers::default_providers;
 use chau7_next_core::telemetry::recorder::TelemetryRecorder;
 use chau7_next_core::telemetry::run::{TelemetryRun, TelemetryRunFilter};
-use chau7_next_core::telemetry::store::TelemetryStore;
+use chau7_next_core::telemetry::store::{StoreReadiness, TelemetryStore};
 use chau7_next_core::telemetry::turn::{TelemetryToolCall, TelemetryTurn};
 use gpui::{App, Global};
 use parking_lot::Mutex;
@@ -35,9 +37,113 @@ use crate::workspace::AppData;
 
 /// Runs listed by the Debug Console "Rebuild Transcript Metrics".
 const REPAIR_LIMIT: i64 = 500;
-/// Wait before reading a finished run's PTY log.
-const PTY_LOG_DRAIN: std::time::Duration = std::time::Duration::from_millis(500);
+struct TranscriptMonitor {
+    task: Option<gpui::Task<()>>,
+    activity: Arc<cache::Activity>,
+}
+impl Global for TranscriptMonitor {}
 
+pub(crate) struct Shutdown {
+    transcript: cache::Drain,
+    reads: Vec<cache::Drain>,
+    maintenance: Option<cache::Drain>,
+    store: Option<Arc<TelemetryStore>>,
+    writer: Option<chau7_next_core::telemetry::recorder::WriterShutdown>,
+}
+impl Shutdown {
+    /// Called only by the existing background quit future.
+    pub(crate) fn finish(self) -> Result<(), String> {
+        self.transcript.finish();
+        if let Some(maintenance) = self.maintenance {
+            maintenance.finish();
+        }
+        for read in self.reads {
+            read.finish();
+        }
+        let drained = if let Some(writer) = self.writer {
+            match writer.finish() {
+                Ok(status) => {
+                    log::info!(
+                        "Telemetry writer drained: accepted={} processed={} rejected={} failed={}",
+                        status.accepted,
+                        status.processed,
+                        status.rejected,
+                        status.failed
+                    );
+                    if status.failed > 0 {
+                        Err("accepted telemetry writes failed".into())
+                    } else {
+                        Ok(())
+                    }
+                }
+                Err(error) => Err(error),
+            }
+        } else if self.store.is_some() {
+            // No handle is not a successful drain: OS worker creation may have
+            // failed before any initialization job could be admitted.
+            Err("telemetry writer unavailable for shutdown".into())
+        } else {
+            Ok(())
+        };
+        let unavailable = self.store.as_ref().is_some_and(|store| {
+            matches!(
+                store.readiness(),
+                StoreReadiness::Loading | StoreReadiness::Failed
+            )
+        });
+        // Retained Global/MCP Arc wrappers must not retain a SQLite handle.
+        if let Some(store) = self.store {
+            store
+                .close()
+                .map_err(|_| "telemetry SQLite close failed".to_string())?;
+        }
+        drained?;
+        if unavailable {
+            Err("telemetry initialization did not succeed".into())
+        } else {
+            Ok(())
+        }
+    }
+}
+pub(crate) fn shutdown(cx: &mut App) -> Option<Shutdown> {
+    cx.try_global::<TranscriptMonitor>()?;
+    let monitor = cx.global_mut::<TranscriptMonitor>();
+    drop(monitor.task.take());
+    let transcript = monitor.activity.stop();
+    let maintenance = usage::shutdown_maintenance(cx);
+    let store = recorder(cx).map(|recorder| recorder.store().clone());
+    let mut reads = cx
+        .try_global::<ReadSnapshots>()
+        .map(|s| {
+            vec![
+                s.hover.stop(),
+                s.analytics.stop(),
+                s.repairs.stop(),
+                s.bootstrap.stop(),
+            ]
+        })
+        .unwrap_or_default();
+    if let Some(quota) = usage::shutdown_quota(cx) {
+        reads.push(quota);
+    }
+    let writer = recorder(cx).and_then(|recorder| recorder.shutdown());
+    Some(Shutdown {
+        transcript,
+        writer,
+        reads,
+        maintenance,
+        store,
+    })
+}
+
+type HoverValue = Option<(TelemetryRun, Vec<(String, i64)>)>;
+struct ReadSnapshots {
+    hover: Arc<cache::Cache<Vec<String>, HoverValue>>,
+    analytics: Arc<cache::Cache<(), AnalyticsData>>,
+    repairs: Arc<cache::Activity>,
+    bootstrap: Arc<cache::Activity>,
+}
+impl Global for ReadSnapshots {}
 struct TelemetryGlobal(Arc<TelemetryRecorder>);
 struct LiveTranscriptsGlobal(Arc<LiveTranscripts>);
 impl Global for LiveTranscriptsGlobal {}
@@ -104,7 +210,7 @@ pub fn record_token_rate(
 
 impl Global for TelemetryGlobal {}
 
-/// Open the store (Chau7 Next's own file) and set up the recorder.
+/// Set up memory-only globals; the first writer job opens/migrates off UI.
 pub fn init(cx: &mut App) {
     cx.set_global(PromptTimings(Mutex::new(Default::default())));
     cx.set_global(LiveTranscriptsGlobal(Arc::new(LiveTranscripts::new(
@@ -112,15 +218,44 @@ pub fn init(cx: &mut App) {
     ))));
     usage::init(cx);
     let root = cx.global::<AppData>().root.clone();
-    let store = Arc::new(TelemetryStore::open(&root.telemetry_db()));
-    let recorder = TelemetryRecorder::new(store, default_providers(root.home()));
+    let recorder =
+        TelemetryRecorder::open_background(&root.telemetry_db(), default_providers(root.home()));
     let recorder = Arc::new(recorder);
     let rates = Arc::new(Mutex::new(
         chau7_next_core::telemetry::token_rate::TokenRateStore::default(),
     ));
     cx.set_global(TelemetryGlobal(recorder.clone()));
+    cx.set_global(ReadSnapshots {
+        hover: Arc::new(cache::Cache::new()),
+        analytics: Arc::new(cache::Cache::new()),
+        repairs: cache::Activity::new(1),
+        bootstrap: cache::Activity::new(1),
+    });
     cx.set_global(TokenRates(rates.clone()));
     usage::init_latency(cx);
+    let initializing = recorder.store().clone();
+    let active = cx
+        .global::<ReadSnapshots>()
+        .bootstrap
+        .begin()
+        .expect("new initialization observer accepts one worker");
+    cx.spawn(async move |cx| {
+        let initialized = cx
+            .background_executor()
+            .spawn(async move {
+                let _active = active;
+                initializing.wait_until_initialized().is_ok()
+            })
+            .await;
+        cx.update(|cx| {
+            usage::refresh_latency(cx);
+            if !initialized {
+                log::warn!("Telemetry initialization unavailable");
+            }
+            cx.refresh_windows();
+        });
+    })
+    .detach();
     let home = root.home().to_owned();
     let rate_executor = cx.background_executor().clone();
     let timer = crate::observability::register_background_timer(
@@ -130,97 +265,124 @@ pub fn init(cx: &mut App) {
         "telemetry",
         200,
     );
-    cx.background_executor()
-        .spawn(async move {
-            let _timer = timer;
-            use chau7_next_core::telemetry::{
-                jsonl_tail::JsonlTail, token_rate::TranscriptRateState,
-            };
-            let claude =
-                chau7_next_core::telemetry::providers::ClaudeCodeContentProvider::new(&home);
-            let codex = chau7_next_core::telemetry::providers::CodexContentProvider::new(&home);
-            let mut files: std::collections::HashMap<
-                (String, PathBuf),
-                (JsonlTail, TranscriptRateState),
-            > = std::collections::HashMap::new();
-            let mut paths_cache: std::collections::HashMap<
-                String,
-                (String, std::time::Instant, Vec<PathBuf>),
-            > = std::collections::HashMap::new();
-            loop {
-                rate_executor
-                    .timer(std::time::Duration::from_millis(200))
-                    .await;
-                let mut callback = chau7_next_core::work_profiler::timer_callback(
-                    "telemetry.transcript_rate",
-                    "poll",
-                    chau7_next_core::work_profiler::Queue::Background,
-                );
-                let runs = recorder.all_active_runs();
-                callback.items(runs.len());
-                callback.idle(runs.is_empty() && files.is_empty() && paths_cache.is_empty());
-                let active: std::collections::HashSet<_> =
-                    runs.iter().filter_map(|r| r.tab_id.clone()).collect();
-                files.retain(|(tab, _), _| active.contains(tab));
-                paths_cache.retain(|tab, _| active.contains(tab));
-                for run in runs {
-                    let (Some(tab), Some(session)) = (run.tab_id, run.session_id) else {
-                        continue;
-                    };
-                    let cached = paths_cache
-                        .get(&tab)
-                        .filter(|(id, at, _)| {
-                            id == &session && at.elapsed() < std::time::Duration::from_secs(2)
-                        })
-                        .map(|(_, _, paths)| paths.clone());
-                    let paths = if let Some(paths) = cached {
-                        paths
+    let activity = cache::Activity::new(1);
+    let active = activity
+        .begin()
+        .expect("new transcript lifecycle accepts its worker");
+    let task = cx.background_executor().spawn(async move {
+        let _active = active;
+        let _timer = timer;
+        use chau7_next_core::telemetry::{jsonl_tail::JsonlTail, token_rate::TranscriptRateState};
+        let claude = chau7_next_core::telemetry::providers::ClaudeCodeContentProvider::new(&home);
+        let codex = chau7_next_core::telemetry::providers::CodexContentProvider::new(&home);
+        let mut files: std::collections::HashMap<
+            (String, PathBuf),
+            (JsonlTail, TranscriptRateState),
+        > = std::collections::HashMap::new();
+        let mut paths_cache: std::collections::HashMap<
+            String,
+            (String, std::time::Instant, Vec<PathBuf>),
+        > = std::collections::HashMap::new();
+        loop {
+            rate_executor
+                .timer(std::time::Duration::from_millis(200))
+                .await;
+            let mut callback = chau7_next_core::work_profiler::timer_callback(
+                "telemetry.transcript_rate",
+                "poll",
+                chau7_next_core::work_profiler::Queue::Background,
+            );
+            let runs = recorder.all_active_runs();
+            callback.items(runs.len());
+            callback.idle(runs.is_empty() && files.is_empty() && paths_cache.is_empty());
+            let active: std::collections::HashSet<_> =
+                runs.iter().filter_map(|r| r.tab_id.clone()).collect();
+            files.retain(|(tab, _), _| active.contains(tab));
+            paths_cache.retain(|tab, _| active.contains(tab));
+            for run in runs {
+                let (Some(tab), Some(session)) = (run.tab_id, run.session_id) else {
+                    continue;
+                };
+                let cached = paths_cache
+                    .get(&tab)
+                    .filter(|(id, at, _)| {
+                        id == &session && at.elapsed() < std::time::Duration::from_secs(2)
+                    })
+                    .map(|(_, _, paths)| paths.clone());
+                let paths = if let Some(paths) = cached {
+                    paths
+                } else {
+                    let discovered = if matches!(run.provider.as_str(), "claude" | "anthropic") {
+                        claude.transcript_files(&run.cwd, &session)
+                    } else if matches!(run.provider.as_str(), "codex" | "openai") {
+                        codex
+                            .find_rollout(&session, run.started_at)
+                            .into_iter()
+                            .collect()
                     } else {
-                        let discovered = if matches!(run.provider.as_str(), "claude" | "anthropic")
-                        {
-                            claude.transcript_files(&run.cwd, &session)
-                        } else if matches!(run.provider.as_str(), "codex" | "openai") {
-                            codex
-                                .find_rollout(&session, run.started_at)
-                                .into_iter()
-                                .collect()
-                        } else {
-                            vec![]
-                        };
-                        paths_cache.insert(
-                            tab.clone(),
-                            (
-                                session.clone(),
-                                std::time::Instant::now(),
-                                discovered.clone(),
-                            ),
-                        );
-                        discovered
+                        vec![]
                     };
-                    for path in paths {
-                        let state = files.entry((tab.clone(), path.clone())).or_default();
-                        if let Ok(text) = state.0.read(&path) {
-                            for line in text.lines() {
-                                if let Some(r) = state.1.consume(&run.provider, line)
-                                    && r.updated_at >= run.started_at
-                                {
-                                    rates.lock().record_rate(
-                                        &tab,
-                                        &r.provider,
-                                        r.tokens_per_second,
-                                        r.output_tokens,
-                                        r.duration_ms,
-                                        r.source,
-                                        r.updated_at,
-                                    );
-                                }
+                    paths_cache.insert(
+                        tab.clone(),
+                        (
+                            session.clone(),
+                            std::time::Instant::now(),
+                            discovered.clone(),
+                        ),
+                    );
+                    discovered
+                };
+                for path in paths {
+                    let state = files.entry((tab.clone(), path.clone())).or_default();
+                    if let Ok(text) = state.0.read(&path) {
+                        for line in text.lines() {
+                            if let Some(r) = state.1.consume(&run.provider, line)
+                                && r.updated_at >= run.started_at
+                            {
+                                rates.lock().record_rate(
+                                    &tab,
+                                    &r.provider,
+                                    r.tokens_per_second,
+                                    r.output_tokens,
+                                    r.duration_ms,
+                                    r.source,
+                                    r.updated_at,
+                                );
                             }
                         }
                     }
                 }
             }
+        }
+    });
+    cx.set_global(TranscriptMonitor {
+        task: Some(task),
+        activity,
+    });
+}
+
+/// Numeric, memory-only state for the existing MCP/performance diagnostics.
+/// No run IDs, commands, context, database paths or SQL are captured here.
+pub fn diagnostics(cx: &App) -> Value {
+    let Some(recorder) = recorder(cx) else {
+        return serde_json::json!({"store_state":"unavailable", "writer":null, "store_failures":null,
+            "snapshots":null, "maintenance":usage::maintenance_diagnostics(cx)});
+    };
+    let writer = recorder.writer_status();
+    let snapshots = cx.try_global::<ReadSnapshots>().map(|s| {
+        serde_json::json!({
+            "hover":s.hover.diagnostics(), "analytics":s.analytics.diagnostics(),
+            "repair":s.repairs.diagnostics(), "initialization":s.bootstrap.diagnostics(),
         })
-        .detach();
+    });
+    serde_json::json!({"store_state":recorder.store().readiness().as_str(),
+        "store_failures":recorder.store().failure_count(),
+        "writer":{"accepted":writer.accepted, "completed":writer.processed,
+            "pending":writer.accepted.saturating_sub(writer.processed),
+            "pending_bytes":writer.pending_bytes,"rejected":writer.rejected,"failed":writer.failed,
+            "accepting":writer.accepting,"last_error":writer.last_error,
+            "acknowledgement":"admission is queued; completed includes failed jobs; failed is separate"},
+        "snapshots":snapshots,"maintenance":usage::maintenance_diagnostics(cx)})
 }
 
 /// The shared recorder (and through it the store).
@@ -245,12 +407,10 @@ pub fn note_output(tab: &str, bytes: &[u8], cx: &App) {
     let sample = cx
         .try_global::<PromptTimings>()
         .and_then(|t| t.0.lock().output(tab, bytes, chrono::Utc::now()));
-    if let (Some(sample), Some(recorder)) = (sample, recorder(cx)) {
-        cx.background_executor()
-            .spawn(async move {
-                recorder.store().insert_latency_sample(&sample);
-            })
-            .detach();
+    if let (Some(sample), Some(recorder)) = (sample, recorder(cx))
+        && let Err(error) = recorder.record_latency(sample)
+    {
+        log::warn!("Telemetry latency write rejected: {error}");
     }
 }
 
@@ -270,7 +430,9 @@ pub fn run_started(
     let provider = chau7_next_core::ai::resume::normalize_provider_name(tool)
         .unwrap_or_else(|| tool.to_string());
     let session_id = session_id.filter(|s| chau7_next_core::ai::resume::is_valid_session_id(s));
-    recorder.run_started(tab_id, &provider, cwd, repo_path, session_id);
+    if let Err(error) = recorder.run_started(tab_id, &provider, cwd, repo_path, session_id) {
+        log::warn!("Telemetry run admission rejected: {error}");
+    }
 }
 
 /// TEL-002, TEL-006: the AI CLI exited. The transcript is read on a
@@ -290,8 +452,9 @@ pub fn run_ended(
         && recorder
             .active_run_for_tab(tab_id)
             .is_some_and(|r| r.session_id.is_none())
+        && let Err(error) = recorder.update_session_id(tab_id, session)
     {
-        recorder.update_session_id(tab_id, session);
+        log::warn!("Telemetry session update rejected: {error}");
     }
     if let Some(timing) = cx.try_global::<PromptTimings>() {
         timing.0.lock().clear(tab_id);
@@ -300,15 +463,11 @@ pub fn run_ended(
     let Some(run) = recorder.run_ended(tab_id, exit_status.map(i64::from)) else {
         return;
     };
-    // The PTY log is written by a background thread: give it a moment to
-    // drain before the tail is read (Swift closes the log first).
-    let executor = cx.background_executor().clone();
-    cx.background_executor()
-        .spawn(async move {
-            executor.timer(PTY_LOG_DRAIN).await;
-            recorder.complete(run, buffer, pty_log.as_deref());
-        })
-        .detach();
+    // The owned writer captures this completion before returning. Its drain
+    // includes the off-UI PTY delay, transcript read and final transaction.
+    if let Err(error) = recorder.enqueue_completion(run, buffer, pty_log) {
+        log::warn!("Telemetry completion rejected: {error}");
+    }
 }
 
 /// TEL-003: the session id of a tab's AI CLI became known.
@@ -320,8 +479,9 @@ pub fn update_session_id(tab_id: &str, session_id: &str, cx: &App) {
         && recorder
             .active_run_for_tab(tab_id)
             .is_some_and(|r| r.session_id.as_deref() != Some(session_id))
+        && let Err(error) = recorder.update_session_id(tab_id, session_id)
     {
-        recorder.update_session_id(tab_id, session_id);
+        log::warn!("Telemetry session update rejected: {error}");
     }
 }
 
@@ -330,23 +490,63 @@ pub fn update_session_id(tab_id: &str, session_id: &str, cx: &App) {
 /// belongs to the tab, with its top three tools.
 pub fn hover_summary(tab_ids: &[String], cx: &App) -> Option<(TelemetryRun, Vec<(String, i64)>)> {
     let recorder = recorder(cx)?;
-    let run = tab_ids
+    let live = tab_ids
         .iter()
-        .find_map(|id| recorder.active_run_for_tab(id))
-        .or_else(|| {
-            recorder
-                .store()
-                .list_runs(&TelemetryRunFilter {
-                    limit: Some(1),
-                    ..Default::default()
+        .find_map(|id| recorder.active_run_for_tab(id));
+    if recorder.store().readiness() != StoreReadiness::Ready {
+        return live.map(|run| (run, Vec::new()));
+    }
+    let mut key = tab_ids.to_vec();
+    // A restarted tab never displays the tools of its previous invocation.
+    key.push(live.as_ref().map(|r| r.id.clone()).unwrap_or_default());
+    let (snapshot, ticket) = cx.try_global::<ReadSnapshots>()?.hover.begin(key);
+    if let Some(ticket) = ticket {
+        let ids = tab_ids.to_vec();
+        let active = live.clone();
+        cx.spawn(async move |cx| {
+            cx.background_executor()
+                .spawn(async move {
+                    let mut span = chau7_next_core::work_profiler::begin(
+                        chau7_next_core::work_profiler::Key::work(
+                            "telemetry_snapshot",
+                            "hover",
+                            "telemetry",
+                            "telemetry_snapshot",
+                            chau7_next_core::work_profiler::Queue::Background,
+                        ),
+                    );
+                    span.items(1);
+                    let before = recorder.store().failure_count();
+                    let run = active.or_else(|| {
+                        recorder
+                            .store()
+                            .list_runs(&TelemetryRunFilter {
+                                limit: Some(1),
+                                ..Default::default()
+                            })
+                            .into_iter()
+                            .next()
+                            .filter(|r| r.tab_id.as_ref().is_some_and(|t| ids.contains(t)))
+                    });
+                    let value = run.map(|run| {
+                        let mut tools = recorder.store().tool_call_summary(&run.id);
+                        tools.truncate(3);
+                        (run, tools)
+                    });
+                    let failed = recorder.store().failure_count() != before || before == u64::MAX;
+                    ticket.apply(if failed { Err(()) } else { Ok(value) });
                 })
-                .into_iter()
-                .next()
-                .filter(|r| r.tab_id.as_ref().is_some_and(|t| tab_ids.contains(t)))
-        })?;
-    let mut tools = recorder.store().tool_call_summary(&run.id);
-    tools.truncate(3);
-    Some((run, tools))
+                .await;
+            cx.update(|cx| cx.refresh_windows());
+        })
+        .detach();
+    }
+    // Live identity/status is cached authoritative recorder state; tools remain
+    // absent until the worker observes them, instead of synchronously querying SQL.
+    match (live, snapshot.value.flatten()) {
+        (Some(run), stored) => Some((run, stored.map(|(_, tools)| tools).unwrap_or_default())),
+        (None, stored) => stored,
+    }
 }
 
 /// The AI half of a repository's stats (`RepoStatsProvider`).
@@ -393,9 +593,13 @@ pub fn connect(cx: &mut App) {
     );
 
     // RMT-024, TEL-015.
-    let remote_store = store.clone();
+    let remote_recorder = recorder.clone();
     crate::remote::set_telemetry_sink(
-        Box::new(move |event, _cx| remote_store.insert_remote_client_event(&event)),
+        Box::new(move |event, _cx| {
+            if let Err(error) = remote_recorder.record_remote_event(event) {
+                log::warn!("Telemetry remote event rejected: {error}");
+            }
+        }),
         cx,
     );
 
@@ -406,16 +610,24 @@ pub fn connect(cx: &mut App) {
         crate::debug::AnalyticsSource {
             data: std::rc::Rc::new(analytics_data),
             rebuild: Some(std::rc::Rc::new(move |cx: &mut App| {
+                let Some(active) = cx
+                    .try_global::<ReadSnapshots>()
+                    .and_then(|s| s.repairs.begin())
+                else {
+                    log::warn!("Telemetry repair busy or stopped; request was not accepted");
+                    return;
+                };
                 let recorder = rebuild_recorder.clone();
                 cx.background_executor()
                     .spawn(async move {
+                        let _active=active;
                         let report = recorder.rebuild_transcript_derived_runs(REPAIR_LIMIT);
                         log::info!(
-                            "Telemetry repair: inspected={} rebuilt={} invalidated={} skipped={}",
+                            "Telemetry repair: inspected={} rebuilt={} invalidated={} skipped={} failed={}",
                             report.inspected_runs,
                             report.rebuilt_runs,
                             report.invalidated_runs,
-                            report.skipped_runs
+                            report.skipped_runs,report.failed_runs
                         );
                     })
                     .detach();
@@ -436,41 +648,105 @@ pub fn connect(cx: &mut App) {
             AiEventSource::CODEX => "codex",
             _ => return,
         };
-        recorder.update_session_id_by_cwd(provider, directory, session);
+        if let Err(error) = recorder.update_session_id_by_cwd(provider, directory, session) {
+            log::warn!("Telemetry hook identity update rejected: {error}");
+        }
     });
 }
 
 /// Everything the Debug Console Analytics tab shows.
-fn analytics_data(cx: &App) -> AnalyticsData {
-    let root = cx.global::<AppData>().root.clone();
-    let mut data = AnalyticsData::default();
-    let db = root.proxy_db();
-    let proxy = ProxyAnalyticsStore::new(&db);
-    data.proxy_stats = proxy.overall_stats(None);
-    data.proxy_providers = proxy.provider_stats();
-    data.proxy_daily = proxy.daily_trend(7);
-    data.proxy_recent = proxy
-        .recent_calls(50)
-        .iter()
-        .map(|c| c.debug_call())
-        .collect();
+fn analytics_data(cx: &App) -> (Option<AnalyticsData>, Option<String>) {
     if let Some(recorder) = recorder(cx) {
-        let store = recorder.store();
-        data.run_providers = store.consumption_per_provider(None);
-        data.run_tabs = store.token_usage_per_tab(None);
-        data.run_daily = store.daily_cost_trend(7);
-        data.run_count = store.run_count();
+        match recorder.store().readiness() {
+            StoreReadiness::Loading => return (None, Some("Loading telemetry database".into())),
+            StoreReadiness::Failed | StoreReadiness::Closed => {
+                return (None, Some("Telemetry database is unavailable".into()));
+            }
+            StoreReadiness::Ready => (),
+        }
     }
+    let Some(snapshots) = cx.try_global::<ReadSnapshots>() else {
+        return (None, Some("Analytics is unavailable".into()));
+    };
+    let (snapshot, ticket) = snapshots.analytics.begin(());
+    if let (Some(ticket), Some(recorder)) = (ticket, recorder(cx)) {
+        let root = cx.global::<AppData>().root.clone();
+        cx.spawn(async move |cx| {
+            cx.background_executor()
+                .spawn(async move {
+                    let mut span = chau7_next_core::work_profiler::begin(
+                        chau7_next_core::work_profiler::Key::work(
+                            "telemetry_snapshot",
+                            "analytics",
+                            "telemetry",
+                            "telemetry_snapshot",
+                            chau7_next_core::work_profiler::Queue::Background,
+                        ),
+                    );
+                    span.items(1);
+                    let db = root.proxy_db();
+                    let proxy = ProxyAnalyticsStore::new(&db);
+                    let before = recorder.store().failure_count();
+                    let data = AnalyticsData {
+                        proxy_stats: proxy.overall_stats(None),
+                        proxy_providers: proxy.provider_stats(),
+                        proxy_daily: proxy.daily_trend(7),
+                        proxy_recent: proxy
+                            .recent_calls(50)
+                            .iter()
+                            .map(|c| c.debug_call())
+                            .collect(),
+                        run_providers: recorder.store().consumption_per_provider(None),
+                        run_tabs: recorder.store().token_usage_per_tab(None),
+                        run_daily: recorder.store().daily_cost_trend(7),
+                        run_count: recorder.store().run_count(),
+                        ..Default::default()
+                    };
+                    let failed = proxy.failure_count() > 0
+                        || recorder.store().failure_count() != before
+                        || before == u64::MAX;
+                    ticket.apply(if failed { Err(()) } else { Ok(data) });
+                })
+                .await;
+            cx.update(|cx| cx.refresh_windows());
+        })
+        .detach();
+    }
+    let mut status = if snapshot.error {
+        Some("Analytics unavailable; showing the last successful observation when present".into())
+    } else if snapshot.pending {
+        Some("Loading analytics; showing the last successful observation when present".into())
+    } else {
+        None
+    };
+    if let Some(recorder) = recorder(cx) {
+        let writer = recorder.writer_status();
+        if writer.rejected > 0 || writer.failed > 0 || !writer.accepting {
+            status = Some(format!(
+                "Telemetry writes: queued {}, completed {}, rejected {}, failed {}; {}",
+                writer.accepted,
+                writer.processed,
+                writer.rejected,
+                writer.failed,
+                writer.last_error.as_deref().unwrap_or("admission closed")
+            ));
+        }
+    }
+    let Some(mut data) = snapshot.value else {
+        return (None, status);
+    };
+    // Repository registry snapshots already schedule their own off-UI refresh.
+    // Never read recent-repos.json or probe Git from a paint callback.
     let now = chrono::Utc::now();
-    data.repos = chau7_next_core::repo_metadata::load_recent(&root.recent_repos_file())
+    data.repos = crate::repository::known_roots(cx)
         .into_iter()
-        .map(|path| {
-            let stats = crate::repository::stats(&path, cx).unwrap_or_default();
+        .filter_map(|path| {
+            let stats = crate::repository::stats(&path, cx)?;
             let last = [stats.last_command_at, stats.last_run_at]
                 .into_iter()
                 .flatten()
                 .max();
-            RepoAnalytics {
+            Some(RepoAnalytics {
                 name: chau7_next_core::data_explorer::last_component(&path),
                 total_commands: stats.total_commands,
                 success_rate: stats.success_rate(),
@@ -481,10 +757,10 @@ fn analytics_data(cx: &App) -> AnalyticsData {
                 top_tools: stats.top_tools.clone(),
                 last_activity_ago: last.map(|d| (now - d).num_seconds().max(0)),
                 path,
-            }
+            })
         })
         .collect();
-    data
+    (Some(data), status)
 }
 
 /// Bounded, off-UI live transcript reads. Keys use run identity so a new
@@ -600,8 +876,12 @@ impl mcp_sources::TelemetrySource for McpTelemetry {
             .map(|r| self.1.turns(&r))
             .unwrap_or_default()
     }
-    fn set_tags(&self, run_id: &str, tags: &[String]) {
-        self.0.tag_run(run_id, tags);
+    fn set_tags(&self, run_id: &str, tags: &[String]) -> Result<(), String> {
+        // MCP dispatch is outside the UI thread. The reply acknowledges the
+        // committed ordered prefix, including these tags, rather than admission.
+        self.0.tag_run(run_id, tags).map_err(|e| e.to_string())?;
+        self.0.flush().map_err(|e| e.to_string())?;
+        Ok(())
     }
     fn latest_run_for_repo(&self, repo_path: &str, provider: Option<&str>) -> Option<TelemetryRun> {
         self.runs(&TelemetryRunFilter {
@@ -712,10 +992,11 @@ mod query_tests {
     #[test]
     fn current_snapshot_and_sql_pagination_do_not_duplicate_runs() {
         let source = source();
-        let live_id =
-            source
-                .0
-                .run_started("TAB", "claude", "/repo", Some("/repo"), Some("session"));
+        let live_id = source
+            .0
+            .run_started("TAB", "claude", "/repo", Some("/repo"), Some("session"))
+            .unwrap();
+        source.0.flush().unwrap();
         let mut stale = source.0.store().get_run(&live_id).unwrap();
         stale.ended_at = Some(chrono::Utc::now());
         source.0.store().rewrite_completed_run(&stale, &[], &[]);
@@ -760,7 +1041,11 @@ mod query_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("one-pty.log");
         std::fs::write(&path, "first run").unwrap();
-        let id = source.0.run_started("TAB", "claude", "/repo", None, None);
+        let id = source
+            .0
+            .run_started("TAB", "claude", "/repo", None, None)
+            .unwrap();
+        source.0.flush().unwrap();
         source.1.paths.lock().insert("TAB".into(), path.clone());
         assert_eq!(source.turns(&id)[0].content.as_deref(), Some("first run"));
         std::fs::write(&path, "changed output").unwrap();
@@ -772,12 +1057,45 @@ mod query_tests {
         );
         source.0.run_ended("TAB", Some(0));
         assert!(source.turns(&id).is_empty());
-        let next = source.0.run_started("TAB", "claude", "/repo", None, None);
+        let next = source
+            .0
+            .run_started("TAB", "claude", "/repo", None, None)
+            .unwrap();
+        source.0.flush().unwrap();
         std::fs::write(&path, "second run").unwrap();
         assert_eq!(
             source.turns(&next)[0].content.as_deref(),
             Some("second run")
         );
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+
+    #[test]
+    fn missing_writer_never_authorizes_clean_shutdown_even_when_sqlite_close_succeeds() {
+        let store = Arc::new(TelemetryStore::in_memory());
+        assert_eq!(store.readiness(), StoreReadiness::Ready);
+        let shutdown = Shutdown {
+            transcript: cache::Activity::new(1).stop(),
+            reads: Vec::new(),
+            maintenance: None,
+            store: Some(store.clone()),
+            writer: None,
+        };
+        // The actual background quit decision must retain this Err after close;
+        // no SQLite handle remains, but the absent writer was never drained.
+        let result = std::thread::spawn(move || shutdown.finish())
+            .join()
+            .unwrap();
+        assert_eq!(
+            result,
+            Err("telemetry writer unavailable for shutdown".to_string())
+        );
+        assert_eq!(store.readiness(), StoreReadiness::Closed);
+        store.close().unwrap();
     }
 }

@@ -19,6 +19,61 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::path::Path;
 
+/// Conservative syntax validation for applying a destructive installation
+/// default. Preserve the Swift parser's section names, shortcut keys, duplicate
+/// assignments and // comments, while rejecting lines it would silently skip.
+pub fn is_valid_config(text: &str) -> bool {
+    text.lines().all(|line| {
+        let mut quoted = None;
+        let mut escaped = false;
+        let mut end = line.len();
+        let mut chars = line.char_indices().peekable();
+        while let Some((index, ch)) = chars.next() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if quoted == Some('"') && ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if let Some(quote) = quoted {
+                if ch == quote {
+                    quoted = None;
+                }
+            } else if ch == '"' || ch == '\'' {
+                quoted = Some(ch);
+            } else if ch == '#' || (ch == '/' && chars.peek().is_some_and(|(_, next)| *next == '/'))
+            {
+                end = index;
+                break;
+            }
+        }
+        let original = line.trim();
+        let line = line[..end].trim();
+        if line.is_empty() {
+            return true;
+        }
+        if quoted.is_some() {
+            return false;
+        }
+        if let Some(section) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            // parse_raw accepts a header only when the original line ends
+            // in ]. Normalizing a trailing comment here would hide the next
+            // section's explicit retention setting from the actual loader.
+            return line == original && !section.trim().is_empty() && !section.contains(['[', ']']);
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            return false;
+        };
+        !key.trim().is_empty()
+            && !key.contains(['[', ']', '"', '\''])
+            && format!("value = {}", value.trim())
+                .parse::<toml_edit::DocumentMut>()
+                .is_ok()
+    })
+}
+
 /// Name of the implicit section that holds keys appearing before any header.
 pub const GLOBAL_SECTION: &str = "__global__";
 

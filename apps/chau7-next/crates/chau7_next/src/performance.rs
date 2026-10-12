@@ -117,6 +117,7 @@ pub fn capture(cx: &App) -> Value {
         "incidents": crate::incidents::diagnostics(),
         "remote_grid": crate::remote::grid_diagnostics(cx),
         "work_profile": chau7_next_core::work_profiler::snapshot(),
+        "telemetry":crate::telemetry::diagnostics(cx),
         "main_thread": {"timer_delay_ms": heartbeat.and_then(|h| h.last_delay_ms)
                 .filter(|ms| ms.is_finite() && *ms >= 0.0),
             "max_timer_delay_ms": heartbeat.filter(|h| h.sample_count > 0)
