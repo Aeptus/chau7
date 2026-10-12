@@ -100,6 +100,7 @@ struct Shared {
     line_starts: RefCell<Vec<usize>>,
     ruler: RefCell<Option<Weak<LineRuler>>>,
     mirroring: Cell<bool>,
+    deferred_style: Cell<bool>,
     host: host::SourceHost,
 }
 impl Shared {
@@ -121,10 +122,18 @@ impl Shared {
                 ruler.resize(self.line_starts.borrow().len());
                 ruler.setNeedsDisplay(true);
             }
-            if let Some(storage) = unsafe { view.textStorage() } {
-                self.theme
-                    .borrow()
-                    .apply(&storage, &doc, doc.restyled_range());
+            if view.hasMarkedText() {
+                // NSTextInputClient owns both the marked range and its
+                // attributes until composition commits. Replacing paragraph
+                // attributes here can remove AppKit's marked-text metadata.
+                self.deferred_style.set(true);
+            } else if let Some(storage) = unsafe { view.textStorage() } {
+                let range = if self.deferred_style.replace(false) {
+                    0..text.len()
+                } else {
+                    doc.restyled_range()
+                };
+                self.theme.borrow().apply(&storage, &doc, range);
             }
             self.pending.borrow_mut().text = Some(text);
         }
@@ -583,6 +592,7 @@ impl NativeMarkdown {
             line_starts: RefCell::new(vec![0]),
             ruler: RefCell::new(None),
             mirroring: Cell::new(false),
+            deferred_style: Cell::new(false),
             host: host::SourceHost::new(&raw),
         });
         let text = SourceTextView::new(mtm, shared.clone());
@@ -642,6 +652,12 @@ impl NativeMarkdown {
         self.sync_inner(text, config, false);
     }
     fn sync_inner(&self, text: &str, config: &EditorConfig, loaded: bool) {
+        if !loaded && self.text.hasMarkedText() {
+            // A render/configuration pass must not overwrite an in-progress
+            // native composition with its asynchronously delivered GPUI mirror.
+            self.shared.deferred_style.set(true);
+            return;
+        }
         if !loaded && self.has_pending_edits() {
             return;
         }
@@ -685,7 +701,7 @@ impl NativeMarkdown {
         }
         let mut doc = self.shared.document.borrow_mut();
         doc.update(text);
-        let range = if size_changed || loaded {
+        let range = if size_changed || loaded || self.shared.deferred_style.replace(false) {
             0..text.len()
         } else {
             doc.restyled_range()
