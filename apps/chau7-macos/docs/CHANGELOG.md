@@ -9,13 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Validation
 
+- Source `d8a04d4944a36556bf3346390b497d11814bf402` passed five staged
+  commit gates, five publication gates, ten separate full-quality gates and
+  the exact optional keyboard-case unit test. Its fast workspace tests, normal
+  strict Clippy, formatting and build/installer contracts passed. Native-feature
+  Clippy rejected one redundant closure in the fixture-only input-context trace,
+  stopping the compiler sequence before any seal, package or app launch.
+  The follow-up correction uses the associated function directly, preserving
+  strict warnings; fresh compiler and runtime validation remains pending.
+
 - Follow-up source `0f40436372eb13684a09e9449e35b24aad8ad2eb` passed seven
   staged commit gates, nine full-suite publication gates and four Python parser
   tests. Its focused optional Rust unit-test compilation failed on two keyboard
   fixture reads using `AsyncApp` where `App` is required; no app was launched or
   nine-stage compiler sequence started. The follow-up correction uses the
-  existing `cx.update` path for both unchanged PTY-liveness assertions. Fresh
-  compiler/runtime validation remains pending.
+  existing `cx.update` path for both unchanged PTY-liveness assertions; its
+  exact unit test passed on d8a04d49.
 - On exact source `ab64761304b0339cdace38413bed241432e7e1a7`, all nine fast
   compiler stages passed and the workspace reported 3,019 passed tests (two
   ignored). The native Software matrix passed Restore, Settings and Cache; the
@@ -41,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Diagnostics
 
-- A follow-up fixture-only proposal extends the earlier 64-event AppKit trace
+- The follow-up fixture-only code extends the earlier 64-event AppKit trace
   to a 96-event bound. It records input-context identities, native frame
   geometry and attachment decisions, marked-state around existing frame
   setters, and pending mirror/focus state around existing focus delivery. It
@@ -62,7 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selection, Ctrl+Tab and Cmd+D against local fake-shell PTYs; the assertions
   require the exact interruption byte, distinct split PTYs and new-leaf focus.
   The original four-case default matrix and deadlines remain unchanged. This
-  new batch has not yet compiled or run and does not prove physical input.
+  fixture unit test passed on d8a04d49; native Clippy stopped the full sequence
+  before runtime validation. It does not prove physical input.
 
 ### Maintenance
 

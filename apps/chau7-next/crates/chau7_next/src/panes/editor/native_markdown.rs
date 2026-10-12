@@ -130,7 +130,7 @@ impl FixtureTrace {
             .inputContext()
             .map(|context| (&*context as *const NSTextInputContext) as usize);
         let current_context_id = MainThreadMarker::new()
-            .and_then(|mtm| NSTextInputContext::currentInputContext(mtm))
+            .and_then(NSTextInputContext::currentInputContext)
             .map(|context| (&*context as *const NSTextInputContext) as usize);
         let sequence = self.sequence.get().saturating_add(1);
         self.sequence.set(sequence);

@@ -31,13 +31,23 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
+- Source `d8a04d4944a36556bf3346390b497d11814bf402` passed five staged
+  commit gates, five publication gates, ten separate full-quality gates and
+  the exact optional keyboard-case unit test. Its fast workspace tests, normal
+  strict Clippy, formatting and build/installer contracts passed. Native-feature
+  Clippy rejected a redundant closure in the new fixture-only input-context
+  trace. The nine-stage compiler sequence stopped at its first stage: no
+  compiler seal, package or fixture launch was produced for this source.
+  The follow-up correction passes the associated function directly and retains
+  strict warnings. Fresh compiler and runtime validation remains pending.
+
 - Follow-up source `0f40436372eb13684a09e9449e35b24aad8ad2eb` passed seven
   staged commit gates, nine full-suite publication gates and four Python parser
   tests. Its focused optional Rust unit-test compilation failed on two
   `Entity::read` calls receiving `AsyncApp` instead of `App` in the keyboard
   fixture. No fixture app was launched, and the nine-stage compiler sequence
   was not started. The follow-up source correction routes those two unchanged
-  liveness assertions through `cx.update`; fresh validation remains pending.
+  liveness assertions through `cx.update`; its exact unit test passed on d8a04d49.
 - Latest compiled checkpoint `ab64761304b0339cdace38413bed241432e7e1a7` (tree
   `9e6987d719189b415113e0fe1671aa9f52b46a4a`) passed all nine fast compiler
   stages and 3,019 workspace tests (two ignored). The isolated native Software
@@ -51,14 +61,14 @@ Last updated 2026-10-13.
   verified. Quality run `38313846806` and the three parity checks also passed.
   All seven expected checks succeeded; the three cancelled jobs belong to the
   redundant matrix run stopped by shared concurrency.
-- A follow-up fixture-only diagnostic proposal extends the earlier 64-event
+- The follow-up fixture-only diagnostic code extends the earlier 64-event
   trace to a 96-event bound. It records input-context identities, native frame
   geometry and attachment decisions, marked-state around existing frame
   setters, and pending mirror/focus state around existing focus delivery. It
   captures no source text and changes no production behavior, acceptance
   assertions or deadlines. This new source batch still needs compiler and
   runtime validation.
-- The same unvalidated batch adds an explicit-only `keyboard` native fixture.
+- The same batch adds an explicit-only `keyboard` native fixture.
   It installs the production keymap, app actions and native menus, then sends
   owned AppKit events for Cmd+C without selection, Ctrl+Tab and Cmd+D. Local
   fake shells record the exact interruption byte and prove two distinct split
