@@ -3037,8 +3037,12 @@ final class OverlayTabsModelTests: XCTestCase {
 
         let terminalView = RustTerminalView(frame: .zero)
         var capturedInputs: [String] = []
+        let readyExpectation = expectation(description: "resume command sent after terminal is ready")
         terminalView.onInput = { text in
             capturedInputs.append(text)
+            if text == resumeCommand {
+                readyExpectation.fulfill()
+            }
         }
         session.attachRustTerminal(terminalView)
 
@@ -3052,12 +3056,8 @@ final class OverlayTabsModelTests: XCTestCase {
         }
         wait(for: [notReadyExpectation], timeout: 2.0)
 
-        let readyExpectation = expectation(description: "resume command sent after terminal is ready")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            XCTAssertEqual(capturedInputs, [resumeCommand])
-            readyExpectation.fulfill()
-        }
         wait(for: [readyExpectation], timeout: 2.0)
+        XCTAssertEqual(capturedInputs, [resumeCommand])
     }
 
     func testRestorePrefillsUsingPersistedAiMetadata() {

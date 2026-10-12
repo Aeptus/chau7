@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Make the Swift resume-prefill readiness regression observe actual terminal input delivery instead of an unrelated timer, preserving the not-ready assertion, exact text and existing two-second deadline.
+
+
 - Pin the native Settings regional-format environment contract in ordinary unit tests, keeping fixture constants covered when optional native fixtures are disabled and retaining strict warnings-as-errors checks.
 
 
