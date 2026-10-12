@@ -121,9 +121,15 @@
           "description": "Avoid copying held atlas pixels on allocation misses; rollback unpublished allocation after fallible copy failure; pointer-stability regression",
           "before_sha256": "9af4a8cc14e6e6954124dd6ac0c05ce7690e828fc8dbc319f68ae09cb0a76f67",
           "after_sha256": "a4374d734d717fa848a3d86479af3bba95111d075b53c7de7b0d6655612ec2f4"
+        },
+        {
+          "kind": "semantic",
+          "description": "Remove unused TileId import without suppressing warnings",
+          "before_sha256": "a4374d734d717fa848a3d86479af3bba95111d075b53c7de7b0d6655612ec2f4",
+          "after_sha256": "af16d3c2ae7a4fc4a2cb733bb667aef82b71f99170417fab81278feb23c83d4d"
         }
       ],
-      "current_sha256": "a4374d734d717fa848a3d86479af3bba95111d075b53c7de7b0d6655612ec2f4",
+      "current_sha256": "af16d3c2ae7a4fc4a2cb733bb667aef82b71f99170417fab81278feb23c83d4d",
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/software_renderer/atlas.rs"
@@ -315,9 +321,15 @@
           "before_sha256": "6d79491a8104bd162a1414ca5f73a58170d8a8c433899c13d4db315eaaa77a85",
           "description": "Prepare immutable complete window backend before NSWindow/atlas exposure, match native packed atlas/filtering with retained snapshots, add actual seven-family zero-error Metal comparison; expose submission rather than display-completion counters",
           "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Attach nullable-checked explicit sRGB profile to shader-color image; verify actual retained image color-space name after framebuffer release",
+          "before_sha256": "e554aa98a8e406e69a3a7c4244f1e5681628cf52a40e49c13abfac37a722a70e",
+          "after_sha256": "7fe2ea1153413ed3e4ec746e92244d8bdfabee343583c2c14c11992aeb51560d"
         }
       ],
-      "current_sha256": "e554aa98a8e406e69a3a7c4244f1e5681628cf52a40e49c13abfac37a722a70e",
+      "current_sha256": "7fe2ea1153413ed3e4ec746e92244d8bdfabee343583c2c14c11992aeb51560d",
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/software_renderer/presentation.rs"

@@ -179,13 +179,20 @@ pub(super) async fn verify(cx: &mut AsyncApp) -> Result<Value, String> {
         .update_window(handle.into(), |_, window, _| inspect(window))
         .map_err(|error| error.to_string())??;
     // The real native setContentSize produces the normal GPUI resize callback.
-    cx.update_window(handle.into(), |_, window, _| -> Result<(), String> {
-        let view = raw_view(window)?;
-        let native = view.window().ok_or("owned backend NSWindow missing")?;
-        native.setContentSize(NSSize::new(420., 260.));
-        Ok(())
-    })
-    .map_err(|error| error.to_string())??;
+    let native = cx
+        .update_window(handle.into(), |_, window, _| {
+            raw_view(window)?
+                .window()
+                .ok_or_else(|| "owned backend NSWindow missing".to_string())
+        })
+        .map_err(|error| error.to_string())??;
+    // setContentSize synchronously calls GPUI's resize callback. Like the
+    // NSMenu action below, it must run after the App borrow has ended.
+    cx.foreground_executor()
+        .spawn(async move {
+            native.setContentSize(NSSize::new(420., 260.));
+        })
+        .await;
     crate::native_parity_fixture::next_frame(handle.into(), cx).await?;
     let resized = cx
         .update_window(handle.into(), |_, window, _| {

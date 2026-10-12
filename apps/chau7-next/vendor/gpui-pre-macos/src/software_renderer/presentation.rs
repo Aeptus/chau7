@@ -9,7 +9,7 @@ use core_foundation::{
 };
 use core_graphics::{
     base::{CGFloat, kCGBitmapByteOrder32Little, kCGImageAlphaPremultipliedFirst},
-    color_space::CGColorSpace,
+    color_space::{CGColorSpace, kCGColorSpaceSRGB},
     data_provider::CGDataProvider,
     image::CGImage,
 };
@@ -20,7 +20,6 @@ use std::{cell::RefCell, ptr, sync::Arc, time::Instant};
 
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
-    fn CGColorSpaceCreateDeviceRGB() -> core_graphics::sys::CGColorSpaceRef;
     fn CGDataProviderCreateWithCFData(data: CFDataRef) -> core_graphics::sys::CGDataProviderRef;
     fn CGImageCreate(
         width: usize,
@@ -52,12 +51,11 @@ fn image(canvas: &Canvas) -> Result<CGImage> {
         "software image provider allocation failed"
     );
     let provider = unsafe { CGDataProvider::from_ptr(provider) };
-    let color_space = unsafe { CGColorSpaceCreateDeviceRGB() };
-    ensure!(
-        !color_space.is_null(),
-        "software image color space allocation failed"
-    );
-    let color_space = unsafe { CGColorSpace::from_ptr(color_space) };
+    // Scene shaders produce sRGB values. DeviceRGB is display-dependent and
+    // visibly changes primary colors when AppKit color-manages a wide-gamut
+    // view; attach the explicit matching profile with nullable-safe ownership.
+    let color_space = CGColorSpace::create_with_name(unsafe { kCGColorSpaceSRGB })
+        .ok_or_else(|| anyhow!("software image color space allocation failed"))?;
     let image = unsafe {
         CGImageCreate(
             width,
@@ -304,5 +302,14 @@ mod tests {
         assert_eq!((cg.width(), cg.height()), (2, 1));
         assert_eq!(cg.bytes_per_row(), 8);
         assert_eq!(cg.data().bytes(), &[0, 0, 255, 255, 128, 0, 0, 128]);
+        // Inspect the actual owned image profile, not merely the requested name.
+        unsafe extern "C" {
+            fn CGColorSpaceCopyName(space: core_graphics::sys::CGColorSpaceRef) -> core_foundation::string::CFStringRef;
+        }
+        let name = unsafe { CGColorSpaceCopyName(cg.color_space().as_ptr()) };
+        assert!(!name.is_null());
+        let name = unsafe { core_foundation::string::CFString::wrap_under_create_rule(name) };
+        let expected = unsafe { core_foundation::string::CFString::wrap_under_get_rule(kCGColorSpaceSRGB) };
+        assert_eq!(name, expected);
     }
 }

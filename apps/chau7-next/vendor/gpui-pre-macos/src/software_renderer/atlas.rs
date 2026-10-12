@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow, ensure};
 use etagere::BucketedAtlasAllocator;
 use gpui::{
     AtlasBackend, AtlasKey, AtlasState, AtlasTextureId, AtlasTextureKind, AtlasTile, Bounds,
-    DevicePixels, PlatformAtlas, Size, TileId,
+    DevicePixels, PlatformAtlas, Size,
 };
 use parking_lot::Mutex;
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
