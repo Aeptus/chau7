@@ -50,8 +50,13 @@ mod imp {
         fn set_string(&self, key: &str, value: &str) -> Result<()> {
             let store = NSUbiquitousKeyValueStore::defaultStore();
             store.setString_forKey(Some(&NSString::from_str(value)), &NSString::from_str(key));
-            store.synchronize();
-            Ok(())
+            if store.synchronize() {
+                Ok(())
+            } else {
+                Err(crate::platform::PlatformError::Failed(
+                    "could not synchronize iCloud settings".into(),
+                ))
+            }
         }
 
         fn synchronize(&self) -> bool {

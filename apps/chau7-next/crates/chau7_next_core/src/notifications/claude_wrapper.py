@@ -84,10 +84,7 @@ def main():
     )
     if (
         sessions
-        and not any(
-            arg in ("--help", "-h", "--version", "-v", "--bare", "--safe-mode")
-            for arg in args
-        )
+        and not any(arg in ("--help", "-h", "--version", "-v", "--bare", "--safe-mode") for arg in args)
         and os.path.isfile(OVERLAY)
     ):
         try:

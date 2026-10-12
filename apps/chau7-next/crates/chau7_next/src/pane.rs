@@ -4,15 +4,12 @@
 //! editor, a file preview or a diff viewer ([`PaneItem`]; the side panes
 //! live in `crate::panes`).
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use chau7_next_core::editor::diff::DiffMode;
-use chau7_next_core::session_restore::{
-    SavedAxis, SavedSplitNode, build_ai_resume_command, normalized_resume_command,
-    resolve_resume_metadata_from_saved, restore_input,
-};
+use chau7_next_core::session_restore::{SavedAxis, SavedSplitNode};
 use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Entity, EntityId, EventEmitter, FocusHandle,
     Focusable, Render, Subscription, Window, div, prelude::*, px, relative,
@@ -22,7 +19,6 @@ use crate::actions::{ScrollToBottom, ScrollToTop};
 use crate::panes::{
     DashboardPane, DiffPane, EditorPane, PreviewPane, RepositoryPane, SidePaneEvent,
 };
-use crate::restore;
 use crate::session_store::{SavedPane, SavedTab};
 use crate::settings::Settings;
 use crate::terminal::session::{SessionEvent, TerminalSession};
@@ -34,11 +30,21 @@ use crate::workspace::AppData;
 /// Random, so it can also name a terminal pane's scrollback file.
 pub type PaneId = u64;
 
-/// Directory of a pane's shell right now (the session's own value is only
-/// refreshed when output arrives).
+/// Authoritative cached directory, maintained by OSC7 and the off-UI
+/// process-directory fallback. Saved-state capture never probes a process.
 pub fn live_cwd(session: &TerminalSession) -> Option<PathBuf> {
-    crate::platform::process::process_cwd(session.shell_pid() as u32)
-        .or_else(|| session.cwd.clone())
+    session.cwd.clone()
+}
+
+fn close_warning_status(status: chau7_next_core::shell_session::CommandStatus) -> bool {
+    use chau7_next_core::shell_session::CommandStatus;
+    matches!(
+        status,
+        CommandStatus::Running
+            | CommandStatus::WaitingForInput
+            | CommandStatus::ApprovalRequired
+            | CommandStatus::Stuck
+    )
 }
 
 fn new_pane_id() -> PaneId {
@@ -169,6 +175,14 @@ pub struct PaneTree {
     /// Complete saved payload parked until this tab is actually selected.
     deferred_saved: Option<SavedTab>,
     deferred_cwd: Option<PathBuf>,
+    restore_selected: Cell<bool>,
+    restore_prepared: Option<crate::restore::preparation::PreparedTab>,
+    restore_activation: Option<gpui::Task<()>>,
+    identity_hydration: Option<gpui::Task<()>>,
+    identity_generation: u64,
+    restore_override: chau7_next_core::token_optimization::TabTokenOptOverride,
+    restore_release_registered: bool,
+    restored_metadata: HashMap<PaneId, SavedPane>,
     root: Option<Node<PaneItem>>,
     focused: Option<EntityId>,
     next_split_id: u64,
@@ -194,6 +208,14 @@ impl PaneTree {
         Self {
             deferred_saved: None,
             deferred_cwd: None,
+            restore_selected: Cell::new(false),
+            restore_prepared: None,
+            restore_activation: None,
+            identity_hydration: None,
+            identity_generation: 0,
+            restore_override: chau7_next_core::token_optimization::TabTokenOptOverride::Default,
+            restore_release_registered: false,
+            restored_metadata: HashMap::new(),
             root: None,
             focused: None,
             next_split_id: 1,
@@ -209,8 +231,14 @@ impl PaneTree {
         }
     }
 
-    pub fn new(cwd: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new_with_owner(
+        cwd: Option<PathBuf>,
+        owner: uuid::Uuid,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let mut this = Self::empty();
+        this.owner_tab = Some(owner);
         let view = this.create_terminal(cwd, new_pane_id(), DEFAULT_SIZE, window, cx);
         this.focused = Some(view.entity_id());
         this.presentation_terminal = this.focused;
@@ -226,15 +254,20 @@ impl PaneTree {
     }
 
     /// Startup placeholders retain the complete payload without a hidden shell.
-    pub fn from_saved_deferred(
+    pub fn from_saved_deferred_with_owner(
         saved: Option<&SavedTab>,
         cwd: Option<PathBuf>,
+        owner: uuid::Uuid,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         match saved {
-            Some(saved) => Self::park_saved(saved.clone(), cwd),
-            None => Self::new(cwd, window, cx),
+            Some(saved) => {
+                let mut this = Self::park_saved(saved.clone(), cwd);
+                this.owner_tab = Some(owner);
+                this
+            }
+            None => Self::new_with_owner(cwd, owner, window, cx),
         }
     }
     pub fn deferred_saved(&self) -> Option<&SavedTab> {
@@ -244,26 +277,245 @@ impl PaneTree {
         self.deferred_saved.is_some()
     }
 
+    /// BackgroundIdentityOnly validates metadata without creating a PTY/view,
+    /// loading scrollback or delivering a resume. Selection performs a fresh
+    /// full preparation; a weak late result cannot overwrite that activation.
+    pub(crate) fn hydrate_deferred_identity(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Option<futures::channel::oneshot::Receiver<bool>> {
+        if self.restore_selected.get() || self.restore_activation.is_some() {
+            return None;
+        }
+        let mut saved = self.deferred_saved.clone()?;
+        let owner = self.owner_tab?;
+        saved.uuid = Some(owner);
+        self.identity_generation = self.identity_generation.wrapping_add(1);
+        let generation = self.identity_generation;
+        let root = cx.global::<AppData>().root.clone();
+        let hint_generation = crate::restore::preparation::identity_hint_generation(&root);
+        let cwd = self.deferred_cwd.clone();
+        let task = cx.background_spawn(async move {
+            use chau7_next_core::work_profiler::{self, Key, Queue};
+            let mut work = work_profiler::begin(Key::work(
+                "restore_identity",
+                "metadata",
+                "parked",
+                "deferred_restore",
+                Queue::Background,
+            ));
+            work.items(saved.panes.len());
+            crate::restore::preparation::prepare_identity(&root, saved, cwd)
+        });
+        let (tx, rx) = futures::channel::oneshot::channel();
+        self.identity_hydration = Some(cx.spawn(async move |this, cx| {
+            let mut prepared = task.await;
+            let admitted = this
+                .update(cx, |this, cx| {
+                    if !this.apply_deferred_identity(
+                        owner,
+                        generation,
+                        hint_generation,
+                        &cx.global::<AppData>().root,
+                        &mut prepared,
+                    ) {
+                        return false;
+                    }
+                    this.identity_hydration = None;
+                    cx.emit(PaneEvent::MetadataChanged);
+                    cx.notify();
+                    true
+                })
+                .unwrap_or(false);
+            let _ = tx.send(admitted);
+        }));
+        Some(rx)
+    }
+
+    fn apply_deferred_identity(
+        &mut self,
+        owner: uuid::Uuid,
+        generation: u64,
+        hint_generation: u64,
+        root: &chau7_next_core::data_root::DataRoot,
+        prepared: &mut crate::restore::preparation::PreparedTab,
+    ) -> bool {
+        if self.deferred_saved.is_none()
+            || self.restore_selected.get()
+            || self.restore_activation.is_some()
+            || self.owner_tab != Some(owner)
+            || self.identity_generation != generation
+        {
+            return false;
+        }
+        if !crate::restore::preparation::admit_identity_metadata(
+            root,
+            owner,
+            hint_generation,
+            prepared,
+        ) {
+            return false;
+        }
+        self.deferred_cwd = prepared
+            .saved
+            .cwd
+            .clone()
+            .or_else(|| self.deferred_cwd.clone());
+        self.restored_metadata = prepared
+            .saved
+            .panes
+            .iter()
+            .map(|p| (p.id, p.clone()))
+            .collect();
+        self.deferred_saved = Some(prepared.saved.clone());
+        true
+    }
+
+    pub(crate) fn set_restore_surface(&self, selected: bool, visible: bool, cx: &App) {
+        self.restore_selected.set(selected);
+        for (_, session) in self.pane_sessions(cx) {
+            session.read(cx).set_restore_selected(selected);
+            session.read(cx).mark_restore_surface(visible);
+        }
+    }
+    pub(crate) fn set_restore_override(
+        &mut self,
+        value: chau7_next_core::token_optimization::TabTokenOptOverride,
+    ) {
+        self.restore_override = value;
+    }
     fn activate_deferred(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(saved) = self.deferred_saved.take() else {
+        let Some(saved) = self.deferred_saved.clone() else {
             return;
         };
-        let cwd = self.deferred_cwd.take().or_else(|| saved.cwd.clone());
-        let owner = self.owner_tab;
-        let mut active = Self::from_saved(Some(&saved), cwd, window, cx);
-        if let Some(owner) = owner {
-            active.set_owner_tab(owner, window, cx);
+        self.identity_generation = self.identity_generation.wrapping_add(1);
+        self.identity_hydration = None;
+        if let Some(mut prepared) = self.restore_prepared.take() {
+            if !self.restore_selected.get() || !window.is_visible() {
+                self.restore_prepared = Some(prepared);
+                return;
+            }
+            let owner = self.owner_tab;
+            if let Some(owner) = owner {
+                crate::restore::preparation::claim(
+                    &cx.global::<AppData>().root,
+                    owner,
+                    &mut prepared,
+                );
+            }
+
+            let token_override = self.restore_override;
+            let cwd = self.deferred_cwd.clone().or_else(|| saved.cwd.clone());
+            let mut active =
+                Self::from_saved_prepared(Some(&prepared.saved), cwd, owner, window, cx);
+            active.restore_selected.set(true);
+            active.restore_release_registered = self.restore_release_registered;
+            active.restored_metadata = prepared
+                .saved
+                .panes
+                .iter()
+                .map(|pane| (pane.id, pane.clone()))
+                .collect();
+            active.restore_override = token_override;
+            if let Some(owner) = owner {
+                active.set_owner_tab(owner, window, cx);
+            }
+            for (pane, session) in active.pane_sessions(cx) {
+                session.update(cx, |session, cx| {
+                    session.set_token_opt_override(token_override, false);
+                    session.set_restore_selected(true);
+                    session.mark_restore_surface(window.is_visible());
+                    if let Some(prepared) = prepared.panes.get(&pane) {
+                        if let Some(context) = &prepared.context {
+                            session.replay_restored_context(context, cx);
+                        }
+                        if let Some(identity) = &prepared.identity {
+                            session.restore_ai_metadata(
+                                Some(&identity.provider),
+                                Some(&identity.session_id),
+                                cx,
+                            );
+                            if let Some(command) = &prepared.command {
+                                session.queue_restored_resume(
+                                    command.clone(),
+                                    prepared.directory.clone(),
+                                    identity.clone(),
+                                    cx,
+                                );
+                            }
+                        } else if let Some(provider) = active
+                            .restored_metadata
+                            .get(&pane)
+                            .and_then(|pane| pane.ai_provider.as_deref())
+                        {
+                            session.restore_ai_metadata(Some(provider), None, cx);
+                        }
+                    }
+                });
+            }
+            for (pane, prepared) in &prepared.panes {
+                active.pending_restore.remove(pane);
+                if let Some(identity) = &prepared.identity {
+                    active.resume_meta.insert(
+                        *pane,
+                        (identity.provider.clone(), identity.session_id.clone()),
+                    );
+                }
+            }
+            *self = active;
+            self.focus_own(window, cx);
+            cx.emit(PaneEvent::MetadataChanged);
+            cx.notify();
+            return;
         }
-        *self = active;
-        cx.emit(PaneEvent::MetadataChanged);
-        cx.notify();
+        if self.restore_activation.is_some() {
+            return;
+        }
+        let root = cx.global::<AppData>().root.clone();
+        let cwd = self.deferred_cwd.clone();
+        let contexts = crate::restore::writer::contexts_for(
+            &saved.panes.iter().map(|pane| pane.id).collect::<Vec<_>>(),
+            cx,
+        );
+        let task = cx.background_spawn(async move {
+            crate::restore::preparation::prepare_with_contexts(&root, saved, cwd, contexts)
+        });
+        self.restore_activation = Some(cx.spawn_in(window, async move |this, cx| {
+            let prepared = task.await;
+            // Keep prepared data even if the original window disappeared during
+            // a move. The receiving window activates it when actually selected.
+            let _ = this.update(cx, |this, cx| {
+                this.restore_prepared = Some(prepared);
+                this.restore_activation = None;
+                cx.notify();
+            });
+            let _ = this.update_in(cx, |this, window, cx| this.activate_deferred(window, cx));
+        }));
     }
 
     /// The panes of a tab: restored from its saved split layout when it has
     /// one (`buildRestorableController`), else one shell in `cwd`.
-    pub fn from_saved(
+    pub fn from_saved_with_owner(
         saved: Option<&SavedTab>,
         cwd: Option<PathBuf>,
+        owner: uuid::Uuid,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        match saved {
+            Some(saved) => {
+                let mut this = Self::park_saved(saved.clone(), cwd);
+                this.owner_tab = Some(owner);
+                this
+            }
+            None => Self::new_with_owner(cwd, owner, window, cx),
+        }
+    }
+
+    fn from_saved_prepared(
+        saved: Option<&SavedTab>,
+        cwd: Option<PathBuf>,
+        owner: Option<uuid::Uuid>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -278,9 +530,10 @@ impl PaneTree {
             })
             .and_then(SavedSplitNode::normalized);
         let (Some(saved), Some(layout)) = (saved, layout) else {
-            return Self::new(cwd, window, cx);
+            return Self::new_with_owner(cwd, owner.unwrap_or_else(uuid::Uuid::new_v4), window, cx);
         };
         let mut this = Self::empty();
+        this.owner_tab = owner;
         this.deferred_cwd = cwd;
         let states: HashMap<PaneId, &SavedPane> = saved.panes.iter().map(|p| (p.id, p)).collect();
         let root = this.build_node(&layout, &states, window, cx);
@@ -301,7 +554,6 @@ impl PaneTree {
             }
         }
         this.deferred_cwd = None;
-        this.start_restore(cx);
         this
     }
 
@@ -406,7 +658,15 @@ impl PaneTree {
         let settings = Settings::get(cx).clone();
         let root = cx.global::<AppData>().root.clone();
         let session = cx.new(|cx| {
-            match TerminalSession::spawn(cols, rows, cwd.clone(), &settings, &root, cx) {
+            match TerminalSession::spawn_with_owner(
+                cols,
+                rows,
+                cwd.clone(),
+                &settings,
+                &root,
+                self.owner_tab.unwrap_or_else(uuid::Uuid::new_v4),
+                cx,
+            ) {
                 Ok(session) => session,
                 Err(err) => {
                     log::error!("{err}");
@@ -725,6 +985,12 @@ impl PaneTree {
 
     /// Whether the tab has a terminal (a tab of editors only is "Editor").
     pub fn has_terminal(&self) -> bool {
+        if let Some(saved) = &self.deferred_saved {
+            return saved
+                .layout
+                .as_ref()
+                .is_none_or(|layout| !layout.terminal_ids().is_empty());
+        }
         !self.views().is_empty()
     }
 
@@ -771,7 +1037,10 @@ impl PaneTree {
 
     /// Focus the focused pane of `panes`.
     pub fn focus_entity(panes: &Entity<PaneTree>, window: &mut Window, cx: &mut App) {
-        panes.update(cx, |tree, cx| tree.activate_deferred(window, cx));
+        panes.update(cx, |tree, cx| {
+            tree.restore_selected.set(true);
+            tree.activate_deferred(window, cx);
+        });
         let handle = panes
             .read(cx)
             .focused_item()
@@ -850,9 +1119,26 @@ impl PaneTree {
     /// Workspace passes its persistent tab UUID after new/restore/reopen construction.
     #[allow(dead_code)] // Coordinator wires the shared workspace constructor seam.
     pub fn set_owner_tab(&mut self, tab: uuid::Uuid, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.restore_release_registered {
+            self.restore_release_registered = true;
+            let root = cx.global::<AppData>().root.clone();
+            cx.on_release(move |this, _| {
+                if let Some(owner) = this.owner_tab {
+                    crate::restore::preparation::release_owner(&root, owner);
+                }
+            })
+            .detach();
+        }
         if self.owner_tab != Some(tab) {
             self.owner_tab = Some(tab);
             self.note_binding = None;
+        }
+        if let Some(saved) = &self.deferred_saved {
+            crate::restore::preparation::register_owner_identity_hints(
+                &cx.global::<AppData>().root,
+                tab,
+                saved,
+            );
         }
         self.attach_session_notes(window, cx);
     }
@@ -1155,6 +1441,14 @@ impl PaneTree {
             .collect()
     }
 
+    /// Only already constructed live sessions prewarm. Parked restores retain
+    /// their full saved payload without creating invisible PTYs on hover.
+    pub(crate) fn prewarm_surface(&mut self, hovered: bool, cx: &mut Context<Self>) {
+        for (_, session) in self.pane_sessions(cx) {
+            session.update(cx, |session, cx| session.prewarm_surface(hovered, cx));
+        }
+    }
+
     /// Id of the focused pane, whatever its kind (`focusedPaneID`).
     pub fn focused_pane_id(&self) -> Option<PaneId> {
         if let Some(saved) = &self.deferred_saved {
@@ -1238,119 +1532,16 @@ impl PaneTree {
         self.pending_restore.get(&pane)
     }
 
+    pub(crate) fn restored_metadata(&self, pane: PaneId) -> Option<&SavedPane> {
+        self.restored_metadata.get(&pane)
+    }
+
     /// AI session a restored pane was running.
     pub fn resume_meta(&self, pane: PaneId) -> Option<(String, String)> {
         self.resume_meta.get(&pane).cloned()
     }
 
     // ----- restore ------------------------------------------------------
-
-    /// Replay the saved scrollback into every restored pane after
-    /// `restoreDelaySeconds` (0.8 s), then type the AI resume command into
-    /// the focused pane once its prompt is ready, retrying up to 16 times
-    /// (`restoreTabState`, `scheduleResumeCommand`).
-    fn start_restore(&mut self, cx: &mut Context<Self>) {
-        if self.pending_restore.is_empty() {
-            return;
-        }
-        let token = format!("{:x}", new_pane_id());
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(800))
-                .await;
-            let Ok(target) = this.update(cx, |this, cx| this.replay_pending(&token, cx)) else {
-                return;
-            };
-            let Some((pane, command)) = target else {
-                return;
-            };
-            let mut delay = Duration::from_millis(600);
-            for _ in 0..16 {
-                cx.background_executor().timer(delay).await;
-                match this.update(cx, |this, cx| this.resume_ready(pane, cx)) {
-                    Ok(Some(true)) => break,
-                    Ok(Some(false)) => {
-                        delay = (delay + Duration::from_millis(500)).min(Duration::from_secs(4));
-                    }
-                    // The pane or the tab is gone.
-                    Ok(None) | Err(_) => return,
-                }
-            }
-            // Ready, or retries exhausted: type it anyway, as Swift queues it.
-            let _ = this.update(cx, |this, cx| this.prefill(pane, &command, cx));
-        })
-        .detach();
-    }
-
-    /// Type the restore line into each pending pane. Returns the resume
-    /// command of the focused pane, if it was running an AI session.
-    fn replay_pending(&mut self, token: &str, cx: &mut Context<Self>) -> Option<(PaneId, String)> {
-        let root = cx.global::<crate::workspace::AppData>().root.clone();
-        let focused = self.focused_pane_id();
-        let mut target = None;
-        for (pane, session) in self.pane_sessions(cx) {
-            let Some(saved) = self.pending_restore.remove(&pane) else {
-                continue;
-            };
-            let file = saved
-                .scrollback
-                .then(|| restore::replay_copy(&root, pane, token))
-                .flatten();
-            if let Some(line) = restore_input(file.as_deref(), saved.directory.as_deref()) {
-                session.update(cx, |s, _| s.write_restore_line(&line));
-            }
-            let meta = resolve_resume_metadata_from_saved(
-                saved.ai_provider.as_deref(),
-                saved.ai_session_id.as_deref(),
-                saved.ai_resume_command.as_deref(),
-            );
-            let command = build_ai_resume_command(
-                meta.as_ref().map(|m| m.provider.as_str()),
-                meta.as_ref().map(|m| m.session_id.as_str()),
-            )
-            .or_else(|| normalized_resume_command(saved.ai_resume_command.as_deref()));
-            // Every restored pane keeps its AI session (`restoreAIMetadata`), so
-            // it is saved again; only the focused pane gets the command typed.
-            if let Some(meta) = meta {
-                // The session knows its AI tool again (tab color, detection).
-                session.update(cx, |s, cx| {
-                    s.restore_ai_metadata(Some(&meta.provider), Some(&meta.session_id), cx)
-                });
-                self.resume_meta
-                    .insert(pane, (meta.provider, meta.session_id));
-                if let Some(command) = command
-                    && Some(pane) == focused
-                {
-                    target = Some((pane, command));
-                }
-            }
-        }
-        target
-    }
-
-    /// `Some(true)` when the pane's shell shows a prompt, `Some(false)` when
-    /// not yet, `None` when the pane no longer exists.
-    fn resume_ready(&self, pane: PaneId, cx: &App) -> Option<bool> {
-        let (_, session) = self
-            .pane_sessions(cx)
-            .into_iter()
-            .find(|(id, _)| *id == pane)?;
-        let session = session.read(cx);
-        Some(session.is_at_prompt() && !session.is_loading() && session.exited.is_none())
-    }
-
-    fn prefill(&mut self, pane: PaneId, command: &str, cx: &mut Context<Self>) {
-        if let Some((_, session)) = self
-            .pane_sessions(cx)
-            .into_iter()
-            .find(|(id, _)| *id == pane)
-        {
-            // Typed at the prompt, not run (`prefillInput`; the session waits
-            // for its prompt again if the shell is still busy).
-            let command = command.to_string();
-            session.update(cx, |s, cx| s.prefill_input(command, cx));
-        }
-    }
 
     /// Directory of the focused pane (for new tabs, restore).
     pub fn cwd(&self, cx: &App) -> Option<PathBuf> {
@@ -1373,18 +1564,14 @@ impl PaneTree {
     }
 
     /// Whether any pane has a command running (close confirmation).
-    /// Processes still running under the shells of this tab
-    /// (`countRunningProcesses` in Swift).
+    /// Current Swift `countRunningProcesses` counts busy pane statuses,
+    /// rather than scanning the operating system from a close dialog.
     pub fn running_process_count(&self, cx: &App) -> usize {
         self.views()
             .iter()
             .map(|v| {
                 let session = v.read(cx).session.read(cx);
-                if session.exited.is_some() {
-                    0
-                } else {
-                    crate::platform::process::child_process_count(session.shell_pid() as u32)
-                }
+                usize::from(session.exited.is_none() && close_warning_status(session.status()))
             })
             .sum()
     }
@@ -1398,20 +1585,20 @@ impl PaneTree {
             if session.exited.is_some() {
                 continue;
             }
-            for child in crate::platform::process::child_pids(session.shell_pid() as u32) {
-                if let Some(name) = crate::platform::process::process_name(child) {
-                    names.push(name);
-                }
-            }
+            names.extend(crate::monitoring::process_tree::observed_names(
+                session.shell_pid() as u32,
+                cx,
+            ));
         }
         names
     }
 
     /// Send input to the focused pane of `panes` without re-broadcasting it.
-    pub fn send_input(panes: &Entity<PaneTree>, bytes: &[u8], cx: &mut App) {
-        if let Some(view) = panes.read(cx).focused_view() {
-            view.update(cx, |v, cx| v.write_without_broadcast(bytes, cx));
-        }
+    pub fn send_input(panes: &Entity<PaneTree>, bytes: &[u8], cx: &mut App) -> bool {
+        panes
+            .read(cx)
+            .focused_view()
+            .is_some_and(|view| view.update(cx, |v, cx| v.write_without_broadcast(bytes, cx)))
     }
 
     /// A synthesized key press (MCP `tab_press_key`, KBD-017) to the focused
@@ -1429,8 +1616,7 @@ impl PaneTree {
         let Ok(encoded) = press.encode(app_cursor) else {
             return false;
         };
-        view.update(cx, |v, cx| v.write_without_broadcast(&encoded.bytes, cx));
-        true
+        view.update(cx, |v, cx| v.write_without_broadcast(&encoded.bytes, cx))
     }
 
     pub fn set_font_size(&mut self, size: f32, cx: &mut Context<Self>) {
@@ -1731,7 +1917,9 @@ fn remove_leaf<L: LeafKey>(node: Node<L>, target: EntityId) -> Option<Node<L>> {
 }
 
 impl Render for PaneTree {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.restore_selected.set(true);
+        self.activate_deferred(window, cx);
         let chrome = Chrome::get(cx);
         let show_focus = self.pane_count() > 1;
         let content = match &self.root {
@@ -1742,7 +1930,9 @@ impl Render for PaneTree {
                 self.root = root;
                 element
             }
-            None => div().into_any_element(),
+            None => div()
+                .child(crate::l10n::l("misc.loading", "Loading..."))
+                .into_any_element(),
         };
         div()
             .size_full()
@@ -1778,6 +1968,114 @@ impl Focusable for PaneTree {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn close_counts_match_all_current_swift_statuses() {
+        use chau7_next_core::shell_session::CommandStatus::*;
+        for status in [Running, WaitingForInput, ApprovalRequired, Stuck] {
+            assert!(super::close_warning_status(status));
+        }
+        for status in [Idle, Done, Exited] {
+            assert!(!super::close_warning_status(status));
+        }
+    }
+    #[test]
+    fn parked_identity_result_keeps_full_payload_and_rejects_selection_owner_and_generation_changes()
+     {
+        let home = std::env::temp_dir().join(format!(
+            "chau7-next-identity-admission-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        let root = chau7_next_core::data_root::DataRoot::with_home(home.clone(), true);
+        let owner = uuid::Uuid::new_v4();
+        let saved = SavedTab {
+            uuid: Some(owner),
+            cwd: Some(home.clone()),
+            focused_pane: Some(8),
+            panes: vec![SavedPane {
+                id: 8,
+                scrollback: true,
+                ai_provider: Some("codex".into()),
+                ai_session_id: Some("thread-fixture".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut prepared =
+            crate::restore::preparation::prepare_identity(&root, saved.clone(), None);
+        crate::restore::preparation::register_saved_identity_hints(&root, [&saved]);
+        let hint_generation = crate::restore::preparation::identity_hint_generation(&root);
+        let mut tree = super::PaneTree::park_saved(saved.clone(), None);
+        tree.owner_tab = Some(owner);
+        tree.identity_generation = 3;
+        assert!(!tree.apply_deferred_identity(owner, 2, hint_generation, &root, &mut prepared));
+        assert!(!tree.apply_deferred_identity(
+            uuid::Uuid::new_v4(),
+            3,
+            hint_generation,
+            &root,
+            &mut prepared
+        ));
+        tree.restore_selected.set(true);
+        assert!(!tree.apply_deferred_identity(owner, 3, hint_generation, &root, &mut prepared));
+        tree.restore_selected.set(false);
+        assert!(tree.apply_deferred_identity(owner, 3, hint_generation, &root, &mut prepared));
+        assert!(tree.root.is_none());
+        assert!(tree.views().is_empty());
+        assert!(tree.subscriptions.is_empty());
+        assert!(tree.deferred_saved().unwrap().panes[0].scrollback);
+        assert_eq!(
+            tree.deferred_saved().unwrap().panes[0]
+                .ai_resume_command
+                .as_deref(),
+            Some("codex resume thread-fixture")
+        );
+        assert!(tree.restore_prepared.is_none());
+        assert!(tree.resume_meta.is_empty());
+        tree.deferred_saved = None;
+        assert!(!tree.apply_deferred_identity(owner, 3, hint_generation, &root, &mut prepared));
+        crate::restore::preparation::release_owner(&root, owner);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+    #[test]
+    fn background_identity_is_wired_before_activation_and_never_delivers_a_resume() {
+        let pane = include_str!("pane.rs");
+        let start = pane
+            .find("    pub(crate) fn hydrate_deferred_identity(")
+            .unwrap();
+        let end = pane[start..]
+            .find("    pub(crate) fn set_restore_surface(")
+            .unwrap()
+            + start;
+        let hydration = &pane[start..end];
+        assert!(hydration.contains("cx.background_spawn"));
+        assert!(hydration.contains("prepare_identity(&root"));
+        assert!(
+            hydration
+                .split_whitespace()
+                .collect::<String>()
+                .contains("this.update(cx")
+        );
+        assert!(hydration.contains("apply_deferred_identity"));
+        for forbidden in [
+            "create_terminal(",
+            "queue_restored_resume(",
+            "replay_restored_context(",
+            "write_input(",
+            "from_saved_prepared(",
+        ] {
+            assert!(!hydration.contains(forbidden), "{forbidden}");
+        }
+        let startup = include_str!("main.rs");
+        let load = startup
+            .find("let mut restored = session_store::load")
+            .unwrap();
+        let hints = startup.find("register_saved_identity_hints(").unwrap();
+        let app = startup.find("Application::with_platform").unwrap();
+        assert!(load < hints && hints < app);
+        let scheduler = include_str!("workspace/restore_lifecycle.rs");
+        assert!(scheduler.contains("prepared.await"));
+    }
     #[test]
     fn deferred_restore_preserves_full_payload_without_constructing_panes() {
         let saved = crate::session_store::SavedTab {

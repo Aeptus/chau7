@@ -392,6 +392,11 @@ impl ShellSession {
         self.last_ai_provider.as_deref()
     }
 
+    /// Cached unsubmitted fragment used by the input admission fence.
+    pub fn pending_input_text(&self) -> &str {
+        &self.input_buffer
+    }
+
     /// Unsubmitted user fragment, separate from completed command history.
     pub fn has_pending_input(&self) -> bool {
         !self.input_buffer.is_empty()
@@ -408,6 +413,14 @@ impl ShellSession {
     /// The command being run (typed line, secrets redacted).
     pub fn pending_command(&self) -> Option<&str> {
         self.pending_command_line.as_deref()
+    }
+
+    /// Actual observed input/output timestamps for restore persistence.
+    pub fn last_input_at(&self) -> f64 {
+        self.last_input_at
+    }
+    pub fn last_output_at(&self) -> f64 {
+        self.last_output_at
     }
 
     pub fn command_started_at(&self) -> f64 {
@@ -1182,7 +1195,7 @@ pub fn sanitize_input_for_buffer(text: &str) -> String {
 
 /// Appends typed text to the line buffer, applying backspace (DEL and BS)
 /// and Ctrl-U (kill line) so the captured line matches what was run.
-fn apply_line_editing(buffer: &mut String, text: &str) {
+pub(crate) fn apply_line_editing(buffer: &mut String, text: &str) {
     for ch in text.chars() {
         match ch {
             '\u{7f}' | '\u{8}' => {

@@ -8,15 +8,19 @@ use crate::theme::Chrome;
 
 pub(super) fn section(title: impl Into<SharedString>, chrome: Chrome) -> gpui::Div {
     let title = title.into();
-    div().flex().flex_col().gap_2().pb_4().child(
-        div()
-            .id(SharedString::from(format!("setting-header-{title}")))
-            .anchor_scroll(super::anchors::for_title(&title))
-            .text_xs()
-            .font_weight(gpui::FontWeight::SEMIBOLD)
-            .text_color(chrome.text_muted)
-            .child(crate::l10n::tr(&title).to_uppercase()),
-    )
+    let header = div()
+        .id(SharedString::from(format!("setting-header-{title}")))
+        .anchor_scroll(super::anchors::for_title(&title))
+        .text_xs()
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(chrome.text_muted)
+        .child(crate::l10n::tr(&title).to_uppercase());
+    #[cfg(test)]
+    let header = {
+        use gpui_kit::test::TestSupportExt;
+        header.test_support()
+    };
+    div().flex().flex_col().gap_2().pb_4().child(header)
 }
 
 pub(super) fn row(

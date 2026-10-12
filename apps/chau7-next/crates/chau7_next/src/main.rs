@@ -126,7 +126,23 @@ fn main() {
     let settings = Settings::load(&root);
     l10n::apply_setting(settings.general.app_language);
     chau7_next_core::l10n::numbers::set_current(settings.general.regional_number_format);
-    let restored = session_store::load(&root);
+    let mut restored = session_store::load(&root);
+    if let Some(saved) = &mut restored {
+        // Normalize legacy UUIDs once so every window shares the same metadata
+        // owner reservations before the first selected pane activates.
+        for tab in saved.windows.iter_mut().flat_map(|window| &mut window.tabs) {
+            tab.uuid.get_or_insert_with(uuid::Uuid::new_v4);
+        }
+        restore::preparation::register_saved_identity_hints(
+            &root,
+            saved.windows.iter().flat_map(|window| &window.tabs),
+        );
+    }
+    history::shell_histories::prune_startup(
+        &root,
+        restored.as_ref(),
+        settings.terminal.shell_history_max_lines,
+    );
 
     // The bundled icons (find bar, side pane headers, palette rows).
     let platform = gpui_kit::platform::current_platform(false);
@@ -150,13 +166,15 @@ fn main() {
         settings::config_files::init(cx, root.config_file(), settings.clone());
         cx.set_global(settings);
         cx.set_global(AppData::new(root));
+        // Service timers and background writers share this registry.
+        observability::init(cx);
+        restore::writer::init(cx);
         terminal::command_guard::init(cx);
         cto::init(
             &cx.global::<AppData>().root.clone(),
             &Settings::get(cx).clone(),
             cx,
         );
-        observability::init(cx);
         ai::init(cx);
         history::init(cx);
         telemetry::init(cx);
@@ -235,6 +253,7 @@ fn main() {
             memory_pressure::stop(cx);
             permission_center::stop(cx);
             save_session(cx, true);
+            let restore_worker = restore::writer::shutdown(cx);
             repository::flush(cx);
             history::recorder::flush_on_quit();
             monitoring::aethyme_delivery::stop(cx);
@@ -259,6 +278,16 @@ fn main() {
                 }
                 if let Some(worker) = worker {
                     let _ = worker.join();
+                }
+                if let Some(worker) = restore_worker {
+                    match worker.join() {
+                        Ok(stats) if stats.failed > 0 => log::warn!(
+                            "Restore writer completed with {} failed captures",
+                            stats.failed
+                        ),
+                        Err(_) => log::error!("Restore writer panicked during shutdown"),
+                        _ => (),
+                    }
                 }
                 if let Some(worker) = cto_worker {
                     let _ = worker.join();
@@ -433,10 +462,9 @@ pub(crate) fn save_session(cx: &mut App, terminating: bool) {
         .iter()
         .flat_map(|(_, ws)| ws.read(cx).closed_scrollback_panes())
         .collect();
-    let root = cx.global::<AppData>().root.clone();
     if windows.is_empty() {
-        if terminating && let Err(err) = session_store::clear(&root) {
-            log::warn!("clear session: {err}");
+        if terminating {
+            restore::writer::submit(None, closed_panes.into_iter().collect(), true, cx);
         }
         return;
     }
@@ -449,17 +477,15 @@ pub(crate) fn save_session(cx: &mut App, terminating: bool) {
         .map(|p| p.id)
         .chain(closed_panes)
         .collect();
-    match session_store::save_for(
-        &root,
-        &SavedSession {
+    restore::writer::submit(
+        Some(SavedSession {
             version: 1,
             windows,
-        },
+        }),
+        keep,
         terminating,
-    ) {
-        Ok(()) => restore::prune_scrollback(&root, &keep),
-        Err(err) => log::warn!("save session: {err}"),
-    }
+        cx,
+    );
 }
 
 pub(crate) const DEFAULT_CONFIG: &str = r#"# Chau7 Next settings. Same format as the Chau7 config.toml.
@@ -516,3 +542,29 @@ pub(crate) const DEFAULT_CONFIG: &str = r#"# Chau7 Next settings. Same format as
 [keybindings]
 # cmd+shift+b = "toggleBroadcast"
 "#;
+
+#[cfg(test)]
+mod startup_order_tests {
+    #[test]
+    fn observability_precedes_services_that_register_timers() {
+        let startup = include_str!("main.rs")
+            .split_once("app.run(move |cx: &mut App| {")
+            .unwrap()
+            .1
+            .split_once("ai::init(cx);")
+            .unwrap()
+            .0;
+        let registry = startup.find("observability::init(cx);").unwrap();
+        assert!(startup.find("cx.set_global(AppData::new(root));").unwrap() < registry);
+        for service in [
+            "restore::writer::init(cx);",
+            "terminal::command_guard::init(cx);",
+            "cto::init(",
+        ] {
+            assert!(
+                registry < startup.find(service).unwrap(),
+                "{service} precedes observability"
+            );
+        }
+    }
+}

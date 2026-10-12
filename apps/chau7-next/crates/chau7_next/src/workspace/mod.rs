@@ -44,6 +44,7 @@ mod palette_window;
 mod panel;
 mod panes;
 mod pickers;
+mod provider_health;
 mod remote_hooks;
 mod rename;
 mod restore_lifecycle;
@@ -72,7 +73,6 @@ use gpui_kit::component::TitleBar;
 
 use crate::actions::*;
 use crate::pane::{PaneEvent, PaneTree};
-use crate::platform::process as procinfo;
 use crate::session_store::{SavedTab, SavedWindow};
 use crate::settings::Settings;
 use crate::tab_bar::{NotificationStyle, TabAnimations, TabDrag, TabId};
@@ -91,6 +91,22 @@ use pickers::PickerState;
 use rename::RenameState;
 use tab_bar_view::TabScroll;
 use window::global_bounds;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TabCloseFence {
+    owner: uuid::Uuid,
+    sessions: Vec<String>,
+    busy_panes: usize,
+    last_tab: bool,
+}
+impl TabCloseFence {
+    fn admits(&self, current: &Self) -> bool {
+        self.owner == current.owner
+            && self.sessions == current.sessions
+            && current.busy_panes <= self.busy_panes
+            && self.last_tab == current.last_tab
+    }
+}
 
 struct TabEntry {
     panes: Entity<PaneTree>,
@@ -178,10 +194,36 @@ impl Workspace {
         state.auto_repo_grouping = settings.tabs.auto_repo_grouping();
         // Refresh idle state and the window title once a second.
         Self::hide_on_close(window, cx);
-        cx.observe_window_activation(window, |_, window, cx| {
+        cx.observe_window_activation(window, |this, window, cx| {
+            this.sync_restore_surfaces(window, cx);
             if window.is_window_active() {
                 crate::permission_center::recheck(cx);
+                this.queue_surface_reactivation(
+                    chau7_next_core::session_restore::lifecycle::SurfaceEvents {
+                        key: true,
+                        main: true,
+                        ..Default::default()
+                    },
+                    window,
+                    cx,
+                );
             }
+        })
+        .detach();
+        cx.observe_window_visibility(window, |this, _, window, cx| {
+            this.sync_restore_surfaces(window, cx);
+            if window.is_visible() {
+                this.queue_surface_reactivation(
+                    chau7_next_core::session_restore::lifecycle::SurfaceEvents {
+                        visible: true,
+                        deminiaturized: true,
+                        ..Default::default()
+                    },
+                    window,
+                    cx,
+                );
+            }
+            cx.notify();
         })
         .detach();
         let ticker = cx.spawn(async move |this, cx| {
@@ -331,18 +373,27 @@ impl Workspace {
     ) -> TabId {
         let (at_directory, inherit_group) = origin;
         let id = AppData::next_tab_id(cx);
+        let mut meta = TabMeta::new(id, self.state.next_color());
+        if let Some(uuid) = saved.as_ref().and_then(|saved| saved.uuid) {
+            meta.set_uuid(uuid);
+        }
         let deferred = self.restore_lifecycle.startup && saved.is_some();
         let panes = cx.new(|cx| {
             if deferred {
-                PaneTree::from_saved_deferred(saved.as_ref(), cwd.clone(), window, cx)
+                PaneTree::from_saved_deferred_with_owner(
+                    saved.as_ref(),
+                    cwd.clone(),
+                    meta.uuid,
+                    window,
+                    cx,
+                )
             } else {
-                PaneTree::from_saved(saved.as_ref(), cwd.clone(), window, cx)
+                PaneTree::from_saved_with_owner(saved.as_ref(), cwd.clone(), meta.uuid, window, cx)
             }
         });
         if deferred {
             self.restore_lifecycle.pending_identity.push(id);
         }
-        let mut meta = TabMeta::new(id, self.state.next_color());
         meta.last_activity = AppData::now(cx);
         meta.created_at = meta.last_activity;
         meta.git_root = panes
@@ -361,7 +412,17 @@ impl Workspace {
                         })
                         .map(PathBuf::from)
                 } else {
-                    cwd.as_deref().and_then(procinfo::git_root)
+                    cwd.as_deref().and_then(|dir| {
+                        crate::repository::resolve(dir, cx)
+                            .or_else(|| {
+                                chau7_next_core::tabs_state::known_repo_root(
+                                    dir,
+                                    saved.as_ref().and_then(|s| s.repo_group_id.as_deref()),
+                                    &self.known_repo_roots,
+                                )
+                            })
+                            .map(PathBuf::from)
+                    })
                 }
             })
             .map(|p| p.to_string_lossy().to_string());
@@ -691,7 +752,14 @@ impl Workspace {
 
     fn focus_selected(&mut self, window: &mut Window, cx: &mut App) {
         self.record_restore_selection();
+        self.sync_restore_surfaces(window, cx);
         if let Some(panes) = self.selected_panes() {
+            if let Some(meta) = self.state.selected().and_then(|id| self.state.get(id)) {
+                panes.update(cx, |tree, _| {
+                    tree.set_restore_override(meta.token_opt_override)
+                });
+            }
+
             let deferred = panes.read(cx).is_deferred();
             PaneTree::focus_entity(&panes, window, cx);
             // Parked tabs had no shells when overrides were first restored.
@@ -705,6 +773,11 @@ impl Workspace {
                 }
             }
         }
+        self.reveal_selected_surface(
+            chau7_next_core::session_restore::lifecycle::RevealTrigger::Selection,
+            window,
+            cx,
+        );
     }
 
     pub fn select_tab(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
@@ -748,6 +821,21 @@ impl Workspace {
         self.close_with_confirmation(id, window, cx).detach();
     }
 
+    fn tab_close_fence(&self, id: TabId, cx: &App) -> Option<TabCloseFence> {
+        let meta = self.state.get(id)?;
+        let panes = self.entries.get(&id)?.panes.read(cx);
+        Some(TabCloseFence {
+            owner: meta.uuid,
+            sessions: panes
+                .pane_sessions(cx)
+                .iter()
+                .map(|(_, session)| session.read(cx).tab_identifier.clone())
+                .collect(),
+            busy_panes: panes.running_process_count(cx),
+            last_tab: self.state.len() == 1,
+        })
+    }
+
     /// Like [`Self::request_close_tab`]; the task ends once the tab is
     /// closed or the user answered (closing a group asks tab by tab).
     fn close_with_confirmation(
@@ -756,7 +844,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Task<()> {
-        if self.state.get(id).is_none() {
+        if self.last_tab_prompt || self.state.get(id).is_none() {
             return Task::ready(());
         }
         if self.state.len() == 1 {
@@ -785,6 +873,10 @@ impl Workspace {
         } else {
             &["Close Tab", "Cancel"]
         };
+        let Some(fence) = self.tab_close_fence(id, cx) else {
+            return Task::ready(());
+        };
+        self.last_tab_prompt = true;
         let answer = crate::l10n::prompt(
             window,
             gpui::PromptLevel::Warning,
@@ -795,15 +887,20 @@ impl Workspace {
         );
         cx.spawn_in(window, async move |this, cx| {
             let answer = answer.await.ok();
-            if answer == Some(2) {
-                let _ = this.update(cx, |_, cx| {
-                    crate::settings_window::update(cx, |s| s.tabs.confirm_close = false)
-                });
-            }
-            if matches!(answer, Some(0) | Some(2)) {
-                let _ =
-                    this.update_in(cx, |this, window, cx| this.close_tab(id, false, window, cx));
-            }
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.last_tab_prompt = false;
+                if !matches!(answer, Some(0) | Some(2))
+                    || !this
+                        .tab_close_fence(id, cx)
+                        .is_some_and(|current| fence.admits(&current))
+                {
+                    return;
+                }
+                if answer == Some(2) {
+                    crate::settings_window::update(cx, |s| s.tabs.confirm_close = false);
+                }
+                this.close_tab(id, false, window, cx);
+            });
         })
     }
 
@@ -818,6 +915,9 @@ impl Workspace {
         if self.last_tab_prompt {
             return Task::ready(());
         }
+        let Some(fence) = self.tab_close_fence(id, cx) else {
+            return Task::ready(());
+        };
         self.last_tab_prompt = true;
         self.hover = None;
         let answer = crate::l10n::prompt(
@@ -829,10 +929,17 @@ impl Workspace {
             cx,
         );
         cx.spawn_in(window, async move |this, cx| {
-            let close_window = answer.await.ok() == Some(0);
+            let answer = answer.await.ok();
             let _ = this.update_in(cx, |this, window, cx| {
                 this.last_tab_prompt = false;
-                if close_window {
+                if !matches!(answer, Some(0) | Some(1))
+                    || !this
+                        .tab_close_fence(id, cx)
+                        .is_some_and(|current| fence.admits(&current))
+                {
+                    return;
+                }
+                if answer == Some(0) {
                     log::info!("closeTab: last tab - user chose to close window");
                     this.entries.remove(&id);
                     window.remove_window();
@@ -873,13 +980,14 @@ impl Workspace {
         }
         let cwd = self.inherited_start_directory(cx);
         let new_id = AppData::next_tab_id(cx);
-        let panes = cx.new(|cx| PaneTree::new(cwd.clone(), window, cx));
         let mut meta = TabMeta::new(new_id, TabColor::ALL[0]);
+        let panes = cx.new(|cx| PaneTree::new_with_owner(cwd.clone(), meta.uuid, window, cx));
         meta.last_activity = AppData::now(cx);
-        meta.git_root = cwd
-            .as_deref()
-            .and_then(procinfo::git_root)
-            .map(|p| p.to_string_lossy().to_string());
+        meta.git_root = cwd.as_deref().and_then(|dir| {
+            crate::repository::resolve(dir, cx).or_else(|| {
+                chau7_next_core::tabs_state::known_repo_root(dir, None, &self.known_repo_roots)
+            })
+        });
         panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
         self.entries.remove(&id);
         self.insert_entry(new_id, panes, cx);
@@ -953,6 +1061,9 @@ impl Workspace {
     /// `closeOtherTabs`: one confirmation for all the other tabs (running
     /// processes, or "always warn"), then close them.
     fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.last_tab_prompt {
+            return;
+        }
         let Some(current) = self.state.selected() else {
             return;
         };
@@ -976,6 +1087,10 @@ impl Workspace {
         let tabs = &Settings::get(cx).tabs;
         let warn_for_process = tabs.warn_on_close_running && processes > 0;
         let warn_always = tabs.confirm_close;
+        let target_fences = others
+            .iter()
+            .filter_map(|id| self.tab_close_fence(*id, cx).map(|fence| (*id, fence)))
+            .collect::<HashMap<_, _>>();
         let close_all = move |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
             // Rightmost first, so the remaining indexes stay valid.
             for id in others.iter().rev() {
@@ -995,6 +1110,7 @@ impl Workspace {
         } else {
             &["Close Tabs", "Cancel"]
         };
+        self.last_tab_prompt = true;
         let answer = crate::l10n::prompt(
             window,
             gpui::PromptLevel::Warning,
@@ -1005,18 +1121,28 @@ impl Workspace {
         );
         cx.spawn_in(window, async move |this, cx| {
             let answer = answer.await.ok();
-            if answer == Some(2) {
-                let _ = this.update(cx, |_, cx| {
-                    crate::settings_window::update(cx, |s| s.tabs.confirm_close = false)
-                });
-            }
-            if matches!(answer, Some(0) | Some(2)) {
-                let _ = this.update_in(cx, |this, window, cx| {
-                    if this.state.get(current).is_some() {
-                        close_all(this, window, cx);
-                    }
-                });
-            }
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.last_tab_prompt = false;
+                let remaining = target_fences
+                    .iter()
+                    .filter(|(id, _)| this.state.get(**id).is_some())
+                    .collect::<Vec<_>>();
+                if !matches!(answer, Some(0) | Some(2))
+                    || this.state.selected() != Some(current)
+                    || this.state.get(current).is_none()
+                    || remaining.is_empty()
+                    || !remaining.iter().all(|(id, fence)| {
+                        this.tab_close_fence(**id, cx)
+                            .is_some_and(|current| fence.admits(&current))
+                    })
+                {
+                    return;
+                }
+                if answer == Some(2) {
+                    crate::settings_window::update(cx, |s| s.tabs.confirm_close = false);
+                }
+                close_all(this, window, cx);
+            });
         })
         .detach();
     }
@@ -1035,7 +1161,9 @@ impl Workspace {
         }
         let snapshot = self.closed_snapshots.remove(&entry.meta.uuid);
         let cwd = entry.directory.map(PathBuf::from);
-        let panes = cx.new(|cx| PaneTree::from_saved(snapshot.as_ref(), cwd, window, cx));
+        let panes = cx.new(|cx| {
+            PaneTree::from_saved_with_owner(snapshot.as_ref(), cwd, entry.meta.uuid, window, cx)
+        });
         if let Some(meta) = self.state.get(new_id) {
             panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
         }
@@ -1155,7 +1283,17 @@ impl Workspace {
         let session = panes.and_then(|p| p.focused_session(cx));
         let ai = session
             .as_ref()
-            .and_then(|s| s.read(cx).ai_display_app_name());
+            .and_then(|s| s.read(cx).ai_display_app_name())
+            .or_else(|| {
+                panes
+                    .and_then(|tree| tree.deferred_saved())
+                    .and_then(|saved| saved.focused_terminal())
+                    .and_then(|pane| {
+                        chau7_next_core::shell_session::display_name_from_provider(
+                            pane.ai_provider.as_deref(),
+                        )
+                    })
+            });
         let dev_server = session
             .as_ref()
             .and_then(|s| s.read(cx).dev_server().map(|d| d.name.clone()));
@@ -1368,6 +1506,7 @@ fn register_tab_actions(div: Stateful<Div>, cx: &mut Context<Workspace>) -> Stat
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.screen_bounds = global_bounds(window, cx);
+        self.sync_restore_surfaces(window, cx);
         self.window_active = window.is_window_active();
         // (dev) A trace line whenever the tabs or the open panel change.
         let picker = self.picker.as_ref().map(|p| p.kind);
@@ -1431,6 +1570,7 @@ impl Render for Workspace {
         let picker = self.render_picker(chrome, cx);
         let shortcut_hint = self.render_shortcut_hint(chrome, cx);
         let drag_listener = self.drag_listener(cx);
+        let provider_health_border = self.provider_health_border(cx);
 
         div()
             .id("workspace")
@@ -1500,7 +1640,8 @@ impl Render for Workspace {
                     .children(explain)
                     .children(tasks)
                     .children(timeline)
-                    .children(dashboard),
+                    .children(dashboard)
+                    .children(provider_health_border),
             )
             .children(hover_card)
             .children(idle_popover)
@@ -1593,5 +1734,41 @@ mod tests {
             close_tab_prompt_text(3).0,
             "Close tab with 3 running processes?"
         );
+    }
+}
+
+#[cfg(test)]
+mod close_confirmation_tests {
+    use super::TabCloseFence;
+    fn captured() -> TabCloseFence {
+        TabCloseFence {
+            owner: uuid::Uuid::from_u128(10),
+            sessions: vec!["pane-a".into()],
+            busy_panes: 1,
+            last_tab: false,
+        }
+    }
+    #[test]
+    fn confirmed_identity_allows_completed_work_but_rejects_new_busy_panes() {
+        let before = captured();
+        assert!(before.admits(&before));
+        let mut after = before.clone();
+        after.busy_panes = 0;
+        assert!(before.admits(&after));
+        after.busy_panes = 2;
+        assert!(!before.admits(&after));
+    }
+    #[test]
+    fn confirmation_cannot_target_replaced_sessions_tabs_or_last_tab_state() {
+        let before = captured();
+        let mut after = before.clone();
+        after.sessions = vec!["replacement".into()];
+        assert!(!before.admits(&after));
+        after = before.clone();
+        after.owner = uuid::Uuid::from_u128(11);
+        assert!(!before.admits(&after));
+        after = before.clone();
+        after.last_tab = true;
+        assert!(!before.admits(&after));
     }
 }

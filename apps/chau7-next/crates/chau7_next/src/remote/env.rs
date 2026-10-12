@@ -86,46 +86,11 @@ impl<'a> GpuiEnv<'a> {
             .find(|view| view.read(self.cx).session.read(self.cx).id == session_id)
     }
     fn dispatch_steps(&mut self, view: Entity<TerminalView>, steps: Vec<InputStep>) -> bool {
-        if steps.is_empty() {
-            return false;
+        let admitted = view.update(self.cx, |view, cx| view.send_guarded_steps(steps, cx));
+        if admitted {
+            self.cache = None;
         }
-        let session_id = view.read(self.cx).session.read(self.cx).id;
-        let weak = view.downgrade();
-        let mut steps = steps.into_iter().peekable();
-        while steps.peek().is_some_and(|step| step.delay_ms == 0) {
-            let step = steps.next().unwrap();
-            view.update(self.cx, |view, cx| {
-                view.write_without_broadcast(&step.bytes, cx)
-            });
-        }
-        let rest: Vec<InputStep> = steps.collect();
-        if !rest.is_empty() {
-            self.cx
-                .spawn(async move |cx| {
-                    for step in rest {
-                        if step.delay_ms > 0 {
-                            cx.background_executor()
-                                .timer(std::time::Duration::from_millis(step.delay_ms))
-                                .await;
-                        }
-                        let Ok(written) = weak.update(cx, |view, cx| {
-                            if view.session.read(cx).id != session_id {
-                                return false;
-                            }
-                            view.write_without_broadcast(&step.bytes, cx);
-                            true
-                        }) else {
-                            break;
-                        };
-                        if !written {
-                            break;
-                        }
-                    }
-                })
-                .detach();
-        }
-        self.cache = None;
-        true
+        admitted
     }
     fn send_text(&mut self, key: TabKey, pane: Option<u64>, text: &str) -> bool {
         let Some(view) = self.input_view(key, pane) else {

@@ -12,7 +12,7 @@
 //! This mirrors `RustTerminalView.swift` (display link, `poll()`, write queue)
 //! and `TerminalSessionModel.swift`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -49,6 +49,14 @@ use crate::platform::process as procinfo;
 use crate::settings::{ActivePollingRateCap, BellSound, Settings};
 
 const PTY_READINESS_MAX_WAIT_MS: u64 = 200;
+
+fn replay_restored_terminal(term: &Chau7Terminal, context: &str) {
+    let live = term.full_buffer_ansi_text();
+    let mut bytes = context.as_bytes().to_vec();
+    bytes.extend_from_slice(b"\r\n\x1b[0m");
+    bytes.extend_from_slice(live.as_bytes());
+    term.replay_buffer(&bytes);
+}
 
 #[derive(Clone, Copy)]
 enum RefreshWake {
@@ -167,6 +175,7 @@ pub struct TerminalSession {
     /// This terminal's identity for the analytics proxy and AI run
     /// telemetry (`tabIdentifier`, `CHAU7_NEXT_TAB_ID`): a UUID per session.
     pub tab_identifier: String,
+    _shell_history_owner: Option<crate::history::shell_histories::Registration>,
     term: Arc<RwLock<Chau7Terminal>>,
     memory: Arc<crate::memory_pressure::SessionMemory>,
     writer: PtyWriter,
@@ -185,6 +194,14 @@ pub struct TerminalSession {
     /// Bookmarks of this session (TRM-057).
     bookmarks: BookmarkList,
     /// Resume command waiting to be typed at the prompt (TRM-010).
+    restore_intent: Option<chau7_next_core::session_restore::lifecycle::RestorePrefillIntent>,
+    restore_token: u64,
+    restore_input_generation: Cell<u64>,
+    restore_presented: Cell<bool>,
+    restore_selected: Cell<bool>,
+    restore_window_visible: Cell<bool>,
+    restore_hidden_since: Cell<Option<Instant>>,
+    surface_prewarm: Cell<chau7_next_core::session_restore::lifecycle::SurfacePrewarm>,
     pending_prefill: Option<String>,
     prefill_retries: u32,
     prefill_scheduled: bool,
@@ -232,6 +249,7 @@ pub struct TerminalSession {
     /// The user closed this session (no "shell exited" notice).
     close_requested: bool,
     last_cwd_check: Instant,
+    cwd_probe_pending: bool,
     last_branch_check: Instant,
     /// Directory of the running command and the shell's name, for the
     /// command history.
@@ -330,16 +348,19 @@ fn unregister_shell(id: u64) {
 
 impl TerminalSession {
     /// Start a shell in `cwd` (or the configured/default directory).
-    pub fn spawn(
+    pub fn spawn_with_owner(
         cols: u16,
         rows: u16,
         cwd: Option<PathBuf>,
         settings: &Settings,
         root: &DataRoot,
+        history_owner: uuid::Uuid,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<Self> {
         super::pty_capture::init(&root.pty_capture_file());
         let shell_path = settings.terminal.resolved_shell();
+        let (history_registration, history_env) =
+            crate::history::shell_histories::prepare_shell(root, history_owner, &shell_path);
         let home = root.home().to_string_lossy().to_string();
         let mut env =
             shell_env::shell_environment(Some(&home), std::env::var("PATH").ok().as_deref());
@@ -350,6 +371,7 @@ impl TerminalSession {
             &root.history_file(),
             |key| std::env::var(key).ok(),
         ));
+        env.extend(history_env);
         let start_dir = start_directory(cwd.as_deref(), settings, &home);
         let session_id = uuid::Uuid::new_v4().to_string().to_uppercase();
         env.extend(shell_env::session_environment(
@@ -450,6 +472,7 @@ impl TerminalSession {
                 .is_empty();
         let mut session = Self::from_terminal(term, Some(start_dir), cx);
         session.tab_identifier = tab_identifier;
+        session._shell_history_owner = history_registration;
         session.has_hooks = has_hooks;
         session.shell_name = Path::new(&shell_path)
             .file_name()
@@ -471,6 +494,27 @@ impl TerminalSession {
         cwd: Option<PathBuf>,
         cx: &mut Context<Self>,
     ) -> Self {
+        Self::from_terminal_driving(term, cwd, true, cx)
+    }
+
+    /// Real fixture PTYs use the production model and writer, while their
+    /// deterministic GPUI tests manually drive input instead of permitting
+    /// external native threads to wake the mock foreground scheduler.
+    #[cfg(all(test, unix))]
+    pub(crate) fn from_terminal_manually_driven(
+        term: Chau7Terminal,
+        cwd: Option<PathBuf>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        Self::from_terminal_driving(term, cwd, false, cx)
+    }
+
+    fn from_terminal_driving(
+        term: Chau7Terminal,
+        cwd: Option<PathBuf>,
+        start_external_workers: bool,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let echo_fd = term.echo_fd();
         let has_pty = term.has_pty();
         let pid = term.shell_pid() as i32;
@@ -487,7 +531,7 @@ impl TerminalSession {
             std::sync::Weak<crate::memory_pressure::SessionMemory>,
         >::new());
 
-        {
+        if start_external_workers {
             let term = term.clone();
             let stop = stop.clone();
             let output = output.clone();
@@ -630,7 +674,9 @@ impl TerminalSession {
             register_shell(id, pid);
         }
         let writer = PtyWriter::spawn(term.clone());
-        let git_root = cwd.as_deref().and_then(procinfo::git_root);
+        let git_root = cwd
+            .as_deref()
+            .and_then(|dir| crate::repository::resolve(dir, cx).map(PathBuf::from));
         let git_branch = git_root.as_deref().and_then(|root| {
             crate::repository::resolve(root, cx)
                 .and_then(|shared| crate::repository::branch(&shared, cx))
@@ -661,7 +707,7 @@ impl TerminalSession {
             .map_or(10_000, |settings| settings.terminal.scrollback_lines);
         let memory = crate::memory_pressure::register(id, &term, &root, lines);
         let _ = profile_memory.set(Arc::downgrade(&memory));
-        let process_subscription = (has_pty && pid > 0).then(|| {
+        let process_subscription = (start_external_workers && has_pty && pid > 0).then(|| {
             crate::monitoring::process_tree::subscribe(pid as u32, cx.entity().downgrade(), cx)
         });
         Self {
@@ -678,6 +724,14 @@ impl TerminalSession {
             last_output_bytes: 0,
             permission_output_tail: Default::default(),
             bookmarks: BookmarkList::new(),
+            restore_intent: None,
+            restore_token: 0,
+            restore_input_generation: Cell::new(0),
+            restore_presented: Cell::new(false),
+            restore_selected: Cell::new(false),
+            restore_window_visible: Cell::new(false),
+            restore_hidden_since: Cell::new(Some(Instant::now())),
+            surface_prewarm: Cell::new(Default::default()),
             pending_prefill: None,
             prefill_retries: 0,
             prefill_scheduled: false,
@@ -713,6 +767,7 @@ impl TerminalSession {
             git_baseline: Arc::new(Mutex::new(None)),
             close_requested: false,
             last_cwd_check: now,
+            cwd_probe_pending: false,
             last_branch_check: now,
             command_dir: None,
             restore_line_pending: false,
@@ -720,6 +775,7 @@ impl TerminalSession {
             pending_resize: None,
             monitor: SessionMonitor::new(id, &root, shell_events),
             tab_identifier: uuid::Uuid::new_v4().to_string().to_uppercase(),
+            _shell_history_owner: None,
             dev_checks: None,
             mouse_reporting_enabled: std::cell::Cell::new(false),
             _pump: pump,
@@ -1202,7 +1258,7 @@ impl TerminalSession {
                         self.emit_ai(shell_ai_event(event), true, cx);
                     }
                     let path = PathBuf::from(path);
-                    self.set_cwd(path.clone());
+                    self.set_cwd(path.clone(), cx);
                     cx.emit(SessionEvent::DirectoryChanged(path));
                     changed = true;
                 }
@@ -1289,11 +1345,27 @@ impl TerminalSession {
         // the process table.
         if !self.tracker.saw_osc7() && self.last_cwd_check.elapsed() > Duration::from_millis(500) {
             self.last_cwd_check = Instant::now();
-            changed |= self.update_cwd();
+            self.request_cwd_update(cx);
         }
         // The branch can change without a cd (git checkout): re-read HEAD.
         if self.last_branch_check.elapsed() >= Duration::from_secs(2) {
             self.last_branch_check = Instant::now();
+            // Known identity is available immediately; a shared background
+            // probe reconciles cold/nested repositories without blocking UI.
+            if let Some(cwd) = &self.cwd {
+                let root = crate::repository::resolve(cwd, cx)
+                    .map(PathBuf::from)
+                    .or_else(|| {
+                        self.git_root
+                            .as_ref()
+                            .filter(|root| cwd.starts_with(root))
+                            .cloned()
+                    });
+                if root != self.git_root {
+                    self.git_root = root;
+                    changed = true;
+                }
+            }
             // Tabs in one repository share one branch value.
             let branch = match self.git_root.as_deref() {
                 Some(root) => match crate::repository::resolve(root, cx) {
@@ -1327,6 +1399,7 @@ impl TerminalSession {
             }
         }
         changed |= self.drain_tracker_events(cx);
+        self.flush_restored_resume(cx);
         if self.pending_prefill.is_some() && !self.prefill_scheduled {
             self.flush_prefill(cx);
         }
@@ -1586,6 +1659,133 @@ impl TerminalSession {
         }));
     }
 
+    /// Direct emulator replay never sends a restore command to the PTY. The
+    /// outer write guard prevents the poll worker from parsing between capture
+    /// and replay, preserving the newly launched shell's prompt/output.
+    pub(crate) fn replay_restored_context(&mut self, context: &str, cx: &mut Context<Self>) {
+        let term = self.term.write();
+        replay_restored_terminal(&term, context);
+        self.grid = term.grid_copy();
+        self.cursor = term.cursor_position();
+        drop(term);
+        cx.emit(SessionEvent::Output);
+        cx.notify();
+    }
+    pub(crate) fn queue_restored_resume(
+        &mut self,
+        command: String,
+        directory: PathBuf,
+        identity: chau7_next_core::session_restore::lifecycle::ResumeIdentity,
+        cx: &mut Context<Self>,
+    ) {
+        self.restore_token = self.restore_token.wrapping_add(1);
+        self.restore_intent = Some(
+            chau7_next_core::session_restore::lifecycle::RestorePrefillIntent {
+                token: self.restore_token,
+                command,
+                expected_directory: directory,
+                expected_identity: identity,
+                // The shell was just constructed. Input typed while background
+                // restore validation/first-frame preparation ran cancels delivery.
+                input_generation: 0,
+            },
+        );
+        self.flush_restored_resume(cx);
+    }
+    pub(crate) fn set_restore_selected(&self, selected: bool) {
+        self.restore_selected.set(selected);
+        if selected {
+            let mut prewarm = self.surface_prewarm.get();
+            prewarm.clear();
+            self.surface_prewarm.set(prewarm);
+        }
+        self.sync_surface_clock();
+    }
+    pub(crate) fn mark_restore_surface(&self, visible: bool) {
+        self.restore_window_visible.set(visible);
+        self.sync_surface_clock();
+    }
+    fn sync_surface_clock(&self) {
+        if self.restore_surface_visible() {
+            self.restore_hidden_since.set(None);
+        } else if self.restore_hidden_since.get().is_none() {
+            self.restore_hidden_since.set(Some(Instant::now()));
+        }
+    }
+    pub(crate) fn prewarm_surface(&mut self, hovered: bool, cx: &mut Context<Self>) {
+        if self.restore_selected.get() {
+            return;
+        }
+        let mut prewarm = self.surface_prewarm.get();
+        let refresh = if hovered {
+            prewarm.begin(Instant::now())
+        } else {
+            prewarm.end(Instant::now());
+            false
+        };
+        self.surface_prewarm.set(prewarm);
+        self.set_render_suspended(false);
+        if refresh {
+            self.refresh(cx);
+        }
+    }
+    pub(crate) fn surface_prewarm_remaining(&self) -> Option<Duration> {
+        self.surface_prewarm.get().remaining(Instant::now())
+    }
+    pub(crate) fn surface_hidden_for(&self) -> Option<Duration> {
+        self.restore_hidden_since.get().map(|at| at.elapsed())
+    }
+    pub(crate) fn restore_surface_visible(&self) -> bool {
+        self.restore_selected.get() && self.restore_window_visible.get()
+    }
+    pub(crate) fn mark_restore_presented(&self) {
+        self.restore_presented.set(true);
+    }
+    /// Cached restore bootstrap evidence for presentation policy; no input/I/O.
+    pub(crate) fn has_pending_restore_resume(&self) -> bool {
+        self.restore_intent.is_some()
+    }
+    pub(crate) fn surface_has_live_frame(&self) -> bool {
+        self.restore_presented.get()
+    }
+    pub(crate) fn request_surface_frame(&self) {
+        self.restore_presented.set(false);
+    }
+
+    fn flush_restored_resume(&mut self, _cx: &mut Context<Self>) {
+        use chau7_next_core::session_restore::lifecycle::{PrefillDecision, PrefillSnapshot};
+        let Some(intent) = self.restore_intent.as_ref() else {
+            return;
+        };
+        let snapshot = PrefillSnapshot {
+            current_token: self.restore_token,
+            directory: self.cwd.clone().unwrap_or_default(),
+            provider: self.tracker.ai_provider().map(str::to_owned),
+            session_id: self.tracker.ai_session_id().map(str::to_owned),
+            input_generation: self.restore_input_generation.get(),
+            view_presented: self.restore_presented.get(),
+            surface_visible: self.restore_surface_visible(),
+            at_prompt: self.is_at_prompt(),
+            loading: self.is_loading(),
+            ai_running: self.is_ai_running(),
+            exited: self.exited.is_some(),
+        };
+        match intent.decision(&snapshot) {
+            PrefillDecision::Wait => {}
+            PrefillDecision::Reject(reason) => {
+                self.restore_intent = None;
+                // Outcomes only: no command, path, transcript or credential.
+                log::info!("restore resume rejected: {reason:?}");
+            }
+            PrefillDecision::Deliver => {
+                if let Some(intent) = self.restore_intent.take() {
+                    self.write(intent.command.as_bytes()); // Deliberately no CR/LF.
+                    log::info!("restore resume prefilled");
+                }
+            }
+        }
+    }
+
     /// Types `text` (without running it) once the shell shows its prompt
     /// (`prefillInput`).
     pub fn prefill_input(&mut self, text: String, cx: &mut Context<Self>) {
@@ -1643,11 +1843,18 @@ impl TerminalSession {
         .detach();
     }
 
-    fn set_cwd(&mut self, cwd: PathBuf) {
+    fn set_cwd(&mut self, cwd: PathBuf, cx: &mut Context<Self>) {
         if self.cwd.as_ref() == Some(&cwd) {
             return;
         }
-        self.git_root = procinfo::git_root(&cwd);
+        self.git_root = crate::repository::resolve(&cwd, cx)
+            .map(PathBuf::from)
+            .or_else(|| {
+                self.git_root
+                    .as_ref()
+                    .filter(|root| cwd.starts_with(root))
+                    .cloned()
+            });
         self.git_branch = None;
         // New directory: reconcile on the next existing monitor tick, off UI.
         self.last_branch_check = Instant::now()
@@ -1656,20 +1863,63 @@ impl TerminalSession {
         self.cwd = Some(cwd);
     }
 
-    /// Re-read the shell's directory from the process table. Returns true
-    /// when it changed.
-    pub fn update_cwd(&mut self) -> bool {
+    /// One native directory probe at a time, off UI. A late result cannot
+    /// overwrite OSC7 or a newer directory/shell identity.
+    fn request_cwd_update(&mut self, cx: &mut Context<Self>) {
         let pid = self.term.read().shell_pid() as u32;
-        let Some(cwd) = procinfo::process_cwd(pid) else {
-            return false;
-        };
-        let path = cwd.to_string_lossy().to_string();
-        if self.tracker.update_directory(&path, &self.shell_context) {
-            // The tracker's DirectoryChanged event is applied on the next drain.
-            self.set_cwd(cwd);
-            return true;
+        if self.cwd_probe_pending || self.exited.is_some() || pid == 0 || self.tracker.saw_osc7() {
+            return;
         }
-        false
+        self.cwd_probe_pending = true;
+        let captured_cwd = self.cwd.clone();
+        let input_revision = self.restore_input_generation.get();
+        cx.spawn(async move |this, cx| {
+            let cwd = cx
+                .background_executor()
+                .spawn(async move {
+                    chau7_next_core::work_profiler::measure(
+                        chau7_next_core::work_profiler::Key::work(
+                            "process_cwd_probe",
+                            "fallback",
+                            "unobserved",
+                            "session_monitor",
+                            chau7_next_core::work_profiler::Queue::Background,
+                        ),
+                        || procinfo::process_cwd(pid),
+                    )
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.cwd_probe_pending = false;
+                if input_revision != this.restore_input_generation.get()
+                    || !accepts_cwd_probe(
+                        pid,
+                        this.term.read().shell_pid() as u32,
+                        captured_cwd.as_deref(),
+                        this.cwd.as_deref(),
+                        this.tracker.saw_osc7(),
+                        this.exited.is_some(),
+                    )
+                {
+                    return;
+                }
+                let Some(cwd) = cwd else {
+                    return;
+                };
+                if this
+                    .tracker
+                    .update_directory(&cwd.to_string_lossy(), &this.shell_context)
+                {
+                    this.set_cwd(cwd, cx);
+                    // Reuse the authoritative DirectoryChanged routing and
+                    // metadata reconciliation rather than inventing a UI value.
+                    this.drain_tracker_events(cx);
+                    cx.emit(SessionEvent::MetadataChanged);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     fn ring_bell(&mut self, cx: &mut Context<Self>) {
@@ -1845,10 +2095,30 @@ impl TerminalSession {
 
     /// Bytes typed or pasted by the user: written like [`Self::write`] and
     /// given to the command tracker (typed lines, history, AI detection).
+    /// Immediate user-input revision; independent of delayed tracker processing.
+    pub fn input_revision(&self) -> u64 {
+        self.restore_input_generation.get()
+    }
+
+    /// Rebuild the current line from cached tracker state and not-yet-processed
+    /// user fragments. No PTY read or native process scan runs here.
+    pub fn reviewed_input_prefix(&self) -> String {
+        let pending = self.pending_input.borrow();
+        chau7_next_core::command_risk::admission::pending_prefix(
+            self.tracker.pending_input_text(),
+            pending
+                .iter()
+                .filter(|(_, secret)| !secret)
+                .map(|(bytes, _)| String::from_utf8_lossy(bytes)),
+        )
+    }
+
     pub fn write_input(&self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
         }
+        self.restore_input_generation
+            .set(self.restore_input_generation.get().wrapping_add(1));
         // Password prompts only: Swift checks ECHO alone, which line editors
         // (readline, ZLE) also clear, so every typed command looked secret.
         let echo_disabled = Chau7Terminal::password_input_on_fd(self.echo_fd);
@@ -2130,6 +2400,7 @@ impl TerminalSession {
     /// Automation must never overwrite a typed fragment or queued restore.
     pub(crate) fn has_pending_automation_input(&self) -> bool {
         !self.pending_input.borrow().is_empty()
+            || self.restore_intent.is_some()
             || self.pending_prefill.is_some()
             || self.tracker.prefill_pending
             || self.tracker.has_pending_input()
@@ -2455,12 +2726,28 @@ fn feedback_provider(event: &AiEvent) -> Option<String> {
     chau7_next_core::ai::resume::normalize_provider_name(&event.tool)
         .or_else(|| chau7_next_core::ai::resume::normalize_provider_name(event.source.raw_value()))
 }
+fn feedback_owner_accepts_kind(kind: &str, is_live: bool) -> bool {
+    is_live || matches!(kind, "turn_completed" | "finished")
+}
+fn feedback_target_matches(
+    target: Option<uuid::Uuid>,
+    metadata_uuid: uuid::Uuid,
+    tab: crate::tab_bar::TabId,
+    native_tab_identifier: &str,
+) -> bool {
+    target.is_none_or(|target| {
+        target == metadata_uuid
+            || target == crate::ai::events_out::tab_uuid(tab)
+            || uuid::Uuid::parse_str(native_tab_identifier).ok() == Some(target)
+    })
+}
 fn feedback_owner(
     event: &AiEvent,
     target: Option<uuid::Uuid>,
     exact_only: bool,
     cx: &mut gpui::App,
 ) -> Option<(uuid::Uuid, gpui::Entity<TerminalSession>)> {
+    let kind = feedback_kind(event)?;
     let provider = feedback_provider(event)?;
     let date = chau7_next_core::telemetry::date_codec::parse_iso8601(Some(&event.ts))?;
     let observed_at = date.timestamp_millis() as f64 / 1000.0;
@@ -2474,9 +2761,6 @@ fn feedback_owner(
     for window in crate::mcp::windows::windows(cx) {
         let workspace = window.workspace.read(cx);
         for uuid in workspace.mcp_tab_uuids() {
-            if target.is_some_and(|target| target != uuid) {
-                continue;
-            }
             let Some(tab) = workspace.mcp_find(uuid) else {
                 continue;
             };
@@ -2485,12 +2769,16 @@ fn feedback_owner(
             };
             for (_, entity) in panes.read(cx).pane_sessions(cx) {
                 let session = entity.read(cx);
+                if !feedback_target_matches(target, uuid, tab, &session.tab_identifier) {
+                    continue;
+                }
                 let id = event
                     .session_id
                     .as_deref()
                     .or(session.tracker.ai_session_id())
                     .unwrap_or("unbound");
                 if session.exited.is_some()
+                    || !feedback_owner_accepts_kind(kind, session.is_ai_running())
                     || !session.tracker.can_adopt_observed_ai_identity(
                         &provider,
                         id,
@@ -2538,6 +2826,77 @@ fn feedback_owner(
         }
     }
     unique_claude_owner(exact, unbound)
+}
+
+#[cfg(test)]
+mod feedback_owner_tests {
+    use super::{AiEvent, feedback_kind, feedback_owner_accepts_kind, feedback_target_matches};
+
+    #[test]
+    fn current_publishers_and_native_pane_aliases_match_only_the_actual_tab() {
+        let metadata = uuid::Uuid::new_v4();
+        let native = uuid::Uuid::new_v4();
+        let encoded = crate::ai::events_out::tab_uuid(7);
+        for target in [None, Some(metadata), Some(encoded), Some(native)] {
+            assert!(feedback_target_matches(
+                target,
+                metadata,
+                7,
+                &native.to_string()
+            ));
+        }
+        for target in [uuid::Uuid::new_v4(), crate::ai::events_out::tab_uuid(8)] {
+            assert!(!feedback_target_matches(
+                Some(target),
+                metadata,
+                7,
+                &native.to_string()
+            ));
+        }
+        assert!(!feedback_target_matches(
+            Some(native),
+            metadata,
+            7,
+            "invalid native id"
+        ));
+        assert!(feedback_target_matches(
+            Some(encoded),
+            metadata,
+            7,
+            "invalid native id"
+        ));
+    }
+
+    #[test]
+    fn inactive_exact_owner_only_accepts_completion_not_requests_or_resolutions() {
+        let alias = AiEvent::new(
+            chau7_next_core::ai::event::AiEventSource("codex".into()),
+            "response_complete",
+            "codex",
+            "",
+            "2026-10-11T12:00:00Z",
+        );
+        assert_eq!(feedback_kind(&alias), Some("turn_completed"));
+        assert!(feedback_owner_accepts_kind(
+            feedback_kind(&alias).unwrap(),
+            false
+        ));
+        for kind in ["turn_completed", "finished"] {
+            assert!(feedback_owner_accepts_kind(kind, false), "{kind}");
+        }
+        for kind in [
+            "approval_requested",
+            "permission",
+            "user_input_requested",
+            "waiting_input",
+            "approval_resolved",
+            "permission_resolved",
+            "user_input_resolved",
+        ] {
+            assert!(!feedback_owner_accepts_kind(kind, false), "{kind}");
+            assert!(feedback_owner_accepts_kind(kind, true), "{kind}");
+        }
+    }
 }
 
 /// Final projection authority: preserve the durable raw event, but never apply
@@ -2739,5 +3098,61 @@ mod refresh_pacing_tests {
             refresh_wait(Duration::from_secs(1), true, Duration::from_millis(10)),
             Duration::from_millis(490)
         );
+    }
+}
+
+#[cfg(test)]
+mod restored_context_tests {
+    use super::*;
+
+    #[test]
+    fn direct_restore_replay_preserves_live_prompt_without_a_pty() {
+        let term = Chau7Terminal::new_headless(80, 24).unwrap();
+        term.replay_buffer(b"fresh shell\r\nlive-prompt> ");
+        replay_restored_terminal(&term, "\x1b[31msaved history\x1b[0m");
+        let text = term.full_buffer_text();
+        assert!(text.contains("saved history"), "{text:?}");
+        assert!(text.contains("fresh shell"), "{text:?}");
+        assert!(text.contains("live-prompt>"), "{text:?}");
+        assert!(text.find("saved history").unwrap() < text.find("fresh shell").unwrap());
+        assert!(!text.contains("cat "));
+    }
+}
+
+fn accepts_cwd_probe(
+    expected_pid: u32,
+    live_pid: u32,
+    expected_cwd: Option<&std::path::Path>,
+    live_cwd: Option<&std::path::Path>,
+    saw_osc7: bool,
+    exited: bool,
+) -> bool {
+    expected_pid != 0
+        && expected_pid == live_pid
+        && expected_cwd == live_cwd
+        && !saw_osc7
+        && !exited
+}
+#[cfg(test)]
+mod cwd_probe_tests {
+    use super::accepts_cwd_probe;
+    use std::path::Path;
+    #[test]
+    fn late_native_directory_results_require_unchanged_live_identity() {
+        let before = Some(Path::new("/before"));
+        assert!(accepts_cwd_probe(10, 10, before, before, false, false));
+        assert!(accepts_cwd_probe(10, 10, None, None, false, false));
+        assert!(!accepts_cwd_probe(0, 0, before, before, false, false));
+        assert!(!accepts_cwd_probe(10, 11, before, before, false, false));
+        assert!(!accepts_cwd_probe(
+            10,
+            10,
+            before,
+            Some(Path::new("/after")),
+            false,
+            false
+        ));
+        assert!(!accepts_cwd_probe(10, 10, before, before, true, false));
+        assert!(!accepts_cwd_probe(10, 10, before, before, false, true));
     }
 }

@@ -74,6 +74,7 @@ struct State {
     timer: Option<crate::observability::TimerGuard>,
     projection: Option<Snapshot>,
     projection_queued: bool,
+    observed_names: HashMap<u32, Vec<String>>,
 }
 #[derive(Default)]
 struct Shared {
@@ -102,6 +103,7 @@ impl Drop for Subscription {
             state.timer.take();
             state.schedule = Schedule::default();
             state.projection.take();
+            state.observed_names.clear();
         }
         self.shared.changed.notify_one();
     }
@@ -146,6 +148,13 @@ pub fn refresh(cx: &App, launch: bool) {
         service.0.changed.notify_one();
     }
 }
+/// Read-only names from the last shared native snapshot; never runs a process
+/// scan or filesystem read while guarding typed terminal input.
+pub fn observed_names(pid: u32, cx: &App) -> Vec<String> {
+    cx.try_global::<Service>()
+        .and_then(|service| service.0.state.lock().observed_names.get(&pid).cloned())
+        .unwrap_or_default()
+}
 pub fn stop(cx: &mut App) {
     if !cx.has_global::<Service>() {
         return;
@@ -155,6 +164,7 @@ pub fn stop(cx: &mut App) {
     state.stopped = true;
     state.timer.take();
     state.projection.take();
+    state.observed_names.clear();
     state.subscribers.clear();
     service.0.changed.notify_one();
 }
@@ -199,6 +209,11 @@ fn run(shared: Arc<Shared>, main: MainThread) {
         if state.stopped || state.subscribers.is_empty() {
             continue;
         }
+        state.observed_names = state
+            .subscribers
+            .values()
+            .map(|subscriber| (subscriber.pid, snapshot.descendant_names(subscriber.pid)))
+            .collect();
         state.projection = Some(snapshot);
         if state.projection_queued {
             continue;

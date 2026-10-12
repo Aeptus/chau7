@@ -66,6 +66,8 @@ pub struct TerminalSettings {
     /// `[next] ls_colors_enabled` (`terminal.lsColorsEnabled`).
     pub ls_colors: bool,
     pub scrollback_lines: usize,
+    /// Closed-tab shell history budget, distinct from SQLite history records.
+    pub shell_history_max_lines: usize,
     /// `[next] restored_scrollback_lines` (`terminal.restoredScrollbackLines`):
     /// lines of scrollback replayed when tabs are recovered, 0 disables.
     pub restored_scrollback_lines: usize,
@@ -87,6 +89,7 @@ impl Default for TerminalSettings {
             startup_command: String::new(),
             ls_colors: true,
             scrollback_lines: 10_000,
+            shell_history_max_lines: chau7_next_core::shell_histories::DEFAULT_MAX_LINES,
             restored_scrollback_lines: DEFAULT_RESTORED_SCROLLBACK_LINES,
             bell_enabled: true,
             bell_sound: BellSound::Default,
@@ -97,6 +100,17 @@ impl Default for TerminalSettings {
 }
 
 impl TerminalSettings {
+    /// Current Swift's live terminal buffer setting, separate from saved artifacts.
+    pub fn set_scrollback_lines(&mut self, lines: i128) {
+        self.scrollback_lines = lines.clamp(100, 100_000) as usize;
+    }
+
+    /// Current Swift's restore preference; zero disables replay.
+    pub fn set_restored_scrollback_lines(&mut self, lines: i128) {
+        self.restored_scrollback_lines =
+            lines.clamp(0, MAX_RESTORED_SCROLLBACK_LINES as i128) as usize;
+    }
+
     /// The shell choice shown in the settings window: the chosen type, else
     /// the `[general] shell` path as a matching type or a custom path.
     pub fn effective_shell_type(&self) -> (ShellType, String) {
@@ -137,8 +151,8 @@ impl SettingsDomain for TerminalSettings {
             }
         }
         if let Some(terminal) = &src.file.terminal {
-            if let Some(lines) = terminal.scrollback_lines.filter(|l| *l > 0) {
-                self.scrollback_lines = lines.clamp(100, 100_000) as usize;
+            if let Some(lines) = terminal.scrollback_lines {
+                self.set_scrollback_lines(lines.into());
             }
             if let Some(bell) = terminal.bell_enabled {
                 self.bell_enabled = bell;
@@ -146,6 +160,13 @@ impl SettingsDomain for TerminalSettings {
             if let Some(sound) = &terminal.bell_sound {
                 self.bell_sound = BellSound::from_raw(sound);
             }
+        }
+        if let Some(v) = src
+            .next("shell_history_max_lines")
+            .and_then(RawValue::as_int)
+        {
+            self.shell_history_max_lines =
+                v.clamp(0, chau7_next_core::shell_histories::MAX_LINES as i64) as usize;
         }
         if let Some(v) = src.next("shell_type").and_then(RawValue::as_str) {
             self.shell_type = ShellType::from_raw(v);
@@ -166,8 +187,7 @@ impl SettingsDomain for TerminalSettings {
             .next("restored_scrollback_lines")
             .and_then(RawValue::as_int)
         {
-            self.restored_scrollback_lines =
-                v.clamp(0, MAX_RESTORED_SCROLLBACK_LINES as i64) as usize;
+            self.set_restored_scrollback_lines(v.into());
         }
     }
 
@@ -188,6 +208,11 @@ impl SettingsDomain for TerminalSettings {
         out.set_next("restored_scrollback_lines", self.restored_scrollback_lines);
         out.set_next("smart_scroll_enabled", self.smart_scroll);
         out.set_next("split_panes", self.split_panes_enabled);
+        out.set_next(
+            "shell_history_max_lines",
+            self.shell_history_max_lines
+                .min(chau7_next_core::shell_histories::MAX_LINES),
+        );
     }
 }
 
@@ -205,6 +230,7 @@ mod tests {
             startup_command: "echo hi".into(),
             ls_colors: false,
             scrollback_lines: 2_000,
+            shell_history_max_lines: 17,
             restored_scrollback_lines: 0,
             bell_enabled: false,
             bell_sound: BellSound::Visual,
@@ -219,11 +245,22 @@ mod tests {
     }
 
     #[test]
-    fn loads_shell_and_ignores_zero_scrollback() {
+    fn shell_history_budget_defaults_bounds_and_owned_round_trip() {
+        assert_eq!(TerminalSettings::default().shell_history_max_lines, 1000);
+        for (raw, expected) in [(-1, 0), (0, 0), (2345, 2345), (2_000_000, 1_000_000)] {
+            let t: TerminalSettings =
+                load_text(&format!("[next]\nshell_history_max_lines = {raw}\n"));
+            assert_eq!(t.shell_history_max_lines, expected);
+            assert_eq!(round_trip(&t).shell_history_max_lines, expected);
+        }
+    }
+
+    #[test]
+    fn loads_shell_and_clamps_zero_scrollback() {
         let t: TerminalSettings =
             load_text("[general]\nshell = \"/bin/fish\"\n\n[terminal]\nscrollback_lines = 0\n");
         assert_eq!(t.shell.as_deref(), Some("/bin/fish"));
-        assert_eq!(t.scrollback_lines, 10_000);
+        assert_eq!(t.scrollback_lines, 100);
         assert_eq!(
             t.effective_shell_type(),
             (ShellType::Custom, "/bin/fish".to_string())
@@ -265,5 +302,35 @@ mod tests {
             load_text("[next]\nrestored_scrollback_lines = 0\nsplit_panes = false\n");
         assert_eq!(t.restored_scrollback_lines, 0);
         assert!(!t.split_panes_enabled);
+    }
+
+    #[test]
+    fn scrollback_setting_boundaries_survive_config_roundtrip() {
+        for raw in [
+            i64::MIN,
+            -1,
+            0,
+            99,
+            100,
+            101,
+            10_000,
+            100_000,
+            100_001,
+            i64::MAX,
+        ] {
+            let actual: TerminalSettings = load_text(&format!(
+                "[terminal]\nscrollback_lines = {raw}\n\n[next]\nrestored_scrollback_lines = {raw}\n"
+            ));
+            let expected_live = raw.clamp(100, 100_000) as usize;
+            let expected_restore = raw.clamp(0, 10_000) as usize;
+            assert_eq!(actual.scrollback_lines, expected_live, "{raw}");
+            assert_eq!(actual.restored_scrollback_lines, expected_restore, "{raw}");
+            let restored = round_trip(&actual);
+            assert_eq!(restored.scrollback_lines, expected_live, "{raw}");
+            assert_eq!(
+                restored.restored_scrollback_lines, expected_restore,
+                "{raw}"
+            );
+        }
     }
 }

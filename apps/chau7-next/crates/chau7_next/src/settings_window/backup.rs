@@ -98,15 +98,33 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
 /// Export Settings...: save panel, then the JSON document.
 fn export_settings(cx: &mut App) {
     let home = cx.global::<AppData>().root.home().to_path_buf();
-    let text = export::export_json(
+    let text = export::export_json_with_recent(
         &cx.global::<crate::settings::config_files::ConfigFiles>()
             .base,
         &home.to_string_lossy(),
+        &match crate::repository::recent_roots(cx) {
+            Ok(roots) => roots,
+            Err(reason) => {
+                set_message(cx, reason, true);
+                return;
+            }
+        },
     );
+    let text = match text {
+        Ok(text) => text,
+        Err(reason) => {
+            set_message(cx, reason, true);
+            return;
+        }
+    };
     let path = cx.prompt_for_new_path(&home, Some(export::EXPORT_FILE_NAME));
+    let background = cx.background_executor().clone();
     cx.spawn(async move |cx| {
         if let Ok(Ok(Some(path))) = path.await {
-            let result = std::fs::write(&path, text);
+            let write_path = path.clone();
+            let result = background
+                .spawn(async move { std::fs::write(write_path, text) })
+                .await;
             cx.update(|cx| match result {
                 Ok(()) => set_message(
                     cx,
@@ -131,6 +149,7 @@ fn import_settings(cx: &mut App) {
         multiple: false,
         prompt: Some("Import".into()),
     });
+    let background = cx.background_executor().clone();
     cx.spawn(async move |cx| {
         let Ok(Ok(Some(paths))) = paths.await else {
             return;
@@ -138,7 +157,10 @@ fn import_settings(cx: &mut App) {
         let Some(path) = paths.into_iter().next() else {
             return;
         };
-        let text = std::fs::read_to_string(&path);
+        let read_path = path.clone();
+        let text = background
+            .spawn(async move { export::read_settings_document(&read_path) })
+            .await;
         cx.update(|cx| {
             let text = match text {
                 Ok(text) => text,
@@ -157,12 +179,17 @@ fn import_settings(cx: &mut App) {
                 .global::<crate::settings::config_files::ConfigFiles>()
                 .base
                 .clone();
-            match export::import_json(&mut base, &text, &home) {
-                Ok(()) => {
+            match export::import_json_with_recent(&mut base, &text, &home) {
+                Ok(recent_roots) => {
                     replace_base(cx, base);
+                    if let Some(roots) = recent_roots {
+                        crate::repository::import_recent_roots(roots, cx);
+                    }
                     set_message(cx, "Settings imported".to_string(), false);
                 }
-                Err(_) => set_message(cx, "Invalid settings file format".to_string(), true),
+                Err(reason) => {
+                    set_message(cx, format!("Invalid settings file format: {reason}"), true)
+                }
             }
         });
     })

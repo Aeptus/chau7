@@ -84,6 +84,9 @@ pub struct TerminalView {
     /// Keyboard and mouse state (`input.rs`, `mouse.rs`).
     input: input::InputState,
     refresh_interactive: bool,
+    winsize_state: chau7_next_core::session_restore::lifecycle::WinsizeNudgeState,
+    /// Dropping/replacing these tasks cancels pending signals on hide/dispose.
+    winsize_nudges: Vec<Task<()>>,
     _blink: Task<()>,
     _subscriptions: Vec<gpui::Subscription>,
 }
@@ -112,6 +115,9 @@ impl TerminalView {
         let mut subscriptions = vec![cx.observe(&session, |_, _, cx| cx.notify())];
         subscriptions.push(cx.on_release(|this, cx| this.overlays.release_cpu_frame(cx)));
         subscriptions.push(cx.subscribe(&session, |this, _, event, cx| {
+            if matches!(event, SessionEvent::MetadataChanged) {
+                this.sync_winsize_nudges(None, cx);
+            }
             if let SessionEvent::ClipboardStore(text) = event {
                 crate::workspace::record_clipboard(text, cx);
                 cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
@@ -197,6 +203,8 @@ impl TerminalView {
             danger: danger::DangerState::new(scrollback),
             input: input::InputState::new(scrollback),
             refresh_interactive: false,
+            winsize_state: Default::default(),
+            winsize_nudges: Vec::new(),
             _blink: blink,
             _subscriptions: subscriptions,
         };
@@ -224,7 +232,10 @@ impl TerminalView {
         self.font_size
     }
 
-    fn update_refresh_pacing(&mut self, window: &Window, cx: &App) {
+    fn update_refresh_pacing(&mut self, window: &Window, cx: &mut Context<Self>) {
+        self.session
+            .read(cx)
+            .mark_restore_surface(window.is_visible());
         self.refresh_interactive = window.is_visible()
             && window.is_window_active()
             && self.focus_handle.is_focused(window);
@@ -234,6 +245,92 @@ impl TerminalView {
             rendering.active_polling_rate_cap,
             rendering.inactive_view_max_fps,
         );
+        self.sync_winsize_nudges(None, cx);
+    }
+
+    /// Resize signals are bounded and coalesced. The syscall runs off UI and
+    /// targets only this owned view's foreground process group.
+    fn sync_winsize_nudges(&mut self, dimensions: Option<(u16, u16)>, cx: &mut Context<Self>) {
+        use chau7_next_core::session_restore::lifecycle::{
+            WINSIZE_NUDGE_DELAYS, WinsizeNudgeDecision, protects_terminal_ui,
+        };
+        let session = self.session.read(cx);
+        let visible = session.restore_surface_visible();
+        // Background blink ticks only revoke pending work. They need neither
+        // terminal locks nor repeated provider-name allocations.
+        if !visible {
+            self.winsize_state.update(false, false, dimensions);
+            self.winsize_nudges.clear();
+            return;
+        }
+        let shell = session.shell();
+        let display = shell.ai_display_app_name();
+        let hosts_tui = session.with_terminal(|term| term.is_alternate_screen_active())
+            || protects_terminal_ui(
+                &[
+                    shell.live_agent_name(),
+                    shell.active_app(),
+                    display.as_deref(),
+                    shell.ai_provider(),
+                ],
+                session.is_ai_running(),
+                session.has_pending_restore_resume(),
+                session.status(),
+            );
+        match self.winsize_state.update(visible, hosts_tui, dimensions) {
+            WinsizeNudgeDecision::Keep => {}
+            WinsizeNudgeDecision::Cancel => self.winsize_nudges.clear(),
+            WinsizeNudgeDecision::Schedule => {
+                self.winsize_nudges.clear();
+                for delay in WINSIZE_NUDGE_DELAYS {
+                    self.winsize_nudges.push(cx.spawn(async move |this, cx| {
+                        cx.background_executor().timer(delay).await;
+                        let Ok(Some(term)) = this.update(cx, |this, cx| {
+                            let session = this.session.read(cx);
+                            (session.restore_surface_visible() && session.exited.is_none())
+                                .then(|| session.remote_terminal())
+                        }) else {
+                            return;
+                        };
+                        cx.background_spawn(async move {
+                            term.read().nudge_winsize();
+                        })
+                        .await;
+                    }));
+                }
+            }
+        }
+    }
+
+    /// Existing live frames repaint in place. Initial/explicit reveals refresh
+    /// the authoritative grid and await the actual next paint for resume input.
+    pub(crate) fn reveal_surface(
+        &mut self,
+        trigger: chau7_next_core::session_restore::lifecycle::RevealTrigger,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        use chau7_next_core::session_restore::lifecycle::{RevealAction, reveal_action};
+        self.update_refresh_pacing(window, cx);
+        let session = self.session.clone();
+        let visible = session.read(cx).restore_surface_visible();
+        if !visible {
+            return;
+        }
+        session.read(cx).set_render_suspended(false);
+        let action = reveal_action(
+            trigger,
+            visible,
+            true,
+            session.read(cx).surface_has_live_frame(),
+        );
+        if matches!(action, RevealAction::Authoritative { .. }) {
+            session.update(cx, |session, cx| {
+                session.request_surface_frame();
+                session.refresh(cx);
+            });
+        }
+        cx.notify();
     }
 
     /// Cursor blink (`handleBlinkTick`): toggles every blink interval (500 ms
@@ -242,24 +339,34 @@ impl TerminalView {
     /// hidden tabs when Suspend Background Rendering is on. Returns the next
     /// interval.
     fn blink_tick(&mut self, cx: &mut Context<Self>) -> Duration {
+        self.sync_winsize_nudges(None, cx);
         let mut wake =
             chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::wakeup(
                 "cursor_blink_timer",
                 self.session.read(cx).profiling_phase(),
                 chau7_next_core::work_profiler::Queue::Main,
             ));
-        wake.idle(!self.overlays.recently_painted(Duration::from_secs(1)));
+        let visible = self.session.read(cx).restore_surface_visible();
+        wake.idle(!visible || !self.overlays.recently_painted(Duration::from_secs(1)));
         let appearance = &Settings::get(cx).appearance;
         let interval = appearance.blink_interval();
         let rendering = appearance.rendering.clone();
-        let visible = self.overlays.recently_painted(interval * 2);
-        let suspend = rendering.suspend_background
-            && !self
-                .overlays
-                .recently_painted(Duration::from_secs_f32(rendering.suspend_delay_secs));
+        let delay = if rendering.suspend_delay_secs.is_finite() {
+            Duration::from_secs_f32(rendering.suspend_delay_secs.max(0.0))
+        } else {
+            Duration::from_secs(5)
+        };
+        let prewarm = self.session.read(cx).surface_prewarm_remaining();
+        let suspend = prewarm.is_none()
+            && chau7_next_core::session_restore::lifecycle::suspend_hidden_surface(
+                visible,
+                self.session.read(cx).surface_hidden_for(),
+                rendering.suspend_background,
+                delay,
+            );
         let session = self.session.read(cx);
         session.set_refresh_pacing(
-            self.refresh_interactive,
+            self.refresh_interactive && visible,
             rendering.active_polling_rate_cap,
             rendering.inactive_view_max_fps,
         );
@@ -267,6 +374,17 @@ impl TerminalView {
             session.set_render_suspended(suspend);
         }
         if !visible {
+            if let Some(remaining) = prewarm {
+                return interval.min(remaining.max(Duration::from_millis(1)));
+            }
+            // Wake at the configured suspension deadline rather than adding an
+            // arbitrary cursor-blink interval to the actual hidden duration.
+            if rendering.suspend_background
+                && !suspend
+                && let Some(age) = session.surface_hidden_for()
+            {
+                return interval.min(delay.saturating_sub(age).max(Duration::from_millis(1)));
+            }
             return interval;
         }
         if appearance.cursor_blink {
@@ -308,18 +426,37 @@ impl TerminalView {
     }
 
     fn write(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
-        self.write_without_broadcast(bytes, cx);
-        cx.emit(TerminalViewEvent::Input(bytes.to_vec()));
+        self.admit_steps(
+            vec![chau7_next_core::remote::key_input::InputStep {
+                bytes: bytes.to_vec(),
+                delay_ms: 0,
+            }],
+            true,
+            cx,
+        );
     }
 
-    /// Write user input that came from another terminal (broadcast mode).
-    pub fn write_without_broadcast(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+    /// User/automation input, including broadcasts, uses the same admission.
+    pub fn write_without_broadcast(&mut self, bytes: &[u8], cx: &mut Context<Self>) -> bool {
+        self.send_guarded_steps(
+            vec![chau7_next_core::remote::key_input::InputStep {
+                bytes: bytes.to_vec(),
+                delay_ms: 0,
+            }],
+            cx,
+        )
+    }
+
+    fn write_admitted(&mut self, bytes: &[u8], broadcast: bool, cx: &mut Context<Self>) {
         let session = self.session.read(cx);
         session.scroll_to_bottom();
         session.selection_clear();
         session.write_input(bytes);
         self.cursor_on = true;
         self.note_user_input(bytes, cx);
+        if broadcast {
+            cx.emit(TerminalViewEvent::Input(bytes.to_vec()));
+        }
     }
 
     /// Cmd+C: copy the selection, or send Ctrl-C (interrupt) when nothing
@@ -415,6 +552,7 @@ fn png_name(name: &str) -> String {
 
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.focus_guard(window, cx);
         self.update_refresh_pacing(window, cx);
         if window.is_visible() {
             self.session.read(cx).mark_memory_visible(cx);
@@ -481,16 +619,27 @@ impl Render for TerminalView {
                         let view = view.clone();
                         move |bounds, _window, cx| {
                             // Resize the PTY to fit, then snapshot.
-                            let cols = ((bounds.size.width - gutter).max(px(0.0))
-                                / metrics.cell_width)
-                                .floor()
-                                .max(2.0) as u16;
-                            let rows =
-                                (bounds.size.height / metrics.line_height).floor().max(1.0) as u16;
-                            session.update(cx, |s, _| s.resize(cols, rows));
+                            let dimensions =
+                                chau7_next_core::session_restore::lifecycle::surface_dimensions(
+                                    f32::from(bounds.size.width - gutter),
+                                    f32::from(bounds.size.height),
+                                    f32::from(metrics.cell_width),
+                                    f32::from(metrics.line_height),
+                                );
+                            if let Some((cols, rows)) = dimensions {
+                                session.update(cx, |s, _| s.resize(cols, rows));
+                            }
+                            // A busy resize may still be pending. Observe applied
+                            // grid dimensions so its later successful retry re-arms
+                            // the post-resize signals instead of caching a request.
+                            let actual_dimensions = dimensions.map(|_| {
+                                let session = session.read(cx);
+                                (session.grid.cols, session.grid.rows)
+                            });
                             // A painted tab is visible: never suspended.
                             session.read(cx).set_render_suspended(false);
                             view.update(cx, |v, cx| {
+                                v.sync_winsize_nudges(actual_dimensions, cx);
                                 v.bounds = Some(bounds);
                                 let mut inputs = inputs;
                                 let s = session.read(cx);
@@ -508,6 +657,7 @@ impl Render for TerminalView {
                             cx,
                         );
                         paint::paint_grid(bounds, state, window, cx);
+                        view.read(cx).session.read(cx).mark_restore_presented();
                     },
                 )
                 .size_full(),
@@ -518,6 +668,69 @@ impl Render for TerminalView {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn collapsed_surface_keeps_actual_restored_grid_and_scrollback() {
+        let terminal = chau7_terminal::Chau7Terminal::new_headless(80, 24).unwrap();
+        for line in 0..60 {
+            terminal.inject_output(format!("restore-{line:02}\r\n").as_bytes());
+        }
+        let before = terminal.full_buffer_ansi_text();
+        for (width, height) in [
+            (0.0, 0.0),
+            (8.0, 384.0),
+            (640.0, 16.0),
+            (f32::NAN, 384.0),
+            (640.0, f32::INFINITY),
+        ] {
+            if let Some((cols, rows)) =
+                chau7_next_core::session_restore::lifecycle::surface_dimensions(
+                    width, height, 8.0, 16.0,
+                )
+            {
+                terminal.resize(cols, rows);
+            }
+            let grid = terminal.grid_copy();
+            assert_eq!((grid.cols, grid.rows), (80, 24));
+            assert_eq!(terminal.full_buffer_ansi_text(), before);
+        }
+        let (cols, rows) =
+            chau7_next_core::session_restore::lifecycle::surface_dimensions(160.0, 64.0, 8.0, 16.0)
+                .unwrap();
+        terminal.resize(cols, rows);
+        assert_eq!(
+            (terminal.grid_copy().cols, terminal.grid_copy().rows),
+            (20, 4)
+        );
+        assert!(terminal.full_buffer_text().contains("restore-59"));
+    }
+    #[test]
+    fn nudge_and_geometry_policies_are_wired_into_actual_view_lifecycle() {
+        let source = include_str!("view.rs");
+        let resize = source
+            .split("// Resize the PTY to fit, then snapshot.")
+            .nth(1)
+            .unwrap()
+            .split("// A painted tab is visible")
+            .next()
+            .unwrap();
+        assert!(resize.contains("surface_dimensions("));
+        assert!(resize.contains("if let Some((cols, rows)) = dimensions"));
+        assert!(!resize.contains(".max(1.0) as u16"));
+        assert!(resize.contains("let actual_dimensions = dimensions.map"));
+        assert!(resize.contains("(session.grid.cols, session.grid.rows)"));
+        let nudges = source
+            .split("    fn sync_winsize_nudges(")
+            .nth(1)
+            .unwrap()
+            .split("    /// Existing live frames")
+            .next()
+            .unwrap();
+        assert!(nudges.contains("session.has_pending_restore_resume()"));
+        assert!(nudges.contains("session.restore_surface_visible() && session.exited.is_none()"));
+        assert!(nudges.contains("self.winsize_nudges.clear()"));
+        assert!(nudges.contains("cx.background_spawn("));
+        assert!(nudges.contains("term.read().nudge_winsize()"));
+    }
     #[test]
     fn switching_renderer_refreshes_existing_terminal_font_metrics() {
         let mut settings = crate::settings::Settings::default();

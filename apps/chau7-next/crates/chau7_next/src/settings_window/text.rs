@@ -10,7 +10,13 @@ use gpui_kit::component::input::Input;
 use super::SectionContext;
 use super::update;
 use super::widgets::{chip, row, section as titled, stepper, toggle};
-use crate::settings::CursorShape;
+use crate::settings::{CursorShape, Settings};
+
+fn change_font_size(settings: &mut Settings, delta: i32) {
+    settings
+        .appearance
+        .set_font_size(settings.appearance.font_size + delta as f32);
+}
 
 /// `None` while the field is empty, else whether the font is installed.
 pub(super) fn validate_font(family: &str, installed: &[String]) -> Option<bool> {
@@ -96,44 +102,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             })
     });
 
-    let cursor = [
-        ("Block", CursorShape::Block),
-        ("Bar", CursorShape::Bar),
-        ("Underline", CursorShape::Underline),
-    ]
-    .into_iter()
-    .map(|(label, shape)| {
-        let active = s.cursor_shape == shape;
-        chip(
-            SharedString::from(format!("cursor-{label}")),
-            label,
-            active,
-            chrome,
-        )
-        .on_click(move |_, _, cx| update(cx, |s| s.appearance.cursor_shape = shape.clone()))
-    });
-    let cursor_colors = CURSOR_COLORS.iter().map(|(label, hex)| {
-        let active = s.cursor_color.eq_ignore_ascii_case(hex);
-        chip(
-            SharedString::from(format!("cursor-color-{label}")),
-            *label,
-            active,
-            chrome,
-        )
-        .when(!hex.is_empty(), |d| {
-            d.child(
-                div()
-                    .ml_1()
-                    .size(px(8.0))
-                    .rounded_full()
-                    .bg(crate::terminal::paint::cursor_color(s.color_scheme, hex)),
-            )
-            .flex()
-            .items_center()
-        })
-        .on_click(move |_, _, cx| update(cx, |s| s.appearance.cursor_color = hex.to_string()))
-    });
-
     titled("Text", chrome)
         .child(row("Font", picker, chrome))
         .child(row(
@@ -153,9 +121,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                 "font-size",
                 format!("{:.0} pt", s.font_size),
                 chrome,
-                |s, d| {
-                    s.appearance.font_size = (s.appearance.font_size + d as f32).clamp(6.0, 72.0)
-                },
+                change_font_size,
             ),
             chrome,
         ))
@@ -198,6 +164,57 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                     "The quick brown fox jumps over the lazy dog  -> => != ===",
                 )),
         )
+        .child(row(
+            "Padding",
+            stepper("padding", format!("{:.0} px", s.padding), chrome, |s, d| {
+                s.appearance.padding = (s.appearance.padding + 2.0 * d as f32).clamp(0.0, 40.0)
+            }),
+            chrome,
+        ))
+}
+
+pub(super) fn cursor(ctx: &SectionContext) -> gpui::Div {
+    let chrome = ctx.chrome;
+    let s = &ctx.settings.appearance;
+    let cursor = [
+        ("Block", CursorShape::Block),
+        ("Bar", CursorShape::Bar),
+        ("Underline", CursorShape::Underline),
+    ]
+    .into_iter()
+    .map(|(label, shape)| {
+        let active = s.cursor_shape == shape;
+        chip(
+            SharedString::from(format!("cursor-{label}")),
+            label,
+            active,
+            chrome,
+        )
+        .on_click(move |_, _, cx| update(cx, |s| s.appearance.cursor_shape = shape.clone()))
+    });
+    let cursor_colors = CURSOR_COLORS.iter().map(|(label, hex)| {
+        let active = s.cursor_color.eq_ignore_ascii_case(hex);
+        chip(
+            SharedString::from(format!("cursor-color-{label}")),
+            *label,
+            active,
+            chrome,
+        )
+        .when(!hex.is_empty(), |d| {
+            d.child(
+                div()
+                    .ml_1()
+                    .size(px(8.0))
+                    .rounded_full()
+                    .bg(crate::terminal::paint::cursor_color(s.color_scheme, hex)),
+            )
+            .flex()
+            .items_center()
+        })
+        .on_click(move |_, _, cx| update(cx, |s| s.appearance.cursor_color = hex.to_string()))
+    });
+
+    titled("Cursor", chrome)
         .child(row("Cursor", div().flex().gap_1().children(cursor), chrome))
         .child(row(
             "Cursor color",
@@ -231,13 +248,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             ),
             chrome,
         ))
-        .child(row(
-            "Padding",
-            stepper("padding", format!("{:.0} px", s.padding), chrome, |s, d| {
-                s.appearance.padding = (s.appearance.padding + 2.0 * d as f32).clamp(0.0, 40.0)
-            }),
-            chrome,
-        ))
 }
 
 #[cfg(test)]
@@ -257,5 +267,22 @@ mod tests {
         assert_eq!(weight_name(5), "Regular");
         assert_eq!(weight_name(9), "Bold");
         assert_eq!(weight_name(14), "Black");
+    }
+
+    #[test]
+    fn actual_font_control_uses_current_swift_setting_range() {
+        for (start, delta, expected) in [
+            (8.0, -1, 8.0),
+            (8.0, 1, 9.0),
+            (72.0, 1, 72.0),
+            (72.0, -1, 71.0),
+            (11.0, i32::MIN, 8.0),
+            (11.0, i32::MAX, 72.0),
+        ] {
+            let mut settings = Settings::default();
+            settings.appearance.font_size = start;
+            change_font_size(&mut settings, delta);
+            assert_eq!(settings.appearance.font_size, expected);
+        }
     }
 }

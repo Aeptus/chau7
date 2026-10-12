@@ -146,7 +146,26 @@ pub(super) fn paint_border(
 
 impl Workspace {
     pub(super) fn session_info(&self, id: TabId, cx: &App) -> Option<TabSessionInfo> {
-        let session = self.entries.get(&id)?.panes.read(cx).focused_session(cx)?;
+        let tree = self.entries.get(&id)?.panes.read(cx);
+        if let Some(saved) = tree.deferred_saved() {
+            let pane = saved.focused_terminal();
+            return Some(TabSessionInfo {
+                ai_app: pane.and_then(|pane| {
+                    chau7_next_core::shell_session::display_name_from_provider(
+                        pane.ai_provider.as_deref(),
+                    )
+                }),
+                ai_running: false,
+                in_git_repo: self
+                    .state
+                    .get(id)
+                    .is_some_and(|meta| meta.git_root.is_some())
+                    || pane.is_some_and(|pane| pane.known_repo_root.is_some()),
+                git_branch: pane.and_then(|pane| pane.known_git_branch.clone()),
+                vite: false,
+            });
+        }
+        let session = tree.focused_session(cx)?;
         let session = session.read(cx);
         Some(TabSessionInfo {
             ai_app: session.ai_display_app_name(),
@@ -163,7 +182,24 @@ impl Workspace {
     /// Secondary label as `tabPathDisplayName`: the git root's name, else the
     /// `~`-abbreviated directory.
     pub(super) fn tab_path(&self, id: TabId, cx: &App) -> Option<String> {
-        let session = self.entries.get(&id)?.panes.read(cx).focused_session(cx)?;
+        let tree = self.entries.get(&id)?.panes.read(cx);
+        if let Some(saved) = tree.deferred_saved() {
+            let pane = saved.focused_terminal();
+            let root = self
+                .state
+                .get(id)
+                .and_then(|meta| meta.git_root.as_deref())
+                .or_else(|| pane.and_then(|pane| pane.known_repo_root.as_deref()));
+            if let Some(root) = root {
+                return std::path::Path::new(root)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned());
+            }
+            return tree
+                .cwd(cx)
+                .map(|cwd| procinfo::display_path(&cwd, cx.global::<AppData>().root.home()));
+        }
+        let session = tree.focused_session(cx)?;
         let session = session.read(cx);
         if let Some(root) = &session.git_root {
             return root.file_name().map(|n| n.to_string_lossy().to_string());

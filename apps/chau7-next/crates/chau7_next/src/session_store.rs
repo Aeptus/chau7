@@ -19,72 +19,15 @@ use std::time::{Duration, SystemTime};
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::session_restore::transaction::{ContextRef, SourceDecision, source_decision};
 use chau7_next_core::session_restore::{
-    MAX_SCROLLBACK_BYTES, SavedSplitNode, build_ai_resume_command,
-    resolve_resume_metadata_from_saved,
+    MAX_SCROLLBACK_BYTES, build_ai_resume_command, resolve_resume_metadata_from_saved,
 };
-use chau7_next_core::token_optimization::TabTokenOptOverride;
+#[cfg(test)]
+use chau7_next_core::{session_restore::SavedSplitNode, token_optimization::TabTokenOptOverride};
 use serde::{Deserialize, Serialize};
 
-/// What is saved for one terminal pane (`SavedTerminalPaneState`). The
-/// scrollback text itself lives in `DataRoot::scrollback_dir()/<id>.txt`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SavedPane {
-    pub id: u64,
-    pub directory: Option<String>,
-    /// A scrollback file exists for this pane.
-    #[serde(default)]
-    pub scrollback: bool,
-    pub ai_provider: Option<String>,
-    pub ai_session_id: Option<String>,
-    /// `claude --resume <id>` or `codex resume <id>`, typed into the prompt
-    /// (not run) after the restore.
-    pub ai_resume_command: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SavedTab {
-    /// Stable tab identity (`OverlayTab.id`), the same after relaunch.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub uuid: Option<uuid::Uuid>,
-    pub cwd: Option<PathBuf>,
-    pub custom_title: Option<String>,
-    pub color: Option<String>,
-    pub repo_group_id: Option<String>,
-    /// Per-tab token optimization override (`tokenOptOverride`), absent for "default".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub token_opt_override: Option<TabTokenOptOverride>,
-    /// When the tab was created, Unix seconds (`createdAt`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub created_at: Option<f64>,
-    /// The color was picked by hand (beats the automatic AI color).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub manual_color: bool,
-    /// Split layout of the tab (`splitLayout`); `None` for a single shell
-    /// started in `cwd` (sessions saved by older versions).
-    #[serde(default)]
-    pub layout: Option<SavedSplitNode>,
-    /// Focused terminal pane (`focusedPaneID`).
-    #[serde(default)]
-    pub focused_pane: Option<u64>,
-    #[serde(default)]
-    pub panes: Vec<SavedPane>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SavedWindow {
-    pub tabs: Vec<SavedTab>,
-    pub selected: usize,
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct SavedSession {
-    pub version: u32,
-    pub windows: Vec<SavedWindow>,
-}
+pub use chau7_next_core::session_restore::models::{
+    SavedPane, SavedSession, SavedTab, SavedWindow,
+};
 
 /// Archive at most every five minutes, with current Swift count/byte bounds.
 const ARCHIVE_INTERVAL: Duration = Duration::from_secs(300);
@@ -148,7 +91,7 @@ fn parse_bundle(path: &Path) -> Option<RestoreBundle> {
 
 /// Temp files are exclusive and private; both content and parent directory
 /// are flushed before publishing the next transaction marker.
-fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let parent = path
         .parent()
@@ -528,6 +471,56 @@ fn recover_legacy_windows(root: &DataRoot, session: &mut SavedSession, paths: &[
         session.windows.extend(additional);
         return;
     }
+}
+
+/// Primary restore identities used by owned shell-history maintenance. No
+/// archive hydration or provider lookup is necessary for this read-only query.
+pub(crate) fn restorable_tab_ids(root: &DataRoot) -> std::collections::HashSet<uuid::Uuid> {
+    let mut ids = std::collections::HashSet::new();
+    let mut collect = |session: SavedSession| {
+        ids.extend(
+            session
+                .windows
+                .into_iter()
+                .flat_map(|window| window.tabs)
+                .filter_map(|tab| tab.uuid),
+        );
+    };
+    if let Some(index) = parse_index(&root.session_file()) {
+        collect(index.session);
+    } else if let Ok(bytes) = read_bounded(&root.session_file(), MAX_MANIFEST_BYTES) {
+        // Historical single-window primary manifests have no top-level
+        // windows. Only UUIDs are needed; never hydrate terminal sidecars.
+        #[derive(Deserialize)]
+        struct IdentityTab {
+            #[serde(default)]
+            uuid: Option<uuid::Uuid>,
+        }
+        #[derive(Deserialize)]
+        struct IdentityWindow {
+            tabs: Vec<IdentityTab>,
+        }
+        if let Ok(window) = serde_json::from_slice::<IdentityWindow>(&bytes) {
+            collect(SavedSession {
+                version: 1,
+                windows: vec![SavedWindow {
+                    tabs: window
+                        .tabs
+                        .into_iter()
+                        .map(|tab| SavedTab {
+                            uuid: tab.uuid,
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                }],
+            });
+        }
+    }
+    if let Some(bundle) = parse_bundle(&bundle_file(root)) {
+        collect(bundle.session);
+    }
+    ids
 }
 
 pub fn load(root: &DataRoot) -> Option<SavedSession> {
@@ -920,6 +913,7 @@ mod tests {
                         ai_provider: Some("claude".into()),
                         ai_session_id: Some("abc".into()),
                         ai_resume_command: Some("claude --resume abc".into()),
+                        ..Default::default()
                     }],
                 }],
                 selected: 0,
@@ -966,6 +960,44 @@ mod tests {
                 ..Default::default()
             }],
         }
+    }
+    #[test]
+    fn history_protection_reads_only_primary_index_and_bundle_without_sidecars() {
+        let root = isolated_root();
+        save(&root, &one_tab(1, "archived")).unwrap();
+        save_for(&root, &one_tab(2, "primary"), true).unwrap();
+        // Older archive UUIDs are not permanently protected. Sidecars are
+        // irrelevant to this bounded identity-only read.
+        assert_eq!(
+            restorable_tab_ids(&root),
+            [uuid::Uuid::from_u128(2)].into_iter().collect()
+        );
+        std::fs::write(
+            root.session_file(),
+            serde_json::to_vec(&one_tab(3, "legacy-single-window")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            restorable_tab_ids(&root),
+            [uuid::Uuid::from_u128(2), uuid::Uuid::from_u128(3)]
+                .into_iter()
+                .collect()
+        );
+        std::fs::write(bundle_file(&root), "malformed").unwrap();
+        assert_eq!(
+            restorable_tab_ids(&root),
+            [uuid::Uuid::from_u128(3)].into_iter().collect()
+        );
+        std::fs::write(
+            root.session_file(),
+            serde_json::to_vec(&one_tab(4, "legacy").windows[0]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            restorable_tab_ids(&root),
+            [uuid::Uuid::from_u128(4)].into_iter().collect()
+        );
+        std::fs::remove_dir_all(root.home()).unwrap();
     }
     #[test]
     fn interrupted_bundle_commit_recovers_newer_source_but_not_stale_bundle() {

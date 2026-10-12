@@ -455,11 +455,7 @@ fn permissions_for(
 fn tab_context(tab: &McpTab, cx: &App) -> Option<MCPTabContext> {
     let session = tab.window.workspace.read(cx).mcp_session(tab.tab, cx)?;
     let s = session.read(cx);
-    let processes = crate::platform::process::process_tree(s.shell_pid() as u32)
-        .into_iter()
-        .skip(1)
-        .filter_map(crate::platform::process::process_name)
-        .collect();
+    let processes = crate::monitoring::process_tree::observed_names(s.shell_pid() as u32, cx);
     Some(MCPTabContext {
         directory: s.cwd.as_ref().map(|p| p.to_string_lossy().into_owned()),
         git_branch: s.git_branch.clone(),
@@ -474,8 +470,13 @@ fn send_to_tab(tab: &McpTab, bytes: &[u8], cx: &mut App) -> bool {
     let Some(panes) = tab.window.workspace.read(cx).mcp_panes(tab.tab) else {
         return false;
     };
-    PaneTree::send_input(&panes, bytes, cx);
-    true
+    PaneTree::send_input(&panes, bytes, cx)
+}
+
+fn input_held() -> String {
+    encode_sorted(
+        &json!({"ok": false, "delivered": false, "error": "Input not delivered: terminal unavailable or command approval pending/blocked"}),
+    )
 }
 
 fn authorize(tab_id: &str, owner: Option<&str>, cx: &mut App) -> Result<(), String> {
@@ -533,7 +534,9 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
             let preview: String = command.chars().take(80).collect();
             if loading {
                 // The shell reads it once started (`sendOrQueueInput`).
-                send_to_tab(&tab, format!("{command}\n").as_bytes(), cx);
+                if !send_to_tab(&tab, format!("{command}\n").as_bytes(), cx) {
+                    return input_held();
+                }
                 log::info!("MCP: queued exec in {tab_id}: {preview}");
                 return encode_sorted(&json!({"ok": true, "queued": true}));
             }
@@ -542,7 +545,9 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
                     "Tab is not at prompt (status: not at prompt). Wait for the current process to finish or use tab_send_input for interactive input.",
                 );
             }
-            send_to_tab(&tab, format!("{command}\n").as_bytes(), cx);
+            if !send_to_tab(&tab, format!("{command}\n").as_bytes(), cx) {
+                return input_held();
+            }
             log::info!("MCP: exec in {tab_id}: {preview}");
             encode_sorted(&json!({"ok": true, "queued": false}))
         })
@@ -579,7 +584,9 @@ pub(crate) fn send_input(tab_id: &str, input: &str, ctx: &ToolContext) -> String
             let Some(tab) = find_tab(&tab_id, cx) else {
                 return not_found(&tab_id);
             };
-            send_to_tab(&tab, input.as_bytes(), cx);
+            if !send_to_tab(&tab, input.as_bytes(), cx) {
+                return input_held();
+            }
             log::info!(
                 "MCP: send_input to {tab_id} ({} chars)",
                 input.chars().count()
@@ -612,7 +619,7 @@ fn press_key(tab_id: &str, key: &str, modifiers: &[String], ctx: &ToolContext) -
                 return not_found(&tab_id);
             };
             if !PaneTree::send_key_press(&panes, &press, cx) {
-                return json_error("unsupported key");
+                return json_error("Key not delivered: unsupported key, unavailable terminal, or pending/blocked command approval");
             }
             log::info!(
                 "MCP: press_key in {tab_id}: key={} modifiers={}",
@@ -682,6 +689,16 @@ pub(crate) fn status(tab_id: &str, ctx: &ToolContext) -> String {
     encode_sorted(&Value::Object(summary))
 }
 
+fn close_requires_force(status: CommandStatus) -> bool {
+    matches!(
+        status,
+        CommandStatus::Running
+            | CommandStatus::WaitingForInput
+            | CommandStatus::ApprovalRequired
+            | CommandStatus::Stuck
+    )
+}
+
 pub(crate) fn close_tab(tab_id: &str, force: bool, cx: &mut App) -> String {
     if parse_tab_id(tab_id).is_none() {
         return json_error(&format!("Invalid tab ID: {tab_id}"));
@@ -696,11 +713,8 @@ pub(crate) fn close_tab(tab_id: &str, force: bool, cx: &mut App) -> String {
             .read(cx)
             .mcp_session(tab.tab, cx)
             .map(|s| s.read(cx).status());
-        if let Some(
-            status @ (CommandStatus::Running
-            | CommandStatus::WaitingForInput
-            | CommandStatus::ApprovalRequired),
-        ) = status
+        if let Some(status) = status
+            && close_requires_force(status)
         {
             return json_error(&format!(
                 "Tab has a running process (status: {}). Use force=true to close anyway.",
@@ -900,5 +914,20 @@ mod creation_tests {
                 ask: true
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod close_tests {
+    use super::close_requires_force;
+    use chau7_next_core::shell_session::CommandStatus::*;
+    #[test]
+    fn force_false_matches_current_swift_display_session_statuses() {
+        for status in [Running, WaitingForInput, ApprovalRequired, Stuck] {
+            assert!(close_requires_force(status));
+        }
+        for status in [Idle, Done, Exited] {
+            assert!(!close_requires_force(status));
+        }
     }
 }

@@ -140,6 +140,11 @@ pub fn start(cx: &mut App) {
                 break;
             }
             cx.update(|_| {
+                let _callback = chau7_next_core::work_profiler::timer_callback(
+                    "performance.main_thread_heartbeat",
+                    "callback",
+                    chau7_next_core::work_profiler::Queue::Main,
+                );
                 shared
                     .last_progress_ms
                     .store(uptime_ms(), Ordering::Relaxed);
@@ -672,7 +677,7 @@ mod tests {
             for (suffix, text) in [("json", "{}"), ("sample.txt", "sample")] {
                 let path = dir.join(format!("hang-{i:02}.{suffix}"));
                 fs::write(&path, text).unwrap();
-                OpenOptions::new()
+                std::fs::OpenOptions::new()
                     .write(true)
                     .open(path)
                     .unwrap()

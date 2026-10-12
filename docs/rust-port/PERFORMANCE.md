@@ -68,9 +68,39 @@ Snapshots include up to 128 panes and report `terminal_count` and
 repository paths, environment variables and caller-supplied profiler metadata.
 The existing full bug report remains a separate diagnostic with different data.
 
-The added export does not yet establish parity for Swift's complete durable
-runtime event spine, timer registry or all component health fields. Those
-features remain separate rows in the current-source inventory.
+## Work stages, callbacks and timer inventory
+
+`work_profile` records actual instrumented work, wakeups and latency with static
+operation, phase, visibility, caller and main/background queue labels. Entries
+have lifetime, last-10-second and last-60-second aggregates. The profiler retains
+at most 256 keys and 120 one-second buckets per key; dropped keys are reported.
+Empty rolling aggregates are null. Durations are wall time in milliseconds,
+including readiness waits where explicitly named. They are not per-stage CPU
+time or completed GPU execution time. Missing CPU/GPU measurements stay null.
+
+`idle_samples` counts callbacks explicitly observed to be idle.
+`activity_unknown_samples` counts callbacks whose activity was not observed;
+`activity_classified_samples` counts the remainder. Subtracting idle from all
+samples would incorrectly label unknown samples active. Callbacks for app
+actions, the hang-watchdog heartbeat, readiness and Codex feedback, repository
+persistence and transcript-rate polling measure actual callback or worker work,
+excluding the preceding executor timer wait. Capture, worker and apply phases
+retain their actual queue labels. This covers instrumented producers; it does
+not claim complete attribution for every runtime or third-party callback.
+
+Call `chau7_timer_inventory` separately for registered timer lifetimes. Its
+bounded inventory retains active registrations and recent inactive lifetimes;
+prior deactivations remain in the event journal. A timer registration establishes
+lifecycle and queue information, not a measured callback cost. The durable
+runtime journal is also separate: runtime diagnostics report latest/processed
+sequence, retained memory events, availability and persistence errors. A captured
+latest sequence is durable only when processed sequence has caught up without
+an error. Performance history and journal persistence are distinct writers.
+
+The heartbeat's first unsampled delay and maximum are null. Actual renderer
+selection and retained terminal/cache memory appear in per-pane diagnostics;
+they do not establish unavailable-Metal fallback or identify GPU memory usage
+that the platform has not measured.
 
 ## Observations from the running test package, 2026-10-11
 
