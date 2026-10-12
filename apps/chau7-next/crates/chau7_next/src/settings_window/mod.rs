@@ -237,15 +237,7 @@ pub fn open_at(section: Option<SettingsSection>, anchor_id: Option<&str>, cx: &m
             if view.navigation.selection == SettingsSection::StartHere {
                 crate::permission_center::refresh(cx);
             }
-            if let Some(anchor) = view
-                .navigation
-                .anchor_id
-                .as_deref()
-                .and_then(|id| view.search_anchors.get(id))
-                .cloned()
-            {
-                cx.on_next_frame(window, move |_, window, cx| anchor.scroll_to(window, cx));
-            }
+            view.scroll_to_active_search_anchor(window, cx);
             cx.notify();
         });
     });
@@ -282,6 +274,8 @@ pub struct SettingsView {
     navigation: SettingsNavigation,
     suppress_search_change: bool,
     scroll_handle: ScrollHandle,
+    target_bounds: anchors::TargetBounds,
+    search_scroll_generation: u64,
     search_anchors: std::rc::Rc<std::collections::HashMap<&'static str, ScrollAnchor>>,
     /// Snippets, links, command guard and profile sections.
     mine: mine::MineState,
@@ -343,8 +337,9 @@ impl SettingsView {
         });
         let search_input = cx
             .new(|cx| InputState::new(window, cx).placeholder(crate::l10n::tr("Search settings")));
+        let search_window = window.window_handle();
         let search_subscription =
-            cx.subscribe(&search_input, |this, input, event: &InputEvent, cx| {
+            cx.subscribe(&search_input, move |this, input, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
                     if this.suppress_search_change {
                         this.suppress_search_change = false;
@@ -355,6 +350,15 @@ impl SettingsView {
                         .first()
                         .map(|(section, _)| *section);
                     this.navigation.update_search_query(query, first);
+                    this.search_scroll_generation = this.search_scroll_generation.wrapping_add(1);
+                    let view = this.entity.clone();
+                    cx.defer(move |cx| {
+                        let _ = search_window.update(cx, |_, window, cx| {
+                            let _ = view.update(cx, |view, cx| {
+                                view.scroll_to_active_search_anchor(window, cx)
+                            });
+                        });
+                    });
                     cx.notify();
                 }
             });
@@ -380,6 +384,8 @@ impl SettingsView {
         );
         Self {
             scroll_handle,
+            target_bounds: Default::default(),
+            search_scroll_generation: 0,
             search_anchors,
             mcp,
             cto,
@@ -409,6 +415,54 @@ impl SettingsView {
         }
     }
 
+    fn active_search_anchor_id(&self) -> Option<&'static str> {
+        if let Some(id) = self.navigation.anchor_id.as_deref() {
+            return self.search_anchors.get_key_value(id).map(|(key, _)| *key);
+        }
+        if self.navigation.search_query.is_empty() {
+            return None;
+        }
+        matching_settings(self.navigation.selection, &self.navigation.search_query)
+            .first()
+            .map(|setting| setting.anchor_id)
+    }
+
+    fn scroll_to_active_search_anchor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_scroll_generation = self.search_scroll_generation.wrapping_add(1);
+        self.target_bounds.clear();
+        let generation = self.search_scroll_generation;
+        let Some(id) = self.active_search_anchor_id() else {
+            cx.notify();
+            return;
+        };
+        if self.navigation.selection == SettingsSection::Notifications {
+            self.notif.focus_search_target(id);
+        }
+        // Two frame barriers ensure the selected page is laid out. GPUI's
+        // built-in ScrollAnchor aligns to the top, so use actual target bounds
+        // for Swift's centered alignment and clamp to the rendered content.
+        cx.on_next_frame(window, move |_, window, cx| {
+            cx.on_next_frame(window, move |this, _, cx| {
+                if this.search_scroll_generation != generation
+                    || this.active_search_anchor_id() != Some(id)
+                {
+                    return;
+                }
+                if let Some(target) = this.target_bounds.get(id) {
+                    let viewport = this.scroll_handle.bounds();
+                    let maximum = this.scroll_handle.max_offset();
+                    let offset = this.scroll_handle.offset();
+                    let centered = offset.y + viewport.center().y - target.center().y;
+                    this.scroll_handle
+                        .set_offset(gpui::point(offset.x, centered.clamp(-maximum.y, px(0.0))));
+                    cx.notify();
+                }
+            });
+            cx.notify();
+        });
+        cx.notify();
+    }
+
     fn focus_search_result(
         &mut self,
         setting: &'static SearchableSetting,
@@ -423,21 +477,18 @@ impl SettingsView {
         if self.navigation.selection == SettingsSection::StartHere {
             crate::permission_center::refresh(cx);
         }
-        let anchor = self.search_anchors.get(setting.anchor_id).cloned();
-        if let Some(anchor) = anchor {
-            // The new section must lay out before the nested target is scrolled to.
-            cx.on_next_frame(window, move |_, window, cx| anchor.scroll_to(window, cx));
-        }
+        self.scroll_to_active_search_anchor(window, cx);
         cx.notify();
     }
 
-    fn select(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
+    fn select(&mut self, section: SettingsSection, window: &mut Window, cx: &mut Context<Self>) {
         self.navigation.selection = section;
         self.navigation.clear_anchor();
         self.scroll_handle.set_offset(gpui::point(px(0.), px(0.)));
         if section == SettingsSection::StartHere {
             crate::permission_center::refresh(cx);
         }
+        self.scroll_to_active_search_anchor(window, cx);
         cx.set_global(UiMessage(None));
         cx.notify();
     }
@@ -507,34 +558,37 @@ impl SettingsView {
             );
             for (section, count) in sections {
                 let selected = section == self.navigation.selection;
-                list = list.child(
-                    div()
-                        .id(SharedString::from(format!("section-{}", section.id())))
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap_2()
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
-                        .text_sm()
-                        .cursor_pointer()
-                        .text_color(chrome.text)
-                        .when(selected, |d| d.bg(chrome.tab_selected_bg))
-                        .hover(|d| d.bg(chrome.tab_hover_bg))
-                        .child(crate::l10n::tr(section.title()))
-                        .when(searching, |d| {
-                            d.child(
-                                div()
-                                    .px_1p5()
-                                    .rounded_full()
-                                    .text_xs()
-                                    .bg(chrome.accent.opacity(0.25))
-                                    .child(count.to_string()),
-                            )
-                        })
-                        .on_click(cx.listener(move |this, _, _, cx| this.select(section, cx))),
-                );
+                list =
+                    list.child(
+                        div()
+                            .id(SharedString::from(format!("section-{}", section.id())))
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap_2()
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .text_sm()
+                            .cursor_pointer()
+                            .text_color(chrome.text)
+                            .when(selected, |d| d.bg(chrome.tab_selected_bg))
+                            .hover(|d| d.bg(chrome.tab_hover_bg))
+                            .child(crate::l10n::tr(section.title()))
+                            .when(searching, |d| {
+                                d.child(
+                                    div()
+                                        .px_1p5()
+                                        .rounded_full()
+                                        .text_xs()
+                                        .bg(chrome.accent.opacity(0.25))
+                                        .child(count.to_string()),
+                                )
+                            })
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.select(section, window, cx)
+                            })),
+                    );
             }
         }
         if searching && matches.is_empty() {
@@ -612,9 +666,10 @@ impl SettingsView {
             if !hits.is_empty() {
                 page = page.child(div().flex().flex_wrap().gap_2().pb_3().children(
                     hits.into_iter().map(|setting| {
-                        widgets::button(
+                        widgets::chip(
                             gpui::SharedString::from(format!("search-hit-{}", setting.id)),
                             setting.localized_title(),
+                            self.active_search_anchor_id() == Some(setting.anchor_id),
                             chrome,
                         )
                         .on_click(cx.listener(
@@ -642,9 +697,16 @@ impl SettingsView {
                 ),
             ));
         } else {
-            page = anchors::with_scope(section, self.search_anchors.clone(), || {
-                page.children(blocks.iter().map(|block| block(context)))
-            });
+            page = anchors::with_search_scope(
+                section,
+                self.search_anchors.clone(),
+                anchors::SearchPresentation {
+                    bounds: self.target_bounds.clone(),
+                    active: self.active_search_anchor_id(),
+                    accent: chrome.accent,
+                },
+                || page.children(blocks.iter().map(|block| block(context))),
+            );
         }
         div()
             // One id per section: a newly selected section opens at the top
@@ -737,3 +799,6 @@ impl Render for SettingsView {
 
 #[cfg(test)]
 mod rendered_targets_test;
+
+#[cfg(test)]
+mod search_navigation_test;

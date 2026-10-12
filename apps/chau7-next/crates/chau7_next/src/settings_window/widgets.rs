@@ -20,7 +20,12 @@ pub(super) fn section(title: impl Into<SharedString>, chrome: Chrome) -> gpui::D
         use gpui_kit::test::TestSupportExt;
         header.test_support()
     };
-    div().flex().flex_col().gap_2().pb_4().child(header)
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .pb_4()
+        .child(super::anchors::title_target(&title, header))
 }
 
 pub(super) fn row(
