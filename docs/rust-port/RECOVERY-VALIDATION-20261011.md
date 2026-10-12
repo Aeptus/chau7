@@ -157,3 +157,38 @@ Local evidence is retained as `native-768877-manifest.json`, the three case
 stdout/stderr pairs and build log, plus `source-768877-pinned-*` check logs in
 the recovery evidence directory. Subsequent anchor and fixture corrections
 require their own native rerun. No user session or global permission changed.
+
+## Combined native checkpoint f9e4c17b (2026-10-12)
+
+Clean source `f9e4c17bcfe7cd999e7df2fd0be5649ae0367ba7` passes
+2,887 release workspace tests with two existing ignored tests, strict default
+release workspace/all-target Clippy, formatting, parity and diff checks.
+The installed fixed Rust 1.96.0 toolchain is used throughout.
+
+The reproducible native driver passes restore, settings and editor on this
+single revision. Its separate optional-feature binary SHA-256 is
+`ce322f9d5ee111b0e1fdfa4955e1ca3db2017147e4d29e601797a67590d2a590`.
+Every case has explicit positive JSON, exit zero and owned profile removal.
+Restore observes identity admission 453ms after rapid selection, with no parked
+or transient PTYs and two exact resume deliveries without terminators or
+duplicates. Its registry-based graceful-close count remains zero; the runner
+closes sessions through the quit fallback. A stronger ordinary-registry
+mount and per-PTY closure assertion are required before closing that facet.
+
+Settings has 99 unique targets. All99 intersect the actual viewport on both
+axes with scroll offsets inside bounds after three real frame callbacks each.
+The production alias fix covers the loaded AI Context caption. This proves
+explicit result jumps; per-page summaries and automatic first query-match
+scrolling/highlighting still require implementation and evidence. SET137
+remains partial.
+
+Editor passes actual native marked-text preservation and composition commit,
+ordinary key delivery, Undo/Redo, saving the synthetic owned file, real GPUI
+dialog/sheet/popup detach, preview remount and owning-window closure. The
+initial hidden-window materialization failure and nested fixture Root lease
+panic were corrected in the acceptance fixture. OS IME source switching,
+candidate panels, hardware input and accessibility are not established here.
+
+Local evidence includes `native-f9e4c1-manifest.json`, case stdout/stderr pairs,
+build log and `source-f9e4c1-*` checks. Each case records its owned PID/profile.
+No existing user session, permission or provider setting changed.
