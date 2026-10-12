@@ -81,6 +81,43 @@ Last updated 2026-10-12.
   follow-up source change, not included in the ca46 receipts and not yet built.
   It records fixed sites and ranges/booleans without text, preserves superclass
   calls, and is diagnostic only; no cause or product fix is established.
+- Frozen clean source `b6394868425f65b91de0d7960e9940c78bb2af6e` passes all
+  nine compiler/test/package stages. Its canonical compiler seal is
+  `51313bfde37ef0dd89f224998b3c90a0e21730b4912d713166ac6d29f6c199ea`.
+  The native Software cases pass Restore, Settings and Cache; Editor still
+  loses its marked range during the first repaint. The observed mark is present
+  before that frame and absent before style/attachment synchronization. No
+  native unmark, responder or detach callback appears, and recorded app/window/
+  responder focus remains valid. This narrows the interval but proves no cause.
+  The run stopped on the Software Editor failure: Auto, localized Settings and
+  full-prepush quality did not run. All four case processes and owned profiles
+  retired. PRF-002 remains partial.
+- The same source's signed, feature-free normal package opened two whole
+  Software windows with zero failed frames. Its owned MCP acceptance appended
+  exactly 68 bytes without a newline, left previous tab inputs unchanged, and
+  increased the tab count from two to three. Graceful quit preserved all three
+  tabs and passed read-only SQLite `quick_check`; telemetry Ready reported one
+  accepted/completed write, zero pending and zero failed. Runtime output
+  exposes numeric performance snapshots and 16 active timer records; these
+  are observations, not a benchmark. A separate owned fake-Claude run persisted
+  one completed assistant turn with exit status zero and a unique marker; its
+  ten shutdown phases, two saved tabs, process/socket exit and post-quit
+  `quick_check` passed. Neither run contacted a provider or device. Receipts
+  are in `/private/tmp/chau7-fast-acceptance-luna-b6394868-normal-runtime`,
+  `/private/tmp/chau7-fast-acceptance-luna-b6394868-run-data-v3` and
+  `/private/tmp/chau7-fast-acceptance-luna-b6394868-native-sequence-fast-revision-v6`.
+- A standalone stock `NSTextView` control provides a bounded comparison, not
+  app or Japanese-IME acceptance. Its direct API mode retained the synthetic
+  mark through two actual draw turns. The synthetic Option+E
+  `NSApplication.sendEvent` mode produced no marked-text callback (and one
+  insert callback); its JSON reports `success: false` and
+  `input-context-did-not-produce-nonempty-mark`, despite process exit code 0.
+  Treat the JSON status as authoritative. The control did not change the active
+  input source and proves neither physical keyboard nor Japanese IME behavior.
+  The first compile's default macOS 27.2 target failed to load its standard
+  library; the preserved retry targeting macOS 13 with the installed macOS 27.0
+  SDK compiled in 5.405 seconds; signatures passed. Both processes retired.
+  Receipts are under `/private/tmp/chau7-marked-text-control-b6394868-v3`.
 - The current-source audit indexes all 652 Swift source files at official main
   `7733b1f0`, appends the current feature delta and reopens changed behaviour.
   [PARITY.md](PARITY.md) is the current status, including missing features.
@@ -113,12 +150,14 @@ Last updated 2026-10-12.
 
 ## 4. Next work, in order
 
-1. Run the complete native matrix with the integrated fixture-only AppKit
-   trace, preserving the marked-composition assertions and existing deadlines.
-   The trace is bounded to 64 events at fixed sites and records ranges and
-   booleans without text; it diagnoses but does not establish a production
-   cause or fix. Complete all eight Software/Auto cases and localized Settings
-   checks; the scoped Auto Restore probe is one case, not an Auto matrix result.
+1. Continue the marked-composition investigation with the four new,
+   fixture-gated AppKit callback trace sites. Preserve existing assertions and
+   deadlines. On b639, Software Restore, Settings and Cache pass but Editor
+   still fails; no complete Auto matrix, localized Settings matrix or
+   full-prepush quality run exists for that source. The standalone stock
+   `NSTextView` comparison is synthetic and proves no cause or Japanese IME
+   parity. Keep the trace capped at 64 text-free events; it is diagnostic, not
+   a production fix.
 2. Settings/snippet/history render getters now consume bounded background
    snapshots. Keep the real cache FSEvents/SQLite error/recovery regression and
    Settings English/French/Arabic RTL/System Default checks in acceptance.

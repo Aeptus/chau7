@@ -21,11 +21,15 @@ use objc2::{
     runtime::AnyObject,
     sel,
 };
+#[cfg(feature = "native-parity-fixture")]
+use objc2_app_kit::NSSelectionAffinity;
 use objc2_app_kit::{
     NSApplication, NSAutoresizingMaskOptions, NSClipView, NSColor, NSEvent, NSEventModifierFlags,
     NSFont, NSFontAttributeName, NSForegroundColorAttributeName, NSMenuItem, NSRulerOrientation,
     NSRulerView, NSScrollView, NSStringDrawing, NSTextInputClient, NSTextView, NSView,
 };
+#[cfg(feature = "native-parity-fixture")]
+use objc2_foundation::{NSArray, NSValue};
 use objc2_foundation::{
     NSDictionary, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString, NSUndoManager,
 };
@@ -308,12 +312,99 @@ define_class!(
             self.ivars().shared.changed(self,false);
         }
         #[cfg(feature = "native-parity-fixture")]
+        #[unsafe(method(insertText:replacementRange:))]
+        fn fixture_insert_text(&self, string: &AnyObject, replacement_range: NSRange) {
+            self.ivars().shared.fixture_trace.record(
+                self,
+                "AppKit::insertText.before_super",
+                None,
+            );
+            // SAFETY: preserve NSTextInputClient's implementation exactly once.
+            unsafe {
+                let _: () = msg_send![super(self), insertText:string replacementRange:replacement_range];
+            }
+            self.ivars().shared.fixture_trace.record(
+                self,
+                "AppKit::insertText.after_super",
+                None,
+            );
+        }
+        #[cfg(feature = "native-parity-fixture")]
+        #[unsafe(method(setMarkedText:selectedRange:replacementRange:))]
+        fn fixture_set_marked_text(
+            &self,
+            string: &AnyObject,
+            selected_range: NSRange,
+            replacement_range: NSRange,
+        ) {
+            self.ivars().shared.fixture_trace.record(
+                self,
+                "AppKit::setMarkedText.before_super",
+                None,
+            );
+            // SAFETY: preserve NSTextInputClient's implementation exactly once.
+            unsafe {
+                let _: () = msg_send![super(self), setMarkedText:string selectedRange:selected_range replacementRange:replacement_range];
+            }
+            self.ivars().shared.fixture_trace.record(
+                self,
+                "AppKit::setMarkedText.after_super",
+                None,
+            );
+        }
+        #[cfg(feature = "native-parity-fixture")]
         #[unsafe(method(unmarkText))]
         fn fixture_unmark_text(&self) {
             self.ivars().shared.fixture_trace.record(self, "AppKit::unmarkText.before_super", None);
             // SAFETY: preserve NSTextView's implementation exactly once.
             unsafe { let _: () = msg_send![super(self), unmarkText]; }
             self.ivars().shared.fixture_trace.record(self, "AppKit::unmarkText.after_super", None);
+        }
+        #[cfg(feature = "native-parity-fixture")]
+        #[unsafe(method(setSelectedRange:affinity:stillSelecting:))]
+        fn fixture_selected_affinity(
+            &self,
+            range: NSRange,
+            affinity: NSSelectionAffinity,
+            still_selecting: bool,
+        ) {
+            self.ivars().shared.fixture_trace.record(
+                self,
+                "SourceTextView::setSelectedRange_affinity.before_super",
+                None,
+            );
+            // SAFETY: preserve NSTextView's exact selector and arguments once.
+            unsafe {
+                let _: () = msg_send![super(self), setSelectedRange:range affinity:affinity stillSelecting:still_selecting];
+            }
+            self.ivars().shared.fixture_trace.record(
+                self,
+                "SourceTextView::setSelectedRange_affinity.after_super",
+                None,
+            );
+        }
+        #[cfg(feature = "native-parity-fixture")]
+        #[unsafe(method(setSelectedRanges:affinity:stillSelecting:))]
+        fn fixture_selected_ranges_affinity(
+            &self,
+            ranges: &NSArray<NSValue>,
+            affinity: NSSelectionAffinity,
+            still_selecting: bool,
+        ) {
+            self.ivars().shared.fixture_trace.record(
+                self,
+                "SourceTextView::setSelectedRanges_affinity.before_super",
+                None,
+            );
+            // SAFETY: preserve NSTextView's exact selector and arguments once.
+            unsafe {
+                let _: () = msg_send![super(self), setSelectedRanges:ranges affinity:affinity stillSelecting:still_selecting];
+            }
+            self.ivars().shared.fixture_trace.record(
+                self,
+                "SourceTextView::setSelectedRanges_affinity.after_super",
+                None,
+            );
         }
         #[cfg(feature = "native-parity-fixture")]
         #[unsafe(method(becomeFirstResponder))]

@@ -888,3 +888,67 @@ of the ca46d51d receipts and has not been built. Its trace is gated by
 ranges and booleans without text. It preserves superclass calls and their
 results. Run the complete compiler/native sequence after the whole source batch
 is ready; the trace does not establish a production cause or fix.
+
+## 2026-10-12: b6394868 compiler, runtime and marked-text control
+
+Frozen clean source `b6394868425f65b91de0d7960e9940c78bb2af6e` passes all nine
+ordered compiler, test, helper, package and seal stages. The canonical compiler
+seal is `51313bfde37ef0dd89f224998b3c90a0e21730b4912d713166ac6d29f6c199ea`.
+The native sequence uses that exact seal, but its optional full-prepush receipt
+is null and `full_quality_verified=false`; this is not a full-prepush result.
+Compiler receipts are under
+`/private/tmp/chau7-fast-acceptance-luna-b6394868-compiler-sequence-v5`.
+
+The native Software Restore, Settings and Cache cases pass. Editor fails after
+the marked range is established: it is present immediately before the first
+frame and absent before style/attachment synchronization. The bounded trace
+has no native unmark, responder or detach callback in that interval, while
+recorded application-active, key-window and first-responder values remain
+valid. This limits the observed transition but does not identify a production
+cause. The sequence stopped at this Software failure, so no Auto cases,
+localized Settings cases or full-prepush quality ran. All four case processes
+and owned profiles retired. The immutable result is under
+`/private/tmp/chau7-fast-acceptance-luna-b6394868-native-sequence-fast-revision-v6`;
+PRF-002 remains partial.
+
+The signed normal feature-free package opened two complete Software windows,
+each with zero failed frames. Owned MCP acceptance appended exactly 68 bytes
+without an added newline, left previous inputs unchanged and grew the tab
+count from two to three. Graceful quit preserved three tabs and passed
+read-only SQLite `quick_check`. Writer Ready reported accepted=1,
+completed=1, pending=0 and failed=0. The runtime exported numeric performance
+snapshots and an inventory of 16 active timers. These values are observations,
+not a controlled performance benchmark. A separate isolated fake-Claude run
+persisted one completed assistant turn (run
+`95023D57-CF34-4EF9-89E9-779BD1FCE2E5`), exit status zero and a unique
+assistant marker. Its ten ordered shutdown phases, two saved tabs,
+process/socket exit and independent post-quit SQLite `quick_check` passed. No
+provider or device was contacted. Receipts are under
+`/private/tmp/chau7-fast-acceptance-luna-b6394868-normal-runtime` and
+`/private/tmp/chau7-fast-acceptance-luna-b6394868-run-data-v3`.
+
+A separate stock `NSTextView` control was compiled and run from a private
+bundle. The initial default macOS 27.2 target could not load its standard
+library; the preserved retry used target `arm64-apple-macosx13.0` and the
+installed macOS 27.0 SDK, compiled in 5.405 seconds, and passed signing. Direct API
+injection retained its synthetic mark through two observed real draw turns.
+In the synthetic Option+E `NSApplication.sendEvent` mode, the control observed
+zero marked-text callbacks and one insert callback. Its JSON reports
+`success=false` and `input-context-did-not-produce-nonempty-mark`, while the
+process exit code was zero; the JSON status is authoritative. Both processes
+retired. The control changes no input-source setting and establishes neither
+physical-keyboard nor Japanese-IME behavior, Chau7 Next behavior, or a
+production cause. Receipts are under
+`/private/tmp/chau7-marked-text-control-b6394868-v3`.
+
+The pending working-tree source batch expands the `native-parity-fixture` trace with four
+callback hooks: `insertText:replacementRange:`,
+`setMarkedText:selectedRange:replacementRange:`,
+`setSelectedRange:affinity:stillSelecting:` and
+`setSelectedRanges:affinity:stillSelecting:`. Each new hook records before and
+after its superclass call exactly once, with the original arguments. The
+existing 64-event cap and fixed-site ranges/booleans-only payload remain; no
+source text, assertion or deadline is added or changed. This callback expansion
+is diagnostic only and was not included in the b639 receipts. It establishes
+no production cause or fix; run the complete compiler/native sequence only
+after the whole source batch is ready.

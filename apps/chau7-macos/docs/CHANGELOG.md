@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Diagnostics
 
-- Add a feature-gated, fixture-only AppKit marked-composition trace capped at
-  64 events and fixed call sites. Record ranges and booleans without text;
-  preserve superclass calls and their results. This trace is diagnostic only,
-  establishes no production cause or fix, and remains pending combined native
-  validation.
+- Extend the fixture-only AppKit marked-composition trace with four
+  `native-parity-fixture`-gated callbacks: NSTextInputClient insertion and
+  marked-text updates, plus NSTextView single- and multi-range selection
+  updates. Trace only fixed event names, ranges and booleans within the existing
+  64-event cap; capture no source text. Each new callback invokes its exact
+  superclass selector once with unchanged arguments. Existing acceptance
+  assertions and deadlines are unchanged. This unbuilt diagnostic expansion
+  establishes no production cause or fix; combined native validation remains
+  pending.
 
 ### Maintenance
 
