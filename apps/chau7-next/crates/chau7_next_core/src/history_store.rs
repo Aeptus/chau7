@@ -405,6 +405,32 @@ impl HistoryStore {
             .unwrap_or(0)
     }
 
+    /// Exact read-only statistics for off-UI snapshots. Unlike legacy display
+    /// helpers, real read errors are preserved instead of becoming false zero.
+    pub fn statistics(&self) -> Result<(i64, u64), String> {
+        let records = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM history", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(|error| error.to_string())?;
+        let bytes = if let Some(path) = &self.path {
+            let database = std::fs::metadata(path)
+                .map_err(|error| error.to_string())?
+                .len();
+            let wal = PathBuf::from(format!("{}-wal", path.display()));
+            let wal = match std::fs::metadata(wal) {
+                Ok(metadata) => metadata.len(),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+                Err(error) => return Err(error.to_string()),
+            };
+            database.saturating_add(wal)
+        } else {
+            0
+        };
+        Ok((records, bytes))
+    }
+
     /// Size of the database file (plus its write-ahead log) in bytes.
     pub fn database_size_bytes(&self) -> u64 {
         let Some(path) = &self.path else { return 0 };
@@ -494,6 +520,33 @@ mod tests {
             timestamp: adding_seconds(Utc::now(), offset),
             ..HistoryRecord::new(command)
         }
+    }
+
+    #[test]
+    fn statistics_preserve_exact_counts_and_actual_read_errors() {
+        let directory =
+            std::env::temp_dir().join(format!("chau7-history-statistics-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("owned.sqlite");
+        let store = HistoryStore::open(&path).unwrap();
+        store.insert(&HistoryRecord::new("owned")).unwrap();
+        let observed = store.statistics().unwrap();
+        assert_eq!(observed.0, 1);
+        assert_eq!(observed.1, store.database_size_bytes());
+        assert!(observed.1 > 0);
+        drop(store);
+        let memory = HistoryStore::open(Path::new(":memory:")).unwrap();
+        assert_eq!(memory.statistics().unwrap(), (0, 0));
+        memory.insert(&HistoryRecord::new("memory")).unwrap();
+        assert_eq!(memory.statistics().unwrap(), (1, 0));
+        // A readable SQLite handle must not invent a zero-sized on-disk DB
+        // after its path disappears. Reopen the now-empty primary path.
+        let mut store = HistoryStore::open(&path).unwrap();
+        store.path = Some(directory.join("missing-primary.sqlite"));
+        assert!(store.statistics().is_err());
+        drop(store);
+        drop(memory);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

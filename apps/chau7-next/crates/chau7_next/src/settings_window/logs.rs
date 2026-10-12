@@ -27,21 +27,26 @@ const RECORDS_STEP: i32 = 5000;
 /// What the section shows besides the settings.
 #[derive(Default)]
 pub(crate) struct LogsData {
-    pub total_records: i64,
-    pub database_bytes: u64,
+    pub total_records: Option<i64>,
+    pub database_bytes: Option<u64>,
     pub database_open: bool,
+    pub statistics_pending: bool,
+    pub statistics_unavailable: bool,
     pub sessions: Vec<SessionStatus>,
 }
 
 impl LogsData {
     pub(crate) fn read(cx: &App) -> Self {
-        let (total_records, database_bytes, database_open) = history::service(cx)
-            .map(|s| s.with_store(|st| (st.total_count(), st.database_size_bytes(), true)))
-            .unwrap_or((0, 0, false));
+        let statistics = super::io_snapshot::statistics(cx);
+        let database_open = history::service(cx).is_some();
+        let total_records = statistics.value.map(|value| value.0);
+        let database_bytes = statistics.value.map(|value| value.1);
         Self {
             total_records,
             database_bytes,
             database_open,
+            statistics_pending: database_open && statistics.pending,
+            statistics_unavailable: database_open && statistics.unavailable,
             sessions: monitor::session_statuses(cx),
         }
     }
@@ -234,7 +239,7 @@ pub(super) fn history(ctx: &SectionContext) -> gpui::Div {
                     match text.parse::<u32>() {
                         Ok(n) if n > 0 => {
                             if let Some(s) = history::service(cx) {
-                                s.with_store(|st| st.clear_older_than(n));
+                                s.with_store_mut(|st| st.clear_older_than(n));
                             }
                             set_message(cx, format!("Cleared history older than {n} days"), false);
                         }
@@ -252,7 +257,7 @@ pub(super) fn history(ctx: &SectionContext) -> gpui::Div {
                         .text_color(chrome.danger)
                         .on_click(|_, _, cx| {
                             if let Some(s) = history::service(cx) {
-                                s.with_store(|st| st.clear_all());
+                                s.with_store_mut(|st| st.clear_all());
                             }
                             cx.set_global(ConfirmClear(false));
                             set_message(cx, "All history cleared".into(), false);
@@ -297,14 +302,26 @@ pub(super) fn history(ctx: &SectionContext) -> gpui::Div {
         persistent = persistent
             .child(info_row(
                 "Total Records",
-                data.total_records.to_string(),
+                data.total_records.map_or_else(
+                    || crate::l10n::l("status.unknown", "Unknown"),
+                    |count| count.to_string(),
+                ),
                 chrome,
             ))
             .child(info_row(
                 "Database Size",
-                history::format_bytes(data.database_bytes),
+                data.database_bytes.map_or_else(
+                    || crate::l10n::l("status.unknown", "Unknown"),
+                    history::format_bytes,
+                ),
                 chrome,
             ));
+        if data.statistics_pending || data.statistics_unavailable {
+            persistent = persistent.child(description(
+                crate::l10n::l("status.unknown", "Unknown"),
+                chrome,
+            ));
+        }
     } else {
         persistent = persistent.child(banner(
             "The history database could not be opened.",
@@ -543,7 +560,7 @@ fn import_history(cx: &mut App) {
                     return;
                 }
             };
-            let count = history::service(cx).map(|s| s.with_store(|st| st.import_json(&text)));
+            let count = history::service(cx).map(|s| s.with_store_mut(|st| st.import_json(&text)));
             match count {
                 Some(n) if n > 0 => set_message(cx, format!("Imported {n} records"), false),
                 Some(_) => set_message(cx, "No records imported".into(), true),
