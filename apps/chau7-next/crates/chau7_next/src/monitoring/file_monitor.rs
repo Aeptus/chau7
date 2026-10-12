@@ -67,6 +67,14 @@ impl FileMonitor {
         );
     }
 
+    /// Cached native subscription state for the target itself. An ancestor
+    /// subscription watching for future creation does not claim the file is
+    /// currently watched. This getter performs no filesystem operations.
+    pub fn is_watching_target(&self) -> bool {
+        self.recovery.ready.load(Ordering::SeqCst)
+            && self.watcher.lock().is_ok_and(|slot| slot.is_some())
+    }
+
     pub fn stop(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
         if let Ok(mut slot) = self.watcher.lock() {
