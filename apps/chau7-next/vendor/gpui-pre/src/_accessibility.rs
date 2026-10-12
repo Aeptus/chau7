@@ -233,11 +233,11 @@
 //! impl Element for MyCustomTextField {
 //!
 //!     // ...
-//!     
+//!
 //!     fn a11y_role(&self) -> Option<Role> {
 //!         Some(Role::TextInput)
 //!     }
-//!     
+//!
 //!     fn a11y_synthetic_children(
 //!         &mut self,
 //!         _prepaint: &mut Self::PrepaintState,
