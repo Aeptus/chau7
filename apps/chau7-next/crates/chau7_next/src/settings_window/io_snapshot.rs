@@ -91,6 +91,8 @@ struct Snapshots {
     last_history_value: Option<(i64, u64)>,
     subscribers: Vec<WeakEntity<SettingsView>>,
     _worker: Task<()>,
+    #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+    read_done: Option<oneshot::Receiver<()>>,
     #[cfg(not(test))]
     monitor_stop: Option<oneshot::Sender<()>>,
     #[cfg(not(test))]
@@ -324,8 +326,22 @@ pub(super) fn init(cx: &mut Context<SettingsView>) {
             let revisions = worker_signal.revisions();
             let root = worker_root.clone();
             let store = worker_store.clone();
+            #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+            let read_done = {
+                let (send, receive) = oneshot::channel();
+                cx.update(|cx| {
+                    cx.update_global::<Snapshots, _>(|state, _| state.read_done = Some(receive))
+                });
+                send
+            };
             let mut batch = cx
-                .background_spawn(async move { read_batch(&root, store.as_ref(), bits, revisions) })
+                .background_spawn(async move {
+                    let batch = read_batch(&root, store.as_ref(), bits, revisions);
+                    drop(store);
+                    #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+                    let _ = read_done.send(());
+                    batch
+                })
                 .await;
             if let (Some(reading), Err(error)) = (&mut batch.snippets, &snippet_watch) {
                 reading.value = Err(error.clone());
@@ -370,12 +386,69 @@ pub(super) fn init(cx: &mut Context<SettingsView>) {
         last_history_value: None,
         subscribers: vec![view],
         _worker: worker,
+        #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+        read_done: None,
         #[cfg(not(test))]
         monitor_stop: Some(monitor_stop),
         #[cfg(not(test))]
         monitor_done: Some(monitor_done),
     });
 }
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(super) struct NativeEvidence {
+    pub snippets: Option<usize>,
+    pub snippets_revision: u64,
+    pub snippets_pending: bool,
+    pub snippets_unavailable: bool,
+    pub history: Statistics,
+}
+/// Held observations only: no metadata, parsing, store lock or SQL.
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(super) fn native_evidence(cx: &App) -> NativeEvidence {
+    let reading = cx.try_global::<Snapshots>().and_then(|state| {
+        state
+            .snippets
+            .as_ref()
+            .filter(|reading| reading.revision == state.signal.revisions().0)
+    });
+    NativeEvidence {
+        snippets: snippets(cx),
+        snippets_revision: cx
+            .try_global::<Snapshots>()
+            .map_or(0, |state| state.signal.revisions().0),
+        snippets_pending: reading.is_none(),
+        snippets_unavailable: reading.is_some_and(|reading| reading.value.is_err()),
+        history: statistics(cx),
+    }
+}
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) async fn shutdown_native_fixture(cx: &mut gpui::AsyncApp) -> Result<(), String> {
+    let pending = cx.update(|cx| {
+        cx.try_global::<Snapshots>()?;
+        let mut state = cx.remove_global::<Snapshots>();
+        let reader = state.read_done.take();
+        #[cfg(not(test))]
+        let monitors = state.stop_monitoring();
+        #[cfg(test)]
+        let monitors: Option<oneshot::Receiver<()>> = None;
+        drop(state); // Cancel foreground task before waiting; it owns no native guard.
+        Some((reader, monitors))
+    });
+    if let Some((reader, monitors)) = pending {
+        if let Some(reader) = reader {
+            // A cancelled queued read closes its sender before it can acquire
+            // SQL. A started read drops its store Arc before sending completion.
+            let _ = reader.await;
+        }
+        if let Some(monitors) = monitors {
+            monitors
+                .await
+                .map_err(|_| "Owned snapshot guards did not confirm teardown".to_string())?;
+        }
+    }
+    Ok(())
+}
+
 fn same_store(left: Option<&Store>, right: Option<&Store>) -> bool {
     match (left, right) {
         (None, None) => true,

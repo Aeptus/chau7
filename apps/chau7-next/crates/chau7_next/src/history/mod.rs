@@ -23,6 +23,8 @@ use std::sync::mpsc::{Sender, channel};
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::history_record::HistoryRecord;
 use chau7_next_core::history_store::HistoryStore;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+use gpui::AppContext;
 use gpui::{App, Global};
 use parking_lot::Mutex;
 
@@ -34,6 +36,8 @@ type StatisticsObserver = Arc<dyn Fn() + Send + Sync>;
 pub struct HistoryService {
     store: Arc<Mutex<HistoryStore>>,
     tx: Sender<HistoryRecord>,
+    #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+    writer: std::thread::JoinHandle<()>,
     statistics_observer: Arc<Mutex<Option<StatisticsObserver>>>,
     /// Records kept (the settings value, applied by [`apply_settings`]).
     enabled: Arc<std::sync::atomic::AtomicBool>,
@@ -59,7 +63,7 @@ impl HistoryService {
         let writer = store.clone();
         let statistics_observer: Arc<Mutex<Option<StatisticsObserver>>> = Arc::default();
         let observer = statistics_observer.clone();
-        std::thread::Builder::new()
+        let writer_handle = std::thread::Builder::new()
             .name("chau7-history-writer".into())
             .spawn(move || {
                 while let Ok(record) = rx.recv() {
@@ -76,9 +80,13 @@ impl HistoryService {
                 }
             })
             .ok()?;
+        #[cfg(not(all(feature = "native-parity-fixture", target_os = "macos")))]
+        drop(writer_handle);
         Some(Self {
             store,
             tx,
+            #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+            writer: writer_handle,
             statistics_observer,
             enabled: Arc::new(std::sync::atomic::AtomicBool::new(
                 settings.history.persistent_history,
@@ -123,6 +131,86 @@ impl HistoryService {
     pub(crate) fn set_statistics_observer(&self, observer: StatisticsObserver) {
         *self.statistics_observer.lock() = Some(observer);
     }
+}
+
+/// Fixture-only store/writer initialization. It never starts provider history
+/// monitors, recording, shell-history maintenance, or ordinary integration.
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) async fn init_native_cache_fixture(cx: &mut gpui::AsyncApp) -> Result<(), String> {
+    let (root, settings) = cx.update(|cx| {
+        if cx.try_global::<HistoryService>().is_some() {
+            return Err("Owned history fixture must not replace a service".into());
+        }
+        let root = cx.global::<crate::workspace::AppData>().root.clone();
+        if !chau7_next_core::data_root::is_isolated_test_mode()
+            || std::env::var("CHAU7_NEXT_NATIVE_PARITY_FIXTURE").as_deref() != Ok("1")
+            || root.state_dir() != root.home().join(".chau7-next-state")
+            || std::env::var_os(chau7_next_core::data_root::HOME_ROOT_ENV)
+                .map(std::path::PathBuf::from)
+                .as_deref()
+                != Some(root.home())
+        {
+            return Err("Owned history fixture requires the runner's isolated root".into());
+        }
+        Ok::<_, String>((root, cx.global::<Settings>().clone()))
+    })?;
+    let service = cx
+        .background_spawn(async move {
+            HistoryService::open(&root, &settings)
+                .ok_or_else(|| "Owned fixture history database could not open".to_string())
+        })
+        .await?;
+    cx.update(|cx| cx.set_global(service));
+    Ok(())
+}
+
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) fn clear_native_cache_fixture(cx: &App) -> Box<dyn FnOnce() + Send> {
+    let service = cx.global::<HistoryService>();
+    let store = service.store.clone();
+    let observer = service.statistics_observer.clone();
+    Box::new(move || {
+        store.lock().clear_all();
+        let notify = observer.lock().clone();
+        if let Some(notify) = notify {
+            notify();
+        }
+    })
+}
+
+/// The snapshots must finish their native guards and reader first. Closing
+/// the sole sender then joining guarantees every queued real write completed.
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) async fn shutdown_native_cache_fixture(cx: &mut gpui::AsyncApp) -> Result<(), String> {
+    let service = cx.update(|cx| {
+        cx.try_global::<HistoryService>()
+            .is_some()
+            .then(|| cx.remove_global::<HistoryService>())
+    });
+    let Some(service) = service else {
+        return Ok(());
+    };
+    cx.background_spawn(async move {
+        let HistoryService {
+            store,
+            tx,
+            writer,
+            statistics_observer,
+            enabled,
+        } = service;
+        drop(tx);
+        writer
+            .join()
+            .map_err(|_| "Owned history writer panicked".to_string())?;
+        drop(statistics_observer);
+        drop(enabled);
+        if Arc::strong_count(&store) != 1 {
+            return Err("Owned history reader still holds its SQLite handle".into());
+        }
+        drop(store); // Last SQLite connection closes off UI, before profile removal.
+        Ok(())
+    })
+    .await
 }
 
 /// One-time import of `history.tsv` (the commands the shell hooks logged
