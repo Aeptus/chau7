@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Maintenance
+
+- Align local and CI quality tools with Node 26.11.1, Python 3.15, pnpm 12 and current formatter/audit releases. Retain the provenance-checked duplication gate and its 2% threshold; update local Swift helper comments for formatter compatibility.
+- Update the relay Workers, Vite and Vitest 5 cohort with explicit supported Node versions and a filesystem-cache compatibility setting for worktrees containing spaces. Refresh Go helper dependencies while retaining the SQLite driver's required libc version.
+
 ### Added
 
 - Introduce Chau7 Next as an isolated Rust/GPUI macOS test app alongside Chau7, with its own bundle, data folders, helper ports and MCP bridge. Track parity against the current Swift sources in `docs/rust-port/`; full current parity remains in progress.
