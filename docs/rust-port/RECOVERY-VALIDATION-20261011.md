@@ -469,3 +469,33 @@ Central cleanup waits for monitor/read/write completion and final SQLite close
 before deleting the owned profile. No injected cache values or ordinary provider
 history initialization. Source integrated as5fe39a846; combined checks follow.
 Evidence: `next-native-cache-20261012-062859.json` and its stdout/stderr.
+
+## Integrated cache and persistence acceptance (2026-10-12)
+
+Combined Rust source5fe39a846 passes2,934 release workspace tests (533 app,
+2,401 core; two existing ignored), strict default and optional-native all-target
+Clippy and formatting. Subsequent runner/document changes leave Rust sources
+unchanged. Exact source424cd1d2a3c5beecb160c69587fd6065e5f20f9d passes all four
+native cases with original binary SHA256
+0243aec3f21dc4e87cd607712408f446813100c894c42bcb0aa3a6e01c71041b.
+Restore actual PID80059 uses ordinary LaunchServices; settings PID82017,
+editor PID84342 and cache PID84361 exit0. All four real PIDs are verified gone,
+profiles removed and resources closed. Restore app exit code remains unknown,
+with the launcher separately exiting0. Source stays clean/unchanged throughout.
+Evidence prefixes `source-5fe39-*` and `native-424cd1d2-*` retain complete receipts.
+The runner now includes the cache in `--case all` and uses the repository's
+explicit `scripts/ruff.toml` configuration, checked idempotent.
+
+Fresh bounded read-only inspection of the unchanged old79748ee9 app at04:35UTC
+finds305 warnings, including301 incomplete Aethyme captures, and zero error
+lines in the trailing256KiB window. No arbitrary log lines are exported.
+The separate performance capture reports PID3607,72,302,592 resident bytes,
+5.314% of one logical CPU, healthy watchdog and zero stalls/recoveries. These
+are scoped observations of the old T7-consent-waiting app, not a benchmark or
+new-source acceptance. The cause of incomplete CLI capture is unproven.
+Evidence: `chau7-old797-readonly-20261012-summary.json`.
+
+Independent final GPUI prerequisite-ledger audit at2e2179b0627e verifies all
+four modified package paths, original/current SHA256 and complete before/after
+change chains. Provenance acceptance remains separate from software rendering.
+Evidence: `chau7-gpui-2e-ledger-root-audit.json`.
