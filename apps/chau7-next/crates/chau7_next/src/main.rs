@@ -101,6 +101,7 @@ fn main() {
     }
     clean_inherited_environment();
     let root = DataRoot::from_env();
+    let installation = settings::installation::FreshInstallation::capture(&root);
     if let Err(err) = root.ensure_dirs() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
     }
@@ -112,6 +113,11 @@ fn main() {
             std::process::exit(1);
         }
     };
+    if installation.initialize().is_err() {
+        eprintln!(
+            "Chau7 Next: installation policy unavailable; preserving legacy retention default"
+        );
+    }
     platform::defaults::disable_press_and_hold();
     logging::init(&root);
     incidents::start(&root);
