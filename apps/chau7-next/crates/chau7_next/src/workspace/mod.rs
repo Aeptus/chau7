@@ -39,6 +39,8 @@ mod hover_card;
 mod keys;
 pub(crate) mod mcp;
 mod menus;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+mod native_restore_fixture;
 mod notifications;
 mod palette_window;
 mod panel;
@@ -49,6 +51,10 @@ mod remote_hooks;
 mod rename;
 #[cfg(all(test, unix))]
 mod restore_fixture;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) use native_restore_fixture::{
+    dispose as dispose_native_fixture, verify as verify_native_restore_fixture,
+};
 mod restore_lifecycle;
 mod shell_loading;
 mod tab_bar_view;
