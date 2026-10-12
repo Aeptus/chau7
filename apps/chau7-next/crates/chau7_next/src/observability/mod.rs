@@ -69,6 +69,33 @@ struct Observability {
 }
 impl Global for Observability {}
 
+/// Timer registration and bounded replay for deterministic, isolated UI fixtures.
+/// No durable store, OS thread, or asynchronous projection is started.
+#[cfg(test)]
+pub(crate) fn init_for_test(cx: &mut App) {
+    let spine = Arc::new(EventSpine::new(128, 0));
+    // The real spine allocates an unbounded delivery channel, not a worker.
+    // Replay remains usable after disconnecting both ends of that unused stream.
+    spine.finish();
+    drop(spine.take_stream());
+    cx.set_global(Observability {
+        journal: Journal {
+            spine,
+            store: None,
+            progress: Arc::new((
+                Mutex::new(PersistenceState {
+                    processed: 0,
+                    error: None,
+                }),
+                Condvar::new(),
+            )),
+        },
+        worker: None,
+        events: VecDeque::new(),
+        timers: Arc::default(),
+    });
+}
+
 pub fn init(cx: &mut App) {
     let path = cx
         .global::<crate::workspace::AppData>()
