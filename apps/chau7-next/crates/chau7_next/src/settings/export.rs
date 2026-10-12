@@ -296,13 +296,21 @@ pub fn import_json(settings: &mut Settings, text: &str, home: &str) -> Result<()
     let str_of = |key: &str| map.get(key).and_then(Value::as_str);
     let bool_of = |key: &str| map.get(key).and_then(Value::as_bool);
     let f64_of = |key: &str| map.get(key).and_then(Value::as_f64);
+    let integer_of = |key: &str| {
+        map.get(key).and_then(|value| {
+            value
+                .as_i64()
+                .map(i128::from)
+                .or_else(|| value.as_u64().map(i128::from))
+        })
+    };
 
     let a = &mut settings.appearance;
     if let Some(v) = str_of("fontFamily").filter(|s| !s.is_empty()) {
         a.font_family = v.to_string();
     }
-    if let Some(v) = f64_of("fontSize").filter(|v| *v > 0.0) {
-        a.font_size = v as f32;
+    if let Some(v) = integer_of("fontSize") {
+        a.set_font_size(v as f32);
     }
     if let Some(v) = str_of("colorSchemeName") {
         a.color_scheme = ColorScheme::named(v);
@@ -334,12 +342,8 @@ pub fn import_json(settings: &mut Settings, text: &str, home: &str) -> Result<()
             _ => {}
         }
     }
-    if let Some(v) = map
-        .get("scrollbackLines")
-        .and_then(Value::as_u64)
-        .filter(|v| *v > 0)
-    {
-        t.scrollback_lines = v as usize;
+    if let Some(v) = integer_of("scrollbackLines") {
+        t.set_scrollback_lines(v);
     }
     if let Some(value) = map.get("shellHistoryMaxLines") {
         if let Some(value) = value.as_i64() {
@@ -364,9 +368,8 @@ pub fn import_json(settings: &mut Settings, text: &str, home: &str) -> Result<()
     if let Some(v) = bool_of("isSmartScrollEnabled") {
         t.smart_scroll = v;
     }
-    if let Some(v) = map.get("restoredScrollbackLines").and_then(Value::as_u64) {
-        t.restored_scrollback_lines =
-            v.min(chau7_next_core::session_restore::MAX_RESTORED_SCROLLBACK_LINES as u64) as usize;
+    if let Some(v) = integer_of("restoredScrollbackLines") {
+        t.set_restored_scrollback_lines(v);
     }
     if let Some(v) = str_of("shellType").and_then(chau7_next_core::shell_env::ShellType::from_raw) {
         t.shell_type = Some(v);
@@ -840,5 +843,85 @@ mod tests {
         settings.reset_all();
         assert!(!settings.general.launch_at_login);
         assert_eq!(settings.general.default_directory, None);
+    }
+
+    #[test]
+    fn shared_only_font_and_buffer_boundaries_match_swift_settings() {
+        for raw in [
+            i64::MIN,
+            -1,
+            0,
+            7,
+            8,
+            72,
+            73,
+            99,
+            100,
+            10_000,
+            10_001,
+            100_000,
+            100_001,
+            i64::MAX,
+        ] {
+            let mut actual = Settings::default();
+            let payload = json!({"fontFamily":"SF Mono", "fontSize":raw, "scrollbackLines":raw, "restoredScrollbackLines":raw});
+            import_json(&mut actual, &payload.to_string(), HOME).unwrap();
+            assert_eq!(
+                actual.appearance.font_size,
+                raw.clamp(8, 72) as f32,
+                "{raw}"
+            );
+            assert_eq!(
+                actual.terminal.scrollback_lines,
+                raw.clamp(100, 100_000) as usize,
+                "{raw}"
+            );
+            assert_eq!(
+                actual.terminal.restored_scrollback_lines,
+                raw.clamp(0, 10_000) as usize,
+                "{raw}"
+            );
+            let mut exported: Map<String, Value> =
+                serde_json::from_str(&export_json(&actual, HOME)).unwrap();
+            exported.remove("chau7Next");
+            let mut restored = Settings::default();
+            import_json(&mut restored, &Value::Object(exported).to_string(), HOME).unwrap();
+            assert_eq!(restored.appearance.font_size, actual.appearance.font_size);
+            assert_eq!(
+                restored.terminal.scrollback_lines,
+                actual.terminal.scrollback_lines
+            );
+            assert_eq!(
+                restored.terminal.restored_scrollback_lines,
+                actual.terminal.restored_scrollback_lines
+            );
+        }
+        let mut actual = Settings::default();
+        import_json(&mut actual, &json!({"fontFamily":"SF Mono", "fontSize":u64::MAX, "scrollbackLines":u64::MAX, "restoredScrollbackLines":u64::MAX}).to_string(), HOME).unwrap();
+        assert_eq!(actual.appearance.font_size, 72.0);
+        assert_eq!(actual.terminal.scrollback_lines, 100_000);
+        assert_eq!(actual.terminal.restored_scrollback_lines, 10_000);
+    }
+
+    #[test]
+    fn invalid_shared_boundary_types_preserve_existing_settings() {
+        for invalid in [
+            Value::Null,
+            json!(true),
+            json!("99"),
+            json!(13.5),
+            json!([]),
+            json!({}),
+        ] {
+            let mut actual = Settings::default();
+            actual.appearance.font_size = 19.0;
+            actual.terminal.scrollback_lines = 2500;
+            actual.terminal.restored_scrollback_lines = 700;
+            let payload = json!({"fontFamily":"SF Mono", "fontSize":invalid, "scrollbackLines":invalid, "restoredScrollbackLines":invalid});
+            import_json(&mut actual, &payload.to_string(), HOME).unwrap();
+            assert_eq!(actual.appearance.font_size, 19.0);
+            assert_eq!(actual.terminal.scrollback_lines, 2500);
+            assert_eq!(actual.terminal.restored_scrollback_lines, 700);
+        }
     }
 }

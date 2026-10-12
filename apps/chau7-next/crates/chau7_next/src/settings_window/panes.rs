@@ -1,6 +1,6 @@
 //! Panes and restore: split panes on or off, lines of scrollback restored.
 
-use chau7_next_core::session_restore::MAX_RESTORED_SCROLLBACK_LINES;
+use crate::settings::Settings;
 use gpui::{div, prelude::*};
 
 use super::SectionContext;
@@ -51,12 +51,12 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         ))
         .child(row(
             "Restored scrollback when tabs are recovered",
-            stepper("restored-scrollback", lines, chrome, |s, d| {
-                let step = 100_i64;
-                let lines = s.terminal.restored_scrollback_lines as i64 + step * d as i64;
-                s.terminal.restored_scrollback_lines =
-                    lines.clamp(0, MAX_RESTORED_SCROLLBACK_LINES as i64) as usize;
-            }),
+            stepper(
+                "restored-scrollback",
+                lines,
+                chrome,
+                change_restored_scrollback,
+            ),
             chrome,
         ))
         .child(
@@ -67,4 +67,33 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                     "Set to 0 to restore tabs without their scrollback.",
                 )),
         )
+}
+
+fn change_restored_scrollback(settings: &mut Settings, delta: i32) {
+    let lines = settings.terminal.restored_scrollback_lines as i128 + i128::from(delta);
+    settings.terminal.set_restored_scrollback_lines(lines);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actual_restore_control_preserves_zero_and_current_swift_upper_bound() {
+        for (start, delta, expected) in [
+            (0, -1, 0),
+            (0, 1, 1),
+            (1, -1, 0),
+            (333, -1, 332),
+            (10_000, 1, 10_000),
+            (10_000, -1, 9999),
+            (500, i32::MIN, 0),
+            (500, i32::MAX, 10_000),
+        ] {
+            let mut settings = Settings::default();
+            settings.terminal.restored_scrollback_lines = start;
+            change_restored_scrollback(&mut settings, delta);
+            assert_eq!(settings.terminal.restored_scrollback_lines, expected);
+        }
+    }
 }
