@@ -5,8 +5,8 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Mutex, OnceLock,
-    mpsc::{self, SyncSender},
+    Arc, Mutex, OnceLock,
+    mpsc::{self, SyncSender, TrySendError},
 };
 use std::time::{Duration, Instant};
 
@@ -128,8 +128,7 @@ pub fn capture(cx: &App) -> Value {
         "instrumentation": {"os_signpost_supported":cfg!(target_os="macos"),
             "signpost_subsystem":if cfg!(target_os="macos") {Some("com.chau7.next")} else {None},
             "signpost_category":if cfg!(target_os="macos") {Some("performance")} else {None}},
-        "persistence": {"interval_seconds": INTERVAL.as_secs(), "history_file_count": 2,
-            "max_history_file_bytes": MAX_HISTORY_BYTES, "max_snapshot_bytes": MAX_RECORD_BYTES}
+        "persistence": persistence_snapshot(cx)
     })
 }
 
@@ -141,11 +140,204 @@ struct Heartbeat {
 }
 impl Global for Heartbeat {}
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WriterState {
+    Running,
+    Draining,
+    Closed,
+    Disconnected,
+    StartFailed,
+}
+impl WriterState {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Draining => "draining",
+            Self::Closed => "closed",
+            Self::Disconnected => "disconnected",
+            Self::StartFailed => "start_failed",
+        }
+    }
+}
+
+#[derive(Default)]
+struct PersistenceCounters {
+    accepted: u64,
+    written: u64,
+    drop_full: u64,
+    failure: u64,
+    disconnected: u64,
+    rejected_closed: u64,
+    worker_start_failure: u64,
+}
+struct PersistenceStats {
+    state: WriterState,
+    counters: PersistenceCounters,
+    last_error_category: Option<&'static str>,
+}
+impl PersistenceStats {
+    fn new() -> Self {
+        Self {
+            state: WriterState::Running,
+            counters: PersistenceCounters::default(),
+            last_error_category: None,
+        }
+    }
+}
+
+/// Fixed vocabulary only: never retain an error's message, path or OS text.
+fn error_category(error: &io::Error) -> &'static str {
+    match error.kind() {
+        io::ErrorKind::NotFound => "not_found",
+        io::ErrorKind::PermissionDenied => "permission_denied",
+        io::ErrorKind::AlreadyExists => "already_exists",
+        io::ErrorKind::InvalidInput => "invalid_input",
+        io::ErrorKind::InvalidData => "invalid_data",
+        io::ErrorKind::WriteZero => "write_zero",
+        io::ErrorKind::Interrupted => "interrupted",
+        io::ErrorKind::WouldBlock => "would_block",
+        io::ErrorKind::StorageFull => "storage_full",
+        io::ErrorKind::OutOfMemory => "out_of_memory",
+        _ => "other_io",
+    }
+}
+
 struct Writer {
     sender: Mutex<Option<SyncSender<Value>>>,
     worker: Mutex<Option<std::thread::JoinHandle<()>>>,
+    stats: Arc<Mutex<PersistenceStats>>,
 }
 impl Global for Writer {}
+impl Writer {
+    fn new(dir: PathBuf) -> Self {
+        Self::spawn(move |snapshot| write_snapshot(&dir, snapshot, MAX_HISTORY_BYTES))
+    }
+
+    /// The worker never holds a snapshot lock across filesystem operations.
+    fn spawn(mut write: impl FnMut(&Value) -> io::Result<()> + Send + 'static) -> Self {
+        let (sender, receiver) = mpsc::sync_channel::<Value>(1);
+        let stats = Arc::new(Mutex::new(PersistenceStats::new()));
+        let worker_stats = stats.clone();
+        let worker = std::thread::Builder::new()
+            .name("chau7-next-performance".into())
+            .spawn(move || {
+                let mut reported_failure = false;
+                while let Ok(snapshot) = receiver.recv() {
+                    let result = write(&snapshot);
+                    {
+                        let mut stats = worker_stats.lock().unwrap_or_else(|e| e.into_inner());
+                        match &result {
+                            Ok(()) => {
+                                stats.counters.written = stats.counters.written.saturating_add(1);
+                            }
+                            Err(error) => {
+                                stats.counters.failure = stats.counters.failure.saturating_add(1);
+                                stats.last_error_category = Some(error_category(error));
+                            }
+                        }
+                    }
+                    // Logging is also outside the lock read by the UI snapshot.
+                    match result {
+                        Ok(()) => reported_failure = false,
+                        Err(error) if !reported_failure => {
+                            log::warn!(
+                                "Performance diagnostics persistence failed: {}",
+                                error_category(&error)
+                            );
+                            reported_failure = true;
+                        }
+                        Err(_) => {}
+                    }
+                }
+                worker_stats.lock().unwrap_or_else(|e| e.into_inner()).state = WriterState::Closed;
+            });
+        match worker {
+            Ok(worker) => Self {
+                sender: Mutex::new(Some(sender)),
+                worker: Mutex::new(Some(worker)),
+                stats,
+            },
+            Err(error) => {
+                {
+                    let mut measured = stats.lock().unwrap_or_else(|e| e.into_inner());
+                    measured.state = WriterState::StartFailed;
+                    measured.counters.worker_start_failure = 1;
+                    measured.last_error_category = Some(error_category(&error));
+                }
+                log::warn!(
+                    "Performance diagnostics worker failed: {}",
+                    error_category(&error)
+                );
+                Self {
+                    sender: Mutex::new(None),
+                    worker: Mutex::new(None),
+                    stats,
+                }
+            }
+        }
+    }
+
+    fn enqueue(&self, snapshot: Value) -> bool {
+        let sender = self.sender.lock().unwrap_or_else(|e| e.into_inner());
+        // Keep the successful admission increment ordered before its completion.
+        // This bounded lock covers try_send only, never I/O or a blocking send.
+        let mut stats = self.stats.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(sender) = sender.as_ref() else {
+            stats.counters.rejected_closed = stats.counters.rejected_closed.saturating_add(1);
+            return false;
+        };
+        match sender.try_send(snapshot) {
+            Ok(()) => {
+                stats.counters.accepted = stats.counters.accepted.saturating_add(1);
+                true
+            }
+            Err(TrySendError::Full(_)) => {
+                stats.counters.drop_full = stats.counters.drop_full.saturating_add(1);
+                false
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                stats.counters.disconnected = stats.counters.disconnected.saturating_add(1);
+                stats.state = WriterState::Disconnected;
+                false
+            }
+        }
+    }
+
+    fn close(&self) -> Option<std::thread::JoinHandle<()>> {
+        let sender = self.sender.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let worker = self.worker.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if sender.is_some() {
+            self.stats.lock().unwrap_or_else(|e| e.into_inner()).state = if worker.is_some() {
+                WriterState::Draining
+            } else {
+                WriterState::Closed
+            };
+        }
+        // Dropping the last producer lets the worker drain its one pending value.
+        drop(sender);
+        worker
+    }
+}
+
+/// Only measured in-memory state is read here; no I/O, timers or joins.
+fn persistence_snapshot(cx: &App) -> Value {
+    let writer = cx.try_global::<Writer>();
+    let stats = writer.map(|writer| writer.stats.lock().unwrap_or_else(|e| e.into_inner()));
+    let counters = stats.as_ref().map(|stats| {
+        let counts = &stats.counters;
+        json!({"accepted":counts.accepted,"written":counts.written,
+            "drop_full":counts.drop_full,"failure":counts.failure,
+            "disconnected":counts.disconnected,"rejected_closed":counts.rejected_closed,
+            "worker_start_failure":counts.worker_start_failure})
+    });
+    json!({"interval_seconds":INTERVAL.as_secs(),"history_file_count":2,
+        "max_history_file_bytes":MAX_HISTORY_BYTES,"max_snapshot_bytes":MAX_RECORD_BYTES,
+        "availability":stats.as_ref().map(|stats|stats.state==WriterState::Running),
+        "state":stats.as_ref().map(|stats|stats.state.name()),"counters":counters,
+        "last_error_category":stats.as_ref().and_then(|stats|stats.last_error_category),
+        "accepted_basis":"nonblocking queue admission; not an acknowledgement of writing",
+        "written_basis":"latest replacement and history append/flush completed; no fsync durability guarantee"})
+}
 
 pub fn directory(cx: &App) -> PathBuf {
     cx.global::<AppData>()
@@ -156,45 +348,22 @@ pub fn directory(cx: &App) -> PathBuf {
 
 /// Queue without blocking rendering or growing a backlog during disk stalls.
 pub fn persist(snapshot: Value, cx: &App) -> bool {
-    cx.try_global::<Writer>().is_some_and(|writer| {
-        writer
-            .sender
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .is_some_and(|sender| sender.try_send(snapshot).is_ok())
-    })
+    cx.try_global::<Writer>()
+        .is_some_and(|writer| writer.enqueue(snapshot))
 }
 
 pub fn start(cx: &mut App) {
     let _ = identity();
     cx.set_global(Heartbeat::default());
-    let dir = directory(cx);
-    let (sender, receiver) = mpsc::sync_channel::<Value>(1);
-    match std::thread::Builder::new()
-        .name("chau7-next-performance".into())
-        .spawn(move || {
-            let mut reported_failure = false;
-            while let Ok(snapshot) = receiver.recv() {
-                match write_snapshot(&dir, &snapshot, MAX_HISTORY_BYTES) {
-                    Ok(()) => reported_failure = false,
-                    Err(error) => {
-                        if !reported_failure {
-                            log::warn!("Performance diagnostics persistence failed: {error}");
-                            reported_failure = true;
-                        }
-                    }
-                }
-            }
-        }) {
-        Ok(worker) => cx.set_global(Writer {
-            sender: Mutex::new(Some(sender)),
-            worker: Mutex::new(Some(worker)),
-        }),
-        Err(error) => {
-            log::warn!("Performance diagnostics worker failed: {error}");
-            return;
-        }
+    let writer = Writer::new(directory(cx));
+    let started = writer
+        .worker
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some();
+    cx.set_global(writer);
+    if !started {
+        return;
     }
     let _ = persist(capture(cx), cx);
     let timer = crate::observability::register_timer(
@@ -225,17 +394,7 @@ pub fn start(cx: &mut App) {
 /// Close the producer on the UI thread; drain accepted records and join only
 /// from the app's background quit future. Repeated stop calls are harmless.
 pub fn stop(cx: &App) -> Option<std::thread::JoinHandle<()>> {
-    let writer = cx.try_global::<Writer>()?;
-    writer
-        .sender
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .take();
-    writer
-        .worker
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .take()
+    cx.try_global::<Writer>()?.close()
 }
 
 fn history_record(snapshot: &Value) -> io::Result<Vec<u8>> {
@@ -333,6 +492,10 @@ mod tests {
             cx.set_global(AppData::new(root));
             cx.set_global(Heartbeat::default());
             let initial = capture(cx);
+            assert!(initial["persistence"]["availability"].is_null());
+            assert!(initial["persistence"]["state"].is_null());
+            assert!(initial["persistence"]["counters"].is_null());
+            assert!(initial["persistence"]["last_error_category"].is_null());
             assert!(initial["main_thread"]["timer_delay_ms"].is_null());
             assert!(initial["main_thread"]["max_timer_delay_ms"].is_null());
             assert_eq!(initial["main_thread"]["sample_count"], 0);
@@ -362,6 +525,184 @@ mod tests {
                 assert!(invalid["main_thread"]["max_timer_delay_ms"].is_null());
                 assert_eq!(invalid["main_thread"]["sample_count"], 1);
             }
+        });
+    }
+
+    fn owned_directory(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("next-perf-{label}-{}", uuid::Uuid::new_v4()))
+    }
+
+    #[gpui::test]
+    fn persistence_admission_is_distinct_from_real_write_and_double_quit_drains_once(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let dir = owned_directory("success");
+        let snapshot = json!({"schema_version":1,"observed":42});
+        cx.update(|cx| {
+            assert!(!persist(snapshot.clone(), cx));
+            assert!(persistence_snapshot(cx)["counters"].is_null());
+            cx.set_global(Writer::new(dir.clone()));
+            let initial = persistence_snapshot(cx);
+            assert_eq!(initial["availability"], true);
+            assert_eq!(initial["state"], "running");
+            assert_eq!(initial["counters"]["accepted"], 0);
+            assert_eq!(initial["counters"]["written"], 0);
+            assert!(persist(snapshot.clone(), cx));
+        });
+        let worker = cx.update(|cx| {
+            let worker = stop(cx).expect("first quit owns the worker");
+            assert!(stop(cx).is_none(), "second quit never joins twice");
+            let stopped = persistence_snapshot(cx);
+            assert_eq!(stopped["availability"], false);
+            assert_eq!(stopped["counters"]["accepted"], 1);
+            assert!(!persist(snapshot.clone(), cx));
+            worker
+        });
+        // Real filesystem I/O drains on the worker, joined outside the UI update.
+        worker.join().unwrap();
+        cx.update(|cx| {
+            let measured = persistence_snapshot(cx);
+            assert_eq!(measured["state"], "closed");
+            assert_eq!(measured["counters"]["accepted"], 1);
+            assert_eq!(measured["counters"]["written"], 1);
+            assert_eq!(measured["counters"]["failure"], 0);
+            assert_eq!(measured["counters"]["rejected_closed"], 1);
+            assert_eq!(measured["counters"]["disconnected"], 0);
+            assert!(measured["last_error_category"].is_null());
+            assert!(
+                measured["written_basis"]
+                    .as_str()
+                    .unwrap()
+                    .contains("no fsync")
+            );
+        });
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(dir.join("latest.json")).unwrap()).unwrap(),
+            snapshot
+        );
+        assert_eq!(
+            fs::read(dir.join("history.jsonl"))
+                .unwrap()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count(),
+            1
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[gpui::test]
+    fn persistence_real_io_failure_is_counted_without_path_or_error_text(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let dir = owned_directory("failure");
+        fs::write(&dir, b"owned fixture blocks directory creation").unwrap();
+        let worker = cx.update(|cx| {
+            cx.set_global(Writer::new(dir.clone()));
+            assert!(persist(json!({"observed":7}), cx));
+            stop(cx).unwrap()
+        });
+        worker.join().unwrap();
+        cx.update(|cx| {
+            let measured = persistence_snapshot(cx);
+            assert_eq!(measured["counters"]["accepted"], 1);
+            assert_eq!(measured["counters"]["written"], 0);
+            assert_eq!(measured["counters"]["failure"], 1);
+            assert_eq!(measured["state"], "closed");
+            assert_eq!(measured["last_error_category"], "already_exists");
+            assert!(
+                !measured
+                    .to_string()
+                    .contains(&dir.to_string_lossy().into_owned())
+            );
+        });
+        fs::remove_file(dir).unwrap();
+    }
+
+    #[gpui::test]
+    fn persistence_busy_worker_has_only_one_pending_record_and_reports_drop_full(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let dir = owned_directory("busy");
+        let worker_dir = dir.clone();
+        let (entered, wait_entered) = mpsc::sync_channel(0);
+        let (release, wait_release) = mpsc::sync_channel(0);
+        let mut first = true;
+        let writer = Writer::spawn(move |snapshot| {
+            if first {
+                first = false;
+                entered.send(()).unwrap();
+                wait_release.recv().unwrap();
+            }
+            write_snapshot(&worker_dir, snapshot, MAX_HISTORY_BYTES)
+        });
+        cx.update(|cx| {
+            cx.set_global(writer);
+            assert!(persist(json!({"sequence":1}), cx));
+        });
+        wait_entered.recv_timeout(Duration::from_secs(5)).unwrap();
+        let worker = cx.update(|cx| {
+            // The first write is blocked; exactly one other record is pending.
+            assert!(persist(json!({"sequence":2}), cx));
+            assert!(!persist(json!({"sequence":3}), cx));
+            let measured = persistence_snapshot(cx);
+            assert_eq!(measured["availability"], true);
+            assert_eq!(measured["counters"]["accepted"], 2);
+            assert_eq!(measured["counters"]["written"], 0);
+            assert_eq!(measured["counters"]["drop_full"], 1);
+            let worker = stop(cx).unwrap();
+            assert_eq!(persistence_snapshot(cx)["state"], "draining");
+            worker
+        });
+        release.send(()).unwrap();
+        worker.join().unwrap();
+        cx.update(|cx| {
+            let measured = persistence_snapshot(cx);
+            assert_eq!(measured["counters"]["written"], 2);
+            assert_eq!(measured["counters"]["drop_full"], 1);
+            assert_eq!(measured["counters"]["failure"], 0);
+            assert_eq!(measured["state"], "closed");
+        });
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(dir.join("latest.json")).unwrap()).unwrap(),
+            json!({"sequence":2})
+        );
+        assert_eq!(
+            fs::read(dir.join("history.jsonl"))
+                .unwrap()
+                .iter()
+                .filter(|b| **b == b'\n')
+                .count(),
+            2
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[gpui::test]
+    fn persistence_disconnected_receiver_is_distinct_from_explicit_close(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        drop(receiver);
+        cx.update(|cx| {
+            cx.set_global(Writer {
+                sender: Mutex::new(Some(sender)),
+                worker: Mutex::new(None),
+                stats: Arc::new(Mutex::new(PersistenceStats::new())),
+            });
+            assert!(!persist(json!({"observed":1}), cx));
+            let disconnected = persistence_snapshot(cx);
+            assert_eq!(disconnected["availability"], false);
+            assert_eq!(disconnected["state"], "disconnected");
+            assert_eq!(disconnected["counters"]["disconnected"], 1);
+            assert_eq!(disconnected["counters"]["rejected_closed"], 0);
+            assert_eq!(disconnected["counters"]["accepted"], 0);
+            assert!(stop(cx).is_none());
+            assert!(!persist(json!({"observed":2}), cx));
+            let closed = persistence_snapshot(cx);
+            assert_eq!(closed["state"], "closed");
+            assert_eq!(closed["counters"]["disconnected"], 1);
+            assert_eq!(closed["counters"]["rejected_closed"], 1);
         });
     }
 
