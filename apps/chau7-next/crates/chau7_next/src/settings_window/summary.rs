@@ -123,14 +123,10 @@ fn shell_name(s: &crate::settings::Settings, compact: &impl Fn(&str) -> String) 
         other => crate::l10n::tr(other.display_name()),
     }
 }
-fn ssh_sync(stamp: Option<i64>) -> String {
+fn ssh_sync(stamp: Option<chrono::NaiveDateTime>) -> String {
     stamp
-        .and_then(|stamp| chrono::DateTime::from_timestamp(stamp, 0))
         .map(|date| {
-            chau7_next_core::l10n::formatters::date_time(
-                chau7_next_core::l10n::current(),
-                date.with_timezone(&chrono::Local).naive_local(),
-            )
+            chau7_next_core::l10n::formatters::date_time(chau7_next_core::l10n::current(), date)
         })
         .unwrap_or_else(|| l("status.never", "Never"))
 }
@@ -821,7 +817,12 @@ fn items(section: SettingsSection, ctx: &SectionContext) -> Vec<Card> {
             ),
         ],
         SettingsSection::SshProfiles => vec![
-            Card::observed_active("watch", "settings.ssh.fileWatch", "File Watch", None),
+            Card::observed_active(
+                "watch",
+                "settings.ssh.fileWatch",
+                "File Watch",
+                ctx.view.mine.profiles.ssh_watch_status(),
+            ),
             Card::quantity(
                 "configEntries",
                 "settings.ssh.entries",
@@ -838,7 +839,7 @@ fn items(section: SettingsSection, ctx: &SectionContext) -> Vec<Card> {
                 "lastSync",
                 "ssh.lastSync.short",
                 "Last Sync",
-                ssh_sync(ctx.view.mine.profiles.ssh_synced),
+                ssh_sync(ctx.view.mine.profiles.ssh_last_sync_local()),
             ),
         ],
         SettingsSection::ApiProxy => vec![
@@ -1135,6 +1136,11 @@ fn items(section: SettingsSection, ctx: &SectionContext) -> Vec<Card> {
                     "settings.summary.proxyNeeded",
                     "Proxy applies AI context rules.",
                 ))
+            }
+            (SettingsSection::SshProfiles, "lastSync")
+                if ctx.view.mine.profiles.ssh_last_sync_local().is_none() =>
+            {
+                card.tone = Tone::Warning;
             }
             (SettingsSection::History, "telemetry") if s.general.telemetry_retention_days == 0 => {
                 card.tone = Tone::Warning

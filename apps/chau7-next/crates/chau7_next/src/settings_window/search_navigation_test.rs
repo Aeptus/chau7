@@ -169,6 +169,16 @@ fn real_search_change_centers_first_match_and_empty_retains_selection(
                 value("clipboard"),
                 chau7_next_core::l10n::l("status.disabled", "Disabled")
             ),
+            SettingsSection::SshProfiles => {
+                assert_eq!(
+                    value("watch"),
+                    chau7_next_core::l10n::l("misc.loading", "Loading...")
+                );
+                assert_eq!(
+                    value("lastSync"),
+                    chau7_next_core::l10n::l("status.never", "Never")
+                );
+            }
             SettingsSection::History => cx.update(|cx| {
                 assert_eq!(
                     value("maxRecords"),
