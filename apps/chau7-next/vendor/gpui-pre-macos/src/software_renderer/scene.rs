@@ -401,34 +401,31 @@ mod tests {
             corner_radii: Corners::all(ScaledPixels(2.)),
             tile: color,
         });
-        use core_foundation::{base::TCFType, dictionary::CFDictionary, string::CFString};
-        let empty = CFDictionary::<CFString, core_foundation::base::CFType>::from_CFType_pairs(&[]);
-        let key = unsafe {
-            CFString::wrap_under_get_rule(
-                core_video::pixel_buffer::kCVPixelBufferIOSurfacePropertiesKey,
-            )
+        use objc2_core_video::{
+            CVPixelBufferGetBaseAddressOfPlane, CVPixelBufferGetBytesPerRowOfPlane,
+            CVPixelBufferGetHeightOfPlane, CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags,
+            CVPixelBufferUnlockBaseAddress,
         };
-        let attributes = CFDictionary::from_CFType_pairs(&[(key, empty.as_CFType())]);
-        let buffer = core_video::pixel_buffer::CVPixelBuffer::new(
-            core_video::pixel_buffer::kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-            4,
-            4,
-            Some(&attributes),
-        )
-        .unwrap();
+        let buffer = super::surfaces::fixture_pixel_buffer(4, 4, true);
         // Deterministic planar video pixels also make the native Metal/CPU
         // comparator independent of allocator contents.
-        assert_eq!(buffer.lock_base_address(0), 0);
+        assert_eq!(
+            unsafe { CVPixelBufferLockBaseAddress(&buffer, CVPixelBufferLockFlags::empty()) },
+            0
+        );
         for plane in 0..2 {
-            let pointer = unsafe { buffer.get_base_address_of_plane(plane) }.cast::<u8>();
+            let pointer = CVPixelBufferGetBaseAddressOfPlane(&buffer, plane).cast::<u8>();
             assert!(!pointer.is_null());
-            let length =
-                buffer.get_bytes_per_row_of_plane(plane) * buffer.get_height_of_plane(plane);
+            let length = CVPixelBufferGetBytesPerRowOfPlane(&buffer, plane)
+                * CVPixelBufferGetHeightOfPlane(&buffer, plane);
             unsafe {
                 std::ptr::write_bytes(pointer, 128, length);
             }
         }
-        assert_eq!(buffer.unlock_base_address(0), 0);
+        assert_eq!(
+            unsafe { CVPixelBufferUnlockBaseAddress(&buffer, CVPixelBufferLockFlags::empty()) },
+            0
+        );
         scene.insert_primitive(gpui::PaintSurface {
             order: 0,
             bounds: b(40., 24., 8., 8.),

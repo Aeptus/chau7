@@ -209,7 +209,7 @@ fn srgb_to_oklab(c: Color) -> Color {
     let s = (0.088_302_46 * r + 0.281_718_85 * g + 0.629_978_7 * b).powf(1. / 3.);
     [
         0.210_454_26 * l + 0.793_617_8 * m - 0.004_072_047 * s,
-        1.977_998_5 * l - 2.428_592_2 * m + 0.450_593_72 * s,
+        1.977_998_5 * l - 2.428_592_2 * m + 0.450_593_7 * s,
         0.025_904_037 * l + 0.782_771_77 * m - 0.808_675_77 * s,
         c[3],
     ]
@@ -276,6 +276,13 @@ pub fn dash_alpha(t: f32, period: f32, length: f32, velocity: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalized_gradient_coefficient_preserves_original_f32_bits() {
+        // The previous decimal literal 0.45059372 rounds to these same f32 bits.
+        assert_eq!(0.450_593_7_f32.to_bits(), 0x3ee6_b438);
+    }
+
     use gpui::{black, checkerboard, linear_color_stop, linear_gradient, pattern_slash, white};
     #[test]
     fn fills_preserve_css_angle_stop_percentages_and_checker_pattern() {

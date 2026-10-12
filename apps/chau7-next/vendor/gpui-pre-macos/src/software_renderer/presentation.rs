@@ -304,12 +304,15 @@ mod tests {
         assert_eq!(cg.data().bytes(), &[0, 0, 255, 255, 128, 0, 0, 128]);
         // Inspect the actual owned image profile, not merely the requested name.
         unsafe extern "C" {
-            fn CGColorSpaceCopyName(space: core_graphics::sys::CGColorSpaceRef) -> core_foundation::string::CFStringRef;
+            fn CGColorSpaceCopyName(
+                space: core_graphics::sys::CGColorSpaceRef,
+            ) -> core_foundation::string::CFStringRef;
         }
         let name = unsafe { CGColorSpaceCopyName(cg.color_space().as_ptr()) };
         assert!(!name.is_null());
         let name = unsafe { core_foundation::string::CFString::wrap_under_create_rule(name) };
-        let expected = unsafe { core_foundation::string::CFString::wrap_under_get_rule(kCGColorSpaceSRGB) };
+        let expected =
+            unsafe { core_foundation::string::CFString::wrap_under_get_rule(kCGColorSpaceSRGB) };
         assert_eq!(name, expected);
     }
 }

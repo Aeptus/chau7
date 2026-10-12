@@ -52,7 +52,6 @@
 
 use anyhow::Result;
 use core_graphics::display::CGDirectDisplayID;
-use core_video::host_time;
 use dispatch2::{
     _dispatch_source_type_data_add, DispatchObject, DispatchQueue, DispatchRetained, DispatchSource,
 };
@@ -136,9 +135,9 @@ unsafe extern "C" fn display_link_output_callback(
 ) -> i32 {
     let signal_at = PlatformFrameSignal::capture(|| {
         // Instant cannot be constructed from Mach ticks, so sample both clock domains.
-        let current_host_time = host_time::get_current_host_time();
+        let current_host_time = objc2_core_video::CVGetCurrentHostTime();
         let received_at = Instant::now();
-        let host_clock_frequency = host_time::get_host_clock_frequency();
+        let host_clock_frequency = objc2_core_video::CVGetHostClockFrequency();
         // SAFETY: CoreVideo owns this timestamp for the lifetime of the callback.
         let current_time = unsafe { current_time.as_ref() };
         frame_request_instant(
@@ -247,22 +246,22 @@ fn subscribe(
         (subscriber_id, link_to_start)
     };
 
-    if let Some(mut link) = link_to_start {
-        if let Err(error) = unsafe { link.start() } {
-            let mut registry = lock_registry();
-            if let Some(entry) = registry.displays.get_mut(&display_id) {
-                entry.running = false;
-                entry.subscribers.retain(|subscriber| {
-                    if subscriber.id == subscriber_id {
-                        subscriber.signal.take();
-                        false
-                    } else {
-                        true
-                    }
-                });
-            }
-            return Err(error);
+    if let Some(mut link) = link_to_start
+        && let Err(error) = unsafe { link.start() }
+    {
+        let mut registry = lock_registry();
+        if let Some(entry) = registry.displays.get_mut(&display_id) {
+            entry.running = false;
+            entry.subscribers.retain(|subscriber| {
+                if subscriber.id == subscriber_id {
+                    subscriber.signal.take();
+                    false
+                } else {
+                    true
+                }
+            });
         }
+        return Err(error);
     }
 
     Ok(subscriber_id)

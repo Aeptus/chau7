@@ -45,9 +45,11 @@ cp "$ROOT/../chau7-macos/Resources/AppDockIcon.icns" "$APP/Contents/Resources/Ap
 # Apache-2.0 GPUI packages. Missing required notices fail packaging before signing.
 GPUI_LICENSES="$APP/Contents/Resources/licenses/gpui"
 mkdir -p "$GPUI_LICENSES"
-for audit_file in README.md gpui-provenance.json gpui-modifications.json; do
+for audit_file in README.md gpui-provenance.json gpui-modifications.json gpui-rebase-0.3.8-to-0.3.9.json; do
   cp "$ROOT/vendor/$audit_file" "$GPUI_LICENSES/$audit_file"
 done
+mkdir -p "$GPUI_LICENSES/history"
+cp -R "$ROOT/vendor/history/0.3.8" "$GPUI_LICENSES/history/0.3.8"
 for package in gpui-pre gpui-pre-macos gpui-pre-apple; do
   mkdir -p "$GPUI_LICENSES/$package"
   cp "$ROOT/vendor/$package/LICENSE-APACHE" "$GPUI_LICENSES/$package/LICENSE-APACHE"

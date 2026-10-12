@@ -17,6 +17,7 @@ use objc2::{rc::Retained, runtime::ProtocolObject};
 use objc2_foundation::{NSActivityOptions, NSObjectProtocol, NSProcessInfo, NSString, NSThread};
 use std::{ffi::c_void, ptr::NonNull, time::Duration};
 
+#[derive(Default)]
 pub struct AppleDispatcher;
 
 impl AppleDispatcher {

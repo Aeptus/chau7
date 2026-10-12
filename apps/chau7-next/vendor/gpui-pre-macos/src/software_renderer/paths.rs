@@ -62,7 +62,7 @@ pub fn draw(canvas: &mut Canvas, paths: &[Path<ScaledPixels>]) -> Result<()> {
         let clip = Rect::from(path.clipped_bounds());
         ensure!(clip.finite(), "nonfinite software path bounds");
         let fill = Fill::new(path.color);
-        for vertices in path.vertices.chunks_exact(3) {
+        for vertices in path.vertices.as_chunks::<3>().0 {
             let mut xy: [[f32; 2]; 3] =
                 std::array::from_fn(|i| [vertices[i].xy_position.x.0, vertices[i].xy_position.y.0]);
             let mut st: [[f32; 2]; 3] =

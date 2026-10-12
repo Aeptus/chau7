@@ -27,7 +27,7 @@ impl Canvas {
         bytes.try_reserve_exact(len)?;
         bytes.resize(len, 0);
         if !transparent {
-            for pixel in bytes.chunks_exact_mut(4) {
+            for pixel in bytes.as_chunks_mut::<4>().0 {
                 pixel[3] = 255;
             }
         }
@@ -86,7 +86,7 @@ impl Canvas {
         for y in ys {
             let begin = (y * self.width + xs.start) * 4;
             let end = (y * self.width + xs.end) * 4;
-            for output in self.bytes[begin..end].chunks_exact_mut(4) {
+            for output in self.bytes[begin..end].as_chunks_mut::<4>().0 {
                 // Keep this fixed-width store local. The no-LTO native fixture
                 // otherwise calls the generic slice memcpy helper per pixel.
                 output[0] = pixel[0];
@@ -114,7 +114,7 @@ impl Canvas {
         let mut bytes = Vec::new();
         bytes.try_reserve_exact(self.bytes.len())?;
         bytes.extend_from_slice(&self.bytes);
-        for pixel in bytes.chunks_exact_mut(4) {
+        for pixel in bytes.as_chunks_mut::<4>().0 {
             pixel.swap(0, 2);
         }
         Ok(bytes)

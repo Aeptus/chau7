@@ -82,7 +82,6 @@ mod tests {
         clock.borrow_mut().request(Instant::now()).unwrap();
         let wake = {
             let closed = closed.clone();
-            let clock = clock.clone();
             move || {
                 clock.borrow_mut().delivered(Instant::now());
                 !closed.load(Ordering::Acquire) && weak.upgrade().is_some()

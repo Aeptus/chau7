@@ -46,7 +46,7 @@ libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Exact patched backend; policy must be fixed before the first native window.
-gpui-macos = { package = "gpui-pre-macos", version = "=0.3.8", default-features = false, features = ["font-kit", "runtime_shaders"] }
+gpui-macos = { package = "gpui-pre-macos", version = "=0.3.9", default-features = false, features = ["font-kit", "runtime_shaders"] }
 # NSWindow behind a GPUI window (platform/window_style.rs).
 raw-window-handle = "0.6"
 # Platform layer (src/platform/). Only the framework features in use are on.

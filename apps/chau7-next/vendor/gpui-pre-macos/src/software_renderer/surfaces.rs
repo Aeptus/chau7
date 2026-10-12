@@ -5,29 +5,33 @@ use super::{
     fills::{Color, Rect},
 };
 use anyhow::{Result, ensure};
-use core_video::pixel_buffer::{
-    CVPixelBuffer, kCVPixelBufferLock_ReadOnly, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-};
 use gpui::PaintSurface;
+use objc2_core_video::{
+    CVPixelBuffer, CVPixelBufferGetBaseAddressOfPlane, CVPixelBufferGetBytesPerRowOfPlane,
+    CVPixelBufferGetHeightOfPlane, CVPixelBufferGetPixelFormatType, CVPixelBufferGetPlaneCount,
+    CVPixelBufferGetWidthOfPlane, CVPixelBufferIsPlanar, CVPixelBufferLockBaseAddress,
+    CVPixelBufferLockFlags, CVPixelBufferUnlockBaseAddress,
+    kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+};
 
 struct Lock<'a>(&'a CVPixelBuffer);
 impl<'a> Lock<'a> {
     fn new(buffer: &'a CVPixelBuffer) -> Result<Self> {
         ensure!(
-            buffer.lock_base_address(kCVPixelBufferLock_ReadOnly) == 0,
+            unsafe { CVPixelBufferLockBaseAddress(buffer, CVPixelBufferLockFlags::ReadOnly) } == 0,
             "CoreVideo surface read lock failed"
         );
         Ok(Self(buffer))
     }
     fn plane(&self, index: usize, channels: usize) -> Result<Plane<'_>> {
-        let width = self.0.get_width_of_plane(index);
-        let height = self.0.get_height_of_plane(index);
-        let stride = self.0.get_bytes_per_row_of_plane(index);
+        let width = CVPixelBufferGetWidthOfPlane(self.0, index);
+        let height = CVPixelBufferGetHeightOfPlane(self.0, index);
+        let stride = CVPixelBufferGetBytesPerRowOfPlane(self.0, index);
         let len = stride
             .checked_mul(height)
             .filter(|n| *n <= isize::MAX as usize)
             .ok_or_else(|| anyhow::anyhow!("CoreVideo plane byte size overflow"))?;
-        let pointer = unsafe { self.0.get_base_address_of_plane(index) };
+        let pointer = CVPixelBufferGetBaseAddressOfPlane(self.0, index);
         ensure!(
             !pointer.is_null(),
             "CoreVideo surface has no readable plane"
@@ -40,7 +44,7 @@ impl<'a> Lock<'a> {
 }
 impl Drop for Lock<'_> {
     fn drop(&mut self) {
-        self.0.unlock_base_address(kCVPixelBufferLock_ReadOnly);
+        unsafe { CVPixelBufferUnlockBaseAddress(self.0, CVPixelBufferLockFlags::ReadOnly) };
     }
 }
 struct Plane<'a> {
@@ -135,9 +139,9 @@ fn planes(
 pub fn draw(canvas: &mut Canvas, surface: &PaintSurface) -> Result<()> {
     let buffer = &surface.image_buffer;
     ensure!(
-        buffer.get_pixel_format() == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-            && buffer.is_planar()
-            && buffer.get_plane_count() == 2,
+        CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+            && CVPixelBufferIsPlanar(buffer)
+            && CVPixelBufferGetPlaneCount(buffer) == 2,
         "unsupported software CoreVideo surface format"
     );
     let lease = Lock::new(buffer)?;
@@ -150,6 +154,37 @@ pub fn draw(canvas: &mut Canvas, surface: &PaintSurface) -> Result<()> {
         &y,
         &chroma,
     )
+}
+#[cfg(test)]
+pub(super) fn fixture_pixel_buffer(
+    width: usize,
+    height: usize,
+    iosurface: bool,
+) -> objc2_core_foundation::CFRetained<CVPixelBuffer> {
+    use objc2_core_foundation::{CFDictionary, CFRetained, CFType};
+    use objc2_core_video::{
+        CVPixelBufferCreate, kCVPixelBufferIOSurfacePropertiesKey, kCVReturnSuccess,
+    };
+    let attributes = CFDictionary::from_slices(
+        &[unsafe { kCVPixelBufferIOSurfacePropertiesKey }],
+        &[&*CFDictionary::<CFType, CFType>::empty()],
+    );
+    let mut buffer = std::ptr::null_mut();
+    let status = unsafe {
+        CVPixelBufferCreate(
+            None,
+            width,
+            height,
+            kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+            iosurface.then(|| attributes.as_opaque()),
+            std::ptr::NonNull::from(&mut buffer),
+        )
+    };
+    // Non-null create outputs own +1, including unusual failure outputs.
+    let buffer =
+        std::ptr::NonNull::new(buffer).map(|buffer| unsafe { CFRetained::from_raw(buffer) });
+    assert_eq!(status, kCVReturnSuccess);
+    buffer.expect("owned CoreVideo pixel-buffer fixture returned nil")
 }
 #[cfg(test)]
 mod tests {
@@ -175,8 +210,7 @@ mod tests {
     }
     #[test]
     fn actual_pixel_buffer_lock_is_released_after_invalid_plane_and_normal_drop() {
-        let buffer =
-            CVPixelBuffer::new(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, 4, 4, None).unwrap();
+        let buffer = fixture_pixel_buffer(4, 4, false);
         {
             let lease = Lock::new(&buffer).unwrap();
             assert!(lease.plane(0, 1).is_ok());
@@ -184,8 +218,14 @@ mod tests {
             assert!(lease.plane(0, 3).is_err());
         }
         // A second actual write lease succeeds after the scoped read lease.
-        assert_eq!(buffer.lock_base_address(0), 0);
-        assert_eq!(buffer.unlock_base_address(0), 0);
+        assert_eq!(
+            unsafe { CVPixelBufferLockBaseAddress(&buffer, CVPixelBufferLockFlags::empty()) },
+            0
+        );
+        assert_eq!(
+            unsafe { CVPixelBufferUnlockBaseAddress(&buffer, CVPixelBufferLockFlags::empty()) },
+            0
+        );
         let _lease = Lock::new(&buffer).unwrap();
     }
 }
