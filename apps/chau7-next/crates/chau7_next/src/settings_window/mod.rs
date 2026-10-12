@@ -25,6 +25,8 @@ mod logs;
 mod mcp;
 mod mine;
 mod minimal_mode;
+#[cfg(feature = "native-parity-fixture")]
+mod native_fixture;
 mod notification_triggers;
 mod notifications;
 mod panes;
@@ -43,6 +45,8 @@ mod widgets;
 mod windows;
 
 pub use about::open_about;
+#[cfg(feature = "native-parity-fixture")]
+pub(crate) use native_fixture::verify_native_fixture;
 
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::settings_search::{
