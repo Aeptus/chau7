@@ -8,11 +8,11 @@ struct Scope {
     anchors: Rc<HashMap<&'static str, ScrollAnchor>>,
     labels: HashMap<String, &'static str>,
 }
-#[cfg(test)]
+#[cfg(any(test, feature = "native-parity-fixture"))]
 thread_local! { static RENDERED: RefCell<std::collections::HashSet<&'static str>> = RefCell::new(Default::default()); }
-#[cfg(test)]
+#[cfg(any(test, feature = "native-parity-fixture"))]
 thread_local! { static OBSERVATION_IDS: RefCell<HashMap<&'static str, std::collections::HashSet<String>>> = RefCell::new(Default::default()); }
-#[cfg(test)]
+#[cfg(any(test, feature = "native-parity-fixture"))]
 pub(super) fn observed_target_ids(id: &str) -> Vec<String> {
     OBSERVATION_IDS.with(|ids| {
         ids.borrow()
@@ -21,16 +21,16 @@ pub(super) fn observed_target_ids(id: &str) -> Vec<String> {
             .unwrap_or_default()
     })
 }
-#[cfg(test)]
+#[cfg(any(test, feature = "native-parity-fixture"))]
 fn record_observation_ids(id: &'static str, ids: impl IntoIterator<Item = String>) {
     OBSERVATION_IDS.with(|seen| seen.borrow_mut().entry(id).or_default().extend(ids));
 }
-#[cfg(test)]
+#[cfg(any(test, feature = "native-parity-fixture"))]
 pub(super) fn take_rendered_targets() -> std::collections::HashSet<&'static str> {
     OBSERVATION_IDS.with(|ids| ids.borrow_mut().clear());
     RENDERED.with(|seen| std::mem::take(&mut *seen.borrow_mut()))
 }
-#[cfg(test)]
+#[cfg(any(test, feature = "native-parity-fixture"))]
 fn record_rendered_target(id: &'static str) {
     RENDERED.with(|seen| {
         seen.borrow_mut().insert(id);
@@ -156,7 +156,7 @@ pub(super) fn for_title(title: &str) -> Option<ScrollAnchor> {
         let scope = scope.as_ref()?;
         let id = scope.labels.get(&normalized(title))?;
         let (key, anchor) = scope.anchors.get_key_value(id)?;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "native-parity-fixture"))]
         {
             record_rendered_target(key);
             record_observation_ids(
@@ -167,7 +167,7 @@ pub(super) fn for_title(title: &str) -> Option<ScrollAnchor> {
                 ],
             );
         }
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "native-parity-fixture")))]
         let _ = key;
         Some(anchor.clone())
     })
@@ -182,12 +182,12 @@ pub(super) fn for_id(id: &str) -> Option<ScrollAnchor> {
             || (id == "permissions" && scope.section == SettingsSection::SnippetsTools);
         if present {
             let (key, anchor) = scope.anchors.get_key_value(id)?;
-            #[cfg(test)]
+            #[cfg(any(test, feature = "native-parity-fixture"))]
             {
                 record_rendered_target(key);
                 record_observation_ids(key, [format!("setting-anchor-{id}")]);
             }
-            #[cfg(not(test))]
+            #[cfg(not(any(test, feature = "native-parity-fixture")))]
             let _ = key;
             Some(anchor.clone())
         } else {
@@ -200,7 +200,7 @@ pub(super) fn target(id: &str, element: impl IntoElement) -> gpui::Div {
         .id(SharedString::from(format!("setting-anchor-{id}")))
         .anchor_scroll(for_id(id))
         .child(element);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "native-parity-fixture"))]
     let target = {
         use gpui_kit::test::TestSupportExt;
         target.test_support()
@@ -216,7 +216,7 @@ pub(super) fn label_target(label: &str, element: impl IntoElement) -> gpui::Div 
         )))
         .anchor_scroll(for_title(label))
         .child(element);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "native-parity-fixture"))]
     let target = {
         use gpui_kit::test::TestSupportExt;
         target.test_support()
