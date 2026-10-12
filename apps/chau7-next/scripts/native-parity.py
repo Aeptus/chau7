@@ -124,8 +124,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--case",
-        choices=("all", "restore", "settings", "editor", "cache"),
+        choices=("all", "restore", "settings", "editor", "cache", "accessibility"),
         default="all",
+    )
+    parser.add_argument(
+        "--fixture-locale",
+        choices=("system", "en", "fr", "es", "ar", "he"),
+        action="append",
+        default=[],
+        help="Process-local accessibility fixture locale; only used with --case accessibility",
     )
     parser.add_argument(
         "--window-renderer",
@@ -141,6 +148,11 @@ def main():
     args = parser.parse_args()
     if platform.system() != "Darwin":
         parser.error("native parity fixtures require macOS")
+    if len(args.fixture_locale) > 1:
+        parser.error("--fixture-locale may be supplied only once")
+    fixture_locale = args.fixture_locale[0] if args.fixture_locale else "system"
+    if args.fixture_locale and args.case != "accessibility":
+        parser.error("--fixture-locale is only supported with --case accessibility")
     if not re.fullmatch(r"\d+\.\d+\.\d+", args.toolchain):
         parser.error("use an exact Rust version, not a mutable toolchain alias")
     workspace = Path(__file__).resolve().parents[1]
@@ -234,6 +246,7 @@ def main():
         launch_services = case == "restore"
         record = {
             "case": case,
+            "fixture_locale": fixture_locale if case == "accessibility" else None,
             "passed": False,
             "timed_out": False,
             "owned_home": str(home),
@@ -275,6 +288,8 @@ def main():
                 process_stderr = evidence / "restore.launcher.stderr"
             else:
                 command = [str(binary), "--native-parity-fixture", case, "--window-renderer", args.window_renderer]
+                if case == "accessibility":
+                    command.extend(["--fixture-locale", fixture_locale])
                 process_stdout = stdout_path
                 process_stderr = stderr_path
             record["command"] = command

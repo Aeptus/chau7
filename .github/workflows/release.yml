@@ -36,6 +36,9 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: services/chau7-remote/go.mod
+          cache-dependency-path: |
+            services/chau7-remote/go.sum
+            apps/chau7-macos/chau7-proxy/go.sum
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
       - name: Parse version
         id: version

@@ -1392,7 +1392,7 @@ impl DashboardPane {
         let mut timeline = div().flex().flex_col().gap_1().child(
             div()
                 .font_weight(gpui::FontWeight::SEMIBOLD)
-                .child("Timeline"),
+                .child(crate::l10n::l("dashboard.timeline", "Timeline")),
         );
         for event in self
             .dashboard

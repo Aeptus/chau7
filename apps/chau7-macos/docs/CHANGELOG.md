@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 
+- Cover the Chau7 Next Cargo workspace with weekly Dependabot updates,
+  grouping coordinated GPUI version and security updates for review. Document
+  the manifest/vendor/provenance/lockfile coordination required by that family.
+- Key CI and release Go caches from both nested module lockfiles; add quality
+  contracts for the cache paths and both Cargo update entries. No build-speed
+  measurement is claimed by this configuration change.
+
 - Correct the four fixture-gated native editor `msg_send!` selector argument
   separators reported by strict native Clippy, preserving selectors, argument
   order and superclass dispatch. The correction is included in the follow-up
@@ -54,6 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add a separate optional native accessibility fixture for owned macOS
+  windows: verify localized tab labels/selection, the timeline slider and actual
+  AppKit press/increment/decrement actions. Preserve the original four-case
+  native matrix and expose process-local locale selection for this fixture.
+  Execution and VoiceOver acceptance remain separate from this source addition.
+
 - Record scoped PRF-002 acceptance for Chau7 Next's whole-window Software
   backend and automatic unavailable-device fallback, including localized
   Settings, signed normal-package MCP/performance/quit checks and isolated
@@ -66,6 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show selected-tab tokens per second in the overlay across proxied Anthropic, OpenAI, and Gemini streams, with Claude Code and Codex transcript rates for direct CLI sessions; estimated readings are marked and explain their source and timing. Keep transient rate readings in a bounded recent-tab cache.
 
 ### Fixed
+
+- Localize Chau7 Next tab accessibility labels and rename hints, timeline
+  command/status/playback labels and controls, and the dashboard Timeline title
+  through existing Swift catalog keys. Add five-language pure assertions for
+  the accessibility strings and actual command-status classification.
 
 - Correct the Debug Console shortcut in Swift and Next help to the current default (⌥⌘L), and document Chau7 Next’s AI Terminal Logs Command Palette access.
 

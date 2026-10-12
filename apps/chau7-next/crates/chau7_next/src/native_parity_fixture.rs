@@ -13,6 +13,19 @@ use std::time::Duration;
 
 /// A real platform frame, never GPUI's deterministic test-frame helpers.
 pub(crate) async fn next_frame(window: AnyWindowHandle, cx: &mut AsyncApp) -> Result<(), String> {
+    next_frame_with_timeout(window, cx, Duration::from_secs(5)).await
+}
+
+/// Wait for one real platform frame within a caller's remaining bounded budget.
+pub(crate) async fn next_frame_with_timeout(
+    window: AnyWindowHandle,
+    cx: &mut AsyncApp,
+    timeout: Duration,
+) -> Result<(), String> {
+    let timeout = timeout.min(Duration::from_secs(5));
+    if timeout.is_zero() {
+        return Err("owned native platform frame deadline exceeded".into());
+    }
     let (send, receive) = oneshot::channel();
     cx.update_window(window, |_, window, _| {
         window.on_next_frame(move |_, _| {
@@ -21,7 +34,7 @@ pub(crate) async fn next_frame(window: AnyWindowHandle, cx: &mut AsyncApp) -> Re
         window.refresh();
     })
     .map_err(|error| error.to_string())?;
-    let timer = cx.background_executor().timer(Duration::from_secs(5));
+    let timer = cx.background_executor().timer(timeout);
     match futures::future::select(receive, timer).await {
         Either::Left((Ok(()), _)) => Ok(()),
         Either::Left((Err(_), _)) => Err("owned native window closed before its frame".into()),
@@ -63,9 +76,36 @@ pub(crate) fn run_if_requested() -> Option<i32> {
     }
     if !matches!(
         requested.as_str(),
-        "restore" | "settings" | "editor" | "cache"
+        "restore" | "settings" | "editor" | "cache" | "accessibility"
     ) {
         eprintln!("unknown native parity fixture: {requested}");
+        return Some(2);
+    }
+    let locale_positions: Vec<_> = args
+        .iter()
+        .enumerate()
+        .filter_map(|(index, arg)| (arg == "--fixture-locale").then_some(index))
+        .collect();
+    if locale_positions.len() > 1 {
+        eprintln!("--fixture-locale may be supplied only once");
+        return Some(2);
+    }
+    let fixture_locale = match locale_positions.first().copied() {
+        Some(index) => match args.get(index + 1) {
+            Some(value)
+                if matches!(value.as_str(), "system" | "en" | "fr" | "es" | "ar" | "he") =>
+            {
+                value.clone()
+            }
+            _ => {
+                eprintln!("--fixture-locale requires system/en/fr/es/ar/he");
+                return Some(2);
+            }
+        },
+        None => "system".to_owned(),
+    };
+    if !locale_positions.is_empty() && requested != "accessibility" {
+        eprintln!("--fixture-locale is limited to --native-parity-fixture accessibility");
         return Some(2);
     }
     let home = match std::env::var_os(chau7_next_core::data_root::HOME_ROOT_ENV)
@@ -129,12 +169,23 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         // child probe, even when ordinary permission startup is skipped.
         settings.general.full_disk_access_guard_enabled = false;
         settings.cto.mode = chau7_next_core::token_optimization::TokenOptimizationMode::Off;
+        if case == "accessibility" {
+            settings.general.app_language =
+                crate::settings::AppLanguage::from_id(&fixture_locale).unwrap_or_default();
+        }
         crate::settings::config_files::init(cx, root.config_file(), settings.clone());
         cx.set_global(settings);
         cx.set_global(crate::workspace::AppData::new(root));
+        if case == "accessibility" {
+            crate::l10n::settings_applied(cx);
+        }
         crate::observability::init(cx);
         cx.spawn(async move |cx| {
-            let deadline_secs = if case == "settings" { 70 } else { 35 };
+            let deadline_secs = if matches!(case.as_str(), "settings" | "accessibility") {
+                70
+            } else {
+                35
+            };
             let deadline = cx
                 .background_executor()
                 .timer(Duration::from_secs(deadline_secs));
@@ -152,6 +203,9 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                     "settings" => crate::settings_window::verify_native_fixture(cx).await,
                     "editor" => crate::panes::editor::verify_native_fixture(cx).await,
                     "cache" => crate::settings_window::verify_native_cache_fixture(cx).await,
+                    "accessibility" => {
+                        crate::workspace::verify_native_accessibility_fixture(cx).await
+                    }
                     _ => Err("unknown native case".into()),
                 }
                 .map_err(|error| format!("existing {case} case: {error}"))?;

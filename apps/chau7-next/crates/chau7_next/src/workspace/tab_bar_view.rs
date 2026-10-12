@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
+use chau7_next_core::l10n::{self, Lang};
 use chau7_next_core::tab_bar_layout::TabBarLayoutItem;
 use chau7_next_core::tab_bar_text::{command_badge, idle_duration, truncate_middle};
 use chau7_next_core::tabs_state::{TabColor, repo_group_color, repo_group_name};
@@ -21,6 +22,35 @@ use crate::platform::process as procinfo;
 use crate::settings::Settings;
 use crate::tab_bar::{BorderStyle, DragSubject, TAB_SPACING, TabId, style_color};
 use crate::theme::{Chrome, tab_color};
+
+pub(super) fn tab_accessibility_label(lang: Lang, title: &str, path: Option<&str>) -> String {
+    let path_suffix = path
+        .filter(|path| !path.is_empty())
+        .map(|path| format!(", {path}"))
+        .unwrap_or_default();
+    l10n::localized_format(
+        lang,
+        "accessibility.tabWithPath",
+        "%@ tab%@",
+        &[title.into(), path_suffix.into()],
+    )
+}
+
+pub(super) fn tab_accessibility_description(lang: Lang, selected: bool) -> String {
+    if selected {
+        l10n::localized(
+            lang,
+            "accessibility.tabRenameSelected",
+            "Selected. Double-tap to rename",
+        )
+    } else {
+        l10n::localized(
+            lang,
+            "accessibility.tabRename",
+            "Double-tap to select, then double-tap to rename",
+        )
+    }
+}
 
 /// Height of a tab chip (`OverlayLayout.tabChipHeight`).
 pub(super) const TAB_CHIP_HEIGHT: f32 = 24.0;
@@ -470,20 +500,17 @@ impl Workspace {
                     .unwrap_or(chrome.border),
             )
         });
-        let accessibility_label = match &raw_path {
-            Some(path) => format!("{title} tab, {path}"),
-            None => format!("{title} tab"),
-        };
+        let accessibility_language = l10n::current();
+        let accessibility_label =
+            tab_accessibility_label(accessibility_language, title.as_ref(), raw_path.as_deref());
+        let accessibility_description =
+            tab_accessibility_description(accessibility_language, selected);
 
         let chip = div()
             .id(("tab", id as usize))
             .role(Role::Tab)
             .aria_label(accessibility_label)
-            .aria_description(if selected {
-                "Selected. Double-tap to rename"
-            } else {
-                "Double-tap to select, then double-tap to rename"
-            })
+            .aria_description(accessibility_description)
             .aria_selected(selected)
             .relative()
             .left(px(offset))
@@ -1133,5 +1160,83 @@ fn paint_bracket(bounds: Bounds<Pixels>, color: Hsla, window: &mut Window) {
     builder.line_to(p(x1, y1));
     if let Ok(path) = builder.build() {
         window.paint_path(path, color);
+    }
+}
+#[cfg(test)]
+mod accessibility_tests {
+    use super::*;
+
+    #[test]
+    fn tab_accessibility_text_matches_swift_resources_in_all_locales() {
+        let cases = [
+            (
+                Lang::En,
+                "Shell tab, /tmp/project",
+                "Shell tab",
+                "Selected. Double-tap to rename",
+                "Double-tap to select, then double-tap to rename",
+            ),
+            (
+                Lang::Fr,
+                "Onglet Shell, /tmp/project",
+                "Onglet Shell",
+                "Sélectionné. Appuyez deux fois pour renommer",
+                "Appuyez deux fois pour sélectionner, puis pour renommer",
+            ),
+            (
+                Lang::Es,
+                "Pestaña Shell, /tmp/project",
+                "Pestaña Shell",
+                "Seleccionado. Toca dos veces para renombrar",
+                "Toca dos veces para seleccionar, luego toca dos veces para renombrar",
+            ),
+            (
+                Lang::Ar,
+                "علامة تبويب Shell, /tmp/project",
+                "علامة تبويب Shell",
+                "محدد. انقر مرتين لإعادة التسمية",
+                "انقر مرتين للتحديد، ثم انقر مرتين لإعادة التسمية",
+            ),
+            (
+                Lang::He,
+                "כרטיסייה Shell, /tmp/project",
+                "כרטיסייה Shell",
+                "נבחר. הקישו פעמיים לשינוי שם",
+                "הקישו פעמיים לבחירה, ואז פעמיים לשינוי שם",
+            ),
+        ];
+
+        for (lang, with_path, without_path, selected, not_selected) in cases {
+            assert_eq!(
+                tab_accessibility_label(lang, "Shell", Some("/tmp/project")),
+                with_path,
+                "tab label for {}",
+                lang.code(),
+            );
+            assert_eq!(
+                tab_accessibility_label(lang, "Shell", None),
+                without_path,
+                "tab label without a path for {}",
+                lang.code(),
+            );
+            assert_eq!(
+                tab_accessibility_label(lang, "Shell", Some("")),
+                without_path,
+                "tab label with an empty path for {}",
+                lang.code(),
+            );
+            assert_eq!(
+                tab_accessibility_description(lang, true),
+                selected,
+                "selected tab hint for {}",
+                lang.code(),
+            );
+            assert_eq!(
+                tab_accessibility_description(lang, false),
+                not_selected,
+                "unselected tab hint for {}",
+                lang.code(),
+            );
+        }
     }
 }

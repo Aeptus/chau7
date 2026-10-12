@@ -13,6 +13,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
+use chau7_next_core::l10n::{self, Arg, Lang};
 use chau7_next_core::session_recorder::{Timeline, TimelineBlock, blocks_from_frames, replay_text};
 use chau7_next_core::session_recording::{RecordedFrame, SessionRecordingMeta};
 use gpui::{
@@ -88,19 +89,99 @@ fn block_color(block: &TimelineBlock) -> gpui::Hsla {
 const A11Y_STEP: f64 = 0.05;
 
 /// `timeline.commandStatus`: "Command: x, succeeded".
-fn block_a11y_label(block: &TimelineBlock) -> String {
-    format!("Command: {}, {}", block.command, block_status(block))
+#[derive(Clone, Copy)]
+enum BlockAccessibilityStatus {
+    Running,
+    Succeeded,
+    Failed(i64),
 }
 
-/// `blockStatusLabel`.
-fn block_status(block: &TimelineBlock) -> String {
-    if block.is_running() {
-        "running".into()
-    } else if block.is_success() {
-        "succeeded".into()
-    } else {
-        format!("failed with exit code {}", block.exit_code.unwrap_or(-1))
+fn block_status_accessibility_label(lang: Lang, status: BlockAccessibilityStatus) -> String {
+    match status {
+        BlockAccessibilityStatus::Running => {
+            l10n::localized(lang, "timeline.status.running", "running")
+        }
+        BlockAccessibilityStatus::Succeeded => {
+            l10n::localized(lang, "timeline.status.succeeded", "succeeded")
+        }
+        BlockAccessibilityStatus::Failed(exit_code) => l10n::localized_format(
+            lang,
+            "timeline.status.failed",
+            "failed with exit code %d",
+            &[Arg::from(exit_code)],
+        ),
     }
+}
+
+fn command_block_accessibility_label(
+    lang: Lang,
+    command: &str,
+    status: BlockAccessibilityStatus,
+) -> String {
+    l10n::localized_format(
+        lang,
+        "timeline.commandStatus",
+        "Command: %@, %@",
+        &[
+            command.into(),
+            block_status_accessibility_label(lang, status).into(),
+        ],
+    )
+}
+
+fn block_accessibility_status(block: &TimelineBlock) -> BlockAccessibilityStatus {
+    if block.is_running() {
+        BlockAccessibilityStatus::Running
+    } else if block.is_success() {
+        BlockAccessibilityStatus::Succeeded
+    } else {
+        BlockAccessibilityStatus::Failed(block.exit_code.unwrap_or(-1))
+    }
+}
+
+fn block_a11y_label(lang: Lang, block: &TimelineBlock) -> String {
+    command_block_accessibility_label(lang, &block.command, block_accessibility_status(block))
+}
+
+fn block_status(lang: Lang, block: &TimelineBlock) -> String {
+    block_status_accessibility_label(lang, block_accessibility_status(block))
+}
+
+pub(super) fn playback_accessibility_label(lang: Lang, playing: bool) -> String {
+    if playing {
+        l10n::localized(lang, "timeline.pauseReplay", "Pause replay")
+    } else {
+        l10n::localized(lang, "timeline.playReplay", "Play replay")
+    }
+}
+
+pub(super) fn playback_speed_accessibility_label(lang: Lang, speed: f64) -> String {
+    l10n::localized_format(
+        lang,
+        "timeline.playbackSpeed",
+        "Playback speed: %.1fx",
+        &[Arg::from(speed)],
+    )
+}
+
+pub(super) fn playback_speed_option_label(lang: Lang, speed: f64) -> String {
+    l10n::localized_format(lang, "timeline.speedOption", "%.1fx", &[Arg::from(speed)])
+}
+
+pub(super) fn scrubber_accessibility_label(lang: Lang) -> String {
+    l10n::localized(lang, "Timeline scrubber", "Timeline scrubber")
+}
+
+pub(super) fn timeline_open_label(lang: Lang) -> String {
+    l10n::localized(lang, "button.open", "Open")
+}
+
+pub(super) fn timeline_delete_label(lang: Lang) -> String {
+    l10n::localized(lang, "action.delete", "Delete")
+}
+
+pub(super) fn timeline_close_label(lang: Lang) -> String {
+    l10n::localized(lang, "action.close", "Close")
 }
 
 fn chip(
@@ -372,67 +453,78 @@ impl Workspace {
                 .on_click(cx.listener(|this, _, _, cx| this.timeline_toggle_recording(cx))),
             )
             .child(
-                chip("timeline-close", "Close", chrome)
-                    .on_click(cx.listener(|this, _, window, cx| this.toggle_timeline(window, cx))),
+                chip(
+                    "timeline-close",
+                    timeline_close_label(l10n::current()),
+                    chrome,
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.toggle_timeline(window, cx))),
             );
 
-        let list: Vec<gpui::AnyElement> =
-            panel
-                .list
-                .iter()
-                .enumerate()
-                .map(|(index, meta)| {
-                    let id = meta.id;
-                    let opened = panel.open.as_ref().is_some_and(|o| o.meta.id == id);
-                    let when = meta
-                        .start_time
-                        .with_timezone(&chrono::Local)
-                        .format("%Y-%m-%d %H:%M")
-                        .to_string();
-                    div()
-                        .id(("timeline-row", index))
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
-                        .bg(if opened {
-                            chrome.accent.opacity(0.18)
-                        } else {
-                            chrome.tab_bg
-                        })
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .flex()
-                                .flex_col()
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .overflow_hidden()
-                                        .whitespace_nowrap()
-                                        .text_ellipsis()
-                                        .child(meta.title.clone()),
-                                )
-                                .child(div().text_xs().text_color(chrome.text_muted).child(
-                                    format!(
-                                        "{when} \u{b7} {} frames \u{b7} {}",
-                                        meta.frame_count,
-                                        crate::history::format_bytes(meta.total_bytes.max(0) as u64)
-                                    ),
-                                )),
+        let list: Vec<gpui::AnyElement> = panel
+            .list
+            .iter()
+            .enumerate()
+            .map(|(index, meta)| {
+                let id = meta.id;
+                let opened = panel.open.as_ref().is_some_and(|o| o.meta.id == id);
+                let when = meta
+                    .start_time
+                    .with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string();
+                div()
+                    .id(("timeline-row", index))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .py_1()
+                    .rounded_md()
+                    .bg(if opened {
+                        chrome.accent.opacity(0.18)
+                    } else {
+                        chrome.tab_bg
+                    })
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .text_ellipsis()
+                                    .child(meta.title.clone()),
+                            )
+                            .child(div().text_xs().text_color(chrome.text_muted).child(format!(
+                                "{when} \u{b7} {} frames \u{b7} {}",
+                                meta.frame_count,
+                                crate::history::format_bytes(meta.total_bytes.max(0) as u64)
+                            ))),
+                    )
+                    .child(
+                        chip(
+                            ("timeline-open", index),
+                            timeline_open_label(l10n::current()),
+                            chrome,
                         )
-                        .child(chip(("timeline-open", index), "Open", chrome).on_click(
-                            cx.listener(move |this, _, _, cx| this.timeline_open(id, cx)),
-                        ))
-                        .child(chip(("timeline-delete", index), "Delete", chrome).on_click(
-                            cx.listener(move |this, _, _, cx| this.timeline_delete(id, cx)),
-                        ))
-                        .into_any_element()
-                })
-                .collect();
+                        .on_click(cx.listener(move |this, _, _, cx| this.timeline_open(id, cx))),
+                    )
+                    .child(
+                        chip(
+                            ("timeline-delete", index),
+                            timeline_delete_label(l10n::current()),
+                            chrome,
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| this.timeline_delete(id, cx))),
+                    )
+                    .into_any_element()
+            })
+            .collect();
 
         let scrubber = panel
             .open
@@ -551,7 +643,7 @@ impl Workspace {
         let track = div()
             .id("timeline-track")
             .role(Role::Slider)
-            .aria_label("Timeline scrubber")
+            .aria_label(scrubber_accessibility_label(l10n::current()))
             .aria_value(timeline.label_at(open.position))
             .aria_numeric_value(open.position * 100.0)
             .aria_min_numeric_value(0.0)
@@ -588,7 +680,7 @@ impl Workspace {
                 div()
                     .id(("timeline-block", index))
                     .role(Role::Label)
-                    .aria_label(block_a11y_label(b))
+                    .aria_label(block_a11y_label(l10n::current(), b))
                     .absolute()
                     .top(px(4.0))
                     .h(px(16.0))
@@ -633,25 +725,20 @@ impl Workspace {
             .flex()
             .items_center()
             .gap_2()
-            .child(
-                chip(
-                    "timeline-play",
-                    if open.playing { "Pause" } else { "Play" },
-                    chrome,
-                )
-                .aria_label(if open.playing {
-                    "Pause replay"
-                } else {
-                    "Play replay"
-                })
-                .on_click(cx.listener(|this, _, _, cx| this.timeline_toggle_play(cx))),
-            )
+            .child({
+                let playback_label = playback_accessibility_label(l10n::current(), open.playing);
+                chip("timeline-play", playback_label.clone(), chrome)
+                    .aria_label(playback_label)
+                    .on_click(cx.listener(|this, _, _, cx| this.timeline_toggle_play(cx)))
+            })
             .children(SPEEDS.iter().enumerate().map(|(index, speed)| {
                 let speed = *speed;
                 let selected = (open.speed - speed).abs() < f64::EPSILON;
-                chip(("timeline-speed", index), format!("{speed}x"), chrome)
+                let lang = l10n::current();
+                let option_label = playback_speed_option_label(lang, speed);
+                chip(("timeline-speed", index), option_label, chrome)
                     .when(selected, |d| d.bg(chrome.accent.opacity(0.25)))
-                    .aria_label(format!("Playback speed: {speed:.1}x"))
+                    .aria_label(playback_speed_accessibility_label(lang, speed))
                     .aria_selected(selected)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if let Some(open) =
@@ -702,7 +789,7 @@ impl Workspace {
                     div()
                         .text_xs()
                         .text_color(block_color(b))
-                        .child(block_status(b)),
+                        .child(block_status(l10n::current(), b)),
                 )
         });
 
@@ -746,5 +833,193 @@ impl Workspace {
             .children(tooltip)
             .child(replay)
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod accessibility_tests {
+    use super::*;
+
+    #[test]
+    fn timeline_accessibility_labels_match_swift_resources_in_all_locales() {
+        let cases = [
+            (
+                Lang::En,
+                "succeeded",
+                "running",
+                "failed with exit code 7",
+                "Command: cargo test, succeeded",
+                "Command: cargo test, running",
+                "Command: cargo test, failed with exit code 7",
+                "Play replay",
+                "Pause replay",
+                "Playback speed: 1.0x",
+                "1.0x",
+                "Open",
+                "Delete",
+                "Close",
+            ),
+            (
+                Lang::Fr,
+                "réussi",
+                "en cours",
+                "échoué avec le code 7",
+                "Commande : cargo test, réussi",
+                "Commande : cargo test, en cours",
+                "Commande : cargo test, échoué avec le code 7",
+                "Lecture",
+                "Mettre en pause",
+                "Vitesse : 1.0x",
+                "1.0x",
+                "Ouvrir",
+                "Supprimer",
+                "Fermer",
+            ),
+            (
+                Lang::Es,
+                "completado con éxito",
+                "en ejecución",
+                "falló con código de salida 7",
+                "Comando: cargo test, completado con éxito",
+                "Comando: cargo test, en ejecución",
+                "Comando: cargo test, falló con código de salida 7",
+                "Reproducir",
+                "Pausar reproducción",
+                "Velocidad de reproducción: 1.0x",
+                "1.0x",
+                "Abrir",
+                "Eliminar",
+                "Cerrar",
+            ),
+            (
+                Lang::Ar,
+                "نجح",
+                "قيد التشغيل",
+                "فشل مع كود الخروج 7",
+                "أمر: cargo test، نجح",
+                "أمر: cargo test، قيد التشغيل",
+                "أمر: cargo test، فشل مع كود الخروج 7",
+                "تشغيل",
+                "إيقاف مؤقت",
+                "سرعة التشغيل: 1.0x",
+                "1.0x",
+                "فتح",
+                "حذف",
+                "إغلاق",
+            ),
+            (
+                Lang::He,
+                "הצליח",
+                "פועל",
+                "נכשל עם קוד יציאה 7",
+                "פקודה: cargo test, הצליח",
+                "פקודה: cargo test, פועל",
+                "פקודה: cargo test, נכשל עם קוד יציאה 7",
+                "הפעל",
+                "השהה",
+                "מהירות: 1.0x",
+                "1.0x",
+                "פתח",
+                "מחיקה",
+                "סגירה",
+            ),
+        ];
+
+        for (
+            lang,
+            succeeded_status,
+            running_status,
+            failed_status,
+            succeeded,
+            running,
+            failed,
+            play,
+            pause,
+            speed,
+            speed_option,
+            open,
+            delete,
+            close,
+        ) in cases
+        {
+            let timestamp = chrono::Utc::now();
+            let running_block = TimelineBlock {
+                command: "cargo test".into(),
+                start: timestamp,
+                end: None,
+                exit_code: None,
+            };
+            let succeeded_block = TimelineBlock {
+                command: "cargo test".into(),
+                start: timestamp,
+                end: Some(timestamp),
+                exit_code: Some(0),
+            };
+            let failed_block = TimelineBlock {
+                command: "cargo test".into(),
+                start: timestamp,
+                end: Some(timestamp),
+                exit_code: Some(7),
+            };
+            assert_eq!(
+                command_block_accessibility_label(
+                    lang,
+                    "cargo test",
+                    BlockAccessibilityStatus::Succeeded,
+                ),
+                succeeded,
+                "succeeded command label for {}",
+                lang.code(),
+            );
+            assert_eq!(
+                command_block_accessibility_label(
+                    lang,
+                    "cargo test",
+                    BlockAccessibilityStatus::Running,
+                ),
+                running,
+                "running command label for {}",
+                lang.code(),
+            );
+            assert_eq!(
+                command_block_accessibility_label(
+                    lang,
+                    "cargo test",
+                    BlockAccessibilityStatus::Failed(7),
+                ),
+                failed,
+                "failed command label for {}",
+                lang.code(),
+            );
+            assert_eq!(block_status(lang, &succeeded_block), succeeded_status);
+            assert_eq!(block_status(lang, &running_block), running_status);
+            assert_eq!(block_status(lang, &failed_block), failed_status);
+            assert_eq!(
+                block_a11y_label(lang, &succeeded_block),
+                succeeded,
+                "succeeded block accessibility label for {}",
+                lang.code(),
+            );
+            assert_eq!(
+                block_a11y_label(lang, &running_block),
+                running,
+                "running block accessibility label for {}",
+                lang.code(),
+            );
+            assert_eq!(
+                block_a11y_label(lang, &failed_block),
+                failed,
+                "failed block accessibility label for {}",
+                lang.code(),
+            );
+            assert_eq!(playback_accessibility_label(lang, false), play);
+            assert_eq!(playback_accessibility_label(lang, true), pause);
+            assert_eq!(playback_speed_accessibility_label(lang, 1.0), speed);
+            assert_eq!(playback_speed_option_label(lang, 1.0), speed_option);
+            assert_eq!(scrubber_accessibility_label(lang), "Timeline scrubber");
+            assert_eq!(timeline_open_label(lang), open);
+            assert_eq!(timeline_delete_label(lang), delete);
+            assert_eq!(timeline_close_label(lang), close);
+        }
     }
 }

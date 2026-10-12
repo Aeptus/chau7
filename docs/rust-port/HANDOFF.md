@@ -31,6 +31,22 @@ Last updated 2026-10-12.
 
 ## 3. Status
 
+- Published docs revision `e4715bd23a50d033f306c6a3da6a2fb39c6cf35d`
+  passed all seven reported PR checks, including macOS, Linux, Windows and
+  quality CI. Next workflow run `38305507183` produced macOS artifact
+  `11772693726`. The separate ten-gate local full-quality execution passed
+  on that clean revision, including 4,586 Swift tests (three skipped) and iOS.
+  These results apply to e471, not to subsequent source changes.
+- A subsequent source audit found hardcoded English tab/timeline accessibility
+  labels and the dashboard Timeline title. The follow-up batch routes them
+  through the existing five-language Swift catalog and adds pure locale
+  assertions. An optional app-local native accessibility fixture checks the
+  rendered tab/slider tree and actual AppKit press/increment/decrement actions
+  without changing system accessibility settings. It remains separate from
+  the original eight-case Software/Auto matrix. This source proposal has not
+  yet been compiled or run; VoiceOver speech/navigation and physical input
+  still require the separate section 6 checklist.
+
 - Frozen clean source `68294293c3cea30a565d9d300781fcac9a6586c8` passes all
   nine compiler stages and the strict native matrix: Software 4/4, Auto
   unavailable-device 4/4 and localized Settings 6/6. All 14 fixture PIDs and

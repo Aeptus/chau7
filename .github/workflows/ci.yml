@@ -43,6 +43,9 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: services/chau7-remote/go.mod
+          cache-dependency-path: |
+            services/chau7-remote/go.sum
+            apps/chau7-macos/chau7-proxy/go.sum
 
       - name: Install golangci-lint with the selected Go toolchain
         run: |
