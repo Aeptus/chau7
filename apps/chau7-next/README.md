@@ -26,7 +26,8 @@ The CI build is for Apple Silicon. On an Intel Mac, build locally.
 
 ### Build locally
 
-Requires Rust (stable, 1.88 or newer) and Xcode (GPUI compiles Metal shaders).
+Requires the repository-pinned Rust 1.99 toolchain and Xcode (GPUI compiles
+Metal shaders).
 On Xcode 26 or newer the Metal toolchain is a separate download; if the build
 fails with "cannot execute tool 'metal'", run:
 
@@ -36,9 +37,35 @@ xcodebuild -downloadComponent MetalToolchain
 
 ```bash
 cd apps/chau7-next
-./scripts/bundle-macos.sh                      # builds target/bundle/Chau7 Next.app
+./scripts/bundle-macos.sh                      # fast optimized build
 OUT_DIR=~/Applications ./scripts/bundle-macos.sh   # or build straight into ~/Applications
 ```
+
+The default keeps `opt-level=3`, turns LTO off, uses 64 codegen units and
+incremental compilation for repeat local builds. The higher codegen-unit count
+favors build parallelism and can trade away some runtime optimization; no timing
+or runtime-performance claim is made without measurements. CI's explicit
+`CARGO_INCREMENTAL=0` remains in force. Both Rust workspaces use the same
+settings. Shared Rust helpers default to `target/embedded-rust` inside this
+worktree so CI can cache them with the app. `CARGO_BUILD_JOBS` passes through
+unchanged if you want to set a worker limit. Keep each writable `CARGO_TARGET_DIR`
+and `OPTIM_TARGET_DIR` private to one worktree.
+
+If the fast build fails, request a single symbol-rich release rebuild:
+
+```bash
+BUILD_MODE=diagnostic ./scripts/bundle-macos.sh
+```
+
+It keeps the optimized release profile and LTO off, includes full Rust and Go
+symbols, and does not enable debug assertions. It runs only when explicitly
+requested. `CARGO_BUILD_VERBOSE=1 BUILD_LOG=target/logs/fast.log` adds verbose
+Cargo commands and captures their output. After a successful package build,
+`target/bundle/Chau7-Next-<target>-<mode>.json` records the source revision,
+working-tree status, compiler versions, compile settings and SHA-256 values for
+the seven expected executables. Missing optional local helpers are recorded as
+`null`; CI requires and verifies all seven. The sidecar is outside the signed
+bundle. Set `BUILD_METADATA_DIR` to put it elsewhere.
 
 For development: `cargo run` from `apps/chau7-next` (logs go to the state
 folder below; set `CHAU7_NEXT_LOG_STDOUT=1` to also print them).

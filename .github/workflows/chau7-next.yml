@@ -62,6 +62,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/chau7-next
+          key: chau7-next-dev-checks-fast-release-opt3-cgu64-lto-off-incremental-off-debug0-strip-symbols-build-override-debug0-build-override-strip-none
           cache-on-failure: true
 
       - name: Linux system libraries
@@ -73,13 +74,28 @@ jobs:
             libfontconfig1-dev libfreetype6-dev libssl-dev libzstd-dev
 
       - name: Format
-        run: set -o pipefail; cargo fmt --all --check 2>&1 | tee ../../ci.log
+        run: set -o pipefail; cargo fmt --all --check 2>&1 | tee "$RUNNER_TEMP/ci.log"
 
+      # Keep Clippy and test builds in the development profile for debug
+      # assertions and overflow checks. Pin macOS to the bundle target so the
+      # cache can still reuse matching target-specific artifacts where valid.
       - name: Clippy
-        run: set -o pipefail; cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee ../../ci.log
+        run: |
+          TARGET_ARGS=()
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            TARGET_ARGS+=(--target aarch64-apple-darwin)
+          fi
+          set -o pipefail
+          cargo clippy --workspace --all-targets "${TARGET_ARGS[@]}" -- -D warnings 2>&1 | tee "$RUNNER_TEMP/ci.log"
 
       - name: Test
-        run: set -o pipefail; cargo test --workspace 2>&1 | tee ../../ci.log
+        run: |
+          TARGET_ARGS=()
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            TARGET_ARGS+=(--target aarch64-apple-darwin)
+          fi
+          set -o pipefail
+          cargo test --workspace "${TARGET_ARGS[@]}" 2>&1 | tee "$RUNNER_TEMP/ci.log"
 
       # The remote control agent (services/chau7-remote) and the API
       # analytics proxy (apps/chau7-macos/chau7-proxy) ship inside the app.
@@ -91,23 +107,75 @@ jobs:
             services/chau7-remote/go.sum
             apps/chau7-macos/chau7-proxy/go.sum
 
+      - name: Build script contracts
+        if: runner.os == 'macOS'
+        run: |
+          set -o pipefail
+          { ./scripts/test-build-mode.sh; ./scripts/test-cli-installer.sh; } 2>&1 | tee "$RUNNER_TEMP/ci.log"
+
       - name: Bundle Chau7 Next.app
         if: runner.os == 'macOS'
         env:
+          BUILD_MODE: fast
           REQUIRE_REMOTE_AGENT: "1"
           REQUIRE_PROXY: "1"
         # Linux and Windows are proven by the build and tests above; only the
         # macOS app is packaged, so only macOS pays for a release build.
         run: |
           set -o pipefail
-          TARGET=aarch64-apple-darwin ./scripts/bundle-macos.sh 2>&1 | tee ../../ci.log
+          TARGET=aarch64-apple-darwin ./scripts/bundle-macos.sh 2>&1 | tee "$RUNNER_TEMP/ci.log"
           plutil -lint "target/bundle/Chau7 Next.app/Contents/Info.plist"
           test -x "target/bundle/Chau7 Next.app/Contents/MacOS/Chau7 Next"
           test -x "target/bundle/Chau7 Next.app/Contents/MacOS/chau7-next-mcp-bridge"
+          test -x "target/bundle/Chau7 Next.app/Contents/MacOS/chau7-next-cli"
           test -x "target/bundle/Chau7 Next.app/Contents/MacOS/chau7-remote"
           test -x "target/bundle/Chau7 Next.app/Contents/MacOS/chau7-proxy"
           test -x "target/bundle/Chau7 Next.app/Contents/MacOS/chau7-optim"
           test -x "target/bundle/Chau7 Next.app/Contents/MacOS/chau7-md"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import subprocess
+
+          bundle = pathlib.Path("target/bundle/Chau7 Next.app")
+          manifest_path = pathlib.Path("target/bundle/Chau7-Next-aarch64-apple-darwin-fast.json")
+          manifest = json.loads(manifest_path.read_text())
+          expected = {
+              "Chau7 Next": "Contents/MacOS/Chau7 Next",
+              "chau7-next-mcp-bridge": "Contents/MacOS/chau7-next-mcp-bridge",
+              "chau7-next-cli": "Contents/MacOS/chau7-next-cli",
+              "chau7-optim": "Contents/MacOS/chau7-optim",
+              "chau7-md": "Contents/MacOS/chau7-md",
+              "chau7-remote": "Contents/MacOS/chau7-remote",
+              "chau7-proxy": "Contents/MacOS/chau7-proxy",
+          }
+          assert manifest["buildMode"] == "fast"
+          assert manifest["sourceDirty"] is False
+          assert manifest["appSignatureVerified"] is True
+          assert manifest["profile"]["optLevel"] == 3
+          assert manifest["profile"]["codegenUnits"] == 64
+          assert manifest["profile"]["lto"] == "off"
+          assert manifest["sourceRevision"] == subprocess.check_output(
+              ["git", "rev-parse", "HEAD"], text=True
+          ).strip()
+          assert manifest["cargoCommands"]["app"] == [
+              "cargo", "build", "--locked", "--release", "--target",
+              "aarch64-apple-darwin", "--bin", "chau7-next",
+              "--bin", "chau7-next-mcp-bridge", "--bin", "chau7-next-cli",
+          ]
+          assert manifest["cargoCommands"]["sharedHelpers"] == [
+              "cargo", "build", "--locked", "--release", "--target",
+              "aarch64-apple-darwin", "-p", "chau7_optim", "-p", "chau7_md",
+          ]
+          assert set(manifest["artifacts"]) == set(expected)
+          for name, relative_path in expected.items():
+              entry = manifest["artifacts"][name]
+              assert entry["path"] == relative_path
+              artifact = bundle / relative_path
+              digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+              assert entry["sha256"] == digest, name
+          PY
           cd target/bundle && ditto -c -k --keepParent "Chau7 Next.app" "Chau7-Next-macOS-arm64.zip"
 
       - name: Upload Chau7 Next.app
@@ -115,7 +183,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Chau7-Next-macOS-arm64
-          path: apps/chau7-next/target/bundle/Chau7-Next-macOS-arm64.zip
+          path: |
+            apps/chau7-next/target/bundle/Chau7-Next-macOS-arm64.zip
+            apps/chau7-next/target/bundle/Chau7-Next-aarch64-apple-darwin-fast.json
           if-no-files-found: error
 
       # Surface the end of the failing step's output as an annotation, so the
@@ -127,7 +197,8 @@ jobs:
           PY_BIN="$(command -v python3 || command -v python)"
           "$PY_BIN" - <<'PY'
           import pathlib
-          log = pathlib.Path("ci.log")
+          import os
+          log = pathlib.Path(os.environ["RUNNER_TEMP"]) / "ci.log"
           lines = log.read_text(errors="replace").splitlines() if log.exists() else ["no log captured"]
           errors = [l for l in lines if l.startswith(("error", "warning: unused", "  -->", "test ")) and ("FAILED" in l or l.startswith(("error", "  -->")))]
           tail = (errors[-60:] if errors else []) + ["---- tail ----"] + lines[-80:]

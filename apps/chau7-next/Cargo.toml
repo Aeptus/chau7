@@ -30,10 +30,14 @@ sha2 = "0.11.0"
 # Command history store (history/). Bundled so no system SQLite is needed.
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
 
+# Fast optimized local builds; scripts/build-mode.sh enables explicit diagnostics.
 [profile.release]
+opt-level = 3
 debug = false
-lto = "thin"
-codegen-units = 16
+lto = "off"
+codegen-units = 64
+incremental = true
+strip = "symbols"
 
 # macOS 27 rejects some stripped proc-macro dylibs at compile time.
 # Build tools do not ship inside the app bundle.
