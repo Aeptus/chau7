@@ -55,7 +55,7 @@ stale table.
 | [Notifications](inventory/Notifications.md) | 2 | 45 | 45 | 0 | 0 | 0 | 0 | 0 |
 | [Observability](inventory/Observability.md) | 3 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | [Overlay](inventory/Overlay.md) | 1 | 121 | 116 | 0 | 0 | 5 | 0 | 0 |
-| [Performance](inventory/Performance.md) | 1 | 18 | 13 | 1 | 0 | 4 | 0 | 1 |
+| [Performance](inventory/Performance.md) | 1 | 18 | 14 | 0 | 0 | 4 | 0 | 0 |
 | [Profiles](inventory/Profiles.md) | 1 | 20 | 20 | 0 | 0 | 0 | 0 | 0 |
 | [Proxy](inventory/Proxy.md) | 3 | 22 | 22 | 0 | 0 | 0 | 0 | 0 |
 | [Remote](inventory/Remote.md) | 3 | 34 | 33 | 0 | 0 | 1 | 0 | 0 |
@@ -75,9 +75,9 @@ stale table.
 | [Usage](inventory/Usage.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | [Utilities](inventory/Utilities.md) | 1 | 13 | 6 | 0 | 0 | 7 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1309** | **1266** | **1** | **0** | **42** | **0** | |
+| **Total** | | **1309** | **1267** | **0** | **0** | **42** | **0** | |
 
-Finished (done, n/a or dropped): 1308 of 1309 rows (99%). Partial: 1.
+Finished (done, n/a or dropped): 1309 of 1309 rows (100%). Partial: 0.
 
 <!-- parity:end -->
 

@@ -54,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Record scoped PRF-002 acceptance for Chau7 Next's whole-window Software
+  backend and automatic unavailable-device fallback, including localized
+  Settings, signed normal-package MCP/performance/quit checks and isolated
+  synthetic-run persistence. Full-quality/CI results for the final docs-only
+  revision and the separate Mac hand-test checklist remain distinct.
+
 - Introduce Chau7 Next as an isolated Rust/GPUI macOS test app alongside Chau7, with its own bundle, data folders, helper ports and MCP bridge. Track parity against the current Swift sources in `docs/rust-port/`; full current parity remains in progress.
 - Expose Chau7 Next runtime identity and numeric performance snapshots through MCP and bounded JSON reports, including CPU, RSS, main-thread heartbeat, per-pane latency percentiles and feature timings.
 

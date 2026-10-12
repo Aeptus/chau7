@@ -72,7 +72,7 @@ Current gaps have explicit delta rows. No `missing` or `partial` row may be
 silently excluded from a full-parity claim. In particular:
 
 - OVL-043 / OVL-120: repository seeding and regrouping were fixed in e78f2790 and remain regression checks. Default remains Off as in Swift.
-- PRF-002: Next has whole-window GPU and Software backends with startup fallback. Native Software Settings and Auto Restore/Settings cases remain partial; see the Performance inventory and current recovery evidence.
+- PRF-002: On frozen source `68294293`, scoped native Software/Auto unavailable-device and localized Settings acceptance pass, as do the signed feature-free normal-package MCP/performance/quit flow and isolated synthetic-run persistence. The inventory row is done for this scope; full quality/CI on the final docs-only head and the separate Mac hand-test checklist are tracked separately. See the Performance inventory, package evidence and current recovery record.
 - MCP-053 to MCP-063 / OBS-001 to OBS-005: current MCP observation, control
   ownership, readiness and repository event contracts.
 - PRF-014 to PRF-018 / DBG-026: durable performance and memory diagnostics,
@@ -130,7 +130,7 @@ The verified current TUI prompt-injection TODO is recorded separately in REP-018
 | EDT-004 to EDT-012 | IDE-style editor (its settings tab runs, but nothing reads the values) |
 | PRO-004, PRO-005 | Profile auto-switch rules on SSH host and environment variables |
 | APR-008, APR-009, KBD-016 | Minimal mode, high contrast, Kitty keyboard protocol |
-| PRF-002 | "Metal Renderer" on/off setting (GPUI always renders on the GPU) |
+| PRF-002 | April 2026 historical claim, superseded by the current-source evidence above: "Metal Renderer" on/off setting (GPUI always renders on the GPU) |
 
 ## Audit evidence
 

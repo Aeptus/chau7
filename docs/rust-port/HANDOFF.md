@@ -31,6 +31,25 @@ Last updated 2026-10-12.
 
 ## 3. Status
 
+- Frozen clean source `68294293c3cea30a565d9d300781fcac9a6586c8` passes all
+  nine compiler stages and the strict native matrix: Software 4/4, Auto
+  unavailable-device 4/4 and localized Settings 6/6. All 14 fixture PIDs and
+  owned homes were retired. Its feature-free signed normal package selected
+  Software for the whole window, passed exact 68-byte MCP input, exposed a
+  performance snapshot and 16 active timers, and quit gracefully with three
+  tabs saved and read-only SQLite `quick_check` passing. A separate isolated
+  synthetic CLI run persisted one completed assistant turn, exit status 0 and
+  a unique marker; ten shutdown phases, two saved tabs and independent
+  post-quit row/turn verification passed. Neither run contacted a provider or
+  device. PRF-002 is done for this scoped inventory behavior. Full `--full`
+  quality and CI results for the final docs-only revision are not included in
+  these receipts. The separate Mac hand-test checklist remains open; these
+  results do not establish WindowServer independence or hot GPU-loss recovery.
+  The inventory now reports 1,309/1,309 finished rows: 1,267 done, 42 n/a,
+  zero partial, zero missing and zero dropped. This inventory count does not
+  imply completion of the separate physical Mac checklist. The earlier b639
+  marked-composition failure remains historical; no cause or fix is claimed.
+
 - Historical combined source `feb5e199` passes 2,992 release workspace tests
   (two existing ignored), strict normal/optional all-target Clippy, format, 38
   macOS fork and 13 Apple tests, including seven actual Metal comparison cases.
@@ -131,8 +150,9 @@ Last updated 2026-10-12.
   `/private/tmp/fast-ee462221-exact-gates-negative-20261012`; manifest SHA256 is
   `96c1052e45e53846ebd4f1b56218195ddfef74e02fe01d69223a3294cd5f536d`.
   The follow-up source batch corrects the four separators and adds idempotent
-  layout reconciliation with bounded geometry assertions; that batch is not
-  yet validated. Earlier b639 outcomes remain scoped to b639.
+  layout reconciliation with bounded geometry assertions; the completed batch
+  is covered by the later frozen `68294293` compiler/native acceptance above.
+  Earlier b639 outcomes remain scoped to b639.
 - The current-source audit indexes all 652 Swift source files at official main
   `7733b1f0`, appends the current feature delta and reopens changed behaviour.
   [PARITY.md](PARITY.md) is the current status, including missing features.
@@ -148,7 +168,9 @@ Last updated 2026-10-12.
   row was PRF-002. That historical limitation is superseded: Next now has a
   terminal CPU rasterizer and a working renderer switch. The complete software
   window backend now starts in an ordinary signed app;
-  native resize/frame and injected-failure acceptance remain open facets.
+  at that historical checkpoint, native resize/frame and injected-failure
+  acceptance were open facets. The later `68294293` evidence is summarized at
+  the top of this section.
 - Rebased on `Aeptus/chau7` main (2026-10-09), with the coexistence rules
   updated for the newer Swift app (relay credentials, parent PID, prompt
   rules, per-tab history, Codex wrapper, attribution headers, CHG2 grid
@@ -165,43 +187,37 @@ Last updated 2026-10-12.
 
 ## 4. Next work, in order
 
-1. Validate the follow-up source batch containing the four comma-only native
-   `msg_send!` corrections and idempotent native layout reconciliation. Rerun
-   the exact compiler gates first; only after they pass continue the normal
-   build, fresh package, optional fixture build and native sequence to a
-   canonical seal. The published ee checkpoint's native-Clippy receipt remains
-   negative; its six publication gates are not a substitute for compiler or
-   native acceptance.
-2. Continue the marked-composition investigation with the four new,
-   fixture-gated AppKit callback trace sites. Preserve existing assertions and
-   deadlines. On b639, Software Restore, Settings and Cache pass but Editor
-   still fails; no complete Auto matrix, localized Settings matrix or
-   full-prepush quality run exists for that source. The standalone stock
-   `NSTextView` comparison is synthetic and proves no cause or Japanese IME
-   parity. Keep the trace capped at 64 text-free events; it is diagnostic, not
-   a production fix.
-3. Settings/snippet/history render getters now consume bounded background
-   snapshots. Keep the real cache FSEvents/SQLite error/recovery regression and
-   Settings English/French/Arabic RTL/System Default checks in acceptance.
-4. Finish remaining Mac hand-test facets below. Existing native evidence
-   proves scoped geometry/events/lifecycle, not every physical keyboard/IME,
-   multi-display, provider or full AX interaction. Preserve running apps.
-5. Continue draft PR229. Check CI and full-quality outcomes for the exact
-   current revision before claiming it is green; earlier results apply only to
-   their recorded source revisions. The editor layout fixture records and
-   validates initial geometry before composition, but checks the saved result
-   only after existing editor assertions. Later equal-bounds, one-pixel
-   resize/restore and detach-to-same-host checks use a fresh post-preview
-   baseline. A sibling-host reparent and content-width-only change are not
-   covered; no performance gain or composition fix is claimed.
+1. After the documentation-only closeout is committed and published, run the
+   full pre-push suite once against that exact clean head and record its result.
+   Check the final PR validation, including any still-running Quality/macOS job,
+   before calling the revision green. Do not rebuild Next solely for these
+   documentation changes; the implementation artifact remains `68294293`.
+2. Complete the separate physical Mac checklist below, especially actual
+   keyboard/dead-key/IME input, multi-display interactions, accessibility and
+   real helper/provider integrations. Isolated native fixtures and the fake
+   local CLI run do not cover those physical or production integrations.
+3. Keep the b639 marked-composition failure and its diagnostic evidence in the
+   recovery history. The later passing matrix does not reproduce that failure
+   or establish its cause or a production fix. Any follow-up investigation must
+   preserve existing assertions and deadlines.
+4. Continue PR #229 and update this handoff only with evidence from the exact
+   revision tested. Preserve prior negative receipts and the distinction
+   between scoped fixture acceptance and manual acceptance.
+
+The layout fixture validates an initial geometry result after the existing
+composition/input/editor assertions finish, then takes a fresh post-preview
+baseline for equal-bounds, one-pixel resize/restore and same-host detach/reattach
+checks. A sibling-host reparent and an independent content-width-only change
+with unchanged outer bounds are not covered. No performance gain or composition
+cause/fix is claimed.
 
 ## 5. Approved decisions and retained behavior
 
 - New installations default to 30 days. Existing settings/history are preserved,
   including explicit zero. Local factory resets respect installation policy.
-- PRF-002 includes a usable whole GPUI window without Metal and startup fallback.
-  CPU terminal drawing alone does not close it. Ordinary AppKit/WindowServer
-  composition and hot GPU loss have separate boundaries.
+- PRF-002 is `done` for the scoped implementation, native fixture and normal
+  runtime evidence recorded above. Ordinary AppKit/WindowServer composition,
+  hot GPU loss and the physical Mac checklist remain separate boundaries.
 - Explicit Create Per-Repo Config retains Swift behavior. Automatic Next reads
   of repository `.chau7/` remain read only. No additional user decision is needed
   to continue the authorized parity work.
@@ -246,8 +262,9 @@ Read docs/rust-port/HANDOFF.md, then AGENT-PLAYBOOK.md and
 REBASE-ON-AEPTUS.md, on branch feat/chau7-next. Goal: full parity with the
 CURRENT official Swift app, retaining the isolated macOS Chau7 Next package.
 Check PARITY.md and current source baseline before choosing the next batch.
-Finish missing and partial rows with real caller wiring and tests; do not
-claim current parity from the historical April percentage. Inspect current
+Recheck new findings against current sources and record evidence-backed
+inventory changes. Do not infer physical Mac acceptance from scoped fixtures
+or from the historical April percentage. Inspect current
 Next logs safely and use PERFORMANCE.md for numeric diagnostic access.
 Preserve running Next/Swift sessions and production restore data. Validate in
 an isolated bundle/profile, continue PR229, and record actual Mac results.

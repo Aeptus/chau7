@@ -1012,3 +1012,77 @@ its manifest is
 The source batch and fixture assertions are not yet compiled or run. No measured
 performance gain or marked-composition cause/fix is claimed; the original
 composition, input, lifecycle and deadline assertions remain in place.
+
+## 2026-10-12: 68294293 scoped Software, fallback and run-data acceptance
+
+Frozen clean source `68294293c3cea30a565d9d300781fcac9a6586c8` (tree
+`51588684fcc60f98f74eaa00f2e3e2943c6f094b`) passes all nine ordered compiler
+stages. The compiler sequence SHA256 is
+`3e61d3f3c11eecd925f7f93de562e715b465c76556f09b8df9ef172f760f9345`; its
+canonical phase seal SHA256 is
+`77f57b4c7ebb5d7a8af3b931b2549d6f503d1a3402c03fccfcf940ac5b1e79af`.
+The seal records a clean source tree and no app launch.
+
+The strict native sequence passes all four Software cases, all four Auto
+unavailable-device cases and all six localized Settings cases. All 14 native
+fixture processes and owned homes were retired. The native sequence is
+`/private/tmp/chau7-fast-acceptance-luna-68294293-native-sequence-fast-revision-v6/sequence.json`
+(SHA256 `435c9fa3eee46cc882f02d59d96e8206e316680708dc648f6fe15f8e7ad5be9b`);
+the aggregate eight-case receipt is `aggregate/native-eight-receipt.json`
+(SHA256 `7fae6d28011d1b8e560721036ffe35c5540cc6052f1f393bfd9a38b446d936e8`).
+The sequence intentionally records `full_quality_verified=false` and no full
+quality receipt. Standalone `--full` quality and CI inspection for the final
+docs-only revision are not covered by this native acceptance.
+
+The same-source feature-free signed normal package verified the actual Software
+whole-window selection. Its MCP receipt passes with exactly 68 submitted bytes,
+no appended newline, exact observed input, unchanged previous inputs, and tabs
+increasing from two to three; no provider or device was contacted. The
+performance snapshot reports writer accepted=1, completed=1, pending=0,
+failed=0, numeric runtime observations and 16 active timers; these measurements
+are not a benchmark. The graceful-quit proof is recorded in the isolated owned
+manifest (SHA256 `cff76be5e422f84cceb510add39dcc5ecef7e1c94e97e70f76d486b0476ee671`):
+exit code 0, app PID and MCP socket gone, no forced signal, three saved tabs,
+unchanged owned input files, and read-only SQLite `quick_check` returned `ok`
+with ten tables. Runtime receipts are under
+`/private/tmp/chau7-fast-acceptance-luna-68294293-normal-runtime`;
+`mcp-acceptance.json` SHA256 is
+`c6eab819cf273acb432dccaec10291e7d24c1f68f0ef38bf0ade68a099a30953`,
+`performance-snapshot.json` SHA256 is
+`d7ea58e615064146608847ba3970ea605e9dbe34b0e985db5bc1220843ae41cc`, and
+`timer-inventory.json` SHA256 is
+`bb71ed2aecc7fb448c6b9a9511a748cd155b79f21e146e91bd53ad161e3c1021`.
+
+A separate owned synthetic CLI run passed all five package, launch, MCP,
+graceful-quit and independent post-quit verification stages. Run
+`339C8BA1-D76C-4B55-BC20-87C802F6495E` completed one assistant turn with exit
+status 0 and unique marker
+`owned-synthetic-claude-run-c8c2de62b5a648499e2057bade35fd5c`. No provider,
+network or device was contacted. Its ten ordered shutdown phases passed; two
+saved tabs, app PID and MCP socket were verified after graceful quit without
+signals. Independent read-only SQLite checks passed and matched the persisted
+run row, completed turn and unique assistant marker. The five stage receipts
+are under `/private/tmp/chau7-fast-acceptance-luna-68294293-run-data-v3`:
+`package.json` SHA256 `4bc0e0ae84ddff310a5b3fe3ccb171cbc6db366aaac40a62d44f0bdbf0292baa`,
+`launch.json` SHA256 `f3da3a671e1bfa9ca0c17a289d84a77ad268ba940f1c21883895829bc07e99e7`,
+`run-data-mcp.json` SHA256 `230e044d8866d5377912c4be1b530c7200820b6435a700bacfeafad5a5943285`,
+`quit-postdb.json` SHA256 `cabdc27f7ef1deb44e9fdc186a4ec6020a12f66b1315ef2476c62887f2d7f3fa`,
+and `root-postdb-precision-aware-v3.json` SHA256
+`8d9165ebe4fc7984ba3de17430c80fb7e64a716c8d198447de4f0439c6ffaeaf`.
+
+A successful GitHub workflow run for this source reports macOS, Linux and
+Windows passing and publishes the `Chau7-Next-macOS-arm64` artifact (29,549,422
+bytes): [run 38302279668](https://github.com/Aeptus/chau7/actions/runs/38302279668),
+[artifact 11771389619](https://github.com/Aeptus/chau7/actions/runs/38302279668/artifacts/11771389619).
+The artifact was not downloaded or verified locally by this acceptance. A
+separate PR workflow run had Quality/macOS checks still running at the latest
+status read; no all-green claim is made for the final docs-only revision.
+
+These results close PRF-002 for the scoped whole-window Software and automatic
+unavailable-device fallback behavior. They do not establish independence from
+normal WindowServer composition, hot GPU-loss recovery, physical keyboard/IME
+behavior or completion of the separate Mac hand-test checklist. The b639
+marked-composition failure remains a preserved historical result; this later
+matrix does not establish its cause or a fix. Full-quality and CI results for
+the final documentation-only revision are not included here; check the current
+PR workflow for those results.

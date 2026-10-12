@@ -95,14 +95,16 @@ in real AI CLI configs, TLS trust and production relay pairing. The isolated
 startup check does not establish full feature parity or production readiness.
 
 
-## Current parity batch validation
+## Historical parity batch validation (20f9eed5)
 
 Committed app source `20f9eed5` passed 2,196 local macOS workspace tests
 (261 app, 1,935 core), with two ignored tests/examples. The final combined
 source also passes strict workspace/all-target Clippy and the parity schema
 check. This batch includes current repository grouping, grapheme painting,
 Spanish/plural backend, CTO sentinel, macOS file-watcher recovery and numeric
-performance exports. Full current parity remains active and incomplete.
+performance exports. At that checkpoint the current-source inventory was still
+in progress; the later scoped PRF-002 status is recorded below. The separate
+physical Mac checklist remains open.
 
 A separately identified local diagnostic app was assembled from the committed
 new app/bridge binaries and the previously verified CI helpers. This is an
@@ -119,7 +121,7 @@ quit/session save passed. Diagnostic profile: `/private/tmp/c7perf-5af6659b5d`.
 The performance reports path is `~/.chau7-next/reports/performance`, through
 `DataRoot::reports_dir`, rather than the main log's App Support location.
 
-## Current owned normal package, 2026-10-12
+## Earlier owned diagnostic package, 2026-10-12 (66753ed1)
 
 Source66753ed1 builds three normal Rust binaries without native fixture features.
 Clean source, matching Cargo artifact/fingerprint hashes, arm64/minimum macOS13.0,
@@ -130,12 +132,43 @@ and performance persistence intact. Existing apps/profiles remain untouched.
 This owned diagnostic package is separate from the complete CI build artifact.
 See [recovery validation](RECOVERY-VALIDATION-20261011.md) for scope and limits.
 
-## Normal software-window test package, 2026-10-12
+## Earlier normal software-window test package, 2026-10-12 (7bd54649)
 
 Clean source 7bd54649 produces a normal feature-free signed arm64/macOS13.0
 package with all seven helpers and GPUI notices/licenses. It launches in a fresh
 synthetic profile through LaunchServices using the saved Software preference,
 exposes verified runtime/whole-window diagnostics, accepts exact owned MCP
 Unicode input and saves all three tabs on graceful quit. Existing apps/profiles
-remain untouched. This scoped test does not yet close native resize/fallback
-acceptance or replace the complete CI package; see recovery validation.
+remain untouched. At this earlier checkpoint the scoped test did not yet close native
+resize/fallback acceptance or replace the full CI package; the later
+exact-source acceptance below supersedes that status. See recovery validation
+for both chronology and scope.
+
+## Current exact-source acceptance, 2026-10-12
+
+Frozen clean source `68294293c3cea30a565d9d300781fcac9a6586c8` (tree
+`51588684fcc60f98f74eaa00f2e3e2943c6f094b`) passes all nine compiler stages
+and the strict native matrix: Software 4/4, Auto unavailable-device 4/4 and
+localized Settings 6/6. The feature-free signed normal package selects the
+whole-window Software backend and passes owned MCP input, numeric performance
+observation and graceful quit/session persistence. A separate isolated fake
+CLI run passes completed-run persistence and independent read-only post-quit
+database verification. No provider or device was contacted. Full
+receipt detail and scope limits are in
+[recovery validation](RECOVERY-VALIDATION-20261011.md).
+
+PRF-002 is complete for this scoped inventory behavior. The native and runtime
+receipts do not establish independence from normal WindowServer composition,
+hot GPU-loss recovery, or completion of the separate [Mac hand-test checklist](HANDOFF.md#6-hand-test-checklist-on-a-mac).
+Full `--full` quality and CI inspection for the final docs-only revision are
+not represented by these receipts.
+
+A successful workflow run for this exact source head reports macOS, Linux and
+Windows passing. Its 29,549,422-byte `Chau7-Next-macOS-arm64` artifact is
+available from [run 38302279668](https://github.com/Aeptus/chau7/actions/runs/38302279668)
+([artifact 11771389619](https://github.com/Aeptus/chau7/actions/runs/38302279668/artifacts/11771389619)).
+The artifact was not downloaded or verified locally in this acceptance. A
+separate pull-request workflow run still had Quality/macOS checks running at
+the latest status read. Check [PR #229](https://github.com/Aeptus/chau7/pull/229)
+for the final docs-only revision's current checks and artifact; the successful
+run above is for source head `68294293`, before the documentation-only closeout.
