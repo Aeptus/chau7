@@ -52,7 +52,11 @@ fn real_search_change_centers_first_match_and_empty_retains_selection(
             })
             .unwrap();
         cx.run_until_parked();
-        for _ in 0..3 {
+        for _ in 0..5 {
+            cx.background_executor
+                .advance_clock(std::time::Duration::from_millis(250));
+            cx.run_until_parked();
+            anchors::take_rendered_targets();
             cx.update_window(handle, |_, window, cx| {
                 window.render_frame(cx);
                 window.simulate_next_frame(cx);
@@ -100,6 +104,74 @@ fn real_search_change_centers_first_match_and_empty_retains_selection(
             }
         });
     }
+    // Rapid changes cancel the older120ms retry, including a query cleared
+    // before its target ever paints. Exercise actual subscribed input events.
+    let retries_before = cx.update(|cx| view.read(cx).search_retry_attempts);
+    for query in ["restored", "font"] {
+        handle
+            .update(cx, |_, window, cx| {
+                input.update(cx, |input, cx| {
+                    input.set_value(query, window, cx);
+                    cx.emit(InputEvent::Change);
+                })
+            })
+            .unwrap();
+        cx.run_until_parked();
+    }
+    for _ in 0..5 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(250));
+        cx.run_until_parked();
+        anchors::take_rendered_targets();
+        cx.update_window(handle, |_, window, cx| {
+            window.render_frame(cx);
+            window.simulate_next_frame(cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+    }
+    cx.update(|cx| {
+        let current = view.read(cx);
+        assert_eq!(current.navigation.selection, SettingsSection::FontColors);
+        assert_eq!(current.navigation.search_query, "font");
+        assert_eq!(current.search_retry_attempts, retries_before + 1);
+        assert_eq!(
+            anchors::highlighted_targets(),
+            std::collections::HashSet::from(["fontFamily"])
+        );
+    });
+    let retries_before = cx.update(|cx| view.read(cx).search_retry_attempts);
+    for query in ["cursor", ""] {
+        handle
+            .update(cx, |_, window, cx| {
+                input.update(cx, |input, cx| {
+                    input.set_value(query, window, cx);
+                    cx.emit(InputEvent::Change);
+                })
+            })
+            .unwrap();
+        cx.run_until_parked();
+    }
+    for _ in 0..5 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(250));
+        cx.run_until_parked();
+        anchors::take_rendered_targets();
+        cx.update_window(handle, |_, window, cx| {
+            window.render_frame(cx);
+            window.simulate_next_frame(cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+    }
+    cx.update(|cx| {
+        let current = view.read(cx);
+        assert_eq!(current.navigation.selection, SettingsSection::Shell);
+        assert!(current.navigation.search_query.is_empty());
+        assert_eq!(current.search_retry_attempts, retries_before);
+        assert!(current.search_animations_finished(cx.background_executor().now()));
+        assert!(anchors::highlighted_targets().is_empty());
+    });
     let swift = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../../chau7-macos/Sources/Chau7/Settings/Views/SettingsPageSummaryView.swift"
@@ -117,7 +189,11 @@ fn real_search_change_centers_first_match_and_empty_retains_selection(
             })
             .unwrap();
         cx.run_until_parked();
-        for _ in 0..3 {
+        for _ in 0..5 {
+            cx.background_executor
+                .advance_clock(std::time::Duration::from_millis(250));
+            cx.run_until_parked();
+            anchors::take_rendered_targets();
             cx.update_window(handle, |_, window, cx| {
                 window.render_frame(cx);
                 window.simulate_next_frame(cx);

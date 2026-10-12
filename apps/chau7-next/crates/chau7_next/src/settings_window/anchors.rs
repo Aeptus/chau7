@@ -11,11 +11,25 @@ struct Scope {
     labels: HashMap<String, &'static str>,
     presentation: Option<SearchPresentation>,
 }
+type MeasuredTargets = HashMap<&'static str, (Bounds<Pixels>, Pixels)>;
 #[derive(Clone, Default)]
-pub(super) struct TargetBounds(Rc<RefCell<HashMap<&'static str, Bounds<Pixels>>>>);
+pub(super) struct TargetBounds(Rc<RefCell<MeasuredTargets>>);
 impl TargetBounds {
     pub(super) fn get(&self, id: &str) -> Option<Bounds<Pixels>> {
-        self.0.borrow().get(id).copied()
+        self.0.borrow().get(id).map(|(bounds, _)| *bounds)
+    }
+    /// Screen geometry belongs to the offset used during that same prepaint.
+    /// A retry or another frame callback may already have changed the current
+    /// offset before consuming this measurement.
+    pub(super) fn centered_offset(
+        &self,
+        id: &str,
+        viewport: Bounds<Pixels>,
+        maximum: Pixels,
+    ) -> Option<Pixels> {
+        self.0.borrow().get(id).map(|(bounds, offset)| {
+            (*offset + viewport.center().y - bounds.center().y).clamp(-maximum, gpui::px(0.))
+        })
     }
     pub(super) fn clear(&self) {
         self.0.borrow_mut().clear();
@@ -24,8 +38,9 @@ impl TargetBounds {
 #[derive(Clone)]
 pub(super) struct SearchPresentation {
     pub bounds: TargetBounds,
-    pub active: Option<&'static str>,
+    pub strengths: HashMap<&'static str, f32>,
     pub accent: Hsla,
+    pub scroll_handle: gpui::ScrollHandle,
 }
 pub(super) fn with_search_scope<T>(
     section: SettingsSection,
@@ -45,23 +60,29 @@ fn present(id: Option<&'static str>, element: impl IntoElement) -> gpui::Div {
     let Some((id, presentation)) = id.zip(presentation) else {
         return div().child(element);
     };
-    let highlighted = presentation.active == Some(id);
+    let strength = presentation.strengths.get(id).copied().unwrap_or(0.);
+    let highlighted = strength > 0.;
     let bounds = presentation.bounds;
     div()
         .relative()
         .rounded_md()
         .border_1()
         .border_color(if highlighted {
-            presentation.accent.opacity(0.45)
+            presentation.accent.opacity(0.45 * strength)
         } else {
             gpui::transparent_black()
         })
-        .when(highlighted, |d| d.bg(presentation.accent.opacity(0.12)))
+        .when(highlighted, |d| {
+            d.bg(presentation.accent.opacity(0.12 * strength))
+        })
         .child(element)
         .child(
             canvas(
                 move |value, _, _| {
-                    bounds.0.borrow_mut().insert(id, value);
+                    bounds
+                        .0
+                        .borrow_mut()
+                        .insert(id, (value, presentation.scroll_handle.offset().y));
                     #[cfg(any(test, feature = "native-parity-fixture"))]
                     if highlighted {
                         HIGHLIGHTED.with(|seen| {
@@ -373,5 +394,41 @@ mod tests {
         with_scope(SettingsSection::SnippetsTools, anchors, || {
             assert!(for_id("permissions").is_some())
         });
+    }
+}
+
+#[cfg(test)]
+mod measurement_tests {
+    use super::*;
+    #[test]
+    fn centered_destination_uses_the_offset_of_its_actual_measurement() {
+        let measured = TargetBounds::default();
+        measured.0.borrow_mut().insert(
+            "fontFamily",
+            (
+                Bounds::new(
+                    gpui::point(gpui::px(0.), gpui::px(780.)),
+                    gpui::size(gpui::px(400.), gpui::px(40.)),
+                ),
+                gpui::px(-200.),
+            ),
+        );
+        let viewport = Bounds::new(
+            gpui::point(gpui::px(0.), gpui::px(0.)),
+            gpui::size(gpui::px(400.), gpui::px(600.)),
+        );
+        assert_eq!(
+            measured.centered_offset("fontFamily", viewport, gpui::px(1000.)),
+            Some(gpui::px(-700.))
+        );
+        assert_eq!(
+            measured.centered_offset("fontFamily", viewport, gpui::px(500.)),
+            Some(gpui::px(-500.))
+        );
+        assert!(
+            measured
+                .centered_offset("missing", viewport, gpui::px(1000.))
+                .is_none()
+        );
     }
 }
