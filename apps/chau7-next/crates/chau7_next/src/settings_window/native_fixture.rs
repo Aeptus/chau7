@@ -64,6 +64,7 @@ async fn verify(cx: &mut AsyncApp) -> Result<Value> {
             chau7_next_core::token_optimization::TokenOptimizationMode::AiOnly;
         let (window, view) = gpui_kit::open_window(
             WindowOptions {
+                focus: false,
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(
                     gpui::point(px(0.0), px(0.0)),
                     size(px(860.0), px(640.0)),
