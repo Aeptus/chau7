@@ -58,6 +58,7 @@ pub(crate) use native_accessibility_fixture::verify as verify_native_accessibili
 #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
 pub(crate) use native_restore_fixture::{
     dispose as dispose_native_fixture, verify as verify_native_restore_fixture,
+    verify_keyboard as verify_native_keyboard_fixture,
 };
 mod restore_lifecycle;
 mod shell_loading;

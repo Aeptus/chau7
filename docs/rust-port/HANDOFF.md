@@ -1,7 +1,7 @@
 # Chau7 Next: handoff
 
 Read this first when picking up Chau7 Next (the Rust/GPUI port of Chau7).
-Last updated 2026-10-12.
+Last updated 2026-10-13.
 
 ## 1. Where things are
 
@@ -31,16 +31,60 @@ Last updated 2026-10-12.
 
 ## 3. Status
 
-- Frozen follow-up source `afc66fa27460213c54e29c381e3fe50e08554ef2`
-  passed nine commit gates and ten full-suite publication gates. Its fast
-  workspace execution passed 3,019 tests (two ignored), normal strict Clippy,
-  format and build/installer contracts. Native-feature Clippy failed because
-  the new accessibility fixture inferred a borrowed error type where an owned
-  String was required. The sequence stopped before vendor/package/native
-  stages; no new fixture app was launched. The subsequent batch corrects that
-  type, upgrades the Issues Worker tool cohort, and groups duplicate push/PR
-  CI builds while separating forks, target bases and manual runs. That batch
-  still requires exact-source compilation and native execution.
+- Latest compiled checkpoint `ab64761304b0339cdace38413bed241432e7e1a7` (tree
+  `9e6987d719189b415113e0fe1671aa9f52b46a4a`) passed all nine fast compiler
+  stages and 3,019 workspace tests (two ignored). The isolated native Software
+  matrix passed Restore, Settings and Cache (3/4); the Editor case observed the
+  marked composition disappear between repaint frames. The runner stopped after
+  this matrix, so Auto, localized Settings and the optional accessibility case
+  were not attempted.
+- GitHub workflow run `38313846802` reports its macOS, Linux and Windows matrix
+  jobs successful for this exact source. Artifact metadata identifies
+  `11776452820` at 29,556,237 bytes; the artifact was not downloaded or locally
+  verified. Quality run `38313846806` and the three parity checks also passed.
+  All seven expected checks succeeded; the three cancelled jobs belong to the
+  redundant matrix run stopped by shared concurrency.
+- A follow-up fixture-only diagnostic proposal extends the earlier 64-event
+  trace to a 96-event bound. It records input-context identities, native frame
+  geometry and attachment decisions, marked-state around existing frame
+  setters, and pending mirror/focus state around existing focus delivery. It
+  captures no source text and changes no production behavior, acceptance
+  assertions or deadlines. This new source batch still needs compiler and
+  runtime validation.
+- The same unvalidated batch adds an explicit-only `keyboard` native fixture.
+  It installs the production keymap, app actions and native menus, then sends
+  owned AppKit events for Cmd+C without selection, Ctrl+Tab and Cmd+D. Local
+  fake shells record the exact interruption byte and prove two distinct split
+  PTYs with focus on the new leaf. The original four-case default matrix and
+  its assertions/deadlines stay unchanged. This fixture does not establish
+  physical keyboard, dead-key or input-method behavior.
+- Separate from that failure, the signed normal package selected Software for
+  its live windows. MCP delivered the exact 68-byte input to a newly created
+  third tab and left earlier tab input unchanged. The writer receipt reported
+  accepted 1, completed 1, failed 0 and pending 0; the performance snapshot
+  reported two Software renderer surfaces with zero failed frames and 16 active
+  timers. Read-only metadata inspection confirmed the persisted snapshot and
+  all 34 history records carry the ab647613 build SHA; this is not a benchmark.
+- An owned `/bin/cat` child (PID 19542, parent app PID 19228) was present
+  before the existing graceful-quit path ran once. Both processes were gone
+  afterward; the observer used no process signals. A separate five-stage
+  synthetic run-data sequence passed: a local owned fake `claude` executable
+  produced one completed assistant turn (exit 0) with a unique marker; ten
+  shutdown phases passed, and a read-only SQLite check matched the run and turn
+  records. That isolated run made no network or provider/device contact.
+  These scoped receipts do not establish physical input, VoiceOver, production
+  provider behavior or a complete native matrix; the section 6 Mac checklist
+  remains open.
+
+- Earlier checkpoint: frozen source
+  `afc66fa27460213c54e29c381e3fe50e08554ef2` passed nine commit gates and ten
+  full-suite publication gates. Its fast workspace execution passed 3,019 tests
+  (two ignored), normal strict Clippy, format and build/installer contracts.
+  Native-feature Clippy failed because the accessibility fixture inferred a
+  borrowed error type where an owned String was required; that sequence
+  stopped before vendor/package/native stages and launched no fixture app.
+  The later source revision and its exact compiler/native outcomes are recorded
+  above. The afc failure remains historical and was not treated as a pass.
 
 - Published docs revision `e4715bd23a50d033f306c6a3da6a2fb39c6cf35d`
   passed all seven reported PR checks, including macOS, Linux, Windows and
@@ -54,9 +98,10 @@ Last updated 2026-10-12.
   assertions. An optional app-local native accessibility fixture checks the
   rendered tab/slider tree and actual AppKit press/increment/decrement actions
   without changing system accessibility settings. It remains separate from
-  the original eight-case Software/Auto matrix. This source proposal has not
-  yet been compiled or run; VoiceOver speech/navigation and physical input
-  still require the separate section 6 checklist.
+  the original Software/Auto matrix. The fixture compiled in the ab647613 gates,
+  but its runtime case was not reached after the Software editor failure.
+  VoiceOver speech/navigation and physical input still require the separate
+  section 6 checklist.
 
 - Frozen clean source `68294293c3cea30a565d9d300781fcac9a6586c8` passes all
   nine compiler stages and the strict native matrix: Software 4/4, Auto
@@ -111,27 +156,30 @@ Last updated 2026-10-12.
   No locale cases ran after the stopped matrix. The failing receipt lacks
   memory-state values; the next batch adds failure diagnostics with the same
   predicate and deadline. PRF-002 remains partial.
-- Frozen clean source `ca46d51d5ab00ab4f913eed25246b87e192db26b` passes all nine
+- Historical frozen source `ca46d51d5ab00ab4f913eed25246b87e192db26b` passes all nine
   compiler stages and the canonical seal. It passes 3,017 Next tests (two
   existing ignored), strict normal/native Clippy and format/contracts; vendor
   tests pass at 36 macOS and 23 Apple, and the helper workspace passes 539
   tests (three ignored) plus focused HUP and seven EINTR cases. The normal
   build, four fresh helpers, seven-artifact signed package, package verifier
   and optional fixture build pass. Native Software Restore, Settings and Cache
-  pass; Editor loses marked composition during repaint. All four fixture
-  processes are gone and owned homes are removed. The complete Auto matrix,
+  pass; the Editor case observed marked composition disappear between repaint
+  frames. All four fixture processes are gone and owned homes are removed. The
+  complete Auto matrix,
   localized Settings cases and full-prepush quality did not run. A separate
   one-case Auto Restore probe passes but its aggregate is incomplete. PRF-002
   remains partial; see [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
-  A feature-gated, fixture-only 64-event AppKit trace is integrated in a
-  follow-up source change, not included in the ca46 receipts and not yet built.
+  Earlier diagnostic: a feature-gated, fixture-only 64-event AppKit trace was
+  integrated in a follow-up source change, not included in the ca46 receipts.
   It records fixed sites and ranges/booleans without text, preserves superclass
-  calls, and is diagnostic only; no cause or product fix is established.
-- Frozen clean source `b6394868425f65b91de0d7960e9940c78bb2af6e` passes all
+  calls, and is diagnostic only; no cause or product fix is established. The
+  current follow-up proposal is the separate 96-event trace described above;
+  it remains uncompiled and unrun.
+- Historical frozen source `b6394868425f65b91de0d7960e9940c78bb2af6e` passes all
   nine compiler/test/package stages. Its canonical compiler seal is
   `51313bfde37ef0dd89f224998b3c90a0e21730b4912d713166ac6d29f6c199ea`.
-  The native Software cases pass Restore, Settings and Cache; Editor still
-  loses its marked range during the first repaint. The observed mark is present
+  The native Software cases pass Restore, Settings and Cache; the Editor case
+  observed its marked range disappear between repaint frames. The mark is present
   before that frame and absent before style/attachment synchronization. No
   native unmark, responder or detach callback appears, and recorded app/window/
   responder focus remains valid. This narrows the interval but proves no cause.
@@ -214,19 +262,19 @@ Last updated 2026-10-12.
 
 ## 4. Next work, in order
 
-1. After the documentation-only closeout is committed and published, run the
-   full pre-push suite once against that exact clean head and record its result.
-   Check the final PR validation, including any still-running Quality/macOS job,
-   before calling the revision green. Do not rebuild Next solely for these
-   documentation changes; the implementation artifact remains `68294293`.
+1. Investigate the current ab647613 Software Editor failure without weakening
+   its marked-composition assertion or deadline. The current native run passed
+   three of four Software cases and stopped before Auto, localized Settings and
+   accessibility acceptance. After any source fix, rerun the exact-source
+   compiler and native sequence; preserve this negative receipt.
 2. Complete the separate physical Mac checklist below, especially actual
    keyboard/dead-key/IME input, multi-display interactions, accessibility and
    real helper/provider integrations. Isolated native fixtures and the fake
    local CLI run do not cover those physical or production integrations.
-3. Keep the b639 marked-composition failure and its diagnostic evidence in the
-   recovery history. The later passing matrix does not reproduce that failure
-   or establish its cause or a production fix. Any follow-up investigation must
-   preserve existing assertions and deadlines.
+3. Keep the b639 failure and its diagnostic evidence in recovery history. The
+   the ab647613 Editor case observed marked-composition loss between repaint
+   frames; neither result establishes a production cause or fix. Preserve
+   assertions and deadlines in any follow-up.
 4. Continue PR #229 and update this handoff only with evidence from the exact
    revision tested. Preserve prior negative receipts and the distinction
    between scoped fixture acceptance and manual acceptance.
@@ -242,9 +290,12 @@ cause/fix is claimed.
 
 - New installations default to 30 days. Existing settings/history are preserved,
   including explicit zero. Local factory resets respect installation policy.
-- PRF-002 is `done` for the scoped implementation, native fixture and normal
-  runtime evidence recorded above. Ordinary AppKit/WindowServer composition,
-  hot GPU loss and the physical Mac checklist remain separate boundaries.
+- PRF-002 remains `done` for the scoped implementation and its accepted
+  68294293 evidence; the newer ab647613 native Software rerun is separately
+  incomplete because its Editor case failed (3/4). Do not use the inventory
+  status as a substitute for that current receipt. Ordinary AppKit/WindowServer
+  composition, hot GPU loss and the physical Mac checklist remain separate
+  boundaries.
 - Explicit Create Per-Repo Config retains Swift behavior. Automatic Next reads
   of repository `.chau7/` remain read only. No additional user decision is needed
   to continue the authorized parity work.

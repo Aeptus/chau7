@@ -21,13 +21,13 @@ use objc2::{
     runtime::AnyObject,
     sel,
 };
-#[cfg(feature = "native-parity-fixture")]
-use objc2_app_kit::NSSelectionAffinity;
 use objc2_app_kit::{
     NSApplication, NSAutoresizingMaskOptions, NSClipView, NSColor, NSEvent, NSEventModifierFlags,
     NSFont, NSFontAttributeName, NSForegroundColorAttributeName, NSMenuItem, NSRulerOrientation,
     NSRulerView, NSScrollView, NSStringDrawing, NSTextInputClient, NSTextView, NSView,
 };
+#[cfg(feature = "native-parity-fixture")]
+use objc2_app_kit::{NSSelectionAffinity, NSTextInputContext};
 #[cfg(feature = "native-parity-fixture")]
 use objc2_foundation::{NSArray, NSValue};
 use objc2_foundation::{
@@ -103,7 +103,7 @@ struct FixtureTrace {
 }
 #[cfg(feature = "native-parity-fixture")]
 impl FixtureTrace {
-    const CAPACITY: usize = 64;
+    const CAPACITY: usize = 96;
 
     fn begin(&self, view: &SourceTextView, site: &'static str) {
         self.events.borrow_mut().clear();
@@ -126,6 +126,12 @@ impl FixtureTrace {
             .is_some_and(|source| std::ptr::eq(&*source, view));
         let application_active = MainThreadMarker::new()
             .is_some_and(|mtm| NSApplication::sharedApplication(mtm).isActive());
+        let source_context_id = view
+            .inputContext()
+            .map(|context| (&*context as *const NSTextInputContext) as usize);
+        let current_context_id = MainThreadMarker::new()
+            .and_then(|mtm| NSTextInputContext::currentInputContext(mtm))
+            .map(|context| (&*context as *const NSTextInputContext) as usize);
         let sequence = self.sequence.get().saturating_add(1);
         self.sequence.set(sequence);
         let event = serde_json::json!({
@@ -139,6 +145,9 @@ impl FixtureTrace {
             "window_key": window_key,
             "source_first_responder": source_first_responder,
             "application_active": application_active,
+            "source_input_context_id": source_context_id,
+            "current_input_context_id": current_context_id,
+            "source_context_is_current": source_context_id.is_some() && source_context_id == current_context_id,
             "responder_result": responder_result,
         });
         let mut events = self.events.borrow_mut();
@@ -146,6 +155,21 @@ impl FixtureTrace {
             events.remove(0);
         }
         events.push(event);
+    }
+
+    fn record_details(
+        &self,
+        view: &SourceTextView,
+        site: &'static str,
+        details: serde_json::Value,
+    ) {
+        self.record(view, site, None);
+        if !self.enabled.get() {
+            return;
+        }
+        if let Some(event) = self.events.borrow_mut().last_mut() {
+            event["details"] = details;
+        }
     }
 
     fn finish(&self, failed: bool) {
@@ -186,7 +210,7 @@ struct Shared {
     deferred_style: Cell<bool>,
     host: host::SourceHost,
     #[cfg(feature = "native-parity-fixture")]
-    fixture_trace: FixtureTrace,
+    fixture_trace: Rc<FixtureTrace>,
 }
 impl Shared {
     fn signal(&self) {
@@ -253,6 +277,7 @@ fn start_delivery(
     queued: Rc<Cell<bool>>,
     mut receiver: mpsc::UnboundedReceiver<()>,
     cx: &Context<EditorPane>,
+    #[cfg(feature = "native-parity-fixture")] fixture_trace: Option<Rc<FixtureTrace>>,
 ) {
     cx.spawn(async move |this, cx| {
         while receiver.next().await.is_some() {
@@ -262,13 +287,64 @@ fn start_delivery(
             }
             let _ = this.update_in(cx, |this, window, cx| {
                 let mut pending = std::mem::take(&mut *pending.borrow_mut());
+                #[cfg(feature = "native-parity-fixture")]
+                let pending_text = pending.text.is_some();
+                #[cfg(feature = "native-parity-fixture")]
+                let pending_selection = pending.selection.is_some();
+                #[cfg(feature = "native-parity-fixture")]
+                let pending_focused = pending.focused;
+                #[cfg(feature = "native-parity-fixture")]
+                let pending_actions = pending.actions.len();
+                #[cfg(feature = "native-parity-fixture")]
+                if let (Some(trace), Some(native)) =
+                    (fixture_trace.as_ref(), this.native_markdown.as_ref())
+                {
+                    trace.record_details(&native.text, "EditorPane::delivery.before_mirror", serde_json::json!({
+                        "pending_text": pending_text, "pending_selection": pending_selection,
+                        "pending_focused": pending_focused, "pending_action_count": pending_actions,
+                    }));
+                }
                 let (text, selection) = pending.take_edits(&this.state.read(cx).value());
                 if this.mirror_native_edits(text, selection, window, cx) {
                     this.schedule_autosave(cx);
                 }
+                #[cfg(feature = "native-parity-fixture")]
+                if let (Some(trace), Some(native)) =
+                    (fixture_trace.as_ref(), this.native_markdown.as_ref())
+                {
+                    trace.record_details(&native.text, "EditorPane::delivery.after_mirror", serde_json::json!({
+                        "pending_text": pending_text, "pending_selection": pending_selection,
+                        "pending_focused": pending_focused, "pending_action_count": pending_actions,
+                    }));
+                }
                 if pending.focused {
+                    #[cfg(feature = "native-parity-fixture")]
+                    if let (Some(trace), Some(native)) =
+                        (fixture_trace.as_ref(), this.native_markdown.as_ref())
+                    {
+                        trace.record_details(&native.text, "EditorPane::delivery.before_window_focus", serde_json::json!({
+                            "pending_focused": pending_focused,
+                        }));
+                    }
                     window.focus(&this.focus_handle, cx);
+                    #[cfg(feature = "native-parity-fixture")]
+                    if let (Some(trace), Some(native)) =
+                        (fixture_trace.as_ref(), this.native_markdown.as_ref())
+                    {
+                        trace.record_details(&native.text, "EditorPane::delivery.after_window_focus", serde_json::json!({
+                            "pending_focused": pending_focused,
+                        }));
+                    }
                     cx.emit(super::SidePaneEvent::Focused);
+                } else {
+                    #[cfg(feature = "native-parity-fixture")]
+                    if let (Some(trace), Some(native)) =
+                        (fixture_trace.as_ref(), this.native_markdown.as_ref())
+                    {
+                        trace.record_details(&native.text, "EditorPane::delivery.window_focus_skipped", serde_json::json!({
+                            "pending_focused": pending_focused,
+                        }));
+                    }
                 }
                 for action in pending.actions {
                     match action {
@@ -832,7 +908,7 @@ impl NativeMarkdown {
             deferred_style: Cell::new(false),
             host: host::SourceHost::new(&raw),
             #[cfg(feature = "native-parity-fixture")]
-            fixture_trace: FixtureTrace::default(),
+            fixture_trace: Rc::new(FixtureTrace::default()),
         });
         let text = SourceTextView::new(mtm, shared.clone());
         text.setFont(Some(&NSFont::systemFontOfSize(
@@ -867,6 +943,15 @@ impl NativeMarkdown {
             #[cfg(feature = "native-parity-fixture")]
             fixture_attach_decision: Cell::new(None),
         });
+        #[cfg(feature = "native-parity-fixture")]
+        start_delivery(
+            shared.pending.clone(),
+            shared.queued.clone(),
+            receiver,
+            cx,
+            Some(shared.fixture_trace.clone()),
+        );
+        #[cfg(not(feature = "native-parity-fixture"))]
         start_delivery(shared.pending.clone(), shared.queued.clone(), receiver, cx);
         Some(result)
     }
@@ -1082,7 +1167,14 @@ impl NativeMarkdown {
             NSPoint::new(f64::from(f32::from(bounds.origin.x)), y),
             NSSize::new(f64::from(f32::from(bounds.size.width)), height),
         );
-        let scroll_frame_set = needs_reparent || self.scroll.frame() != frame;
+        let previous_scroll_frame = self.scroll.frame();
+        #[cfg(feature = "native-parity-fixture")]
+        let previous_text_frame = self.text.frame();
+        #[cfg(feature = "native-parity-fixture")]
+        let old_parent_id = unsafe { self.scroll.superview() }
+            .as_ref()
+            .map(|parent| (&**parent as *const NSView) as usize);
+        let scroll_frame_set = needs_reparent || previous_scroll_frame != frame;
         #[cfg(feature = "native-parity-fixture")]
         self.shared.fixture_trace.record(
             &self.text,
@@ -1126,10 +1218,21 @@ impl NativeMarkdown {
             }
             if frame.size.width != width {
                 frame.size.width = width;
+                #[cfg(feature = "native-parity-fixture")]
+                self.shared.fixture_trace.record(
+                    &self.text,
+                    "NativeMarkdown::attach.text_frame.before",
+                    None,
+                );
                 self.text.setFrame(frame);
                 #[cfg(feature = "native-parity-fixture")]
                 {
                     text_frame_set = true;
+                    self.shared.fixture_trace.record(
+                        &self.text,
+                        "NativeMarkdown::attach.text_frame.after",
+                        None,
+                    );
                 }
             }
         }
@@ -1140,28 +1243,44 @@ impl NativeMarkdown {
         #[cfg(feature = "native-parity-fixture")]
         {
             let actual_scroll_frame = self.scroll.frame();
-            let actual_text_width = self.text.frame().size.width;
-            self.fixture_attach_decision
-                .set(Some(FixtureAttachDecision {
-                    bounds: [
-                        f32::from(bounds.origin.x),
-                        f32::from(bounds.origin.y),
-                        f32::from(bounds.size.width),
-                        f32::from(bounds.size.height),
-                    ],
-                    actual_scroll_frame: [
-                        actual_scroll_frame.origin.x,
-                        actual_scroll_frame.origin.y,
-                        actual_scroll_frame.size.width,
-                        actual_scroll_frame.size.height,
-                    ],
-                    needs_reparent,
-                    scroll_frame_set,
-                    text_frame_set,
-                    hidden_set,
-                    text_target_width,
-                    text_actual_width: text_target_width.map(|_| actual_text_width),
-                }));
+            let actual_text_frame = self.text.frame();
+            let decision = FixtureAttachDecision {
+                bounds: [
+                    f32::from(bounds.origin.x),
+                    f32::from(bounds.origin.y),
+                    f32::from(bounds.size.width),
+                    f32::from(bounds.size.height),
+                ],
+                actual_scroll_frame: [
+                    actual_scroll_frame.origin.x,
+                    actual_scroll_frame.origin.y,
+                    actual_scroll_frame.size.width,
+                    actual_scroll_frame.size.height,
+                ],
+                needs_reparent,
+                scroll_frame_set,
+                text_frame_set,
+                hidden_set,
+                text_target_width,
+                text_actual_width: text_target_width.map(|_| actual_text_frame.size.width),
+            };
+            self.fixture_attach_decision.set(Some(decision));
+            self.shared.fixture_trace.record_details(&self.text, "NativeMarkdown::attach.geometry", serde_json::json!({
+                "needs_reparent": needs_reparent, "scroll_frame_set": scroll_frame_set,
+                "text_frame_set": text_frame_set, "was_hidden": hidden_set,
+                "is_hidden": self.scroll.isHidden(), "old_parent_id": old_parent_id,
+                "host_view_id": (&*view as *const NSView) as usize,
+                "previous_scroll_frame": [previous_scroll_frame.origin.x, previous_scroll_frame.origin.y,
+                    previous_scroll_frame.size.width, previous_scroll_frame.size.height],
+                "target_scroll_frame": [frame.origin.x, frame.origin.y, frame.size.width, frame.size.height],
+                "actual_scroll_frame": [actual_scroll_frame.origin.x, actual_scroll_frame.origin.y,
+                    actual_scroll_frame.size.width, actual_scroll_frame.size.height],
+                "previous_text_frame": [previous_text_frame.origin.x, previous_text_frame.origin.y,
+                    previous_text_frame.size.width, previous_text_frame.size.height],
+                "actual_text_frame": [actual_text_frame.origin.x, actual_text_frame.origin.y,
+                    actual_text_frame.size.width, actual_text_frame.size.height],
+                "text_target_width": text_target_width,
+            }));
         }
         // A signal can arrive while a transferred pane has no mounted window.
         // Retry only on a real mount; never consume its edits/actions on failure.
@@ -1417,6 +1536,14 @@ mod tests {
         let pending = cx.update(|cx| {
             pane.update(cx, |pane, cx| {
                 let pending = pane.native_pending.clone();
+                #[cfg(feature = "native-parity-fixture")]
+                let fixture_trace = pane
+                    .native_markdown
+                    .as_ref()
+                    .map(|native| native.shared.fixture_trace.clone());
+                #[cfg(feature = "native-parity-fixture")]
+                start_delivery(pending.clone(), queued.clone(), receiver, cx, fixture_trace);
+                #[cfg(not(feature = "native-parity-fixture"))]
                 start_delivery(pending.clone(), queued.clone(), receiver, cx);
                 pending
             })

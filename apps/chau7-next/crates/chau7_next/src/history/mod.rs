@@ -7,10 +7,12 @@
 //! | `recorder.rs` | session recording for the timeline scrubber (HIS-015) |
 //!
 //! Chau7 Next keeps its own SQLite database (`DataRoot::history_db`) and never
-//! touches the Swift app's `history.db`. Commands are recorded when they
-//! finish (OSC 133 D), with their exit code and duration; the Swift app never
-//! fills its store from the terminal, so this is new behavior on purpose.
-//! Writes go through a thread so the UI never waits for SQLite.
+//! touches the Swift app's `history.db`. Swift also writes terminal input to
+//! `PersistentHistoryStore` from its shell-input path when persistent history is
+//! enabled; that insertion happens before completion and supplies no exit code
+//! or duration. Chau7 Next records completed commands at OSC 133 D with that
+//! completion metadata. Writes go through a thread so the UI never waits for
+//! SQLite.
 
 pub mod monitor;
 pub mod recorder;

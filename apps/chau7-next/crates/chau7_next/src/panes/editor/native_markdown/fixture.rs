@@ -505,6 +505,10 @@ pub(in crate::panes::editor) async fn verify(
     crate::native_parity_fixture::next_frame(handle.into(), cx).await?;
     MainThreadMarker::new().ok_or("owned composition frame left main thread")?;
     composition_phase("after_frame_one", &application, &native_window, &native);
+    native
+        .shared
+        .fixture_trace
+        .record(&native.text, "fixture.frame_one.after", None);
     cx.update(|_| {
         native
             .shared
@@ -514,6 +518,10 @@ pub(in crate::panes::editor) async fn verify(
     crate::native_parity_fixture::next_frame(handle.into(), cx).await?;
     MainThreadMarker::new().ok_or("owned composition frame left main thread")?;
     composition_phase("after_frame_two", &application, &native_window, &native);
+    native
+        .shared
+        .fixture_trace
+        .record(&native.text, "fixture.frame_two.after", None);
     cx.update(|_| {
         ensure(native.mount_generation.get() != previous_mount,
             "owned native source did not actually remount")?;

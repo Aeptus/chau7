@@ -111,7 +111,11 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           set -o pipefail
-          { ./scripts/test-build-mode.sh; ./scripts/test-cli-installer.sh; } 2>&1 | tee "$RUNNER_TEMP/ci.log"
+          {
+            python3 ./scripts/test_native_parity.py
+            ./scripts/test-build-mode.sh
+            ./scripts/test-cli-installer.sh
+          } 2>&1 | tee "$RUNNER_TEMP/ci.log"
 
       - name: Bundle Chau7 Next.app
         if: runner.os == 'macOS'

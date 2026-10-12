@@ -7,17 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Validation
+
+- On exact source `ab64761304b0339cdace38413bed241432e7e1a7`, all nine fast
+  compiler stages passed and the workspace reported 3,019 passed tests (two
+  ignored). The native Software matrix passed Restore, Settings and Cache; the
+  Editor case observed marked composition disappear between repaint frames
+  (3/4). The runner did not proceed to Auto, localized Settings or the optional
+  accessibility case.
+- GitHub workflow run `38313846802` reports macOS, Linux and Windows matrix
+  success for this exact source. Artifact metadata identifies `11776452820` at
+  29,556,237 bytes; it was not downloaded or locally verified. Quality run
+  `38313846806` and the three parity checks also passed. All seven expected
+  checks succeeded; the three cancelled jobs belong to the redundant matrix
+  run stopped by shared concurrency.
+- The separate signed normal package selected Software for its live windows,
+  delivered an exact 68-byte MCP input to a third tab and preserved earlier
+  tab input. The writer completed one accepted item with no failure or pending
+  work; the performance snapshot showed zero failed frames and 16 active
+  timers. An owned `/bin/cat` child was observed under the app before graceful
+  quit; the app and child were gone afterward without forced signals.
+- A separate isolated fake-CLI run persisted one completed assistant turn with
+  exit status 0 and a unique marker. All five run-data stages, ten shutdown
+  phases and read-only SQLite row/turn checks passed. It contacted no external
+  provider or device. These checks do not close the physical Mac checklist.
+
 ### Diagnostics
 
-- Extend the fixture-only AppKit marked-composition trace with four
-  `native-parity-fixture`-gated callbacks: NSTextInputClient insertion and
+- A follow-up fixture-only proposal extends the earlier 64-event AppKit trace
+  to a 96-event bound. It records input-context identities, native frame
+  geometry and attachment decisions, marked-state around existing frame
+  setters, and pending mirror/focus state around existing focus delivery. It
+  captures no source text and changes no production behavior, acceptance
+  assertions or deadlines. Compiler and runtime validation for this new source
+  batch are pending.
+- Earlier diagnostic: the fixture-only AppKit marked-composition trace added
+  four `native-parity-fixture`-gated callbacks: NSTextInputClient insertion and
   marked-text updates, plus NSTextView single- and multi-range selection
-  updates. Trace only fixed event names, ranges and booleans within the existing
-  64-event cap; capture no source text. Each new callback invokes its exact
-  superclass selector once with unchanged arguments. Existing acceptance
-  assertions and deadlines are unchanged. This unbuilt diagnostic expansion
-  establishes no production cause or fix; combined native validation remains
-  pending.
+  updates. It records fixed event names, ranges and booleans within its then-
+  current 64-event cap; it captures no source text. Each callback invokes its
+  exact superclass selector once with unchanged arguments. Existing acceptance
+  assertions and deadlines are unchanged. The callbacks compile on ab647613;
+  that Editor case observed marked composition disappear between repaint
+  frames. The trace does not establish a production cause or fix.
+- Add an explicit-only native `keyboard` fixture using the production keymap,
+  app actions and native menus. Owned AppKit events exercise Cmd+C without
+  selection, Ctrl+Tab and Cmd+D against local fake-shell PTYs; the assertions
+  require the exact interruption byte, distinct split PTYs and new-leaf focus.
+  The original four-case default matrix and deadlines remain unchanged. This
+  new batch has not yet compiled or run and does not prove physical input.
 
 ### Maintenance
 
@@ -38,15 +76,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Correct the four fixture-gated native editor `msg_send!` selector argument
   separators reported by strict native Clippy, preserving selectors, argument
-  order and superclass dispatch. The correction is included in the follow-up
-  source batch; exact native Clippy and compiler-sequence validation is pending.
+  order and superclass dispatch. Exact-source native Clippy and the nine-stage
+  compiler sequence passed on ab647613; native Editor runtime acceptance still
+  fails as recorded above.
 - Make native Markdown layout reconciliation idempotent: skip equal scroll-frame
   and visibility setters while still recomputing geometry and applying changes
   on resize or detach/reattach. The fixture captures initial attached geometry
   and defers its result until existing composition assertions finish; later
   geometry checks use a fresh post-preview baseline for same-bounds setter
-  skips, one-pixel resize/restore and same-host reattachment. The source batch
-  remains unvalidated; no performance gain or composition fix is claimed.
+  skips, one-pixel resize/restore and same-host reattachment. The code compiled
+  on ab647613, but the Editor case failed before those later layout assertions;
+  no performance gain or composition fix is claimed.
 
 - Keep fast Next app and embedded Rust helper artifacts in one private worktree target cache, and isolate symbol-rich diagnostic builds under `target/diagnostic` by default while preserving explicit cache overrides and artifact selection. Speed measurements remain pending.
 
@@ -71,9 +111,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add a separate optional native accessibility fixture for owned macOS
   windows: verify localized tab labels/selection, the timeline slider and actual
-  AppKit press/increment/decrement actions. Preserve the original four-case
-  native matrix and expose process-local locale selection for this fixture.
-  Execution and VoiceOver acceptance remain separate from this source addition.
+  AppKit press/increment/decrement actions. Preserve the original native matrix
+  and expose process-local locale selection for this fixture. The fixture
+  compiled on ab647613 but was not run because the earlier Editor case failed;
+  VoiceOver acceptance remains separate.
 
 - Record scoped PRF-002 acceptance for Chau7 Next's whole-window Software
   backend and automatic unavailable-device fallback, including localized
@@ -90,8 +131,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix the optional native accessibility fixture's borrowed/owned error type
   inference reported by native-feature Clippy, preserving the same messages
-  and native content-view behavior. The failed afc66fa2 compiler receipt remains
-  historical; the correction requires a new exact-source compiler sequence.
+  and native content-view behavior. The correction passed native-feature
+  Clippy in the ab647613 compiler sequence; its native runtime case was not
+  reached after the Editor failure.
 
 - Localize Chau7 Next tab accessibility labels and rename hints, timeline
   command/status/playback labels and controls, and the dashboard Timeline title

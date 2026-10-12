@@ -63,6 +63,13 @@ fn fresh_home(path: &Path) -> Result<PathBuf, String> {
     path.canonicalize().map_err(|e| e.to_string())
 }
 
+fn supported_native_case(requested: &str) -> bool {
+    matches!(
+        requested,
+        "restore" | "settings" | "editor" | "cache" | "accessibility" | "keyboard"
+    )
+}
+
 pub(crate) fn run_if_requested() -> Option<i32> {
     let args: Vec<_> = std::env::args().collect();
     let Some(index) = args.iter().position(|arg| arg == "--native-parity-fixture") else {
@@ -74,10 +81,7 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         eprintln!("native parity fixture requires explicit process-local opt-in");
         return Some(2);
     }
-    if !matches!(
-        requested.as_str(),
-        "restore" | "settings" | "editor" | "cache" | "accessibility"
-    ) {
+    if !supported_native_case(&requested) {
         eprintln!("unknown native parity fixture: {requested}");
         return Some(2);
     }
@@ -180,6 +184,23 @@ pub(crate) fn run_if_requested() -> Option<i32> {
             crate::l10n::settings_applied(cx);
         }
         crate::observability::init(cx);
+        if case == "keyboard" {
+            // Install the production keymap and native menu route only in this
+            // focused case; the original fixture cases keep their old setup.
+            crate::actions::bind_keys(cx);
+            let input = crate::settings::Settings::get(cx).input.clone();
+            crate::actions::bind_shortcut_settings(&input, cx);
+            cx.on_keyboard_layout_change(|cx| {
+                let input = crate::settings::Settings::get(cx).input.clone();
+                crate::actions::bind_shortcut_settings(&input, cx);
+            })
+            .detach();
+            crate::commands::bind_keys(cx);
+            crate::panes::bind_keys(cx);
+            crate::commands::register(cx);
+            cx.set_menus(crate::actions::app_menus(&[]));
+            crate::register_app_actions(cx);
+        }
         cx.spawn(async move |cx| {
             let deadline_secs = if matches!(case.as_str(), "settings" | "accessibility") {
                 70
@@ -206,6 +227,7 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                     "accessibility" => {
                         crate::workspace::verify_native_accessibility_fixture(cx).await
                     }
+                    "keyboard" => crate::workspace::verify_native_keyboard_fixture(cx).await,
                     _ => Err("unknown native case".into()),
                 }
                 .map_err(|error| format!("existing {case} case: {error}"))?;
@@ -311,4 +333,17 @@ fn report(case: &str, home: &Path, outcome: Result<Value, String>) -> i32 {
         return 1;
     }
     code
+}
+
+#[cfg(test)]
+mod native_case_tests {
+    use super::supported_native_case;
+
+    #[test]
+    fn keyboard_is_explicit_and_unknown_cases_are_rejected() {
+        assert!(supported_native_case("keyboard"));
+        assert!(supported_native_case("restore"));
+        assert!(!supported_native_case("all"));
+        assert!(!supported_native_case("unknown"));
+    }
 }

@@ -109,9 +109,10 @@ answers "does this key do the same thing in Chau7 Next".
   names (`find`, `findNext`, `findPrevious`, `snippets`, `clear`, ...) and maps
   them to `KeyAction` raw values (`toggleSearch`, `nextMatch`, `previousMatch`,
   `showSnippets`, ...) in `KeyAction.fromShortcutAction`. Chau7 Next accepts
-  both (`shortcuts::canonical_action`); `debugConsole`, `openTextEditor`,
-  `showChangedFiles`, `refreshTabBar` and the bookmark actions are logged as
-  unsupported until those features exist.
+  both (`shortcuts::canonical_action`). Its keymap maps `debugConsole`,
+  `openTextEditor`, `showChangedFiles`, `showBookmarks` and `addBookmark`.
+  `refreshTabBar` is the remaining excluded action; it belongs to SwiftUI's
+  tab-bar recovery UI (KBD-034, n/a in Next).
 - **Split naming.** In Swift `splitHorizontal` means side by side
   (`SplitDirection.horizontal`, Cmd+D) and `splitVertical` means stacked;
   `action_for_swift_name` follows that (fixed, it used to be reversed).

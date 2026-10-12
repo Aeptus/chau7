@@ -5,10 +5,14 @@ use crate::terminal::session::TerminalSession;
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::session_restore::models::SavedPane;
 use chau7_next_core::session_restore::{SavedAxis, SavedSplitNode};
-use gpui::{AppContext, AsyncApp, WindowHandle, WindowOptions, size};
+use gpui::{AppContext, AsyncApp, Focusable, WindowHandle, WindowOptions, size};
 use gpui_kit::base::Root;
 use objc2::{MainThreadMarker, rc::Retained};
-use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSView, NSWindow};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSEvent, NSEventModifierFlags, NSEventType,
+    NSView, NSWindow,
+};
+use objc2_foundation::{NSPoint, NSString};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::os::unix::fs::PermissionsExt;
 
@@ -52,6 +56,38 @@ fn activate_owned_application(application: &NSApplication) -> Result<(), String>
         // main thread. Preserve GPUI's existing ignoring-other-apps selector.
         unsafe { objc2::msg_send![application, activateIgnoringOtherApps: true] }
     })
+}
+
+fn send_owned_key_event(
+    application: &NSApplication,
+    native: &NSWindow,
+    characters: &str,
+    modifiers: NSEventModifierFlags,
+    key_code: u16,
+) -> Result<(), String> {
+    let _main = MainThreadMarker::new().ok_or("keyboard event is not on the main thread")?;
+    ensure(
+        application.isActive() && native.isVisible() && native.isKeyWindow(),
+        "keyboard event target is not the active owned window",
+    )?;
+    let characters = NSString::from_str(characters);
+    let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
+        NSEventType::KeyDown,
+        NSPoint::new(0., 0.),
+        modifiers,
+        0.,
+        native.windowNumber(),
+        None,
+        &characters,
+        &characters,
+        false,
+        key_code,
+    )
+    .ok_or_else(|| "AppKit could not construct the owned keyboard event".to_owned())?;
+    // Send through the application's ordinary window/responder route. The call
+    // stays outside GPUI's App/window borrow so AppKit may safely re-enter it.
+    application.sendEvent(&event);
+    Ok(())
 }
 #[derive(serde::Serialize)]
 struct SessionSurfaceDiagnostic {
@@ -313,6 +349,320 @@ pub(crate) async fn dispose(cx: &mut AsyncApp) -> Result<usize, String> {
         }
     });
     Ok(count)
+}
+
+pub(crate) async fn verify_keyboard(cx: &mut AsyncApp) -> Result<serde_json::Value, String> {
+    let home = cx.update(|cx| cx.global::<AppData>().root.home().to_path_buf());
+    let profile = Profile::new(home)?;
+    std::fs::write(
+        &profile.shell,
+        b"#!/bin/sh\nset -eu\n/bin/stty -echo -icanon -isig min 1 time 0\nprintf '%s' \"$$\" > \"started.$$\"\nwhile [ ! -f ready ]; do /bin/sleep 0.01; done\nprintf '\\033]133;A\\007fixture$ '\nexec /bin/cat > \"received.$$\"\n",
+    )
+    .map_err(error)?;
+    std::fs::set_permissions(&profile.shell, std::fs::Permissions::from_mode(0o700))
+        .map_err(error)?;
+    let result = verify_keyboard_workspace(cx, &profile).await;
+    let cleanup = dispose(cx).await;
+    match (result, cleanup) {
+        (Ok(mut details), Ok(closed)) if closed == 3 => {
+            if let Some(object) = details.as_object_mut() {
+                object.insert("closed_owned_ptys".into(), serde_json::json!(closed));
+            }
+            Ok(details)
+        }
+        (Ok(_), Ok(closed)) => Err(format!(
+            "keyboard fixture closed {closed} owned PTYs instead of three"
+        )),
+        (Err(error), Ok(_)) => Err(error),
+        (_, Err(error)) => Err(format!("owned keyboard fixture cleanup failed: {error}")),
+    }
+}
+
+async fn verify_keyboard_workspace(
+    cx: &mut AsyncApp,
+    profile: &Profile,
+) -> Result<serde_json::Value, String> {
+    let mut tabs = vec![profile.tab(&[0]), profile.tab(&[1])];
+    for tab in &mut tabs {
+        for pane in &mut tab.panes {
+            pane.ai_provider = None;
+            pane.ai_session_id = None;
+            pane.ai_resume_command = None;
+        }
+    }
+    cx.update(|cx| {
+        let settings = cx.global_mut::<Settings>();
+        settings.terminal.shell = Some(profile.shell.to_string_lossy().into_owned());
+        settings.terminal.split_panes_enabled = true;
+        settings.appearance.rendering.gpu_renderer = false;
+        settings.appearance.rendering.suspend_background = false;
+    });
+    let (handle, ws) = cx
+        .update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    show: true,
+                    focus: false,
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        gpui::point(px(0.), px(0.)),
+                        size(px(1000.), px(600.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |window, cx| {
+                    cx.new(|cx| {
+                        Workspace::new(
+                            Some(SavedWindow {
+                                tabs,
+                                selected: 0,
+                                ..Default::default()
+                            }),
+                            window,
+                            cx,
+                        )
+                    })
+                },
+            )
+        })
+        .map_err(error)?;
+    let handle = handle
+        .downcast::<Root>()
+        .ok_or("owned keyboard window lacks Root")?;
+    cx.update(|cx| {
+        ws.update(cx, |ws, _| ws.window_handle = Some(handle.into()));
+        cx.global_mut::<AppData>()
+            .workspaces
+            .push((handle.into(), ws.downgrade()));
+    });
+    let ids = cx.update(|cx| {
+        ws.read(cx)
+            .state
+            .tabs()
+            .iter()
+            .map(|tab| tab.id)
+            .collect::<Vec<_>>()
+    });
+    ensure(
+        ids.len() == 2 && ids[0] != ids[1],
+        "keyboard fixture did not create two uniquely identified saved tabs",
+    )?;
+
+    let native = native_window(handle, cx)?;
+    let application = NSApplication::sharedApplication(
+        MainThreadMarker::new().ok_or("keyboard fixture is not on main thread")?,
+    );
+    if application.activationPolicy() != NSApplicationActivationPolicy::Regular {
+        application.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+    }
+    native_mutation(|| native.makeKeyAndOrderFront(None))?;
+    activate_owned_application(&application)?;
+    wait_until(cx, "active keyboard fixture window", |_| {
+        application.isActive() && native.isVisible() && native.isKeyWindow()
+    })
+    .await?;
+    settle(handle, cx).await?;
+
+    wait_until(cx, "first lazy PTY activation", |cx| {
+        let ws = ws.read(cx);
+        ws.state.selected() == Some(ids[0])
+            && ws.entries[&ids[0]].panes.read(cx).pane_sessions(cx).len() == 1
+    })
+    .await?;
+    let (first_session, first_pid) = cx.update(|cx| -> Result<_, String> {
+        let workspace = ws.read(cx);
+        let tree = workspace.entries[&ids[0]].panes.read(cx);
+        ensure(
+            tree.focused_pane_id() == Some(100),
+            "first tab did not focus its owned terminal",
+        )?;
+        let session = tree
+            .focused_session(cx)
+            .ok_or("first tab lacks a focused terminal session")?;
+        ensure(
+            session.read(cx).selection_text().is_none(),
+            "keyboard copy fixture unexpectedly has a terminal selection",
+        )?;
+        let pid = session.read(cx).shell_pid();
+        ensure(pid > 0, "first owned keyboard shell has no PID")?;
+        Ok((session, pid))
+    })?;
+    let first_started = profile.directories[0].join(format!("started.{first_pid}"));
+    wait_until(cx, "first owned shell started", |_| first_started.exists()).await?;
+    profile.release_prompt(0)?;
+    wait_until(cx, "first owned shell prompt", |cx| {
+        first_session.read(cx).is_at_prompt()
+    })
+    .await?;
+
+    // Cmd+C with no selection follows the production terminal path that writes
+    // ETX to the PTY. stty -isig keeps the fixture cat alive to record the byte.
+    ensure_terminal_focus(handle, &ws, ids[0], cx)?;
+    send_owned_key_event(&application, &native, "c", NSEventModifierFlags::Command, 8)?;
+    let first_received = profile.directories[0].join(format!("received.{first_pid}"));
+    wait_until(cx, "Cmd+C ETX reached owned PTY", |_| {
+        std::fs::read(&first_received).is_ok_and(|bytes| bytes == vec![0x03])
+    })
+    .await?;
+    ensure(
+        first_session.read(cx).exited.is_none(),
+        "Cmd+C terminated the no-selection PTY instead of delivering ETX",
+    )?;
+
+    ensure_terminal_focus(handle, &ws, ids[0], cx)?;
+    send_owned_key_event(
+        &application,
+        &native,
+        "\t",
+        NSEventModifierFlags::Control,
+        48,
+    )?;
+    wait_until(cx, "Ctrl+Tab selected the next saved tab", |cx| {
+        let workspace = ws.read(cx);
+        workspace.state.selected() == Some(ids[1])
+            && workspace.entries[&ids[1]]
+                .panes
+                .read(cx)
+                .pane_sessions(cx)
+                .len()
+                == 1
+    })
+    .await?;
+    settle(handle, cx).await?;
+    let (second_session, second_pid) = cx.update(|cx| -> Result<_, String> {
+        let workspace = ws.read(cx);
+        let tree = workspace.entries[&ids[1]].panes.read(cx);
+        ensure(
+            tree.focused_pane_id() == Some(101),
+            "next tab did not focus its saved terminal",
+        )?;
+        let session = tree
+            .focused_session(cx)
+            .ok_or("next tab lacks a focused terminal session")?;
+        let pid = session.read(cx).shell_pid();
+        ensure(pid > 0, "second owned keyboard shell has no PID")?;
+        Ok((session, pid))
+    })?;
+    ensure(
+        first_pid != second_pid,
+        "saved tabs reused an owned shell PID",
+    )?;
+    let second_started = profile.directories[1].join(format!("started.{second_pid}"));
+    wait_until(cx, "second owned shell started", |_| {
+        second_started.exists()
+    })
+    .await?;
+    profile.release_prompt(1)?;
+    wait_until(cx, "second owned shell prompt", |cx| {
+        second_session.read(cx).is_at_prompt()
+    })
+    .await?;
+
+    ensure_terminal_focus(handle, &ws, ids[1], cx)?;
+    send_owned_key_event(&application, &native, "d", NSEventModifierFlags::Command, 2)?;
+    wait_until(cx, "Cmd+D created a horizontal terminal split", |cx| {
+        let workspace = ws.read(cx);
+        if workspace.state.selected() != Some(ids[1]) {
+            return false;
+        }
+        let tree = workspace.entries[&ids[1]].panes.read(cx);
+        let layout = tree.export_layout(cx);
+        tree.pane_sessions(cx).len() == 2
+            && tree.focused_pane_id().is_some_and(|pane| pane != 101)
+            && matches!(
+                layout,
+                Some(SavedSplitNode::Split {
+                    axis: SavedAxis::Horizontal,
+                    ref children,
+                    ..
+                }) if children.len() == 2
+            )
+    })
+    .await?;
+    settle(handle, cx).await?;
+    ensure_terminal_focus(handle, &ws, ids[1], cx)?;
+    let (split_pids, focused_pid) = cx.update(|cx| -> Result<_, String> {
+        let workspace = ws.read(cx);
+        let tree = workspace.entries[&ids[1]].panes.read(cx);
+        let layout = tree.export_layout(cx).ok_or("split layout was not saved")?;
+        ensure(
+            layout.terminal_ids().len() == 2,
+            "horizontal split does not contain two terminal leaves",
+        )?;
+        match layout {
+            SavedSplitNode::Split {
+                axis: SavedAxis::Horizontal,
+                ref children,
+                ..
+            } => ensure(
+                children.len() == 2,
+                "horizontal split has the wrong child count",
+            )?,
+            _ => return Err("Cmd+D did not create a horizontal split".into()),
+        }
+        let sessions = tree.pane_sessions(cx);
+        ensure(sessions.len() == 2, "split tab does not have two live PTYs")?;
+        let pids = sessions
+            .iter()
+            .map(|(_, session)| session.read(cx).shell_pid())
+            .collect::<Vec<_>>();
+        ensure(
+            pids.iter().all(|pid| *pid > 0) && pids[0] != pids[1],
+            "split terminals do not have distinct live shell PIDs",
+        )?;
+        let focused_id = tree
+            .focused_pane_id()
+            .ok_or("split has no focused terminal leaf")?;
+        let focused = tree
+            .focused_session(cx)
+            .ok_or("split focus does not resolve to a terminal")?;
+        let focused_pid = focused.read(cx).shell_pid();
+        ensure(
+            focused_id != 101 && focused_pid != second_pid,
+            "Cmd+D did not focus the newly inserted terminal leaf",
+        )?;
+        ensure(
+            pids.contains(&focused_pid),
+            "focused split terminal is not one of the two live PTYs",
+        )?;
+        Ok((pids, focused_pid))
+    })?;
+    wait_until(cx, "both split shells at real prompts", |cx| {
+        let workspace = ws.read(cx);
+        let tree = workspace.entries[&ids[1]].panes.read(cx);
+        let sessions = tree.pane_sessions(cx);
+        sessions.len() == 2
+            && sessions.iter().all(|(_, session)| {
+                let session = session.read(cx);
+                session.is_at_prompt()
+                    && profile.directories[1]
+                        .join(format!("started.{}", session.shell_pid()))
+                        .exists()
+            })
+    })
+    .await?;
+    ensure(
+        std::fs::read(&first_received).is_ok_and(|bytes| bytes == vec![0x03]),
+        "later shortcuts changed the exact Cmd+C PTY byte",
+    )?;
+    ensure(
+        first_session.read(cx).exited.is_none(),
+        "first owned PTY exited before fixture cleanup",
+    )?;
+    Ok(serde_json::json!({
+        "saved_tabs": 2,
+        "saved_tab_ids": [ids[0], ids[1]],
+        "keyboard_dispatch": "NSApplication.sendEvent",
+        "cmd_c_selection": "none",
+        "cmd_c_received_bytes": [3],
+        "ctrl_tab_changed_selected_id": true,
+        "cmd_d_split_axis": "horizontal",
+        "cmd_d_split_terminal_count": 2,
+        "cmd_d_focused_new_leaf": true,
+        "split_shells_started": split_pids.len(),
+        "focused_shell_pid_is_split_child": split_pids.contains(&focused_pid) && focused_pid != second_pid,
+        "synthetic_frames": false
+    }))
 }
 
 pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, String> {
@@ -800,6 +1150,26 @@ async fn verify_hover(
         })
     })
     .await
+}
+
+fn ensure_terminal_focus(
+    handle: WindowHandle<Root>,
+    ws: &Entity<Workspace>,
+    tab_id: TabId,
+    cx: &mut AsyncApp,
+) -> Result<(), String> {
+    let focused = handle
+        .update(cx, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.entries[&tab_id]
+                    .panes
+                    .read(cx)
+                    .focused_view()
+                    .is_some_and(|view| view.read(cx).focus_handle(cx).is_focused(window))
+            })
+        })
+        .map_err(error)?;
+    ensure(focused, "owned terminal does not hold GPUI input focus")
 }
 
 fn native_window(

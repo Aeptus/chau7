@@ -120,11 +120,23 @@ def case_passed(record):
     )
 
 
-def main():
+def cases_for(case):
+    return ("restore", "settings", "editor", "cache") if case == "all" else (case,)
+
+
+def fixture_locale_for(case, locales):
+    if len(locales) > 1:
+        raise ValueError("--fixture-locale may be supplied only once")
+    if locales and case != "accessibility":
+        raise ValueError("--fixture-locale is only supported with --case accessibility")
+    return locales[0] if locales else "system"
+
+
+def argument_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--case",
-        choices=("all", "restore", "settings", "editor", "cache", "accessibility"),
+        choices=("all", "restore", "settings", "editor", "cache", "accessibility", "keyboard"),
         default="all",
     )
     parser.add_argument(
@@ -145,14 +157,18 @@ def main():
         default="1.99.0",
         help="Exact already installed Rust release; never installed or upgraded by this script",
     )
+    return parser
+
+
+def main():
+    parser = argument_parser()
     args = parser.parse_args()
     if platform.system() != "Darwin":
         parser.error("native parity fixtures require macOS")
-    if len(args.fixture_locale) > 1:
-        parser.error("--fixture-locale may be supplied only once")
-    fixture_locale = args.fixture_locale[0] if args.fixture_locale else "system"
-    if args.fixture_locale and args.case != "accessibility":
-        parser.error("--fixture-locale is only supported with --case accessibility")
+    try:
+        fixture_locale = fixture_locale_for(args.case, args.fixture_locale)
+    except ValueError as error:
+        parser.error(str(error))
     if not re.fullmatch(r"\d+\.\d+\.\d+", args.toolchain):
         parser.error("use an exact Rust version, not a mutable toolchain alias")
     workspace = Path(__file__).resolve().parents[1]
@@ -227,7 +243,7 @@ def main():
     binary = target / target_triple / "release" / "chau7-next"
     manifest["binary_sha256"] = sha256(binary)
     manifest["original_binary_sha256"] = manifest["binary_sha256"]
-    cases = ("restore", "settings", "editor", "cache") if args.case == "all" else (args.case,)
+    cases = cases_for(args.case)
     success = True
     for case in cases:
         # Do not create this directory: the runner validates and creates it.
