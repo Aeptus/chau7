@@ -235,7 +235,9 @@ mod tests {
             entry.refreshing = false;
         }
         ticket.unwrap().apply(Ok(1));
-        let (snapshot, _) = cache.begin(());
+        cache.stop().finish();
+        let (snapshot, next) = cache.begin(());
+        assert!(next.is_none());
         assert_eq!(snapshot.value, Some(2));
         assert!(!snapshot.pending);
         assert_eq!(cache.diagnostics()["activity"]["in_flight"], 0);

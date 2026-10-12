@@ -154,11 +154,12 @@ mod tests {
         // Catching the panic belongs only to this fixture; production never
         // turns a worker panic into a successful observation.
         assert_eq!(cache.diagnostics()["activity"]["in_flight"], 0);
-        let snapshot = cache.begin(()).0;
+        cache.stop().finish();
+        let (snapshot, next) = cache.begin(());
+        assert!(next.is_none(), "closed admission reopened after unwind");
         assert!(snapshot.error);
         assert!(!snapshot.pending);
         assert!(snapshot.value.is_none());
-        cache.stop().finish();
     }
 
     #[test]

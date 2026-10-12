@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fence final telemetry panic and stale-generation test snapshots against cache refresh expiry, preserving closed-admission assertions even when CI runs slowly.
+
 - Reject native Settings animation observations at or beyond the existing 500ms deadline even when the late frame reports completion, retaining actual-frame and target visibility assertions.
 - Prepare the isolated native editor fixture's owned active/key window before awaiting visible deferred restoration, preserving its five-second wait and composition assertions. This setup correction awaits combined native acceptance.
 
