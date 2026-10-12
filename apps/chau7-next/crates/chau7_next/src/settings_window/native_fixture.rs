@@ -35,10 +35,38 @@ async fn settled_frame(
         if settled && frames >= 3 {
             break;
         }
-        ensure!(
-            started.elapsed() < Duration::from_millis(500),
-            "native settings animation failed to settle within 500ms after {frames} actual frames"
-        );
+        if started.elapsed() >= Duration::from_millis(500) {
+            let state = cx.update(|cx| {
+                let view = view.read(cx);
+                let now = cx.background_executor().now();
+                json!({
+                    "anchor": view.navigation.anchor_id,
+                    "scroll_motion_pending": view.search_scroll_motion.is_some(),
+                    "scroll_motion_finished": view.search_scroll_motion.as_ref().map(|motion| motion.finished(now)),
+                    "retry_pending": view.search_retry_pending,
+                    "highlight_finished": view.search_highlights.finished(now),
+                    "elapsed_microseconds": started.elapsed().as_micros(),
+                    "actual_frames": frames,
+                })
+            });
+            let renderer = cx
+                .update_window(handle, |_, window, _| {
+                    window.renderer_diagnostics().map(|renderer| {
+                        json!({
+                            "backend": renderer.backend,
+                            "submitted_frames": renderer.submitted_frames,
+                            "failed_frames": renderer.failed_frames,
+                            "last_cpu_submit_microseconds": renderer.last_cpu_submit_microseconds,
+                            "last_primitive_counts": renderer.last_primitive_counts,
+                            "software_image_pixel_bytes": renderer.software_image_pixel_bytes,
+                        })
+                    })
+                })
+                .context("owned settings window disappeared during failure diagnosis")?;
+            anyhow::bail!(
+                "native settings animation failed to settle within 500ms after {frames} actual frames; state={state}; renderer={renderer:?}"
+            );
+        }
     }
     anchors::take_rendered_targets();
     cx.update(|cx| view.update(cx, |_, cx| cx.notify()));
