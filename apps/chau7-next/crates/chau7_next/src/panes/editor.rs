@@ -100,6 +100,10 @@ pub struct EditorPane {
     bracket: Option<RangeDecorationCollection>,
     markdown_styles: chau7_next_core::editor::live_markdown::Document,
     markdown_decorations: Option<TextDecorationCollection>,
+    /// Cached on text changes, never parsed during header rendering.
+    markdown_progress: (usize, usize),
+    #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+    native_fixture_header_progress: Rc<std::cell::Cell<Option<(usize, usize)>>>,
     #[cfg(target_os = "macos")]
     native_markdown: Option<Rc<native_markdown::NativeMarkdown>>,
     /// Real popup rendering is exercised only by the isolated native runner.
@@ -201,6 +205,9 @@ impl EditorPane {
             bracket: None,
             markdown_styles: Default::default(),
             markdown_decorations: None,
+            markdown_progress: (0, 0),
+            #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+            native_fixture_header_progress: Default::default(),
             #[cfg(target_os = "macos")]
             native_markdown: None,
             #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
@@ -272,12 +279,16 @@ impl EditorPane {
     fn refresh_markdown_styles(&mut self, cx: &mut Context<Self>) {
         if !self.is_markdown_file() {
             self.markdown_styles = Default::default();
+            self.markdown_progress = (0, 0);
             if let Some(collection) = &self.markdown_decorations {
                 collection.clear(cx);
             }
             return;
         }
         let text = self.content(cx);
+        if self.markdown_styles.text() != text {
+            self.markdown_progress = markdown::plan_progress(&text);
+        }
         self.markdown_styles.update(&text);
         let decorations = live_markdown::decorations(&self.markdown_styles, self.palette);
         if let Some(collection) = &self.markdown_decorations {
@@ -946,6 +957,8 @@ impl EditorPane {
         let copied = self.copied_until.is_some_and(|t| t > Instant::now());
         let markdown = self.is_markdown_file();
         let can_save = self.is_dirty() || self.path.is_none();
+        #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+        self.native_fixture_header_progress.set(None);
         header(chrome)
             .child(
                 Icon::new(IconName::FileText)
@@ -979,6 +992,41 @@ impl EditorPane {
                         .rounded_full()
                         .bg(gpui::rgb(0xff9500)),
                 )
+            })
+            .when(markdown && self.markdown_progress.1 > 0, |d| {
+                let progress = self.markdown_progress;
+                let counter = div()
+                    .id("editor-plan-progress")
+                    .relative()
+                    .text_size(px(9.0))
+                    .font_family("Menlo")
+                    .text_color(chrome.text_muted)
+                    .child(format!("{}/{}", progress.0, progress.1))
+                    .tooltip(|window, cx| {
+                        gpui_kit::component::tooltip::Tooltip::new(crate::l10n::tr(
+                            "Completed tasks",
+                        ))
+                        .build(window, cx)
+                    });
+                // The optional runner observes an actual painted counter, not
+                // just the cached model. This has no default-build overhead.
+                #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+                let counter = {
+                    let painted = self.native_fixture_header_progress.clone();
+                    counter.child(
+                        gpui::canvas(
+                            |_, _, _| (),
+                            move |bounds, _, _, _| {
+                                if bounds.size.width > px(0.) && bounds.size.height > px(0.) {
+                                    painted.set(Some(progress));
+                                }
+                            },
+                        )
+                        .absolute()
+                        .inset_0(),
+                    )
+                };
+                d.child(counter)
             })
             .child(div().flex_1().min_w(px(4.0)))
             .child(
@@ -1518,6 +1566,38 @@ mod markdown_live_tests {
             .unwrap();
             (handle.downcast::<Root>().unwrap(), pane)
         })
+    }
+
+    #[gpui::test]
+    fn markdown_progress_cache_tracks_text_changes_and_ignores_fenced_tasks(
+        cx: &mut TestAppContext,
+    ) {
+        let (handle, pane) = editor(cx);
+        let text = "- [x] done\n- [ ] pending\n```\n- [x] sample\n```\n";
+        for (text, expected) in [
+            (text.to_owned(), (1, 2)),
+            (text.replace("[ ]", "[x]"), (2, 2)),
+            ("# no tasks\n".into(), (0, 0)),
+        ] {
+            cx.update_window(handle.into(), |_, window, cx| {
+                pane.update(cx, |pane, cx| {
+                    pane.state
+                        .update(cx, |state, cx| state.set_value(text.clone(), window, cx));
+                    pane.refresh_markdown_styles(cx);
+                    assert_eq!(pane.markdown_progress, expected);
+                });
+            })
+            .unwrap();
+            cx.update(|cx| assert_eq!(pane.read(cx).markdown_progress, expected));
+        }
+        cx.update_window(handle.into(), |_, _, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.language = &PLAIN_TEXT;
+                pane.refresh_markdown_styles(cx);
+                assert_eq!(pane.markdown_progress, (0, 0));
+            })
+        })
+        .unwrap();
     }
 
     #[gpui::test]
