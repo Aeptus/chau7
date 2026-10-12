@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prepare native editor responder changes outside GPUI application borrows as well as dispatching the event outside them.
+
 - Exercise Chau7 Next native window reveals with a single owned key/front sequence before activation, preserving visibility, key-window and live-frame acceptance. Add immediate editor event diagnostics; full combined native acceptance remains pending.
 
 - Serialize only the five native vendor tests using private AppKit pasteboards and verify the image fixture starts empty, preserving existing clipboard assertions after an observed cross-test filenames result. Production clipboard behavior is unchanged; combined validation remains pending.

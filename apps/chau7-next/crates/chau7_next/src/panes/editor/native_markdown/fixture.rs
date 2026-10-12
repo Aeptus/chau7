@@ -414,23 +414,18 @@ pub(in crate::panes::editor) async fn verify(
     // Send the same window-targeted native key event through AppKit's normal
     // NSApplication -> NSWindow -> first-responder route, outside the GPUI App
     // borrow so AppKit may safely re-enter the host during event delivery.
-    let (undo, typed) = cx
-        .update(|_| {
-            let undo = native
-                .text
-                .undoManager()
-                .ok_or("owned history unavailable")?;
-            undo.removeAllActions();
-            undo.setGroupsByEvent(false);
-            undo.beginUndoGrouping();
-            native
-                .text
-                .setSelectedRange(NSRange::new(native.text.string().length(), 0));
-            let typed = event(&native, "x", NSEventModifierFlags::empty(), 7)?;
-            Ok::<_, String>((undo, typed))
-        })
-        .map_err(error)?;
     MainThreadMarker::new().ok_or("ordinary source key dispatch is not on main thread")?;
+    let undo = native
+        .text
+        .undoManager()
+        .ok_or("owned history unavailable")?;
+    undo.removeAllActions();
+    undo.setGroupsByEvent(false);
+    undo.beginUndoGrouping();
+    native
+        .text
+        .setSelectedRange(NSRange::new(native.text.string().length(), 0));
+    let typed = event(&native, "x", NSEventModifierFlags::empty(), 7)?;
     ordinary_keydown_phase("before", &application, &native_window, &native, &typed);
     application.sendEvent(&typed);
     ordinary_keydown_phase("after", &application, &native_window, &native, &typed);
