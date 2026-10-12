@@ -224,6 +224,24 @@ mod tests {
     use super::*;
     use chau7_next_core::telemetry::{run::TelemetryRun, store::TelemetryStore};
     #[test]
+    fn stale_generation_cannot_overwrite_a_newer_observation_or_retain_work() {
+        let cache = Arc::new(Cache::<(), u64>::new());
+        let (_, ticket) = cache.begin(());
+        {
+            let mut entries = cache.entries.lock().unwrap();
+            let entry = entries.get_mut(&()).unwrap();
+            entry.generation += 1;
+            entry.value = Some(2);
+            entry.refreshing = false;
+        }
+        ticket.unwrap().apply(Ok(1));
+        let (snapshot, _) = cache.begin(());
+        assert_eq!(snapshot.value, Some(2));
+        assert!(!snapshot.pending);
+        assert_eq!(cache.diagnostics()["activity"]["in_flight"], 0);
+    }
+
+    #[test]
     fn numeric_diagnostics_observe_real_activity_without_exporting_keys_or_values() {
         let cache = Arc::new(Cache::<String, u64>::new());
         let (_, ticket) = cache.begin("owned-private-key".into());

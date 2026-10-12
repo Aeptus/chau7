@@ -8,6 +8,7 @@
 //! tools, repository stats (hover card), Data Explorer, Debug Console
 //! Analytics and the iOS client events of remote control.
 
+mod admission;
 mod cache;
 
 #[path = "usage.rs"]
@@ -239,14 +240,14 @@ pub fn init(cx: &mut App) {
         .bootstrap
         .begin()
         .expect("new initialization observer accepts one worker");
+    let observed = admission::background_observation(cx, async move {
+        let _active = active;
+        initializing.wait_until_initialized().is_ok()
+    });
     cx.spawn(async move |cx| {
-        let initialized = cx
-            .background_executor()
-            .spawn(async move {
-                let _active = active;
-                initializing.wait_until_initialized().is_ok()
-            })
-            .await;
+        let Ok(initialized) = observed.await else {
+            return;
+        };
         cx.update(|cx| {
             usage::refresh_latency(cx);
             if !initialized {
@@ -503,41 +504,40 @@ pub fn hover_summary(tab_ids: &[String], cx: &App) -> Option<(TelemetryRun, Vec<
     if let Some(ticket) = ticket {
         let ids = tab_ids.to_vec();
         let active = live.clone();
+        let observed = admission::background_observation(cx, async move {
+            let mut span =
+                chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                    "telemetry_snapshot",
+                    "hover",
+                    "telemetry",
+                    "telemetry_snapshot",
+                    chau7_next_core::work_profiler::Queue::Background,
+                ));
+            span.items(1);
+            let before = recorder.store().failure_count();
+            let run = active.or_else(|| {
+                recorder
+                    .store()
+                    .list_runs(&TelemetryRunFilter {
+                        limit: Some(1),
+                        ..Default::default()
+                    })
+                    .into_iter()
+                    .next()
+                    .filter(|r| r.tab_id.as_ref().is_some_and(|t| ids.contains(t)))
+            });
+            let value = run.map(|run| {
+                let mut tools = recorder.store().tool_call_summary(&run.id);
+                tools.truncate(3);
+                (run, tools)
+            });
+            let failed = recorder.store().failure_count() != before || before == u64::MAX;
+            ticket.apply(if failed { Err(()) } else { Ok(value) });
+        });
         cx.spawn(async move |cx| {
-            cx.background_executor()
-                .spawn(async move {
-                    let mut span = chau7_next_core::work_profiler::begin(
-                        chau7_next_core::work_profiler::Key::work(
-                            "telemetry_snapshot",
-                            "hover",
-                            "telemetry",
-                            "telemetry_snapshot",
-                            chau7_next_core::work_profiler::Queue::Background,
-                        ),
-                    );
-                    span.items(1);
-                    let before = recorder.store().failure_count();
-                    let run = active.or_else(|| {
-                        recorder
-                            .store()
-                            .list_runs(&TelemetryRunFilter {
-                                limit: Some(1),
-                                ..Default::default()
-                            })
-                            .into_iter()
-                            .next()
-                            .filter(|r| r.tab_id.as_ref().is_some_and(|t| ids.contains(t)))
-                    });
-                    let value = run.map(|run| {
-                        let mut tools = recorder.store().tool_call_summary(&run.id);
-                        tools.truncate(3);
-                        (run, tools)
-                    });
-                    let failed = recorder.store().failure_count() != before || before == u64::MAX;
-                    ticket.apply(if failed { Err(()) } else { Ok(value) });
-                })
-                .await;
-            cx.update(|cx| cx.refresh_windows());
+            if observed.await.is_ok() {
+                cx.update(|cx| cx.refresh_windows());
+            }
         })
         .detach();
     }
@@ -671,44 +671,43 @@ fn analytics_data(cx: &App) -> (Option<AnalyticsData>, Option<String>) {
     let (snapshot, ticket) = snapshots.analytics.begin(());
     if let (Some(ticket), Some(recorder)) = (ticket, recorder(cx)) {
         let root = cx.global::<AppData>().root.clone();
+        let observed = admission::background_observation(cx, async move {
+            let mut span =
+                chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                    "telemetry_snapshot",
+                    "analytics",
+                    "telemetry",
+                    "telemetry_snapshot",
+                    chau7_next_core::work_profiler::Queue::Background,
+                ));
+            span.items(1);
+            let db = root.proxy_db();
+            let proxy = ProxyAnalyticsStore::new(&db);
+            let before = recorder.store().failure_count();
+            let data = AnalyticsData {
+                proxy_stats: proxy.overall_stats(None),
+                proxy_providers: proxy.provider_stats(),
+                proxy_daily: proxy.daily_trend(7),
+                proxy_recent: proxy
+                    .recent_calls(50)
+                    .iter()
+                    .map(|c| c.debug_call())
+                    .collect(),
+                run_providers: recorder.store().consumption_per_provider(None),
+                run_tabs: recorder.store().token_usage_per_tab(None),
+                run_daily: recorder.store().daily_cost_trend(7),
+                run_count: recorder.store().run_count(),
+                ..Default::default()
+            };
+            let failed = proxy.failure_count() > 0
+                || recorder.store().failure_count() != before
+                || before == u64::MAX;
+            ticket.apply(if failed { Err(()) } else { Ok(data) });
+        });
         cx.spawn(async move |cx| {
-            cx.background_executor()
-                .spawn(async move {
-                    let mut span = chau7_next_core::work_profiler::begin(
-                        chau7_next_core::work_profiler::Key::work(
-                            "telemetry_snapshot",
-                            "analytics",
-                            "telemetry",
-                            "telemetry_snapshot",
-                            chau7_next_core::work_profiler::Queue::Background,
-                        ),
-                    );
-                    span.items(1);
-                    let db = root.proxy_db();
-                    let proxy = ProxyAnalyticsStore::new(&db);
-                    let before = recorder.store().failure_count();
-                    let data = AnalyticsData {
-                        proxy_stats: proxy.overall_stats(None),
-                        proxy_providers: proxy.provider_stats(),
-                        proxy_daily: proxy.daily_trend(7),
-                        proxy_recent: proxy
-                            .recent_calls(50)
-                            .iter()
-                            .map(|c| c.debug_call())
-                            .collect(),
-                        run_providers: recorder.store().consumption_per_provider(None),
-                        run_tabs: recorder.store().token_usage_per_tab(None),
-                        run_daily: recorder.store().daily_cost_trend(7),
-                        run_count: recorder.store().run_count(),
-                        ..Default::default()
-                    };
-                    let failed = proxy.failure_count() > 0
-                        || recorder.store().failure_count() != before
-                        || before == u64::MAX;
-                    ticket.apply(if failed { Err(()) } else { Ok(data) });
-                })
-                .await;
-            cx.update(|cx| cx.refresh_windows());
+            if observed.await.is_ok() {
+                cx.update(|cx| cx.refresh_windows());
+            }
         })
         .detach();
     }
