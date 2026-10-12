@@ -19,7 +19,7 @@ fn actual_settings_pages_attach_every_current_search_target(harness: &mut TestAp
         cx.set_global(AppData::new(root.clone()));
         cx.set_global(ConfigFiles::new(root.config_file(), settings.clone()));
         cx.set_global(settings);
-        crate::observability::init(cx);
+        crate::observability::init_for_test(cx);
     });
     let (window, view) = cx.update(|cx| {
         gpui_kit::open_window(
