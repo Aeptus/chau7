@@ -30,6 +30,8 @@ mod minimal_mode;
 mod native_cache_fixture;
 #[cfg(feature = "native-parity-fixture")]
 mod native_fixture;
+#[cfg(any(test, feature = "native-parity-fixture"))]
+mod native_locale;
 mod notification_triggers;
 mod notifications;
 mod panes;
@@ -293,6 +295,10 @@ pub struct SettingsView {
     search_retry_pending: bool,
     search_animation_frame_pending: bool,
     search_retry_attempts: u64,
+    #[cfg(feature = "native-parity-fixture")]
+    search_scroll_requested_at: std::time::Instant,
+    #[cfg(feature = "native-parity-fixture")]
+    search_scroll_trace: Vec<serde_json::Value>,
     search_anchors: std::rc::Rc<std::collections::HashMap<&'static str, ScrollAnchor>>,
     /// Snippets, links, command guard and profile sections.
     mine: mine::MineState,
@@ -414,6 +420,10 @@ impl SettingsView {
             search_retry_pending: false,
             search_animation_frame_pending: false,
             search_retry_attempts: 0,
+            #[cfg(feature = "native-parity-fixture")]
+            search_scroll_requested_at: cx.background_executor().now(),
+            #[cfg(feature = "native-parity-fixture")]
+            search_scroll_trace: Vec::new(),
             search_anchors,
             mcp,
             cto,
@@ -462,6 +472,11 @@ impl SettingsView {
         self.search_retry_pending = false;
         self.search_animation_frame_pending = false;
         self.target_bounds.clear();
+        #[cfg(feature = "native-parity-fixture")]
+        {
+            self.search_scroll_requested_at = cx.background_executor().now();
+            self.search_scroll_trace.clear();
+        }
         let generation = self.search_scroll_generation;
         let id = self.active_search_anchor_id();
         self.search_highlights
@@ -480,7 +495,7 @@ impl SettingsView {
                 if this.search_scroll_generation == generation
                     && this.active_search_anchor_id() == Some(id)
                 {
-                    this.start_search_scroll_motion(id, window, cx);
+                    this.start_search_scroll_motion(id, "initial_layout", window, cx);
                 }
             });
             cx.notify();
@@ -500,7 +515,7 @@ impl SettingsView {
                 }
                 view.search_retry_pending = false;
                 view.search_retry_attempts = view.search_retry_attempts.saturating_add(1);
-                view.start_search_scroll_motion(id, window, cx);
+                view.start_search_scroll_motion(id, "retry", window, cx);
             });
         }));
         cx.notify();
@@ -509,18 +524,35 @@ impl SettingsView {
     fn start_search_scroll_motion(
         &mut self,
         id: &'static str,
+        _source_kind: &'static str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let viewport = self.scroll_handle.bounds();
         let maximum = self.scroll_handle.max_offset();
-        if let Some(centered) = self.target_bounds.centered_offset(id, viewport, maximum.y) {
-            self.search_scroll_motion = Some(search_animation::ScrollMotion::new(
-                self.scroll_handle.offset().y,
+        let centered = self.target_bounds.centered_offset(id, viewport, maximum.y);
+        let now = cx.background_executor().now();
+        let observed = self.scroll_handle.offset().y;
+        if let Some(centered) = centered
+            && search_animation::update_motion(
+                &mut self.search_scroll_motion,
+                observed,
                 centered,
-                cx.background_executor().now(),
-            ));
+                now,
+            )
+        {
+            // Completion remains a real frame applying the exact final offset.
             self.schedule_search_animation_frame(window, cx);
+        }
+        #[cfg(feature = "native-parity-fixture")]
+        if self.search_scroll_trace.len() < 4 {
+            self.search_scroll_trace.push(serde_json::json!({
+                "source_kind": _source_kind,
+                "attempt_microseconds": now.saturating_duration_since(self.search_scroll_requested_at).as_micros(),
+                "requested_from_px": f32::from(observed),
+                "requested_to_px": centered.map(f32::from),
+                "motion": self.search_scroll_motion.as_ref().map(|motion| motion.diagnostic(self.search_scroll_requested_at, now)),
+            }));
         }
     }
 
@@ -849,6 +881,11 @@ impl Render for SettingsView {
         self.mcp.refresh(cx);
         let chrome = Chrome::panels(cx);
         let sidebar = self.sidebar(chrome, cx);
+        #[cfg(any(test, feature = "native-parity-fixture"))]
+        let sidebar = {
+            use gpui_kit::test::TestSupportExt;
+            sidebar.test_support()
+        };
         let settings = Settings::get(cx).clone();
         let root = cx.global::<AppData>().root.clone();
         let files = cx.global::<ConfigFiles>();

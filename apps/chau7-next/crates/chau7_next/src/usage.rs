@@ -85,9 +85,18 @@ pub fn provider_health(
         })
         .unwrap_or_default()
 }
+fn automatic_health_worker_allowed(isolated: bool) -> bool {
+    !isolated
+}
+
 fn init_health(cx: &mut App) {
     let state = Arc::new(Mutex::new(ProviderHealth::default()));
     cx.set_global(HealthGlobal(state.clone()));
+    // Keep health getters present with no observations; isolation must not
+    // fabricate a healthy status or start external requests/timer tasks.
+    if !automatic_health_worker_allowed(chau7_next_core::data_root::is_isolated_test_mode()) {
+        return;
+    }
     let executor = cx.background_executor().clone();
     let main = crate::mcp::MainThread::start(cx);
     let timer = crate::observability::register_background_timer(
@@ -667,6 +676,35 @@ printf '%s' "$INPUT" | eval "$ORIG_CMD"
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn isolation_health_worker_decision_preserves_normal_fetches() {
+        assert!(!automatic_health_worker_allowed(true));
+        assert!(automatic_health_worker_allowed(false));
+        assert!(ProviderHealth::default().snapshots.is_empty());
+    }
+
+    #[test]
+    fn isolation_health_guard_keeps_global_and_precedes_worker_creation() {
+        let prefix = include_str!("usage.rs")
+            .split_once("fn init_health(cx: &mut App) {")
+            .unwrap()
+            .1
+            .split_once("let executor")
+            .unwrap()
+            .0;
+        assert!(
+            prefix
+                .find("cx.set_global(HealthGlobal(state.clone()));")
+                .unwrap()
+                < prefix.find("if !automatic_health_worker_allowed(").unwrap()
+        );
+        assert!(prefix.contains("chau7_next_core::data_root::is_isolated_test_mode()"));
+        assert!(prefix.contains("return;"));
+        assert!(!prefix.contains("register_background_timer"));
+        assert!(!prefix.contains(".spawn("));
+    }
+
     fn root() -> DataRoot {
         let home = std::env::temp_dir().join(format!("chau7-quota-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(home.join(".claude")).unwrap();

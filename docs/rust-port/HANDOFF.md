@@ -31,10 +31,13 @@ Last updated 2026-10-12.
 
 ## 3. Status
 
-- Current integrated5fa1e4c4 native restoration, settings and editor acceptance
-  passes in fresh owned macOS profiles. Five restore/reveal/hover rows close;
-  search animation/summary formatter facets, retention default and unavailable
-  Metal startup remain open. Exact source/test/native scope and limits are in
+- Integrated source bc1bf7dd passes 2,962 release workspace tests, strict
+  normal/optional all-target Clippy and 33 macOS fork plus 13 Apple tests.
+  A normal feature-free 7bd54649 package runs the complete software window
+  backend, receives exact synthetic Unicode input through MCP and saves all
+  three owned tabs on graceful quit. Full native software resize/frame
+  acceptance and post-prune telemetry maintenance remain in progress; two
+  inventory rows stay partial. Evidence and limits are in
   [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
 - The current-source audit indexes all 652 Swift source files at official main
   `7733b1f0`, appends the current feature delta and reopens changed behaviour.
@@ -49,8 +52,9 @@ Last updated 2026-10-12.
 - Historical result against the **April 2026** Swift app: 1,174 of 1,175 inventory rows
   finished (1,129 done, 45 not needed in the Rust design). The one partial
   row was PRF-002. That historical limitation is superseded: Next now has a
-  terminal CPU rasterizer and a working renderer switch. GPUI window startup
-  without a platform graphics device remains an open facet.
+  terminal CPU rasterizer and a working renderer switch. The complete software
+  window backend now starts in an ordinary signed app;
+  native resize/frame and injected-failure acceptance remain open facets.
 - Rebased on `Aeptus/chau7` main (2026-10-09), with the coexistence rules
   updated for the newer Swift app (relay credentials, parent PID, prompt
   rules, per-tab history, Codex wrapper, attribution headers, CHG2 grid
@@ -67,38 +71,41 @@ Last updated 2026-10-12.
 
 ## 4. Next work, in order
 
-1. Continue the 14 current-source batches in REBASE-ON-AEPTUS.md section 6.
-   Current active batches cover editor/runbook lifecycle, independent regional
-   formatting, agent dashboard, usage/rates, runtime delegation and structured
-   results. Use the agent playbook and preserve existing isolated app data.
-2. Complete observation/MCP parity: durable event spine, actual timer inventory,
-   subscriptions, control ownership and ready-state delivery. The new numeric
-   performance endpoint does not substitute for these behaviours.
-3. Implement the remaining repository/session files, settings/permissions,
-   hooks/routing, prompt rules, skills/CLI, restore/retention and remote deltas.
-   Remote credentials remain isolated; current Swift also relies on external
-   identity/provision commands, so a provision UI is not an established parity
-   requirement. Full/delta grid delivery and credential validation are.
-4. Validate every batch against current Swift tests, keep the generated parity
-   table honest, and finish the Mac checklist below. The running user's Next
-   may host active AI sessions; never stop it for a build or test. Use a separate
-   test bundle identity and fresh `CHAU7_NEXT_HOME_ROOT` for automated startup.
-5. CI runs the matrix for official feature pushes and PRs. Agent branch pushes
-   avoid duplicate runs. Inspect the complete PR checks, including quality gates.
+1. Finish actual software window frame/resize progress and the existing four
+   native cases under explicit Software and Auto with unavailable-device
+   injection. Keep actual frame callbacks and unchanged five-second deadlines.
+2. Finish TEL-024 post-prune VACUUM and ordered background telemetry writes,
+   demand-coalesced read snapshots, explicit database close and error-aware
+   shutdown. The approved new-installation policy is implemented and tested:
+   30 days only for positively fresh profiles; preserve existing zero/custom
+   values, configuration and history. Ambiguous/invalid files retain zero.
+3. Settings/snippet/history render getters now consume bounded background
+   snapshots. Keep the real cache FSEvents/SQLite error/recovery regression and
+   Settings English/French/Arabic RTL/System Default checks in acceptance.
+4. Finish remaining Mac hand-test facets below. Existing native evidence
+   proves scoped geometry/events/lifecycle, not every physical keyboard/IME,
+   multi-display, provider or full AX interaction. Preserve running apps.
+5. Continue draft PR229. Official `2f089af2` passes Next PR and push
+   macOS/Linux/Windows, parity and quality CI. Later integrated writer/startup,
+   editor composition/attachment and software optimization checkpoints require
+   their own combined gates, native acceptance and CI run.
 
-## 5. Decisions waiting for Christophe
+## 5. Approved decisions and retained behavior
 
-1. "Create Per-Repo Config" still writes `<repo>/.chau7/config.toml` on an
-   explicit click (as Swift does). Everything else in repo `.chau7/` is read
-   only for Chau7 Next. Keep, or make it read only too?
-2. PRF-002 (CPU renderer switch): keep as partial with the explanation, or
-   mark `dropped`.
-3. Security issue in the **Swift** app, not fixed there:
-   `apps/chau7-macos/Sources/Chau7/App/AppDelegate+URLScheme.swift` turns
-   `chau7://ssh/<target>` into `ssh '<target>'` with no confirmation, so a
-   web link with `-oProxyCommand=...` runs any command. Chau7 Next rejects
-   such targets, uses `ssh --` and asks first; the Swift fix is the same few
-   lines.
+- New installations default to 30 days. Existing settings/history are preserved,
+  including explicit zero. Local factory resets respect installation policy.
+- PRF-002 includes a usable whole GPUI window without Metal and startup fallback.
+  CPU terminal drawing alone does not close it. Ordinary AppKit/WindowServer
+  composition and hot GPU loss have separate boundaries.
+- Explicit Create Per-Repo Config retains Swift behavior. Automatic Next reads
+  of repository `.chau7/` remain read only. No additional user decision is needed
+  to continue the authorized parity work.
+
+The inherited Swift URL handler observation remains present in the current
+comparison source: `AppDelegate+URLScheme.swift` shell-quotes the SSH target but
+does not reject leading options or ask for confirmation. Next rejects such
+targets, uses `ssh --` and confirms. This observation is retained for the Swift
+app; no current user decision or unsafe matching behavior is required for Next.
 
 ## 6. Hand-test checklist on a Mac
 

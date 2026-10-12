@@ -83,11 +83,7 @@ def fixture_outcome(path, case):
             value = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if (
-            isinstance(value, dict)
-            and value.get("case") == case
-            and isinstance(value.get("passed"), bool)
-        ):
+        if isinstance(value, dict) and value.get("case") == case and isinstance(value.get("passed"), bool):
             outcomes.append(value)
     return outcomes[0] if len(outcomes) == 1 else None
 
@@ -127,7 +123,15 @@ def case_passed(record):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--case", choices=("all", "restore", "settings", "editor"), default="all"
+        "--case",
+        choices=("all", "restore", "settings", "editor", "cache"),
+        default="all",
+    )
+    parser.add_argument(
+        "--window-renderer",
+        choices=("auto", "metal", "software", "auto-device-failure"),
+        default="auto",
+        help="Optional fixture-only complete window backend; injection occurs before Metal calls",
     )
     parser.add_argument(
         "--toolchain",
@@ -143,25 +147,16 @@ def main():
     repo = workspace.parents[1]
     revision = output(["git", "rev-parse", "HEAD"], cwd=repo)
     if output(["git", "status", "--porcelain"], cwd=repo):
-        parser.error(
-            "commit or preserve source changes before collecting exact-revision evidence"
-        )
+        parser.error("commit or preserve source changes before collecting exact-revision evidence")
     architecture = {"arm64": "aarch64", "x86_64": "x86_64"}.get(platform.machine())
     if architecture is None:
         parser.error("unsupported macOS architecture")
     target_triple = f"{architecture}-apple-darwin"
     toolchain_id = f"{args.toolchain}-{target_triple}"
-    toolchain = (
-        Path(os.environ.get("RUSTUP_HOME", str(Path.home() / ".rustup")))
-        / "toolchains"
-        / toolchain_id
-        / "bin"
-    )
+    toolchain = Path(os.environ.get("RUSTUP_HOME", str(Path.home() / ".rustup"))) / "toolchains" / toolchain_id / "bin"
     for name in ("cargo", "rustc", "rustdoc"):
         if not (toolchain / name).is_file():
-            parser.error(
-                f"required already installed executable is missing: {toolchain / name}"
-            )
+            parser.error(f"required already installed executable is missing: {toolchain / name}")
     evidence = Path(tempfile.mkdtemp(prefix="chau7-native-results-")).resolve()
     target = workspace / "target" / "native-parity"
     environment = dict(os.environ)
@@ -181,6 +176,7 @@ def main():
         "compiler": output([str(toolchain / "rustc"), "--version"]),
         "cargo": output([str(toolchain / "cargo"), "--version"]),
         "fixture_feature": "native-parity-fixture",
+        "window_renderer": args.window_renderer,
         "release_lto": "off",
         "target_triple": target_triple,
         "target_directory": str(target),
@@ -213,22 +209,17 @@ def main():
         (evidence / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
         print(f"Build failed; evidence: {evidence}")
         return 1
-    if output(["git", "rev-parse", "HEAD"], cwd=repo) != revision or output(
-        ["git", "status", "--porcelain"], cwd=repo
-    ):
+    if output(["git", "rev-parse", "HEAD"], cwd=repo) != revision or output(["git", "status", "--porcelain"], cwd=repo):
         print(f"Source changed during build; evidence: {evidence}")
         return 1
     binary = target / target_triple / "release" / "chau7-next"
     manifest["binary_sha256"] = sha256(binary)
     manifest["original_binary_sha256"] = manifest["binary_sha256"]
-    cases = ("restore", "settings", "editor") if args.case == "all" else (args.case,)
+    cases = ("restore", "settings", "editor", "cache") if args.case == "all" else (args.case,)
     success = True
     for case in cases:
         # Do not create this directory: the runner validates and creates it.
-        home = (
-            Path(tempfile.gettempdir()).resolve()
-            / f"chau7-native-fixture-{uuid.uuid4()}"
-        )
+        home = Path(tempfile.gettempdir()).resolve() / f"chau7-native-fixture-{uuid.uuid4()}"
         child_environment = dict(environment)
         child_environment.update(
             {
@@ -247,9 +238,7 @@ def main():
             "timed_out": False,
             "owned_home": str(home),
             "launch_services": launch_services,
-            "exit_code_basis": (
-                "launch_services_waiter" if launch_services else "application_process"
-            ),
+            "exit_code_basis": ("launch_services_waiter" if launch_services else "application_process"),
             # open -W has no application exit-code contract.
             "application_exit_code": None,
             "original_binary_sha256": manifest["binary_sha256"],
@@ -279,11 +268,13 @@ def main():
                     "HISTFILE",
                 ):
                     command.extend(["--env", name + "=" + child_environment[name]])
-                command.extend([str(bundle), "--args", "--native-parity-fixture", case])
+                command.extend(
+                    [str(bundle), "--args", "--native-parity-fixture", case, "--window-renderer", args.window_renderer]
+                )
                 process_stdout = evidence / "restore.launcher.stdout"
                 process_stderr = evidence / "restore.launcher.stderr"
             else:
-                command = [str(binary), "--native-parity-fixture", case]
+                command = [str(binary), "--native-parity-fixture", case, "--window-renderer", args.window_renderer]
                 process_stdout = stdout_path
                 process_stderr = stderr_path
             record["command"] = command
@@ -298,9 +289,7 @@ def main():
                 record["launcher_process_id"] = process.pid if launch_services else None
                 record["direct_process_id"] = None if launch_services else process.pid
                 # Persist ownership before waiting, including when the app stalls.
-                (evidence / "manifest.json").write_text(
-                    json.dumps(manifest, indent=2) + "\n"
-                )
+                (evidence / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
                 try:
                     record["exit_code"] = process.wait(timeout=75)
                 except subprocess.TimeoutExpired:
@@ -343,9 +332,9 @@ def main():
         (evidence / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
         if record["timed_out"]:
             break
-    manifest["source_unchanged"] = output(
-        ["git", "rev-parse", "HEAD"], cwd=repo
-    ) == revision and not output(["git", "status", "--porcelain"], cwd=repo)
+    manifest["source_unchanged"] = output(["git", "rev-parse", "HEAD"], cwd=repo) == revision and not output(
+        ["git", "status", "--porcelain"], cwd=repo
+    )
     success = success and manifest["source_unchanged"]
     manifest["passed"] = bool(success)
     (evidence / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

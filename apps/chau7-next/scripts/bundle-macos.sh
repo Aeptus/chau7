@@ -41,6 +41,18 @@ cp "$RELEASE_DIR/chau7-next-cli" "$APP/Contents/MacOS/chau7-next-cli"
 cp -R "$ROOT/resources/skills" "$APP/Contents/Resources/Skills"
 cp "$ROOT/../chau7-macos/Resources/AppDockIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
+# Ship attribution and the source audit trail for the three modified, locked
+# Apache-2.0 GPUI packages. Missing required notices fail packaging before signing.
+GPUI_LICENSES="$APP/Contents/Resources/licenses/gpui"
+mkdir -p "$GPUI_LICENSES"
+for audit_file in README.md gpui-provenance.json gpui-modifications.json; do
+  cp "$ROOT/vendor/$audit_file" "$GPUI_LICENSES/$audit_file"
+done
+for package in gpui-pre gpui-pre-macos gpui-pre-apple; do
+  mkdir -p "$GPUI_LICENSES/$package"
+  cp "$ROOT/vendor/$package/LICENSE-APACHE" "$GPUI_LICENSES/$package/LICENSE-APACHE"
+done
+
 # Token optimizer and markdown renderer (the apps/chau7-macos/rust
 # workspace), next to the app binary. The app installs them into
 # ~/.chau7-next/bin; the wrappers pass CHAU7_CTO_BIN_DIR so chau7-optim also

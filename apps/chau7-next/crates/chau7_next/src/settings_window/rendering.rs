@@ -73,7 +73,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         ))
         .child(refresh)
         .child(div().text_xs().text_color(chrome.text_muted).child(
-            "Turning this off draws the terminal text, backgrounds and images on the CPU. \
-             Font ligatures are disabled. The window still uses GPU composition.",
+            "On macOS, turning this off selects software drawing for the whole window at the next launch. \
+             Font ligatures are disabled for CPU terminal drawing. Restart to change the window backend.",
         ))
 }

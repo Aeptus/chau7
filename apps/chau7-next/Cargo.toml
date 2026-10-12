@@ -1,6 +1,7 @@
 [workspace]
 members = ["crates/chau7_next_core", "crates/chau7_next", "crates/chau7_next_mcp_bridge"]
 resolver = "2"
+exclude = ["vendor/gpui-pre", "vendor/gpui-pre-macos", "vendor/gpui-pre-apple"]
 
 [workspace.package]
 version = "0.1.0"
@@ -51,3 +52,10 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 opt-level = 2
 debug = false
+
+# Keep the locked GPUI snapshot together. Local changes and original hashes are
+# recorded under vendor/; other packages and platform backends stay pinned.
+[patch.crates-io]
+gpui-pre = { path = "vendor/gpui-pre" }
+gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
+gpui-pre-apple = { path = "vendor/gpui-pre-apple" }

@@ -118,3 +118,24 @@ commands and terminal content. Automatic sampling and graceful owned-app
 quit/session save passed. Diagnostic profile: `/private/tmp/c7perf-5af6659b5d`.
 The performance reports path is `~/.chau7-next/reports/performance`, through
 `DataRoot::reports_dir`, rather than the main log's App Support location.
+
+## Current owned normal package, 2026-10-12
+
+Source66753ed1 builds three normal Rust binaries without native fixture features.
+Clean source, matching Cargo artifact/fingerprint hashes, arm64/minimum macOS13.0,
+seven individual helper signatures and deep/strict bundle verification pass.
+A fresh UUID package launches in a new synthetic profile, exposes exact runtime
+SHA/PID and numeric diagnostics, restores two tabs and quits normally with session
+and performance persistence intact. Existing apps/profiles remain untouched.
+This owned diagnostic package is separate from the complete CI build artifact.
+See [recovery validation](RECOVERY-VALIDATION-20261011.md) for scope and limits.
+
+## Normal software-window test package, 2026-10-12
+
+Clean source 7bd54649 produces a normal feature-free signed arm64/macOS13.0
+package with all seven helpers and GPUI notices/licenses. It launches in a fresh
+synthetic profile through LaunchServices using the saved Software preference,
+exposes verified runtime/whole-window diagnostics, accepts exact owned MCP
+Unicode input and saves all three tabs on graceful quit. Existing apps/profiles
+remain untouched. This scoped test does not yet close native resize/fallback
+acceptance or replace the complete CI package; see recovery validation.

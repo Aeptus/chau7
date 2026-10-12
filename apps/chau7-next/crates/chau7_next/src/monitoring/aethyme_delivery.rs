@@ -1,11 +1,14 @@
 //! Pull-only, Next-owned adapter for Aethyme's durable delivery outbox.
 //! Broker owns authorization, deduplication and retries. We resolve an exact
 //! local recipient and acknowledge its generation after terminal acceptance.
+//! Uncertain acknowledgements retain bounded acceptance evidence in RAM only;
+//! a restart/crash cannot guarantee exactly-once terminal writes.
 use crate::mcp::{MainThread, windows};
 use chau7_next_core::{
     aethyme_delivery::{
         self as delivery, ClaimReport, Envelope, Readiness, TabSnapshot, Target, Watch,
     },
+    session_restore::transaction::ContextRef,
     subprocess,
 };
 use gpui::{App, AppContext, Global, Task};
@@ -250,12 +253,102 @@ fn resolve_executable() -> Option<PathBuf> {
         }
     })
 }
+#[derive(Clone, Copy)]
+enum CaptureKind {
+    List,
+    Poll,
+    Claim,
+    Complete,
+}
+impl CaptureKind {
+    fn caller(self) -> &'static str {
+        match self {
+            Self::List => "monitor.aethyme_delivery.list",
+            Self::Poll => "monitor.aethyme_delivery.poll",
+            Self::Claim => "monitor.aethyme_delivery.claim",
+            Self::Complete => "monitor.aethyme_delivery.complete",
+        }
+    }
+}
+
+// Canonical repository roots are supplied by the background caller. Generation
+// belongs to a claim, not the logical delivery: expiry can issue a new generation
+// for an item whose bytes this process already accepted.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct AcceptanceKey {
+    root: String,
+    item_id: i64,
+    tab_id: uuid::Uuid,
+    session: String,
+}
+impl AcceptanceKey {
+    fn new(root: &str, item_id: i64, target: &Target) -> Self {
+        Self {
+            root: root.into(),
+            item_id,
+            tab_id: target.tab_id,
+            session: target.ai_session_id.clone(),
+        }
+    }
+    fn payload_bytes(&self) -> usize {
+        self.root
+            .len()
+            .saturating_add(self.session.len())
+            .saturating_add(64)
+    }
+}
+struct Acceptance {
+    // Reuses the core's pure SHA-256/length constructor; it does no artifact I/O.
+    prompt: ContextRef,
+    generation: i64,
+}
+struct AcceptanceLedger {
+    entries: HashMap<AcceptanceKey, Acceptance>,
+    payload_bytes: usize,
+    entry_limit: usize,
+    byte_limit: usize,
+}
+impl Default for AcceptanceLedger {
+    fn default() -> Self {
+        Self {
+            entries: HashMap::new(),
+            payload_bytes: 0,
+            entry_limit: 2048,
+            byte_limit: 1024 * 1024,
+        }
+    }
+}
+impl AcceptanceLedger {
+    // One serial Runner owns this ledger. Reserve the budget before a recipient
+    // can accept bytes, then commit or release it according to real readiness.
+    fn reserve(&mut self, key: &AcceptanceKey) -> bool {
+        let Some(bytes) = self.payload_bytes.checked_add(key.payload_bytes()) else {
+            return false;
+        };
+        if self.entries.len() >= self.entry_limit || bytes > self.byte_limit {
+            return false;
+        }
+        self.payload_bytes = bytes;
+        true
+    }
+    fn release(&mut self, key: &AcceptanceKey) {
+        self.payload_bytes -= key.payload_bytes();
+    }
+    fn confirmed(&mut self, key: &AcceptanceKey) {
+        if self.entries.remove(key).is_some() {
+            self.release(key);
+        }
+    }
+}
+
 struct Runner {
     executable: PathBuf,
     worker: String,
     stopped: Arc<AtomicBool>,
     backoff: Option<Instant>,
     logged_unavailable: bool,
+    incomplete_failures: [u32; 4],
+    accepted: AcceptanceLedger,
 }
 impl Runner {
     fn new(stopped: Arc<AtomicBool>) -> Self {
@@ -265,6 +358,8 @@ impl Runner {
             stopped,
             backoff: None,
             logged_unavailable: false,
+            incomplete_failures: [0; 4],
+            accepted: AcceptanceLedger::default(),
         }
     }
     fn backing_off(&self) -> bool {
@@ -276,10 +371,42 @@ impl Runner {
             log::info!("{message}");
         }
     }
-    fn run(&mut self, root: &str, args: Vec<String>) -> Option<subprocess::CaptureResult> {
+    // Consecutive incomplete captures are one outage. Never retry an uncertain
+    // claim immediately or flood the operational log; successful capture resets.
+    fn incomplete_capture(&mut self, kind: CaptureKind, now: Instant) -> bool {
+        if self.stopped.load(Ordering::Acquire) {
+            return false;
+        }
+        let failures = &mut self.incomplete_failures[kind as usize];
+        let first = *failures == 0;
+        let exponent = (*failures).min(4);
+        let delay = Duration::from_secs((30_u64 << exponent).min(300));
+        *failures = failures.saturating_add(1);
+        self.backoff = Some(now + delay);
+        first
+    }
+    fn completion_warning_required(&self) -> bool {
+        !self.stopped.load(Ordering::Acquire) && !self.backing_off()
+    }
+    fn run(
+        &mut self,
+        root: &str,
+        args: Vec<String>,
+        kind: CaptureKind,
+    ) -> Option<subprocess::CaptureResult> {
         if self.backing_off() || self.stopped.load(Ordering::Acquire) {
             return None;
         }
+        let mut work =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                "aethyme.delivery",
+                "subprocess_capture_wall",
+                "application",
+                kind.caller(),
+                chau7_next_core::work_profiler::Queue::Background,
+            ));
+        work.items(1);
+        work.idle(false);
         let result = subprocess::capture_unless(
             Command::new(&self.executable)
                 .args(args)
@@ -291,13 +418,30 @@ impl Runner {
             4 * 1024 * 1024,
             || self.stopped.load(Ordering::Acquire),
         );
+        if let Ok(output) = &result {
+            work.bytes(output.stdout.len().saturating_add(output.stderr.len()));
+        }
+        // This phase includes actual subprocess execution/wait, never the
+        // enclosing executor timer, logging or later recipient delivery.
+        drop(work);
         let Ok(result) = result else {
             self.log_unavailable("Aethyme Next delivery could not launch its executable");
             return None;
         };
         if !result.completed() {
-            self.backoff = Some(Instant::now() + Duration::from_secs(30));
-            log::warn!("Aethyme capture incomplete; leaving any uncertain claim to expire");
+            if self.incomplete_capture(kind, Instant::now()) {
+                log::warn!(
+                    "Aethyme capture incomplete; leaving any uncertain claim to expire; caller={} timed_out={} output_limit_exceeded={} read_failed={} cancelled={} status={:?} stdout_bytes={} stderr_bytes={}",
+                    kind.caller(),
+                    result.timed_out,
+                    result.output_limit_exceeded,
+                    result.read_failed,
+                    result.cancelled,
+                    result.status,
+                    result.stdout.len(),
+                    result.stderr.len(),
+                );
+            }
             return None;
         }
         if result.status != Some(0) {
@@ -311,11 +455,14 @@ impl Runner {
             }
             return None;
         }
+        self.incomplete_failures[kind as usize] = 0;
+        self.logged_unavailable = false;
+        self.backoff = None;
         Some(result)
     }
     fn run_root(&mut self, root: &str, mut deliver: impl FnMut(&Target, &str) -> Readiness) {
         let Some(watches) = self
-            .run(root, delivery::list_watches())
+            .run(root, delivery::list_watches(), CaptureKind::List)
             .and_then(|r| serde_json::from_slice::<Vec<Watch>>(&r.stdout).ok())
         else {
             return;
@@ -326,10 +473,11 @@ impl Runner {
             .filter(|w| w.id > 0 && w.status == "active" && w.next_poll_at.unwrap_or(0) <= now)
             .take(4)
         {
-            let _ = self.run(root, delivery::poll_watch(watch.id));
+            let _ = self.run(root, delivery::poll_watch(watch.id), CaptureKind::Poll);
         }
         for _ in 0..4 {
-            let Some(result) = self.run(root, delivery::claim(&self.worker)) else {
+            let Some(result) = self.run(root, delivery::claim(&self.worker), CaptureKind::Claim)
+            else {
                 return;
             };
             let envelope = serde_json::from_slice::<ClaimReport>(&result.stdout)
@@ -338,32 +486,73 @@ impl Runner {
             let Some(Some(envelope)) = envelope else {
                 return;
             };
-            let readiness = match Target::parse(&envelope.subscription.target) {
-                Some(target) => deliver(
-                    &target,
-                    &format!(
+            let target = Target::parse(&envelope.subscription.target);
+            let key = target
+                .as_ref()
+                .map(|target| AcceptanceKey::new(root, envelope.item.id, target));
+            let readiness = match (target, key.as_ref()) {
+                (Some(target), Some(key)) => {
+                    let prompt = format!(
                         "[Aethyme delivery #{}]\n{}",
                         envelope.item.id, envelope.prompt
-                    ),
-                ),
-                None => Readiness::Failed("invalid_chau7_next_target"),
+                    );
+                    let fingerprint = ContextRef::new(prompt.as_bytes());
+                    if let Some(accepted) = self.accepted.entries.get_mut(key) {
+                        if accepted.prompt == fingerprint {
+                            accepted.generation = envelope.item.generation;
+                            // The current validated claim must still be acknowledged,
+                            // even if the old generation's ACK was never observed.
+                            Readiness::Ready
+                        } else {
+                            Readiness::Failed("accepted_delivery_prompt_changed")
+                        }
+                    } else if self.accepted.reserve(key) {
+                        let readiness = deliver(&target, &prompt);
+                        if readiness == Readiness::Ready {
+                            self.accepted.entries.insert(
+                                key.clone(),
+                                Acceptance {
+                                    prompt: fingerprint,
+                                    generation: envelope.item.generation,
+                                },
+                            );
+                        } else {
+                            self.accepted.release(key);
+                        }
+                        readiness
+                    } else {
+                        // Never evict unresolved acceptance evidence to admit a new
+                        // write: that would silently permit a duplicate on reclaim.
+                        Readiness::Retry("acceptance_ledger_full")
+                    }
+                }
+                _ => Readiness::Failed("invalid_chau7_next_target"),
             };
-            self.complete(root, &envelope, &readiness);
+            if self.complete(root, &envelope, &readiness)
+                && readiness == Readiness::Ready
+                && let Some(key) = key.as_ref()
+            {
+                self.accepted.confirmed(key);
+            }
             if matches!(readiness, Readiness::Retry(_)) {
                 return;
             }
         }
     }
-    fn complete(&mut self, root: &str, envelope: &Envelope, readiness: &Readiness) {
-        if self
+    fn complete(&mut self, root: &str, envelope: &Envelope, readiness: &Readiness) -> bool {
+        let completed = self
             .run(
                 root,
                 delivery::complete(&envelope.item, &self.worker, readiness),
+                CaptureKind::Complete,
             )
-            .is_none()
-        {
+            .is_some();
+        // The existing CLI contract confirms a completion with a fully captured
+        // exit status 0. Incomplete/nonzero/cancelled ACKs retain the ledger entry.
+        if !completed && self.completion_warning_required() {
             log::warn!("Aethyme completion failed; its fenced claim will expire safely");
         }
+        completed
     }
 }
 
@@ -433,6 +622,35 @@ esac
                 runner,
                 target,
             }
+        }
+        fn uncertain_ack(&mut self, incomplete: bool) {
+            let script = std::fs::read_to_string(&self.runner.executable).unwrap();
+            let command = if incomplete {
+                "head -c 4194305 /dev/zero"
+            } else {
+                "exit 3"
+            };
+            let replacement = format!(
+                "deliveries:complete:--id) if [ -e ack-confirmed ]; then printf '{{}}'; else {command}; fi ;;"
+            );
+            assert!(script.contains("deliveries:complete:--id) printf '{}' ;;"));
+            std::fs::write(
+                &self.runner.executable,
+                script.replace("deliveries:complete:--id) printf '{}' ;;", &replacement),
+            )
+            .unwrap();
+        }
+        fn edit_claim(&self, edit: impl FnOnce(&mut serde_json::Value)) {
+            let path = self.root.join("claim.json");
+            let mut claim: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            edit(&mut claim);
+            std::fs::write(path, serde_json::to_vec(&claim).unwrap()).unwrap();
+        }
+        fn reclaim(&mut self) {
+            std::fs::remove_file(self.root.join("claimed")).unwrap();
+            // Model broker lease/backoff expiry without sleeping or real claims.
+            self.runner.backoff = None;
         }
         fn calls(&self) -> Vec<String> {
             std::fs::read_to_string(self.root.join("calls"))
@@ -540,5 +758,417 @@ esac
         f.runner
             .run_root(f.root.to_str().unwrap(), |_, _| panic!("stopped"));
         assert!(f.calls().is_empty());
+    }
+    #[test]
+    fn incomplete_captures_back_off_with_a_bound_and_one_warning_per_outage() {
+        let mut runner = Runner::new(Arc::new(AtomicBool::new(false)));
+        let now = Instant::now();
+        for (index, seconds) in [30, 60, 120, 240, 300, 300].into_iter().enumerate() {
+            assert_eq!(
+                runner.incomplete_capture(CaptureKind::List, now),
+                index == 0
+            );
+            assert_eq!(
+                runner.backoff.unwrap().duration_since(now),
+                Duration::from_secs(seconds)
+            );
+        }
+        runner.incomplete_failures[CaptureKind::List as usize] = u32::MAX;
+        assert!(!runner.incomplete_capture(CaptureKind::List, now));
+        assert_eq!(
+            runner.incomplete_failures[CaptureKind::List as usize],
+            u32::MAX
+        );
+        assert_eq!(
+            runner.backoff.unwrap().duration_since(now),
+            Duration::from_secs(300)
+        );
+    }
+    #[test]
+    fn successful_owned_capture_resets_incomplete_outage_and_normal_polling() {
+        let mut fixture = Fixture::new("chau7-next:", None, false);
+        assert!(
+            fixture
+                .runner
+                .incomplete_capture(CaptureKind::List, Instant::now())
+        );
+        assert!(
+            !fixture
+                .runner
+                .incomplete_capture(CaptureKind::List, Instant::now())
+        );
+        // Model expiry without sleeping; the actual fake CLI capture must reset.
+        fixture.runner.backoff = None;
+        assert!(
+            fixture
+                .runner
+                .run(
+                    fixture.root.to_str().unwrap(),
+                    delivery::list_watches(),
+                    CaptureKind::List
+                )
+                .is_some()
+        );
+        assert_eq!(fixture.runner.incomplete_failures, [0; 4]);
+        assert!(fixture.runner.backoff.is_none());
+        assert!(
+            fixture
+                .runner
+                .incomplete_capture(CaptureKind::List, Instant::now())
+        );
+        assert!(
+            fixture
+                .calls()
+                .iter()
+                .any(|call| call.contains("watch pr list"))
+        );
+    }
+    #[test]
+    fn shutdown_cancellation_does_not_open_an_incomplete_outage() {
+        let mut runner = Runner::new(Arc::new(AtomicBool::new(true)));
+        assert!(!runner.incomplete_capture(CaptureKind::List, Instant::now()));
+        assert_eq!(runner.incomplete_failures, [0; 4]);
+        assert!(runner.backoff.is_none());
+    }
+
+    #[test]
+    fn actual_output_limit_stops_delivery_and_repeated_captures_back_off() {
+        let mut fixture = Fixture::new("chau7-next:", None, false);
+        std::fs::write(
+            &fixture.runner.executable,
+            "#!/bin/sh\nprintf '%s\n' attempt >> attempts\nhead -c 4194305 /dev/zero\n",
+        )
+        .unwrap();
+        for expected in [1, 2] {
+            fixture.runner.backoff = None;
+            fixture
+                .runner
+                .run_root(fixture.root.to_str().unwrap(), |_, _| {
+                    panic!("incomplete capture delivered")
+                });
+            assert_eq!(
+                fixture.runner.incomplete_failures[CaptureKind::List as usize],
+                expected
+            );
+            assert!(fixture.runner.backing_off());
+            assert!(
+                fixture
+                    .runner
+                    .run(
+                        fixture.root.to_str().unwrap(),
+                        delivery::list_watches(),
+                        CaptureKind::List
+                    )
+                    .is_none()
+            );
+        }
+        assert_eq!(
+            std::fs::read_to_string(fixture.root.join("attempts"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+    }
+    #[test]
+    fn successful_list_and_poll_do_not_reset_an_incomplete_claim_outage() {
+        let mut fixture = Fixture::new("chau7-next:", None, false);
+        let script = std::fs::read_to_string(&fixture.runner.executable).unwrap();
+        let script = script.replace("case \"$3:$4:$5\" in\n", "if [ \"$3:$4\" = 'deliveries:claim' ]; then\nprintf '%s\n' attempt >> attempts\nhead -c 4194305 /dev/zero\nexit 0\nfi\ncase \"$3:$4:$5\" in\n");
+        std::fs::write(&fixture.runner.executable, script).unwrap();
+        for expected in [1, 2] {
+            fixture.runner.backoff = None;
+            fixture
+                .runner
+                .run_root(fixture.root.to_str().unwrap(), |_, _| {
+                    panic!("incomplete claim delivered")
+                });
+            assert_eq!(
+                fixture.runner.incomplete_failures[CaptureKind::Claim as usize],
+                expected
+            );
+            assert_eq!(
+                fixture.runner.incomplete_failures[CaptureKind::List as usize],
+                0
+            );
+            assert_eq!(
+                fixture.runner.incomplete_failures[CaptureKind::Poll as usize],
+                0
+            );
+            assert!(!fixture.runner.completion_warning_required());
+        }
+        assert_eq!(
+            std::fs::read_to_string(fixture.root.join("attempts"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+        assert_eq!(
+            fixture
+                .calls()
+                .iter()
+                .filter(|call| call.contains("watch pr list"))
+                .count(),
+            2
+        );
+    }
+    #[test]
+    fn completion_warning_is_suppressed_for_backoff_and_shutdown() {
+        let mut runner = Runner::new(Arc::new(AtomicBool::new(false)));
+        assert!(runner.completion_warning_required());
+        assert!(runner.incomplete_capture(CaptureKind::Complete, Instant::now()));
+        assert!(!runner.completion_warning_required());
+        runner.backoff = None;
+        assert!(runner.completion_warning_required());
+        runner.stopped.store(true, Ordering::Release);
+        assert!(!runner.completion_warning_required());
+    }
+
+    #[test]
+    fn incomplete_ack_reclaim_skips_write_and_confirms_current_generation() {
+        let mut f = Fixture::new("chau7-next:", None, false);
+        f.uncertain_ack(true);
+        let mut writes = 0;
+        f.runner.run_root(f.root.to_str().unwrap(), |_, prompt| {
+            assert_eq!(prompt, "[Aethyme delivery #7]\ncontinue the task");
+            writes += 1;
+            Readiness::Ready
+        });
+        assert_eq!(writes, 1);
+        assert!(f.runner.backing_off());
+        assert_eq!(f.runner.accepted.entries.len(), 1);
+        assert_eq!(
+            f.runner
+                .accepted
+                .entries
+                .values()
+                .next()
+                .unwrap()
+                .generation,
+            11
+        );
+        f.reclaim();
+        f.runner.run_root(f.root.to_str().unwrap(), |_, _| {
+            panic!("same-generation duplicate write")
+        });
+        assert_eq!(
+            f.runner
+                .accepted
+                .entries
+                .values()
+                .next()
+                .unwrap()
+                .generation,
+            11
+        );
+        assert_eq!(f.runner.accepted.entries.len(), 1);
+        f.edit_claim(|v| v["delivery"]["item"]["generation"] = json!(12));
+        f.reclaim();
+        // Another incomplete ACK retains the new generation and the same evidence.
+        f.runner
+            .run_root(f.root.to_str().unwrap(), |_, _| panic!("duplicate write"));
+        assert_eq!(
+            f.runner
+                .accepted
+                .entries
+                .values()
+                .next()
+                .unwrap()
+                .generation,
+            12
+        );
+        assert_eq!(f.runner.accepted.entries.len(), 1);
+        f.reclaim();
+        std::fs::write(f.root.join("ack-confirmed"), b"").unwrap();
+        f.runner
+            .run_root(f.root.to_str().unwrap(), |_, _| panic!("duplicate write"));
+        assert!(f.runner.accepted.entries.is_empty());
+        assert_eq!(f.runner.accepted.payload_bytes, 0);
+        let completions: Vec<_> = f
+            .calls()
+            .into_iter()
+            .filter(|c| c.contains("deliveries complete"))
+            .collect();
+        assert_eq!(completions.len(), 4);
+        assert!(completions[0].contains("--generation 11 --outcome delivered"));
+        assert!(completions[1].contains("--generation 11 --outcome delivered"));
+        assert!(completions[2].contains("--generation 12 --outcome delivered"));
+        assert!(completions[3].contains("--generation 12 --outcome delivered"));
+    }
+
+    #[test]
+    fn changed_prompt_fails_without_rewriting_or_erasing_accepted_evidence() {
+        let mut f = Fixture::new("chau7-next:", None, false);
+        f.uncertain_ack(false);
+        f.runner
+            .run_root(f.root.to_str().unwrap(), |_, _| Readiness::Ready);
+        let fingerprint = f
+            .runner
+            .accepted
+            .entries
+            .values()
+            .next()
+            .unwrap()
+            .prompt
+            .clone();
+        let bytes = f.runner.accepted.payload_bytes;
+        f.edit_claim(|v| v["delivery"]["prompt"] = json!("different task"));
+        f.reclaim();
+        std::fs::write(f.root.join("ack-confirmed"), b"").unwrap();
+        f.runner.run_root(f.root.to_str().unwrap(), |_, _| {
+            panic!("changed prompt written")
+        });
+        assert_eq!(f.runner.accepted.entries.len(), 1);
+        assert_eq!(f.runner.accepted.payload_bytes, bytes);
+        assert_eq!(
+            f.runner.accepted.entries.values().next().unwrap().prompt,
+            fingerprint
+        );
+        assert!(
+            f.calls()
+                .iter()
+                .any(|c| c
+                    .contains("--outcome failed --error-code accepted_delivery_prompt_changed"))
+        );
+        f.edit_claim(|v| v["delivery"]["prompt"] = json!("continue the task"));
+        f.reclaim();
+        f.runner.run_root(f.root.to_str().unwrap(), |_, _| {
+            panic!("old prompt written twice")
+        });
+        assert_eq!(f.runner.accepted.payload_bytes, 0);
+    }
+
+    #[test]
+    fn only_actual_ready_acceptance_is_retained() {
+        let mut f = Fixture::new("chau7-next:", None, false);
+        f.uncertain_ack(false);
+        for readiness in [
+            Readiness::Retry("target_tab_busy"),
+            Readiness::Failed("test_target_invalid"),
+        ] {
+            f.runner
+                .run_root(f.root.to_str().unwrap(), |_, _| readiness.clone());
+            assert!(f.runner.accepted.entries.is_empty());
+            assert_eq!(f.runner.accepted.payload_bytes, 0);
+            f.reclaim();
+        }
+        f.runner
+            .run_root(f.root.to_str().unwrap(), |_, _| Readiness::Ready);
+        assert_eq!(f.runner.accepted.entries.len(), 1);
+        assert!(f.runner.accepted.payload_bytes > 0);
+    }
+
+    #[test]
+    fn root_item_tab_and_native_session_are_independent_acceptance_identities() {
+        for variant in ["root", "item", "tab", "session"] {
+            let mut f = Fixture::new("chau7-next:", None, false);
+            f.uncertain_ack(false);
+            let mut writes = 0;
+            f.runner.run_root(f.root.to_str().unwrap(), |_, _| {
+                writes += 1;
+                Readiness::Ready
+            });
+            let other = Fixture::new("chau7-next:", None, false);
+            if variant == "root" {
+                std::fs::copy(f.root.join("claim.json"), other.root.join("claim.json")).unwrap();
+            } else {
+                f.edit_claim(|v| match variant {
+                    "item" => v["delivery"]["item"]["id"] = json!(8),
+                    "tab" => {
+                        let target = Target {
+                            tab_id: uuid::Uuid::new_v4(),
+                            ai_session_id: f.target.ai_session_id.clone(),
+                        };
+                        v["delivery"]["subscription"]["target"] = json!(target.opaque_value());
+                    }
+                    "session" => {
+                        let target = Target {
+                            tab_id: f.target.tab_id,
+                            ai_session_id: "other-native-session".into(),
+                        };
+                        v["delivery"]["subscription"]["target"] = json!(target.opaque_value());
+                    }
+                    _ => unreachable!(),
+                });
+                f.reclaim();
+            }
+            let root = if variant == "root" {
+                &other.root
+            } else {
+                &f.root
+            };
+            f.runner.run_root(root.to_str().unwrap(), |_, _| {
+                writes += 1;
+                Readiness::Ready
+            });
+            assert_eq!(writes, 2, "{variant}");
+            assert_eq!(f.runner.accepted.entries.len(), 2, "{variant}");
+        }
+    }
+
+    #[test]
+    fn full_ledger_preserves_uncertain_entries_but_allows_existing_ack_cleanup() {
+        let mut f = Fixture::new("chau7-next:", None, false);
+        f.uncertain_ack(false);
+        f.runner.accepted.entry_limit = 1;
+        let mut writes = 0;
+        f.runner.run_root(f.root.to_str().unwrap(), |_, _| {
+            writes += 1;
+            Readiness::Ready
+        });
+        let bytes = f.runner.accepted.payload_bytes;
+        f.edit_claim(|v| v["delivery"]["item"]["id"] = json!(8));
+        f.reclaim();
+        f.runner.run_root(f.root.to_str().unwrap(), |_, _| {
+            panic!("capacity permitted write")
+        });
+        assert_eq!(f.runner.accepted.entries.len(), 1);
+        assert_eq!(f.runner.accepted.payload_bytes, bytes);
+        assert!(
+            f.calls()
+                .iter()
+                .any(|c| c.contains("--outcome retry --error-code acceptance_ledger_full"))
+        );
+        f.edit_claim(|v| v["delivery"]["item"]["id"] = json!(7));
+        f.reclaim();
+        std::fs::write(f.root.join("ack-confirmed"), b"").unwrap();
+        f.runner.run_root(f.root.to_str().unwrap(), |_, _| {
+            panic!("existing ACK duplicate write")
+        });
+        assert_eq!(f.runner.accepted.payload_bytes, 0);
+        for id in [8, 9, 10] {
+            f.edit_claim(|v| v["delivery"]["item"]["id"] = json!(id));
+            f.reclaim();
+            f.runner.run_root(f.root.to_str().unwrap(), |_, _| {
+                writes += 1;
+                Readiness::Ready
+            });
+            assert!(f.runner.accepted.entries.is_empty());
+            assert_eq!(f.runner.accepted.payload_bytes, 0);
+        }
+        assert_eq!(writes, 4);
+    }
+
+    #[test]
+    fn byte_capacity_is_reserved_before_write_and_released_exactly_after_ack() {
+        let mut f = Fixture::new("chau7-next:", None, false);
+        let key = AcceptanceKey::new(f.root.to_str().unwrap(), 7, &f.target);
+        let bytes = key.payload_bytes();
+        f.runner.accepted.byte_limit = bytes - 1;
+        f.runner.run_root(f.root.to_str().unwrap(), |_, _| {
+            panic!("byte cap permitted write")
+        });
+        assert!(f.runner.accepted.entries.is_empty());
+        assert_eq!(f.runner.accepted.payload_bytes, 0);
+        f.runner.accepted.byte_limit = bytes;
+        f.reclaim();
+        let mut writes = 0;
+        f.runner.run_root(f.root.to_str().unwrap(), |_, _| {
+            writes += 1;
+            Readiness::Ready
+        });
+        assert_eq!(writes, 1);
+        assert_eq!(f.runner.accepted.payload_bytes, 0);
     }
 }

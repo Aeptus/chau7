@@ -93,7 +93,13 @@ pub fn terminal_font(settings: &Settings, window: &Window) -> Font {
     let mut f = font(SharedString::from(family));
     f.fallbacks = Some(FontFallbacks::from_fonts(fallback_fonts()));
     f.weight = ns_font_weight(appearance.font_weight);
-    f.features = font_features(appearance.ligatures && appearance.rendering.gpu_renderer);
+    f.features = font_features(
+        appearance.ligatures
+            && appearance.rendering.gpu_renderer
+            && window
+                .renderer_diagnostics()
+                .is_none_or(|d| d.backend != "software"),
+    );
     f
 }
 

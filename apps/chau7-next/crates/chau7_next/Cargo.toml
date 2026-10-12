@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [features]
 # Explicit acceptance binary only; production packaging leaves this disabled.
-native-parity-fixture = ["objc2-app-kit/NSGraphicsContext", "gpui-kit/test-support"]
+native-parity-fixture = ["objc2-app-kit/NSGraphicsContext", "objc2-app-kit/NSBitmapImageRep", "objc2-app-kit/NSColorSpace", "gpui-kit/test-support", "gpui-macos/test-support"]
 
 [build-dependencies]
 # Compiles the os_log shim on macOS (build.rs).
@@ -45,6 +45,8 @@ sys-locale = "0.3"
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# Exact patched backend; policy must be fixed before the first native window.
+gpui-macos = { package = "gpui-pre-macos", version = "=0.3.8", default-features = false, features = ["font-kit", "runtime_shaders"] }
 # NSWindow behind a GPUI window (platform/window_style.rs).
 raw-window-handle = "0.6"
 # Platform layer (src/platform/). Only the framework features in use are on.
