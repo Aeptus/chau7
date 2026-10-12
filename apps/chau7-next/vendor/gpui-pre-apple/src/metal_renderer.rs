@@ -8,7 +8,7 @@ use gpui::{
 };
 #[cfg(any(test, feature = "bench-support", feature = "test-support"))]
 use image::RgbaImage;
-use objc2::runtime::AnyObject;
+use objc2::{ClassType, runtime::AnyObject};
 
 use core_foundation::base::TCFType;
 use core_video::{
@@ -145,13 +145,77 @@ pub struct PathRasterizationVertex {
     pub bounds: Bounds<ScaledPixels>,
 }
 
+/// The initialization stage that failed before a window could draw.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RendererInitStage {
+    /// No compatible Metal device was available.
+    Device,
+    /// The compiled shader library could not be loaded.
+    ShaderLibrary,
+    /// A required shader entry point was unavailable.
+    ShaderEntry,
+    /// The device could not compile a required render pipeline.
+    Pipeline,
+    /// A required native resource could not be allocated.
+    Resource,
+}
+
+/// A recoverable, bounded description of Metal startup failure.
+#[derive(Clone, Debug)]
+pub struct RendererInitError {
+    stage: RendererInitStage,
+    message: String,
+}
+impl RendererInitError {
+    fn new(stage: RendererInitStage, message: impl std::fmt::Display) -> Self {
+        Self {
+            stage,
+            message: message.to_string().chars().take(512).collect(),
+        }
+    }
+    /// The stable reason category, independent of driver message text.
+    pub fn stage(&self) -> RendererInitStage {
+        self.stage
+    }
+}
+impl std::fmt::Display for RendererInitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}: {}", self.stage, self.message)
+    }
+}
+impl std::error::Error for RendererInitError {}
+type InitResult<T> = std::result::Result<T, RendererInitError>;
+
 impl MetalRenderer {
+    /// Constructs a renderer without exiting the process or panicking on a
+    /// device, shader, pipeline, or required initial allocation failure.
+    pub fn try_new(
+        instance_buffer_pool: Arc<Mutex<InstanceBufferPool>>,
+        transparent: bool,
+    ) -> std::result::Result<Self, RendererInitError> {
+        let device = Self::try_create_device()?;
+        // SAFETY: CAMetalLayer is an Objective-C class on supported Apple targets.
+        // `new` returns a +1 object. The metal wrapper takes that ownership only
+        // after the nil check, preserving a recoverable allocation failure.
+        let raw: *mut AnyObject =
+            unsafe { objc2::msg_send![objc2_quartz_core::CAMetalLayer::class(), new] };
+        let layer = unsafe {
+            initial_allocation::<metal::MetalLayer>(
+                raw,
+                RendererInitStage::Resource,
+                "CAMetalLayer allocation failed",
+            )?
+        };
+        Self::configure_layer(&layer, &device, transparent);
+        Self::new_internal(device, Some(layer), !transparent, instance_buffer_pool)
+    }
     /// Creates a new MetalRenderer with a CAMetalLayer for window-based rendering.
     pub fn new(instance_buffer_pool: Arc<Mutex<InstanceBufferPool>>, transparent: bool) -> Self {
         let device = Self::create_device();
         let layer = metal::MetalLayer::new();
         Self::configure_layer(&layer, &device, transparent);
         Self::new_internal(device, Some(layer), !transparent, instance_buffer_pool)
+            .expect("failed to initialize Metal renderer")
     }
 
     /// Creates a renderer for a CAMetalLayer owned by a platform view, such as
@@ -171,6 +235,7 @@ impl MetalRenderer {
         .to_owned();
         Self::configure_layer(&layer, &device, transparent);
         Self::new_internal(device, Some(layer), !transparent, instance_buffer_pool)
+            .expect("failed to initialize Metal renderer")
     }
 
     fn configure_layer(layer: &metal::MetalLayerRef, device: &metal::DeviceRef, transparent: bool) {
@@ -207,37 +272,26 @@ impl MetalRenderer {
     pub fn new_headless(instance_buffer_pool: Arc<Mutex<InstanceBufferPool>>) -> Self {
         let device = Self::create_device();
         Self::new_internal(device, None, true, instance_buffer_pool)
+            .expect("failed to initialize headless Metal renderer")
     }
 
-    #[cfg(target_os = "macos")]
     fn create_device() -> metal::Device {
-        // Prefer low‐power integrated GPUs on Intel Mac. On Apple
-        // Silicon, there is only ever one GPU, so this is equivalent to
-        // `metal::Device::system_default()`.
-        if let Some(d) = metal::Device::all()
-            .into_iter()
-            .min_by_key(|d| (d.is_removable(), !d.is_low_power()))
-        {
-            d
-        } else {
-            // For some reason `all()` can return an empty list, see https://github.com/zed-industries/zed/issues/37689
-            // In that case, we fall back to the system default device.
-            log::error!(
-                "Unable to enumerate Metal devices; attempting to use system default device"
-            );
-            Self::system_default_device()
-        }
-    }
-
-    #[cfg(target_os = "ios")]
-    fn create_device() -> metal::Device {
-        Self::system_default_device()
-    }
-
-    fn system_default_device() -> metal::Device {
-        metal::Device::system_default().unwrap_or_else(|| {
-            log::error!("unable to access a compatible graphics device");
+        Self::try_create_device().unwrap_or_else(|error| {
+            log::error!("{error}");
             std::process::exit(1);
+        })
+    }
+
+    fn try_create_device() -> InitResult<metal::Device> {
+        #[cfg(target_os = "macos")]
+        if let Some(device) = metal::Device::all()
+            .into_iter()
+            .min_by_key(|device| (device.is_removable(), !device.is_low_power()))
+        {
+            return Ok(device);
+        }
+        metal::Device::system_default().ok_or_else(|| {
+            RendererInitError::new(RendererInitStage::Device, "no compatible graphics device")
         })
     }
 
@@ -246,15 +300,8 @@ impl MetalRenderer {
         layer: Option<metal::MetalLayer>,
         opaque: bool,
         instance_buffer_pool: Arc<Mutex<InstanceBufferPool>>,
-    ) -> Self {
-        #[cfg(feature = "runtime_shaders")]
-        let library = device
-            .new_library_with_source(&SHADERS_SOURCE_FILE, &metal::CompileOptions::new())
-            .expect("error building metal library");
-        #[cfg(not(feature = "runtime_shaders"))]
-        let library = device
-            .new_library_with_data(SHADERS_METALLIB)
-            .expect("error building metal library");
+    ) -> InitResult<Self> {
+        let library = new_initial_library(&device)?;
 
         fn to_float2_bits(point: PointF) -> u64 {
             let mut output = point.y.to_bits() as u64;
@@ -282,7 +329,8 @@ impl MetalRenderer {
             to_float2_bits(point(1., 0.)),
             to_float2_bits(point(1., 1.)),
         ];
-        let unit_vertices = device.new_buffer_with_data(
+        let unit_vertices = new_initial_buffer(
+            &device,
             unit_vertices.as_ptr() as *const c_void,
             mem::size_of_val(&unit_vertices) as u64,
             if is_unified_memory {
@@ -291,7 +339,7 @@ impl MetalRenderer {
             } else {
                 MTLResourceOptions::StorageModeManaged
             },
-        );
+        )?;
 
         let paths_rasterization_pipeline_state = build_path_rasterization_pipeline_state(
             &device,
@@ -301,7 +349,7 @@ impl MetalRenderer {
             "path_rasterization_fragment",
             MTLPixelFormat::BGRA8Unorm,
             PATH_SAMPLE_COUNT,
-        );
+        )?;
         let path_sprites_pipeline_state = build_path_sprite_pipeline_state(
             &device,
             &library,
@@ -309,7 +357,7 @@ impl MetalRenderer {
             "path_sprite_vertex",
             "path_sprite_fragment",
             MTLPixelFormat::BGRA8Unorm,
-        );
+        )?;
         let shadows_pipeline_state = build_pipeline_state(
             &device,
             &library,
@@ -317,7 +365,7 @@ impl MetalRenderer {
             "shadow_vertex",
             "shadow_fragment",
             MTLPixelFormat::BGRA8Unorm,
-        );
+        )?;
         let quads_pipeline_state = build_pipeline_state(
             &device,
             &library,
@@ -325,7 +373,7 @@ impl MetalRenderer {
             "quad_vertex",
             "quad_fragment",
             MTLPixelFormat::BGRA8Unorm,
-        );
+        )?;
         let underlines_pipeline_state = build_pipeline_state(
             &device,
             &library,
@@ -333,7 +381,7 @@ impl MetalRenderer {
             "underline_vertex",
             "underline_fragment",
             MTLPixelFormat::BGRA8Unorm,
-        );
+        )?;
         let monochrome_sprites_pipeline_state = build_pipeline_state(
             &device,
             &library,
@@ -341,7 +389,7 @@ impl MetalRenderer {
             "monochrome_sprite_vertex",
             "monochrome_sprite_fragment",
             MTLPixelFormat::BGRA8Unorm,
-        );
+        )?;
         let polychrome_sprites_pipeline_state = build_pipeline_state(
             &device,
             &library,
@@ -349,7 +397,7 @@ impl MetalRenderer {
             "polychrome_sprite_vertex",
             "polychrome_sprite_fragment",
             MTLPixelFormat::BGRA8Unorm,
-        );
+        )?;
         let surfaces_pipeline_state = build_pipeline_state(
             &device,
             &library,
@@ -357,15 +405,14 @@ impl MetalRenderer {
             "surface_vertex",
             "surface_fragment",
             MTLPixelFormat::BGRA8Unorm,
-        );
+        )?;
 
-        let command_queue = device.new_command_queue();
+        let command_queue = new_initial_command_queue(&device)?;
         let supports_shared_storage = cfg!(target_os = "ios") || is_apple_gpu;
         let sprite_atlas = Arc::new(MetalAtlas::new(device.clone(), supports_shared_storage));
-        let core_video_texture_cache =
-            CVMetalTextureCache::new(None, device.clone(), None).unwrap();
+        let core_video_texture_cache = new_initial_video_cache(&device)?;
 
-        Self {
+        Ok(Self {
             device,
             layer,
             presents_with_transaction: false,
@@ -390,7 +437,7 @@ impl MetalRenderer {
             path_sample_count: PATH_SAMPLE_COUNT,
             #[cfg(any(test, feature = "bench-support", feature = "test-support"))]
             headless_render_target: None,
-        }
+        })
     }
 
     pub fn layer(&self) -> Option<&metal::MetalLayerRef> {
@@ -1313,6 +1360,222 @@ fn read_texture_to_image(texture: &metal::TextureRef) -> Result<RgbaImage> {
     RgbaImage::from_raw(width, height, pixels).context("failed to create RgbaImage from pixel data")
 }
 
+// Nullable +1 objects must be checked before foreign-types constructs a
+// NonNull owner. The caller supplies the exact Objective-C resource type.
+unsafe fn initial_allocation<T: ForeignType>(
+    raw: *mut AnyObject,
+    stage: RendererInitStage,
+    message: &str,
+) -> InitResult<T> {
+    if raw.is_null() {
+        return Err(RendererInitError::new(stage, message));
+    }
+    // SAFETY: Caller guarantees the non-nil object is a +1 instance of T.
+    Ok(unsafe { T::from_ptr(raw.cast()) })
+}
+
+// NSError is autoreleased by Metal, so borrow rather than transfer ownership.
+unsafe fn driver_message(error: *mut AnyObject, fallback: &str) -> String {
+    if error.is_null() {
+        return fallback.to_owned();
+    }
+    // SAFETY: Metal's error argument supplies an NSError or nil.
+    let description: *mut AnyObject = unsafe { objc2::msg_send![&*error, localizedDescription] };
+    if description.is_null() {
+        return fallback.to_owned();
+    }
+    // SAFETY: localizedDescription is an NSString; its UTF8String lives while
+    // that autoreleased description remains alive in the current pool.
+    let text: *const std::ffi::c_char = unsafe { objc2::msg_send![&*description, UTF8String] };
+    if text.is_null() {
+        return fallback.to_owned();
+    }
+    unsafe { std::ffi::CStr::from_ptr(text) }
+        .to_string_lossy()
+        .chars()
+        .take(512)
+        .collect()
+}
+
+#[cfg(not(feature = "runtime_shaders"))]
+fn new_initial_library(device: &metal::DeviceRef) -> InitResult<metal::Library> {
+    new_initial_library_with_data(device, SHADERS_METALLIB)
+}
+
+#[cfg(any(not(feature = "runtime_shaders"), test))]
+fn new_initial_library_with_data(
+    device: &metal::DeviceRef,
+    bytes: &[u8],
+) -> InitResult<metal::Library> {
+    unsafe extern "C" {
+        fn dispatch_data_create(
+            buffer: *const c_void,
+            size: usize,
+            queue: *mut c_void,
+            destructor: *mut c_void,
+        ) -> *mut c_void;
+        fn dispatch_release(object: *mut c_void);
+    }
+    // SAFETY: A nil destructor requests a copy, matching metal-rs's existing
+    // behavior. No dispatch owner is constructed before checking for nil.
+    let data = unsafe {
+        dispatch_data_create(
+            bytes.as_ptr().cast(),
+            bytes.len(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    if data.is_null() {
+        return Err(RendererInitError::new(
+            RendererInitStage::Resource,
+            "shader dispatch data allocation failed",
+        ));
+    }
+    let native = unsafe { &*device.as_ptr().cast::<AnyObject>() };
+    let mut error: *mut AnyObject = ptr::null_mut();
+    // SAFETY: Both arguments match the Metal selector; data remains alive until
+    // the library has retained/copied its contents. The +1 result is nullable.
+    let raw: *mut AnyObject = unsafe {
+        objc2::msg_send![native,
+        newLibraryWithData: data, error: &mut error]
+    };
+    unsafe { dispatch_release(data) };
+    let message = unsafe { driver_message(error, "shader library allocation failed") };
+    let library = unsafe { initial_allocation(raw, RendererInitStage::ShaderLibrary, &message)? };
+    if !error.is_null() {
+        return Err(RendererInitError::new(
+            RendererInitStage::ShaderLibrary,
+            message,
+        ));
+    }
+    Ok(library)
+}
+
+#[cfg(feature = "runtime_shaders")]
+fn new_initial_library(device: &metal::DeviceRef) -> InitResult<metal::Library> {
+    new_initial_library_with_source(device, SHADERS_SOURCE_FILE)
+}
+
+#[cfg(any(feature = "runtime_shaders", test))]
+fn new_initial_library_with_source(
+    device: &metal::DeviceRef,
+    source: &str,
+) -> InitResult<metal::Library> {
+    let source = objc2_foundation::NSString::from_str(source);
+    let options_raw: *mut AnyObject =
+        unsafe { objc2::msg_send![objc2::class!(MTLCompileOptions), new] };
+    let options = unsafe {
+        initial_allocation::<metal::CompileOptions>(
+            options_raw,
+            RendererInitStage::Resource,
+            "shader compile options allocation failed",
+        )?
+    };
+    let native = unsafe { &*device.as_ptr().cast::<AnyObject>() };
+    let options = unsafe { &*options.as_ptr().cast::<AnyObject>() };
+    let mut error: *mut AnyObject = ptr::null_mut();
+    let raw: *mut AnyObject = unsafe {
+        objc2::msg_send![native,
+        newLibraryWithSource: &*source, options: options, error: &mut error]
+    };
+    let message = unsafe { driver_message(error, "shader library compilation failed") };
+    if !raw.is_null() && !error.is_null() {
+        log::warn!("Shader warnings: {message}");
+    }
+    unsafe { initial_allocation(raw, RendererInitStage::ShaderLibrary, &message) }
+}
+
+fn new_initial_video_cache(device: &metal::DeviceRef) -> InitResult<CVMetalTextureCache> {
+    let mut cache = ptr::null_mut();
+    // SAFETY: CoreVideo receives a retained device; default dictionary arguments
+    // are nullable. Check both status and pointer before taking the +1 CF owner.
+    let status = unsafe {
+        core_video::metal_texture_cache::CVMetalTextureCacheCreate(
+            core_foundation::base::kCFAllocatorDefault,
+            ptr::null(),
+            device.to_owned(),
+            ptr::null(),
+            &mut cache,
+        )
+    };
+    if status != core_video::r#return::kCVReturnSuccess || cache.is_null() {
+        return Err(RendererInitError::new(
+            RendererInitStage::Resource,
+            format!("CoreVideo texture cache allocation failed: {status}"),
+        ));
+    }
+    Ok(unsafe { CVMetalTextureCache::wrap_under_create_rule(cache) })
+}
+
+fn new_initial_pipeline(
+    device: &metal::DeviceRef,
+    descriptor: &metal::RenderPipelineDescriptorRef,
+) -> InitResult<metal::RenderPipelineState> {
+    let native = unsafe { &*device.as_ptr().cast::<AnyObject>() };
+    let descriptor = unsafe { &*descriptor.as_ptr().cast::<AnyObject>() };
+    let mut error: *mut AnyObject = ptr::null_mut();
+    let raw: *mut AnyObject = unsafe {
+        objc2::msg_send![native,
+        newRenderPipelineStateWithDescriptor: descriptor, error: &mut error]
+    };
+    let message = unsafe { driver_message(error, "render pipeline allocation failed") };
+    let pipeline = unsafe { initial_allocation(raw, RendererInitStage::Pipeline, &message)? };
+    if !error.is_null() {
+        return Err(RendererInitError::new(RendererInitStage::Pipeline, message));
+    }
+    Ok(pipeline)
+}
+
+fn new_initial_pipeline_descriptor() -> InitResult<metal::RenderPipelineDescriptor> {
+    let raw: *mut AnyObject =
+        unsafe { objc2::msg_send![objc2::class!(MTLRenderPipelineDescriptor), new] };
+    unsafe {
+        initial_allocation(
+            raw,
+            RendererInitStage::Resource,
+            "pipeline descriptor allocation failed",
+        )
+    }
+}
+
+// metal-rs exposes these selectors as non-optional owned values. Send them as
+// raw +1 pointers to check allocation failure before constructing foreign owners.
+fn new_initial_buffer(
+    device: &metal::DeviceRef,
+    bytes: *const c_void,
+    length: NSUInteger,
+    options: MTLResourceOptions,
+) -> InitResult<metal::Buffer> {
+    // SAFETY: DeviceRef refers to a retained MTLDevice; selector arguments match
+    // newBufferWithBytes:length:options:. Metal copies the provided byte slice.
+    let native = unsafe { &*device.as_ptr().cast::<AnyObject>() };
+    let raw: *mut AnyObject = unsafe {
+        objc2::msg_send![native, newBufferWithBytes: bytes, length: length, options: options.bits()]
+    };
+    unsafe {
+        initial_allocation(
+            raw,
+            RendererInitStage::Resource,
+            "initial vertex buffer allocation failed",
+        )
+    }
+}
+
+fn new_initial_command_queue(device: &metal::DeviceRef) -> InitResult<CommandQueue> {
+    // SAFETY: newCommandQueue returns a +1 object or nil; ownership passes to
+    // CommandQueue after the nil check and is released once by that wrapper.
+    let native = unsafe { &*device.as_ptr().cast::<AnyObject>() };
+    let raw: *mut AnyObject = unsafe { objc2::msg_send![native, newCommandQueue] };
+    unsafe {
+        initial_allocation(
+            raw,
+            RendererInitStage::Resource,
+            "command queue allocation failed",
+        )
+    }
+}
+
 fn build_pipeline_state(
     device: &metal::DeviceRef,
     library: &metal::LibraryRef,
@@ -1320,19 +1583,24 @@ fn build_pipeline_state(
     vertex_fn_name: &str,
     fragment_fn_name: &str,
     pixel_format: metal::MTLPixelFormat,
-) -> metal::RenderPipelineState {
+) -> InitResult<metal::RenderPipelineState> {
     let vertex_fn = library
         .get_function(vertex_fn_name, None)
-        .expect("error locating vertex function");
+        .map_err(|error| RendererInitError::new(RendererInitStage::ShaderEntry, error))?;
     let fragment_fn = library
         .get_function(fragment_fn_name, None)
-        .expect("error locating fragment function");
+        .map_err(|error| RendererInitError::new(RendererInitStage::ShaderEntry, error))?;
 
-    let descriptor = metal::RenderPipelineDescriptor::new();
+    let descriptor = new_initial_pipeline_descriptor()?;
     descriptor.set_label(label);
     descriptor.set_vertex_function(Some(vertex_fn.as_ref()));
     descriptor.set_fragment_function(Some(fragment_fn.as_ref()));
-    let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
+    let color_attachment = descriptor.color_attachments().object_at(0).ok_or_else(|| {
+        RendererInitError::new(
+            RendererInitStage::Resource,
+            "missing pipeline color attachment",
+        )
+    })?;
     color_attachment.set_pixel_format(pixel_format);
     color_attachment.set_blending_enabled(true);
     color_attachment.set_rgb_blend_operation(metal::MTLBlendOperation::Add);
@@ -1342,9 +1610,7 @@ fn build_pipeline_state(
     color_attachment.set_destination_rgb_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
     color_attachment.set_destination_alpha_blend_factor(metal::MTLBlendFactor::One);
 
-    device
-        .new_render_pipeline_state(&descriptor)
-        .expect("could not create render pipeline state")
+    new_initial_pipeline(device, &descriptor)
 }
 
 fn build_path_sprite_pipeline_state(
@@ -1354,19 +1620,24 @@ fn build_path_sprite_pipeline_state(
     vertex_fn_name: &str,
     fragment_fn_name: &str,
     pixel_format: metal::MTLPixelFormat,
-) -> metal::RenderPipelineState {
+) -> InitResult<metal::RenderPipelineState> {
     let vertex_fn = library
         .get_function(vertex_fn_name, None)
-        .expect("error locating vertex function");
+        .map_err(|error| RendererInitError::new(RendererInitStage::ShaderEntry, error))?;
     let fragment_fn = library
         .get_function(fragment_fn_name, None)
-        .expect("error locating fragment function");
+        .map_err(|error| RendererInitError::new(RendererInitStage::ShaderEntry, error))?;
 
-    let descriptor = metal::RenderPipelineDescriptor::new();
+    let descriptor = new_initial_pipeline_descriptor()?;
     descriptor.set_label(label);
     descriptor.set_vertex_function(Some(vertex_fn.as_ref()));
     descriptor.set_fragment_function(Some(fragment_fn.as_ref()));
-    let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
+    let color_attachment = descriptor.color_attachments().object_at(0).ok_or_else(|| {
+        RendererInitError::new(
+            RendererInitStage::Resource,
+            "missing pipeline color attachment",
+        )
+    })?;
     color_attachment.set_pixel_format(pixel_format);
     color_attachment.set_blending_enabled(true);
     color_attachment.set_rgb_blend_operation(metal::MTLBlendOperation::Add);
@@ -1376,9 +1647,7 @@ fn build_path_sprite_pipeline_state(
     color_attachment.set_destination_rgb_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
     color_attachment.set_destination_alpha_blend_factor(metal::MTLBlendFactor::One);
 
-    device
-        .new_render_pipeline_state(&descriptor)
-        .expect("could not create render pipeline state")
+    new_initial_pipeline(device, &descriptor)
 }
 
 fn build_path_rasterization_pipeline_state(
@@ -1389,15 +1658,15 @@ fn build_path_rasterization_pipeline_state(
     fragment_fn_name: &str,
     pixel_format: metal::MTLPixelFormat,
     path_sample_count: u32,
-) -> metal::RenderPipelineState {
+) -> InitResult<metal::RenderPipelineState> {
     let vertex_fn = library
         .get_function(vertex_fn_name, None)
-        .expect("error locating vertex function");
+        .map_err(|error| RendererInitError::new(RendererInitStage::ShaderEntry, error))?;
     let fragment_fn = library
         .get_function(fragment_fn_name, None)
-        .expect("error locating fragment function");
+        .map_err(|error| RendererInitError::new(RendererInitStage::ShaderEntry, error))?;
 
-    let descriptor = metal::RenderPipelineDescriptor::new();
+    let descriptor = new_initial_pipeline_descriptor()?;
     descriptor.set_label(label);
     descriptor.set_vertex_function(Some(vertex_fn.as_ref()));
     descriptor.set_fragment_function(Some(fragment_fn.as_ref()));
@@ -1405,7 +1674,12 @@ fn build_path_rasterization_pipeline_state(
         descriptor.set_raster_sample_count(path_sample_count as _);
         descriptor.set_alpha_to_coverage_enabled(false);
     }
-    let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
+    let color_attachment = descriptor.color_attachments().object_at(0).ok_or_else(|| {
+        RendererInitError::new(
+            RendererInitStage::Resource,
+            "missing pipeline color attachment",
+        )
+    })?;
     color_attachment.set_pixel_format(pixel_format);
     color_attachment.set_blending_enabled(true);
     color_attachment.set_rgb_blend_operation(metal::MTLBlendOperation::Add);
@@ -1415,9 +1689,7 @@ fn build_path_rasterization_pipeline_state(
     color_attachment.set_destination_rgb_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
     color_attachment.set_destination_alpha_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
 
-    device
-        .new_render_pipeline_state(&descriptor)
-        .expect("could not create render pipeline state")
+    new_initial_pipeline(device, &descriptor)
 }
 
 #[derive(Clone)]
@@ -1669,5 +1941,97 @@ impl gpui::PlatformHeadlessRenderer for MetalHeadlessRenderer {
 
     fn sprite_atlas(&self) -> Arc<dyn gpui::PlatformAtlas> {
         self.renderer.sprite_atlas().clone()
+    }
+}
+
+#[cfg(test)]
+mod initialization_error_tests {
+    use super::*;
+    #[test]
+    fn nil_allocations_are_errors_before_foreign_owners_exist() {
+        let result = unsafe {
+            initial_allocation::<metal::Buffer>(
+                ptr::null_mut(),
+                RendererInitStage::Resource,
+                "injected nil",
+            )
+        };
+        assert!(matches!(result, Err(error) if error.stage() == RendererInitStage::Resource));
+    }
+    #[test]
+    fn actual_metal_startup_preserves_all_pipelines_and_initial_resources() {
+        let pool = Arc::new(Mutex::new(InstanceBufferPool::default()));
+        match MetalRenderer::try_new(pool, false) {
+            Ok(renderer) => {
+                assert!(!renderer.layer_ptr().is_null());
+                assert_eq!(renderer.unit_vertices.length(), 48);
+                assert!(!renderer.command_queue.as_ptr().is_null());
+                // Reaching this point requires all eight pipelines and the
+                // CoreVideo cache, without a window or provider interaction.
+            }
+            Err(error) => {
+                // This machine may legitimately have no device. A shader or
+                // resource regression on a supported device is a test failure.
+                assert_eq!(error.stage(), RendererInitStage::Device, "{error}");
+            }
+        }
+    }
+    #[test]
+    fn actual_invalid_pipeline_is_a_typed_failure() {
+        let device = MetalRenderer::try_create_device()
+            .expect("this isolated native Metal fixture requires an available device");
+        // Both functions are individually valid. Linking must report that the
+        // fragment input is absent from the vertex outputs; the descriptor has
+        // all required resources and never violates Metal validation preconditions.
+        let library = new_initial_library_with_source(
+            &device,
+            r#"
+            #include <metal_stdlib>
+            using namespace metal;
+            struct V { float4 position [[position]]; };
+            struct F { float4 position [[position]]; float4 absent [[user(locn0)]]; };
+            vertex V owned_vertex(uint id [[vertex_id]]) { return {float4(0, 0, 0, 1)}; }
+            fragment float4 owned_fragment(F input [[stage_in]]) { return input.absent; }
+        "#,
+        )
+        .unwrap();
+        let result = build_pipeline_state(
+            &device,
+            &library,
+            "owned incompatible-stage fixture",
+            "owned_vertex",
+            "owned_fragment",
+            MTLPixelFormat::BGRA8Unorm,
+        );
+        assert!(matches!(result, Err(error) if error.stage() == RendererInitStage::Pipeline));
+    }
+    #[test]
+    fn actual_invalid_library_is_a_typed_failure() {
+        let device = MetalRenderer::try_create_device()
+            .expect("this isolated native Metal fixture requires an available device");
+        let result = new_initial_library_with_source(&device, "owned invalid MSL fixture");
+        assert!(matches!(result, Err(error) if error.stage() == RendererInitStage::ShaderLibrary));
+    }
+    #[test]
+    fn actual_invalid_compiled_library_is_a_typed_failure() {
+        let device = MetalRenderer::try_create_device()
+            .expect("this isolated native Metal fixture requires an available device");
+        let result = new_initial_library_with_data(&device, b"owned invalid metallib fixture");
+        assert!(matches!(result, Err(error) if error.stage() == RendererInitStage::ShaderLibrary));
+    }
+    #[test]
+    fn initialization_errors_are_typed_and_bounded() {
+        for stage in [
+            RendererInitStage::Device,
+            RendererInitStage::ShaderLibrary,
+            RendererInitStage::ShaderEntry,
+            RendererInitStage::Pipeline,
+            RendererInitStage::Resource,
+        ] {
+            let error = RendererInitError::new(stage, "é".repeat(1024));
+            assert_eq!(error.stage(), stage);
+            assert_eq!(error.message.chars().count(), 512);
+            assert!(!error.to_string().is_empty());
+        }
     }
 }

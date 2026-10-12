@@ -5,8 +5,8 @@ packages (Zed snapshot `279fe070bb389b79652e52065b2f001edcc0b11b`).
 `gpui-provenance.json` records the registry checksums and SHA256 of every original
 file. Each package retains its Apache-2.0 license and copyright notice.
 
-The copies are not activated until the explicit Cargo patch checkpoint. Changes
-remain separately reviewable; `gpui-modifications.json` records modified paths,
+The workspace activates these exact versions through three Cargo path patches.
+Changes remain separately reviewable; `gpui-modifications.json` records modified paths,
 reasons and original/current SHA256, including upstream whitespace normalization.
 
 The Apple package's five `vendor/gpui/src` files are shader binding inputs used

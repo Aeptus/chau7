@@ -907,7 +907,57 @@ impl LinearColorStop {
     }
 }
 
+/// Readonly paint data for scene renderers. This does not change the shader ABI.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BackgroundDescription {
+    /// A single color.
+    Solid(Hsla),
+    /// Two-stop linear interpolation in the selected color space.
+    LinearGradient {
+        /// Interpolation space.
+        color_space: ColorSpace,
+        /// CSS-style angle in degrees.
+        angle: f32,
+        /// Original stops, including their percentages.
+        colors: [LinearColorStop; 2],
+    },
+    /// Diagonal stripes with the existing packed width/interval encoding.
+    PatternSlash {
+        /// Stripe color.
+        color: Hsla,
+        /// Packed value used by the existing scene shader.
+        encoded_width_interval: f32,
+    },
+    /// Alternating squares.
+    Checkerboard {
+        /// Colored square color.
+        color: Hsla,
+        /// Square size in scaled pixels.
+        size: f32,
+    },
+}
+
 impl Background {
+    /// Describes the fill without exposing private layout or allocating.
+    pub fn description(&self) -> BackgroundDescription {
+        match self.tag {
+            BackgroundTag::Solid => BackgroundDescription::Solid(self.solid),
+            BackgroundTag::LinearGradient => BackgroundDescription::LinearGradient {
+                color_space: self.color_space,
+                angle: self.gradient_angle_or_pattern_height,
+                colors: self.colors,
+            },
+            BackgroundTag::PatternSlash => BackgroundDescription::PatternSlash {
+                color: self.solid,
+                encoded_width_interval: self.gradient_angle_or_pattern_height,
+            },
+            BackgroundTag::Checkerboard => BackgroundDescription::Checkerboard {
+                color: self.solid,
+                size: self.gradient_angle_or_pattern_height,
+            },
+        }
+    }
+
     /// Returns the solid color if this is a solid background, None otherwise.
     pub fn as_solid(&self) -> Option<Hsla> {
         if self.tag == BackgroundTag::Solid {

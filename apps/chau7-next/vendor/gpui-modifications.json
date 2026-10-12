@@ -27,6 +27,34 @@
       "original_sha256": "bcdeb209fa6309f5c507d9e8918235e75c18751c1985d0ebed632de643d7ea2e",
       "package": "gpui-pre",
       "path": "src/_accessibility.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "af64c64f40f379386d266373130de2b40a512a26c95d3d816f2c0197e87191be",
+          "before_sha256": "4292aa1a2bbc56b653aaef0702726325f8efb93f16226320519e257c3ba8a839",
+          "description": "Add readonly BackgroundDescription accessor preserving shader ABI and wire serialization",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "af64c64f40f379386d266373130de2b40a512a26c95d3d816f2c0197e87191be",
+      "original_sha256": "4292aa1a2bbc56b653aaef0702726325f8efb93f16226320519e257c3ba8a839",
+      "package": "gpui-pre",
+      "path": "src/color.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "aa7d475958a1b6512437c2ebeecf495024ff65b8e9c118d03c957c9eabd0a00d",
+          "before_sha256": "72928305adc4671f3b8f4d97e2344738980e4c3e662926d840f4b69fc674f227",
+          "description": "Add typed fallible startup, checking nullable Metal/CoreVideo resources before ownership; preserve all eight pipelines and default constructors; isolated initialization tests",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "aa7d475958a1b6512437c2ebeecf495024ff65b8e9c118d03c957c9eabd0a00d",
+      "original_sha256": "72928305adc4671f3b8f4d97e2344738980e4c3e662926d840f4b69fc674f227",
+      "package": "gpui-pre-apple",
+      "path": "src/metal_renderer.rs"
     }
   ],
   "format_version": 1
