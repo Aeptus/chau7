@@ -237,9 +237,25 @@ pub(super) async fn verify(cx: &mut AsyncApp) -> Result<Value, String> {
             native.orderFrontRegardless();
         })
         .await;
-    crate::native_parity_fixture::next_frame(handle.into(), cx)
-        .await
-        .map_err(|error| format!("backend surface resized frame: {error}"))?;
+    if let Err(error) = crate::native_parity_fixture::next_frame(handle.into(), cx).await {
+        let state = cx.update_window(handle.into(), |_, window, _| {
+            let native_view = raw_view(window).ok();
+            let native_bounds = native_view.as_ref().map(|view| view.bounds());
+            let native_window = native_view.as_ref().and_then(|view| view.window());
+            let viewport = window.viewport_size();
+            let diagnostics = window.renderer_diagnostics();
+            json!({"gpui_visible":window.is_visible(),"gpui_viewport":[f32::from(viewport.width),f32::from(viewport.height)],
+                "native_viewport":native_bounds.map(|bounds|[bounds.size.width,bounds.size.height]),
+                "native_visible":native_window.as_ref().map(|window|window.isVisible()),
+                "native_key":native_window.as_ref().map(|window|window.isKeyWindow()),
+                "submitted_frames":diagnostics.as_ref().and_then(|d|d.submitted_frames),
+                "image_pixel_bytes":diagnostics.as_ref().and_then(|d|d.software_image_pixel_bytes),
+                "failed_frames":diagnostics.as_ref().and_then(|d|d.failed_frames)})
+        }).map_err(|error|error.to_string())?;
+        return Err(format!(
+            "backend surface resized frame: {error}; actual owned state: {state}"
+        ));
+    }
     let resized = cx
         .update_window(handle.into(), |_, window, _| {
             let content = window.viewport_size();
