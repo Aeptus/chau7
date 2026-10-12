@@ -1,6 +1,12 @@
 # Chau7 Next: genuine non-Metal window backend
 
-Status: design and acceptance plan. Implementation is in progress; this document is not validation evidence.
+Status: implemented startup selection, complete CPU scene/atlas and ordinary
+AppKit presentation at bc1bf7dd. Root tests pass 33 macOS fork and 13 Apple cases.
+A normal feature-free 7bd54649 app starts both window renderers as Software,
+receives exact owned MCP terminal input and quits with session save. Full native
+frame/resize and injected-failure interaction acceptance remain pending; this
+row is not done. Original design below is retained as the acceptance contract.
+See [recovery validation](RECOVERY-VALIDATION-20261011.md).
 Application reviewed: 66753ed1c99a879881fbf7c9f65d2ec0ede59197.
 Locked engine: gpui-kit 0.7.1; gpui-pre family 0.3.8, Zed snapshot 279fe070bb389b79652e52065b2f001edcc0b11b.
 Local primary sources: ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/.
@@ -41,7 +47,10 @@ Direct Rust implementation of the current shader contract is the proposed raster
 - App terminal/paint.rs, workspace/debug.rs, performance.rs: effective renderer plus measured window-backend diagnostics, unsupported values null.
 - Existing optional native-parity-fixture dispatcher and new owned backend case; default feature unchanged.
 
-No settings page is required for Auto fallback. Initial forced-software/injected failure controls belong only to isolated fixture code, not normal config/environment startup. No OS/provider/profile policy changes.
+No settings page is required for Auto fallback. Injected failure controls belong only to isolated fixture code. Normal startup
+uses the saved renderer preference: disabled Metal requests Software; enabled
+Metal requests Auto and retains fallback. The effective CPU terminal selection
+does not rewrite the saved preference. No OS/provider/profile policy changes.
 
 ## Immutable selection API
 

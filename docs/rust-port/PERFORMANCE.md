@@ -215,3 +215,22 @@ Native dee8163a additionally proves the actual80ms loading task cancels hidden,
 has zero hidden callbacks, resumes once and stops at real prompt/disposal.
 Its callback wall-time excludes interval waiting. Exact evidence and limits:
 [recovery validation](RECOVERY-VALIDATION-20261011.md).
+
+## Whole-window renderer diagnostics
+
+Runtime and performance MCP exports include window_renderer with immutable
+startup policy, selected backend, bounded initial failure stage and whether an
+optional fixture injected it. Per-window records expose actual backend,
+submitted/failed image counts, last primitive counts, measured CPU submission
+microseconds and retained software image/atlas pixel bytes. GPU and compositor
+allocations and OS display completion are null when unmeasured. Image submission
+to an ordinary CALayer does not establish completed display presentation.
+
+A normal feature-free 7bd54649 owned app requests Software from the saved
+use_metal_renderer=false preference; both windows and the CPU terminal run,
+receive exact synthetic MCP Unicode input and quit normally with three saved
+tabs. Latest main-window submit 139,217 us and 42.101% app-process CPU after 66.88s
+show that software rendering has a measurable cost. Concurrent compilation and
+the synthetic workload prevent a controlled idle comparison. Intermittent native
+frame/resize barriers remain under investigation. See the recovery validation
+for exact source, observations and limits.

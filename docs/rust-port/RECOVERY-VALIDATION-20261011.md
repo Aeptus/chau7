@@ -503,7 +503,7 @@ Evidence: `chau7-gpui-2e-ledger-root-audit.json`.
 ## Integrated shutdown, acknowledgement and Windows correction (2026-10-12)
 
 Exact root1814234842f6e6d6d14a0ddb9b1ef8f1016ee13a passes2,947 release
-workspace tests (544 app,2 public GPUI prerequisite integration,2,401 core;
+workspace tests (544 app,2 public GPUI prerequisite integration, 2,401 core;
 two existing ignored), strict default and optional-native all-target Clippy,
 formatting and diff checks. This integrates normal history shutdown/drain,
 nonblocking descriptor-checked snapshot reads, the bounded Aethyme acceptance
@@ -555,7 +555,7 @@ logs, `chau7-ci-c514-next-failed.log` and
 ## Integrated CPU scene prerequisites, not window acceptance (2026-10-12)
 
 Exact rootbd6269459be60aaf88147dec13dd849b06e93417 passes2,948 release
-workspace tests (544 app,3 public GPUI integration,2,401 core; two existing
+workspace tests (544 app,3 public GPUI integration, 2,401 core; two existing
 ignored), strict default and optional-native all-target Clippy, formatting and
 diff checks. Separate actual platform tests pass15 software renderer cases and
 13 Apple cases on the owned native target with release LTO disabled. These cover
@@ -591,3 +591,71 @@ ownership condition for every ordinary live window.
 Evidence: `source-bd626-*`, `chau7-root-bd626-software15.log`,
 `chau7-root-bd626-apple13.log`, `chau7-root-bd626-duplication.log` and
 `chau7-gpui-bd626-ledger-root-audit.json` in the private evidence folder.
+
+## Whole software scene, policy and normal app checkpoint (2026-10-12)
+
+Exact root bc1bf7ddaa80 passes 2,962 default-feature release workspace tests
+(558 app, 3 public GPUI integration, 2,401 core; two existing ignored), strict
+normal/optional all-target Clippy, fmt and diff guards. All 33 macOS fork tests
+and 13 Apple tests pass separately on clean unchanged source. These include
+packed atlas lifetime/COW/bounds, seven-family actual Metal image comparison
+with visible shadow coverage, real CoreVideo reads and checked explicit sRGB
+CGImage/profile ownership. Root capture validates comparator assertions without
+changing thresholds; exact per-family mean/max values are not printed in that
+root capture. No AppKit window launches in these unit runs.
+
+The approved retention policy is integrated: only positively absent owned config
+and state roots can establish the durable 30 day installation default. Existing
+profiles, explicit zero/custom values, partial imports and local resets retain
+appropriate prior choices. Ambiguous, malformed and misplaced settings remain
+zero. Independent review caught inline-comment section headers that could hide
+explicit zero from the legacy parser; conservative validation plus owned
+load/import regressions correct that case without rewriting existing files.
+Post-prune VACUUM and ordered background writer/close work remain pending; TEL-024
+stays partial.
+
+A normal feature-free package at 7bd54649ddfd builds the three Rust binaries from
+clean source with matching Cargo artifact/fingerprint hashes. Four helpers have
+unchanged verified source lineage; seven arm64/minimum macOS13.0 executables are
+individually signed and the bundle passes deep/strict verification. The required
+GPUI original/modification manifests, notices and licenses are in the signed
+bundle. The native fixture feature is absent.
+
+The uniquely owned app launches through ordinary LaunchServices as actual
+PID 32659 with verified source/bundle UUID, synthetic profile and provider/remote
+services disabled. Saved use_metal_renderer=false selects Software before
+window setup without injection; both measured window backends are Software and
+the terminal uses CPU. After 66.88s the main window has 199 submitted images and
+the auxiliary window 5, with zero failed frames. Latest measured CPU submission
+is 139,217 us and 17,157 us respectively. App-process CPU snapshot 42.101% uses one
+logical CPU as 100%; RSS 144,457,728 bytes and watchdog zero stalls are observed.
+Compilation runs concurrently, so this is not an idle benchmark or a performance
+gain. GPU/compositor memory and display completion stay null.
+
+Authorized synthetic MCP tab_create adds one tab to the two restored tabs.
+Only after its local cat sink is ready, tab_send_input sends 68 Unicode bytes
+without an appended newline or shell evaluation. Exactly those bytes are
+observed in that tab's owned input file; the other input file remains empty.
+No provider/device is contacted. Normal AppleEvent quit removes the actual PID
+and MCP socket, saves all three tabs, marks continuity running=false and leaves
+input files unchanged. No POSIX signal or forced quit is used; package/profile
+and evidence are retained, and existing apps/profiles remain untouched.
+
+Actual isolated native surface probes expose intermittent five-second frame
+barrier failures, including after resize; the Metal control has the same timeout.
+AppKit source/capture colors pass after explicit sRGB image and empty capture
+profile ownership corrections, with thresholds unchanged. That does not prove
+all software interaction cases. These negatives remain preserved. PRF-002 stays
+partial pending actual frame demand/resize progress and all four cases under
+explicit Software and Auto unavailable-device fallback.
+
+Official 34a16789 passes the Next PR matrix38209626232, parity and quality
+38209626235. Its quality correction uses process.stdout.write instead of
+console.log without changing duplication pin/coverage/threshold. The earlier
+Windows join correction is confirmed by d1081dad Next PR38207094216 and
+push38207091081 across all three platforms. These CI successes apply to their
+exact published revisions, not the later local backend checkpoints.
+
+Evidence: chau7-root-bc1bf-* release/vendor receipts and logs,
+chau7-root-7bd546-* build/package/MCP receipts, normal-7bd546-* identity,
+performance and graceful-quit records in the private recovery evidence folder.
