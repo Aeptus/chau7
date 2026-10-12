@@ -597,8 +597,9 @@ impl TelemetryStore {
         self.publish_readiness(StoreReadiness::Ready);
         Ok(())
     }
-    /// Open (or create) the store at `path`. A database that fails
-    /// `PRAGMA quick_check` is deleted and created again (TEL-008).
+    /// Open (or create) the store at `path`. Only confirmed corruption
+    /// permits deleting and recreating the database (TEL-008); ambiguous
+    /// integrity, I/O and schema failures preserve it and report Failed.
     pub fn open(path: &Path) -> Self {
         let store = Self::pending(path);
         if let Err(error) = store.initialize_background() {
