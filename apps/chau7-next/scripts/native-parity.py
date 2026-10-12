@@ -183,6 +183,8 @@ def main():
                 "case": case,
                 "passed": passed,
                 "exit_code": exit_code,
+                "process_id": process.pid,
+                "owned_home": str(home),
                 "owned_home_removed": not home.exists(),
                 "outcome": outcomes[0] if len(outcomes) == 1 else None,
             }
