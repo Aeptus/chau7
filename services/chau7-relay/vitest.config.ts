@@ -21,5 +21,12 @@ export default defineConfig({
       }
     })
   ],
-  test: { include: ['test/integration/**/*.test.ts'], fileParallelism: false, testTimeout: 15000 }
+  test: {
+    include: ['test/integration/**/*.test.ts'],
+    fileParallelism: false,
+    testTimeout: 15000,
+    // The Workers module loader treats percent-encoded cache URLs as literal paths.
+    // Vitest 5 enables this optimization by default; keep worktrees with spaces working.
+    fsModuleCache: false
+  }
 });
