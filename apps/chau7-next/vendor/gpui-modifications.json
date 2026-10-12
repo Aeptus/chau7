@@ -61,6 +61,160 @@
       "original_sha256": "72928305adc4671f3b8f4d97e2344738980e4c3e662926d840f4b69fc674f227",
       "package": "gpui-pre-apple",
       "path": "src/metal_renderer.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "2fb64b020c7edbb0c13e4745fa95c07202fbc265d16f519a927e40e4b58d715f",
+          "before_sha256": "c48da8a1e703faca710eda4e7ab4247b709af29fc1a072832945aac5ffa0595e",
+          "description": "Add readonly PaddedBool32 boolean accessor without changing GPU storage/layout",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "2fb64b020c7edbb0c13e4745fa95c07202fbc265d16f519a927e40e4b58d715f",
+      "original_sha256": "c48da8a1e703faca710eda4e7ab4247b709af29fc1a072832945aac5ffa0595e",
+      "package": "gpui-pre",
+      "path": "src/scene.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "144948df947cd5b0f48b4ebc9d0c0a018f86fdfa93c76229b533dccef0aa9a1c",
+          "before_sha256": "09433aa8d9e4796075350aa9352c0e56f964b4f7be3dba017c8860e609d9e3be",
+          "description": "Export staged software scene primitives; keep the selected Metal renderer unchanged",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "144948df947cd5b0f48b4ebc9d0c0a018f86fdfa93c76229b533dccef0aa9a1c",
+      "original_sha256": "09433aa8d9e4796075350aa9352c0e56f964b4f7be3dba017c8860e609d9e3be",
+      "package": "gpui-pre-macos",
+      "path": "src/gpui_macos.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "38baa588d112690d0bd824c21918816d1fc84d1efa5f6187de8898a989b124ae",
+          "before_sha256": null,
+          "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "38baa588d112690d0bd824c21918816d1fc84d1efa5f6187de8898a989b124ae",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/atlas.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "5d604beb8297a134badd177dd08190b2892823c1743d4df94419ca0610a05d65",
+          "before_sha256": null,
+          "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "5d604beb8297a134badd177dd08190b2892823c1743d4df94419ca0610a05d65",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/canvas.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "01aa64beed946c20f9440aaaec6a66b6375d4c93b0b5664ab435fceb4fdd89e1",
+          "before_sha256": null,
+          "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "01aa64beed946c20f9440aaaec6a66b6375d4c93b0b5664ab435fceb4fdd89e1",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/fills.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "d1314f59ce63ea409672f2c6331c6e900ee6ca7d984edf8e16908173a2b00d36",
+          "before_sha256": null,
+          "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "d1314f59ce63ea409672f2c6331c6e900ee6ca7d984edf8e16908173a2b00d36",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/mod.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "e723310f9be8b16e2f3daf2af6ae16149e8622df13a9a63a29298de4900c3e59",
+          "before_sha256": null,
+          "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "e723310f9be8b16e2f3daf2af6ae16149e8622df13a9a63a29298de4900c3e59",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/paths.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "530d5e0a70171668655f89172cbb59c582d246469c5f9c711d261b36d1144e00",
+          "before_sha256": null,
+          "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "530d5e0a70171668655f89172cbb59c582d246469c5f9c711d261b36d1144e00",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/primitives.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "564d294a0e9fd59db3e020099d9b05572ecc8b94b4b15bf2a0a4f9c195db6e59",
+          "before_sha256": null,
+          "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "564d294a0e9fd59db3e020099d9b05572ecc8b94b4b15bf2a0a4f9c195db6e59",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/scene.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "66920da19005b614f315aedf3669bd3be81da17d193396b115627ae1a31db7f2",
+          "before_sha256": null,
+          "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "66920da19005b614f315aedf3669bd3be81da17d193396b115627ae1a31db7f2",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/sprites.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "5fa3ec5088df902d5d2c69eff752858db80a70c18abd44444cb52c4352e4fb66",
+          "before_sha256": null,
+          "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "5fa3ec5088df902d5d2c69eff752858db80a70c18abd44444cb52c4352e4fb66",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/surfaces.rs"
     }
   ],
   "format_version": 1

@@ -11,6 +11,9 @@ mod keyboard;
 mod pasteboard;
 mod system_notifications;
 
+/// Pixel-retaining software scene rendering support.
+pub mod software_renderer;
+
 #[cfg(feature = "screen-capture")]
 mod screen_capture;
 

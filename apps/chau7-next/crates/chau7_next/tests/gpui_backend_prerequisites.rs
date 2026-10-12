@@ -66,3 +66,11 @@ fn description_preserves_existing_opacity_and_serialization() {
         panic!("linear gradient description changed kind");
     }
 }
+
+#[test]
+fn padded_boolean_accessor_preserves_gpu_layout_and_logical_value() {
+    assert!(!gpui::PaddedBool32::from(false).get());
+    assert!(gpui::PaddedBool32::from(true).get());
+    assert_eq!(std::mem::size_of::<gpui::PaddedBool32>(), 4);
+    assert_eq!(std::mem::align_of::<gpui::PaddedBool32>(), 4);
+}
