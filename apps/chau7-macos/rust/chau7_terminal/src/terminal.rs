@@ -4392,24 +4392,53 @@ mod tests {
         .expect("short-lived burst terminal");
 
         let mut combined = String::new();
-        for _ in 0..200 {
-            let _ = term.poll(50);
+        let started = Instant::now();
+        let deadline = started + Duration::from_secs(10);
+        let mut observed_in_time = false;
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let poll_timeout_ms = remaining.as_millis().min(50) as u32;
+            let _ = term.poll(poll_timeout_ms);
             let chunk = std::mem::take(&mut *term.last_output.lock());
             combined.push_str(&String::from_utf8_lossy(&chunk));
-            if combined.contains("CHAU7_TAIL_END") {
+            let pty_closed = term.pty_closed.load(Ordering::Acquire);
+            if combined.contains("CHAU7_TAIL_END") && pty_closed && Instant::now() < deadline {
+                observed_in_time = true;
                 break;
+            }
+            // Adaptive polling may reduce the timeout to zero after a large
+            // batch. Yield briefly so the child and reader pool can progress,
+            // without sleeping past this test's deadline.
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if !remaining.is_zero() {
+                std::thread::sleep(remaining.min(Duration::from_millis(1)));
             }
         }
 
+        let elapsed = started.elapsed();
+        let pty_closed = term.pty_closed.load(Ordering::Acquire);
+        let running = term.running.load(Ordering::Acquire);
+        let child_status = term.child.lock().as_mut().map(|child| child.try_wait());
         assert!(
             combined.contains("CHAU7_TAIL_END"),
-            "tail marker lost after HUP (received {} bytes)",
+            "tail marker not observed before deadline (received {} bytes after {elapsed:?}; pty_closed={pty_closed}, running={running}, child_status={child_status:?})",
             combined.len()
         );
         let x_count = combined.matches('X').count();
         assert!(
             x_count >= 65536,
-            "burst truncated: only {x_count}/65536 payload bytes arrived"
+            "burst truncated: only {x_count}/65536 payload bytes arrived (received {} bytes after {elapsed:?}; pty_closed={pty_closed}, running={running}, child_status={child_status:?})",
+            combined.len()
+        );
+        assert!(
+            pty_closed,
+            "PTY close was not observed after the complete burst (received {} bytes after {elapsed:?}; running={running}, child_status={child_status:?})",
+            combined.len()
+        );
+        assert!(
+            observed_in_time,
+            "complete burst and PTY close were not both observed before the 10s deadline (received {} bytes after {elapsed:?}; pty_closed={pty_closed}, running={running}, child_status={child_status:?})",
+            combined.len()
         );
     }
 

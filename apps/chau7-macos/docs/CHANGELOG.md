@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Make the short-lived PTY burst regression enforce its intended ten-second wall-clock ceiling under adaptive polling, retaining the complete output assertions and requiring observed closure before the deadline. Keep all interruption tests under strict helper lint checks.
+
 - Retry interrupted PTY reads within a bounded budget, then yield without closing the terminal. Preserve buffered HUP output and allow other terminals to progress; verify retry, yield and resume behavior with injected reads.
 
 - Verify automatic Next retention and compaction inside the admitted background worker, including ownership before UI publication. Preserve the real maintenance and fresh-install retention regressions.

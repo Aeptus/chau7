@@ -69,136 +69,6 @@ fn read_pty(fd: RawFd, buffer: &mut [u8]) -> ReadAttempt<usize> {
     }))
 }
 
-#[cfg(test)]
-mod retry_interrupted_tests {
-    use super::{MAX_READ_EINTR_RETRIES, ReadAttempt, classify_read, retry_interrupted};
-    use std::cell::Cell;
-    use std::io::{Error, ErrorKind};
-
-    #[test]
-    fn retries_interrupted_read_then_returns_bytes() {
-        let calls = Cell::new(0);
-        let result = retry_interrupted(|| {
-            let call = calls.get() + 1;
-            calls.set(call);
-            if call == 1 {
-                Err(Error::from(ErrorKind::Interrupted))
-            } else {
-                Ok(17usize)
-            }
-        });
-
-        assert!(matches!(classify_read(result), ReadAttempt::Value(17)));
-        assert_eq!(calls.get(), 2);
-    }
-
-    #[test]
-    fn retries_interrupted_read_then_preserves_eof() {
-        let calls = Cell::new(0);
-        let result = retry_interrupted(|| {
-            let call = calls.get() + 1;
-            calls.set(call);
-            if call == 1 {
-                Err(Error::from(ErrorKind::Interrupted))
-            } else {
-                Ok(0usize)
-            }
-        });
-
-        assert!(matches!(classify_read(result), ReadAttempt::Value(0)));
-        assert_eq!(calls.get(), 2);
-    }
-
-    #[test]
-    fn retries_interrupted_read_then_returns_eio() {
-        let calls = Cell::new(0);
-        let result = retry_interrupted(|| {
-            let call = calls.get() + 1;
-            calls.set(call);
-            if call == 1 {
-                Err(Error::from(ErrorKind::Interrupted))
-            } else {
-                Err::<usize, _>(Error::from_raw_os_error(libc::EIO))
-            }
-        });
-
-        assert!(
-            matches!(classify_read(result), ReadAttempt::Error(error) if error.raw_os_error() == Some(libc::EIO))
-        );
-        assert_eq!(calls.get(), 2);
-    }
-
-    #[test]
-    fn retries_interrupted_read_then_returns_eagain() {
-        let calls = Cell::new(0);
-        let result = retry_interrupted(|| {
-            let call = calls.get() + 1;
-            calls.set(call);
-            if call == 1 {
-                Err(Error::from(ErrorKind::Interrupted))
-            } else {
-                Err::<usize, _>(Error::from_raw_os_error(libc::EAGAIN))
-            }
-        });
-
-        assert!(
-            matches!(classify_read(result), ReadAttempt::Error(error) if error.raw_os_error() == Some(libc::EAGAIN))
-        );
-        assert_eq!(calls.get(), 2);
-    }
-
-    #[test]
-    fn bounds_repeated_interrupted_reads() {
-        let calls = Cell::new(0);
-        let result = retry_interrupted(|| {
-            calls.set(calls.get() + 1);
-            Err::<usize, _>(Error::from(ErrorKind::Interrupted))
-        });
-
-        assert!(matches!(classify_read(result), ReadAttempt::Yield));
-        assert_eq!(calls.get(), MAX_READ_EINTR_RETRIES + 1);
-    }
-
-    #[test]
-    fn yields_at_retry_cap_then_resumes_with_bytes() {
-        let calls = Cell::new(0);
-        let mut read = || {
-            let call = calls.get() + 1;
-            calls.set(call);
-            if call <= MAX_READ_EINTR_RETRIES + 1 {
-                Err(Error::from(ErrorKind::Interrupted))
-            } else {
-                Ok(23usize)
-            }
-        };
-
-        let first_attempt = retry_interrupted(&mut read);
-        assert!(matches!(classify_read(first_attempt), ReadAttempt::Yield));
-        assert_eq!(calls.get(), MAX_READ_EINTR_RETRIES + 1);
-
-        let resumed_attempt = retry_interrupted(&mut read);
-        assert!(matches!(
-            classify_read(resumed_attempt),
-            ReadAttempt::Value(23)
-        ));
-        assert_eq!(calls.get(), MAX_READ_EINTR_RETRIES + 2);
-    }
-
-    #[test]
-    fn does_not_retry_non_interrupted_errors() {
-        for code in [libc::EIO, libc::EAGAIN] {
-            let calls = Cell::new(0);
-            let result = retry_interrupted(|| {
-                calls.set(calls.get() + 1);
-                Err::<usize, _>(Error::from_raw_os_error(code))
-            });
-
-            assert_eq!(result.unwrap_err().raw_os_error(), Some(code));
-            assert_eq!(calls.get(), 1, "errno {code} must not be retried");
-        }
-    }
-}
-
 /// Registration info for a single PTY fd in the pool.
 struct PtyEntry {
     fd: RawFd,
@@ -637,4 +507,134 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
     }
 
     info!("SharedPtyReaderPool: thread exiting");
+}
+
+#[cfg(test)]
+mod retry_interrupted_tests {
+    use super::{MAX_READ_EINTR_RETRIES, ReadAttempt, classify_read, retry_interrupted};
+    use std::cell::Cell;
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn retries_interrupted_read_then_returns_bytes() {
+        let calls = Cell::new(0);
+        let result = retry_interrupted(|| {
+            let call = calls.get() + 1;
+            calls.set(call);
+            if call == 1 {
+                Err(Error::from(ErrorKind::Interrupted))
+            } else {
+                Ok(17usize)
+            }
+        });
+
+        assert!(matches!(classify_read(result), ReadAttempt::Value(17)));
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn retries_interrupted_read_then_preserves_eof() {
+        let calls = Cell::new(0);
+        let result = retry_interrupted(|| {
+            let call = calls.get() + 1;
+            calls.set(call);
+            if call == 1 {
+                Err(Error::from(ErrorKind::Interrupted))
+            } else {
+                Ok(0usize)
+            }
+        });
+
+        assert!(matches!(classify_read(result), ReadAttempt::Value(0)));
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn retries_interrupted_read_then_returns_eio() {
+        let calls = Cell::new(0);
+        let result = retry_interrupted(|| {
+            let call = calls.get() + 1;
+            calls.set(call);
+            if call == 1 {
+                Err(Error::from(ErrorKind::Interrupted))
+            } else {
+                Err::<usize, _>(Error::from_raw_os_error(libc::EIO))
+            }
+        });
+
+        assert!(
+            matches!(classify_read(result), ReadAttempt::Error(error) if error.raw_os_error() == Some(libc::EIO))
+        );
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn retries_interrupted_read_then_returns_eagain() {
+        let calls = Cell::new(0);
+        let result = retry_interrupted(|| {
+            let call = calls.get() + 1;
+            calls.set(call);
+            if call == 1 {
+                Err(Error::from(ErrorKind::Interrupted))
+            } else {
+                Err::<usize, _>(Error::from_raw_os_error(libc::EAGAIN))
+            }
+        });
+
+        assert!(
+            matches!(classify_read(result), ReadAttempt::Error(error) if error.raw_os_error() == Some(libc::EAGAIN))
+        );
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn bounds_repeated_interrupted_reads() {
+        let calls = Cell::new(0);
+        let result = retry_interrupted(|| {
+            calls.set(calls.get() + 1);
+            Err::<usize, _>(Error::from(ErrorKind::Interrupted))
+        });
+
+        assert!(matches!(classify_read(result), ReadAttempt::Yield));
+        assert_eq!(calls.get(), MAX_READ_EINTR_RETRIES + 1);
+    }
+
+    #[test]
+    fn yields_at_retry_cap_then_resumes_with_bytes() {
+        let calls = Cell::new(0);
+        let mut read = || {
+            let call = calls.get() + 1;
+            calls.set(call);
+            if call <= MAX_READ_EINTR_RETRIES + 1 {
+                Err(Error::from(ErrorKind::Interrupted))
+            } else {
+                Ok(23usize)
+            }
+        };
+
+        let first_attempt = retry_interrupted(&mut read);
+        assert!(matches!(classify_read(first_attempt), ReadAttempt::Yield));
+        assert_eq!(calls.get(), MAX_READ_EINTR_RETRIES + 1);
+
+        let resumed_attempt = retry_interrupted(&mut read);
+        assert!(matches!(
+            classify_read(resumed_attempt),
+            ReadAttempt::Value(23)
+        ));
+        assert_eq!(calls.get(), MAX_READ_EINTR_RETRIES + 2);
+    }
+
+    #[test]
+    fn does_not_retry_non_interrupted_errors() {
+        for code in [libc::EIO, libc::EAGAIN] {
+            let calls = Cell::new(0);
+            let result = retry_interrupted(|| {
+                calls.set(calls.get() + 1);
+                Err::<usize, _>(Error::from_raw_os_error(code))
+            });
+
+            assert_eq!(result.unwrap_err().raw_os_error(), Some(code));
+            assert_eq!(calls.get(), 1, "errno {code} must not be retried");
+        }
+    }
 }
