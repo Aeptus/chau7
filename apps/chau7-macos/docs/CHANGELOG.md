@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reject native Settings animation observations at or beyond the existing 500ms deadline even when the late frame reports completion, retaining actual-frame and target visibility assertions.
 - Prepare the isolated native editor fixture's owned active/key window before awaiting visible deferred restoration, preserving its five-second wait and composition assertions. This setup correction awaits combined native acceptance.
 
 - Drain all accepted Chau7 Next quota, latency and maintenance operations independently of UI publication; foreground timer cancellation releases only its monitor lifetime guard without waiting for queued future destruction.

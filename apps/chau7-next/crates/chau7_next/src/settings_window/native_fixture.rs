@@ -32,9 +32,8 @@ async fn settled_frame(
             view.read(cx)
                 .search_animations_finished(cx.background_executor().now())
         });
-        if settled && frames >= 3 {
-            break;
-        }
+        // Reject a late frame even when that frame finally reports settled.
+        // Completion must be observed inside the original 500ms budget.
         if started.elapsed() >= Duration::from_millis(500) {
             let state = cx.update(|cx| {
                 let view = view.read(cx);
@@ -70,6 +69,9 @@ async fn settled_frame(
             anyhow::bail!(
                 "native settings animation failed to settle within 500ms after {frames} actual frames; state={state}; renderer={renderer:?}"
             );
+        }
+        if settled && frames >= 3 {
+            break;
         }
     }
     anchors::take_rendered_targets();
