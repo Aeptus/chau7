@@ -111,6 +111,9 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         );
         let mut settings = crate::settings::Settings::default();
         settings.proxy.enabled = false;
+        // Workspace activation otherwise lazily creates this service and its
+        // child probe, even when ordinary permission startup is skipped.
+        settings.general.full_disk_access_guard_enabled = false;
         settings.cto.mode = chau7_next_core::token_optimization::TokenOptimizationMode::Off;
         crate::settings::config_files::init(cx, root.config_file(), settings.clone());
         cx.set_global(settings);
