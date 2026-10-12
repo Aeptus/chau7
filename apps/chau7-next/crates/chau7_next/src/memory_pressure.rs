@@ -59,6 +59,8 @@ struct Service {
     views: ViewRegistrations<gpui::WeakEntity<crate::terminal::view::TerminalView>>,
     reclaimed_cache_bytes: u64,
     last_critical_reclaim: Option<Instant>,
+    #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+    fixture_worker: Option<std::thread::JoinHandle<()>>,
 }
 impl Global for Service {}
 /// Restored windows can construct their terminal views before the lifecycle
@@ -428,7 +430,7 @@ pub fn start(cx: &mut App) {
     let (sender, receiver) = mpsc::channel::<Arc<SessionMemory>>();
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
-    std::thread::Builder::new()
+    let worker = std::thread::Builder::new()
         .name("next-scrollback-retention".into())
         .spawn(move || {
             while !worker_stop.load(Ordering::Acquire) {
@@ -440,6 +442,8 @@ pub fn start(cx: &mut App) {
             }
         })
         .expect("scrollback retention worker");
+    #[cfg(not(all(feature = "native-parity-fixture", target_os = "macos")))]
+    drop(worker); // Ordinary builds retain the existing detached worker contract.
     let pressure = Arc::new(Mutex::new(PressureState::default()));
     let epoch = Instant::now();
     let native = native::Source::new(pressure.clone(), epoch);
@@ -473,8 +477,49 @@ pub fn start(cx: &mut App) {
         views,
         reclaimed_cache_bytes: 0,
         last_critical_reclaim: None,
+        #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+        fixture_worker: Some(worker),
     });
 }
+/// Exercise the real cache-reclamation path under deterministic policy pressure.
+/// This is explicitly not evidence of an OS pressure notification.
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) fn inject_native_fixture_critical(cx: &mut App) -> u64 {
+    start(cx);
+    let selected: HashSet<u64> = selected(cx)
+        .into_iter()
+        .filter_map(|(id, visible)| visible.then_some(id))
+        .collect();
+    let service = cx.global::<Service>();
+    let before = service.reclaimed_cache_bytes;
+    service
+        .pressure
+        .lock()
+        .record(policy::PressureLevel::Critical, service.epoch.elapsed());
+    reclaim_caches(&selected, true, cx);
+    cx.global::<Service>()
+        .reclaimed_cache_bytes
+        .saturating_sub(before)
+}
+
+/// The isolated runner joins this worker before its profile is deleted.
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) fn stop_native_fixture(cx: &mut App) -> Option<std::thread::JoinHandle<()>> {
+    let worker = if cx.has_global::<Service>() {
+        let mut service = cx.remove_global::<Service>();
+        let worker = service.fixture_worker.take();
+        service.views.clear();
+        drop(service);
+        worker
+    } else {
+        None
+    };
+    if cx.has_global::<PendingViews>() {
+        cx.remove_global::<PendingViews>().0.clear();
+    }
+    worker
+}
+
 pub(crate) fn register_view(
     view: gpui::WeakEntity<crate::terminal::view::TerminalView>,
     cx: &mut App,

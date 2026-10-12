@@ -7,6 +7,9 @@ use chau7_next_core::session_restore::models::SavedPane;
 use chau7_next_core::session_restore::{SavedAxis, SavedSplitNode};
 use gpui::{AppContext, AsyncApp, WindowHandle, WindowOptions, size};
 use gpui_kit::base::Root;
+use objc2::rc::Retained;
+use objc2_app_kit::{NSView, NSWindow};
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::os::unix::fs::PermissionsExt;
 
 fn error(error: impl std::fmt::Display) -> String {
@@ -31,10 +34,10 @@ impl Profile {
         let root = DataRoot::with_home(home.clone(), true);
         root.ensure_dirs().map_err(error)?;
         let shell = home.join("fixture-shell");
-        std::fs::write(&shell, b"#!/bin/sh\n/bin/stty -echo -icanon min 1 time 0\nprintf started > started\nwhile [ ! -f ready ]; do /bin/sleep 0.01; done\nprintf '\x1b]133;A\x07fixture$ '\nexec /bin/cat > received\n").map_err(error)?;
+        std::fs::write(&shell, b"#!/bin/sh\n/bin/stty -echo -icanon min 1 time 0\nprintf started > started\nwhile [ ! -f ready ]; do /bin/sleep 0.01; done\nprintf '\x1b]133;A\x07fixture$ '\n(while [ ! -f hidden-output ]; do /bin/sleep 0.01; done; printf '\nOWNED_HIDDEN_GRID\n'; printf done > output-child-done) &\nexec /bin/cat > received\n").map_err(error)?;
         std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o700)).map_err(error)?;
-        let directories: Vec<_> = (0..5).map(|i| home.join(format!("pane-{i}"))).collect();
-        let ids: Vec<_> = (0..5).map(|_| uuid::Uuid::new_v4().to_string()).collect();
+        let directories: Vec<_> = (0..7).map(|i| home.join(format!("pane-{i}"))).collect();
+        let ids: Vec<_> = (0..7).map(|_| uuid::Uuid::new_v4().to_string()).collect();
         for (directory, id) in directories.iter().zip(&ids) {
             std::fs::create_dir_all(directory).map_err(error)?;
             let project = directory.to_string_lossy();
@@ -183,6 +186,8 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
         profile.tab(&[1, 2]),
         profile.tab(&[3]),
         profile.tab(&[4]),
+        profile.tab(&[5]),
+        profile.tab(&[6]),
     ];
     let stale = profile.home.clone();
     tabs[0].cwd = Some(stale.clone());
@@ -195,8 +200,11 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
     let selected_uuid = tabs[1].uuid.ok_or("fixture UUID missing")?;
     crate::restore::preparation::register_saved_identity_hints(&profile.root, tabs.iter());
     cx.update(|cx| {
-        cx.global_mut::<Settings>().terminal.shell =
-            Some(profile.shell.to_string_lossy().into_owned())
+        let settings = cx.global_mut::<Settings>();
+        settings.terminal.shell = Some(profile.shell.to_string_lossy().into_owned());
+        settings.appearance.rendering.gpu_renderer = false;
+        settings.appearance.rendering.suspend_background = true;
+        settings.appearance.rendering.suspend_delay_secs = 0.05;
     });
     let (handle, ws) = cx
         .update(|cx| {
@@ -230,6 +238,14 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
     let handle = handle
         .downcast::<Root>()
         .ok_or("owned restore window lacks Root")?;
+    // Use the same ownership registry as the ordinary open_workspace path.
+    // Cleanup and memory selection must observe the actual owned Workspace.
+    cx.update(|cx| {
+        ws.update(cx, |ws, _| ws.window_handle = Some(handle.into()));
+        cx.global_mut::<AppData>()
+            .workspaces
+            .push((handle.into(), ws.downgrade()));
+    });
     let ids = cx.update(|cx| {
         ws.read(cx)
             .state
@@ -285,7 +301,7 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
                     .is_some_and(|tab| tab.uuid == selected_uuid),
                 "stable selected UUID changed",
             )?;
-            for i in [0, 2, 3] {
+            for i in [0, 2, 3, 4, 5] {
                 let tree = ws.entries[&ids[i]].panes.read(cx);
                 ensure(
                     tree.is_deferred() && tree.pane_sessions(cx).is_empty(),
@@ -373,7 +389,7 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
         "identity admitted before selection quiet period",
     )?;
     cx.update(|cx| -> Result<(), String> {
-        for i in [0, 2, 3] {
+        for i in [0, 2, 3, 4, 5] {
             ensure(
                 ws.read(cx).entries[&ids[i]]
                     .panes
@@ -387,6 +403,7 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
     })?;
     select(handle, &ws, ids[3], cx)?;
     settle(handle, cx).await?;
+    verify_hover(handle, &ws, &ids, &selected_panes, cx).await?;
     profile.release_prompt(1)?;
     profile.release_prompt(2)?;
     wait_until(cx, "native OSC133 readiness", |cx| {
@@ -421,8 +438,330 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
             "resume prefill repeated after next production tick",
         )?;
     }
+    let surface = verify_surfaces(handle, &ws, &ids, &selected_panes, &profile, cx).await?;
+    // Let every owned output subprocess finish before normal PTY disposal.
+    for directory in &profile.directories {
+        if directory.join("ready").exists() {
+            std::fs::write(directory.join("hidden-output"), b"done").map_err(error)?;
+        }
+    }
+    wait_until(cx, "owned output subprocess completion", |_| {
+        profile.directories.iter().all(|directory| {
+            !directory.join("ready").exists() || directory.join("output-child-done").exists()
+        })
+    })
+    .await?;
     let closed = dispose(cx).await?;
+    ensure(
+        closed == 4,
+        "cleanup did not close all four actual owned PTYs",
+    )?;
     Ok(
-        serde_json::json!({"restored_tabs":4,"selected_initial_ptys":2,"preserved_split_leaves":2,"native_identities":2,"quiet_period_ms":450,"observed_identity_admission_ms":admission_ms,"transient_selection_ptys":0,"parked_metadata_ptys":0,"resume_deliveries":2,"resume_line_terminators":0,"duplicate_deliveries":0,"closed_owned_ptys":closed,"manual_polling":false,"simulated_frames":false}),
+        serde_json::json!({"restored_tabs":6,"selected_initial_ptys":2,"preserved_split_leaves":2,"native_identities":2,"quiet_period_ms":450,"observed_identity_admission_ms":admission_ms,"transient_selection_ptys":0,"parked_metadata_ptys":0,"resume_deliveries":2,"resume_line_terminators":0,"duplicate_deliveries":0,"closed_owned_ptys":closed,"surfaces":surface,"manual_polling":false,"simulated_frames":false}),
+    )
+}
+
+async fn verify_hover(
+    handle: WindowHandle<Root>,
+    ws: &Entity<Workspace>,
+    ids: &[TabId],
+    sessions: &[(u64, Entity<TerminalSession>)],
+    cx: &mut AsyncApp,
+) -> Result<(), String> {
+    handle
+        .update(cx, |_, _, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.hover_tab(ids[1], true, None, cx);
+            })
+        })
+        .map_err(error)?;
+    cx.update(|cx| -> Result<(), String> {
+        for (_, session) in sessions {
+            ensure(
+                session
+                    .read(cx)
+                    .surface_prewarm_remaining()
+                    .is_some_and(|remaining| {
+                        remaining <= Duration::from_secs(2)
+                            && remaining >= Duration::from_millis(1500)
+                    }),
+                "existing hidden split did not receive the two-second hover budget",
+            )?;
+            ensure(
+                !session.read(cx).is_render_suspended(),
+                "hover did not wake hidden rendering",
+            )?;
+        }
+        Ok(())
+    })?;
+    pause(cx, Duration::from_millis(2150)).await;
+    cx.update(|cx| -> Result<(), String> {
+        ensure(
+            sessions
+                .iter()
+                .all(|(_, s)| s.read(cx).surface_prewarm_remaining().is_none()),
+            "hover budget exceeded its two-second deadline",
+        )
+    })?;
+    handle
+        .update(cx, |_, _, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.hover_tab(ids[1], true, None, cx);
+                ws.hover_tab(ids[1], false, None, cx);
+                ws.hover_tab(ids[0], true, None, cx);
+            })
+        })
+        .map_err(error)?;
+    cx.update(|cx| -> Result<(), String> {
+        ensure(
+            sessions.iter().all(|(_, s)| {
+                s.read(cx)
+                    .surface_prewarm_remaining()
+                    .is_some_and(|remaining| remaining <= Duration::from_millis(500))
+            }),
+            "hover exit did not shorten the budget to 500ms",
+        )?;
+        ensure(
+            ws.read(cx).entries[&ids[0]].panes.read(cx).is_deferred()
+                && ws.read(cx).entries[&ids[0]]
+                    .panes
+                    .read(cx)
+                    .pane_sessions(cx)
+                    .is_empty(),
+            "hovering a parked restore created a PTY",
+        )
+    })?;
+    handle
+        .update(cx, |_, _, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.hover_tab(ids[0], false, None, cx);
+            })
+        })
+        .map_err(error)?;
+    pause(cx, Duration::from_millis(650)).await;
+    wait_until(cx, "hidden hover deadline suspension", |cx| {
+        sessions.iter().all(|(_, s)| {
+            s.read(cx).surface_prewarm_remaining().is_none() && s.read(cx).is_render_suspended()
+        })
+    })
+    .await
+}
+
+fn native_window(
+    handle: WindowHandle<Root>,
+    cx: &mut AsyncApp,
+) -> Result<Retained<NSWindow>, String> {
+    handle
+        .update(cx, |_, window, _| {
+            let raw = HasWindowHandle::window_handle(window).map_err(error)?;
+            let RawWindowHandle::AppKit(raw) = raw.as_raw() else {
+                return Err("owned window lacks AppKit handle".into());
+            };
+            // SAFETY: GPUI owns this view throughout the real window's lifetime;
+            // retaining it is confined to the platform's main-thread fixture.
+            let view = unsafe { Retained::retain(raw.ns_view.cast::<NSView>().as_ptr()) }
+                .ok_or("owned native view disappeared")?;
+            view.window()
+                .ok_or("owned native view lacks NSWindow".into())
+        })
+        .map_err(error)?
+}
+
+async fn verify_surfaces(
+    handle: WindowHandle<Root>,
+    ws: &Entity<Workspace>,
+    ids: &[TabId],
+    sessions: &[(u64, Entity<TerminalSession>)],
+    profile: &Profile,
+    cx: &mut AsyncApp,
+) -> Result<serde_json::Value, String> {
+    let native = native_window(handle, cx)?;
+    let selected_views = cx.update(|cx| ws.read(cx).entries[&ids[1]].panes.read(cx).views());
+    let initial_cache = cx.update(|cx| {
+        selected_views
+            .iter()
+            .map(|view| view.read(cx).overlays.cache_bytes())
+            .sum::<u64>()
+    });
+    ensure(
+        initial_cache > 0,
+        "real CPU terminal frames were never cached",
+    )?;
+    cx.update(|_| native.orderOut(None));
+    wait_until(cx, "actual ordered-out window suspension", |cx| {
+        !native.isVisible()
+            && sessions.iter().all(|(_, s)| {
+                !s.read(cx).restore_surface_visible() && s.read(cx).is_render_suspended()
+            })
+    })
+    .await?;
+    std::fs::write(profile.directories[1].join("hidden-output"), b"release").map_err(error)?;
+    wait_until(cx, "hidden authoritative native output", |cx| {
+        sessions[0]
+            .1
+            .read(cx)
+            .with_terminal(|term| term.full_buffer_text().contains("OWNED_HIDDEN_GRID"))
+            && sessions[0].1.read(cx).is_render_suspended()
+    })
+    .await?;
+    let terminal = cx.update(|cx| sessions[0].1.read(cx).remote_terminal());
+    let update = cx
+        .background_spawn(async move { crate::remote::snapshot::capture_update(&terminal, 0) })
+        .await
+        .ok_or("hidden authoritative remote snapshot absent")?;
+    let mut cache = chau7_next_core::remote::grid_cache::RemoteGridSnapshotCache::default();
+    let encoded = cache
+        .encode(&update)
+        .ok_or("hidden remote grid encode failed")?;
+    let remote =
+        chau7_next_core::remote::grid_snapshot::RemoteTerminalGridSnapshot::decode(&encoded)
+            .map_err(error)?;
+    ensure(
+        remote
+            .clusters
+            .windows(b"OWNED_HIDDEN_GRID".len())
+            .any(|bytes| bytes == b"OWNED_HIDDEN_GRID"),
+        "remote grid did not reflect output while presentation was suspended",
+    )?;
+    cx.update(|_| {
+        native.orderFront(None);
+        native.makeKeyWindow();
+    });
+    wait_until(cx, "actual ordered-front surface reveal", |cx| {
+        native.isVisible()
+            && sessions
+                .iter()
+                .all(|(_, s)| s.read(cx).restore_surface_visible())
+    })
+    .await?;
+    settle(handle, cx).await?;
+    cx.update(|cx| -> Result<(), String> {
+        ensure(
+            sessions.iter().all(|(_, s)| {
+                s.read(cx).surface_has_live_frame() && !s.read(cx).is_render_suspended()
+            }),
+            "ordered-front reveal did not paint actual terminal surfaces",
+        )
+    })?;
+    cx.update(|_| native.miniaturize(None));
+    wait_until(cx, "actual miniaturized window", |cx| {
+        native.isMiniaturized()
+            && sessions
+                .iter()
+                .all(|(_, s)| !s.read(cx).restore_surface_visible())
+    })
+    .await?;
+    cx.update(|_| {
+        native.deminiaturize(None);
+        native.makeKeyWindow();
+    });
+    wait_until(cx, "actual deminiaturized surface reveal", |cx| {
+        !native.isMiniaturized()
+            && native.isVisible()
+            && sessions
+                .iter()
+                .all(|(_, s)| s.read(cx).restore_surface_visible())
+    })
+    .await?;
+    settle(handle, cx).await?;
+    let reclaimed = cx.update(|cx| -> Result<u64, String> {
+        let histories: Vec<_> = sessions
+            .iter()
+            .map(|(_, s)| s.read(cx).buffer_text())
+            .collect();
+        let reclaimed = crate::memory_pressure::inject_native_fixture_critical(cx);
+        ensure(
+            reclaimed > 0,
+            "injected critical policy reclaimed no actual renderer cache",
+        )?;
+        ensure(
+            selected_views
+                .iter()
+                .all(|view| view.read(cx).overlays.cache_bytes() == 0),
+            "critical policy retained regenerable selected CPU caches",
+        )?;
+        for ((_, session), before) in sessions.iter().zip(histories) {
+            ensure(
+                session.read(cx).buffer_text() == before,
+                "critical cache reclaim changed native history",
+            )?;
+        }
+        Ok(reclaimed)
+    })?;
+    let worker = cx.update(crate::memory_pressure::stop_native_fixture);
+    cx.background_spawn(async move {
+        if let Some(worker) = worker {
+            let _ = worker.join();
+        }
+    })
+    .await;
+    // Repaint a neighbor and the split, then move more than two tabs away.
+    select(handle, ws, ids[3], cx)?;
+    settle(handle, cx).await?;
+    select(handle, ws, ids[1], cx)?;
+    settle(handle, cx).await?;
+    let neighbor_views = cx.update(|cx| ws.read(cx).entries[&ids[3]].panes.read(cx).views());
+    let neighbor_before = cx.update(|cx| {
+        neighbor_views
+            .iter()
+            .map(|v| v.read(cx).overlays.cache_bytes())
+            .sum::<u64>()
+    });
+    ensure(
+        neighbor_before > 0,
+        "actual neighbor CPU cache was not painted",
+    )?;
+    select(handle, ws, ids[5], cx)?;
+    wait_until(cx, "far owned deferred PTY activation", |cx| {
+        ws.read(cx).entries[&ids[5]]
+            .panes
+            .read(cx)
+            .pane_sessions(cx)
+            .len()
+            == 1
+    })
+    .await?;
+    settle(handle, cx).await?;
+    let retained_cache = cx.update(|cx| -> Result<u64, String> {
+        ensure(
+            selected_views
+                .iter()
+                .all(|view| view.read(cx).overlays.cache_bytes() == 0),
+            "distant split CPU frames escaped neighbor cache bounds",
+        )?;
+        ensure(
+            neighbor_views
+                .iter()
+                .map(|v| v.read(cx).overlays.cache_bytes())
+                .sum::<u64>()
+                == neighbor_before,
+            "nearby CPU cache was evicted by the distance policy",
+        )?;
+        let ws = ws.read(cx);
+        let mut total = 0;
+        for entry in ws.entries.values() {
+            for view in entry.panes.read(cx).views() {
+                let bytes = view.read(cx).overlays.cache_bytes();
+                ensure(
+                    bytes <= 64 * 1024 * 1024,
+                    "real CPU frame exceeded its allocation budget",
+                )?;
+                total += bytes;
+            }
+        }
+        ensure(
+            total <= chau7_next_core::memory_pressure::GLOBAL_CACHE_BYTES,
+            "fixture's retained real renderer caches exceeded the global budget",
+        )?;
+        Ok(total)
+    })?;
+    Ok(
+        serde_json::json!({"hover_live_budget_ms":2000,"hover_exit_budget_ms":500,
+        "hover_parked_ptys":0,"hidden_raw_grid_updated":true,"hidden_remote_grid_updated":true,
+        "ordered_out_front":true,"native_mini_demini":true,"actual_reveal_frames":true,
+        "critical_pressure_source":"fixture_policy_injection","os_pressure_delivery_tested":false,
+        "critical_cache_bytes_reclaimed":reclaimed,"native_history_preserved":true,
+        "distant_split_cache_bytes":0,"neighbor_cpu_cache_bytes":neighbor_before,
+        "retained_cpu_cache_bytes":retained_cache}),
     )
 }
