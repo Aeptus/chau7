@@ -146,3 +146,21 @@ Files live in Next's own `reports/hangs/` directory:
 Recognized sample bundles are bounded to 40 bundles, 64 MiB total and seven days.
 Unrelated files are retained. The helper is intercepted before app initialization,
 so it never imports settings, installs integrations or starts a second GUI.
+
+## Owned normal app observation, 2026-10-12
+
+The ordinary feature-free 66753ed1 app exposes runtime identity, performance,
+timer inventory and journal via read-only MCP. A fresh synthetic profile restores
+two tabs, starts one selected PTY and settles with zero loading timers. Two
+post-startup snapshots 37.61s apart measure 2.912% of one logical CPU;
+resident memory is 113,475,584 bytes at the later capture. Sixteen active timers,
+32 work-profile entries and journal19/19 have no reported persistence error or
+hang. Per-stage CPU/GPU completion stay null. Schema1 performance latest/history
+files parse, and normal quit drains workers and saves both tabs.
+
+This is a scoped observation: provider services are disabled and compilation runs
+concurrently. Main-thread scheduler delay reaches127.267ms across16 samples.
+Native dee8163a additionally proves the actual80ms loading task cancels hidden,
+has zero hidden callbacks, resumes once and stops at real prompt/disposal.
+Its callback wall-time excludes interval waiting. Exact evidence and limits:
+[recovery validation](RECOVERY-VALIDATION-20261011.md).

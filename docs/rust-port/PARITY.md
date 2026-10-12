@@ -64,7 +64,7 @@ stale table.
 | [Runtime](inventory/Runtime.md) | 3 | 33 | 33 | 0 | 0 | 0 | 0 | 0 |
 | [RustBackend](inventory/RustBackend.md) | 1 | 62 | 58 | 0 | 0 | 4 | 0 | 0 |
 | [Scripting](inventory/Scripting.md) | 3 | 15 | 15 | 0 | 0 | 0 | 0 | 0 |
-| [Settings](inventory/Settings.md) | 1 | 145 | 139 | 1 | 0 | 5 | 0 | 1 |
+| [Settings](inventory/Settings.md) | 1 | 145 | 140 | 0 | 0 | 5 | 0 | 0 |
 | [Skills](inventory/Skills.md) | 3 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | [Snippets](inventory/Snippets.md) | 1 | 37 | 37 | 0 | 0 | 0 | 0 | 0 |
 | [SplitPanes](inventory/SplitPanes.md) | 1 | 27 | 27 | 0 | 0 | 0 | 0 | 0 |
@@ -75,9 +75,9 @@ stale table.
 | [Usage](inventory/Usage.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | [Utilities](inventory/Utilities.md) | 1 | 13 | 6 | 0 | 0 | 7 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1309** | **1264** | **3** | **0** | **42** | **0** | |
+| **Total** | | **1309** | **1265** | **2** | **0** | **42** | **0** | |
 
-Finished (done, n/a or dropped): 1306 of 1309 rows (99%). Partial: 3.
+Finished (done, n/a or dropped): 1307 of 1309 rows (99%). Partial: 2.
 
 <!-- parity:end -->
 
