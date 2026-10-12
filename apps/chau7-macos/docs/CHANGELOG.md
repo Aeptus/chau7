@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Exercise Spanish Settings search and independently selected regional usage formats through visible controls in an owned native window, verifying persistence and summary values while retaining the animation deadline.
+
+
 - Make the short-lived PTY burst regression enforce its intended ten-second wall-clock ceiling under adaptive polling, retaining the complete output assertions and requiring observed closure before the deadline. Keep all interruption tests under strict helper lint checks.
 
 - Retry interrupted PTY reads within a bounded budget, then yield without closing the terminal. Preserve buffered HUP output and allow other terminals to progress; verify retry, yield and resume behavior with injected reads.

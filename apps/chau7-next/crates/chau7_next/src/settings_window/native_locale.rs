@@ -1,11 +1,12 @@
 //! Process-local settings acceptance choices; never changes the OS language.
 use crate::settings::AppLanguage;
 use chau7_next_core::{
-    l10n::{self, Lang},
+    l10n::{self, Lang, numbers::RegionalNumberFormat},
     settings_search::SettingsSection,
 };
 
 pub(super) const LANGUAGE_ENV: &str = "CHAU7_NEXT_NATIVE_SETTINGS_LANGUAGE";
+pub(super) const NUMBER_FORMAT_ENV: &str = "CHAU7_NEXT_NATIVE_SETTINGS_NUMBER_FORMAT";
 pub(super) struct LocaleCase {
     pub setting: AppLanguage,
     pub preferred: Vec<String>,
@@ -16,6 +17,7 @@ impl LocaleCase {
         let setting = match requested {
             "en" => AppLanguage::English,
             "fr" => AppLanguage::French,
+            "es" => AppLanguage::Spanish,
             "ar" => AppLanguage::Arabic,
             "system" => AppLanguage::System,
             _ => return Err(format!("unsupported native Settings language: {requested}")),
@@ -55,6 +57,22 @@ impl LocaleCase {
         cases
     }
 }
+
+/// A regional usage-number preference, resolved independently of app language.
+#[derive(Clone, Copy)]
+pub(super) struct RegionalNumberFormatCase {
+    pub setting: RegionalNumberFormat,
+}
+impl RegionalNumberFormatCase {
+    pub fn new(requested: Option<&str>) -> Result<Self, String> {
+        let requested = requested.unwrap_or("fr");
+        let setting = RegionalNumberFormat::from_id(requested).ok_or_else(|| {
+            format!("unsupported native Settings regional number format: {requested}")
+        })?;
+        Ok(Self { setting })
+    }
+}
+
 const TITLES: &[(&str, &str, SettingsSection, &str)] = &[
     (
         "settings.search.restoredScrollback.title",
@@ -144,12 +162,34 @@ mod tests {
                 .resolved
                 .is_rtl()
         );
+        let spanish = LocaleCase::new("es", preferred.clone()).unwrap();
+        assert_eq!(spanish.setting, AppLanguage::Spanish);
+        assert_eq!(spanish.resolved, Lang::Es);
+        assert!(!spanish.resolved.is_rtl());
         assert!(LocaleCase::new("unexpected", preferred).is_err());
         assert_eq!(
             LocaleCase::new("system", vec![]).unwrap().resolved,
             Lang::En
         );
         assert_eq!(LANGUAGE_ENV, "CHAU7_NEXT_NATIVE_SETTINGS_LANGUAGE");
+    }
+    #[test]
+    fn regional_number_format_choices_are_typed_and_reject_unknown_values() {
+        for (id, expected) in [
+            ("fr", RegionalNumberFormat::French),
+            ("eu", RegionalNumberFormat::European),
+            ("us", RegionalNumberFormat::UnitedStates),
+        ] {
+            assert_eq!(
+                RegionalNumberFormatCase::new(Some(id)).unwrap().setting,
+                expected
+            );
+        }
+        assert_eq!(
+            RegionalNumberFormatCase::new(None).unwrap().setting,
+            RegionalNumberFormat::French
+        );
+        assert!(RegionalNumberFormatCase::new(Some("es")).is_err());
     }
     #[test]
     fn five_queries_keep_english_exact_and_localized_source_goldens() {
@@ -163,7 +203,7 @@ mod tests {
                 "source default: {key}"
             );
         }
-        for requested in ["en", "fr", "ar", "system"] {
+        for requested in ["en", "fr", "es", "ar", "system"] {
             let case = LocaleCase::new(requested, vec!["fr-FR".into()]).unwrap();
             let queries = case.queries();
             assert_eq!(queries.len(), 5);
