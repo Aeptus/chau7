@@ -15,6 +15,7 @@ ci_require_cmd swiftlint "Install SwiftLint (for example: brew install swiftlint
 ci_require_cmd cargo "Install Rust via rustup."
 ci_require_cmd go "Install Go 1.25+."
 ci_require_cmd npm "Install Node.js and npm."
+ci_require_cmd node "Install Node.js and npm."
 ci_require_cmd_strict shellcheck "Install shellcheck (for example: brew install shellcheck)."
 ci_require_cmd_strict ruff "Install ruff (for example: brew install ruff)."
 ci_require_cmd_strict golangci-lint "Install golangci-lint (for example: brew install golangci-lint)."
@@ -57,6 +58,6 @@ ci_run_in "Relay build" "services/chau7-relay" npm run build
 
 ci_ruff_check_dir "scripts" "Ruff (scripts/)"
 ci_shellcheck_tracked "Shellcheck (all tracked .sh)"
-ci_run_in "Duplication (jscpd)" "." jscpd --config scripts/.jscpd.json
+ci_run_in "Duplication (jscpd)" "." node scripts/quality/run-duplication.mjs
 
 ci_success "Full local CI passed."
