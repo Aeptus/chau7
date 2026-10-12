@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pin the native Settings regional-format environment contract in ordinary unit tests, keeping fixture constants covered when optional native fixtures are disabled and retaining strict warnings-as-errors checks.
+
+
 - Display the restored-scrollback counter with the current OS number format, including localized zero, matching Swift without untranslated suffixes. Preserve configured values and stepper bounds.
 
 

@@ -192,6 +192,13 @@ mod tests {
         assert!(RegionalNumberFormatCase::new(Some("es")).is_err());
     }
     #[test]
+    fn number_format_environment_name_matches_fixture_contract() {
+        assert_eq!(
+            NUMBER_FORMAT_ENV,
+            "CHAU7_NEXT_NATIVE_SETTINGS_NUMBER_FORMAT"
+        );
+    }
+    #[test]
     fn five_queries_keep_english_exact_and_localized_source_goldens() {
         let swift_metadata = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
