@@ -976,7 +976,7 @@ impl MacWindow {
         cursor_visible: Arc<AtomicBool>,
         foreground_executor: ForegroundExecutor,
         background_executor: BackgroundExecutor,
-        renderer_context: renderer::Context,
+        renderer: renderer::Renderer,
         marker: MainThreadMarker,
     ) -> Self {
         unsafe {
@@ -1098,13 +1098,7 @@ impl MacWindow {
                 cursor_style: CursorStyle::Arrow,
                 cursor_visible,
                 frame_source: None,
-                renderer: renderer::new_renderer(
-                    renderer_context,
-                    native_window as *mut _,
-                    native_view as *mut _,
-                    bounds.size.map(|pixels| pixels.as_f32()),
-                    false,
-                ),
+                renderer,
                 request_frame_callback: None,
                 event_callback: None,
                 activate_callback: None,
@@ -3087,14 +3081,7 @@ fn update_window_scale_factor(window_state: &Arc<Mutex<MacWindowState>>) {
     let scale_factor = lock.scale_factor();
     let size = lock.content_size();
     let drawable_size = size.to_device_pixels(scale_factor);
-    if let Some(layer) = lock.renderer.layer() {
-        unsafe {
-            let _: () = msg_send![
-                layer,
-                setContentsScale: scale_factor as f64
-            ];
-        }
-    }
+    lock.renderer.set_contents_scale(scale_factor as f64);
 
     lock.renderer.update_drawable_size(drawable_size);
 

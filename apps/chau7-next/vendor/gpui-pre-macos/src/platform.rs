@@ -229,6 +229,29 @@ fn native_activation_policy(policy: ActivationPolicy) -> NSApplicationActivation
 
 impl MacPlatform {
     pub fn new(headless: bool) -> Self {
+        Self::with_renderer_context(headless, renderer::Context::default())
+    }
+
+    /// Select a fixed startup rendering policy before creating any windows.
+    pub fn with_backend_policy(headless: bool, policy: renderer::BackendPolicy) -> Self {
+        Self::with_renderer_context(headless, renderer::Context::new(policy))
+    }
+
+    /// An isolated test policy that injects a device failure before Metal calls.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_injected_device_failure(headless: bool) -> Self {
+        Self::with_renderer_context(
+            headless,
+            renderer::Context::with_injected_device_failure(renderer::BackendPolicy::Auto),
+        )
+    }
+
+    /// Actual whole-window backend choice; Unknown until the first preparation.
+    pub fn backend_status(&self) -> renderer::BackendStatus {
+        self.0.lock().renderer_context.status()
+    }
+
+    fn with_renderer_context(headless: bool, renderer_context: renderer::Context) -> Self {
         let marker = MainThreadMarker::new().expect("Mac platform not created on main thread");
         let dispatcher = Arc::new(AppleDispatcher::new());
 
@@ -255,7 +278,7 @@ impl MacPlatform {
             text_system,
             background_executor: BackgroundExecutor::new(dispatcher.clone()),
             foreground_executor: ForegroundExecutor::new(dispatcher),
-            renderer_context: renderer::Context::default(),
+            renderer_context,
             general_pasteboard: Pasteboard::general(),
             find_pasteboard: Pasteboard::find(),
             reopen: None,
@@ -783,13 +806,25 @@ impl Platform for MacPlatform {
             )
         };
 
+        // Native screen scale is read before a window or atlas exists. Complete
+        // fallible renderer preparation commits the immutable backend here.
+        let display = options
+            .display_id
+            .and_then(MacDisplay::find_by_id)
+            .unwrap_or_else(MacDisplay::primary);
+        let viewport = options
+            .bounds
+            .size
+            .to_device_pixels(display.backing_scale_factor());
+        let renderer = renderer_context.prepare(viewport, false)?;
+
         Ok(Box::new(MacWindow::open(
             handle,
             options,
             cursor_visible,
             foreground_executor,
             background_executor,
-            renderer_context,
+            renderer,
             self.1,
         )))
     }

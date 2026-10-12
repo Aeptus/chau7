@@ -99,8 +99,9 @@ impl Drop for Transaction {
 /// compositor backing-store allocation is inferred from these measurements.
 #[derive(Clone, Debug, Default)]
 pub struct SoftwareMetrics {
-    /// Completed, successfully presented software frames.
-    pub presented_frames: u64,
+    /// Successfully constructed images submitted through CALayer contents.
+    /// This does not measure compositor or physical display completion.
+    pub submitted_frames: u64,
     /// Failed raster/image attempts, excluding zero-size suspended surfaces.
     pub failed_frames: u64,
     /// Actual retained source image pixel length (CFData); compositor memory unknown.
@@ -215,7 +216,7 @@ impl SoftwareRenderer {
             }
             *self.last_image.get_mut() = Some(image);
             let metrics = self.metrics.get_mut();
-            metrics.presented_frames = metrics.presented_frames.saturating_add(1);
+            metrics.submitted_frames = metrics.submitted_frames.saturating_add(1);
             metrics.owned_image_pixel_bytes = pixels;
             metrics.atlas_pixel_bytes = self.atlas.retained_bytes();
             metrics.last_primitive_counts = Some(frame.primitive_counts);
@@ -275,18 +276,18 @@ mod tests {
         assert!(!renderer.layer_ptr().is_null());
         let initial = renderer.metrics();
         assert_eq!(initial.owned_image_pixel_bytes, 8 * 4 * 4);
-        assert_eq!(initial.presented_frames, 0);
+        assert_eq!(initial.submitted_frames, 0);
         assert_eq!(initial.last_primitive_counts, None);
         assert_eq!(initial.last_cpu_submit_microseconds, None);
         renderer.set_contents_scale(2.);
         renderer.draw(&Scene::default()).unwrap();
         let completed = renderer.metrics();
-        assert_eq!(completed.presented_frames, 1);
+        assert_eq!(completed.submitted_frames, 1);
         assert_eq!(completed.last_primitive_counts, Some([0; 8]));
         assert!(completed.last_cpu_submit_microseconds.is_some());
         renderer.update_drawable_size(gpui::size(DevicePixels(0), DevicePixels(0)));
         renderer.draw(&Scene::default()).unwrap();
-        assert_eq!(renderer.metrics().presented_frames, 1);
+        assert_eq!(renderer.metrics().submitted_frames, 1);
         renderer.destroy();
         assert_eq!(renderer.metrics().owned_image_pixel_bytes, 0);
         assert!(renderer.last_image.borrow().is_none());
