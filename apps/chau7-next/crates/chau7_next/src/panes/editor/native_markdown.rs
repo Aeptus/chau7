@@ -507,8 +507,9 @@ impl LineRuler {
             .partition_point(|s| *s < chars.location)
             .saturating_sub(1);
         let end = starts.partition_point(|s| *s <= chars.location + chars.length);
+        let source = text.string();
         for (i, char_start) in starts[first..end].iter().enumerate() {
-            if *char_start >= text.string().len() {
+            if !ruler_start_valid(&source, *char_start) {
                 continue;
             }
             let glyph = layout.glyphIndexForCharacterAtIndex(*char_start);
@@ -533,6 +534,13 @@ impl LineRuler {
         }
     }
 }
+// NSLayoutManager character indices and cached starts are UTF-16 units.
+// NSString::len counts UTF-8 bytes and would admit an out-of-range final line
+// after non-ASCII text, producing an invalid glyph-index lookup.
+fn ruler_start_valid(text: &NSString, index: usize) -> bool {
+    index < text.len_utf16()
+}
+
 fn line_starts(text: &str) -> Vec<usize> {
     let mut starts = vec![0];
     let mut units = 0;
@@ -963,6 +971,24 @@ mod tests {
         assert_eq!(drained.text.as_deref(), Some("new file edit"));
         assert_eq!(drained.selection, Some(NSRange::new(13, 0)));
         assert!(pending.text.is_none());
+    }
+
+    #[test]
+    fn ruler_bounds_reject_final_utf16_index_after_unicode() {
+        for source in ["", "ascii\n", "# café😀\n", "e\u{301}\n", "漢字\n"] {
+            let text = NSString::from_str(source);
+            let units = source.encode_utf16().count();
+            assert_eq!(text.len_utf16(), units);
+            for start in line_starts(source) {
+                assert_eq!(ruler_start_valid(&text, start), start < units);
+            }
+            assert!(!ruler_start_valid(&text, units));
+        }
+        let text = NSString::from_str("# café😀\n");
+        assert_eq!(text.len_utf16(), 9);
+        assert_eq!(text.len(), 12);
+        assert!(!ruler_start_valid(&text, 9));
+        assert!(ruler_start_valid(&text, 8));
     }
 
     #[test]
