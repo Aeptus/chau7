@@ -55,9 +55,15 @@
           "before_sha256": "aa7d475958a1b6512437c2ebeecf495024ff65b8e9c118d03c957c9eabd0a00d",
           "description": "Check copied device arrays before native messages/owners and release non-null CoreVideo output on native failure; deterministic ownership/nil regressions",
           "kind": "semantic"
+        },
+        {
+          "after_sha256": "d724414ca059cd0a5395df0bf338d2179df05deaf557dcd3abc568fa61d5a6e6",
+          "before_sha256": "7debde0fb8d2c754375a29dad7798582b02688218e1fa193ac3fb0a5b69d3c86",
+          "description": "Add fallible atomic initial viewport/MSAA, instance-buffer and atlas preparation before backend selection; nullable native texture ownership checks and real resource regressions",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "7debde0fb8d2c754375a29dad7798582b02688218e1fa193ac3fb0a5b69d3c86",
+      "current_sha256": "d724414ca059cd0a5395df0bf338d2179df05deaf557dcd3abc568fa61d5a6e6",
       "original_sha256": "72928305adc4671f3b8f4d97e2344738980e4c3e662926d840f4b69fc674f227",
       "package": "gpui-pre-apple",
       "path": "src/metal_renderer.rs"
@@ -215,6 +221,20 @@
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/software_renderer/surfaces.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "5fac452ac1166965bfc561012af1e5949b8d2fe91a532f1eef02eda9689f9913",
+          "before_sha256": "c414bf9caf88413b04fb6a3214c4f070686b454c82c28fa471af9d1bcc91ddba",
+          "description": "Validate atlas byte lengths and nullable descriptor/texture allocations; idempotent native atlas preflight without creating application keys",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "5fac452ac1166965bfc561012af1e5949b8d2fe91a532f1eef02eda9689f9913",
+      "original_sha256": "c414bf9caf88413b04fb6a3214c4f070686b454c82c28fa471af9d1bcc91ddba",
+      "package": "gpui-pre-apple",
+      "path": "src/metal_atlas.rs"
     }
   ],
   "format_version": 1

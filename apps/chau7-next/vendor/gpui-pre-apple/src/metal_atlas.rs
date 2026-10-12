@@ -1,4 +1,4 @@
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, ensure};
 use derive_more::{Deref, DerefMut};
 use etagere::BucketedAtlasAllocator;
 use gpui::{
@@ -19,6 +19,44 @@ impl MetalAtlas {
             monochrome_textures: Default::default(),
             polychrome_textures: Default::default(),
         })))
+    }
+
+    /// Reserves the two initial native atlas texture formats before a platform
+    /// exposes its backend. No tiles or application keys are created.
+    pub(crate) fn try_prepare_startup(&self) -> Result<()> {
+        let mut state = self.0.lock();
+        for kind in [AtlasTextureKind::Monochrome, AtlasTextureKind::Polychrome] {
+            let initialized = match kind {
+                AtlasTextureKind::Monochrome => {
+                    !state.backend.monochrome_textures.textures.is_empty()
+                }
+                AtlasTextureKind::Polychrome => {
+                    !state.backend.polychrome_textures.textures.is_empty()
+                }
+                AtlasTextureKind::Subpixel => false,
+            };
+            if initialized {
+                continue;
+            }
+            state
+                .backend
+                .push_texture(
+                    Size {
+                        width: DevicePixels(1),
+                        height: DevicePixels(1),
+                    },
+                    kind,
+                )
+                .context("initial Metal atlas allocation failed")?;
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn startup_texture_count(&self) -> usize {
+        let state = self.0.lock();
+        state.backend.monochrome_textures.textures.len()
+            + state.backend.polychrome_textures.textures.len()
     }
 
     /// Returns the GPU texture backing `id`, or `None` once every tile in it
@@ -58,6 +96,23 @@ impl AtlasBackend for MetalAtlasTextures {
         size: Size<DevicePixels>,
         bytes: &[u8],
     ) -> Result<AtlasTile> {
+        ensure!(
+            size.width.0 > 0 && size.height.0 > 0,
+            "Metal atlas dimensions must be positive"
+        );
+        let channels = if kind == AtlasTextureKind::Monochrome {
+            1
+        } else {
+            4
+        };
+        let expected = (size.width.0 as usize)
+            .checked_mul(size.height.0 as usize)
+            .and_then(|n| n.checked_mul(channels))
+            .context("Metal atlas byte size overflow")?;
+        ensure!(
+            bytes.len() == expected,
+            "Metal atlas source byte length mismatch"
+        );
         let tile = self.allocate(size, kind).context("failed to allocate")?;
         let texture = self
             .texture(tile.texture_id)
@@ -117,7 +172,7 @@ impl MetalAtlasTextures {
             }
         }
 
-        let texture = self.push_texture(size, texture_kind);
+        let texture = self.push_texture(size, texture_kind)?;
         texture.allocate(size)
     }
 
@@ -125,7 +180,7 @@ impl MetalAtlasTextures {
         &mut self,
         min_size: Size<DevicePixels>,
         kind: AtlasTextureKind,
-    ) -> &mut MetalAtlasTexture {
+    ) -> Option<&mut MetalAtlasTexture> {
         const DEFAULT_ATLAS_SIZE: Size<DevicePixels> = Size {
             width: DevicePixels(1024),
             height: DevicePixels(1024),
@@ -136,7 +191,7 @@ impl MetalAtlasTextures {
             height: DevicePixels(16384),
         };
         let size = min_size.min(&MAX_ATLAS_SIZE).max(&DEFAULT_ATLAS_SIZE);
-        let texture_descriptor = metal::TextureDescriptor::new();
+        let texture_descriptor = crate::metal_renderer::initial_texture_descriptor().ok()?;
         texture_descriptor.set_width(size.width.into());
         texture_descriptor.set_height(size.height.into());
         let pixel_format;
@@ -161,7 +216,12 @@ impl MetalAtlasTextures {
         } else {
             metal::MTLStorageMode::Managed
         });
-        let metal_texture = self.device.new_texture(&texture_descriptor);
+        let metal_texture = crate::metal_renderer::initial_texture(
+            &self.device,
+            &texture_descriptor,
+            "atlas texture allocation failed",
+        )
+        .ok()?;
 
         let texture_list = match kind {
             AtlasTextureKind::Monochrome => &mut self.monochrome_textures,
@@ -169,6 +229,7 @@ impl MetalAtlasTextures {
             AtlasTextureKind::Subpixel => unreachable!(),
         };
 
+        texture_list.textures.try_reserve(1).ok()?;
         let index = texture_list.free_list.pop();
 
         let atlas_texture = MetalAtlasTexture {
@@ -181,16 +242,18 @@ impl MetalAtlasTextures {
             live_atlas_keys: 0,
         };
 
-        if let Some(ix) = index {
-            texture_list.textures[ix] = Some(atlas_texture);
-            texture_list.textures.get_mut(ix)
-        } else {
-            texture_list.textures.push(Some(atlas_texture));
-            texture_list.textures.last_mut()
-        }
-        .unwrap()
-        .as_mut()
-        .unwrap()
+        Some(
+            if let Some(ix) = index {
+                texture_list.textures[ix] = Some(atlas_texture);
+                texture_list.textures.get_mut(ix)
+            } else {
+                texture_list.textures.push(Some(atlas_texture));
+                texture_list.textures.last_mut()
+            }
+            .unwrap()
+            .as_mut()
+            .unwrap(),
+        )
     }
 
     fn texture(&self, id: AtlasTextureId) -> Option<&MetalAtlasTexture> {
