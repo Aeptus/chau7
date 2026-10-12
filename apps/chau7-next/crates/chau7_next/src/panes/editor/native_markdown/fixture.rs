@@ -159,6 +159,12 @@ pub(in crate::panes::editor) async fn verify(
     cx.update(|_| ensure(attached(&native), "actual NativeElement never attached"))
         .map_err(error)?;
 
+    // Keep an old frame's actual lifetime guard across a forced remount.
+    let stale_attachment = Attachment {
+        native: native.clone(),
+        generation: native.mount_generation.get(),
+    };
+    let previous_mount = stale_attachment.generation;
     // Exercise NSTextInputClient on the production SourceTextView and let an
     // actual GPUI frame/restyle pass while its text is still marked.
     cx.update(|_| {
@@ -195,8 +201,13 @@ pub(in crate::panes::editor) async fn verify(
         )
     })
     .map_err(error)?;
+    cx.update(|cx| editor.update(cx, |_, cx| cx.notify()));
     settle(handle, cx).await?;
     cx.update(|_| {
+        ensure(native.mount_generation.get() != previous_mount,
+            "owned native source did not actually remount")?;
+        drop(stale_attachment);
+        ensure(attached(&native), "old frame guard detached the current source")?;
         ensure(
             native.text.hasMarkedText(),
             &format!(
@@ -483,6 +494,7 @@ pub(in crate::panes::editor) async fn verify(
     Ok(serde_json::json!({
         "production_source_class": "Chau7NextMarkdownSourceTextView",
         "marked_text_survives_actual_frame": true,
+        "stale_attachment_preserves_remounted_composition": true,
         "composition_commit_reaches_gpui_buffer": true,
         "ordinary_keydown_current_source": true,
         "native_undo_redo_key_equivalents": true,
