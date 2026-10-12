@@ -268,6 +268,7 @@ pub(super) fn for_id(id: &str) -> Option<ScrollAnchor> {
         let present = SEARCHABLE_SETTINGS
             .iter()
             .any(|setting| setting.section == scope.section && setting.anchor_id == id)
+            || id == "pageSummary"
             || (id == "permissions" && scope.section == SettingsSection::SnippetsTools);
         if present {
             let (key, anchor) = scope.anchors.get_key_value(id)?;

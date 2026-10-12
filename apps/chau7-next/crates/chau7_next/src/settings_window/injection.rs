@@ -48,6 +48,23 @@ pub(super) struct InjectionState {
     _tasks: Vec<Task<()>>,
 }
 impl InjectionState {
+    pub(super) fn summary_counts(&self) -> Option<(bool, usize, usize)> {
+        (!self.loading).then(|| {
+            (
+                self.file.global().is_some(),
+                self.file
+                    .rules
+                    .iter()
+                    .filter(|rule| rule.repository != "*")
+                    .count(),
+                self.locals
+                    .values()
+                    .filter(|rule| rule.rule.is_some())
+                    .count(),
+            )
+        })
+    }
+
     pub(super) fn new(window: &mut Window, cx: &mut Context<SettingsView>) -> Self {
         let root = cx.global::<AppData>().root.clone();
         if cx.try_global::<RuleCache>().is_none() {

@@ -20,6 +20,10 @@ pub(crate) struct PaneInputs {
 }
 
 impl PaneInputs {
+    pub(super) fn format_summary_count(&self, value: usize) -> String {
+        self.number_format.format(value)
+    }
+
     pub(crate) fn new(window: &mut Window, cx: &mut Context<SettingsView>) -> Self {
         let value = Settings::get(cx).terminal.scrollback_lines;
         let baseline = cx.global::<ConfigFiles>().base.terminal.scrollback_lines;
