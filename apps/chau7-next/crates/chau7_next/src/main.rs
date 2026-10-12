@@ -25,6 +25,8 @@ mod memory_pressure;
 mod migration;
 mod monitoring;
 mod monitoring_status;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+mod native_parity_fixture;
 mod notifications;
 mod observability;
 mod pane;
@@ -86,6 +88,10 @@ fn clean_inherited_environment() {
 pub(crate) use logging::log_file_path;
 
 fn main() {
+    #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+    if let Some(code) = native_parity_fixture::run_if_requested() {
+        std::process::exit(code);
+    }
     if let Some(code) = hang_watchdog::run_cli_if_requested() {
         std::process::exit(code);
     }
