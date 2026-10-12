@@ -189,6 +189,39 @@ mod tests {
         }
     }
     #[test]
+    fn actual_rotated_asymmetric_mask_uses_inverse_mapping() {
+        let texture = Texture {
+            size: size(DevicePixels(2), DevicePixels(1)),
+            bytes: vec![0, 255],
+            kind: AtlasTextureKind::Monochrome,
+        };
+        let mut tile = tile(texture.kind);
+        tile.bounds.size = texture.size;
+        let sprite = MonochromeSprite {
+            order: 0,
+            pad: 0,
+            bounds: Bounds::new(
+                point(ScaledPixels(0.), ScaledPixels(0.)),
+                size(ScaledPixels(2.), ScaledPixels(1.)),
+            ),
+            content_mask: ContentMask {
+                bounds: Bounds::new(
+                    point(ScaledPixels(0.), ScaledPixels(0.)),
+                    size(ScaledPixels(1.), ScaledPixels(2.)),
+                ),
+            },
+            color: white(),
+            tile,
+            transformation: TransformationMatrix {
+                rotation_scale: [[0., -1.], [1., 0.]],
+                translation: [1., 0.],
+            },
+        };
+        let mut canvas = Canvas::new(1, 2, true).unwrap();
+        monochrome(&mut canvas, &sprite, &texture).unwrap();
+        assert_eq!(canvas.bytes, [0, 0, 0, 0, 255, 255, 255, 255]);
+    }
+    #[test]
     fn transformed_mask_clips_in_screen_space_and_color_coverage_is_bgra() {
         let texture = Texture {
             size: size(DevicePixels(1), DevicePixels(1)),

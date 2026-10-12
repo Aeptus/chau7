@@ -14,6 +14,8 @@ use gpui::{AtlasTextureKind, Scene};
 pub struct Frame {
     pub canvas: Canvas,
     pub primitive_counts: [u64; 8],
+    /// Cached sprite batches whose texture was already retired, as in Metal.
+    pub retired_sprite_batches: u64,
 }
 /// Renders all eight public Scene primitive families without Metal resources.
 pub fn render(
@@ -25,6 +27,7 @@ pub fn render(
 ) -> Result<Frame> {
     let mut canvas = Canvas::new(width, height, transparent)?;
     let mut counts = [0u64; 8];
+    let mut retired_sprite_batches = 0u64;
     for batch in scene.batches() {
         match batch {
             gpui::PrimitiveBatch::Shadows(range) => {
@@ -96,9 +99,12 @@ pub fn render(
                     texture_id.kind == AtlasTextureKind::Monochrome,
                     "monochrome batch has wrong atlas format"
                 );
-                let texture = atlas.texture(texture_id).ok_or_else(|| {
-                    anyhow::anyhow!("software monochrome atlas texture unavailable")
-                })?;
+                let Some(texture) = atlas.texture(texture_id) else {
+                    // GPUI may replay a cached scene after image/glyph eviction.
+                    // Match Metal's retired texture skip, while exposing it.
+                    retired_sprite_batches += 1;
+                    continue;
+                };
                 for sprite in &scene.monochrome_sprites[range] {
                     sprites::monochrome(&mut canvas, sprite, &texture)?;
                     counts[4] += 1;
@@ -109,9 +115,10 @@ pub fn render(
                     texture_id.kind == AtlasTextureKind::Subpixel,
                     "LCD batch has wrong atlas format"
                 );
-                let texture = atlas
-                    .texture(texture_id)
-                    .ok_or_else(|| anyhow::anyhow!("software LCD atlas texture unavailable"))?;
+                let Some(texture) = atlas.texture(texture_id) else {
+                    retired_sprite_batches += 1;
+                    continue;
+                };
                 for sprite in &scene.subpixel_sprites[range] {
                     sprites::subpixel(&mut canvas, sprite, &texture)?;
                     counts[5] += 1;
@@ -122,9 +129,10 @@ pub fn render(
                     texture_id.kind == AtlasTextureKind::Polychrome,
                     "color batch has wrong atlas format"
                 );
-                let texture = atlas
-                    .texture(texture_id)
-                    .ok_or_else(|| anyhow::anyhow!("software color atlas texture unavailable"))?;
+                let Some(texture) = atlas.texture(texture_id) else {
+                    retired_sprite_batches += 1;
+                    continue;
+                };
                 for sprite in &scene.polychrome_sprites[range] {
                     sprites::polychrome(&mut canvas, sprite, &texture)?;
                     counts[6] += 1;
@@ -141,6 +149,7 @@ pub fn render(
     Ok(Frame {
         canvas,
         primitive_counts: counts,
+        retired_sprite_batches,
     })
 }
 #[cfg(test)]
@@ -294,6 +303,9 @@ mod tests {
             path: "owned-scene".into(),
             size: size(DevicePixels(1), DevicePixels(1)),
         }));
-        assert!(render(&scene, &atlas, 64, 64, false).is_err());
+        let retired = render(&scene, &atlas, 64, 64, false).unwrap();
+        assert_eq!(retired.retired_sprite_batches, 1);
+        assert_eq!(retired.primitive_counts[4], 0);
+        assert_eq!(retired.primitive_counts[6], 1);
     }
 }

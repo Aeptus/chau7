@@ -6,6 +6,7 @@ pub mod fills;
 
 pub mod canvas;
 pub mod paths;
+pub mod presentation;
 pub mod primitives;
 pub mod scene;
 pub mod sprites;

@@ -117,9 +117,15 @@
           "before_sha256": null,
           "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
           "kind": "new_source"
+        },
+        {
+          "after_sha256": "a330c14da4492c1a020b18de770f1718a4c141050852b09ee2a6c677325bb21a",
+          "before_sha256": "5d604beb8297a134badd177dd08190b2892823c1743d4df94419ca0610a05d65",
+          "description": "Add checked ordinary CALayer/CoreGraphics software presentation and measured image/frame storage; match retired Metal-atlas replay, fallible capture and transformed sprite fixtures",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "5d604beb8297a134badd177dd08190b2892823c1743d4df94419ca0610a05d65",
+      "current_sha256": "a330c14da4492c1a020b18de770f1718a4c141050852b09ee2a6c677325bb21a",
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/software_renderer/canvas.rs"
@@ -145,9 +151,15 @@
           "before_sha256": null,
           "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
           "kind": "new_source"
+        },
+        {
+          "after_sha256": "f1f8115d88002b626e78fb83ef01a971a50a4aa7fa95363c8d41dfc6565cf148",
+          "before_sha256": "d1314f59ce63ea409672f2c6331c6e900ee6ca7d984edf8e16908173a2b00d36",
+          "description": "Add checked ordinary CALayer/CoreGraphics software presentation and measured image/frame storage; match retired Metal-atlas replay, fallible capture and transformed sprite fixtures",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "d1314f59ce63ea409672f2c6331c6e900ee6ca7d984edf8e16908173a2b00d36",
+      "current_sha256": "f1f8115d88002b626e78fb83ef01a971a50a4aa7fa95363c8d41dfc6565cf148",
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/software_renderer/mod.rs"
@@ -187,9 +199,15 @@
           "before_sha256": null,
           "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
           "kind": "new_source"
+        },
+        {
+          "after_sha256": "eb0ff72b2d422fcdec18ef80e7e4f8366cd44eac4aeea91e6996ce250378c258",
+          "before_sha256": "564d294a0e9fd59db3e020099d9b05572ecc8b94b4b15bf2a0a4f9c195db6e59",
+          "description": "Add checked ordinary CALayer/CoreGraphics software presentation and measured image/frame storage; match retired Metal-atlas replay, fallible capture and transformed sprite fixtures",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "564d294a0e9fd59db3e020099d9b05572ecc8b94b4b15bf2a0a4f9c195db6e59",
+      "current_sha256": "eb0ff72b2d422fcdec18ef80e7e4f8366cd44eac4aeea91e6996ce250378c258",
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/software_renderer/scene.rs"
@@ -201,9 +219,15 @@
           "before_sha256": null,
           "description": "Add complete bounded CPU scene rasterization support and isolated primitive regression fixtures; platform adapter not selected yet",
           "kind": "new_source"
+        },
+        {
+          "after_sha256": "d7ffaa6185070929a59fc6015be5c119d8480d5e3cbc1b6b819ab93218dccf99",
+          "before_sha256": "66920da19005b614f315aedf3669bd3be81da17d193396b115627ae1a31db7f2",
+          "description": "Add checked ordinary CALayer/CoreGraphics software presentation and measured image/frame storage; match retired Metal-atlas replay, fallible capture and transformed sprite fixtures",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "66920da19005b614f315aedf3669bd3be81da17d193396b115627ae1a31db7f2",
+      "current_sha256": "d7ffaa6185070929a59fc6015be5c119d8480d5e3cbc1b6b819ab93218dccf99",
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/software_renderer/sprites.rs"
@@ -235,6 +259,20 @@
       "original_sha256": "c414bf9caf88413b04fb6a3214c4f070686b454c82c28fa471af9d1bcc91ddba",
       "package": "gpui-pre-apple",
       "path": "src/metal_atlas.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "6d79491a8104bd162a1414ca5f73a58170d8a8c433899c13d4db315eaaa77a85",
+          "before_sha256": null,
+          "description": "Add checked ordinary CALayer/CoreGraphics software presentation and measured image/frame storage; match retired Metal-atlas replay, fallible capture and transformed sprite fixtures",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "6d79491a8104bd162a1414ca5f73a58170d8a8c433899c13d4db315eaaa77a85",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/presentation.rs"
     }
   ],
   "format_version": 1
