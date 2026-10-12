@@ -20,5 +20,5 @@ The Command Palette includes commands for:
 - Edit operations (Copy, Paste, Find)
 - View settings (Zoom, Clear Screen)
 - Tab management (Navigate, Rename, Move)
-- Window management (Settings, Debug Console)
+- Window management (Settings, Debug Console, AI Terminal Logs)
 - Help (Documentation, About)

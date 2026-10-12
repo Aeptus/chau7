@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 
-- Share compatible Next app and embedded Rust helper artifacts in one private worktree target cache by default, while preserving explicit cache overrides and artifact selection. Speed measurements remain pending.
+- Keep fast Next app and embedded Rust helper artifacts in one private worktree target cache, and isolate symbol-rich diagnostic builds under `target/diagnostic` by default while preserving explicit cache overrides and artifact selection. Speed measurements remain pending.
 
 - Make optimized Next builds default to LTO off, 64 codegen units and local incremental caching, with an explicit diagnostic mode for symbols and verbose logs. Apply matching settings to the app and Rust helpers, verify all seven signed package artifacts and publish source/compiler/hash evidence. Select installed CLI binaries from actual Cargo artifacts to honor configured targets.
 
@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show selected-tab tokens per second in the overlay across proxied Anthropic, OpenAI, and Gemini streams, with Claude Code and Codex transcript rates for direct CLI sessions; estimated readings are marked and explain their source and timing. Keep transient rate readings in a bounded recent-tab cache.
 
 ### Fixed
+
+- Correct the Debug Console shortcut in the in-app help to match the current Swift and Next default (⌥⌘L), and list AI Terminal Logs among the command-palette entries.
+
 
 - Preserve the native background-Warm predicate and deadline while recording actual memory, selection and window state on timeout to diagnose the remaining fallback acceptance failure.
 

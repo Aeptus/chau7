@@ -31,6 +31,7 @@ assert_file_contains() {
 # the CI-wide CARGO_INCREMENTAL=0 override when one is already set.
 (
   unset BUILD_MODE CARGO_INCREMENTAL BUILD_LOG CARGO_BUILD_VERBOSE
+  unset CARGO_TARGET_DIR OPTIM_TARGET_DIR
   unset CARGO_PROFILE_RELEASE_DEBUG CARGO_PROFILE_RELEASE_STRIP
   unset CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG
   unset CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP
@@ -39,6 +40,7 @@ assert_file_contains() {
   # shellcheck source=apps/chau7-next/scripts/build-mode.sh
   source "$APP_ROOT/scripts/build-mode.sh"
   [[ "$BUILD_MODE" == fast ]]
+  [[ -z "${CARGO_TARGET_DIR:-}" ]]
   [[ "$CARGO_PROFILE_RELEASE_OPT_LEVEL" == 3 ]]
   [[ "$CARGO_PROFILE_RELEASE_CODEGEN_UNITS" == 64 ]]
   [[ "$CARGO_PROFILE_RELEASE_LTO" == off ]]
@@ -78,15 +80,16 @@ cat > "$FAKE_BIN/cargo-probe" <<'FAKE'
 printf 'probe output: %s\n' "$*"
 FAKE
 chmod 755 "$FAKE_BIN/cargo-probe"
-run_diagnostic_probe() {
-  local PATH="$FAKE_BIN:$PATH"
-  local BUILD_MODE=diagnostic CARGO_BUILD_VERBOSE=1
+run_diagnostic_probe() (
+  cd "$APP_ROOT"
+  local BUILD_MODE=diagnostic CARGO_BUILD_VERBOSE=1 CARGO_TARGET_DIR=''
   local BUILD_LOG="$TMP_ROOT/logs/diagnostic-cargo.log"
   local CARGO_INCREMENTAL CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS
   unset CARGO_INCREMENTAL CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS
-  export PATH BUILD_MODE CARGO_BUILD_VERBOSE BUILD_LOG
+  export BUILD_MODE CARGO_BUILD_VERBOSE BUILD_LOG CARGO_TARGET_DIR
   # shellcheck source=apps/chau7-next/scripts/build-mode.sh
   source "$APP_ROOT/scripts/build-mode.sh"
+  [[ "$CARGO_TARGET_DIR" == "$APP_ROOT/target/diagnostic" ]]
   [[ "$CARGO_PROFILE_RELEASE_OPT_LEVEL" == 3 ]]
   [[ "$CARGO_PROFILE_RELEASE_LTO" == off ]]
   [[ "$CARGO_PROFILE_RELEASE_DEBUG" == 2 ]]
@@ -94,10 +97,25 @@ run_diagnostic_probe() {
   [[ "$CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG" == 2 ]]
   [[ -z "${CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS:-}" ]]
   [[ " ${CARGO_BUILD_ARGS[*]} " == *" -vv "* ]]
-  run_cargo cargo-probe diagnostic-check
-}
+  run_cargo "$FAKE_BIN/cargo-probe" diagnostic-check
+)
 run_diagnostic_probe
 assert_file_contains "$TMP_ROOT/logs/diagnostic-cargo.log" 'probe output: diagnostic-check'
+
+# An explicit diagnostic CARGO_TARGET_DIR wins over the isolated default.
+run_diagnostic_explicit_target_probe() (
+  cd "$APP_ROOT"
+  local BUILD_MODE=diagnostic CARGO_BUILD_VERBOSE=0
+  local CARGO_TARGET_DIR="$TMP_ROOT/explicit-diagnostic-target"
+  local BUILD_LOG="$TMP_ROOT/logs/diagnostic-explicit-cargo.log"
+  export BUILD_MODE CARGO_BUILD_VERBOSE CARGO_TARGET_DIR BUILD_LOG
+  # shellcheck source=apps/chau7-next/scripts/build-mode.sh
+  source "$APP_ROOT/scripts/build-mode.sh"
+  [[ "$CARGO_TARGET_DIR" == "$TMP_ROOT/explicit-diagnostic-target" ]]
+  run_cargo "$FAKE_BIN/cargo-probe" diagnostic-explicit-check
+)
+run_diagnostic_explicit_target_probe
+assert_file_contains "$TMP_ROOT/logs/diagnostic-explicit-cargo.log" 'probe output: diagnostic-explicit-check'
 
 # Fake every external build/signing tool so the package flow checks cache
 # precedence, post-sign hashes, and sidecar placement without compiling code.
@@ -375,6 +393,22 @@ validate_bundle "$fast_bundle" "$fast_manifest" fast "$FIXTURE_APP/target" 0 ''
 assert_file_contains "$FAKE_STATE/go-args.log" '-s -w'
 [[ -f "$FIXTURE_APP/target/aarch64-apple-darwin/release/chau7-next" ]] || fail 'default main cache was not used'
 [[ -f "$FIXTURE_APP/target/aarch64-apple-darwin/release/chau7-optim" ]] || fail 'default shared helper cache was not used'
+assert_file_contains "$FIXTURE_APP/target/aarch64-apple-darwin/release/chau7-next" "targetdir=$FIXTURE_APP/target"
+
+# Diagnostic mode gets its own default app and helper cache, with package
+# evidence still checking the expected target and all seven signed artifacts.
+: > "$FAKE_STATE/go-args.log"
+diagnostic_default_paths="$(run_fake_bundle diagnostic diagnostic-default '' '' 0 '')"
+diagnostic_default_bundle="$(printf '%s\n' "$diagnostic_default_paths" | sed -n '1p')"
+diagnostic_default_manifest="$(printf '%s\n' "$diagnostic_default_paths" | sed -n '2p')"
+validate_bundle "$diagnostic_default_bundle" "$diagnostic_default_manifest" diagnostic \
+  "$FIXTURE_APP/target/diagnostic" 0 ''
+[[ -f "$FIXTURE_APP/target/diagnostic/aarch64-apple-darwin/release/chau7-next" ]] \
+  || fail 'default diagnostic app cache was not used'
+[[ -f "$FIXTURE_APP/target/diagnostic/aarch64-apple-darwin/release/chau7-optim" ]] \
+  || fail 'default diagnostic helper cache was not used'
+assert_file_contains "$FIXTURE_APP/target/diagnostic/aarch64-apple-darwin/release/chau7-next" \
+  "targetdir=$FIXTURE_APP/target/diagnostic"
 
 # Explicit relative cache paths resolve from the app workspace. OPTIM_TARGET_DIR
 # wins for shared helpers even with CARGO_TARGET_DIR set; a stale default helper

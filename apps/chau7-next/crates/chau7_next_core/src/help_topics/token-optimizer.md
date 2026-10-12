@@ -297,7 +297,7 @@ Flags like `-q` (quiet), `-c` (count), and `-l` (files-only) in grep produce no 
 
 ## Monitoring
 
-Open the **Debug Console** (⇧⌘L → Token Optimizer tab) to see:
+Open the **Debug Console** (⌥⌘L → Token Optimizer tab) to see:
 - **Optimization rate**: Percentage of commands successfully optimized
 - **Tokens saved**: Total token savings from the optimizer
 - **Per-tab breakdown**: Stats for each terminal tab

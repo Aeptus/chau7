@@ -43,11 +43,12 @@ The default keeps `opt-level=3`, turns LTO off, uses 64 codegen units and
 incremental compilation for repeat local builds. The higher codegen-unit count
 favors build parallelism and can trade away some runtime optimization; no timing
 or runtime-performance claim is made without measurements. CI's explicit
-`CARGO_INCREMENTAL=0` remains in force. Both Rust workspaces use the same
-settings and share this worktree's `target` directory by default, allowing
-compatible host and build dependencies to reuse artifacts. Set
+`CARGO_INCREMENTAL=0` remains in force. Fast mode shares this worktree's
+`target` directory across both Rust workspaces by default; diagnostic mode uses
+`target/diagnostic` so symbol-rich artifacts stay separate. Set
 `OPTIM_TARGET_DIR` to give the helpers a separate cache; an explicit
-`CARGO_TARGET_DIR` selects the cache for both workspaces. `CARGO_BUILD_JOBS`
+`CARGO_TARGET_DIR` selects the cache for both workspaces in either mode.
+`CARGO_BUILD_JOBS`
 passes through unchanged if you want to set a worker limit. Run one integrated
 Cargo gate at a time against its frozen source revision; Cargo can parallelize
 compilation within that invocation. For concurrent worktrees, keep each

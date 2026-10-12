@@ -40,4 +40,4 @@ Click any shortcut to record a new key combination.
 - **⇧⌘P**: Command Palette
 - **⇧⌘O**: SSH Connections
 - **⌘;**: Snippets
-- **⇧⌘L**: Debug Console
+- **⌥⌘L**: Debug Console

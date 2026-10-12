@@ -20,6 +20,12 @@ case "$BUILD_MODE" in
     ;;
 esac
 
+# Keep symbol-rich artifacts separate from the default fast cache. Packaging
+# sources this file from the app workspace after resolving explicit overrides.
+if [[ "$BUILD_MODE" == diagnostic && -z "${CARGO_TARGET_DIR:-}" ]]; then
+  export CARGO_TARGET_DIR="$PWD/target/diagnostic"
+fi
+
 # Keep optimized runtime code and avoid the expensive whole-program LTO pass.
 # More codegen units and incremental state favor short local rebuilds; Cargo's
 # global CARGO_INCREMENTAL setting still takes precedence (CI sets it to 0).
