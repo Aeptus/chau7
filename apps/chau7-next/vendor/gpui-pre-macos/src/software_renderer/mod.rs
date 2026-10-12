@@ -3,6 +3,7 @@
 //! fixed startup policy requires it or initial Metal preparation fails.
 pub mod atlas;
 pub mod fills;
+pub(crate) mod frame_clock;
 
 pub mod canvas;
 pub mod paths;
