@@ -250,12 +250,31 @@ fn resolve_executable() -> Option<PathBuf> {
         }
     })
 }
+#[derive(Clone, Copy)]
+enum CaptureKind {
+    List,
+    Poll,
+    Claim,
+    Complete,
+}
+impl CaptureKind {
+    fn caller(self) -> &'static str {
+        match self {
+            Self::List => "monitor.aethyme_delivery.list",
+            Self::Poll => "monitor.aethyme_delivery.poll",
+            Self::Claim => "monitor.aethyme_delivery.claim",
+            Self::Complete => "monitor.aethyme_delivery.complete",
+        }
+    }
+}
+
 struct Runner {
     executable: PathBuf,
     worker: String,
     stopped: Arc<AtomicBool>,
     backoff: Option<Instant>,
     logged_unavailable: bool,
+    incomplete_failures: [u32; 4],
 }
 impl Runner {
     fn new(stopped: Arc<AtomicBool>) -> Self {
@@ -265,6 +284,7 @@ impl Runner {
             stopped,
             backoff: None,
             logged_unavailable: false,
+            incomplete_failures: [0; 4],
         }
     }
     fn backing_off(&self) -> bool {
@@ -276,10 +296,42 @@ impl Runner {
             log::info!("{message}");
         }
     }
-    fn run(&mut self, root: &str, args: Vec<String>) -> Option<subprocess::CaptureResult> {
+    // Consecutive incomplete captures are one outage. Never retry an uncertain
+    // claim immediately or flood the operational log; successful capture resets.
+    fn incomplete_capture(&mut self, kind: CaptureKind, now: Instant) -> bool {
+        if self.stopped.load(Ordering::Acquire) {
+            return false;
+        }
+        let failures = &mut self.incomplete_failures[kind as usize];
+        let first = *failures == 0;
+        let exponent = (*failures).min(4);
+        let delay = Duration::from_secs((30_u64 << exponent).min(300));
+        *failures = failures.saturating_add(1);
+        self.backoff = Some(now + delay);
+        first
+    }
+    fn completion_warning_required(&self) -> bool {
+        !self.stopped.load(Ordering::Acquire) && !self.backing_off()
+    }
+    fn run(
+        &mut self,
+        root: &str,
+        args: Vec<String>,
+        kind: CaptureKind,
+    ) -> Option<subprocess::CaptureResult> {
         if self.backing_off() || self.stopped.load(Ordering::Acquire) {
             return None;
         }
+        let mut work =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                "aethyme.delivery",
+                "subprocess_capture_wall",
+                "application",
+                kind.caller(),
+                chau7_next_core::work_profiler::Queue::Background,
+            ));
+        work.items(1);
+        work.idle(false);
         let result = subprocess::capture_unless(
             Command::new(&self.executable)
                 .args(args)
@@ -291,13 +343,20 @@ impl Runner {
             4 * 1024 * 1024,
             || self.stopped.load(Ordering::Acquire),
         );
+        if let Ok(output) = &result {
+            work.bytes(output.stdout.len().saturating_add(output.stderr.len()));
+        }
+        // This phase includes actual subprocess execution/wait, never the
+        // enclosing executor timer, logging or later recipient delivery.
+        drop(work);
         let Ok(result) = result else {
             self.log_unavailable("Aethyme Next delivery could not launch its executable");
             return None;
         };
         if !result.completed() {
-            self.backoff = Some(Instant::now() + Duration::from_secs(30));
-            log::warn!("Aethyme capture incomplete; leaving any uncertain claim to expire");
+            if self.incomplete_capture(kind, Instant::now()) {
+                log::warn!("Aethyme capture incomplete; leaving any uncertain claim to expire");
+            }
             return None;
         }
         if result.status != Some(0) {
@@ -311,11 +370,14 @@ impl Runner {
             }
             return None;
         }
+        self.incomplete_failures[kind as usize] = 0;
+        self.logged_unavailable = false;
+        self.backoff = None;
         Some(result)
     }
     fn run_root(&mut self, root: &str, mut deliver: impl FnMut(&Target, &str) -> Readiness) {
         let Some(watches) = self
-            .run(root, delivery::list_watches())
+            .run(root, delivery::list_watches(), CaptureKind::List)
             .and_then(|r| serde_json::from_slice::<Vec<Watch>>(&r.stdout).ok())
         else {
             return;
@@ -326,10 +388,11 @@ impl Runner {
             .filter(|w| w.id > 0 && w.status == "active" && w.next_poll_at.unwrap_or(0) <= now)
             .take(4)
         {
-            let _ = self.run(root, delivery::poll_watch(watch.id));
+            let _ = self.run(root, delivery::poll_watch(watch.id), CaptureKind::Poll);
         }
         for _ in 0..4 {
-            let Some(result) = self.run(root, delivery::claim(&self.worker)) else {
+            let Some(result) = self.run(root, delivery::claim(&self.worker), CaptureKind::Claim)
+            else {
                 return;
             };
             let envelope = serde_json::from_slice::<ClaimReport>(&result.stdout)
@@ -359,8 +422,10 @@ impl Runner {
             .run(
                 root,
                 delivery::complete(&envelope.item, &self.worker, readiness),
+                CaptureKind::Complete,
             )
             .is_none()
+            && self.completion_warning_required()
         {
             log::warn!("Aethyme completion failed; its fenced claim will expire safely");
         }
@@ -540,5 +605,170 @@ esac
         f.runner
             .run_root(f.root.to_str().unwrap(), |_, _| panic!("stopped"));
         assert!(f.calls().is_empty());
+    }
+    #[test]
+    fn incomplete_captures_back_off_with_a_bound_and_one_warning_per_outage() {
+        let mut runner = Runner::new(Arc::new(AtomicBool::new(false)));
+        let now = Instant::now();
+        for (index, seconds) in [30, 60, 120, 240, 300, 300].into_iter().enumerate() {
+            assert_eq!(
+                runner.incomplete_capture(CaptureKind::List, now),
+                index == 0
+            );
+            assert_eq!(
+                runner.backoff.unwrap().duration_since(now),
+                Duration::from_secs(seconds)
+            );
+        }
+        runner.incomplete_failures[CaptureKind::List as usize] = u32::MAX;
+        assert!(!runner.incomplete_capture(CaptureKind::List, now));
+        assert_eq!(
+            runner.incomplete_failures[CaptureKind::List as usize],
+            u32::MAX
+        );
+        assert_eq!(
+            runner.backoff.unwrap().duration_since(now),
+            Duration::from_secs(300)
+        );
+    }
+    #[test]
+    fn successful_owned_capture_resets_incomplete_outage_and_normal_polling() {
+        let mut fixture = Fixture::new("chau7-next:", None, false);
+        assert!(
+            fixture
+                .runner
+                .incomplete_capture(CaptureKind::List, Instant::now())
+        );
+        assert!(
+            !fixture
+                .runner
+                .incomplete_capture(CaptureKind::List, Instant::now())
+        );
+        // Model expiry without sleeping; the actual fake CLI capture must reset.
+        fixture.runner.backoff = None;
+        assert!(
+            fixture
+                .runner
+                .run(
+                    fixture.root.to_str().unwrap(),
+                    delivery::list_watches(),
+                    CaptureKind::List
+                )
+                .is_some()
+        );
+        assert_eq!(fixture.runner.incomplete_failures, [0; 4]);
+        assert!(fixture.runner.backoff.is_none());
+        assert!(
+            fixture
+                .runner
+                .incomplete_capture(CaptureKind::List, Instant::now())
+        );
+        assert!(
+            fixture
+                .calls()
+                .iter()
+                .any(|call| call.contains("watch pr list"))
+        );
+    }
+    #[test]
+    fn shutdown_cancellation_does_not_open_an_incomplete_outage() {
+        let mut runner = Runner::new(Arc::new(AtomicBool::new(true)));
+        assert!(!runner.incomplete_capture(CaptureKind::List, Instant::now()));
+        assert_eq!(runner.incomplete_failures, [0; 4]);
+        assert!(runner.backoff.is_none());
+    }
+
+    #[test]
+    fn actual_output_limit_stops_delivery_and_repeated_captures_back_off() {
+        let mut fixture = Fixture::new("chau7-next:", None, false);
+        std::fs::write(
+            &fixture.runner.executable,
+            "#!/bin/sh\nprintf '%s\n' attempt >> attempts\nhead -c 4194305 /dev/zero\n",
+        )
+        .unwrap();
+        for expected in [1, 2] {
+            fixture.runner.backoff = None;
+            fixture
+                .runner
+                .run_root(fixture.root.to_str().unwrap(), |_, _| {
+                    panic!("incomplete capture delivered")
+                });
+            assert_eq!(
+                fixture.runner.incomplete_failures[CaptureKind::List as usize],
+                expected
+            );
+            assert!(fixture.runner.backing_off());
+            assert!(
+                fixture
+                    .runner
+                    .run(
+                        fixture.root.to_str().unwrap(),
+                        delivery::list_watches(),
+                        CaptureKind::List
+                    )
+                    .is_none()
+            );
+        }
+        assert_eq!(
+            std::fs::read_to_string(fixture.root.join("attempts"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+    }
+    #[test]
+    fn successful_list_and_poll_do_not_reset_an_incomplete_claim_outage() {
+        let mut fixture = Fixture::new("chau7-next:", None, false);
+        let script = std::fs::read_to_string(&fixture.runner.executable).unwrap();
+        let script = script.replace("case \"$3:$4:$5\" in\n", "if [ \"$3:$4\" = 'deliveries:claim' ]; then\nprintf '%s\n' attempt >> attempts\nhead -c 4194305 /dev/zero\nexit 0\nfi\ncase \"$3:$4:$5\" in\n");
+        std::fs::write(&fixture.runner.executable, script).unwrap();
+        for expected in [1, 2] {
+            fixture.runner.backoff = None;
+            fixture
+                .runner
+                .run_root(fixture.root.to_str().unwrap(), |_, _| {
+                    panic!("incomplete claim delivered")
+                });
+            assert_eq!(
+                fixture.runner.incomplete_failures[CaptureKind::Claim as usize],
+                expected
+            );
+            assert_eq!(
+                fixture.runner.incomplete_failures[CaptureKind::List as usize],
+                0
+            );
+            assert_eq!(
+                fixture.runner.incomplete_failures[CaptureKind::Poll as usize],
+                0
+            );
+            assert!(!fixture.runner.completion_warning_required());
+        }
+        assert_eq!(
+            std::fs::read_to_string(fixture.root.join("attempts"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+        assert_eq!(
+            fixture
+                .calls()
+                .iter()
+                .filter(|call| call.contains("watch pr list"))
+                .count(),
+            2
+        );
+    }
+    #[test]
+    fn completion_warning_is_suppressed_for_backoff_and_shutdown() {
+        let mut runner = Runner::new(Arc::new(AtomicBool::new(false)));
+        assert!(runner.completion_warning_required());
+        assert!(runner.incomplete_capture(CaptureKind::Complete, Instant::now()));
+        assert!(!runner.completion_warning_required());
+        runner.backoff = None;
+        assert!(runner.completion_warning_required());
+        runner.stopped.store(true, Ordering::Release);
+        assert!(!runner.completion_warning_required());
     }
 }
