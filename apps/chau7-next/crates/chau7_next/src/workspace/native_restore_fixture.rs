@@ -505,7 +505,7 @@ async fn verify_keyboard_workspace(
     })
     .await?;
     ensure(
-        first_session.read(cx).exited.is_none(),
+        cx.update(|cx| first_session.read(cx).exited.is_none()),
         "Cmd+C terminated the no-selection PTY instead of delivering ETX",
     )?;
 
@@ -646,7 +646,7 @@ async fn verify_keyboard_workspace(
         "later shortcuts changed the exact Cmd+C PTY byte",
     )?;
     ensure(
-        first_session.read(cx).exited.is_none(),
+        cx.update(|cx| first_session.read(cx).exited.is_none()),
         "first owned PTY exited before fixture cleanup",
     )?;
     Ok(serde_json::json!({

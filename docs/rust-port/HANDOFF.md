@@ -31,6 +31,13 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
+- Follow-up source `0f40436372eb13684a09e9449e35b24aad8ad2eb` passed seven
+  staged commit gates, nine full-suite publication gates and four Python parser
+  tests. Its focused optional Rust unit-test compilation failed on two
+  `Entity::read` calls receiving `AsyncApp` instead of `App` in the keyboard
+  fixture. No fixture app was launched, and the nine-stage compiler sequence
+  was not started. The follow-up source correction routes those two unchanged
+  liveness assertions through `cx.update`; fresh validation remains pending.
 - Latest compiled checkpoint `ab64761304b0339cdace38413bed241432e7e1a7` (tree
   `9e6987d719189b415113e0fe1671aa9f52b46a4a`) passed all nine fast compiler
   stages and 3,019 workspace tests (two ignored). The isolated native Software

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Validation
 
+- Follow-up source `0f40436372eb13684a09e9449e35b24aad8ad2eb` passed seven
+  staged commit gates, nine full-suite publication gates and four Python parser
+  tests. Its focused optional Rust unit-test compilation failed on two keyboard
+  fixture reads using `AsyncApp` where `App` is required; no app was launched or
+  nine-stage compiler sequence started. The follow-up correction uses the
+  existing `cx.update` path for both unchanged PTY-liveness assertions. Fresh
+  compiler/runtime validation remains pending.
 - On exact source `ab64761304b0339cdace38413bed241432e7e1a7`, all nine fast
   compiler stages passed and the workspace reported 3,019 passed tests (two
   ignored). The native Software matrix passed Restore, Settings and Cache; the
