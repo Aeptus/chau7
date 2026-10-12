@@ -75,7 +75,10 @@ impl Workspace {
                             .font_family("Menlo")
                             .text_color(chrome.text_muted)
                             .child(spinner)
-                            .child("Shell initializing\u{2026}"),
+                            .child(crate::l10n::l(
+                                "overlay.shellInitializing",
+                                "Shell initializing\u{2026}",
+                            )),
                     )
                     .into_any_element(),
             );
