@@ -1,5 +1,8 @@
 //! Real AppKit source layout; raw text, selection and undo belong to NSTextView.
 //! The NSScrollView is attached only while its GPUI source element is mounted.
+#[cfg(feature = "native-parity-fixture")]
+pub(super) mod fixture;
+
 mod editing;
 mod host;
 mod styles;
