@@ -275,6 +275,63 @@ pub(in crate::panes::editor) async fn verify(
         "actual Cmd+S delivery did not save the owned file",
     )?;
 
+    cx.update(|cx| {
+        ensure(
+            editor
+                .read(cx)
+                .native_fixture_header_progress
+                .get()
+                .is_none(),
+            "task-free source painted a progress counter",
+        )
+    })
+    .map_err(error)?;
+    // Earlier deterministic Undo/Redo disables event grouping. Restore the
+    // production manager policy before further input delivered in real frames.
+    cx.update(|_| {
+        native
+            .text
+            .undoManager()
+            .ok_or("owned history missing")
+            .map(|undo| undo.setGroupsByEvent(true))
+    })
+    .map_err(error)?;
+    let tasks = "\n- [x] done\n- [ ] pending\n```\n- [x] fenced example\n```\n";
+    cx.update(|_| unsafe {
+        native.text.insertText_replacementRange(
+            &NSString::from_str(tasks),
+            NSRange::new(native.text.string().length(), 0),
+        );
+    });
+    settle(handle, cx).await?;
+    cx.update(|cx| {
+        ensure(
+            editor.read(cx).native_fixture_header_progress.get() == Some((1, 2)),
+            "actual painted header did not show 1/2 or counted a fenced example",
+        )
+    })
+    .map_err(error)?;
+    cx.update(|_| {
+        let text = native.text.string().to_string();
+        let start = text.find("[ ]").ok_or("owned pending task missing")?;
+        unsafe {
+            native.text.insertText_replacementRange(
+                &NSString::from_str("[x]"),
+                NSRange::new(text[..start].encode_utf16().count(), 3),
+            );
+        }
+        Ok::<_, String>(())
+    })
+    .map_err(error)?;
+    settle(handle, cx).await?;
+    cx.update(|cx| {
+        ensure(
+            editor.read(cx).native_fixture_header_progress.get() == Some((2, 2)),
+            "actual painted header did not update to 2/2 after native input",
+        )
+    })
+    .map_err(error)?;
+
     cx.update_window(handle.into(), |_, window, cx| {
         window.open_dialog(cx, |dialog, _, _| dialog.title("Owned editor fixture"))
     })
@@ -415,6 +472,8 @@ pub(in crate::panes::editor) async fn verify(
         "ordinary_keydown_current_source": true,
         "native_undo_redo_key_equivalents": true,
         "save_delivery_owned_file": true,
+        "painted_task_progress_updates_after_native_input": true,
+        "task_progress_excludes_code_fences": true,
         "actual_gpui_dialog_detach": true,
         "actual_gpui_sheet_detach": true,
         "actual_gpui_popup_context_detach": true,
