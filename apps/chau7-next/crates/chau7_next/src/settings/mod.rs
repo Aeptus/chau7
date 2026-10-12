@@ -191,7 +191,14 @@ impl Settings {
                     .get("next")
                     .is_some_and(|keys| keys.contains_key("telemetry_retention_days"))
                 {
-                    settings.general.telemetry_retention_days = fallback;
+                    settings.general.telemetry_retention_days = if raw
+                        .values()
+                        .any(|keys| keys.contains_key("telemetry_retention_days"))
+                    {
+                        0
+                    } else {
+                        fallback
+                    };
                 }
                 settings
             }
@@ -267,11 +274,21 @@ impl Settings {
         settings.installation_retention_default = current.installation_retention_default;
         if !config::is_valid_config(text) {
             settings.general.telemetry_retention_days = 0;
-        } else if !config::parse_raw(text)
-            .get("next")
-            .is_some_and(|keys| keys.contains_key("telemetry_retention_days"))
-        {
-            settings.general.telemetry_retention_days = current.general.telemetry_retention_days;
+        } else {
+            let raw = config::parse_raw(text);
+            if !raw
+                .get("next")
+                .is_some_and(|keys| keys.contains_key("telemetry_retention_days"))
+            {
+                settings.general.telemetry_retention_days = if raw
+                    .values()
+                    .any(|keys| keys.contains_key("telemetry_retention_days"))
+                {
+                    0
+                } else {
+                    current.general.telemetry_retention_days
+                };
+            }
         }
         settings
     }
