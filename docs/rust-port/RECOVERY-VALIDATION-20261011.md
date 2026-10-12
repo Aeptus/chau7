@@ -130,3 +130,30 @@ or accessibility acceptance.
 - Actual measured callbacks now distinguish classified idle work from activity that was not observed. PTY, remote, persistence, readiness, feedback and transcript callbacks expose idle counts; unclassified app/heartbeat/memory callbacks expose `activity_unknown_samples`. The bounded timer registry exposes its 128 inactive-lifetime limit separately from measured callback costs. Per-stage CPU and GPU completion remain null when unavailable.
 - At audit time the new launch has 0 error rows and 0 panic rows. Warning categories are recorded numerically in the local evidence, including notification permission and incomplete Aethyme capture while T7 access awaits consent. Native acceptance is not promoted by this checkpoint.
 - Local evidence: `native-79748ee9b629-bundle-manifest.json`, `native-79748-{runtime,perf-a,perf-b,timers,tabs}.json`, `native-79748-performance-and-launch-audit.json`, `chau7-next-native-79748.png`, the owned shell sample and scoped TCC log in the parity recovery evidence directory. Raw OS logs remain local; no report was sent externally.
+
+## Reproducible native fixture checkpoint 76887725 (2026-10-12)
+
+Clean source `76887725e37bdd506e0a6f0db599ffa085cf29b1` passes
+2,886 release workspace tests with two existing ignored tests. Strict default
+release workspace/all-target Clippy, formatting, parity and diff checks pass
+using the installed Rust 1.96.0 toolchain. The upstream `block 0.1.6`
+future-compatibility warning remains separate from these checks.
+
+`apps/chau7-next/scripts/native-parity.py` builds the opt-in acceptance feature
+in a separate target directory. It records the exact source, compiler and
+binary SHA-256, then requires one positive case report, exit zero and removal
+of that case's owned temporary profile. It cannot accept empty stdout as a
+successful native test. Feature-enabled fixture binaries are not app packages.
+
+The actual native run has one passing case and two failures. Restore passes
+with real platform frames, real owned PTYs, selected-first split activation,
+no transient-selection or parked-metadata PTYs, and two readiness-bound resume
+deliveries without terminators or duplicates. Settings fails at the loaded
+`promptInjection` target. Editor fails at its fixture's editor materialization
+step. Each case emits an explicit result and removes its owned profile; the
+overall manifest is false. These failures do not promote the inventory.
+
+Local evidence is retained as `native-768877-manifest.json`, the three case
+stdout/stderr pairs and build log, plus `source-768877-pinned-*` check logs in
+the recovery evidence directory. Subsequent anchor and fixture corrections
+require their own native rerun. No user session or global permission changed.
