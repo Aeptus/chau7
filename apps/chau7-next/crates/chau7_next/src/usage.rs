@@ -1048,6 +1048,15 @@ pub(super) fn shutdown_maintenance(cx: &mut App) -> Option<super::cache::Drain> 
     drop(global.timer.take());
     Some(global.activity.stop())
 }
+pub(super) fn maintenance_diagnostics(cx: &App) -> serde_json::Value {
+    cx.try_global::<Maintenance>()
+        .map(|m| {
+            let pending = m.pending.lock();
+            serde_json::json!({"accepting": !pending.stopped, "running":pending.running,
+            "replacement_pending":pending.latest.is_some(), "activity":m.activity.diagnostics()})
+        })
+        .unwrap_or(serde_json::Value::Null)
+}
 fn maintenance_guard(cx: &App) -> Option<super::cache::WorkGuard> {
     cx.try_global::<Maintenance>()?.activity.begin()
 }
@@ -1122,6 +1131,21 @@ pub fn refresh_latency(cx: &mut App) {
     ) else {
         return;
     };
+    use chau7_next_core::telemetry::store::StoreReadiness;
+    let readiness = recorder.store().readiness();
+    if readiness != StoreReadiness::Ready {
+        let mut state = global.0.lock();
+        state.refreshing = readiness == StoreReadiness::Loading;
+        state.error = if readiness == StoreReadiness::Loading {
+            None
+        } else {
+            Some(
+                "Telemetry database is unavailable; retaining the last successful observation"
+                    .into(),
+            )
+        };
+        return;
+    }
     let shared = global.0.clone();
     let mut pending = maintenance.pending.lock();
     if pending.stopped {

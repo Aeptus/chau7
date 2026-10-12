@@ -37,6 +37,8 @@ struct Active {
     runs: HashMap<String, TelemetryRun>,
 }
 
+type InitializeStore = Box<dyn FnOnce(&TelemetryStore) -> Result<(), String> + Send>;
+
 pub struct TelemetryRecorder {
     store: Arc<TelemetryStore>,
     providers: Arc<Vec<Box<dyn RunContentProvider>>>,
@@ -53,6 +55,50 @@ impl TelemetryRecorder {
             writer,
             active: Mutex::new(Active::default()),
         }
+    }
+
+    /// Memory-only construction on UI. Open/migrate is the first ordered job,
+    /// so later admitted run IDs never overtake initialization.
+    pub fn open_background(path: &Path, providers: Vec<Box<dyn RunContentProvider>>) -> Self {
+        Self::with_initializer(
+            path,
+            providers,
+            Box::new(|store| {
+                store
+                    .initialize_background()
+                    .map_err(|_| "telemetry initialization failed".into())
+            }),
+        )
+    }
+    fn with_initializer(
+        path: &Path,
+        providers: Vec<Box<dyn RunContentProvider>>,
+        initialize: InitializeStore,
+    ) -> Self {
+        let store = Arc::new(TelemetryStore::pending(path));
+        let recorder = Self::new(store.clone(), providers);
+        if recorder
+            .writer
+            .admit(
+                "initialize",
+                0,
+                Box::new(move |store| {
+                    // The guard includes any initializer failure/unwind before open.
+                    struct Wake<'a>(&'a TelemetryStore);
+                    impl Drop for Wake<'_> {
+                        fn drop(&mut self) {
+                            self.0.fail_initialization();
+                        }
+                    }
+                    let _wake = Wake(store);
+                    initialize(store)
+                }),
+            )
+            .is_err()
+        {
+            store.fail_initialization();
+        }
+        recorder
     }
 
     pub fn store(&self) -> &Arc<TelemetryStore> {
@@ -594,6 +640,127 @@ mod tests {
     }
 
     #[test]
+    fn background_open_is_first_and_queued_runs_drain_durably_without_ui_filesystem_work() {
+        use super::super::store::StoreReadiness;
+        use std::sync::mpsc;
+        let directory =
+            std::env::temp_dir().join(format!("next-bootstrap-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("nested/owned.db");
+        let caller = std::thread::current().id();
+        let (started, entered) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let recorder = TelemetryRecorder::with_initializer(
+            &path,
+            Vec::new(),
+            Box::new(move |store| {
+                started.send(std::thread::current().id()).unwrap();
+                released.recv().unwrap();
+                store
+                    .initialize_background()
+                    .map_err(|_| "owned initialize failed".into())
+            }),
+        );
+        assert_ne!(entered.recv().unwrap(), caller);
+        assert_eq!(recorder.store().readiness(), StoreReadiness::Loading);
+        assert!(!path.parent().unwrap().exists());
+        let id = recorder
+            .run_started("owned-tab", "owned-fake", "/synthetic", None, None)
+            .unwrap();
+        recorder
+            .update_session_id("owned-tab", "owned-native-id")
+            .unwrap();
+        recorder.tag_run(&id, &["owned-tag".into()]).unwrap();
+        let run = recorder.run_ended("owned-tab", Some(0)).unwrap();
+        recorder
+            .enqueue_completion(run, Some("owned-terminal-evidence".into()), None)
+            .unwrap();
+        assert_eq!(recorder.writer_status().accepted, 5);
+        // All of those admissions returned while even the parent directory was
+        // absent, proving they neither opened SQLite nor overtook its first job.
+        assert!(!path.exists());
+        let store = recorder.store().clone();
+        let reader = store.clone();
+        let waiting = std::thread::spawn(move || reader.wait_until_initialized());
+        release.send(()).unwrap();
+        waiting.join().unwrap().unwrap();
+        recorder.flush().unwrap();
+        let saved = store.get_run(&id).unwrap();
+        assert_eq!(saved.session_id.as_deref(), Some("owned-native-id"));
+        assert_eq!(saved.tags, vec!["owned-tag"]);
+        assert!(saved.ended_at.is_some());
+        assert_eq!(
+            store.get_turns(&id)[0].content.as_deref(),
+            Some("owned-terminal-evidence")
+        );
+        let shutdown = recorder.shutdown().unwrap();
+        assert!(recorder.shutdown().is_none());
+        let closed = store.clone();
+        let outcome = std::thread::spawn(move || {
+            let outcome = shutdown.finish().unwrap();
+            closed.close().unwrap();
+            outcome
+        })
+        .join()
+        .unwrap();
+        assert_eq!(outcome.accepted, outcome.processed);
+        assert_eq!(outcome.failed, 0);
+        assert_eq!(store.readiness(), StoreReadiness::Closed);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn failed_background_open_wakes_readers_and_reports_accepted_write_failures() {
+        use super::super::store::StoreReadiness;
+        let directory =
+            std::env::temp_dir().join(format!("next-bootstrap-failure-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let parent = directory.join("regular-parent");
+        std::fs::write(&parent, b"owned-preserved").unwrap();
+        let recorder = TelemetryRecorder::open_background(&parent.join("owned.db"), Vec::new());
+        recorder
+            .run_started("owned", "fake", "/synthetic", None, None)
+            .unwrap();
+        assert_eq!(recorder.flush(), Err(AdmissionError::PersistenceFailed));
+        assert!(recorder.store().wait_until_initialized().is_err());
+        assert_eq!(recorder.store().readiness(), StoreReadiness::Failed);
+        let store = recorder.store().clone();
+        let shutdown = recorder.shutdown().unwrap();
+        let outcome = std::thread::spawn(move || {
+            let outcome = shutdown.finish().unwrap();
+            store.close().unwrap();
+            outcome
+        })
+        .join()
+        .unwrap();
+        assert_eq!(outcome.accepted, outcome.processed);
+        assert_eq!(outcome.failed, 2); // initialization plus the actual admitted insert
+        assert_eq!(std::fs::read(parent).unwrap(), b"owned-preserved");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn unwinding_initializer_wakes_waiters_and_shutdown_reports_the_panic() {
+        let directory =
+            std::env::temp_dir().join(format!("next-bootstrap-panic-{}", uuid::Uuid::new_v4()));
+        let recorder = TelemetryRecorder::with_initializer(
+            &directory.join("owned.db"),
+            Vec::new(),
+            Box::new(|_| panic!("owned initializer failure")),
+        );
+        assert!(recorder.store().wait_until_initialized().is_err());
+        let shutdown = recorder.shutdown().unwrap();
+        assert!(
+            std::thread::spawn(move || shutdown.finish())
+                .join()
+                .unwrap()
+                .is_err()
+        );
+        recorder.store().close().unwrap();
+        assert!(!directory.exists());
+    }
+
+    #[test]
     fn actual_sql_mutex_does_not_block_admission_and_ordered_shutdown_persists_identity_and_content()
      {
         use std::sync::mpsc;
@@ -638,6 +805,12 @@ mod tests {
             producer
                 .enqueue_completion(ended, Some("owned fallback transcript".into()), None)
                 .unwrap();
+            assert_eq!(
+                producer.store().readiness(),
+                super::super::store::StoreReadiness::Ready
+            );
+            assert_eq!(producer.store().failure_count(), 0);
+            assert_eq!(producer.writer_status().accepted, 6);
             result_tx.send(id).unwrap();
         });
         // A bounded watchdog diagnoses regression; release happens even on
