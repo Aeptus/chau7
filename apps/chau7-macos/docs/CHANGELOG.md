@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the GPUI Metal headless constructor implementation behind the same test and benchmark feature gates as its type, restoring ordinary builds without fixture features. Preserve the original vendor provenance and record the source hash transition.
+
+
 - Make the Swift resume-prefill readiness regression observe actual terminal input delivery instead of an unrelated timer, preserving the not-ready assertion, exact text and existing two-second deadline.
 
 

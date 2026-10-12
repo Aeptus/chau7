@@ -61,9 +61,15 @@
           "before_sha256": "89a35ae8b182604c06d0efddecb3c0616ed7fd77704964fad57cef94b910d9e1",
           "description": "Preserve renderer behavior while satisfying Rust 1.99 strict Clippy: expression initialization, complete fixed-array chunks, explicit Default construction, safety documentation and conditional structure as applicable",
           "kind": "semantic"
+        },
+        {
+          "after_sha256": "c368c48946d0a760b44e5f1ee3e7921ae346c1b2db3ee03b93891bff688d02ee",
+          "before_sha256": "1544635cdb1d141dc09d9a8a088a1ea0ec24d778e1bcced242195fd435333273",
+          "description": "Gate the headless Metal inherent implementation like its type and constructor; add a regression for all four declarations without enabling test features in production",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "1544635cdb1d141dc09d9a8a088a1ea0ec24d778e1bcced242195fd435333273",
+      "current_sha256": "c368c48946d0a760b44e5f1ee3e7921ae346c1b2db3ee03b93891bff688d02ee",
       "original_sha256": "28ea7fbcc4e949d77a0b0f796b99864cd8cbdfc58c60c2a88b8484731f8eefab",
       "package": "gpui-pre-apple",
       "path": "src/metal_renderer.rs"

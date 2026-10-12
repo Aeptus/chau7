@@ -2088,6 +2088,7 @@ impl Default for MetalHeadlessRenderer {
     }
 }
 
+#[cfg(any(test, feature = "bench-support", feature = "test-support"))]
 impl MetalHeadlessRenderer {
     pub fn new() -> Self {
         let instance_buffer_pool = Arc::new(Mutex::new(InstanceBufferPool::default()));
@@ -2118,6 +2119,34 @@ impl gpui::PlatformHeadlessRenderer for MetalHeadlessRenderer {
 #[cfg(test)]
 mod initialization_error_tests {
     use super::*;
+
+    #[test]
+    fn headless_renderer_items_share_feature_gate() {
+        let lines: Vec<_> = include_str!("metal_renderer.rs").lines().collect();
+        let expected_gate =
+            r#"#[cfg(any(test, feature = "bench-support", feature = "test-support"))]"#;
+        for declaration in [
+            "pub struct MetalHeadlessRenderer {",
+            "impl Default for MetalHeadlessRenderer {",
+            "impl MetalHeadlessRenderer {",
+            "impl gpui::PlatformHeadlessRenderer for MetalHeadlessRenderer {",
+        ] {
+            let indices: Vec<_> = lines
+                .iter()
+                .enumerate()
+                .filter_map(|(index, line)| (line.trim() == declaration).then_some(index))
+                .collect();
+            assert_eq!(indices.len(), 1, "declaration count for {declaration}");
+            let index = indices[0];
+            assert!(index > 0, "missing feature gate for {declaration}");
+            assert_eq!(
+                lines[index - 1].trim(),
+                expected_gate,
+                "feature gate for {declaration}"
+            );
+        }
+    }
+
     #[test]
     fn nil_allocations_are_errors_before_foreign_owners_exist() {
         let result = unsafe {
