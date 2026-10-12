@@ -185,7 +185,7 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
         // Process pending adds/removes
         {
             let mut s = state.lock();
-            let adds: Vec<PtyEntry> = s.pending_adds.drain(..).collect();
+            let adds: Vec<PtyEntry> = std::mem::take(&mut s.pending_adds);
             for entry in adds {
                 let tid = entry.terminal_id;
                 let fd = entry.fd;
@@ -197,7 +197,7 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                     s.entries.len()
                 );
             }
-            let removes: Vec<RawFd> = s.pending_removes.drain(..).collect();
+            let removes: Vec<RawFd> = std::mem::take(&mut s.pending_removes);
             for fd in removes {
                 if let Some(entry) = s.entries.remove(&fd) {
                     info!(

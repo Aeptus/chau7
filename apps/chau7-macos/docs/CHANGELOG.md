@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Maintenance
+
+- Upgrade owned Chau7 Next SQLite, SHA-256, Base64 and TOML dependencies together with the four Rust helpers, preserving configuration serialization, canonical hashes, checked integer conversions and the terminal C header. Transfer pending PTY queues without collecting into a second vector; the GPUI family upgrade is coordinated separately.
+
 ### Added
 
 - Introduce Chau7 Next as an isolated Rust/GPUI macOS test app alongside Chau7, with its own bundle, data folders, helper ports and MCP bridge. Track parity against the current Swift sources in `docs/rust-port/`; full current parity remains in progress.

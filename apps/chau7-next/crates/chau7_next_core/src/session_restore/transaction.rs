@@ -37,7 +37,10 @@ pub struct ContextRef {
 impl ContextRef {
     pub fn new(bytes: &[u8]) -> Self {
         Self {
-            sha256: format!("{:x}", Sha256::digest(bytes)),
+            sha256: Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
             byte_count: bytes.len(),
         }
     }

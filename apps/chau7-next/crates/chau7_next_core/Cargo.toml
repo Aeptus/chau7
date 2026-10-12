@@ -16,7 +16,7 @@ sha2.workspace = true
 log.workspace = true
 rusqlite.workspace = true
 plist = "1"
-toml_edit = "=0.22.27"
+toml_edit = "0.25.17"
 flate2 = "1"
 
 libc = "0.2"

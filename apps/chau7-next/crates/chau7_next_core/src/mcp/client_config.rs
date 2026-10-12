@@ -199,7 +199,7 @@ fn try_merge_codex_toml(
         let position = before_features.unwrap_or(max.saturating_add(1));
         walk_tables(document.as_table_mut(), &mut |table| {
             if let Some(old) = table.position().filter(|old| *old >= position) {
-                table.set_position(old.saturating_add(1));
+                table.set_position(Some(old.saturating_add(1)));
             }
         });
         position
@@ -222,7 +222,7 @@ fn try_merge_codex_toml(
             Item::Value(TomlValue::InlineTable(InlineTable::new()))
         } else {
             let mut table = Table::new();
-            table.set_position(position);
+            table.set_position(Some(position));
             table.decor_mut().set_prefix("\n");
             Item::Table(table)
         };

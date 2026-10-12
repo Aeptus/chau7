@@ -25,10 +25,10 @@ log = "0.4"
 regex = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
-base64 = "0.22"
-sha2 = "0.10"
+base64 = "0.23.1"
+sha2 = "0.11.0"
 # Command history store (history/). Bundled so no system SQLite is needed.
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
 
 [profile.release]
 debug = false
