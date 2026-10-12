@@ -47,6 +47,8 @@ mod pickers;
 mod provider_health;
 mod remote_hooks;
 mod rename;
+#[cfg(all(test, unix))]
+mod restore_fixture;
 mod restore_lifecycle;
 mod shell_loading;
 mod tab_bar_view;
