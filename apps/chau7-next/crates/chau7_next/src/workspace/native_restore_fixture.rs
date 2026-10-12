@@ -22,6 +22,23 @@ fn ensure(condition: bool, message: &str) -> Result<(), String> {
         Err(message.into())
     }
 }
+fn activation_diagnostic(
+    app_active: bool,
+    activation_policy: isize,
+    window_visible: bool,
+    window_key: bool,
+    window_can_become_key: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "stage": "owned_fixture_application_activation",
+        "app_active": app_active,
+        "activation_policy": activation_policy,
+        "window_visible": window_visible,
+        "window_key": window_key,
+        "window_can_become_key": window_can_become_key,
+    })
+}
+
 struct Profile {
     home: PathBuf,
     root: DataRoot,
@@ -751,10 +768,25 @@ async fn verify_surfaces(
         native.orderFront(None);
         cx.activate(true);
     });
-    wait_until(cx, "owned fixture application activation", |_| {
+    if let Err(error) = wait_until(cx, "owned fixture application activation", |_| {
         application.isActive()
     })
-    .await?;
+    .await
+    {
+        // Capture this owned application's actual AppKit state at the failed
+        // gate, before cleanup changes it. Keep the original failure and timer.
+        let snapshot = cx.update(|_| {
+            activation_diagnostic(
+                application.isActive(),
+                application.activationPolicy().0,
+                native.isVisible(),
+                native.isKeyWindow(),
+                native.canBecomeKeyWindow(),
+            )
+        });
+        eprintln!("native_activation_failure={snapshot}");
+        return Err(error);
+    }
     cx.update(|_| {
         native.orderFront(None);
         native.makeKeyWindow();
@@ -1074,4 +1106,31 @@ async fn verify_retention(
         "ordinary_input_bytes":0,"ordinary_background_warm":true,"selected_history_preserved":true,
         "worker_failures":reloaded["failures"],"os_pressure_delivery_tested":false}),
     )
+}
+
+#[cfg(test)]
+mod activation_diagnostic_tests {
+    use super::activation_diagnostic;
+
+    #[test]
+    fn activation_timeout_snapshot_preserves_observed_states_and_numeric_policy() {
+        let inactive = activation_diagnostic(false, 0, true, false, true);
+        assert_eq!(
+            inactive,
+            serde_json::json!({
+                "stage": "owned_fixture_application_activation",
+                "app_active": false,
+                "activation_policy": 0,
+                "window_visible": true,
+                "window_key": false,
+                "window_can_become_key": true,
+            })
+        );
+        let alternate = activation_diagnostic(true, 2, false, true, false);
+        assert_eq!(alternate["app_active"], true);
+        assert_eq!(alternate["activation_policy"], 2);
+        assert_eq!(alternate["window_visible"], false);
+        assert_eq!(alternate["window_key"], true);
+        assert_eq!(alternate["window_can_become_key"], false);
+    }
 }
