@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use gpui::{App, div, prelude::*, px};
+use gpui::{App, Context, Window, div, prelude::*, px};
 
 use super::Workspace;
 use crate::theme::Chrome;
@@ -34,22 +34,78 @@ fn bar(step: usize) -> String {
 }
 
 impl Workspace {
-    /// The indicator for the selected tab, if its shell is still starting.
-    pub(super) fn render_shell_loading(
-        &self,
-        chrome: Chrome,
-        cx: &App,
-    ) -> Option<gpui::AnyElement> {
+    fn shell_loading_elapsed(&self, cx: &App) -> Option<Duration> {
         let session = self.selected_panes()?.read(cx).focused_session(cx)?;
         let session = session.read(cx);
         let blank = session.cursor == (0, 0)
             && session
                 .line_text(0)
                 .is_none_or(|line| line.trim().is_empty());
-        if session.exited.is_some() || !blank {
-            return None;
+        (session.exited.is_none() && blank).then(|| session.started_at.elapsed())
+    }
+
+    /// One cancellable clock per visible loading workspace. The visual bar
+    /// changes every 80ms; it must not drive a full refresh at display rate.
+    pub(super) fn update_shell_loading_timer(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !window.is_visible() || self.shell_loading_elapsed(cx).is_none() {
+            self.shell_loading_tick = None;
+            return;
         }
-        let elapsed = session.started_at.elapsed();
+        if self.shell_loading_tick.is_some() {
+            return;
+        }
+        let timer = crate::observability::timer_registry(cx).map(|registry| {
+            registry.register(
+                &format!("shell.loading.{}", cx.entity_id()),
+                "Shell loading animation",
+                "workspace",
+                STEP.as_millis() as u64,
+                "gpui_task",
+                "gpui-main",
+            )
+        });
+        self.shell_loading_tick = Some(cx.spawn_in(window, async move |this, cx| {
+            let _timer = timer;
+            loop {
+                cx.background_executor().timer(STEP).await;
+                let active = this
+                    .update_in(cx, |this, window, cx| {
+                        use chau7_next_core::work_profiler::{self, Queue};
+                        let mut cost = work_profiler::timer_callback(
+                            "shell_loading_animation",
+                            "refresh",
+                            Queue::Main,
+                        );
+                        let active =
+                            window.is_visible() && this.shell_loading_elapsed(cx).is_some();
+                        cost.idle(!active);
+                        if active {
+                            cost.items(1);
+                            cx.notify();
+                        } else {
+                            this.shell_loading_tick = None;
+                        }
+                        active
+                    })
+                    .unwrap_or(false);
+                if !active {
+                    break;
+                }
+            }
+        }));
+    }
+
+    /// The indicator for the selected tab, if its shell is still starting.
+    pub(super) fn render_shell_loading(
+        &self,
+        chrome: Chrome,
+        cx: &App,
+    ) -> Option<gpui::AnyElement> {
+        let elapsed = self.shell_loading_elapsed(cx)?;
         if elapsed < Duration::from_millis(200) {
             return None;
         }
