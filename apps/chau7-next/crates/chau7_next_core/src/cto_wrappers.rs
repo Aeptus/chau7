@@ -1144,12 +1144,21 @@ mod tests {
             let (dir, paths, real_dir) = setup("run-sentinel");
             create_flag(&paths, "S1");
             for command in ["git", "cat", "sed"] {
-                write_executable(&real_dir.join(command), b"#!/bin/sh\necho real \"$@\"\n")
-                    .unwrap();
+                // Forks from parallel tests may temporarily inherit a newly
+                // written script's descriptor on Linux. This fixture tests the
+                // generated wrapper's bypass, using a stable real executable.
+                let real = real_dir.join(command);
+                if real.exists() {
+                    fs::remove_file(&real).unwrap();
+                }
+                std::os::unix::fs::symlink("/bin/echo", &real).unwrap();
                 let path = format!("{}:/usr/bin:/bin", real_dir.display());
                 install_wrapper(command, &paths, &path).unwrap();
-                let out = Command::new(paths.wrapper_dir.join(command))
-                    .arg("file.md")
+                // The generated source is still executed by its actual Bash
+                // interpreter. Wrapper execute permissions are tested above.
+                let out = Command::new("/bin/bash")
+                    .arg(paths.wrapper_dir.join(command))
+                    .args(["real", "file.md"])
                     .env_clear()
                     .env("PATH", path)
                     .env("CHAU7_CTO_SESSION", "S1")
@@ -1157,7 +1166,13 @@ mod tests {
                     .env("CHAU7_CTO_LOG", paths.command_log())
                     .output()
                     .unwrap();
-                assert!(out.status.success(), "{command}");
+                assert!(
+                    out.status.success(),
+                    "{command}: status={} stdout={:?} stderr={:?}",
+                    out.status,
+                    String::from_utf8_lossy(&out.stdout),
+                    String::from_utf8_lossy(&out.stderr)
+                );
                 assert_eq!(
                     String::from_utf8_lossy(&out.stdout).trim(),
                     "real file.md",

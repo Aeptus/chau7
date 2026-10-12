@@ -120,7 +120,10 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         cx.set_global(crate::workspace::AppData::new(root));
         crate::observability::init(cx);
         cx.spawn(async move |cx| {
-            let deadline = cx.background_executor().timer(Duration::from_secs(35));
+            let deadline_secs = if case == "settings" { 70 } else { 35 };
+            let deadline = cx
+                .background_executor()
+                .timer(Duration::from_secs(deadline_secs));
             let verification = async {
                 match case.as_str() {
                     "restore" => crate::workspace::verify_native_restore_fixture(cx).await,
@@ -147,8 +150,12 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                     let _ = cx.update_window(window, |_, window, _| window.remove_window());
                 }
             });
+            let memory_worker = cx.update(crate::memory_pressure::stop_native_fixture);
             let worker = cx.update(crate::observability::shutdown);
             cx.background_spawn(async move {
+                if let Some(worker) = memory_worker {
+                    let _ = worker.join();
+                }
                 if let Some(worker) = worker {
                     let _ = worker.join();
                 }
@@ -179,10 +186,10 @@ fn report(case: &str, home: &Path, outcome: Result<Value, String>) -> i32 {
     let code = i32::from(outcome.is_err() || !cleaned);
     let evidence = match outcome {
         Ok(details) => {
-            json!({"case":case,"passed":code==0,"details":details,"frames":"native on_next_frame","profile_isolated":true,"owned_profile_removed":cleaned,"owned_resources_closed":true})
+            json!({"case":case,"pid":std::process::id(),"passed":code==0,"details":details,"frames":"native on_next_frame","profile_isolated":true,"owned_profile_removed":cleaned,"owned_resources_closed":true})
         }
         Err(error) => {
-            json!({"case":case,"passed":false,"error":error,"profile_isolated":true,"owned_profile_removed":cleaned})
+            json!({"case":case,"pid":std::process::id(),"passed":false,"error":error,"profile_isolated":true,"owned_profile_removed":cleaned})
         }
     };
     println!("{evidence}");

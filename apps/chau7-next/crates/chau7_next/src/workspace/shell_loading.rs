@@ -1,12 +1,11 @@
-//! Shell loading indicator (`ShellLoadingBar`): while a new shell has not
-//! drawn anything yet, an ASCII bar sweeps back and forth with "Loading
-//! shell…" (after 0.2 s); when startup is slow (no output after 5 s, the
-//! design intent of Swift's never-set `shellStartupSlow`), a centered
-//! "Shell initializing…" with a spinner replaces it.
+//! Shell startup indicator (`ShellLoadingBar`), driven by the session's
+//! authoritative prompt/output readiness. An ASCII bar appears after 0.2s;
+//! the session's no-output slow-start signal selects the centered spinner.
+//! Clearing an already ready terminal must never restart this indicator.
 
 use std::time::Duration;
 
-use gpui::{App, div, prelude::*, px};
+use gpui::{App, Context, Window, div, prelude::*, px};
 
 use super::Workspace;
 use crate::theme::Chrome;
@@ -34,26 +33,79 @@ fn bar(step: usize) -> String {
 }
 
 impl Workspace {
+    pub(super) fn shell_loading_state(&self, cx: &App) -> Option<(Duration, bool)> {
+        let session = self.selected_panes()?.read(cx).focused_session(cx)?;
+        let session = session.read(cx);
+        session
+            .is_loading()
+            .then(|| (session.started_at.elapsed(), session.shell_slow))
+    }
+
+    /// One cancellable clock per visible loading workspace. The visual bar
+    /// changes every 80ms; it must not drive a full refresh at display rate.
+    pub(super) fn update_shell_loading_timer(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !window.is_visible() || self.shell_loading_state(cx).is_none() {
+            self.shell_loading_tick = None;
+            return;
+        }
+        if self.shell_loading_tick.is_some() {
+            return;
+        }
+        let timer = crate::observability::timer_registry(cx).map(|registry| {
+            registry.register(
+                &format!("shell.loading.{}", cx.entity_id()),
+                "Shell loading animation",
+                "workspace",
+                STEP.as_millis() as u64,
+                "gpui_task",
+                "gpui-main",
+            )
+        });
+        self.shell_loading_tick = Some(cx.spawn_in(window, async move |this, cx| {
+            let _timer = timer;
+            loop {
+                cx.background_executor().timer(STEP).await;
+                let active = this
+                    .update_in(cx, |this, window, cx| {
+                        use chau7_next_core::work_profiler::{self, Queue};
+                        let mut cost = work_profiler::timer_callback(
+                            "shell_loading_animation",
+                            "refresh",
+                            Queue::Main,
+                        );
+                        let active = window.is_visible() && this.shell_loading_state(cx).is_some();
+                        cost.idle(!active);
+                        if active {
+                            cost.items(1);
+                            cx.notify();
+                        } else {
+                            this.shell_loading_tick = None;
+                        }
+                        active
+                    })
+                    .unwrap_or(false);
+                if !active {
+                    break;
+                }
+            }
+        }));
+    }
+
     /// The indicator for the selected tab, if its shell is still starting.
     pub(super) fn render_shell_loading(
         &self,
         chrome: Chrome,
         cx: &App,
     ) -> Option<gpui::AnyElement> {
-        let session = self.selected_panes()?.read(cx).focused_session(cx)?;
-        let session = session.read(cx);
-        let blank = session.cursor == (0, 0)
-            && session
-                .line_text(0)
-                .is_none_or(|line| line.trim().is_empty());
-        if session.exited.is_some() || !blank {
-            return None;
-        }
-        let elapsed = session.started_at.elapsed();
+        let (elapsed, slow) = self.shell_loading_state(cx)?;
         if elapsed < Duration::from_millis(200) {
             return None;
         }
-        if elapsed >= Duration::from_secs(5) {
+        if slow {
             let spinner = ["◐", "◓", "◑", "◒"][(elapsed.as_millis() / 150) as usize % 4];
             return Some(
                 div()
@@ -75,7 +127,10 @@ impl Workspace {
                             .font_family("Menlo")
                             .text_color(chrome.text_muted)
                             .child(spinner)
-                            .child("Shell initializing\u{2026}"),
+                            .child(crate::l10n::l(
+                                "overlay.shellInitializing",
+                                "Shell initializing\u{2026}",
+                            )),
                     )
                     .into_any_element(),
             );

@@ -119,3 +119,205 @@ identity, timer retention, unsampled heartbeat reporting and restored terminal
 geometry require their own combined checks and a subsequent native rebuild.
 This checkpoint does not establish real-provider, paired-device, keyboard/IME
 or accessibility acceptance.
+
+## Native checkpoint 79748ee9 (2026-10-12)
+
+- Clean source `79748ee9b62929af30196a62e229559174433e44` passes 2,885 release workspace tests with two existing ignored, strict release workspace/all-target Clippy, formatting, parity and diff checks. The future-compatibility warning is upstream `block 0.1.6`.
+- Three Next executables were rebuilt from that exact source. Four shared helpers retain verified unchanged source and hashes. All seven arm64 executables and the bundle pass signing/deep/strict verification. Graceful replacement preserves one window and two saved tabs, with the prior owned bundle retained for rollback.
+- LaunchServices opens only `com.chau7.next.parity-recovery.20261011` with the explicit owned isolated profile. Read-only MCP reports the exact source and PID 3607; the durable journal has processed all 181 events without a persistence error. The watchdog remains healthy with zero stalls or recoveries.
+- The owned window capture shows automatic repository grouping and two restored tabs. It also exposes a pending startup acceptance issue: the fake shell remains on `Shell initializing`. A one-second sample of its owned PID3681 shows `getcwd` waiting in `open`; its CWD is the T7 worktree. Matching TCC events explicitly show a `SystemPolicyRemovableVolumes` prompt for the isolated bundle. The user was asked to respond to that OS prompt. No OS permission was changed, no denial was bypassed and no live-session input was sent.
+- The 65.673-second numeric interval records 4.747% of one logical CPU and final RSS 143,671,296 bytes with one selected terminal and one window. Because the shell awaits filesystem consent, this is startup evidence, not a ready-terminal performance comparison or an optimization claim.
+- Actual measured callbacks now distinguish classified idle work from activity that was not observed. PTY, remote, persistence, readiness, feedback and transcript callbacks expose idle counts; unclassified app/heartbeat/memory callbacks expose `activity_unknown_samples`. The bounded timer registry exposes its 128 inactive-lifetime limit separately from measured callback costs. Per-stage CPU and GPU completion remain null when unavailable.
+- At audit time the new launch has 0 error rows and 0 panic rows. Warning categories are recorded numerically in the local evidence, including notification permission and incomplete Aethyme capture while T7 access awaits consent. Native acceptance is not promoted by this checkpoint.
+- Local evidence: `native-79748ee9b629-bundle-manifest.json`, `native-79748-{runtime,perf-a,perf-b,timers,tabs}.json`, `native-79748-performance-and-launch-audit.json`, `chau7-next-native-79748.png`, the owned shell sample and scoped TCC log in the parity recovery evidence directory. Raw OS logs remain local; no report was sent externally.
+
+## Reproducible native fixture checkpoint 76887725 (2026-10-12)
+
+Clean source `76887725e37bdd506e0a6f0db599ffa085cf29b1` passes
+2,886 release workspace tests with two existing ignored tests. Strict default
+release workspace/all-target Clippy, formatting, parity and diff checks pass
+using the installed Rust 1.96.0 toolchain. The upstream `block 0.1.6`
+future-compatibility warning remains separate from these checks.
+
+`apps/chau7-next/scripts/native-parity.py` builds the opt-in acceptance feature
+in a separate target directory. It records the exact source, compiler and
+binary SHA-256, then requires one positive case report, exit zero and removal
+of that case's owned temporary profile. It cannot accept empty stdout as a
+successful native test. Feature-enabled fixture binaries are not app packages.
+
+The actual native run has one passing case and two failures. Restore passes
+with real platform frames, real owned PTYs, selected-first split activation,
+no transient-selection or parked-metadata PTYs, and two readiness-bound resume
+deliveries without terminators or duplicates. Settings fails at the loaded
+`promptInjection` target. Editor fails at its fixture's editor materialization
+step. Each case emits an explicit result and removes its owned profile; the
+overall manifest is false. These failures do not promote the inventory.
+
+Local evidence is retained as `native-768877-manifest.json`, the three case
+stdout/stderr pairs and build log, plus `source-768877-pinned-*` check logs in
+the recovery evidence directory. Subsequent anchor and fixture corrections
+require their own native rerun. No user session or global permission changed.
+
+## Combined native checkpoint f9e4c17b (2026-10-12)
+
+Clean source `f9e4c17bcfe7cd999e7df2fd0be5649ae0367ba7` passes
+2,887 release workspace tests with two existing ignored tests, strict default
+release workspace/all-target Clippy, formatting, parity and diff checks.
+The installed fixed Rust 1.96.0 toolchain is used throughout.
+
+The reproducible native driver passes restore, settings and editor on this
+single revision. Its separate optional-feature binary SHA-256 is
+`ce322f9d5ee111b0e1fdfa4955e1ca3db2017147e4d29e601797a67590d2a590`.
+Every case has explicit positive JSON, exit zero and owned profile removal.
+Restore observes identity admission 453ms after rapid selection, with no parked
+or transient PTYs and two exact resume deliveries without terminators or
+duplicates. Its registry-based graceful-close count remains zero; the runner
+closes sessions through the quit fallback. A stronger ordinary-registry
+mount and per-PTY closure assertion are required before closing that facet.
+
+Settings has 99 unique targets. All99 intersect the actual viewport on both
+axes with scroll offsets inside bounds after three real frame callbacks each.
+The production alias fix covers the loaded AI Context caption. This proves
+explicit result jumps; per-page summaries and automatic first query-match
+scrolling/highlighting still require implementation and evidence. SET137
+remains partial.
+
+Editor passes actual native marked-text preservation and composition commit,
+ordinary key delivery, Undo/Redo, saving the synthetic owned file, real GPUI
+dialog/sheet/popup detach, preview remount and owning-window closure. The
+initial hidden-window materialization failure and nested fixture Root lease
+panic were corrected in the acceptance fixture. OS IME source switching,
+candidate panels, hardware input and accessibility are not established here.
+
+Local evidence includes `native-f9e4c1-manifest.json`, case stdout/stderr pairs,
+build log and `source-f9e4c1-*` checks. Each case records its owned PID/profile.
+No existing user session, permission or provider setting changed.
+
+## Native key-state checkpoint 29ac30b3 (2026-10-12)
+
+Clean source `29ac30b38e1cfd865a8260f9e49f73310d61c95e` passes
+2,888 release workspace tests with two existing ignored tests. Strict default
+and optional-native-feature release workspace/all-target Clippy, formatting,
+parity and diff checks pass with fixed Rust1.96.
+
+The separate actual native runner still passes all99 explicit settings target
+jumps and the editor case. Editor stderr is empty after the production UTF-16
+ruler bounds fix. The bounded workspace animation clock and real pane animation
+FPS cap are integrated; these results do not establish a matched CPU benchmark.
+
+The strengthened restore case fails its actual AppKit key-window assertion in
+an inactive fixture process. Visible/front/frame checks had passed in the prior
+agent-native checkpoint, but makeKeyWindow alone did not make this inactive
+process's window key. The failure emits explicit false JSON, exits nonzero and
+removes its profile. It is preserved as negative acceptance evidence. The next
+fixture must exercise ordinary activation of its own isolated application;
+the key assertion is retained rather than substituted with a successful API
+call. No production key/reactivation defect is established by this failure.
+
+Evidence: `native-29ac-manifest.json`, case stdout/stderr/build logs and
+`source-29ac-*` default/optional check logs in the local recovery directory.
+The overall native manifest remains false and inventory rows are not promoted.
+
+## Current editor and query acceptance 9a4b5730 (2026-10-12)
+
+Clean integrated source `9a4b5730e2b0bed9ec9aea188be4095e3306504a`
+passes 2,890 release workspace tests (492 app, 2,398 core), with two existing
+ignored tests. Strict release workspace/all-target Clippy passes in both
+default and optional-native-feature builds, along with formatting and parity.
+The native feature remains separate from ordinary app packaging.
+
+Independent native editor and settings runs use the same exact source and
+optional binary, real platform frames and new synthetic profiles. Both emit
+explicit passed JSON, exit zero and remove their own profiles. Editor stderr
+is empty. Production source composition, constructed native key delivery,
+Undo/Redo/Save, dialog/sheet/focused-popup detach, preview/remount and disposal
+pass. A production paint observer additionally verifies the actual header has
+no task-free counter, then paints 1/2 and 2/2 after real NSTextView insertions,
+excluding a fenced task sample. EDT-013 closes its specific native source and
+modal acceptance blocker. New SPL-027 records the current Swift header display
+behavior that was absent from the earlier inventory.
+
+The native settings run verifies all99 explicit target jumps and four actual
+InputState Change deliveries. Matching queries derive and visibly lay out the
+first anchor with highlight prepaint; unmatched and empty queries retain the
+selected page and clear active highlight. Centered geometry is checked when
+content allows it. Pixel-level highlight, OS keyboard/pointer and accessibility
+acceptance are not claimed. SET-137 stays partial while the current 28-page
+summary grid and Swift search animation/retry behavior are being implemented.
+
+This does not supersede the negative restore key-window evidence at29ac30b3:
+an unbundled fixture cannot yet become an active key application. Its actual
+key assertion remains required; a fresh owned LaunchServices fixture is being
+prepared. Hover/deferred restore, full Hidden persistence/reload and memory
+acceptance are reported at their exact independent checkpoints.
+
+A read-only MCP sample at2026-10-12T02:01:40Z confirms installed source79748ee9,
+PID3607, journal181/181 with no persistence error, zero watchdog stalls and
+17 registered active tasks. Process CPU is6.346% of one logical CPU and RSS is
+75,890,688 bytes. The restored T7 shell remains consent-blocked; this is not a
+ready-terminal performance comparison, and the new bounded loading animation
+is not installed in that bundle. Runtime/performance/task snapshots remain
+accessible without terminal input or creation of a live tab.
+
+Local evidence: `native-9a4b-editor-*`, `native-9a4b-settings-*`,
+`source-9a4b-*`, and `readonly-20261012-020140-*` in the recovery evidence
+directory. Broader OS input-source, hardware keyboard, accessibility, real
+provider and paired-device acceptance remain in the hand-test checklist.
+
+## Combined native acceptance 5fa1e4c4 (2026-10-12)
+
+Clean exact integrated source `5fa1e4c4f0561894fa51ddf5070e9c684a19e7d4` passes 2,895 default-feature
+workspace tests in the debug profile, with 2 existing ignored tests. Strict
+release workspace/all-target Clippy passes for both normal and optional native
+builds; formatting, generated parity and diff checks pass. Earlier exact26b5d4fe
+passes2,894 release workspace tests and the same strict gates. The native feature
+remains outside normal app packaging.
+
+One optional binary runs allthree actual native scenarios with explicit passed
+JSON and unchanged source. Original binary SHA256 is `d05c93ba760d4b8a3e134146525c8f8fdea72f1e23b528877bbdccaee26c5e95`.
+Restore uses a fresh signed, deeply/strictly verified UUID app via ordinary
+LaunchServices; actual appPID72531 disappears, allfive owned PTYs close and its
+profile and bundle are removed. The LaunchServices waiter exits zero; the actual
+app exit code is unknown, rather than inferred from open -W. Settings/editor
+actual processes exit zero and disappear, removing their profiles.
+
+Restore verifies native active/key-window state, selected split admission,
+451ms identity-only preparation, two exact readiness-bound resume prefills with
+no Enter or duplicates, real hover expiry and hide/reveal/miniaturize frames.
+Ordinary background history is Warm before injected Critical policy runs through
+the real tick, disk worker and reload. All200 markers survive exactly once,
+PTY output bytes remain4017 and input recorder remains zero; Hidden keeps50 native
+ring rows and selected history stays intact. Before3799 bytes become3800 with
+one final LF on shared emulator replay, retained as an explicit raw difference.
+The actual worker reports zero failures. Raw/CHG2 remote snapshots continue
+updating while UI presentation is suspended. OS pressure notification delivery
+is not tested by policy injection.
+
+The actual loading task is one80ms registration, cancels to zero while hidden
+with no callbacks for240ms, resumes as one clock and yields five measured callback
+samples, then stops at real prompt and disposal. Callback costs are wall time,
+exclude interval waiting, and do not establish CPU or display FPS improvement.
+A separate actual PTY regression proves clearing a ready terminal cannot restart
+the loading indicator.
+
+Settings proves99/99 target rectangles visible, all28 summary sections and114
+current Swift card identities, and five real InputState Change queries. Values
+use cached observations; SSH reads/watch setup and timezone conversion occur off
+UI, with bounded coalescing and retained successful data on read failure. Search
+animation/retry and two exact summary formatter facets remain followups, so
+SET-137 stays partial. Editor again verifies actual native source composition,
+Undo/Redo/Save, painted task progress, modal/sheet/popup detach and disposal.
+This does not claim physical keyboard/pointer, OS input-source or full AX checks.
+
+At the earlier published757d1523, the PR-event macOS/Linux/Windows workflow passes;
+the push-event workflow at the same SHA passes macOS/Windows but fails the CTO
+sentinel Linux fixture with only `sed` recorded. Root0f74f4ee makes the test-only
+wrapper explicitly run through Bash and uses stable system executable symlinks,
+retaining assertions and adding failure diagnostics. All24 CTO tests and20
+concurrent full repeated runs pass locally. The old log lacks stderr, so a
+fork/executable race is a hypothesis, not a proven diagnosis; new Linux CI must
+verify this checkpoint. No retries, ignored tests or workflow gates were added.
+
+Local exact evidence: `native-5fa1-*`, `source-5fa1-*` and `source-26b5-*` in the
+recovery evidence directory. Negative29ac key-window evidence remains historical;
+the ordinary bundled positive establishes the later observed active/key state.

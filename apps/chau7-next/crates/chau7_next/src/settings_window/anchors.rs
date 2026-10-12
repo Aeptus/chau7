@@ -1,12 +1,120 @@
 //! Nested GPUI scroll anchors corresponding to current settings metadata.
 use chau7_next_core::settings_search::{SEARCHABLE_SETTINGS, SettingsSection};
-use gpui::{IntoElement, ScrollAnchor, SharedString, div, prelude::*};
+use gpui::{
+    Bounds, Hsla, IntoElement, Pixels, ScrollAnchor, SharedString, canvas, div, prelude::*,
+};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 #[derive(Clone)]
 struct Scope {
     section: SettingsSection,
     anchors: Rc<HashMap<&'static str, ScrollAnchor>>,
     labels: HashMap<String, &'static str>,
+    presentation: Option<SearchPresentation>,
+}
+type MeasuredTargets = HashMap<&'static str, (Bounds<Pixels>, Pixels)>;
+#[derive(Clone, Default)]
+pub(super) struct TargetBounds(Rc<RefCell<MeasuredTargets>>);
+impl TargetBounds {
+    #[cfg(any(test, feature = "native-parity-fixture"))]
+    pub(super) fn get(&self, id: &str) -> Option<Bounds<Pixels>> {
+        self.0.borrow().get(id).map(|(bounds, _)| *bounds)
+    }
+    /// Screen geometry belongs to the offset used during that same prepaint.
+    /// A retry or another frame callback may already have changed the current
+    /// offset before consuming this measurement.
+    pub(super) fn centered_offset(
+        &self,
+        id: &str,
+        viewport: Bounds<Pixels>,
+        maximum: Pixels,
+    ) -> Option<Pixels> {
+        self.0.borrow().get(id).map(|(bounds, offset)| {
+            (*offset + viewport.center().y - bounds.center().y).clamp(-maximum, gpui::px(0.))
+        })
+    }
+    pub(super) fn clear(&self) {
+        self.0.borrow_mut().clear();
+    }
+}
+#[derive(Clone)]
+pub(super) struct SearchPresentation {
+    pub bounds: TargetBounds,
+    pub strengths: HashMap<&'static str, f32>,
+    pub accent: Hsla,
+    pub scroll_handle: gpui::ScrollHandle,
+}
+pub(super) fn with_search_scope<T>(
+    section: SettingsSection,
+    anchors: Rc<HashMap<&'static str, ScrollAnchor>>,
+    presentation: SearchPresentation,
+    render: impl FnOnce() -> T,
+) -> T {
+    with_scope(section, anchors, || {
+        ACTIVE.with(|scope| scope.borrow_mut().as_mut().unwrap().presentation = Some(presentation));
+        render()
+    })
+}
+/// Real layout measurements are scoped to this view and bounded by its fixed
+/// setting catalog. Capturing geometry has no native queries or input handlers.
+fn present(id: Option<&'static str>, element: impl IntoElement) -> gpui::Div {
+    let presentation = ACTIVE.with(|scope| scope.borrow().as_ref()?.presentation.clone());
+    let Some((id, presentation)) = id.zip(presentation) else {
+        return div().child(element);
+    };
+    let strength = presentation.strengths.get(id).copied().unwrap_or(0.);
+    let highlighted = strength > 0.;
+    let bounds = presentation.bounds;
+    div()
+        .relative()
+        .rounded_md()
+        .border_1()
+        .border_color(if highlighted {
+            presentation.accent.opacity(0.45 * strength)
+        } else {
+            gpui::transparent_black()
+        })
+        .when(highlighted, |d| {
+            d.bg(presentation.accent.opacity(0.12 * strength))
+        })
+        .child(element)
+        .child(
+            canvas(
+                move |value, _, _| {
+                    bounds
+                        .0
+                        .borrow_mut()
+                        .insert(id, (value, presentation.scroll_handle.offset().y));
+                    #[cfg(any(test, feature = "native-parity-fixture"))]
+                    if highlighted {
+                        HIGHLIGHTED.with(|seen| {
+                            seen.borrow_mut().insert(id);
+                        });
+                    }
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_full(),
+        )
+}
+fn title_id(title: &str) -> Option<&'static str> {
+    ACTIVE.with(|scope| {
+        scope
+            .borrow()
+            .as_ref()?
+            .labels
+            .get(&normalized(title))
+            .copied()
+    })
+}
+pub(super) fn title_target(title: &str, element: impl IntoElement) -> gpui::Div {
+    present(title_id(title), element)
+}
+#[cfg(any(test, feature = "native-parity-fixture"))]
+thread_local! { static HIGHLIGHTED: RefCell<std::collections::HashSet<&'static str>> = RefCell::new(Default::default()); }
+#[cfg(any(test, feature = "native-parity-fixture"))]
+pub(super) fn highlighted_targets() -> std::collections::HashSet<&'static str> {
+    HIGHLIGHTED.with(|seen| seen.borrow().clone())
 }
 #[cfg(any(test, feature = "native-parity-fixture"))]
 thread_local! { static RENDERED: RefCell<std::collections::HashSet<&'static str>> = RefCell::new(Default::default()); }
@@ -28,6 +136,7 @@ fn record_observation_ids(id: &'static str, ids: impl IntoIterator<Item = String
 #[cfg(any(test, feature = "native-parity-fixture"))]
 pub(super) fn take_rendered_targets() -> std::collections::HashSet<&'static str> {
     OBSERVATION_IDS.with(|ids| ids.borrow_mut().clear());
+    HIGHLIGHTED.with(|seen| seen.borrow_mut().clear());
     RENDERED.with(|seen| std::mem::take(&mut *seen.borrow_mut()))
 }
 #[cfg(any(test, feature = "native-parity-fixture"))]
@@ -120,6 +229,7 @@ pub(super) fn with_scope<T>(
         ("Command Permissions", "mcpPermissions"),
         ("MCP Profiles", "mcpProfiles"),
         ("API Call Tracking", "apiAnalytics"),
+        ("All Repositories", "promptInjection"),
         ("Optimization Mode", "ctoMode"),
         ("Input Prefix", "ctoPrefix"),
         ("Per-Tab Control", "ctoPerTab"),
@@ -145,6 +255,7 @@ pub(super) fn with_scope<T>(
             section,
             anchors,
             labels,
+            presentation: None,
         }))
     });
     let _restore = Restore(previous);
@@ -179,6 +290,7 @@ pub(super) fn for_id(id: &str) -> Option<ScrollAnchor> {
         let present = SEARCHABLE_SETTINGS
             .iter()
             .any(|setting| setting.section == scope.section && setting.anchor_id == id)
+            || id == "pageSummary"
             || (id == "permissions" && scope.section == SettingsSection::SnippetsTools);
         if present {
             let (key, anchor) = scope.anchors.get_key_value(id)?;
@@ -205,7 +317,15 @@ pub(super) fn target(id: &str, element: impl IntoElement) -> gpui::Div {
         use gpui_kit::test::TestSupportExt;
         target.test_support()
     };
-    div().child(target)
+    let id = ACTIVE.with(|scope| {
+        scope
+            .borrow()
+            .as_ref()?
+            .anchors
+            .get_key_value(id)
+            .map(|(key, _)| *key)
+    });
+    present(id, target)
 }
 
 pub(super) fn label_target(label: &str, element: impl IntoElement) -> gpui::Div {
@@ -221,7 +341,7 @@ pub(super) fn label_target(label: &str, element: impl IntoElement) -> gpui::Div 
         use gpui_kit::test::TestSupportExt;
         target.test_support()
     };
-    div().child(target)
+    present(title_id(label), target)
 }
 
 #[cfg(test)]
@@ -241,6 +361,23 @@ mod tests {
         )
     }
     #[test]
+    fn ai_context_anchor_survives_the_loaded_caption_change() {
+        take_rendered_targets();
+        let anchors = anchors();
+        with_scope(SettingsSection::PromptInjection, anchors.clone(), || {
+            assert!(for_title("AI Context").is_some());
+            assert!(for_title("All Repositories").is_some());
+            assert!(
+                observed_target_ids("promptInjection")
+                    .contains(&"setting-header-All Repositories".to_owned())
+            );
+            assert!(take_rendered_targets().contains("promptInjection"));
+        });
+        with_scope(SettingsSection::General, anchors, || {
+            assert!(for_title("All Repositories").is_none());
+        });
+    }
+    #[test]
     fn title_aliases_are_section_scoped_and_scopes_restore() {
         assert!(for_title("Font").is_none());
         let anchors = anchors();
@@ -258,5 +395,41 @@ mod tests {
         with_scope(SettingsSection::SnippetsTools, anchors, || {
             assert!(for_id("permissions").is_some())
         });
+    }
+}
+
+#[cfg(test)]
+mod measurement_tests {
+    use super::*;
+    #[test]
+    fn centered_destination_uses_the_offset_of_its_actual_measurement() {
+        let measured = TargetBounds::default();
+        measured.0.borrow_mut().insert(
+            "fontFamily",
+            (
+                Bounds::new(
+                    gpui::point(gpui::px(0.), gpui::px(780.)),
+                    gpui::size(gpui::px(400.), gpui::px(40.)),
+                ),
+                gpui::px(-200.),
+            ),
+        );
+        let viewport = Bounds::new(
+            gpui::point(gpui::px(0.), gpui::px(0.)),
+            gpui::size(gpui::px(400.), gpui::px(600.)),
+        );
+        assert_eq!(
+            measured.centered_offset("fontFamily", viewport, gpui::px(1000.)),
+            Some(gpui::px(-700.))
+        );
+        assert_eq!(
+            measured.centered_offset("fontFamily", viewport, gpui::px(500.)),
+            Some(gpui::px(-500.))
+        );
+        assert!(
+            measured
+                .centered_offset("missing", viewport, gpui::px(1000.))
+                .is_none()
+        );
     }
 }
