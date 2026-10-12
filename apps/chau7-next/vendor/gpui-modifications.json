@@ -1,0 +1,33 @@
+{
+  "files": [
+    {
+      "changes": [
+        {
+          "after_sha256": "9d22a99a48b5c4dd103aeda638d861771e9571432d862eddcacf5d8318e3ecdc",
+          "before_sha256": "436647169d914d26092fcf3bfd4020a6638a97d1ea3b39466fd2d4641d1c219e",
+          "description": "Normalize 7 pre-existing upstream whitespace errors; no semantic changes",
+          "kind": "whitespace_only"
+        }
+      ],
+      "current_sha256": "9d22a99a48b5c4dd103aeda638d861771e9571432d862eddcacf5d8318e3ecdc",
+      "original_sha256": "436647169d914d26092fcf3bfd4020a6638a97d1ea3b39466fd2d4641d1c219e",
+      "package": "gpui-pre-apple",
+      "path": "src/shaders.metal"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "8dbaf1f77751f57d5a59aeeb15d2d2aa0f868b45d1b80919afc7c4719627da3f",
+          "before_sha256": "bcdeb209fa6309f5c507d9e8918235e75c18751c1985d0ebed632de643d7ea2e",
+          "description": "Normalize 2 pre-existing upstream whitespace errors; no semantic changes",
+          "kind": "whitespace_only"
+        }
+      ],
+      "current_sha256": "8dbaf1f77751f57d5a59aeeb15d2d2aa0f868b45d1b80919afc7c4719627da3f",
+      "original_sha256": "bcdeb209fa6309f5c507d9e8918235e75c18751c1985d0ebed632de643d7ea2e",
+      "package": "gpui-pre",
+      "path": "src/_accessibility.rs"
+    }
+  ],
+  "format_version": 1
+}
