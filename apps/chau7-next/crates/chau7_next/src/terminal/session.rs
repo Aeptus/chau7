@@ -50,6 +50,13 @@ use crate::settings::{ActivePollingRateCap, BellSound, Settings};
 
 const PTY_READINESS_MAX_WAIT_MS: u64 = 200;
 
+/// App-scoped fixture policy: production shell construction and the real PTY
+/// writer remain intact, while native output is driven by the test scheduler.
+#[cfg(all(test, unix))]
+pub(crate) struct ManuallyDrivenRestoreFixture;
+#[cfg(all(test, unix))]
+impl Global for ManuallyDrivenRestoreFixture {}
+
 fn replay_restored_terminal(term: &Chau7Terminal, context: &str) {
     let live = term.full_buffer_ansi_text();
     let mut bytes = context.as_bytes().to_vec();
@@ -470,7 +477,11 @@ impl TerminalSession {
         let has_hooks =
             !shell_integration::environment(&shell_path, &integration_dir, Path::new(""), |_| None)
                 .is_empty();
-        let mut session = Self::from_terminal(term, Some(start_dir), cx);
+        #[cfg(all(test, unix))]
+        let drive_output = !cx.has_global::<ManuallyDrivenRestoreFixture>();
+        #[cfg(not(all(test, unix)))]
+        let drive_output = true;
+        let mut session = Self::from_terminal_driving(term, Some(start_dir), drive_output, cx);
         session.tab_identifier = tab_identifier;
         session._shell_history_owner = history_registration;
         session.has_hooks = has_hooks;
@@ -507,6 +518,27 @@ impl TerminalSession {
         cx: &mut Context<Self>,
     ) -> Self {
         Self::from_terminal_driving(term, cwd, false, cx)
+    }
+
+    /// Drain the actual fixture PTY through the same native parser/output buffer
+    /// and production refresh path as the poll worker, without foreign wakes.
+    #[cfg(all(test, unix))]
+    pub(crate) fn poll_restore_fixture(&mut self, cx: &mut Context<Self>) {
+        assert!(cx.has_global::<ManuallyDrivenRestoreFixture>());
+        let bytes = {
+            let term = self.term.read();
+            let _ = term.poll(0);
+            term.get_last_output()
+        };
+        if !bytes.is_empty() {
+            let mut output = self.output.lock();
+            output.0.extend_from_slice(&bytes);
+            output.1.get_or_insert_with(Instant::now);
+        }
+        self.refresh(cx);
+        // The deterministic executor has no wall-clock timer. Drive the same
+        // production readiness tick after each owned native output poll.
+        self.tick(cx);
     }
 
     fn from_terminal_driving(
