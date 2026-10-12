@@ -1,7 +1,7 @@
 # Chau7 Next: handoff
 
 Read this first when picking up Chau7 Next (the Rust/GPUI port of Chau7).
-Last updated 2026-10-11.
+Last updated 2026-10-12.
 
 ## 1. Where things are
 
@@ -31,6 +31,11 @@ Last updated 2026-10-11.
 
 ## 3. Status
 
+- Current integrated5fa1e4c4 native restoration, settings and editor acceptance
+  passes in fresh owned macOS profiles. Five restore/reveal/hover rows close;
+  search animation/summary formatter facets, retention default and unavailable
+  Metal startup remain open. Exact source/test/native scope and limits are in
+  [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
 - The current-source audit indexes all 652 Swift source files at official main
   `7733b1f0`, appends the current feature delta and reopens changed behaviour.
   [PARITY.md](PARITY.md) is the current status, including missing features.

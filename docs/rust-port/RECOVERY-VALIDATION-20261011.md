@@ -263,3 +263,61 @@ Local evidence: `native-9a4b-editor-*`, `native-9a4b-settings-*`,
 `source-9a4b-*`, and `readonly-20261012-020140-*` in the recovery evidence
 directory. Broader OS input-source, hardware keyboard, accessibility, real
 provider and paired-device acceptance remain in the hand-test checklist.
+
+## Combined native acceptance 5fa1e4c4 (2026-10-12)
+
+Clean exact integrated source `5fa1e4c4f0561894fa51ddf5070e9c684a19e7d4` passes 2,895 default-feature
+workspace tests in the debug profile, with 2 existing ignored tests. Strict
+release workspace/all-target Clippy passes for both normal and optional native
+builds; formatting, generated parity and diff checks pass. Earlier exact26b5d4fe
+passes2,894 release workspace tests and the same strict gates. The native feature
+remains outside normal app packaging.
+
+One optional binary runs allthree actual native scenarios with explicit passed
+JSON and unchanged source. Original binary SHA256 is `d05c93ba760d4b8a3e134146525c8f8fdea72f1e23b528877bbdccaee26c5e95`.
+Restore uses a fresh signed, deeply/strictly verified UUID app via ordinary
+LaunchServices; actual appPID72531 disappears, allfive owned PTYs close and its
+profile and bundle are removed. The LaunchServices waiter exits zero; the actual
+app exit code is unknown, rather than inferred from open -W. Settings/editor
+actual processes exit zero and disappear, removing their profiles.
+
+Restore verifies native active/key-window state, selected split admission,
+451ms identity-only preparation, two exact readiness-bound resume prefills with
+no Enter or duplicates, real hover expiry and hide/reveal/miniaturize frames.
+Ordinary background history is Warm before injected Critical policy runs through
+the real tick, disk worker and reload. All200 markers survive exactly once,
+PTY output bytes remain4017 and input recorder remains zero; Hidden keeps50 native
+ring rows and selected history stays intact. Before3799 bytes become3800 with
+one final LF on shared emulator replay, retained as an explicit raw difference.
+The actual worker reports zero failures. Raw/CHG2 remote snapshots continue
+updating while UI presentation is suspended. OS pressure notification delivery
+is not tested by policy injection.
+
+The actual loading task is one80ms registration, cancels to zero while hidden
+with no callbacks for240ms, resumes as one clock and yields five measured callback
+samples, then stops at real prompt and disposal. Callback costs are wall time,
+exclude interval waiting, and do not establish CPU or display FPS improvement.
+A separate actual PTY regression proves clearing a ready terminal cannot restart
+the loading indicator.
+
+Settings proves99/99 target rectangles visible, all28 summary sections and114
+current Swift card identities, and five real InputState Change queries. Values
+use cached observations; SSH reads/watch setup and timezone conversion occur off
+UI, with bounded coalescing and retained successful data on read failure. Search
+animation/retry and two exact summary formatter facets remain followups, so
+SET-137 stays partial. Editor again verifies actual native source composition,
+Undo/Redo/Save, painted task progress, modal/sheet/popup detach and disposal.
+This does not claim physical keyboard/pointer, OS input-source or full AX checks.
+
+At the earlier published757d1523, the PR-event macOS/Linux/Windows workflow passes;
+the push-event workflow at the same SHA passes macOS/Windows but fails the CTO
+sentinel Linux fixture with only `sed` recorded. Root0f74f4ee makes the test-only
+wrapper explicitly run through Bash and uses stable system executable symlinks,
+retaining assertions and adding failure diagnostics. All24 CTO tests and20
+concurrent full repeated runs pass locally. The old log lacks stderr, so a
+fork/executable race is a hypothesis, not a proven diagnosis; new Linux CI must
+verify this checkpoint. No retries, ignored tests or workflow gates were added.
+
+Local exact evidence: `native-5fa1-*`, `source-5fa1-*` and `source-26b5-*` in the
+recovery evidence directory. Negative29ac key-window evidence remains historical;
+the ordinary bundled positive establishes the later observed active/key state.
