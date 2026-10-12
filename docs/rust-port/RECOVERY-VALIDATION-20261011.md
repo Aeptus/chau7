@@ -952,3 +952,63 @@ source text, assertion or deadline is added or changed. This callback expansion
 is diagnostic only and was not included in the b639 receipts. It establishes
 no production cause or fix; run the complete compiler/native sequence only
 after the whole source batch is ready.
+
+## 2026-10-12: ee462221 native Clippy stop and publication
+
+Scope: this entry records the ee exact-gate outcome and publication state only;
+it does not claim an ee compiler seal, native/runtime acceptance or full parity.
+
+Published clean source `ee46222185ae4779b1a5e9ac1f0def13a21513ae` (tree
+`f5f696c78f18cba033a7bab04302d47270d40c81`) passed the release workspace,
+strict normal workspace/all-target Clippy, formatting, build-mode contract and
+CLI-installer contract gates. Strict all-target Clippy with
+`chau7_next/native-parity-fixture` enabled stopped with exit 101 on four
+`msg_send!` calls in
+`apps/chau7-next/crates/chau7_next/src/panes/editor/native_markdown.rs`
+(lines 324, 347, 378 and 401). The macro reports missing commas between
+selector arguments as deprecated syntax, promoted to errors by `-D warnings`.
+The affected overrides remain behind `native-parity-fixture`; the diagnostic
+identifies no other native Clippy failures. The exact compiler sequence stopped
+at this gate, before normal build, fresh package, optional fixture build, native
+acceptance or canonical seal. This is not an ee runtime result.
+
+Broker operation 1838 published the checkpoint after six normal prepush gates
+passed. A subsequent gh check at operation 1839 verified the PR head. These
+publication facts are separate from the failed native fixture Clippy gate and
+do not claim that the complete full-quality suite or native acceptance passed.
+The original negative evidence is archived as nine receipt/log files in
+`/private/tmp/fast-ee462221-exact-gates-negative-20261012`; its manifest SHA256
+is `96c1052e45e53846ebd4f1b56218195ddfef74e02fe01d69223a3294cd5f536d`.
+
+The follow-up source batch applies the four macro-recommended commas while
+preserving selectors, argument values/order and one superclass dispatch per
+override. It changes no assertions, features or warning policy. The source
+patch is
+`/private/tmp/ee462221-native-clippy-fix-v1/ee462221-native-clippy-fix-v1.patch`
+(SHA256 `560c52de515acc4628b8274c1c71269ebf3f6f674cd55297d9caa9e0c9943117`);
+strict native Clippy and all subsequent compiler gates remain to be validated
+on the completed source batch.
+
+The same follow-up batch makes native Markdown layout reconciliation
+idempotent. It skips `NSScrollView.setFrame` only when the current host is the
+same and the freshly computed frame is equal, updates wrapped text width when
+the live `contentView` width changes, and clears hidden state only on an actual
+hidden-to-visible transition. Feature-only attach decisions record actual
+setter branches and resulting geometry. The fixture records the initial
+attached layout and validates it without failing early; that stored Result is
+checked only after the existing composition, input and editor assertions finish.
+Its subsequent geometry checks take a fresh post-preview baseline, then verify
+same-bounds setter skips, a one-pixel bounds resize and restore, detach and
+reattach to the same host, and two normal frames refreshing the production
+attachment guard before close. There is no distinct sibling-host reparent case
+or independent content-width-only change with unchanged outer bounds.
+
+The pinned layout source patch for the follow-up batch is
+`/private/tmp/native-layout-idempotent-v4-ee462221/native-layout-idempotent-v4.patch`
+(SHA256 `54c032efecf43cace3c5ef15bc21779e77904f7777a02e9cc8407163a0bed5b3`);
+its manifest is
+`/private/tmp/native-layout-idempotent-v4-ee462221/native-layout-idempotent-v4-manifest.json`
+(SHA256 `5ba225516c55d4ed85cac56d06575522f8eeec4d8505b113f6c14858a17154c2`).
+The source batch and fixture assertions are not yet compiled or run. No measured
+performance gain or marked-composition cause/fix is claimed; the original
+composition, input, lifecycle and deadline assertions remain in place.

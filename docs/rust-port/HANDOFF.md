@@ -118,6 +118,21 @@ Last updated 2026-10-12.
   library; the preserved retry targeting macOS 13 with the installed macOS 27.0
   SDK compiled in 5.405 seconds; signatures passed. Both processes retired.
   Receipts are under `/private/tmp/chau7-marked-text-control-b6394868-v3`.
+- Published source checkpoint `ee46222185ae4779b1a5e9ac1f0def13a21513ae`
+  passes the release workspace, strict normal workspace Clippy, formatting,
+  build-mode contract and CLI-installer contract checks. Strict native fixture
+  Clippy stopped at four deprecated `msg_send!` argument-separator diagnostics;
+  `-D warnings` makes them errors. Broker operation 1838 published the checkpoint
+  after six normal prepush gates passed, and a subsequent gh check at operation
+  1839 verified the PR head. Those publication gates do not change the native
+  Clippy result: the compiler sequence stopped before the normal build, fresh
+  package, optional fixture build or native acceptance, with no ee compiler
+  seal or runtime result. Nine exact-gate receipt/log files are preserved in
+  `/private/tmp/fast-ee462221-exact-gates-negative-20261012`; manifest SHA256 is
+  `96c1052e45e53846ebd4f1b56218195ddfef74e02fe01d69223a3294cd5f536d`.
+  The follow-up source batch corrects the four separators and adds idempotent
+  layout reconciliation with bounded geometry assertions; that batch is not
+  yet validated. Earlier b639 outcomes remain scoped to b639.
 - The current-source audit indexes all 652 Swift source files at official main
   `7733b1f0`, appends the current feature delta and reopens changed behaviour.
   [PARITY.md](PARITY.md) is the current status, including missing features.
@@ -150,7 +165,14 @@ Last updated 2026-10-12.
 
 ## 4. Next work, in order
 
-1. Continue the marked-composition investigation with the four new,
+1. Validate the follow-up source batch containing the four comma-only native
+   `msg_send!` corrections and idempotent native layout reconciliation. Rerun
+   the exact compiler gates first; only after they pass continue the normal
+   build, fresh package, optional fixture build and native sequence to a
+   canonical seal. The published ee checkpoint's native-Clippy receipt remains
+   negative; its six publication gates are not a substitute for compiler or
+   native acceptance.
+2. Continue the marked-composition investigation with the four new,
    fixture-gated AppKit callback trace sites. Preserve existing assertions and
    deadlines. On b639, Software Restore, Settings and Cache pass but Editor
    still fails; no complete Auto matrix, localized Settings matrix or
@@ -158,15 +180,20 @@ Last updated 2026-10-12.
    `NSTextView` comparison is synthetic and proves no cause or Japanese IME
    parity. Keep the trace capped at 64 text-free events; it is diagnostic, not
    a production fix.
-2. Settings/snippet/history render getters now consume bounded background
+3. Settings/snippet/history render getters now consume bounded background
    snapshots. Keep the real cache FSEvents/SQLite error/recovery regression and
    Settings English/French/Arabic RTL/System Default checks in acceptance.
-3. Finish remaining Mac hand-test facets below. Existing native evidence
+4. Finish remaining Mac hand-test facets below. Existing native evidence
    proves scoped geometry/events/lifecycle, not every physical keyboard/IME,
    multi-display, provider or full AX interaction. Preserve running apps.
-4. Continue draft PR229. Check CI and full-quality outcomes for the exact
-   current revision before claiming it is green; earlier results, including
-   d3df6a48, apply only to their recorded source revisions.
+5. Continue draft PR229. Check CI and full-quality outcomes for the exact
+   current revision before claiming it is green; earlier results apply only to
+   their recorded source revisions. The editor layout fixture records and
+   validates initial geometry before composition, but checks the saved result
+   only after existing editor assertions. Later equal-bounds, one-pixel
+   resize/restore and detach-to-same-host checks use a fresh post-preview
+   baseline. A sibling-host reparent and content-width-only change are not
+   covered; no performance gain or composition fix is claimed.
 
 ## 5. Approved decisions and retained behavior
 

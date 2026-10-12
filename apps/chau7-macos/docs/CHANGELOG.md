@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 
+- Correct the four fixture-gated native editor `msg_send!` selector argument
+  separators reported by strict native Clippy, preserving selectors, argument
+  order and superclass dispatch. The correction is included in the follow-up
+  source batch; exact native Clippy and compiler-sequence validation is pending.
+- Make native Markdown layout reconciliation idempotent: skip equal scroll-frame
+  and visibility setters while still recomputing geometry and applying changes
+  on resize or detach/reattach. The fixture captures initial attached geometry
+  and defers its result until existing composition assertions finish; later
+  geometry checks use a fresh post-preview baseline for same-bounds setter
+  skips, one-pixel resize/restore and same-host reattachment. The source batch
+  remains unvalidated; no performance gain or composition fix is claimed.
+
 - Keep fast Next app and embedded Rust helper artifacts in one private worktree target cache, and isolate symbol-rich diagnostic builds under `target/diagnostic` by default while preserving explicit cache overrides and artifact selection. Speed measurements remain pending.
 
 - Make optimized Next builds default to LTO off, 64 codegen units and local incremental caching, with an explicit diagnostic mode for symbols and verbose logs. Apply matching settings to the app and Rust helpers, verify all seven signed package artifacts and publish source/compiler/hash evidence. Select installed CLI binaries from actual Cargo artifacts to honor configured targets.

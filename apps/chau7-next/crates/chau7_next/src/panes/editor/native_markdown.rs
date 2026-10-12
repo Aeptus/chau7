@@ -160,6 +160,19 @@ impl FixtureTrace {
     }
 }
 
+#[cfg(feature = "native-parity-fixture")]
+#[derive(Clone, Copy)]
+struct FixtureAttachDecision {
+    bounds: [f32; 4],
+    actual_scroll_frame: [f64; 4],
+    needs_reparent: bool,
+    scroll_frame_set: bool,
+    text_frame_set: bool,
+    hidden_set: bool,
+    text_target_width: Option<f64>,
+    text_actual_width: Option<f64>,
+}
+
 struct Shared {
     document: RefCell<Document>,
     theme: RefCell<styles::Theme>,
@@ -321,7 +334,7 @@ define_class!(
             );
             // SAFETY: preserve NSTextInputClient's implementation exactly once.
             unsafe {
-                let _: () = msg_send![super(self), insertText:string replacementRange:replacement_range];
+                let _: () = msg_send![super(self), insertText: string, replacementRange: replacement_range];
             }
             self.ivars().shared.fixture_trace.record(
                 self,
@@ -344,7 +357,7 @@ define_class!(
             );
             // SAFETY: preserve NSTextInputClient's implementation exactly once.
             unsafe {
-                let _: () = msg_send![super(self), setMarkedText:string selectedRange:selected_range replacementRange:replacement_range];
+                let _: () = msg_send![super(self), setMarkedText: string, selectedRange: selected_range, replacementRange: replacement_range];
             }
             self.ivars().shared.fixture_trace.record(
                 self,
@@ -375,7 +388,7 @@ define_class!(
             );
             // SAFETY: preserve NSTextView's exact selector and arguments once.
             unsafe {
-                let _: () = msg_send![super(self), setSelectedRange:range affinity:affinity stillSelecting:still_selecting];
+                let _: () = msg_send![super(self), setSelectedRange: range, affinity: affinity, stillSelecting: still_selecting];
             }
             self.ivars().shared.fixture_trace.record(
                 self,
@@ -398,7 +411,7 @@ define_class!(
             );
             // SAFETY: preserve NSTextView's exact selector and arguments once.
             unsafe {
-                let _: () = msg_send![super(self), setSelectedRanges:ranges affinity:affinity stillSelecting:still_selecting];
+                let _: () = msg_send![super(self), setSelectedRanges: ranges, affinity: affinity, stillSelecting: still_selecting];
             }
             self.ivars().shared.fixture_trace.record(
                 self,
@@ -793,6 +806,8 @@ pub(super) struct NativeMarkdown {
     text: Retained<SourceTextView>,
     shared: Rc<Shared>,
     mount_generation: Cell<u64>,
+    #[cfg(feature = "native-parity-fixture")]
+    fixture_attach_decision: Cell<Option<FixtureAttachDecision>>,
 }
 impl NativeMarkdown {
     pub(super) fn create(
@@ -849,6 +864,8 @@ impl NativeMarkdown {
             text,
             shared: shared.clone(),
             mount_generation: Cell::new(0),
+            #[cfg(feature = "native-parity-fixture")]
+            fixture_attach_decision: Cell::new(None),
         });
         start_delivery(shared.pending.clone(), shared.queued.clone(), receiver, cx);
         Some(result)
@@ -1053,31 +1070,35 @@ impl NativeMarkdown {
         let generation = self.mount_generation.get().wrapping_add(1);
         self.mount_generation.set(generation);
         self.shared.host.bind(&view);
+        let needs_reparent = unsafe { self.scroll.superview() }
+            .as_ref()
+            .is_none_or(|v| !std::ptr::eq::<NSView>(&**v, &*view));
         let mut y = f64::from(f32::from(bounds.origin.y));
         let height = f64::from(f32::from(bounds.size.height));
         if !view.isFlipped() {
             y = view.bounds().size.height - y - height;
         }
+        let frame = NSRect::new(
+            NSPoint::new(f64::from(f32::from(bounds.origin.x)), y),
+            NSSize::new(f64::from(f32::from(bounds.size.width)), height),
+        );
+        let scroll_frame_set = needs_reparent || self.scroll.frame() != frame;
         #[cfg(feature = "native-parity-fixture")]
         self.shared.fixture_trace.record(
             &self.text,
             "NativeMarkdown::attach.set_frame.before",
             None,
         );
-        self.scroll.setFrame(NSRect::new(
-            NSPoint::new(f64::from(f32::from(bounds.origin.x)), y),
-            NSSize::new(f64::from(f32::from(bounds.size.width)), height),
-        ));
+        if scroll_frame_set {
+            self.scroll.setFrame(frame);
+        }
         #[cfg(feature = "native-parity-fixture")]
         self.shared.fixture_trace.record(
             &self.text,
             "NativeMarkdown::attach.set_frame.after",
             None,
         );
-        if unsafe { self.scroll.superview() }
-            .as_ref()
-            .is_none_or(|v| !std::ptr::eq::<NSView>(&**v, &*view))
-        {
+        if needs_reparent {
             #[cfg(feature = "native-parity-fixture")]
             self.shared.fixture_trace.record(
                 &self.text,
@@ -1092,12 +1113,56 @@ impl NativeMarkdown {
                 None,
             );
         }
+        #[cfg(feature = "native-parity-fixture")]
+        let mut text_frame_set = false;
+        #[cfg(feature = "native-parity-fixture")]
+        let mut text_target_width = None;
         if self.shared.config.borrow().word_wrap {
+            let width = self.scroll.contentView().bounds().size.width;
             let mut frame = self.text.frame();
-            frame.size.width = self.scroll.contentView().bounds().size.width;
-            self.text.setFrame(frame);
+            #[cfg(feature = "native-parity-fixture")]
+            {
+                text_target_width = Some(width);
+            }
+            if frame.size.width != width {
+                frame.size.width = width;
+                self.text.setFrame(frame);
+                #[cfg(feature = "native-parity-fixture")]
+                {
+                    text_frame_set = true;
+                }
+            }
         }
-        self.scroll.setHidden(false);
+        let hidden_set = self.scroll.isHidden();
+        if hidden_set {
+            self.scroll.setHidden(false);
+        }
+        #[cfg(feature = "native-parity-fixture")]
+        {
+            let actual_scroll_frame = self.scroll.frame();
+            let actual_text_width = self.text.frame().size.width;
+            self.fixture_attach_decision
+                .set(Some(FixtureAttachDecision {
+                    bounds: [
+                        f32::from(bounds.origin.x),
+                        f32::from(bounds.origin.y),
+                        f32::from(bounds.size.width),
+                        f32::from(bounds.size.height),
+                    ],
+                    actual_scroll_frame: [
+                        actual_scroll_frame.origin.x,
+                        actual_scroll_frame.origin.y,
+                        actual_scroll_frame.size.width,
+                        actual_scroll_frame.size.height,
+                    ],
+                    needs_reparent,
+                    scroll_frame_set,
+                    text_frame_set,
+                    hidden_set,
+                    text_target_width,
+                    text_actual_width: text_target_width.map(|_| actual_text_width),
+                }));
+        }
         // A signal can arrive while a transferred pane has no mounted window.
         // Retry only on a real mount; never consume its edits/actions on failure.
         if !self.shared.pending.borrow().is_empty() {

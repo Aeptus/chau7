@@ -38,6 +38,105 @@ async fn settle(handle: WindowHandle<Root>, cx: &mut AsyncApp) -> Result<(), Str
 fn attached(native: &NativeMarkdown) -> bool {
     !native.scroll.isHidden() && unsafe { native.scroll.superview() }.is_some()
 }
+fn fixture_bounds(layout: FixtureAttachDecision) -> Bounds<Pixels> {
+    let [x, y, width, height] = layout.bounds;
+    Bounds::new(
+        gpui::point(gpui::px(x), gpui::px(y)),
+        gpui::size(gpui::px(width), gpui::px(height)),
+    )
+}
+fn fixture_frame_values(frame: NSRect) -> [f64; 4] {
+    [
+        frame.origin.x,
+        frame.origin.y,
+        frame.size.width,
+        frame.size.height,
+    ]
+}
+fn validate_layout(
+    native: &NativeMarkdown,
+    layout: FixtureAttachDecision,
+    expected_bounds: [f32; 4],
+    expected_branch: Option<(bool, bool, Option<bool>, bool)>,
+) -> Result<(), String> {
+    ensure(
+        layout.bounds == expected_bounds,
+        "native fixture attach used unexpected GPUI bounds",
+    )?;
+    let parent = unsafe { native.scroll.superview() }
+        .ok_or("native fixture scroll view has no host after attach")?;
+    let routed_host = native
+        .shared
+        .host
+        .view()
+        .ok_or("native fixture host route disappeared after attach")?;
+    ensure(
+        std::ptr::eq::<NSView>(&*parent, &*routed_host),
+        "native fixture scroll view is attached to the wrong host",
+    )?;
+    let [x, y, width, height] = layout.bounds;
+    let mut frame_y = f64::from(y);
+    let frame_height = f64::from(height);
+    if !parent.isFlipped() {
+        frame_y = parent.bounds().size.height - frame_y - frame_height;
+    }
+    let expected_frame = [f64::from(x), frame_y, f64::from(width), frame_height];
+    ensure(
+        layout.actual_scroll_frame == expected_frame
+            && fixture_frame_values(native.scroll.frame()) == expected_frame,
+        "native fixture scroll frame did not match its attached bounds",
+    )?;
+    ensure(
+        !native.scroll.isHidden(),
+        "native fixture scroll view was not visible after attach",
+    )?;
+    if let Some(target_width) = layout.text_target_width {
+        let content_width = native.scroll.contentView().bounds().size.width;
+        ensure(
+            layout.text_actual_width == Some(target_width)
+                && target_width == content_width
+                && native.text.frame().size.width == content_width,
+            "word-wrapped source width did not match the current scroll content width",
+        )?;
+    }
+    if let Some((needs_reparent, scroll_frame_set, text_frame_set, hidden_set)) = expected_branch {
+        ensure(
+            layout.needs_reparent == needs_reparent,
+            "native fixture took an unexpected reparent branch",
+        )?;
+        ensure(
+            layout.scroll_frame_set == scroll_frame_set,
+            "native fixture took an unexpected scroll-frame setter branch",
+        )?;
+        if let Some(text_frame_set) = text_frame_set {
+            ensure(
+                layout.text_frame_set == text_frame_set,
+                "native fixture took an unexpected text-frame setter branch",
+            )?;
+        }
+        ensure(
+            layout.hidden_set == hidden_set,
+            "native fixture took an unexpected visibility setter branch",
+        )?;
+    }
+    Ok(())
+}
+fn attach_fixture_bounds(
+    handle: WindowHandle<Root>,
+    native: &NativeMarkdown,
+    bounds: Bounds<Pixels>,
+    cx: &mut AsyncApp,
+) -> Result<u64, String> {
+    cx.update_window(handle.into(), |_, window, _| native.attach(window, bounds))
+        .map_err(error)?
+        .ok_or_else(|| "native fixture attach did not mount".into())
+}
+fn last_attach_decision(native: &NativeMarkdown) -> Result<FixtureAttachDecision, String> {
+    native
+        .fixture_attach_decision
+        .get()
+        .ok_or_else(|| "native fixture did not record an attach decision".into())
+}
 fn source_is_first_responder(native: &NativeMarkdown, window: &NSWindow) -> bool {
     window
         .firstResponder()
@@ -318,6 +417,8 @@ pub(in crate::panes::editor) async fn verify(
         .ok_or("actual SourceTextView was not created")?;
     cx.update(|_| ensure(attached(&native), "actual NativeElement never attached"))
         .map_err(error)?;
+    let initial_layout_validation = last_attach_decision(&native)
+        .and_then(|layout| validate_layout(&native, layout, layout.bounds, None).map(|()| layout));
 
     let (application, native_window) = prepare_composition_owner(&native, cx).await?;
 
@@ -698,6 +799,79 @@ pub(in crate::panes::editor) async fn verify(
     settle(handle, cx).await?;
     cx.update(|_| ensure(attached(&native), "source did not remount after preview"))
         .map_err(error)?;
+
+    // Check layout reconciliation only after the marked-text frames, commit,
+    // input, history and save assertions have completed. These direct attach
+    // calls use the production host and bounds without changing the NSWindow.
+    MainThreadMarker::new().ok_or("native layout fixture is not on main thread")?;
+    initial_layout_validation?;
+    let baseline_layout = last_attach_decision(&native)?;
+    validate_layout(&native, baseline_layout, baseline_layout.bounds, None)?;
+
+    let previous_generation = native.mount_generation.get();
+    let same_generation =
+        attach_fixture_bounds(handle, &native, fixture_bounds(baseline_layout), cx)?;
+    ensure(
+        same_generation == previous_generation.wrapping_add(1)
+            && native.mount_generation.get() == same_generation,
+        "same-bounds native attach did not advance its mount generation",
+    )?;
+    validate_layout(
+        &native,
+        last_attach_decision(&native)?,
+        baseline_layout.bounds,
+        Some((false, false, Some(false), false)),
+    )?;
+
+    let [x, y, width, height] = baseline_layout.bounds;
+    ensure(
+        width > 1.0,
+        "native fixture source is too narrow to resize safely",
+    )?;
+    let narrower_bounds = Bounds::new(
+        gpui::point(gpui::px(x), gpui::px(y)),
+        gpui::size(gpui::px(width - 1.0), gpui::px(height)),
+    );
+    attach_fixture_bounds(handle, &native, narrower_bounds, cx)?;
+    validate_layout(
+        &native,
+        last_attach_decision(&native)?,
+        [x, y, width - 1.0, height],
+        Some((false, true, None, false)),
+    )?;
+
+    attach_fixture_bounds(handle, &native, fixture_bounds(baseline_layout), cx)?;
+    validate_layout(
+        &native,
+        last_attach_decision(&native)?,
+        baseline_layout.bounds,
+        Some((false, true, None, false)),
+    )?;
+
+    native.detach();
+    ensure(
+        native.scroll.isHidden() && unsafe { native.scroll.superview() }.is_none(),
+        "native fixture detach did not remove and hide the scroll view",
+    )?;
+    attach_fixture_bounds(handle, &native, fixture_bounds(baseline_layout), cx)?;
+    validate_layout(
+        &native,
+        last_attach_decision(&native)?,
+        baseline_layout.bounds,
+        Some((true, true, None, true)),
+    )?;
+    settle(handle, cx).await?;
+    ensure(
+        attached(&native),
+        "normal GPUI render did not retain the reattached native source",
+    )?;
+    validate_layout(
+        &native,
+        last_attach_decision(&native)?,
+        baseline_layout.bounds,
+        None,
+    )?;
+
     cx.update_window(handle.into(), |_, window, _| window.remove_window())
         .map_err(error)?;
     cx.update(|_| {
@@ -722,6 +896,11 @@ pub(in crate::panes::editor) async fn verify(
         "actual_gpui_popup_context_detach": true,
         "preview_binding_and_remount": true,
         "closed_window_surface_detach": true,
+        "native_initial_frame_matches_gpui_bounds": true,
+        "same_bounds_attach_skips_frame_and_unhide_setters": true,
+        "same_bounds_attach_skips_text_frame_setter": true,
+        "changed_bounds_reconciles_scroll_frame": true,
+        "detached_source_reattaches_to_same_host": true,
         "os_ime_input_source_automation": false,
         "clipboard_access": false
     }))
