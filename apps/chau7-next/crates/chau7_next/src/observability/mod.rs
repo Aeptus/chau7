@@ -268,9 +268,28 @@ pub fn record(event: StructuralEvent, cx: &App) {
             .ingest_structural(event, None, None, None);
     }
 }
+const MAX_INACTIVE_TIMERS: usize = 128;
 struct TimerRecord {
     generation: Uuid,
     payload: Value,
+    inactive_seq: Option<u64>,
+}
+/// Keep all active owners and only the newest completed lifetimes. Historical
+/// deactivation events remain in the spine/journal; no disk I/O occurs here.
+fn trim_inactive_timers(timers: &mut BTreeMap<String, TimerRecord>) {
+    let inactive = timers
+        .values()
+        .filter(|timer| timer.inactive_seq.is_some())
+        .count();
+    if inactive > MAX_INACTIVE_TIMERS
+        && let Some(oldest) = timers
+            .iter()
+            .filter_map(|(id, timer)| timer.inactive_seq.map(|seq| (seq, id)))
+            .min_by_key(|(seq, _)| *seq)
+            .map(|(_, id)| id.clone())
+    {
+        timers.remove(&oldest);
+    }
 }
 type TimerRecords = Arc<Mutex<BTreeMap<String, TimerRecord>>>;
 
@@ -296,7 +315,8 @@ impl Drop for TimerGuard {
         event.detail.insert("timer_id".into(), json!(self.id));
         event.detail.insert("active".into(), json!(false));
         // Serialize timer mutation and its public spine event together.
-        self.spine.ingest_structural(event, None, None, None);
+        timer.inactive_seq = Some(self.spine.ingest_structural(event, None, None, None).seq);
+        trim_inactive_timers(&mut timers);
     }
 }
 pub fn register_timer(
@@ -375,6 +395,7 @@ impl TimerRegistry {
             TimerRecord {
                 generation,
                 payload: timer.clone(),
+                inactive_seq: None,
             },
         );
         let mut event = StructuralEvent::new("timer_registered", subsystem);
@@ -387,18 +408,34 @@ impl TimerRegistry {
             spine: self.spine.clone(),
         }
     }
+    pub fn inventory(&self) -> Value {
+        let records = self.timers.lock().unwrap_or_else(|e| e.into_inner());
+        let inactive = records
+            .values()
+            .filter(|timer| timer.inactive_seq.is_some())
+            .count();
+        let timers = records
+            .values()
+            .map(|timer| timer.payload.clone())
+            .collect::<Vec<_>>();
+        json!({"timers":timers,"latest_seq":self.spine.latest_cursor(),
+            "coverage":"all active registered Chau7 Next tasks and newest inactive lifetimes; prior deactivations remain in the event journal",
+            "active_count":records.len()-inactive,"inactive_count":inactive,
+            "maximum_inactive_timers":MAX_INACTIVE_TIMERS})
+    }
 }
 
 pub fn timer_inventory(cx: &App) -> Value {
-    let host = cx.global::<Observability>();
-    let timers = host
-        .timers
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .values()
-        .map(|timer| timer.payload.clone())
-        .collect::<Vec<_>>();
-    json!({"timers":timers,"latest_seq":host.journal.latest_seq(),"coverage":"registered Chau7 Next tasks"})
+    timer_registry(cx)
+        .expect("observability initialized")
+        .inventory()
+}
+#[cfg(test)]
+pub(crate) fn isolated_timer_registry() -> TimerRegistry {
+    TimerRegistry {
+        timers: Arc::default(),
+        spine: Arc::new(EventSpine::new(128, 0)),
+    }
 }
 
 pub fn repo_events(envelopes: &[EventEnvelope], args: &serde_json::Map<String, Value>) -> Value {
@@ -511,10 +548,7 @@ pub fn shutdown(cx: &mut App) -> Option<JoinHandle<()>> {
 mod tests {
     use super::*;
     fn timer_registry() -> TimerRegistry {
-        TimerRegistry {
-            timers: Arc::default(),
-            spine: Arc::new(EventSpine::new(128, 0)),
-        }
+        isolated_timer_registry()
     }
     #[test]
     fn dropping_replaced_timer_does_not_deactivate_or_emit_for_its_new_owner() {
@@ -582,6 +616,85 @@ mod tests {
             events[8].structural_event().unwrap().detail["active"],
             false
         );
+    }
+
+    #[test]
+    fn thousands_of_closed_lifetimes_keep_all_active_and_only_recent_inactive() {
+        let registry = timer_registry();
+        let active: Vec<_> = (0..256)
+            .map(|i| registry.register(&format!("active-{i}"), "active", "test", 1, "test", "test"))
+            .collect();
+        for i in 0..4096 {
+            drop(registry.register(
+                &format!("closed-{i:04}"),
+                "closed",
+                "test",
+                1,
+                "test",
+                "test",
+            ));
+        }
+        let inventory = registry.inventory();
+        assert_eq!(inventory["active_count"], active.len());
+        assert_eq!(inventory["inactive_count"], MAX_INACTIVE_TIMERS);
+        assert_eq!(inventory["maximum_inactive_timers"], MAX_INACTIVE_TIMERS);
+        assert_eq!(
+            inventory["timers"].as_array().unwrap().len(),
+            active.len() + MAX_INACTIVE_TIMERS
+        );
+        {
+            let timers = registry.timers.lock().unwrap();
+            assert!(!timers.contains_key("closed-0000"));
+            for i in (4096 - MAX_INACTIVE_TIMERS)..4096 {
+                assert_eq!(timers[&format!("closed-{i:04}")].payload["active"], false);
+            }
+            assert!(
+                timers
+                    .values()
+                    .filter(|timer| timer.inactive_seq.is_none())
+                    .all(|timer| timer.payload["active"] == true)
+            );
+        }
+        // Pruning inventory records does not erase deactivation evidence.
+        let last = registry
+            .spine
+            .replay(registry.spine.latest_cursor() - 1, 1)
+            .envelopes;
+        assert_eq!(
+            last[0].structural_event().unwrap().detail["timer_id"],
+            "closed-4095"
+        );
+        assert_eq!(last[0].structural_event().unwrap().detail["active"], false);
+        drop(active);
+        let inventory = registry.inventory();
+        assert_eq!(inventory["active_count"], 0);
+        assert_eq!(inventory["inactive_count"], MAX_INACTIVE_TIMERS);
+    }
+    #[test]
+    fn old_guard_cannot_retire_a_reregistered_id_after_inactive_churn() {
+        let registry = timer_registry();
+        let old = registry.register("shared", "old", "test", 1, "test", "test");
+        let current = registry.register("shared", "current", "test", 2, "test", "test");
+        for i in 0..1024 {
+            drop(registry.register(&format!("closed-{i}"), "closed", "test", 1, "test", "test"));
+        }
+        let sequence = registry.spine.latest_cursor();
+        drop(old);
+        assert_eq!(registry.spine.latest_cursor(), sequence);
+        let inventory = registry.inventory();
+        assert_eq!(inventory["active_count"], 1);
+        assert_eq!(inventory["inactive_count"], MAX_INACTIVE_TIMERS);
+        assert_eq!(
+            registry.timers.lock().unwrap()["shared"].payload["label"],
+            "current"
+        );
+        drop(current);
+        assert_eq!(registry.spine.latest_cursor(), sequence + 1);
+        assert_eq!(
+            registry.timers.lock().unwrap()["shared"].payload["active"],
+            false
+        );
+        assert_eq!(registry.inventory()["inactive_count"], MAX_INACTIVE_TIMERS);
     }
 
     #[test]

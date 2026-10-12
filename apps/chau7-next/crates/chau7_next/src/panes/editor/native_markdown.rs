@@ -1,6 +1,7 @@
 //! Real AppKit source layout; raw text, selection and undo belong to NSTextView.
 //! The NSScrollView is attached only while its GPUI source element is mounted.
 mod editing;
+mod host;
 mod styles;
 
 use super::{EditorPane, SaveEditor, ToggleMarkdownMode};
@@ -45,6 +46,9 @@ pub(super) struct Pending {
     actions: Vec<Action>,
 }
 impl Pending {
+    fn is_empty(&self) -> bool {
+        self.text.is_none() && self.selection.is_none() && !self.focused && self.actions.is_empty()
+    }
     pub(super) fn clear_for_load(&mut self) {
         *self = Self::default();
     }
@@ -88,12 +92,12 @@ struct Shared {
     theme: RefCell<styles::Theme>,
     config: RefCell<EditorConfig>,
     pending: Rc<RefCell<Pending>>,
-    queued: Cell<bool>,
+    queued: Rc<Cell<bool>>,
     sender: mpsc::UnboundedSender<()>,
     line_starts: RefCell<Vec<usize>>,
     ruler: RefCell<Option<Weak<LineRuler>>>,
     mirroring: Cell<bool>,
-    gpui_view: RefCell<Option<Weak<NSView>>>,
+    host: host::SourceHost,
 }
 impl Shared {
     fn signal(&self) {
@@ -126,6 +130,47 @@ impl Shared {
         drop(pending);
         self.signal();
     }
+}
+/// Use the entity's current window, with no ownership of its original host.
+/// Failed updates leave the complete queue intact until the next actual mount.
+fn start_delivery(
+    pending: Rc<RefCell<Pending>>,
+    queued: Rc<Cell<bool>>,
+    mut receiver: mpsc::UnboundedReceiver<()>,
+    cx: &Context<EditorPane>,
+) {
+    cx.spawn(async move |this, cx| {
+        while receiver.next().await.is_some() {
+            queued.set(false);
+            if this.upgrade().is_none() {
+                break;
+            }
+            let _ = this.update_in(cx, |this, window, cx| {
+                let mut pending = std::mem::take(&mut *pending.borrow_mut());
+                let (text, selection) = pending.take_edits(&this.state.read(cx).value());
+                if this.mirror_native_edits(text, selection, window, cx) {
+                    this.schedule_autosave(cx);
+                }
+                if pending.focused {
+                    window.focus(&this.focus_handle, cx);
+                    cx.emit(super::SidePaneEvent::Focused);
+                }
+                for action in pending.actions {
+                    match action {
+                        Action::Save => window.dispatch_action(Box::new(SaveEditor), cx),
+                        Action::Toggle => window.dispatch_action(Box::new(ToggleMarkdownMode), cx),
+                        Action::Jump => {
+                            if let Some(native) = &this.native_markdown {
+                                native.jump();
+                            }
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        }
+    })
+    .detach();
 }
 struct SourceIvars {
     shared: Rc<Shared>,
@@ -284,10 +329,8 @@ impl SourceTextView {
         // Unhandled application shortcuts retain GPUI's normal dispatch path.
         self.ivars()
             .shared
-            .gpui_view
-            .borrow()
-            .as_ref()
-            .and_then(Weak::load)
+            .host
+            .view()
             .is_some_and(|v| v.performKeyEquivalent(event))
     }
 
@@ -517,19 +560,19 @@ impl NativeMarkdown {
     ) -> Option<Rc<Self>> {
         let mtm = MainThreadMarker::new()?;
         let raw = raw_view(window)?;
-        let (sender, mut receiver) = mpsc::unbounded();
+        let (sender, receiver) = mpsc::unbounded();
         let config = Settings::get(cx).editor.config.clone();
         let shared = Rc::new(Shared {
             document: RefCell::new(Document::default()),
             theme: RefCell::new(styles::Theme::new(config.font_size as f64, mtm)),
             config: RefCell::new(config),
             pending,
-            queued: Cell::new(false),
+            queued: Rc::new(Cell::new(false)),
             sender,
             line_starts: RefCell::new(vec![0]),
             ruler: RefCell::new(None),
             mirroring: Cell::new(false),
-            gpui_view: RefCell::new(Some(Weak::new(&raw))),
+            host: host::SourceHost::new(&raw),
         });
         let text = SourceTextView::new(mtm, shared.clone());
         text.setFont(Some(&NSFont::systemFontOfSize(
@@ -561,47 +604,7 @@ impl NativeMarkdown {
             text,
             shared: shared.clone(),
         });
-        let weak_shared = Rc::downgrade(&shared);
-        cx.spawn_in(window, async move |this, cx| {
-            while receiver.next().await.is_some() {
-                let Some(shared) = weak_shared.upgrade() else {
-                    break;
-                };
-                shared.queued.set(false);
-                let pending = std::mem::take(&mut *shared.pending.borrow_mut());
-                if this
-                    .update_in(cx, |this, window, cx| {
-                        let mut pending = pending;
-                        let (text, selection) = pending.take_edits(&this.state.read(cx).value());
-                        if this.mirror_native_edits(text, selection, window, cx) {
-                            this.schedule_autosave(cx);
-                        }
-                        if pending.focused {
-                            window.focus(&this.focus_handle, cx);
-                            cx.emit(super::SidePaneEvent::Focused);
-                        }
-                        for action in pending.actions {
-                            match action {
-                                Action::Save => window.dispatch_action(Box::new(SaveEditor), cx),
-                                Action::Toggle => {
-                                    window.dispatch_action(Box::new(ToggleMarkdownMode), cx)
-                                }
-                                Action::Jump => {
-                                    if let Some(native) = &this.native_markdown {
-                                        native.jump();
-                                    }
-                                }
-                            }
-                        }
-                        cx.notify();
-                    })
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })
-        .detach();
+        start_delivery(shared.pending.clone(), shared.queued.clone(), receiver, cx);
         Some(result)
     }
     pub(super) fn has_pending_edits(&self) -> bool {
@@ -758,6 +761,7 @@ impl NativeMarkdown {
         let Some(view) = raw_view(window) else {
             return;
         };
+        self.shared.host.bind(&view);
         let mut y = f64::from(f32::from(bounds.origin.y));
         let height = f64::from(f32::from(bounds.size.height));
         if !view.isFlipped() {
@@ -779,19 +783,14 @@ impl NativeMarkdown {
             self.text.setFrame(frame);
         }
         self.scroll.setHidden(false);
+        // A signal can arrive while a transferred pane has no mounted window.
+        // Retry only on a real mount; never consume its edits/actions on failure.
+        if !self.shared.pending.borrow().is_empty() {
+            self.shared.signal();
+        }
     }
     pub(super) fn detach(&self) {
-        if let Some(window) = self.scroll.window() {
-            let native_focused = window
-                .firstResponder()
-                .and_then(|r| r.downcast::<NSView>().ok())
-                .is_some_and(|v| v.isDescendantOf(&self.scroll));
-            if native_focused
-                && let Some(view) = self.shared.gpui_view.borrow().as_ref().and_then(Weak::load)
-            {
-                window.makeFirstResponder(Some(&view));
-            }
-        }
+        self.shared.host.return_focus(&self.scroll);
         self.scroll.setHidden(true);
         self.scroll.removeFromSuperview();
     }
@@ -972,5 +971,63 @@ mod tests {
         }
         assert_eq!(line_starts(text), vec![0, 10, 12, 14]);
         assert_eq!(utf16_to_byte(text, usize::MAX), text.len());
+    }
+    #[gpui::test]
+    fn queued_edits_and_actions_follow_transfer_after_source_closes(cx: &mut gpui::TestAppContext) {
+        use gpui::{AppContext, WindowOptions};
+        use gpui_kit::test::TestWindowExt;
+        let (source, pane) = super::super::markdown_live_tests::editor(cx);
+        cx.update_window(source.into(), |_, window, cx| window.render_frame(cx))
+            .unwrap();
+        let (sender, receiver) = mpsc::unbounded();
+        let queued = Rc::new(Cell::new(true));
+        let pending = cx.update(|cx| {
+            pane.update(cx, |pane, cx| {
+                let pending = pane.native_pending.clone();
+                start_delivery(pending.clone(), queued.clone(), receiver, cx);
+                pending
+            })
+        });
+        cx.update_window(source.into(), |_, window, _| window.remove_window())
+            .unwrap();
+        {
+            let mut p = pending.borrow_mut();
+            p.typed("# moved café😀", NSRange::new(2, 4));
+            p.focused = true;
+            p.actions.push(Action::Toggle);
+        }
+        sender.unbounded_send(()).unwrap();
+        cx.run_until_parked();
+        assert!(!queued.get());
+        assert_eq!(pending.borrow().text(), Some("# moved café😀"));
+        assert_eq!(pending.borrow().actions.len(), 1);
+        let target = cx.update(|cx| {
+            gpui_kit::open_window(WindowOptions::default(), cx, |_, _| pane.clone())
+                .unwrap()
+                .0
+        });
+        cx.update_window(target, |_, window, cx| window.render_frame(cx))
+            .unwrap();
+        // Actual native attachment re-signals the preserved queue on mount.
+        queued.set(true);
+        sender.unbounded_send(()).unwrap();
+        cx.run_until_parked();
+        cx.update_window(target, |_, window, cx| {
+            pane.read_with(cx, |pane, cx| {
+                assert_eq!(pane.window_handle, target);
+                assert_eq!(pane.state.read(cx).value(), "# moved café😀");
+                assert_eq!(pane.state.read(cx).selected_range(), 2..6);
+                assert!(
+                    pane.markdown_mode,
+                    "Toggle was dispatched in the target window"
+                );
+                assert!(pane.focus_handle.is_focused(window));
+            });
+        })
+        .unwrap();
+        assert!(pending.borrow().is_empty());
+        assert!(cx.update_window(source.into(), |_, _, _| ()).is_err());
+        drop(sender);
+        cx.run_until_parked();
     }
 }

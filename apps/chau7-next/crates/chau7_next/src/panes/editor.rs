@@ -1223,6 +1223,14 @@ impl Focusable for EditorPane {
 
 impl Render for EditorPane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let host = window.window_handle();
+        if self.window_handle != host {
+            self.window_handle = host;
+            #[cfg(target_os = "macos")]
+            self.native_guard_subscriptions.clear();
+            // A pending autosave must also follow its transferred document.
+            self.schedule_autosave(cx);
+        }
         if std::mem::take(&mut self.settings_pending) {
             self.apply_settings(window, cx);
         }
@@ -1455,7 +1463,7 @@ mod markdown_live_tests {
     };
     use gpui_kit::{base::Root, test::TestWindowExt};
 
-    fn editor(cx: &mut TestAppContext) -> (WindowHandle<Root>, Entity<EditorPane>) {
+    pub(super) fn editor(cx: &mut TestAppContext) -> (WindowHandle<Root>, Entity<EditorPane>) {
         cx.update(|cx| {
             gpui_kit::init(cx);
             cx.set_global(Settings::default());

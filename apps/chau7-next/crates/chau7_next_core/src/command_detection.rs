@@ -10,8 +10,14 @@
 //! (`AIToolRegistry.swift`); the registry queries live in `ai::tool_registry`.
 
 use std::collections::{HashMap, HashSet};
+#[cfg(not(windows))]
 use std::path::Path;
 use std::sync::LazyLock;
+
+#[cfg(any(windows, test))]
+mod windows_paths;
+#[cfg(windows)]
+use windows_paths as paths;
 
 // MARK: - AI tool table (from AIToolRegistry.allTools)
 
@@ -454,7 +460,7 @@ fn detect_ai_app_from_tokens(tokens: &[String], token: &str) -> Option<String> {
 
 /// Detects an AI app name from a command line.
 pub fn detect_app(command_line: &str) -> Option<String> {
-    let tokens = tokenize(command_line);
+    let tokens = detection_tokens(command_line);
     let token = extract_command_token(&tokens)?;
     detect_ai_app_from_tokens(&tokens, token)
 }
@@ -468,7 +474,7 @@ pub fn detect_launchable_app(
     current_directory: &str,
     search_path: Option<&str>,
 ) -> Option<String> {
-    let tokens = tokenize(command_line);
+    let tokens = detection_tokens(command_line);
     let token = extract_command_token(&tokens)?;
     if !command_appears_executable(token, current_directory, search_path) {
         return None;
@@ -478,7 +484,7 @@ pub fn detect_launchable_app(
 
 /// Detects a dev server from a command line.
 pub fn detect_dev_server(command_line: &str) -> Option<String> {
-    let tokens = tokenize(command_line);
+    let tokens = detection_tokens(command_line);
     let token = extract_command_token(&tokens)?;
     let normalized = normalize_token(token);
 
@@ -586,7 +592,7 @@ fn script_to_server_name(script: &str) -> &'static str {
 
 /// Extracts the command token from a raw command line.
 pub fn command_token(command_line: &str) -> Option<String> {
-    let tokens = tokenize(command_line);
+    let tokens = detection_tokens(command_line);
     command_token_index(&tokens).map(|i| tokens[i].clone())
 }
 
@@ -707,6 +713,20 @@ pub fn tokenize(line: &str) -> Vec<String> {
     tokens
 }
 
+// Keep the public Swift/POSIX tokenizer unchanged. Native Windows detection
+// must preserve path separators; PowerShell uses backticks, not backslashes,
+// to escape command text.
+fn detection_tokens(line: &str) -> Vec<String> {
+    #[cfg(windows)]
+    {
+        windows_paths::tokenize(line)
+    }
+    #[cfg(not(windows))]
+    {
+        tokenize(line)
+    }
+}
+
 /// Normalizes a command token to a lookup key: trims whitespace, keeps the
 /// last path component, drops its extension and lowercases it.
 pub fn normalize_token(token: &str) -> String {
@@ -736,21 +756,28 @@ pub fn command_appears_executable(
     current_directory: &str,
     search_path: Option<&str>,
 ) -> bool {
-    let trimmed = token.trim();
-    if trimmed.is_empty() {
-        return false;
+    #[cfg(windows)]
+    {
+        windows_paths::command_appears_executable(token, current_directory, search_path)
     }
+    #[cfg(not(windows))]
+    {
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
 
-    if trimmed.contains('/') || trimmed.starts_with('~') {
-        return match paths::resolve_command_path(trimmed, current_directory) {
-            Some(resolved) => paths::is_executable_file(&resolved),
-            None => false,
-        };
+        if trimmed.contains('/') || trimmed.starts_with('~') {
+            return match paths::resolve_command_path(trimmed, current_directory) {
+                Some(resolved) => paths::is_executable_file(&resolved),
+                None => false,
+            };
+        }
+
+        paths::path_directories(search_path, current_directory)
+            .iter()
+            .any(|dir| paths::is_executable_file(&paths::append_component(dir, trimmed)))
     }
-
-    paths::path_directories(search_path, current_directory)
-        .iter()
-        .any(|dir| paths::is_executable_file(&paths::append_component(dir, trimmed)))
 }
 
 // MARK: - Internal helpers
@@ -814,6 +841,7 @@ fn find_subcommand(tokens: &[String], command: &str, targets: &[&str]) -> Option
 
 /// Path helpers mirroring the NSString / URL / RuntimeIsolation behavior the
 /// Swift code relies on.
+#[cfg(not(windows))]
 mod paths {
     use super::Path;
 

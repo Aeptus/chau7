@@ -154,6 +154,11 @@ pub fn init(cx: &mut App) {
                 .timer(Duration::from_millis(250))
                 .await;
             cx.update(|cx| {
+                let mut callback = chau7_next_core::work_profiler::timer_callback(
+                    "repository.persistence",
+                    "callback",
+                    chau7_next_core::work_profiler::Queue::Main,
+                );
                 if let Some(registry) = registry(cx) {
                     let (saves, recent_changed) = {
                         let mut state = registry.inner.lock();
@@ -162,6 +167,8 @@ pub fn init(cx: &mut App) {
                             std::mem::take(&mut state.recent_changed),
                         )
                     };
+                    callback.items(saves.len().saturating_add(usize::from(recent_changed)));
+                    callback.idle(saves.is_empty() && !recent_changed);
                     if !saves.is_empty() {
                         registry.jobs.0.lock().metadata.extend(saves);
                         registry.jobs.1.notify_one();

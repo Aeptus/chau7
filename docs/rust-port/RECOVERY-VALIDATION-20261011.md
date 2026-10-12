@@ -68,3 +68,54 @@ push-frame patch, current notification reconciliation, shared native process
 monitoring and Usage diagnostics are integrated after the native checkpoint.
 Their source checks and native acceptance must be recorded separately; the
 8fe70406 bundle is not evidence for those newer source changes.
+
+## Rebuilt native checkpoint, 2026-10-12
+
+Native source checkpoint: `10b774b797db94146549c1384889433406d9c2ff`.
+The integrated locked release workspace passed 2,836 tests, with two existing
+ignored tests. Strict release workspace/all-target Clippy, formatting, parity
+and diff checks passed. All three Next executables were rebuilt from this
+checkpoint. Four shared helpers retain their verified unchanged source and
+hashes. All seven executables and the owned bundle passed deep strict signing.
+
+The preceding `b5857ef9` bundle aborted at startup: CTO registered a timer before
+observability initialization. The `c1eed221` initialization-order correction
+is included in `10b774b7`, whose real native launch now succeeds. The failed
+bundle and the prior verified bundle are retained as local rollback evidence.
+
+The isolated test bundle was replaced after a graceful quit. The version-one
+restore index retained its one window and two saved tabs before and after quit.
+Read-only MCP confirms both tabs after launch; the selected terminal activates
+and the other remains deferred. Runtime source identity matches the bundle.
+Its durable journal was fully processed with no journal error at capture.
+The owned window screenshot again shows both tabs grouped under one repository,
+the branch chip, ANSI styles, combining accents, emoji and wide characters.
+
+Two real performance snapshots span 140.708 seconds with one active terminal,
+one window and interactive refresh at both endpoints. App process CPU usage
+is 2.488 percent of one logical CPU over that interval. Final resident memory
+is 100,220,928 bytes. The watchdog records zero stalls and recoveries. These
+measurements do not establish a general speedup over earlier captures with
+different terminal counts and focus. Profiler wall time is not CPU time;
+unavailable per-stage CPU and GPU completion times remain null.
+
+The actual CPU renderer, per-pane retention estimates and work profiles are
+available through read-only MCP. Performance reports persist every five seconds
+in the owned profile: latest JSON, plus two JSONL history files bounded to
+8 MiB each; individual snapshots are capped at 1 MiB. No terminal transcript
+is needed for these numeric captures.
+
+A timestamp-filtered audit of the new launch finds 98 log lines: 62 DEBUG,
+34 INFO, two WARN and zero ERROR or panic records. One warning records the
+previous interrupted launch. The other records the operating system refusing
+notification permission for the test bundle. Notification acceptance therefore
+remains outstanding; no OS permission was changed by this check.
+
+Local evidence includes `native-10b774b797db-bundle-manifest.json`,
+`native-10b774-runtime.json`, `native-10b774-performance-{a,b}.json`,
+`native-10b774-timers.json`, `native-10b774-tabs.json` and the owned window
+capture. Newer source changes to shared protection settings, Windows history
+identity, timer retention, unsampled heartbeat reporting and restored terminal
+geometry require their own combined checks and a subsequent native rebuild.
+This checkpoint does not establish real-provider, paired-device, keyboard/IME
+or accessibility acceptance.

@@ -140,6 +140,11 @@ pub fn start(cx: &mut App) {
                 break;
             }
             cx.update(|_| {
+                let _callback = chau7_next_core::work_profiler::timer_callback(
+                    "performance.main_thread_heartbeat",
+                    "callback",
+                    chau7_next_core::work_profiler::Queue::Main,
+                );
                 shared
                     .last_progress_ms
                     .store(uptime_ms(), Ordering::Relaxed);

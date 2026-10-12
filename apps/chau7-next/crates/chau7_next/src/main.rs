@@ -126,7 +126,18 @@ fn main() {
     let settings = Settings::load(&root);
     l10n::apply_setting(settings.general.app_language);
     chau7_next_core::l10n::numbers::set_current(settings.general.regional_number_format);
-    let restored = session_store::load(&root);
+    let mut restored = session_store::load(&root);
+    if let Some(saved) = &mut restored {
+        // Normalize legacy UUIDs once so every window shares the same metadata
+        // owner reservations before the first selected pane activates.
+        for tab in saved.windows.iter_mut().flat_map(|window| &mut window.tabs) {
+            tab.uuid.get_or_insert_with(uuid::Uuid::new_v4);
+        }
+        restore::preparation::register_saved_identity_hints(
+            &root,
+            saved.windows.iter().flat_map(|window| &window.tabs),
+        );
+    }
     history::shell_histories::prune_startup(
         &root,
         restored.as_ref(),

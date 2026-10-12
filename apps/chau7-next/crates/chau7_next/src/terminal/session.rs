@@ -1741,6 +1741,10 @@ impl TerminalSession {
     pub(crate) fn mark_restore_presented(&self) {
         self.restore_presented.set(true);
     }
+    /// Cached restore bootstrap evidence for presentation policy; no input/I/O.
+    pub(crate) fn has_pending_restore_resume(&self) -> bool {
+        self.restore_intent.is_some()
+    }
     pub(crate) fn surface_has_live_frame(&self) -> bool {
         self.restore_presented.get()
     }

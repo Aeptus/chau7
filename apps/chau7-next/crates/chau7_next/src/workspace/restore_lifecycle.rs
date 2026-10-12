@@ -5,6 +5,12 @@ use chau7_next_core::session_restore::lifecycle::{
     deferred_decision, retain_snapshot,
 };
 
+enum IdentityStep {
+    Idle,
+    Wait(Duration),
+    Prepare(TabId, Option<futures::channel::oneshot::Receiver<bool>>),
+}
+
 #[derive(Default)]
 pub(super) struct RestoreLifecycle {
     pub startup: bool,
@@ -126,12 +132,34 @@ impl Workspace {
                         this.state.selected(),
                         elapsed,
                     ) {
-                        DeferredDecision::Idle => None,
-                        DeferredDecision::Wait(delay) => Some(delay),
+                        DeferredDecision::Idle => IdentityStep::Idle,
+                        DeferredDecision::Wait(delay) => IdentityStep::Wait(delay),
                         DeferredDecision::Restore(id, _) => {
-                            // The full SavedTab stays parked in PaneTree. Only cached
-                            // directory/root identity is hydrated; no terminal, editor,
-                            // transcript lookup or protected path I/O runs here.
+                            let prepared = this.entries.get(&id).and_then(|entry| {
+                                entry
+                                    .panes
+                                    .update(cx, |panes, cx| panes.hydrate_deferred_identity(cx))
+                            });
+                            IdentityStep::Prepare(id, prepared)
+                        }
+                    }
+                }) else {
+                    break;
+                };
+                match next {
+                    IdentityStep::Wait(next) => delay = next,
+                    IdentityStep::Idle => break,
+                    IdentityStep::Prepare(id, prepared) => {
+                        let admitted = match prepared {
+                            Some(prepared) => prepared.await.unwrap_or(false),
+                            None => true, // Already selected/closed/full activation owns it.
+                        };
+                        let _ = this.update(cx, |this, cx| {
+                            if admitted {
+                                this.restore_lifecycle
+                                    .pending_identity
+                                    .retain(|pending| *pending != id);
+                            }
                             if let Some(entry) = this.entries.get(&id) {
                                 let directory = entry.panes.read(cx).cwd(cx);
                                 this.state.setup_repo_group_in_directory(
@@ -140,17 +168,10 @@ impl Workspace {
                                     &this.known_repo_roots,
                                 );
                             }
-                            this.restore_lifecycle.pending_identity.retain(|p| *p != id);
                             cx.notify();
-                            Some(Duration::from_millis(10))
-                        }
+                        });
+                        delay = Duration::from_millis(if admitted { 10 } else { 50 });
                     }
-                }) else {
-                    break;
-                };
-                match next {
-                    Some(next) => delay = next,
-                    None => break,
                 }
             }
         }));
