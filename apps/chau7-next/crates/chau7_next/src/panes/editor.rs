@@ -102,6 +102,9 @@ pub struct EditorPane {
     markdown_decorations: Option<TextDecorationCollection>,
     #[cfg(target_os = "macos")]
     native_markdown: Option<Rc<native_markdown::NativeMarkdown>>,
+    /// Real popup rendering is exercised only by the isolated native runner.
+    #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+    native_fixture_popup: Option<gpui::Entity<gpui_kit::component::menu::PopupMenu>>,
     #[cfg(target_os = "macos")]
     native_guard_subscriptions: Vec<Subscription>,
     bracket_clear: Option<Task<()>>,
@@ -124,6 +127,13 @@ pub struct EditorPane {
 }
 
 impl EventEmitter<SidePaneEvent> for EditorPane {}
+
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) async fn verify_native_fixture(
+    cx: &mut gpui::AsyncApp,
+) -> Result<serde_json::Value, String> {
+    native_markdown::fixture::verify(cx).await
+}
 
 impl EditorPane {
     /// An empty "Untitled" editor (`splitWithTextEditor` without a file).
@@ -193,6 +203,8 @@ impl EditorPane {
             markdown_decorations: None,
             #[cfg(target_os = "macos")]
             native_markdown: None,
+            #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+            native_fixture_popup: None,
             #[cfg(target_os = "macos")]
             native_guard_subscriptions: Vec::new(),
             bracket_clear: None,
@@ -1452,6 +1464,20 @@ impl Render for EditorPane {
                 },
             )
             .child(div().flex_1().min_h_0().overflow_hidden().child(body))
+            .map(|pane| {
+                #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+                {
+                    pane.children(
+                        self.native_fixture_popup
+                            .clone()
+                            .map(|popup| div().absolute().top_0().left_0().child(popup)),
+                    )
+                }
+                #[cfg(not(all(feature = "native-parity-fixture", target_os = "macos")))]
+                {
+                    pane
+                }
+            })
     }
 }
 
