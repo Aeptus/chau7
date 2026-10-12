@@ -43,7 +43,7 @@ stale table.
 | [Dashboard](inventory/Dashboard.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | [DataExplorer](inventory/DataExplorer.md) | 4 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | [Debug](inventory/Debug.md) | 5 | 27 | 27 | 0 | 0 | 0 | 0 | 0 |
-| [Editor](inventory/Editor.md) | 4 | 15 | 14 | 1 | 0 | 0 | 0 | 1 |
+| [Editor](inventory/Editor.md) | 4 | 15 | 15 | 0 | 0 | 0 | 0 | 0 |
 | [Events](inventory/Events.md) | 2 | 10 | 10 | 0 | 0 | 0 | 0 | 0 |
 | [History](inventory/History.md) | 2 | 17 | 17 | 0 | 0 | 0 | 0 | 0 |
 | [Keyboard](inventory/Keyboard.md) | 1 | 70 | 69 | 0 | 0 | 1 | 0 | 0 |
@@ -54,7 +54,7 @@ stale table.
 | [Monitoring](inventory/Monitoring.md) | 2 | 24 | 24 | 0 | 0 | 0 | 0 | 0 |
 | [Notifications](inventory/Notifications.md) | 2 | 45 | 45 | 0 | 0 | 0 | 0 | 0 |
 | [Observability](inventory/Observability.md) | 3 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
-| [Overlay](inventory/Overlay.md) | 1 | 121 | 111 | 5 | 0 | 5 | 0 | 5 |
+| [Overlay](inventory/Overlay.md) | 1 | 121 | 116 | 0 | 0 | 5 | 0 | 0 |
 | [Performance](inventory/Performance.md) | 1 | 18 | 13 | 1 | 0 | 4 | 0 | 1 |
 | [Profiles](inventory/Profiles.md) | 1 | 20 | 20 | 0 | 0 | 0 | 0 | 0 |
 | [Proxy](inventory/Proxy.md) | 3 | 22 | 22 | 0 | 0 | 0 | 0 | 0 |
@@ -67,7 +67,7 @@ stale table.
 | [Settings](inventory/Settings.md) | 1 | 145 | 139 | 1 | 0 | 5 | 0 | 1 |
 | [Skills](inventory/Skills.md) | 3 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | [Snippets](inventory/Snippets.md) | 1 | 37 | 37 | 0 | 0 | 0 | 0 | 0 |
-| [SplitPanes](inventory/SplitPanes.md) | 1 | 26 | 26 | 0 | 0 | 0 | 0 | 0 |
+| [SplitPanes](inventory/SplitPanes.md) | 1 | 27 | 27 | 0 | 0 | 0 | 0 | 0 |
 | [StatusBar](inventory/StatusBar.md) | 5 | 17 | 16 | 0 | 0 | 1 | 0 | 0 |
 | [Telemetry](inventory/Telemetry.md) | 3 | 24 | 23 | 1 | 0 | 0 | 0 | 0 |
 | [Terminal](inventory/Terminal.md) | 1 | 68 | 65 | 0 | 0 | 3 | 0 | 0 |
@@ -75,9 +75,9 @@ stale table.
 | [Usage](inventory/Usage.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | [Utilities](inventory/Utilities.md) | 1 | 13 | 6 | 0 | 0 | 7 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1308** | **1257** | **9** | **0** | **42** | **0** | |
+| **Total** | | **1309** | **1264** | **3** | **0** | **42** | **0** | |
 
-Finished (done, n/a or dropped): 1299 of 1308 rows (99%). Partial: 9.
+Finished (done, n/a or dropped): 1306 of 1309 rows (99%). Partial: 3.
 
 <!-- parity:end -->
 

@@ -320,7 +320,7 @@ apps/chau7-macos/Sources/Chau7/SplitPanes/RunbookHost.swift	A	6fc7a9c54f628fa6dd
 apps/chau7-macos/Sources/Chau7/SplitPanes/SessionFilesTracker.swift	A	cf5061787a78c846829f0d4db8e5306d009d574c5330b19b75174422eabfba60	DSH-005,REP-016
 apps/chau7-macos/Sources/Chau7/SplitPanes/SessionNoteCoordinator.swift	A	1d3ad319aa4aa0f27d74b6dcf18e6df84d5a2b24146f99aca7520ab87690a193	SPL-025
 apps/chau7-macos/Sources/Chau7/SplitPanes/SplitPaneController.swift	M	55631dfa0857792f5fca6327bb6bc670629d32c74c5faae3321e0afa98507ef7	SPL-001,SPL-002,SPL-003,SPL-004,SPL-005,SPL-006,SPL-009,SPL-011,SPL-012,SPL-014,SPL-015,SPL-017,SPL-018,SPL-020,SPL-021,SPL-022,SPL-024,CMD-040,EDT-014,EDT-015
-apps/chau7-macos/Sources/Chau7/SplitPanes/SplitPaneViews.swift	M	7c215e5ddf2e9fd8224c7b9d90cad313c807b718522b60695291361c0b083446	SPL-004,SPL-007,SPL-011,SPL-012,SPL-013,SPL-014,EDT-015
+apps/chau7-macos/Sources/Chau7/SplitPanes/SplitPaneViews.swift	M	7c215e5ddf2e9fd8224c7b9d90cad313c807b718522b60695291361c0b083446	SPL-004,SPL-007,SPL-011,SPL-012,SPL-013,SPL-014,EDT-015,SPL-027
 apps/chau7-macos/Sources/Chau7/Startup/StartupRestoreCoordinator.swift	A	3daf5f4b40c7d83e5b5c59d258b072b05ab3813c208a9e026529989454c1edc5	module-level review; see coverage notes
 apps/chau7-macos/Sources/Chau7/StatusBar/CommandCenterEnvironment.swift	A	5c34aced04135174d43b6865c2ab1a34ef8bdb9f6d7a643fbee9e27491863f2b	module-level review; see coverage notes
 apps/chau7-macos/Sources/Chau7/StatusBar/CommandCenterSessionPresentation.swift	A	553437ca3a381889acd78a337d7248a99f38f4c5484902efd97b385886b3a0c4	module-level review; see coverage notes

@@ -70,11 +70,13 @@ pub(in super::super) struct ProfilesPane {
     pub ui: ProfilesUi,
     pub store: chau7_next_core::settings_profiles::ProfileStore,
     pub current_rule: Option<ProfileSwitchRule>,
-    pub ssh_entries: Vec<SSHConfigEntry>,
+    pub ssh_entries: std::sync::Arc<Vec<SSHConfigEntry>>,
     pub ssh_watching: bool,
     pub ssh_synced: Option<i64>,
     pub ssh_saved: usize,
-    ssh_mtime: Option<std::time::SystemTime>,
+    ssh_watch_state: Option<bool>,
+    ssh_error: Option<String>,
+    ssh_synced_local: Option<chrono::NaiveDateTime>,
 }
 
 impl ProfilesPane {
@@ -92,11 +94,13 @@ impl ProfilesPane {
             ui: ProfilesUi::default(),
             store: Default::default(),
             current_rule: None,
-            ssh_entries: Vec::new(),
+            ssh_entries: Default::default(),
             ssh_watching: false,
             ssh_synced: None,
             ssh_saved: 0,
-            ssh_mtime: None,
+            ssh_watch_state: None,
+            ssh_error: None,
+            ssh_synced_local: None,
         }
     }
 
@@ -109,23 +113,21 @@ impl ProfilesPane {
         if let Some(ssh) = cx.try_global::<SshState>() {
             self.ssh_saved = ssh.0.connections.len();
         }
-        // The config file is polled: a changed modification time reloads it.
-        let path = cx.global::<AppData>().root.home().join(".ssh/config");
-        let meta = std::fs::metadata(&path).ok();
-        self.ssh_watching = meta.is_some();
-        let mtime = meta.and_then(|m| m.modified().ok());
-        if mtime != self.ssh_mtime || self.ssh_synced.is_none() {
-            self.ssh_mtime = mtime;
-            self.ssh_entries = std::fs::read_to_string(&path)
-                .map(|text| ssh_config::parse(&text))
-                .unwrap_or_default();
-            self.ssh_synced = Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0),
-            );
-        }
+        let sync = profiles::ssh_config_sync::snapshot(cx);
+        self.ssh_watch_state = sync.watching;
+        self.ssh_watching = sync.watching.unwrap_or(false);
+        self.ssh_entries = sync.entries;
+        self.ssh_synced = sync.last_sync;
+        self.ssh_error = sync.error;
+        self.ssh_synced_local = sync.last_sync_local;
+    }
+
+    pub(in super::super) fn ssh_watch_status(&self) -> Option<bool> {
+        self.ssh_watch_state
+    }
+
+    pub(in super::super) fn ssh_last_sync_local(&self) -> Option<chrono::NaiveDateTime> {
+        self.ssh_synced_local
     }
 
     /// "Chau7 Next Settings for <name>", the window title.
@@ -690,18 +692,34 @@ pub(in super::super) fn ssh_sync(ctx: &SectionContext) -> gpui::Div {
             .flex()
             .items_center()
             .gap_2()
-            .child(div().size(px(8.0)).rounded_full().bg(if pane.ssh_watching {
-                gpui::hsla(0.36, 0.6, 0.45, 1.0)
-            } else {
-                gpui::hsla(0.0, 0.75, 0.55, 1.0)
-            }))
-            .child(div().text_sm().child(if pane.ssh_watching {
-                "Watching ~/.ssh/config"
-            } else {
-                "Not watching"
+            .child(
+                div()
+                    .size(px(8.0))
+                    .rounded_full()
+                    .bg(match pane.ssh_watch_status() {
+                        Some(true) => gpui::hsla(0.36, 0.6, 0.45, 1.0),
+                        Some(false) => gpui::hsla(0.0, 0.75, 0.55, 1.0),
+                        None => chrome.text_muted,
+                    }),
+            )
+            .child(div().text_sm().child(match pane.ssh_watch_status() {
+                Some(true) => "Watching ~/.ssh/config",
+                Some(false) => "Not watching",
+                None => "Loading SSH config status…",
             })),
         chrome,
     ));
+    if let Some(date) = pane.ssh_last_sync_local() {
+        let formatted =
+            chau7_next_core::l10n::formatters::date_time(chau7_next_core::l10n::current(), date);
+        section = section.child(hint_owned(
+            crate::l10n::lf("ssh.lastSync", "Last sync: %@", &[formatted.into()]),
+            chrome,
+        ));
+    }
+    if let Some(error) = &pane.ssh_error {
+        section = section.child(hint_owned(error.clone(), chrome));
+    }
     if entries.is_empty() {
         section = section
             .child(hint("No SSH config entries found.", chrome))
@@ -756,9 +774,7 @@ pub(in super::super) fn ssh_sync(ctx: &SectionContext) -> gpui::Div {
         .gap_2()
         .child(
             small_button("ssh-refresh", "Refresh", chrome).on_click(|_, _, cx| {
-                // The next render rereads the file when it changed; a click
-                // also forces it by resetting the sync time.
-                ui_edit(cx, |ui| ui.ssh_status = Some("Refreshed.".to_string()));
+                profiles::ssh_config_sync::refresh(cx);
             }),
         )
         .child(

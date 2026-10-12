@@ -51,9 +51,12 @@ fn actual_settings_pages_attach_every_current_search_target(harness: &mut TestAp
             .unwrap();
         let observation_ids = anchors::observed_target_ids(setting.anchor_id);
         let rendered = anchors::take_rendered_targets();
-        // GPUI's test platform has no OS frame loop. Deliver the two actual
-        // next-frame callbacks: our section/layout barrier and ScrollAnchor.
-        for _ in 0..2 {
+        // The headless platform has no OS frame loop. Advance its executor's
+        // virtual clock through real production easing and retry callbacks.
+        for _ in 0..5 {
+            cx.background_executor
+                .advance_clock(std::time::Duration::from_millis(250));
+            cx.run_until_parked();
             cx.update_window(window.into(), |_, window, cx| {
                 window.simulate_next_frame(cx);
                 window.render_frame(cx);
