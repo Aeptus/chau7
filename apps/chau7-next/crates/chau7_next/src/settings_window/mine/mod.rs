@@ -8,7 +8,6 @@ pub(super) mod productivity;
 pub(super) mod profiles;
 
 use chau7_next_core::command_risk::DangerousCommandGuard;
-use chau7_next_core::snippet_store;
 use gpui::{App, Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
 use gpui_kit::component::input::{InputEvent, InputState};
 use std::{cell::RefCell, rc::Rc};
@@ -16,7 +15,6 @@ use std::{cell::RefCell, rc::Rc};
 use super::SettingsView;
 use crate::settings::Settings;
 use crate::terminal::command_guard::{self, GuardState};
-use crate::workspace::AppData;
 
 /// Inputs and snapshots the sections draw from.
 pub(super) struct MineState {
@@ -29,7 +27,7 @@ pub(super) struct MineState {
     /// Sorted copies of the guard's lists, refreshed on each render.
     pub allow: Vec<String>,
     pub blocked: Vec<String>,
-    pub user_snippets: usize,
+    pub user_snippets: Option<usize>,
     pub profiles: profiles::ProfilesPane,
     _subscriptions: Vec<Subscription>,
 }
@@ -58,6 +56,7 @@ fn commit_input(
 
 impl MineState {
     pub(super) fn new(window: &mut Window, cx: &mut Context<SettingsView>) -> Self {
+        super::io_snapshot::init(cx);
         let s = Settings::get(cx).productivity.clone();
         let mut subs = Vec::new();
         let (repo_path, sub) = commit_input(
@@ -151,7 +150,7 @@ impl MineState {
             protected_edit,
             allow: Vec::new(),
             blocked: Vec::new(),
-            user_snippets: 0,
+            user_snippets: None,
             _subscriptions: subs,
         }
     }
@@ -167,8 +166,7 @@ impl MineState {
             self.blocked = blocked;
         }
         self.profiles.refresh(cx);
-        let root = &cx.global::<AppData>().root;
-        self.user_snippets = snippet_store::load_dir(&root.user_snippets_dir()).len();
+        self.user_snippets = super::io_snapshot::snippets(cx);
     }
 }
 

@@ -142,6 +142,8 @@ objc2-service-management = { version = "0.3.2", default-features = false, featur
 security-framework = "3.7.0"
 core-foundation = "0.10.1"
 core-foundation-sys = "0.8.7"
+# Single recursive user-snippets event stream; reuse the locked native backend.
+fsevent-sys = "4"
 
 [dev-dependencies]
 # Deterministic actual EditorState events, selection and undo regression.

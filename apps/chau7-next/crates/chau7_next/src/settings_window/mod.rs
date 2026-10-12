@@ -20,6 +20,7 @@ mod general;
 mod graphics;
 mod hover_card;
 mod injection;
+mod io_snapshot;
 mod keyboard;
 mod logs;
 mod mcp;
@@ -47,6 +48,7 @@ mod widgets;
 mod windows;
 
 pub use about::open_about;
+pub(crate) use io_snapshot::invalidate_snippets;
 #[cfg(feature = "native-parity-fixture")]
 pub(crate) use native_fixture::verify_native_fixture;
 

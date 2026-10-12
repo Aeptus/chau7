@@ -28,10 +28,13 @@ use parking_lot::Mutex;
 
 use crate::settings::Settings;
 
+type StatisticsObserver = Arc<dyn Fn() + Send + Sync>;
+
 /// The command history database.
 pub struct HistoryService {
     store: Arc<Mutex<HistoryStore>>,
     tx: Sender<HistoryRecord>,
+    statistics_observer: Arc<Mutex<Option<StatisticsObserver>>>,
     /// Records kept (the settings value, applied by [`apply_settings`]).
     enabled: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -54,12 +57,21 @@ impl HistoryService {
         let store = Arc::new(Mutex::new(store));
         let (tx, rx) = channel::<HistoryRecord>();
         let writer = store.clone();
+        let statistics_observer: Arc<Mutex<Option<StatisticsObserver>>> = Arc::default();
+        let observer = statistics_observer.clone();
         std::thread::Builder::new()
             .name("chau7-history-writer".into())
             .spawn(move || {
                 while let Ok(record) = rx.recv() {
-                    if let Err(err) = writer.lock().insert(&record) {
+                    let inserted = writer.lock().insert(&record);
+                    if let Err(err) = inserted {
                         log::error!("history insert failed: {err}");
+                    }
+                    // The writer released its store lock before invalidating
+                    // the held statistics; the callback only coalesces a job.
+                    let notify = observer.lock().clone();
+                    if let Some(notify) = notify {
+                        notify();
                     }
                 }
             })
@@ -67,6 +79,7 @@ impl HistoryService {
         Some(Self {
             store,
             tx,
+            statistics_observer,
             enabled: Arc::new(std::sync::atomic::AtomicBool::new(
                 settings.history.persistent_history,
             )),
@@ -97,7 +110,18 @@ impl HistoryService {
 
     /// Change the database (clear, trim, import).
     pub fn with_store_mut<R>(&self, f: impl FnOnce(&mut HistoryStore) -> R) -> R {
-        f(&mut self.store.lock())
+        let result = f(&mut self.store.lock());
+        let observer = self.statistics_observer.lock().clone();
+        if let Some(observer) = observer {
+            observer();
+        }
+        result
+    }
+
+    /// Register one app-owned snapshot observer. Its callback performs no
+    /// database work and should retain its consumer only weakly.
+    pub(crate) fn set_statistics_observer(&self, observer: StatisticsObserver) {
+        *self.statistics_observer.lock() = Some(observer);
     }
 }
 
@@ -240,6 +264,50 @@ mod tests {
         assert_eq!(format_duration(0.25), "250ms");
         assert_eq!(format_duration(1.5), "1.5s");
         assert_eq!(format_duration(125.0), "2m5s");
+    }
+
+    #[test]
+    fn statistics_observer_runs_after_owned_writer_and_mutation_release_the_store() {
+        let directory = std::env::temp_dir().join(format!(
+            "chau7-next-history-snapshot-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let root = DataRoot::with_home(directory, true);
+        root.ensure_dirs().unwrap();
+        let mut settings = Settings::default();
+        settings.history.persistent_history = true;
+        let service = HistoryService::open(&root, &settings).unwrap();
+        let store = service.store_handle();
+        let (events, completed) = std::sync::mpsc::sync_channel(1);
+        let observer_store = store.clone();
+        service.set_statistics_observer(Arc::new(move || {
+            // This would fail if notification ran while holding SQLite's mutex.
+            let unlocked = observer_store.try_lock().is_some();
+            let _ = events.try_send(unlocked);
+        }));
+        service.record(HistoryRecord::new("owned command"));
+        assert!(
+            completed
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap()
+        );
+        assert_eq!(store.lock().statistics().unwrap().0, 1);
+        service.with_store_mut(|store| store.clear_all());
+        assert!(
+            completed
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap()
+        );
+        assert_eq!(store.lock().statistics().unwrap().0, 0);
+        let weak = Arc::downgrade(&store);
+        drop(service);
+        drop(store);
+        let started = std::time::Instant::now();
+        while weak.upgrade().is_some() {
+            assert!(started.elapsed() < std::time::Duration::from_secs(5));
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        std::fs::remove_dir_all(root.home()).unwrap();
     }
 
     #[test]
