@@ -49,7 +49,59 @@ fn actual_settings_pages_attach_every_current_search_target(harness: &mut TestAp
             .unwrap();
         cx.update_window(window.into(), |_, window, cx| window.render_frame(cx))
             .unwrap();
+        let observation_ids = anchors::observed_target_ids(setting.anchor_id);
         let rendered = anchors::take_rendered_targets();
+        // GPUI's test platform has no OS frame loop. Deliver the two actual
+        // next-frame callbacks: our section/layout barrier and ScrollAnchor.
+        for _ in 0..2 {
+            cx.update_window(window.into(), |_, window, cx| {
+                window.simulate_next_frame(cx);
+                window.render_frame(cx);
+            })
+            .unwrap();
+        }
+        let (offset, maximum, bounds, selection, target) = cx.update(|cx| {
+            let settings = view.read(cx);
+            (
+                settings.scroll_handle.offset(),
+                settings.scroll_handle.max_offset(),
+                settings.scroll_handle.bounds(),
+                settings.navigation.selection,
+                settings.navigation.anchor_id.clone(),
+            )
+        });
+        assert_eq!(selection, setting.section, "{}", setting.anchor_id);
+        assert_eq!(target.as_deref(), Some(setting.anchor_id));
+        assert!(
+            bounds.size.height > px(0.0),
+            "{}: missing viewport",
+            setting.anchor_id
+        );
+        assert!(
+            offset.y <= px(0.0),
+            "{}: positive scroll offset",
+            setting.anchor_id
+        );
+        assert!(
+            offset.y >= -maximum.y,
+            "{}: offset beyond content",
+            setting.anchor_id
+        );
+        let visible = cx
+            .update_window(window.into(), |_, window, _| {
+                observation_ids
+                    .iter()
+                    .filter_map(|id| window.try_find(SharedString::from(id.clone())))
+                    .any(|element| {
+                        element.visible()
+                            && element.bounds().bottom() > bounds.top()
+                            && element.bounds().top() < bounds.bottom()
+                    })
+            })
+            .unwrap();
+        if !visible {
+            missing.push(format!("{}:{} (target not visible after actual scroll callbacks; offset {:?}, maximum {:?})", setting.section.id(), setting.anchor_id, offset, maximum));
+        }
         if !rendered.contains(setting.anchor_id) {
             missing.push(format!(
                 "{}:{} ({})",
