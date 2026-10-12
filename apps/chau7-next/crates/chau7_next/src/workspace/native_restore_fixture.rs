@@ -595,6 +595,23 @@ async fn verify_surfaces(
         initial_cache > 0,
         "real CPU terminal frames were never cached",
     )?;
+    let reclaimed_before = cx.update(|cx| {
+        crate::memory_pressure::diagnostics(cx)["regenerable_cache_bytes_released"]
+            .as_u64()
+            .unwrap_or(0)
+    });
+    let retention = verify_retention(handle, ws, ids, sessions, profile, cx).await?;
+    let reclaimed = cx.update(|cx| {
+        crate::memory_pressure::diagnostics(cx)["regenerable_cache_bytes_released"]
+            .as_u64()
+            .unwrap_or(0)
+            .saturating_sub(reclaimed_before)
+    });
+    ensure(
+        reclaimed > 0,
+        "injected critical policy reclaimed no actual renderer cache",
+    )?;
+    eprintln!("native_history_retention={retention}");
     cx.update(|_| native.orderOut(None));
     wait_until(cx, "actual ordered-out window suspension", |cx| {
         !native.isVisible()
@@ -634,11 +651,19 @@ async fn verify_surfaces(
     let application = NSApplication::sharedApplication(
         MainThreadMarker::new().ok_or("native fixture is not on main thread")?,
     );
+    // Observe only this fixture application on the platform main thread.
+    let policy_before = application.activationPolicy();
+    if policy_before != NSApplicationActivationPolicy::Regular {
+        application.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+    }
     ensure(
-        application.setActivationPolicy(NSApplicationActivationPolicy::Regular),
-        "owned fixture activation policy refused Regular",
+        application.activationPolicy() == NSApplicationActivationPolicy::Regular,
+        "owned fixture activation policy is not Regular",
     )?;
-    cx.update(|cx| cx.activate(true));
+    cx.update(|cx| {
+        native.orderFront(None);
+        cx.activate(true);
+    });
     wait_until(cx, "owned fixture application activation", |_| {
         application.isActive()
     })
@@ -689,22 +714,6 @@ async fn verify_surfaces(
     .await?;
     settle(handle, cx).await?;
     let key_window_observed = native.isKeyWindow();
-    let reclaimed_before = cx.update(|cx| {
-        crate::memory_pressure::diagnostics(cx)["regenerable_cache_bytes_released"]
-            .as_u64()
-            .unwrap_or(0)
-    });
-    let retention = verify_retention(handle, ws, ids, sessions, profile, cx).await?;
-    let reclaimed = cx.update(|cx| {
-        crate::memory_pressure::diagnostics(cx)["regenerable_cache_bytes_released"]
-            .as_u64()
-            .unwrap_or(0)
-            .saturating_sub(reclaimed_before)
-    });
-    ensure(
-        reclaimed > 0,
-        "injected critical policy reclaimed no actual renderer cache",
-    )?;
     let worker = cx.update(crate::memory_pressure::stop_native_fixture);
     cx.background_spawn(async move {
         if let Some(worker) = worker {
@@ -775,7 +784,7 @@ async fn verify_surfaces(
     Ok(
         serde_json::json!({"hover_live_budget_ms":2000,"hover_exit_budget_ms":500,
         "hover_parked_ptys":0,"hidden_raw_grid_updated":true,"hidden_remote_grid_updated":true,
-        "ordered_out_front":true,"native_mini_demini":true,"native_key_window":key_window_observed,"native_app_active":application.isActive(),"actual_reveal_frames":true,
+        "ordered_out_front":true,"native_mini_demini":true,"native_key_window":key_window_observed,"native_app_active":application.isActive(),"native_activation_policy_before":policy_before.0,"native_activation_policy_after":application.activationPolicy().0,"actual_reveal_frames":true,
         "critical_pressure_source":"fixture_policy_injection","os_pressure_delivery_tested":false,
         "critical_cache_bytes_reclaimed":reclaimed,"native_history_preserved":true,"ordinary_history_retention":retention,
         "distant_split_cache_bytes":0,"neighbor_cpu_cache_bytes":neighbor_before,
