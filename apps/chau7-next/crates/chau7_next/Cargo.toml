@@ -8,6 +8,10 @@ license.workspace = true
 name = "chau7-next"
 path = "src/main.rs"
 
+[features]
+# Explicit acceptance binary only; production packaging leaves this disabled.
+native-parity-fixture = ["objc2-app-kit/NSGraphicsContext", "gpui-kit/test-support"]
+
 [build-dependencies]
 # Compiles the os_log shim on macOS (build.rs).
 cc = "1"
