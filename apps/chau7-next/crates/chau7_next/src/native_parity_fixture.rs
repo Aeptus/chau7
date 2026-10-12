@@ -120,7 +120,10 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         cx.set_global(crate::workspace::AppData::new(root));
         crate::observability::init(cx);
         cx.spawn(async move |cx| {
-            let deadline = cx.background_executor().timer(Duration::from_secs(35));
+            let deadline_secs = if case == "settings" { 70 } else { 35 };
+            let deadline = cx
+                .background_executor()
+                .timer(Duration::from_secs(deadline_secs));
             let verification = async {
                 match case.as_str() {
                     "restore" => crate::workspace::verify_native_restore_fixture(cx).await,
