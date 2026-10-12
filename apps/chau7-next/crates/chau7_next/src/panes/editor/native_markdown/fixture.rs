@@ -99,7 +99,7 @@ pub(in crate::panes::editor) async fn verify(
         .update(|cx| {
             gpui_kit::open_window(
                 WindowOptions {
-                    show: false,
+                    show: true,
                     focus: false,
                     ..Default::default()
                 },
@@ -111,41 +111,47 @@ pub(in crate::panes::editor) async fn verify(
     let handle = handle
         .downcast::<Root>()
         .ok_or("owned editor window lacks Root")?;
-    let editor = cx
-        .update(|cx| {
-            workspace
-                .read(cx)
-                .selected_panes()
-                .and_then(|panes| {
-                    panes
-                        .read(cx)
-                        .leaves()
-                        .into_iter()
-                        .find_map(|pane| match pane {
-                            PaneItem::Editor(editor) => Some(editor),
-                            _ => None,
-                        })
-                })
-                .ok_or("restored editor-only layout did not create an editor")
-        })
-        .map_err(error)?;
-    handle
-        .update(cx, |_, window, cx| {
-            editor.update(cx, |editor, cx| {
-                editor.path = Some(path.clone());
-                editor.language = chau7_next_core::editor::language::EditorLanguage::detect(
-                    "native-editor-owned.md",
-                );
-                editor.autosave = false;
-                editor
-                    .state
-                    .update(cx, |state, cx| state.set_value(initial, window, cx));
-                editor.install_highlighter(cx);
-                window.focus(&editor.focus_handle, cx);
-                cx.notify();
-            });
-        })
-        .map_err(error)?;
+    // The production restored pane is deferred until its real window is
+    // visible. Wait for that path rather than reading the placeholder layout.
+    let started = std::time::Instant::now();
+    let editor = loop {
+        if let Some(editor) = cx.update(|cx| {
+            workspace.read(cx).selected_panes().and_then(|panes| {
+                panes
+                    .read(cx)
+                    .leaves()
+                    .into_iter()
+                    .find_map(|pane| match pane {
+                        PaneItem::Editor(editor) => Some(editor),
+                        _ => None,
+                    })
+            })
+        }) {
+            break editor;
+        }
+        if started.elapsed() >= std::time::Duration::from_secs(5) {
+            return Err("visible restored editor-only layout did not materialize an editor".into());
+        }
+        settle(handle, cx).await?;
+        cx.background_executor()
+            .timer(std::time::Duration::from_millis(10))
+            .await;
+    };
+    cx.update_window(handle.into(), |_, window, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.path = Some(path.clone());
+            editor.language =
+                chau7_next_core::editor::language::EditorLanguage::detect("native-editor-owned.md");
+            editor.autosave = false;
+            editor
+                .state
+                .update(cx, |state, cx| state.set_value(initial, window, cx));
+            editor.install_highlighter(cx);
+            window.focus(&editor.focus_handle, cx);
+            cx.notify();
+        });
+    })
+    .map_err(error)?;
     settle(handle, cx).await?;
     let native = cx
         .update(|cx| editor.read(cx).native_markdown.clone())
@@ -269,11 +275,67 @@ pub(in crate::panes::editor) async fn verify(
         "actual Cmd+S delivery did not save the owned file",
     )?;
 
-    handle
-        .update(cx, |_, window, cx| {
-            window.open_dialog(cx, |dialog, _, _| dialog.title("Owned editor fixture"))
-        })
-        .map_err(error)?;
+    cx.update(|cx| {
+        ensure(
+            editor
+                .read(cx)
+                .native_fixture_header_progress
+                .get()
+                .is_none(),
+            "task-free source painted a progress counter",
+        )
+    })
+    .map_err(error)?;
+    // Earlier deterministic Undo/Redo disables event grouping. Restore the
+    // production manager policy before further input delivered in real frames.
+    cx.update(|_| {
+        native
+            .text
+            .undoManager()
+            .ok_or("owned history missing")
+            .map(|undo| undo.setGroupsByEvent(true))
+    })
+    .map_err(error)?;
+    let tasks = "\n- [x] done\n- [ ] pending\n```\n- [x] fenced example\n```\n";
+    cx.update(|_| unsafe {
+        native.text.insertText_replacementRange(
+            &NSString::from_str(tasks),
+            NSRange::new(native.text.string().length(), 0),
+        );
+    });
+    settle(handle, cx).await?;
+    cx.update(|cx| {
+        ensure(
+            editor.read(cx).native_fixture_header_progress.get() == Some((1, 2)),
+            "actual painted header did not show 1/2 or counted a fenced example",
+        )
+    })
+    .map_err(error)?;
+    cx.update(|_| {
+        let text = native.text.string().to_string();
+        let start = text.find("[ ]").ok_or("owned pending task missing")?;
+        unsafe {
+            native.text.insertText_replacementRange(
+                &NSString::from_str("[x]"),
+                NSRange::new(text[..start].encode_utf16().count(), 3),
+            );
+        }
+        Ok::<_, String>(())
+    })
+    .map_err(error)?;
+    settle(handle, cx).await?;
+    cx.update(|cx| {
+        ensure(
+            editor.read(cx).native_fixture_header_progress.get() == Some((2, 2)),
+            "actual painted header did not update to 2/2 after native input",
+        )
+    })
+    .map_err(error)?;
+
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.open_dialog(cx, |dialog, _, _| dialog.title("Owned editor fixture"))
+    })
+    .map_err(error)?;
     settle(handle, cx).await?;
     cx.update(|_| {
         ensure(
@@ -282,8 +344,7 @@ pub(in crate::panes::editor) async fn verify(
         )
     })
     .map_err(error)?;
-    handle
-        .update(cx, |_, window, cx| window.close_all_dialogs(cx))
+    cx.update_window(handle.into(), |_, window, cx| window.close_all_dialogs(cx))
         .map_err(error)?;
     settle(handle, cx).await?;
     cx.update(|_| {
@@ -293,11 +354,10 @@ pub(in crate::panes::editor) async fn verify(
         )
     })
     .map_err(error)?;
-    handle
-        .update(cx, |_, window, cx| {
-            window.open_sheet(cx, |sheet, _, _| sheet.title("Owned editor fixture"))
-        })
-        .map_err(error)?;
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.open_sheet(cx, |sheet, _, _| sheet.title("Owned editor fixture"))
+    })
+    .map_err(error)?;
     settle(handle, cx).await?;
     cx.update(|_| {
         ensure(
@@ -306,15 +366,14 @@ pub(in crate::panes::editor) async fn verify(
         )
     })
     .map_err(error)?;
-    handle
-        .update(cx, |_, window, cx| window.close_sheet(cx))
+    cx.update_window(handle.into(), |_, window, cx| window.close_sheet(cx))
         .map_err(error)?;
     settle(handle, cx).await?;
 
     // Render and focus a real PopupMenu; this exercises the actual dispatch
     // context consulted by NativeElement::prepaint and the focus-out observer.
-    let popup = handle
-        .update(cx, |_, window, cx| {
+    let popup = cx
+        .update_window(handle.into(), |_, window, cx| {
             let popup = PopupMenu::build(window, cx, |menu, _, _| {
                 menu.item(PopupMenuItem::Label("Owned menu".into()))
             });
@@ -326,24 +385,22 @@ pub(in crate::panes::editor) async fn verify(
         })
         .map_err(error)?;
     settle(handle, cx).await?;
-    handle
-        .update(cx, |_, window, cx| {
-            window.focus(&popup.read(cx).focus_handle(cx), cx);
-            window.refresh();
-        })
-        .map_err(error)?;
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.focus(&popup.read(cx).focus_handle(cx), cx);
+        window.refresh();
+    })
+    .map_err(error)?;
     settle(handle, cx).await?;
-    handle
-        .update(cx, |_, window, _| {
-            ensure(
-                window
-                    .context_stack()
-                    .iter()
-                    .any(|context| context.contains("PopupMenu")),
-                "real popup did not enter its dispatch context",
-            )
-        })
-        .map_err(error)??;
+    cx.update_window(handle.into(), |_, window, _| {
+        ensure(
+            window
+                .context_stack()
+                .iter()
+                .any(|context| context.contains("PopupMenu")),
+            "real popup did not enter its dispatch context",
+        )
+    })
+    .map_err(error)??;
     cx.update(|_| {
         ensure(
             !attached(&native),
@@ -351,15 +408,14 @@ pub(in crate::panes::editor) async fn verify(
         )
     })
     .map_err(error)?;
-    handle
-        .update(cx, |_, window, cx| {
-            editor.update(cx, |editor, cx| {
-                editor.native_fixture_popup = None;
-                window.focus(&editor.focus_handle, cx);
-                cx.notify();
-            });
-        })
-        .map_err(error)?;
+    cx.update_window(handle.into(), |_, window, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.native_fixture_popup = None;
+            window.focus(&editor.focus_handle, cx);
+            cx.notify();
+        });
+    })
+    .map_err(error)?;
     settle(handle, cx).await?;
     cx.update(|_| {
         ensure(
@@ -389,20 +445,18 @@ pub(in crate::panes::editor) async fn verify(
         )
     })
     .map_err(error)?;
-    handle
-        .update(cx, |_, window, cx| {
-            editor.update(cx, |editor, cx| {
-                editor.markdown_mode = false;
-                cx.notify();
-            });
-            window.refresh();
-        })
-        .map_err(error)?;
+    cx.update_window(handle.into(), |_, window, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.markdown_mode = false;
+            cx.notify();
+        });
+        window.refresh();
+    })
+    .map_err(error)?;
     settle(handle, cx).await?;
     cx.update(|_| ensure(attached(&native), "source did not remount after preview"))
         .map_err(error)?;
-    handle
-        .update(cx, |_, window, _| window.remove_window())
+    cx.update_window(handle.into(), |_, window, _| window.remove_window())
         .map_err(error)?;
     cx.update(|_| {
         ensure(
@@ -418,6 +472,8 @@ pub(in crate::panes::editor) async fn verify(
         "ordinary_keydown_current_source": true,
         "native_undo_redo_key_equivalents": true,
         "save_delivery_owned_file": true,
+        "painted_task_progress_updates_after_native_input": true,
+        "task_progress_excludes_code_fences": true,
         "actual_gpui_dialog_detach": true,
         "actual_gpui_sheet_detach": true,
         "actual_gpui_popup_context_detach": true,

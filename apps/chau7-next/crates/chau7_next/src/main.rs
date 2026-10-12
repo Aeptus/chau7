@@ -87,6 +87,10 @@ fn clean_inherited_environment() {
 
 pub(crate) use logging::log_file_path;
 
+fn global_url_registration_allowed(isolated: bool) -> bool {
+    !isolated
+}
+
 fn main() {
     #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
     if let Some(code) = native_parity_fixture::run_if_requested() {
@@ -206,13 +210,16 @@ fn main() {
         register_app_actions(cx);
         // The first keystroke after a pause must not wait for App Nap.
         platform::power::begin_latency_critical("Terminal requires low-latency input processing");
-        let url_scheme = cx.register_url_scheme(chau7_next_core::app_shell::URL_SCHEME);
-        cx.background_spawn(async move {
-            if let Err(err) = url_scheme.await {
-                log::debug!("URL scheme registration: {err}");
-            }
-        })
-        .detach();
+        // An isolated owned app must not replace the user's global URL handler.
+        if global_url_registration_allowed(chau7_next_core::data_root::is_isolated_test_mode()) {
+            let url_scheme = cx.register_url_scheme(chau7_next_core::app_shell::URL_SCHEME);
+            cx.background_spawn(async move {
+                if let Err(err) = url_scheme.await {
+                    log::debug!("URL scheme registration: {err}");
+                }
+            })
+            .detach();
+        }
         app_actions::apply_menu_bar_only_mode(cx);
         // MCP server for AI agents (`MCPServerManager.shared.start()`).
         mcp::start(cx);
@@ -551,6 +558,12 @@ pub(crate) const DEFAULT_CONFIG: &str = r#"# Chau7 Next settings. Same format as
 
 #[cfg(test)]
 mod startup_order_tests {
+    #[test]
+    fn isolated_launch_preserves_the_global_url_handler() {
+        assert!(!super::global_url_registration_allowed(true));
+        assert!(super::global_url_registration_allowed(false));
+    }
+
     #[test]
     fn observability_precedes_services_that_register_timers() {
         let startup = include_str!("main.rs")

@@ -24,7 +24,7 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
 | EDT-011 | Word wrap on/off (off scrolls horizontally) | `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs | done |  |
 | EDT-012 | Editor settings: font size (13), tab size (4), use spaces, word wrap, line numbers, auto-indent, bracket matching, highlight current line, minimap, theme; stored in UserDefaults `editor.config` | `Settings/EditorConfig.swift`, `Settings/Views/EditorSettingsView.swift` |  | chau7_next_core/src/editor/config.rs,chau7_next/src/settings/editor.rs,chau7_next/src/settings_window/editor.rs,chau7_next/src/panes/editor.rs | done |  |
 
-| EDT-013 | Markdown source/live styling retains original text, updates spans without breaking selection/undo and supports session note/runbook headers | `Editor/MarkdownLiveStyler.swift`; `Editor/EnhancedEditorView.swift` |  | chau7_next/src/panes/editor.rs; chau7_next/src/panes/editor/live_markdown.rs; chau7_next/src/panes/editor/native_markdown.rs; chau7_next_core/src/editor/live_markdown.rs; chau7_next/src/panes/runbook.rs | partial | Attribute-only source styles, incremental fence-aware parsing and scoped preview binding implemented; macOS native heading fonts and measured hanging indentation implemented; selected-window input/popup acceptance remains pending. |
+| EDT-013 | Markdown source/live styling retains original text, updates spans without breaking selection/undo and supports session note/runbook headers | `Editor/MarkdownLiveStyler.swift`; `Editor/EnhancedEditorView.swift` | Live Markdown source/styling regressions; actual owned AppKit/GPUI native editor fixture at 9a4b5730 | chau7_next/src/panes/editor.rs; chau7_next/src/panes/editor/live_markdown.rs; chau7_next/src/panes/editor/native_markdown.rs; chau7_next_core/src/editor/live_markdown.rs; chau7_next/src/panes/runbook.rs | done | Attribute-only styling, native fonts/indentation, composition across actual frames, current-source key delivery, Undo/Redo/Save, dialog/sheet/focused-popup detachment and preview/remount are verified. OS input-source, hardware keyboard and accessibility acceptance remain separate manual checks. |
 
 | EDT-014 | Named editor autosave toggle, 2.5 s debounce, 2 s Auto-saved status and discard cancellation; automatic defaults for Next-owned plans/notes and stable owner-tab session note locator/UI | `SplitPanes/EditorAutoSaver.swift`; `SplitPanes/SplitPaneController.swift` | EditorAutoSaverTests | chau7_next/src/panes/editor.rs; chau7_next_core/src/editor/text.rs | done | 6943290c + coordinator e2cb9f62 complete isolated note attachment; 47 focused editor tests and strict macOS Clippy passed. Native UI acceptance remains unverified. |
 
@@ -36,7 +36,7 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
   `SplitPanes/SplitPaneViews.swift` now instantiates `EnhancedEditorView`.
   The original April inventory's unreachable note was stale. Next's
   gpui-kit editor applies the configured language rules and editor settings.
-- **EDT-013 remains partial.** Markdown source styles now apply immediately
+- **EDT-013 is implemented and native fixture acceptance passes.** Markdown source styles now apply immediately
   as UTF-8 text decorations, preserving markers, selection and undo history.
   The parser carries fence state, restyles edited paragraphs with neighbors,
   and falls back to a full pass when an old or new fence delimiter changes.
@@ -76,8 +76,14 @@ Text highlighting and editing building blocks. `SyntaxHighlighter` colors termin
   native UI (temporary-file save, fenced append, preview and late delivery);
   an additional pure queue test preserves focus/actions. All 406 app tests
   pass (one ignored); strict workspace/all-target release Clippy passes.
-  Source-window keyboard/IME, selection, split
-  resize and popup acceptance remain pending; keep partial until proven.
+  At integrated source `9a4b5730`, the actual owned AppKit/GPUI window
+  verifies composition across platform frames, commit into the GPUI buffer,
+  current-source constructed key delivery, native Undo/Redo, owned-file Save,
+  modal/sheet/focused-popup detachment, preview/remount and final surface
+  disposal, with empty stderr and profile removal. This closes the
+  row-specific source styling and selected-window input/modal blocker.
+  Real OS input-source switching, hardware keyboard, accessibility and
+  manual split resize remain in the broader macOS acceptance checklist.
 - The minimap setting and "highlight current line" only change the caret
   color in Swift; there is no minimap drawing. Chau7 Next draws both (a
   minimap column of line bars that scrolls on click, and a current line

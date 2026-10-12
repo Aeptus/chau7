@@ -888,7 +888,7 @@ mod identity_tests {
         );
         assert_eq!(
             repo_metadata::load_recent(&data.recent_repos_file()),
-            vec![new_root]
+            vec![known_identity::normalize_root(&new_root).unwrap()]
         );
         registry.jobs.0.lock().closed = true;
         registry.jobs.1.notify_one();

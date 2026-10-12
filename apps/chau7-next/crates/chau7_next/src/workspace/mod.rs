@@ -157,6 +157,7 @@ pub struct Workspace {
     font_size: f32,
     focus_handle: FocusHandle,
     _ticker: Option<Task<()>>,
+    shell_loading_tick: Option<Task<()>>,
     /// Broadcast mode: input typed in one tab goes to every included tab.
     broadcast: bool,
     broadcast_excluded: std::collections::HashSet<TabId>,
@@ -219,6 +220,9 @@ impl Workspace {
         })
         .detach();
         cx.observe_window_visibility(window, |this, _, window, cx| {
+            if !window.is_visible() {
+                this.shell_loading_tick = None;
+            }
             this.sync_restore_surfaces(window, cx);
             if window.is_visible() {
                 this.queue_surface_reactivation(
@@ -261,6 +265,7 @@ impl Workspace {
             font_size: settings.appearance.zoomed_font_size(),
             focus_handle: cx.focus_handle(),
             _ticker: Some(ticker),
+            shell_loading_tick: None,
             broadcast: false,
             broadcast_excluded: Default::default(),
             last_bell: HashMap::new(),
@@ -1563,9 +1568,7 @@ impl Render for Workspace {
         let content = self.selected_panes();
         let switch_offset = self.switch_anim.offset(0);
         let loading = self.render_shell_loading(chrome, cx);
-        if loading.is_some() {
-            window.request_animation_frame();
-        }
+        self.update_shell_loading_timer(window, cx);
         let hover_card = self.render_hover_card(chrome, cx);
         let explain = self.render_explain(chrome, cx);
         let idle_popover = self.render_idle_popover(chrome, cx);

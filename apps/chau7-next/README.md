@@ -182,3 +182,31 @@ cargo test --workspace
 
 CI (`.github/workflows/chau7-next.yml`) runs these on macOS, Linux and
 Windows, and builds the macOS app bundle.
+
+## Owned native parity fixtures (macOS)
+
+From a clean committed checkout, with Rust 1.96.0 already installed:
+
+```bash
+python3 apps/chau7-next/scripts/native-parity.py
+```
+
+Use `--case restore`, `--case settings` or `--case editor` for one case, and
+`--toolchain X.Y.Z` for another exact installed compiler. The script pins Cargo,
+rustc and rustdoc; it does not update the shared `stable` alias. It builds the
+optional `native-parity-fixture` feature into a separate target directory with
+command-local LTO off. Ordinary app packaging leaves this feature disabled.
+
+Each case uses a new validated temporary profile and actual macOS windows/frame
+callbacks. Fake local shells record synthetic resume input without interpreting
+provider commands. Settings and AppKit editor cases exercise production views.
+The fixtures do not send OS input, change permissions, contact providers/devices
+or reuse a live profile. Hardware keyboard, pointer and OS input-source checks
+remain on the hand-test checklist.
+
+The printed evidence directory contains the build log, per-case stdout/stderr
+and a manifest with the exact Git revision, compiler, binary SHA256 and outcome.
+Pass requires one explicit positive JSON result, exit zero and removal of the
+owned profile. Empty stdout never counts as success. An unexpected timeout
+retains the owned process PID/profile for diagnosis without forced signals.
+An unbundled fixture has null bundle metadata; its manifest supplies provenance.
