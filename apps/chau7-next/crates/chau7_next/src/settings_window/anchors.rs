@@ -120,6 +120,7 @@ pub(super) fn with_scope<T>(
         ("Command Permissions", "mcpPermissions"),
         ("MCP Profiles", "mcpProfiles"),
         ("API Call Tracking", "apiAnalytics"),
+        ("All Repositories", "promptInjection"),
         ("Optimization Mode", "ctoMode"),
         ("Input Prefix", "ctoPrefix"),
         ("Per-Tab Control", "ctoPerTab"),
@@ -239,6 +240,23 @@ mod tests {
                 )))
                 .collect(),
         )
+    }
+    #[test]
+    fn ai_context_anchor_survives_the_loaded_caption_change() {
+        take_rendered_targets();
+        let anchors = anchors();
+        with_scope(SettingsSection::PromptInjection, anchors.clone(), || {
+            assert!(for_title("AI Context").is_some());
+            assert!(for_title("All Repositories").is_some());
+            assert!(
+                observed_target_ids("promptInjection")
+                    .contains(&"setting-header-All Repositories".to_owned())
+            );
+            assert!(take_rendered_targets().contains("promptInjection"));
+        });
+        with_scope(SettingsSection::General, anchors, || {
+            assert!(for_title("All Repositories").is_none());
+        });
     }
     #[test]
     fn title_aliases_are_section_scoped_and_scopes_restore() {
