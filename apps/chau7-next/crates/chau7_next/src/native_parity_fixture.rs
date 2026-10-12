@@ -3,8 +3,12 @@ use chau7_next_core::data_root::DataRoot;
 use futures::{FutureExt, channel::oneshot, future::Either};
 use gpui::{AnyWindowHandle, App, AppContext, AsyncApp};
 use serde_json::{Value, json};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc,
+    atomic::{AtomicI32, Ordering},
+};
 use std::time::Duration;
 
 /// A real platform frame, never GPUI's deterministic test-frame helpers.
@@ -48,15 +52,16 @@ fn fresh_home(path: &Path) -> Result<PathBuf, String> {
 
 pub(crate) fn run_if_requested() -> Option<i32> {
     let args: Vec<_> = std::env::args().collect();
-    let index = args
-        .iter()
-        .position(|arg| arg == "--native-parity-fixture")?;
+    let Some(index) = args.iter().position(|arg| arg == "--native-parity-fixture") else {
+        eprintln!("This optional acceptance binary requires --native-parity-fixture <case>");
+        return Some(2);
+    };
     let requested = args.get(index + 1).cloned().unwrap_or_default();
     if std::env::var("CHAU7_NEXT_NATIVE_PARITY_FIXTURE").as_deref() != Ok("1") {
         eprintln!("native parity fixture requires explicit process-local opt-in");
         return Some(2);
     }
-    if requested != "restore" {
+    if !matches!(requested.as_str(), "restore" | "settings" | "editor") {
         eprintln!("unknown native parity fixture: {requested}");
         return Some(2);
     }
@@ -76,7 +81,7 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         std::env::set_var(chau7_next_core::data_root::HOME_ROOT_ENV, &home);
         std::env::set_var(chau7_next_core::data_root::ISOLATED_TEST_MODE_ENV, "1");
     }
-    let result = Arc::new(Mutex::new(None::<Result<Value, String>>));
+    let result = Arc::new(AtomicI32::new(1));
     let completion = result.clone();
     let root = DataRoot::with_home(home.clone(), true);
     if let Err(error) = root.ensure_dirs() {
@@ -84,6 +89,16 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         let _ = std::fs::remove_dir_all(&home);
         return Some(2);
     }
+    if let Err(error) = std::env::set_current_dir(&home) {
+        let code = report(
+            &requested,
+            &home,
+            Err(format!("owned fixture cwd: {error}")),
+        );
+        return Some(code);
+    }
+    let owned_home = home.clone();
+    let case = requested.clone();
     let platform = gpui_kit::platform::current_platform(false);
     let terminal_text_system = platform.text_system();
     let app = gpui::Application::with_platform(platform).with_assets(crate::assets::AppAssets);
@@ -103,7 +118,15 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         crate::observability::init(cx);
         cx.spawn(async move |cx| {
             let deadline = cx.background_executor().timer(Duration::from_secs(35));
-            let verification = crate::workspace::verify_native_restore_fixture(cx).boxed_local();
+            let verification = async {
+                match case.as_str() {
+                    "restore" => crate::workspace::verify_native_restore_fixture(cx).await,
+                    "settings" => crate::settings_window::verify_native_fixture(cx).await,
+                    "editor" => crate::panes::editor::verify_native_fixture(cx).await,
+                    _ => Err("unknown native case".into()),
+                }
+            }
+            .boxed_local();
             let outcome = match futures::future::select(verification, deadline).await {
                 Either::Left((result, _)) => result,
                 Either::Right(_) => Err("native acceptance deadline exceeded".into()),
@@ -128,29 +151,40 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                 }
             })
             .await;
-            *completion.lock().unwrap() = Some(outcome);
+            // NSApplication::terminate exits the process; it does not return
+            // from Application::run. Evidence and cleanup must precede quit.
+            let code = report(&case, &owned_home, outcome);
+            completion.store(code, Ordering::Release);
+            if code != 0 {
+                // Every owned window/session and the journal are closed above.
+                std::process::exit(code);
+            }
             cx.update(|cx| cx.quit());
         })
         .detach();
     });
-    let outcome = result
-        .lock()
-        .unwrap()
-        .take()
-        .unwrap_or_else(|| Err("native application quit without an outcome".into()));
-    let code = i32::from(outcome.is_err());
+    Some(result.load(Ordering::Acquire))
+}
+
+fn report(case: &str, home: &Path, outcome: Result<Value, String>) -> i32 {
+    let cleanup = std::fs::remove_dir_all(home).map_err(|error| error.to_string());
+    let cleaned = cleanup.is_ok() && !home.exists();
+    let outcome = match (outcome, cleanup) {
+        (result, Ok(())) => result,
+        (_, Err(error)) => Err(format!("owned fixture profile cleanup failed: {error}")),
+    };
+    let code = i32::from(outcome.is_err() || !cleaned);
     let evidence = match outcome {
         Ok(details) => {
-            json!({"case":requested,"passed":true,"details":details,"frames":"native on_next_frame","profile_isolated":true})
+            json!({"case":case,"passed":code==0,"details":details,"frames":"native on_next_frame","profile_isolated":true,"owned_profile_removed":cleaned,"owned_resources_closed":true})
         }
         Err(error) => {
-            json!({"case":requested,"passed":false,"error":error,"profile_isolated":true})
+            json!({"case":case,"passed":false,"error":error,"profile_isolated":true,"owned_profile_removed":cleaned})
         }
     };
     println!("{evidence}");
-    if let Err(error) = std::fs::remove_dir_all(&home) {
-        eprintln!("owned fixture cleanup failed: {error}");
-        return Some(1);
+    if std::io::stdout().flush().is_err() {
+        return 1;
     }
-    Some(code)
+    code
 }
