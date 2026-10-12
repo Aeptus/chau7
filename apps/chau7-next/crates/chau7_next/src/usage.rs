@@ -242,6 +242,7 @@ struct UsageGlobal {
     capture_working: Arc<std::sync::atomic::AtomicBool>,
     activity: Arc<super::cache::Activity>,
     timer: Option<gpui::Task<()>>,
+    monitor_guard: Option<super::cache::WorkGuard>,
     health: Option<gpui::Task<()>>,
 }
 impl UsageGlobal {
@@ -260,6 +261,7 @@ impl UsageGlobal {
             capture_working: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             activity: super::cache::Activity::new(4),
             timer: None,
+            monitor_guard: None,
             health: None,
         }
     }
@@ -305,8 +307,8 @@ pub fn init(cx: &mut App) {
         .activity
         .begin()
         .expect("new quota lifecycle accepts its monitor");
+    cx.global_mut::<UsageGlobal>().monitor_guard = Some(active);
     let task = cx.spawn(async move |cx| {
-        let _active = active;
         let _timer = timer;
         loop {
             cx.background_executor()
@@ -467,27 +469,35 @@ pub fn refresh(cx: &mut App) {
     snapshot.lock().refreshing = true;
     let recorder = crate::telemetry::recorder(cx);
     let settings = Settings::get(cx).general.clone();
-    cx.spawn(async move |cx| {
-        let state2 = state.clone();
-        let (warnings, mut view) = cx
-            .background_executor()
-            .spawn(async move {
-                let _active=active;
-                let mut worker = state2.lock();
-                let warnings = worker.capture(
-                    settings.usage_monitoring,
-                    settings.claude_quota_capture,
-                    settings.usage_quota_warnings,
+    let state2 = state.clone();
+    let observed = super::admission::background_observation(cx, async move {
+        let _active = active;
+        let mut worker = state2.lock();
+        let warnings = worker.capture(
+            settings.usage_monitoring,
+            settings.claude_quota_capture,
+            settings.usage_quota_warnings,
+        );
+        if let Some(recorder) = recorder {
+            let before = recorder.store().failure_count();
+            let consumption = recorder
+                .store()
+                .consumption_per_provider(Some(Utc::now() - chrono::Duration::minutes(10)));
+            if recorder.store().failure_count() == before && before != u64::MAX {
+                worker.view.recent_consumption = Some(consumption);
+            } else {
+                worker.view.last_error = Some(
+                    "Telemetry usage is unavailable; retaining the last successful observation"
+                        .into(),
                 );
-                if let Some(recorder)=recorder {
-                    let before=recorder.store().failure_count();
-                    let consumption=recorder.store().consumption_per_provider(Some(Utc::now()-chrono::Duration::minutes(10)));
-                    if recorder.store().failure_count()==before && before!=u64::MAX { worker.view.recent_consumption=Some(consumption); }
-                    else {worker.view.last_error=Some("Telemetry usage is unavailable; retaining the last successful observation".into());}
-                }
-                (warnings, worker.view.clone())
-            })
-            .await;
+            }
+        }
+        (warnings, worker.view.clone())
+    });
+    cx.spawn(async move |cx| {
+        let Ok((warnings, mut view)) = observed.await else {
+            return;
+        };
         cx.update(|cx| {
             refreshing.store(false, std::sync::atomic::Ordering::Release);
             view.refreshing = false;
@@ -566,18 +576,18 @@ pub fn set_capture(enabled: bool, cx: &mut App) {
     }
     snapshot.lock().capture_working = true;
     let root = cx.global::<AppData>().root.clone();
+    let observed = super::admission::background_observation(cx, async move {
+        let _active = active;
+        let result = configure_capture(&root, enabled);
+        let mut s = state.lock();
+        s.view.last_error = result.as_ref().err().cloned();
+        s.refresh_view();
+        (result, s.view.clone())
+    });
     cx.spawn(async move |cx| {
-        let (result, mut view) = cx
-            .background_executor()
-            .spawn(async move {
-                let _active = active;
-                let result = configure_capture(&root, enabled);
-                let mut s = state.lock();
-                s.view.last_error = result.as_ref().err().cloned();
-                s.refresh_view();
-                (result, s.view.clone())
-            })
-            .await;
+        let Ok((result, mut view)) = observed.await else {
+            return;
+        };
         cx.update(|cx| {
             capture_working.store(false, std::sync::atomic::Ordering::Release);
             view.capture_working = false;
@@ -1065,6 +1075,7 @@ struct Maintenance {
     pending: Arc<Mutex<MaintenancePending>>,
     activity: Arc<super::cache::Activity>,
     timer: Option<gpui::Task<()>>,
+    monitor_guard: Option<super::cache::WorkGuard>,
 }
 impl Global for Maintenance {}
 /// Stop new work and cancel the existing monitor. Completion waits off UI.
@@ -1072,6 +1083,8 @@ pub(super) fn shutdown_quota(cx: &mut App) -> Option<super::cache::Drain> {
     cx.try_global::<UsageGlobal>()?;
     let usage = cx.global_mut::<UsageGlobal>();
     drop(usage.timer.take());
+    // Cancellation closes UI dispatch now; the future may be destroyed later.
+    drop(usage.monitor_guard.take());
     drop(usage.health.take());
     Some(usage.activity.stop())
 }
@@ -1084,6 +1097,7 @@ pub(super) fn shutdown_maintenance(cx: &mut App) -> Option<super::cache::Drain> 
         pending.latest = None;
     }
     drop(global.timer.take());
+    drop(global.monitor_guard.take());
     Some(global.activity.stop())
 }
 pub(super) fn maintenance_diagnostics(cx: &App) -> serde_json::Value {
@@ -1110,6 +1124,7 @@ pub fn init_latency(cx: &mut App) {
         pending: Arc::new(Mutex::new(MaintenancePending::default())),
         activity: super::cache::Activity::new(6),
         timer: None,
+        monitor_guard: None,
     });
     cx.set_global(RetentionGlobal(Arc::new(Mutex::new(RetentionView {
         selected_days: Settings::get(cx).general.telemetry_retention_days,
@@ -1125,8 +1140,8 @@ pub fn init_latency(cx: &mut App) {
         30_000,
     );
     let active = maintenance_guard(cx).expect("new maintenance monitor accepts its task");
+    cx.global_mut::<Maintenance>().monitor_guard = Some(active);
     let task = cx.spawn(async move |cx| {
-        let _active = active;
         let _timer = timer;
         loop {
             cx.background_executor()
@@ -1215,19 +1230,19 @@ pub fn refresh_latency(cx: &mut App) {
         return;
     };
     let pending = maintenance.pending.clone();
+    let observed = super::admission::background_observation(cx, async move {
+        let _active = active;
+        loop {
+            let Some(request) = pending.lock().next() else {
+                break;
+            };
+            refresh_latency_request(request);
+        }
+    });
     cx.spawn(async move |cx| {
-        cx.background_executor()
-            .spawn(async move {
-                let _active = active;
-                loop {
-                    let Some(request) = pending.lock().next() else {
-                        break;
-                    };
-                    refresh_latency_request(request);
-                }
-            })
-            .await;
-        cx.update(|cx| cx.refresh_windows());
+        if observed.await.is_ok() {
+            cx.update(|cx| cx.refresh_windows());
+        }
     })
     .detach();
 }
@@ -1455,22 +1470,22 @@ pub fn preview_retention(days: i64, cx: &mut App) {
         s.generation += 1;
         s.generation
     };
+    let observed = super::admission::background_observation(cx, async move {
+        let _active = active;
+        let protected = recorder
+            .all_active_runs()
+            .into_iter()
+            .map(|r| r.id)
+            .collect::<Vec<_>>();
+        recorder
+            .store()
+            .retention_preview(days, &protected, Utc::now())
+            .map_err(|e| e.to_string())
+    });
     cx.spawn(async move |cx| {
-        let result = cx
-            .background_executor()
-            .spawn(async move {
-                let _active = active;
-                let protected = recorder
-                    .all_active_runs()
-                    .into_iter()
-                    .map(|r| r.id)
-                    .collect::<Vec<_>>();
-                recorder
-                    .store()
-                    .retention_preview(days, &protected, Utc::now())
-                    .map_err(|e| e.to_string())
-            })
-            .await;
+        let Ok(result) = observed.await else {
+            return;
+        };
         cx.update(|cx| {
             let mut s = shared.lock();
             if s.generation != generation {
@@ -1545,17 +1560,17 @@ pub fn compact_confirmed(cx: &mut App) {
         s.working = true;
         s.error = None;
     }
+    let observed = super::admission::background_observation(cx, async move {
+        let _active = active;
+        recorder
+            .store()
+            .compact_confirmed()
+            .map_err(|e| e.to_string())
+    });
     cx.spawn(async move |cx| {
-        let result = cx
-            .background_executor()
-            .spawn(async move {
-                let _active = active;
-                recorder
-                    .store()
-                    .compact_confirmed()
-                    .map_err(|e| e.to_string())
-            })
-            .await;
+        let Ok(result) = observed.await else {
+            return;
+        };
         cx.update(|cx| {
             let mut s = shared.lock();
             s.working = false;
@@ -1671,5 +1686,67 @@ mod maintenance_tests {
         std::thread::spawn(move || writer.finish().unwrap())
             .join()
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    use futures::channel::oneshot;
+    use std::{cell::Cell, rc::Rc};
+
+    #[gpui::test]
+    fn canceling_unpolled_ui_monitors_releases_only_their_lifetime_guards(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.background_executor.allow_parking();
+        let polled = Rc::new(Cell::new(false));
+        cx.update(|app| {
+            let root = DataRoot::with_home(
+                std::env::temp_dir().join(format!("next-monitor-drain-{}", uuid::Uuid::new_v4())),
+                true,
+            );
+            let mut quota = UsageGlobal::new(root);
+            quota.monitor_guard = quota.activity.begin();
+            let quota_polled = polled.clone();
+            quota.timer = Some(app.spawn(async move |_| {
+                quota_polled.set(true);
+                std::future::pending::<()>().await;
+            }));
+            app.set_global(quota);
+            let activity = super::super::cache::Activity::new(6);
+            let monitor_guard = activity.begin();
+            let latency_polled = polled.clone();
+            app.set_global(Maintenance {
+                pending: Arc::new(Mutex::new(MaintenancePending::default())),
+                activity,
+                monitor_guard,
+                timer: Some(app.spawn(async move |_| {
+                    latency_polled.set(true);
+                    std::future::pending::<()>().await;
+                })),
+            });
+            let quota = shutdown_quota(app).unwrap();
+            let latency = shutdown_maintenance(app).unwrap();
+            assert_eq!(
+                app.global::<UsageGlobal>().activity.diagnostics()["in_flight"],
+                0
+            );
+            assert_eq!(
+                app.global::<Maintenance>().activity.diagnostics()["in_flight"],
+                0
+            );
+            let (done, drained) = oneshot::channel();
+            let drainer = std::thread::spawn(move || {
+                quota.finish();
+                latency.finish();
+                done.send(()).unwrap();
+            });
+            // Drop schedules final task destruction on a blocked foreground
+            // queue. Its monitor-only guard must not be owned by that future.
+            app.foreground_executor().block_on(drained).unwrap();
+            drainer.join().unwrap();
+        });
+        assert!(!polled.get(), "foreground monitor unexpectedly ran");
     }
 }

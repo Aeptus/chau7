@@ -128,23 +128,68 @@ mod tests {
         std::fs::remove_file(path).unwrap();
     }
 
+    #[gpui::test]
+    fn unwinding_background_read_releases_guard_before_failed_publication(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use futures::FutureExt;
+        use std::panic::AssertUnwindSafe;
+        cx.background_executor.allow_parking();
+        let cache = Arc::new(Cache::<(), u64>::new());
+        let (_, ticket) = cache.begin(());
+        let observed = cx.update(|app| {
+            background_observation(
+                app,
+                AssertUnwindSafe(async move {
+                    let _ticket = ticket.unwrap();
+                    panic!("owned background read failure");
+                })
+                .catch_unwind(),
+            )
+        });
+        let failed = cx
+            .update(|app| app.foreground_executor().block_on(observed))
+            .unwrap();
+        assert!(failed.is_err(), "the injected panic was not observed");
+        // Catching the panic belongs only to this fixture; production never
+        // turns a worker panic into a successful observation.
+        assert_eq!(cache.diagnostics()["activity"]["in_flight"], 0);
+        let snapshot = cache.begin(()).0;
+        assert!(snapshot.error);
+        assert!(!snapshot.pending);
+        assert!(snapshot.value.is_none());
+        cache.stop().finish();
+    }
+
     #[test]
     fn all_ui_observed_read_sites_admit_background_work_first() {
-        let source = include_str!("../telemetry.rs");
-        assert_eq!(
-            source.matches("admission::background_observation(").count(),
-            3
-        );
-        for boundary in [
-            "let initializing =",
-            "pub fn hover_summary",
-            "fn analytics_data",
+        for (source, call, boundaries) in [
+            (
+                include_str!("../telemetry.rs"),
+                "admission::background_observation(",
+                &[
+                    "let initializing =",
+                    "pub fn hover_summary",
+                    "fn analytics_data",
+                ][..],
+            ),
+            (
+                include_str!("../usage.rs"),
+                "super::admission::background_observation(",
+                &[
+                    "pub fn refresh(",
+                    "pub fn set_capture",
+                    "pub fn refresh_latency(",
+                    "pub fn preview_retention",
+                    "pub fn compact_confirmed",
+                ][..],
+            ),
         ] {
-            let source = &source[source.find(boundary).unwrap()..];
-            assert!(
-                source.find("admission::background_observation(").unwrap()
-                    < source.find("cx.spawn(").unwrap()
-            );
+            assert_eq!(source.matches(call).count(), boundaries.len());
+            for boundary in boundaries {
+                let source = &source[source.find(boundary).unwrap()..];
+                assert!(source.find(call).unwrap() < source.find("cx.spawn(").unwrap());
+            }
         }
     }
 }
