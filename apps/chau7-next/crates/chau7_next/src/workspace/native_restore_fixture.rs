@@ -429,6 +429,33 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
         })
         .map_err(error)?;
     settle(handle, cx).await?;
+    cx.update(|cx| -> Result<(), String> {
+        let ws = ws.read(cx);
+        ensure(
+            ws.state.selected() == Some(ids[1]),
+            "selected-first restore lost selection",
+        )?;
+        ensure(
+            ws.state
+                .get(ids[1])
+                .is_some_and(|tab| tab.uuid == selected_uuid),
+            "stable selected UUID changed",
+        )?;
+        for i in [0, 2, 3, 4, 5] {
+            let tree = ws.entries[&ids[i]].panes.read(cx);
+            ensure(
+                tree.is_deferred() && tree.pane_sessions(cx).is_empty(),
+                "parked restore created an unwanted PTY",
+            )?;
+        }
+        Ok(())
+    })?;
+    wait_until(cx, "selected split PTY activation", |cx| {
+        let ws = ws.read(cx);
+        ws.state.selected() == Some(ids[1])
+            && ws.entries[&ids[1]].panes.read(cx).pane_sessions(cx).len() == 2
+    })
+    .await?;
     let selected_panes = cx.update(
         |cx| -> Result<Vec<(u64, Entity<TerminalSession>)>, String> {
             let ws = ws.read(cx);

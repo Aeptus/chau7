@@ -31,17 +31,24 @@ Last updated 2026-10-12.
 
 ## 3. Status
 
-- Combined source feb5e199 passes 2,992 release workspace tests (two existing
-  ignored), strict normal/optional all-target Clippy, format, 38 macOS fork
-  and 13 Apple tests, including seven actual Metal comparison cases. The full
-  eight-case Software/Auto native matrix records six passes and two failures:
-  Software editor marked composition and Software Restore deminiaturized
-  reveal. Both Settings cases pass the unchanged 500 ms limit. All eight
-  actual processes/profiles retired; no retries or reinterpretation. A normal
-  feature-free thinLTO build is verified on this source; its new packaged
-  runtime/shutdown acceptance remains pending. Two inventory rows stay partial.
-  Evidence and limits are in
+- Historical combined source `feb5e199` passes 2,992 release workspace tests
+  (two existing ignored), strict normal/optional all-target Clippy, format, 38
+  macOS fork and 13 Apple tests, including seven actual Metal comparison cases.
+  Its eight-case Software/Auto matrix records six passes and two failures:
+  Software editor marked composition and Software Restore deminiaturized reveal.
+  Both Settings cases pass the unchanged 500 ms limit. All eight
+  actual processes/profiles retired; no retries or reinterpretation. These
+  historical outcomes remain preserved in
   [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
+- Current frozen source `d1f290ab` passes the 11-gate full prepush, 3,017 Next
+  workspace tests, 539 helper tests, focused HUP and seven injected EINTR cases,
+  and vendor production plus macOS/Apple test gates. The signed normal-app run
+  and precision-aware post-quit database verification close TEL-024. Current
+  native outcomes leave PRF-002 as the only partial inventory row: Software
+  Restore/Editor/Cache pass and Settings fails on the missing
+  `number-format-fr` control; the independent Auto run passes Editor/Cache and
+  fails Restore/Settings. All native-test PIDs are gone. Details and receipt
+  references are in [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
 - The current-source audit indexes all 652 Swift source files at official main
   `7733b1f0`, appends the current feature delta and reopens changed behaviour.
   [PARITY.md](PARITY.md) is the current status, including missing features.
@@ -74,26 +81,21 @@ Last updated 2026-10-12.
 
 ## 4. Next work, in order
 
-1. Resolve the retained native editor/reveal negatives with valid owned
-   AppKit focus/activation and safe window mutation outside GPUI borrows.
-   Repeat all four cases under Software and Auto unavailable-device fallback
-   on one frozen combined artifact; preserve every assertion and deadline.
-2. Verify TEL-024 in the normal signed app: checked background Ready state,
-   ordered writer drain, error-aware clean marker and actual SQLite close.
-   The approved new-installation policy is implemented and tested:
-   30 days only for positively fresh profiles; preserve existing zero/custom
-   values, configuration and history. Ambiguous/invalid files retain zero.
-3. Settings/snippet/history render getters now consume bounded background
+1. Resolve the current native Software Settings failure (missing
+   `number-format-fr` control) and Auto Restore/Settings failures. Repeat all
+   four cases under Software and Auto unavailable-device fallback on one frozen
+   combined artifact; preserve every assertion, deadline and historical
+   negative receipt.
+2. Settings/snippet/history render getters now consume bounded background
    snapshots. Keep the real cache FSEvents/SQLite error/recovery regression and
    Settings English/French/Arabic RTL/System Default checks in acceptance.
-4. Finish remaining Mac hand-test facets below. Existing native evidence
+3. Finish remaining Mac hand-test facets below. Existing native evidence
    proves scoped geometry/events/lifecycle, not every physical keyboard/IME,
    multi-display, provider or full AX interaction. Preserve running apps.
-5. Continue draft PR229. Official `2f089af2` passes Next PR and push
-   macOS/Linux/Windows, parity and quality CI. Later integrated writer/startup,
-   editor composition/attachment and software optimization checkpoints now
-   pass combined feb5e199 gates. Two native negatives, final normal runtime
-   verification and their own official CI publication remain open.
+4. Continue draft PR229. Official `2f089af2` passes Next PR and push
+   macOS/Linux/Windows, parity and quality CI. Current d1f290ab Next PR
+   macOS/Linux/Windows and parity CI pass; quality CI needs the reviewed
+   Swift docComments correction. PRF-002 native Settings/Auto cases remain open.
 
 ## 5. Approved decisions and retained behavior
 

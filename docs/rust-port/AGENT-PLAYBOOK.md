@@ -78,7 +78,12 @@ waited for that area.
    a notes file listing each branch's work, overlaps and seams). Helpers:
    union of `pub mod` lines for `chau7_next_core/src/lib.rs`; for inventory
    row conflicts keep, per ID, the most advanced status.
-4. Clean build of local crates, all checks, `scripts/dev/mac-typecheck.sh`,
+4. For a batch that defers checks, wait until all changes land, then freeze
+   and record the integrated revision. Run aggregate compiler, test and native
+   acceptance gates sequentially against it; keep read-only reviews parallel.
+   Cargo's job setting controls in-command parallelism; every concurrent
+   worktree needs a private target directory.
+5. Clean build of local crates, all checks, `scripts/dev/mac-typecheck.sh`,
    Xvfb smoke test, `parity.py --write` and `--check`, push.
 
 ## Pitfalls already hit

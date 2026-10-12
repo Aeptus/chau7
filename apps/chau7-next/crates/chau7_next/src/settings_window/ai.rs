@@ -401,7 +401,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         ));
 
     let formats = RegionalNumberFormat::ALL.into_iter().map(|format| {
-        chip(
+        let control = chip(
             SharedString::from(format!("number-format-{}", format.id())),
             format!(
                 "{} ({})",
@@ -411,7 +411,13 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             ctx.settings.general.regional_number_format == format,
             chrome,
         )
-        .on_click(move |_, _, cx| update(cx, |s| s.general.regional_number_format = format))
+        .on_click(move |_, _, cx| update(cx, |s| s.general.regional_number_format = format));
+        #[cfg(any(test, feature = "native-parity-fixture"))]
+        let control = {
+            use gpui_kit::test::TestSupportExt;
+            control.test_support()
+        };
+        control
     });
     let usage_display = titled(crate::l10n::tr("Usage Display"), chrome)
         .child(row(crate::l10n::tr("Number Format"),

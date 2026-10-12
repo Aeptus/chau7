@@ -72,7 +72,7 @@ Current gaps have explicit delta rows. No `missing` or `partial` row may be
 silently excluded from a full-parity claim. In particular:
 
 - OVL-043 / OVL-120: repository seeding and regrouping were fixed in e78f2790 and remain regression checks. Default remains Off as in Swift.
-- PRF-002: GPU-only GPUI remains an explicit renderer limitation.
+- PRF-002: Next has whole-window GPU and Software backends with startup fallback. Native Software Settings and Auto Restore/Settings cases remain partial; see the Performance inventory and current recovery evidence.
 - MCP-053 to MCP-063 / OBS-001 to OBS-005: current MCP observation, control
   ownership, readiness and repository event contracts.
 - PRF-014 to PRF-018 / DBG-026: durable performance and memory diagnostics,

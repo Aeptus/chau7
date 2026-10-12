@@ -26,14 +26,12 @@ The CI build is for Apple Silicon. On an Intel Mac, build locally.
 
 ### Build locally
 
-Requires the repository-pinned Rust 1.99 toolchain and Xcode (GPUI compiles
-Metal shaders).
-On Xcode 26 or newer the Metal toolchain is a separate download; if the build
-fails with "cannot execute tool 'metal'", run:
-
-```bash
-xcodebuild -downloadComponent MetalToolchain
-```
+Requires the repository-pinned Rust 1.99 toolchain and Apple developer
+tools with the macOS SDK, compiler and linker. The macOS app enables GPUI's
+`runtime_shaders` feature: its build script writes a stitched Metal source
+file, which GPUI compiles through the Metal API at runtime. `bundle-macos.sh`
+does not invoke `xcrun metal` or `metallib`; the separate MetalToolchain
+download is not a prerequisite for this bundle.
 
 ```bash
 cd apps/chau7-next
@@ -50,8 +48,10 @@ settings and share this worktree's `target` directory by default, allowing
 compatible host and build dependencies to reuse artifacts. Set
 `OPTIM_TARGET_DIR` to give the helpers a separate cache; an explicit
 `CARGO_TARGET_DIR` selects the cache for both workspaces. `CARGO_BUILD_JOBS`
-passes through unchanged if you want to set a worker limit. Keep each writable
-`CARGO_TARGET_DIR` and `OPTIM_TARGET_DIR` private to one worktree.
+passes through unchanged if you want to set a worker limit. Run one integrated
+Cargo gate at a time against its frozen source revision; Cargo can parallelize
+compilation within that invocation. For concurrent worktrees, keep each
+writable `CARGO_TARGET_DIR` and `OPTIM_TARGET_DIR` private to its worktree.
 
 If the fast build fails, request a single symbol-rich release rebuild:
 

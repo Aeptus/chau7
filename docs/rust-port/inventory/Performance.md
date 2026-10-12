@@ -17,7 +17,7 @@ the rows below keep the user-visible effects.
 | ID | Feature | Swift source | Tests | Rust | Status | macOS API |
 |---|---|---|---|---|---|---|
 | PRF-001 | Terminal text and backgrounds drawn on the GPU | `Performance/RustMetalDisplayCoordinator.swift`, `Performance/MetalTerminalRenderer.swift` | | `chau7_next/src/terminal/view.rs` (GPUI `paint_quad`, `shape_line`) | done | Metal |
-| PRF-002 | "Metal Renderer" selects GPU or CPU drawing. Swift retains its CoreGraphics terminal path when Metal initialization fails; Next implements a whole-window software backend and startup fallback, with the complete native Software acceptance still pending editor composition and deminiaturized reveal | `Settings/Views/ScrollbackPerfSettingsView.swift:65`; `RustBackend/RustTerminalView.swift:335`; `Overlay/OverlayTabsModel+Refresh.swift:181`; `Performance/RustMetalDisplayCoordinator.swift:167` | CPU raster/cache tests; actual styled-text captures; normal signed 7bd54649 Software window/MCP/quit; 1d93cd72 unavailable-device editor and 0cfd5652 Software editor/restore acceptance; actual Settings 500 ms negative retained | chau7_next/src/terminal/cpu_renderer.rs; chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs; vendor/gpui-pre-macos/src/window.rs; vendor/gpui-pre-macos/src/software_renderer/scene.rs | partial | CoreText, Metal |
+| PRF-002 | "Metal Renderer" selects GPU or CPU drawing. Swift retains its CoreGraphics terminal path when Metal initialization fails; Next implements a whole-window software backend and startup fallback, with native Software/Auto acceptance still incomplete | `Settings/Views/ScrollbackPerfSettingsView.swift:65`; `RustBackend/RustTerminalView.swift:335`; `Overlay/OverlayTabsModel+Refresh.swift:181`; `Performance/RustMetalDisplayCoordinator.swift:167` | CPU raster/cache tests; actual styled-text captures; d1f290ab signed whole-window Software run and native Software/Auto cases (see notes) | chau7_next/src/terminal/cpu_renderer.rs; chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs; vendor/gpui-pre-macos/src/window.rs; vendor/gpui-pre-macos/src/software_renderer/scene.rs | partial | CoreText, Metal |
 | PRF-003 | Fallback fonts, double-width/bold/italic glyphs and complete multi-character grapheme clusters with continuation-cell spacing | `Performance/MetalTerminalRenderer.swift`; `RustBackend/RustTerminalView+Rendering.swift` | 17 native GridCopy paint fixtures; isolated macOS CPU/GPU-requested screenshots at e8f32e6014b0 | chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs | done | CoreText |
 | PRF-004 | Crisp text on Retina and when a window moves between screens with different scale factors | `Performance/RustMetalDisplayCoordinator.swift` (`configureFont`), `RustBackend/RustTerminalView.swift` (`viewDidMoveToWindow`) | | GPUI | done | |
 | PRF-005 | Rendering paced to the display refresh rate (ProMotion 120 Hz), vsync on, three drawables in flight | `Performance/OptimalMetalView.swift` (`configureForLowLatency`), `RustBackend/RustTerminalView.swift` (`displayRefreshInterval`) | | GPUI | done | CAMetalLayer, CVDisplayLink |
@@ -69,6 +69,12 @@ the rows below keep the user-visible effects.
   valid native focus/visibility diagnostics and final acceptance remain open.
   These receipts establish scoped startup/frame/lifecycle behavior, not hot
   GPU-loss recovery or independence from normal WindowServer composition.
+  At `d1f290ab`, the signed whole-window Software run observed two windows;
+  each submitted one frame with zero failed frames. Native Software
+  Restore, Editor and Cache passed; Settings failed because the
+  `number-format-fr` control was missing. The independent Auto run
+  passed Editor and Cache; Restore and Settings failed. All native-test
+  PIDs were verified gone. PRF-002 remains partial.
 - PRF-003: native macOS acceptance on `e8f32e6014b0` passes colors,
   bold/italic/underline, combining accents, composed woman-technologist skin
   tone, one family glyph, French flag and CJK. The fix reconstructs extended
@@ -127,3 +133,10 @@ queue/context and idle wakeup costs. Retention is bounded to 256 contexts and
 GPU completion and CPU-time values remain unavailable, rather than being
 inferred from command submission duration. Native idle comparisons are separate
 acceptance evidence, not universal benchmark claims.
+
+- Observed build times at `d1f290ab`: normal fast build 287.913 s, helper
+  builds 93.600 s and optional native build 83.104 s. These are recorded
+  elapsed times for those runs and do not establish a controlled speedup.
+  Receipts are in `fast-d1f290ab-v3-normal-20261012`,
+  `fast-d1f290ab-v3-helpers-20261012` and
+  `fast-d1f290ab-v3-optional-20261012`.

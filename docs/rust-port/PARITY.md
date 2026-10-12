@@ -69,15 +69,15 @@ stale table.
 | [Snippets](inventory/Snippets.md) | 1 | 37 | 37 | 0 | 0 | 0 | 0 | 0 |
 | [SplitPanes](inventory/SplitPanes.md) | 1 | 27 | 27 | 0 | 0 | 0 | 0 | 0 |
 | [StatusBar](inventory/StatusBar.md) | 5 | 17 | 16 | 0 | 0 | 1 | 0 | 0 |
-| [Telemetry](inventory/Telemetry.md) | 3 | 24 | 23 | 1 | 0 | 0 | 0 | 0 |
+| [Telemetry](inventory/Telemetry.md) | 3 | 24 | 24 | 0 | 0 | 0 | 0 | 0 |
 | [Terminal](inventory/Terminal.md) | 1 | 68 | 65 | 0 | 0 | 3 | 0 | 0 |
 | [TokenOptimization](inventory/TokenOptimization.md) | 3 | 24 | 23 | 0 | 0 | 1 | 0 | 0 |
 | [Usage](inventory/Usage.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | [Utilities](inventory/Utilities.md) | 1 | 13 | 6 | 0 | 0 | 7 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1309** | **1265** | **2** | **0** | **42** | **0** | |
+| **Total** | | **1309** | **1266** | **1** | **0** | **42** | **0** | |
 
-Finished (done, n/a or dropped): 1307 of 1309 rows (99%). Partial: 2.
+Finished (done, n/a or dropped): 1308 of 1309 rows (99%). Partial: 1.
 
 <!-- parity:end -->
 
