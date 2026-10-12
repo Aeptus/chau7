@@ -138,8 +138,7 @@ fn wait_for(stage: &str, mut ready: impl FnMut() -> bool) {
     }
 }
 fn advance(cx: &mut TestAppContext, duration: Duration) {
-    // Production selection uses std::Instant; advance both clocks together.
-    std::thread::sleep(duration);
+    // The production selection deadline shares this monotonic timer clock.
     cx.executor().advance_clock(duration);
     cx.run_until_parked();
 }
@@ -312,7 +311,58 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
                 );
             }
         });
-        advance(cx, Duration::from_millis(300));
+        // Delay dispatch independently of the clock: queued UI and worker work
+        // must not admit parked identity before the selection quiet deadline.
+        cx.executor()
+            .dispatcher()
+            .as_test()
+            .unwrap()
+            .scheduler()
+            .clock()
+            .advance(Duration::from_millis(249));
+        cx.update(|cx| {
+            let ws = ws.read(cx);
+            assert_eq!(
+                cx.background_executor()
+                    .now()
+                    .saturating_duration_since(ws.restore_lifecycle.last_selection.unwrap()),
+                Duration::from_millis(449)
+            );
+            assert_eq!(
+                ws.entries[&ids[0]]
+                    .panes
+                    .read(cx)
+                    .deferred_saved()
+                    .unwrap()
+                    .cwd,
+                Some(stale.clone())
+            );
+        });
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let ws = ws.read(cx);
+            let tree = ws.entries[&ids[0]].panes.read(cx);
+            assert_eq!(tree.deferred_saved().unwrap().cwd, Some(stale.clone()));
+            assert!(tree.pane_sessions(cx).is_empty());
+        });
+        advance(cx, Duration::from_millis(1));
+        settle(cx, handle);
+        cx.update(|cx| {
+            let ws = ws.read(cx);
+            assert_eq!(
+                cx.background_executor()
+                    .now()
+                    .saturating_duration_since(ws.restore_lifecycle.last_selection.unwrap()),
+                Duration::from_millis(450)
+            );
+            let tree = ws.entries[&ids[0]].panes.read(cx);
+            assert_eq!(
+                tree.deferred_saved().unwrap().cwd,
+                Some(profile.directories[0].clone())
+            );
+            assert!(tree.pane_sessions(cx).is_empty());
+        });
+        advance(cx, Duration::from_millis(50));
         settle(cx, handle);
         cx.update(|cx| {
             let tree = ws.read(cx).entries[&ids[0]].panes.read(cx);

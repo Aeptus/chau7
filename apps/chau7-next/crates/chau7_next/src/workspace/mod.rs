@@ -764,7 +764,7 @@ impl Workspace {
     }
 
     fn focus_selected(&mut self, window: &mut Window, cx: &mut App) {
-        self.record_restore_selection();
+        self.record_restore_selection(cx);
         self.sync_restore_surfaces(window, cx);
         if let Some(panes) = self.selected_panes() {
             if let Some(meta) = self.state.selected().and_then(|id| self.state.get(id)) {
