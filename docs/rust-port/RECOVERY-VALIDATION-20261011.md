@@ -217,3 +217,49 @@ call. No production key/reactivation defect is established by this failure.
 Evidence: `native-29ac-manifest.json`, case stdout/stderr/build logs and
 `source-29ac-*` default/optional check logs in the local recovery directory.
 The overall native manifest remains false and inventory rows are not promoted.
+
+## Current editor and query acceptance 9a4b5730 (2026-10-12)
+
+Clean integrated source `9a4b5730e2b0bed9ec9aea188be4095e3306504a`
+passes 2,890 release workspace tests (492 app, 2,398 core), with two existing
+ignored tests. Strict release workspace/all-target Clippy passes in both
+default and optional-native-feature builds, along with formatting and parity.
+The native feature remains separate from ordinary app packaging.
+
+Independent native editor and settings runs use the same exact source and
+optional binary, real platform frames and new synthetic profiles. Both emit
+explicit passed JSON, exit zero and remove their own profiles. Editor stderr
+is empty. Production source composition, constructed native key delivery,
+Undo/Redo/Save, dialog/sheet/focused-popup detach, preview/remount and disposal
+pass. A production paint observer additionally verifies the actual header has
+no task-free counter, then paints 1/2 and 2/2 after real NSTextView insertions,
+excluding a fenced task sample. EDT-013 closes its specific native source and
+modal acceptance blocker. New SPL-027 records the current Swift header display
+behavior that was absent from the earlier inventory.
+
+The native settings run verifies all99 explicit target jumps and four actual
+InputState Change deliveries. Matching queries derive and visibly lay out the
+first anchor with highlight prepaint; unmatched and empty queries retain the
+selected page and clear active highlight. Centered geometry is checked when
+content allows it. Pixel-level highlight, OS keyboard/pointer and accessibility
+acceptance are not claimed. SET-137 stays partial while the current 28-page
+summary grid and Swift search animation/retry behavior are being implemented.
+
+This does not supersede the negative restore key-window evidence at29ac30b3:
+an unbundled fixture cannot yet become an active key application. Its actual
+key assertion remains required; a fresh owned LaunchServices fixture is being
+prepared. Hover/deferred restore, full Hidden persistence/reload and memory
+acceptance are reported at their exact independent checkpoints.
+
+A read-only MCP sample at2026-10-12T02:01:40Z confirms installed source79748ee9,
+PID3607, journal181/181 with no persistence error, zero watchdog stalls and
+17 registered active tasks. Process CPU is6.346% of one logical CPU and RSS is
+75,890,688 bytes. The restored T7 shell remains consent-blocked; this is not a
+ready-terminal performance comparison, and the new bounded loading animation
+is not installed in that bundle. Runtime/performance/task snapshots remain
+accessible without terminal input or creation of a live tab.
+
+Local evidence: `native-9a4b-editor-*`, `native-9a4b-settings-*`,
+`source-9a4b-*`, and `readonly-20261012-020140-*` in the recovery evidence
+directory. Broader OS input-source, hardware keyboard, accessibility, real
+provider and paired-device acceptance remain in the hand-test checklist.
