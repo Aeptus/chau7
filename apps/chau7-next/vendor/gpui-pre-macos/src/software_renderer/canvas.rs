@@ -67,6 +67,30 @@ impl Canvas {
         }
         self.bytes[offset + 3] = quantize(self.bytes[offset + 3] as f32 / 255. + alpha);
     }
+    /// Fill a validated pixel-center region with a fully opaque straight color.
+    /// Quantization is identical to `blend(..., false)` with alpha exactly one,
+    /// but is performed once rather than for every covered pixel.
+    pub(super) fn opaque_rect(
+        &mut self,
+        xs: std::ops::Range<usize>,
+        ys: std::ops::Range<usize>,
+        color: Color,
+    ) {
+        debug_assert_eq!(color[3], 1.);
+        let pixel = [
+            quantize(color[2]),
+            quantize(color[1]),
+            quantize(color[0]),
+            255,
+        ];
+        for y in ys {
+            let begin = (y * self.width + xs.start) * 4;
+            let end = (y * self.width + xs.end) * 4;
+            for output in self.bytes[begin..end].chunks_exact_mut(4) {
+                output.copy_from_slice(&pixel);
+            }
+        }
+    }
     /// Dual-source RGB coverage blending; alpha is opaque as in the locked
     /// upstream LCD shader, independent of its fourth texture channel.
     pub fn blend_lcd(&mut self, x: usize, y: usize, foreground: Color, coverage: [f32; 3]) {

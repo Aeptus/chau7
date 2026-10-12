@@ -58,6 +58,11 @@ pub fn render(
                     let (xs, ys) = canvas.region(
                         Rect::from(quad.bounds).intersect(quad.content_mask.bounds.into()),
                     )?;
+                    if let Some(color) = opaque_rect_color(quad, fill) {
+                        canvas.opaque_rect(xs, ys, color);
+                        counts[1] += 1;
+                        continue;
+                    }
                     for y in ys {
                         for x in xs.clone() {
                             canvas.blend(
@@ -152,6 +157,47 @@ pub fn render(
         retired_sprite_batches,
     })
 }
+// Only integer full-coverage rectangles use the bulk path. Fractional
+// geometry, borders, rounded edges, gradients and patterns retain the scalar
+// shader translation, including its existing edge/clip behavior.
+fn opaque_rect_color(quad: &gpui::Quad, fill: Fill) -> Option<[f32; 4]> {
+    let Fill::Solid(color) = fill else {
+        return None;
+    };
+    if color[3] != 1. {
+        return None;
+    }
+    let corners = quad.corner_radii;
+    let borders = quad.border_widths;
+    if [
+        corners.top_left.0,
+        corners.top_right.0,
+        corners.bottom_right.0,
+        corners.bottom_left.0,
+        borders.top.0,
+        borders.right.0,
+        borders.bottom.0,
+        borders.left.0,
+    ]
+    .iter()
+    .any(|value| *value != 0.)
+    {
+        return None;
+    }
+    for rect in [
+        Rect::from(quad.bounds),
+        Rect::from(quad.content_mask.bounds),
+    ] {
+        if !rect.finite()
+            || [rect.x, rect.y, rect.width, rect.height]
+                .iter()
+                .any(|value| value.fract() != 0.)
+        {
+            return None;
+        }
+    }
+    Some(color)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,6 +213,80 @@ mod tests {
             point(ScaledPixels(x), ScaledPixels(y)),
             size(ScaledPixels(w), ScaledPixels(h)),
         )
+    }
+    #[test]
+    fn bulk_opaque_rect_matches_scalar_bytes_and_fractional_edges_stay_scalar() {
+        let geometries = [
+            (b(-2., -1., 7., 6.), b(1., 1., 3., 2.)),
+            (b(0., 0., 8., 5.), b(0., 0., 8., 5.)),
+            (b(0.25, 0.5, 7.5, 4.25), b(1.25, 1., 4.5, 3.)),
+            (b(1., 1., 3., 2.), b(0.5, 0., 7., 5.)),
+        ];
+        for (bounds, clip) in geometries {
+            for alpha in [0., 0.25, 0.5, 1.] {
+                for foreground in [
+                    [1., 0., 0., 1.],
+                    [0.1, 0.37, 0.91, 1.],
+                    [f32::NAN, -1., 2., 1.],
+                ] {
+                    let mut scalar = Canvas::new(8, 5, true).unwrap();
+                    for y in 0..5 {
+                        for x in 0..8 {
+                            scalar.blend(x, y, [0.7, 0.2, 0.4, alpha], false);
+                        }
+                    }
+                    let mut actual = Canvas::new(8, 5, true).unwrap();
+                    actual.bytes.copy_from_slice(scalar.bgra());
+                    let quad = Quad {
+                        bounds,
+                        content_mask: ContentMask { bounds: clip },
+                        ..Default::default()
+                    };
+                    let fill = Fill::Solid(foreground);
+                    let region = Rect::from(bounds).intersect(clip.into());
+                    let (xs, ys) = scalar.region(region).unwrap();
+                    for y in ys.clone() {
+                        for x in xs.clone() {
+                            scalar.blend(
+                                x,
+                                y,
+                                primitives::quad(&quad, [x as f32 + 0.5, y as f32 + 0.5], fill),
+                                false,
+                            );
+                        }
+                    }
+                    if let Some(color) = opaque_rect_color(&quad, fill) {
+                        actual.opaque_rect(xs, ys, color);
+                    } else {
+                        for y in ys {
+                            for x in xs.clone() {
+                                actual.blend(
+                                    x,
+                                    y,
+                                    primitives::quad(&quad, [x as f32 + 0.5, y as f32 + 0.5], fill),
+                                    false,
+                                );
+                            }
+                        }
+                    }
+                    assert_eq!(actual.bgra(), scalar.bgra());
+                }
+            }
+        }
+        let mut quad = Quad {
+            bounds: b(0., 0., 8., 5.),
+            content_mask: ContentMask {
+                bounds: b(0., 0., 8., 5.),
+            },
+            ..Default::default()
+        };
+        assert!(opaque_rect_color(&quad, Fill::Solid([1.; 4])).is_some());
+        assert!(opaque_rect_color(&quad, Fill::Solid([0.; 4])).is_none());
+        quad.corner_radii.top_left = ScaledPixels(1.);
+        assert!(opaque_rect_color(&quad, Fill::Solid([1.; 4])).is_none());
+        quad.corner_radii.top_left = ScaledPixels(0.);
+        quad.border_widths.left = ScaledPixels(1.);
+        assert!(opaque_rect_color(&quad, Fill::Solid([1.; 4])).is_none());
     }
     fn fixture(atlas: &dyn PlatformAtlas, lcd_enabled: bool) -> Scene {
         let insert = |key: gpui::AtlasKey, bytes: Vec<u8>| {
