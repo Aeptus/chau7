@@ -329,10 +329,26 @@ pub(in crate::panes::editor) async fn verify(
     let previous_mount = stale_attachment.generation;
     // Exercise NSTextInputClient on the production SourceTextView and let an
     // actual GPUI frame/restyle pass while its text is still marked.
+    native
+        .shared
+        .fixture_trace
+        .begin(&native.text, "fixture.before_mark");
     cx.update(|_| {
+        native
+            .shared
+            .fixture_trace
+            .record(&native.text, "fixture.set_selection.before", None);
         native
             .text
             .setSelectedRange(NSRange::new(initial.encode_utf16().count(), 0));
+        native
+            .shared
+            .fixture_trace
+            .record(&native.text, "fixture.set_selection.after", None);
+        native
+            .shared
+            .fixture_trace
+            .record(&native.text, "fixture.setMarkedText.before", None);
         unsafe {
             native.text.setMarkedText_selectedRange_replacementRange(
                 &NSString::from_str("に"),
@@ -340,6 +356,10 @@ pub(in crate::panes::editor) async fn verify(
                 NSRange::new(NSNotFound as usize, 0),
             );
         }
+        native
+            .shared
+            .fixture_trace
+            .record(&native.text, "fixture.setMarkedText.after", None);
         composition_phase("after_mark", &application, &native_window, &native);
         ensure(
             native.text.hasMarkedText(),
@@ -347,9 +367,25 @@ pub(in crate::panes::editor) async fn verify(
         )?;
         // Force the production text-change and mirror paths while marked.
         // Neither styling nor a stale mirror is allowed to remove composition.
+        native
+            .shared
+            .fixture_trace
+            .record(&native.text, "fixture.shared_changed.before", None);
         native.shared.changed(&native.text, true);
+        native
+            .shared
+            .fixture_trace
+            .record(&native.text, "fixture.shared_changed.after", None);
         let config = native.shared.config.borrow().clone();
+        native
+            .shared
+            .fixture_trace
+            .record(&native.text, "fixture.sync.before", None);
         native.sync(initial, &config);
+        native
+            .shared
+            .fixture_trace
+            .record(&native.text, "fixture.sync.after", None);
         ensure(
             native.text.hasMarkedText(),
             "text-change/mirror stripped marked text",
@@ -359,9 +395,21 @@ pub(in crate::panes::editor) async fn verify(
     cx.update(|cx| editor.update(cx, |_, cx| cx.notify()));
     // Preserve exactly the two real settle frames and their existing deadlines,
     // recording the native state after each without an extra frame or retry.
+    cx.update(|_| {
+        native
+            .shared
+            .fixture_trace
+            .record(&native.text, "fixture.frame_one.before", None)
+    });
     crate::native_parity_fixture::next_frame(handle.into(), cx).await?;
     MainThreadMarker::new().ok_or("owned composition frame left main thread")?;
     composition_phase("after_frame_one", &application, &native_window, &native);
+    cx.update(|_| {
+        native
+            .shared
+            .fixture_trace
+            .record(&native.text, "fixture.frame_two.before", None)
+    });
     crate::native_parity_fixture::next_frame(handle.into(), cx).await?;
     MainThreadMarker::new().ok_or("owned composition frame left main thread")?;
     composition_phase("after_frame_two", &application, &native_window, &native);
@@ -370,8 +418,10 @@ pub(in crate::panes::editor) async fn verify(
             "owned native source did not actually remount")?;
         drop(stale_attachment);
         ensure(attached(&native), "old frame guard detached the current source")?;
+        let composition_survived = native.text.hasMarkedText();
+        native.shared.fixture_trace.finish(!composition_survived);
         ensure(
-            native.text.hasMarkedText(),
+            composition_survived,
             &format!(
                 "restyling/repaint discarded marked composition (attached={}, native_matches={}, document_matches={}, pending_text={})",
                 attached(&native),

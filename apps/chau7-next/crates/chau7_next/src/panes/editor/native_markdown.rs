@@ -90,6 +90,72 @@ pub(super) enum MenuCommand {
     FindPrevious,
     UseSelectionForFind,
 }
+#[cfg(feature = "native-parity-fixture")]
+#[derive(Default)]
+struct FixtureTrace {
+    enabled: Cell<bool>,
+    sequence: Cell<u64>,
+    events: RefCell<Vec<serde_json::Value>>,
+}
+#[cfg(feature = "native-parity-fixture")]
+impl FixtureTrace {
+    const CAPACITY: usize = 64;
+
+    fn begin(&self, view: &SourceTextView, site: &'static str) {
+        self.events.borrow_mut().clear();
+        self.sequence.set(0);
+        self.enabled.set(true);
+        self.record(view, site, None);
+    }
+
+    fn record(&self, view: &SourceTextView, site: &'static str, responder_result: Option<bool>) {
+        if !self.enabled.get() {
+            return;
+        }
+        let marked = view.markedRange();
+        let selected = view.selectedRange();
+        let window = view.window();
+        let window_key = window.as_ref().is_some_and(|window| window.isKeyWindow());
+        let source_first_responder = window
+            .and_then(|window| window.firstResponder())
+            .and_then(|responder| responder.downcast::<SourceTextView>().ok())
+            .is_some_and(|source| std::ptr::eq(&*source, view));
+        let application_active = MainThreadMarker::new()
+            .is_some_and(|mtm| NSApplication::sharedApplication(mtm).isActive());
+        let sequence = self.sequence.get().saturating_add(1);
+        self.sequence.set(sequence);
+        let event = serde_json::json!({
+            "sequence": sequence,
+            "site": site,
+            "has_marked_text": view.hasMarkedText(),
+            "marked_location": marked.location,
+            "marked_length": marked.length,
+            "selection_location": selected.location,
+            "selection_length": selected.length,
+            "window_key": window_key,
+            "source_first_responder": source_first_responder,
+            "application_active": application_active,
+            "responder_result": responder_result,
+        });
+        let mut events = self.events.borrow_mut();
+        if events.len() == Self::CAPACITY {
+            events.remove(0);
+        }
+        events.push(event);
+    }
+
+    fn finish(&self, failed: bool) {
+        if !self.enabled.replace(false) || !failed {
+            return;
+        }
+        let events = self.events.borrow().clone();
+        eprintln!(
+            "native_editor_marked_trace={}",
+            serde_json::json!({"capacity": Self::CAPACITY, "events": events})
+        );
+    }
+}
+
 struct Shared {
     document: RefCell<Document>,
     theme: RefCell<styles::Theme>,
@@ -102,6 +168,8 @@ struct Shared {
     mirroring: Cell<bool>,
     deferred_style: Cell<bool>,
     host: host::SourceHost,
+    #[cfg(feature = "native-parity-fixture")]
+    fixture_trace: FixtureTrace,
 }
 impl Shared {
     fn signal(&self) {
@@ -110,7 +178,13 @@ impl Shared {
         }
     }
     fn changed(&self, view: &SourceTextView, text_changed: bool) {
+        #[cfg(feature = "native-parity-fixture")]
+        self.fixture_trace
+            .record(view, "Shared::changed.enter", None);
         if self.mirroring.get() {
+            #[cfg(feature = "native-parity-fixture")]
+            self.fixture_trace
+                .record(view, "Shared::changed.skip_mirroring", None);
             return;
         }
         if text_changed {
@@ -126,6 +200,9 @@ impl Shared {
                 // NSTextInputClient owns both the marked range and its
                 // attributes until composition commits. Replacing paragraph
                 // attributes here can remove AppKit's marked-text metadata.
+                #[cfg(feature = "native-parity-fixture")]
+                self.fixture_trace
+                    .record(view, "Shared::changed.defer_style_marked", None);
                 self.deferred_style.set(true);
             } else if let Some(storage) = unsafe { view.textStorage() } {
                 let range = if self.deferred_style.replace(false) {
@@ -133,7 +210,13 @@ impl Shared {
                 } else {
                     doc.restyled_range()
                 };
+                #[cfg(feature = "native-parity-fixture")]
+                self.fixture_trace
+                    .record(view, "Shared::changed.theme_apply.before", None);
                 self.theme.borrow().apply(&storage, &doc, range);
+                #[cfg(feature = "native-parity-fixture")]
+                self.fixture_trace
+                    .record(view, "Shared::changed.theme_apply.after", None);
             }
             self.pending.borrow_mut().text = Some(text);
         }
@@ -141,6 +224,9 @@ impl Shared {
         pending.selection = Some(view.selectedRange());
         drop(pending);
         self.signal();
+        #[cfg(feature = "native-parity-fixture")]
+        self.fixture_trace
+            .record(view, "Shared::changed.exit", None);
     }
 }
 /// Use the entity's current window, with no ownership of its original host.
@@ -202,14 +288,58 @@ define_class!(
         }
         #[unsafe(method(didChangeText))]
         fn changed(&self) {
+            #[cfg(feature = "native-parity-fixture")]
+            self.ivars().shared.fixture_trace.record(self, "SourceTextView::didChangeText.before_super", None);
             // SAFETY: exact NSTextView superclass selector and signature.
             unsafe { let _: ()=msg_send![super(self),didChangeText]; }
+            #[cfg(feature = "native-parity-fixture")]
+            self.ivars().shared.fixture_trace.record(self, "SourceTextView::didChangeText.after_super", None);
             self.ivars().shared.changed(self,true);
+            #[cfg(feature = "native-parity-fixture")]
+            self.ivars().shared.fixture_trace.record(self, "SourceTextView::didChangeText.after_changed", None);
         }
         #[unsafe(method(setSelectedRange:))]
         fn selected(&self, range:NSRange) {
+            #[cfg(feature = "native-parity-fixture")]
+            self.ivars().shared.fixture_trace.record(self, "SourceTextView::setSelectedRange.before_super", None);
             unsafe { let _: ()=msg_send![super(self),setSelectedRange:range]; }
+            #[cfg(feature = "native-parity-fixture")]
+            self.ivars().shared.fixture_trace.record(self, "SourceTextView::setSelectedRange.after_super", None);
             self.ivars().shared.changed(self,false);
+        }
+        #[cfg(feature = "native-parity-fixture")]
+        #[unsafe(method(unmarkText))]
+        fn fixture_unmark_text(&self) {
+            self.ivars().shared.fixture_trace.record(self, "AppKit::unmarkText.before_super", None);
+            // SAFETY: preserve NSTextView's implementation exactly once.
+            unsafe { let _: () = msg_send![super(self), unmarkText]; }
+            self.ivars().shared.fixture_trace.record(self, "AppKit::unmarkText.after_super", None);
+        }
+        #[cfg(feature = "native-parity-fixture")]
+        #[unsafe(method(becomeFirstResponder))]
+        fn fixture_become_first_responder(&self) -> bool {
+            self.ivars().shared.fixture_trace.record(self, "AppKit::becomeFirstResponder.before_super", None);
+            // SAFETY: preserve NSResponder's implementation and return value.
+            let result: bool = unsafe { msg_send![super(self), becomeFirstResponder] };
+            self.ivars().shared.fixture_trace.record(
+                self,
+                "AppKit::becomeFirstResponder.after_super",
+                Some(result),
+            );
+            result
+        }
+        #[cfg(feature = "native-parity-fixture")]
+        #[unsafe(method(resignFirstResponder))]
+        fn fixture_resign_first_responder(&self) -> bool {
+            self.ivars().shared.fixture_trace.record(self, "AppKit::resignFirstResponder.before_super", None);
+            // SAFETY: preserve NSResponder's implementation and return value.
+            let result: bool = unsafe { msg_send![super(self), resignFirstResponder] };
+            self.ivars().shared.fixture_trace.record(
+                self,
+                "AppKit::resignFirstResponder.after_super",
+                Some(result),
+            );
+            result
         }
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self,event:&NSEvent) {
@@ -595,6 +725,8 @@ impl NativeMarkdown {
             mirroring: Cell::new(false),
             deferred_style: Cell::new(false),
             host: host::SourceHost::new(&raw),
+            #[cfg(feature = "native-parity-fixture")]
+            fixture_trace: FixtureTrace::default(),
         });
         let text = SourceTextView::new(mtm, shared.clone());
         text.setFont(Some(&NSFont::systemFontOfSize(
@@ -654,13 +786,29 @@ impl NativeMarkdown {
         self.sync_inner(text, config, false);
     }
     fn sync_inner(&self, text: &str, config: &EditorConfig, loaded: bool) {
+        #[cfg(feature = "native-parity-fixture")]
+        self.shared
+            .fixture_trace
+            .record(&self.text, "NativeMarkdown::sync_inner.enter", None);
         if !loaded && self.text.hasMarkedText() {
             // A render/configuration pass must not overwrite an in-progress
             // native composition with its asynchronously delivered GPUI mirror.
+            #[cfg(feature = "native-parity-fixture")]
+            self.shared.fixture_trace.record(
+                &self.text,
+                "NativeMarkdown::sync_inner.marked_guard",
+                None,
+            );
             self.shared.deferred_style.set(true);
             return;
         }
         if !loaded && self.has_pending_edits() {
+            #[cfg(feature = "native-parity-fixture")]
+            self.shared.fixture_trace.record(
+                &self.text,
+                "NativeMarkdown::sync_inner.pending_guard",
+                None,
+            );
             return;
         }
         let size = config.font_size as f64;
@@ -692,6 +840,12 @@ impl NativeMarkdown {
         }
         let same = self.shared.document.borrow().text() == text;
         if !same || loaded {
+            #[cfg(feature = "native-parity-fixture")]
+            self.shared.fixture_trace.record(
+                &self.text,
+                "NativeMarkdown::editing_replace.before",
+                None,
+            );
             *self.shared.line_starts.borrow_mut() = line_starts(text);
             if let Some(ruler) = self.shared.ruler.borrow().as_ref().and_then(Weak::load) {
                 ruler.resize(self.shared.line_starts.borrow().len());
@@ -700,6 +854,12 @@ impl NativeMarkdown {
             self.shared.mirroring.set(true);
             editing::replace(&self.text, text, loaded);
             self.shared.mirroring.set(false);
+            #[cfg(feature = "native-parity-fixture")]
+            self.shared.fixture_trace.record(
+                &self.text,
+                "NativeMarkdown::editing_replace.after",
+                None,
+            );
         }
         let mut doc = self.shared.document.borrow_mut();
         doc.update(text);
@@ -710,7 +870,17 @@ impl NativeMarkdown {
             doc.restyled_range()
         };
         if let Some(storage) = unsafe { self.text.textStorage() } {
+            #[cfg(feature = "native-parity-fixture")]
+            self.shared.fixture_trace.record(
+                &self.text,
+                "NativeMarkdown::theme_apply.before",
+                None,
+            );
             self.shared.theme.borrow().apply(&storage, &doc, range);
+            #[cfg(feature = "native-parity-fixture")]
+            self.shared
+                .fixture_trace
+                .record(&self.text, "NativeMarkdown::theme_apply.after", None);
         }
     }
     pub(super) fn append(&self, expected: &str, addition: &str) -> bool {
@@ -797,15 +967,39 @@ impl NativeMarkdown {
         if !view.isFlipped() {
             y = view.bounds().size.height - y - height;
         }
+        #[cfg(feature = "native-parity-fixture")]
+        self.shared.fixture_trace.record(
+            &self.text,
+            "NativeMarkdown::attach.set_frame.before",
+            None,
+        );
         self.scroll.setFrame(NSRect::new(
             NSPoint::new(f64::from(f32::from(bounds.origin.x)), y),
             NSSize::new(f64::from(f32::from(bounds.size.width)), height),
         ));
+        #[cfg(feature = "native-parity-fixture")]
+        self.shared.fixture_trace.record(
+            &self.text,
+            "NativeMarkdown::attach.set_frame.after",
+            None,
+        );
         if unsafe { self.scroll.superview() }
             .as_ref()
             .is_none_or(|v| !std::ptr::eq::<NSView>(&**v, &*view))
         {
+            #[cfg(feature = "native-parity-fixture")]
+            self.shared.fixture_trace.record(
+                &self.text,
+                "NativeMarkdown::attach.add_subview.before",
+                None,
+            );
             view.addSubview(&self.scroll);
+            #[cfg(feature = "native-parity-fixture")]
+            self.shared.fixture_trace.record(
+                &self.text,
+                "NativeMarkdown::attach.add_subview.after",
+                None,
+            );
         }
         if self.shared.config.borrow().word_wrap {
             let mut frame = self.text.frame();
@@ -821,12 +1015,20 @@ impl NativeMarkdown {
         Some(generation)
     }
     pub(super) fn detach(&self) {
+        #[cfg(feature = "native-parity-fixture")]
+        self.shared
+            .fixture_trace
+            .record(&self.text, "NativeMarkdown::detach.before", None);
         // Explicit modal/close/visibility teardown invalidates old frame guards.
         self.mount_generation
             .set(self.mount_generation.get().wrapping_add(1));
         self.shared.host.return_focus(&self.scroll);
         self.scroll.setHidden(true);
         self.scroll.removeFromSuperview();
+        #[cfg(feature = "native-parity-fixture")]
+        self.shared
+            .fixture_trace
+            .record(&self.text, "NativeMarkdown::detach.after", None);
     }
 }
 use crate::settings::Settings;

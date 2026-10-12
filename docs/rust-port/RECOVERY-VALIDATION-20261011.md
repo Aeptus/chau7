@@ -834,3 +834,57 @@ Frozen clean source `2386e7e840fb1fabfad92b7771cdc6d569ec9efe` passes all nine c
 The native Software matrix passes all four cases. Auto unavailable-device Settings, Editor and Cache pass, including actual AppKit-routed source input and undo/redo. Auto Restore fails the unchanged five-second ordinary background-Warm wait before injected policy pressure. Its stderr lacks the memory sample, so pressure state, lifecycle/selection timing and sample absence remain possible causes; none is established. All eight processes and profiles retired, and no locale checks ran after the failed matrix. The immutable negative archive is `/private/tmp/fast-2386e7e8-native-v6-20261012`; the automatic approval review refused its copy to the T7 evidence mount, so no successful external preservation is claimed.
 
 Native v6 runs before publication to discover acceptance failures sooner. Its compiler/source/isolation checks are unchanged, and it records full-quality verification as false; no passing full-prepush or published-branch claim is inferred from this runtime sequence. The next diagnostic records actual state only on Warm failure, preserving the original predicate, five-second wait and original error. No production memory-policy fix is claimed.
+
+## 2026-10-12: 9650 negative and ca46d51d compiler/native observations
+
+The earlier frozen source `9650cf86c68bdec66096bbe340d04abaf5943705` stopped
+in its first exact-gates stage. The Next workspace test
+`l10n::tests::tables_match_the_swift_resources` failed on the mirrored
+`help.topic.tokenOptimizer.content` value. The build-mode-contract check also
+failed because the built `target/aarch64-apple-darwin/release/chau7-next`
+artifact path did not satisfy the expected `targetdir` contract. These are the
+recorded outcomes for that revision; the later ca46d51d run is a separate clean
+source and does not rewrite the earlier receipt. The immutable negative archive
+is `/private/tmp/fast-9650cf86-compiler-negative-20261012`; its manifest SHA256
+is `d7397e6566b00c66d126be8362e9668e3efca6a53ad41623453f247b007326d7`.
+
+Frozen clean source `ca46d51d5ab00ab4f913eed25246b87e192db26b` passes all nine
+compiler stages with canonical seal
+`561b844a566a3fcbe0b161b6997c7384861cf76e328271a288fe5bf7fc860b8e`. The
+Next workspace passes 3,017 tests with two existing ignored; strict normal and
+native all-target Clippy, format, build-mode and installer-contract checks
+pass. Vendor production checks pass, along with 36 macOS and 23 Apple tests.
+The helper workspace passes 539 tests with three ignored, the exact short-lived
+HUP tail-output regression and all seven injected EINTR tests. The sequence
+also passes the normal build, four fresh helpers, seven-artifact signed normal
+package, independent package verification, optional fixture build and seal.
+The receipts and logs are preserved in
+`/private/tmp/fast-ca46d51d-compiler-20261012` (52 files; manifest SHA256
+`aed407f47761cb82ed4c665401a9204c34baa2aa1c4228b5d71de899b2ae4bf4`).
+
+On that sealed binary, the native Software Restore, Settings and Cache cases
+pass. Editor fails after marked text is established: by the first subsequent
+frame the marked range is gone and mount generation has advanced from 2 to 3,
+then 4 by frame two. The fixture reports the attached native view and document
+still match, but `pending_text` is false; this establishes the observed
+composition loss, not a production cause or fix. All four case PIDs were
+verified gone and their owned homes removed. The canonical runner stopped after
+the Software failure: no complete Auto matrix or localized Settings cases ran,
+and the sequence records `full_quality_verified=false`.
+
+A separate scoped Auto Restore probe on the same source reports that one case
+passed. Its aggregate remains incomplete (`cache`, `editor` and `settings` are
+missing), with `incomplete=true` and aggregate `passed=false`; it is not an
+Auto matrix pass. The native negative and bounded receipts are preserved in
+`/private/tmp/fast-ca46d51d-native-negative-20261012` (17 files; manifest
+SHA256 `48bdff12794db56a978e39d7545ff1a9e223c4577f2ec2d1e0e1f6ec62072dde`).
+The independent one-case probe remains under
+`/private/tmp/chau7-fast-acceptance-luna-ca46d51d-scoped-auto-restore-diagnostic`.
+PRF-002 remains partial.
+
+A diagnostic-only follow-up is integrated in the working tree but is not part
+of the ca46d51d receipts and has not been built. Its trace is gated by
+`native-parity-fixture`, capped at 64 events, and records fixed sites plus
+ranges and booleans without text. It preserves superclass calls and their
+results. Run the complete compiler/native sequence after the whole source batch
+is ready; the trace does not establish a production cause or fix.

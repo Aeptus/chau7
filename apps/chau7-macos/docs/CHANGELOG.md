@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Diagnostics
+
+- Add a feature-gated, fixture-only AppKit marked-composition trace capped at
+  64 events and fixed call sites. Record ranges and booleans without text;
+  preserve superclass calls and their results. This trace is diagnostic only,
+  establishes no production cause or fix, and remains pending combined native
+  validation.
+
 ### Maintenance
 
 - Keep fast Next app and embedded Rust helper artifacts in one private worktree target cache, and isolate symbol-rich diagnostic builds under `target/diagnostic` by default while preserving explicit cache overrides and artifact selection. Speed measurements remain pending.

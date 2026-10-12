@@ -65,6 +65,22 @@ Last updated 2026-10-12.
   No locale cases ran after the stopped matrix. The failing receipt lacks
   memory-state values; the next batch adds failure diagnostics with the same
   predicate and deadline. PRF-002 remains partial.
+- Frozen clean source `ca46d51d5ab00ab4f913eed25246b87e192db26b` passes all nine
+  compiler stages and the canonical seal. It passes 3,017 Next tests (two
+  existing ignored), strict normal/native Clippy and format/contracts; vendor
+  tests pass at 36 macOS and 23 Apple, and the helper workspace passes 539
+  tests (three ignored) plus focused HUP and seven EINTR cases. The normal
+  build, four fresh helpers, seven-artifact signed package, package verifier
+  and optional fixture build pass. Native Software Restore, Settings and Cache
+  pass; Editor loses marked composition during repaint. All four fixture
+  processes are gone and owned homes are removed. The complete Auto matrix,
+  localized Settings cases and full-prepush quality did not run. A separate
+  one-case Auto Restore probe passes but its aggregate is incomplete. PRF-002
+  remains partial; see [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
+  A feature-gated, fixture-only 64-event AppKit trace is integrated in a
+  follow-up source change, not included in the ca46 receipts and not yet built.
+  It records fixed sites and ranges/booleans without text, preserves superclass
+  calls, and is diagnostic only; no cause or product fix is established.
 - The current-source audit indexes all 652 Swift source files at official main
   `7733b1f0`, appends the current feature delta and reopens changed behaviour.
   [PARITY.md](PARITY.md) is the current status, including missing features.
@@ -97,21 +113,21 @@ Last updated 2026-10-12.
 
 ## 4. Next work, in order
 
-1. Resolve the current native Restore active/key-window reveal and Editor
-   ordinary keyDown failures. Settings regional control acceptance now passes.
-   Repeat all four cases under Software and Auto unavailable-device fallback
-   on one frozen combined artifact, keeping every assertion, deadline and
-   historical negative receipt.
+1. Run the complete native matrix with the integrated fixture-only AppKit
+   trace, preserving the marked-composition assertions and existing deadlines.
+   The trace is bounded to 64 events at fixed sites and records ranges and
+   booleans without text; it diagnoses but does not establish a production
+   cause or fix. Complete all eight Software/Auto cases and localized Settings
+   checks; the scoped Auto Restore probe is one case, not an Auto matrix result.
 2. Settings/snippet/history render getters now consume bounded background
    snapshots. Keep the real cache FSEvents/SQLite error/recovery regression and
    Settings English/French/Arabic RTL/System Default checks in acceptance.
 3. Finish remaining Mac hand-test facets below. Existing native evidence
    proves scoped geometry/events/lifecycle, not every physical keyboard/IME,
    multi-display, provider or full AX interaction. Preserve running apps.
-4. Continue draft PR229. Current d3df6a48 Linux, Windows and parity CI
-   pass; macOS and quality jobs were still running at the latest check.
-   The Swift docComments correction is integrated. Check final CI outcomes
-   before claiming that the current revision is green.
+4. Continue draft PR229. Check CI and full-quality outcomes for the exact
+   current revision before claiming it is green; earlier results, including
+   d3df6a48, apply only to their recorded source revisions.
 
 ## 5. Approved decisions and retained behavior
 
