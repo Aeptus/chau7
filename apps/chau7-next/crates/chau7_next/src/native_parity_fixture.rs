@@ -147,8 +147,12 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                     let _ = cx.update_window(window, |_, window, _| window.remove_window());
                 }
             });
+            let memory_worker = cx.update(crate::memory_pressure::stop_native_fixture);
             let worker = cx.update(crate::observability::shutdown);
             cx.background_spawn(async move {
+                if let Some(worker) = memory_worker {
+                    let _ = worker.join();
+                }
                 if let Some(worker) = worker {
                     let _ = worker.join();
                 }
