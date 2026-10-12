@@ -36,8 +36,7 @@ type StatisticsObserver = Arc<dyn Fn() + Send + Sync>;
 pub struct HistoryService {
     store: Arc<Mutex<HistoryStore>>,
     tx: Sender<HistoryRecord>,
-    #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
-    writer: std::thread::JoinHandle<()>,
+    writer: std::thread::JoinHandle<WriterOutcome>,
     statistics_observer: Arc<Mutex<Option<StatisticsObserver>>>,
     /// Records kept (the settings value, applied by [`apply_settings`]).
     enabled: Arc<std::sync::atomic::AtomicBool>,
@@ -66,9 +65,12 @@ impl HistoryService {
         let writer_handle = std::thread::Builder::new()
             .name("chau7-history-writer".into())
             .spawn(move || {
+                let mut outcome = WriterOutcome::default();
                 while let Ok(record) = rx.recv() {
+                    outcome.processed += 1;
                     let inserted = writer.lock().insert(&record);
                     if let Err(err) = inserted {
+                        outcome.failed += 1;
                         log::error!("history insert failed: {err}");
                     }
                     // The writer released its store lock before invalidating
@@ -78,14 +80,12 @@ impl HistoryService {
                         notify();
                     }
                 }
+                outcome
             })
             .ok()?;
-        #[cfg(not(all(feature = "native-parity-fixture", target_os = "macos")))]
-        drop(writer_handle);
         Some(Self {
             store,
             tx,
-            #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
             writer: writer_handle,
             statistics_observer,
             enabled: Arc::new(std::sync::atomic::AtomicBool::new(
@@ -131,6 +131,66 @@ impl HistoryService {
     pub(crate) fn set_statistics_observer(&self, observer: StatisticsObserver) {
         *self.statistics_observer.lock() = Some(observer);
     }
+}
+
+#[derive(Default)]
+pub(crate) struct WriterOutcome {
+    pub processed: u64,
+    pub failed: u64,
+}
+/// Resources move to the quit background future; neither SQLite's last Arc
+/// nor the thread join is disposed on the UI by taking the app Global.
+pub(crate) struct HistoryShutdown {
+    store: Arc<Mutex<HistoryStore>>,
+    writer: std::thread::JoinHandle<WriterOutcome>,
+    observer: Arc<Mutex<Option<StatisticsObserver>>>,
+}
+impl HistoryShutdown {
+    pub(crate) fn finish(self) -> Result<WriterOutcome, String> {
+        self.complete(false)
+    }
+    fn complete(self, exclusive: bool) -> Result<WriterOutcome, String> {
+        let Self {
+            store,
+            writer,
+            observer,
+        } = self;
+        let outcome = writer
+            .join()
+            .map_err(|_| "History writer panicked during shutdown".to_string())?;
+        drop(observer);
+        if exclusive && Arc::strong_count(&store) != 1 {
+            return Err("Owned history reader still holds its SQLite handle".into());
+        }
+        drop(store);
+        Ok(outcome)
+    }
+}
+impl HistoryService {
+    fn into_shutdown(self) -> HistoryShutdown {
+        let Self {
+            store,
+            tx,
+            writer,
+            statistics_observer,
+            enabled,
+        } = self;
+        enabled.store(false, std::sync::atomic::Ordering::Release);
+        // This is the only Sender: no clone is exposed or retained elsewhere.
+        // EOF is observed only after every previously accepted item is drained.
+        drop(tx);
+        HistoryShutdown {
+            store,
+            writer,
+            observer: statistics_observer,
+        }
+    }
+}
+/// Idempotently stop acceptance after producers are stopped. The caller must
+/// execute finish() on the existing background quit future before mark_clean.
+pub(crate) fn shutdown(cx: &mut App) -> Option<HistoryShutdown> {
+    cx.try_global::<HistoryService>()?;
+    Some(cx.remove_global::<HistoryService>().into_shutdown())
 }
 
 /// Fixture-only store/writer initialization. It never starts provider history
@@ -182,32 +242,18 @@ pub(crate) fn clear_native_cache_fixture(cx: &App) -> Box<dyn FnOnce() + Send> {
 /// the sole sender then joining guarantees every queued real write completed.
 #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
 pub(crate) async fn shutdown_native_cache_fixture(cx: &mut gpui::AsyncApp) -> Result<(), String> {
-    let service = cx.update(|cx| {
-        cx.try_global::<HistoryService>()
-            .is_some()
-            .then(|| cx.remove_global::<HistoryService>())
-    });
-    let Some(service) = service else {
+    let pending = cx.update(shutdown);
+    let Some(pending) = pending else {
         return Ok(());
     };
     cx.background_spawn(async move {
-        let HistoryService {
-            store,
-            tx,
-            writer,
-            statistics_observer,
-            enabled,
-        } = service;
-        drop(tx);
-        writer
-            .join()
-            .map_err(|_| "Owned history writer panicked".to_string())?;
-        drop(statistics_observer);
-        drop(enabled);
-        if Arc::strong_count(&store) != 1 {
-            return Err("Owned history reader still holds its SQLite handle".into());
+        let outcome = pending.complete(true)?;
+        if outcome.failed > 0 {
+            return Err(format!(
+                "Owned history writer had {} failed inserts",
+                outcome.failed
+            ));
         }
-        drop(store); // Last SQLite connection closes off UI, before profile removal.
         Ok(())
     })
     .await
@@ -395,6 +441,70 @@ mod tests {
             assert!(started.elapsed() < std::time::Duration::from_secs(5));
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+
+    #[gpui::test]
+    fn normal_shutdown_drains_accepted_writes_and_is_idempotent(cx: &mut gpui::TestAppContext) {
+        let root = DataRoot::with_home(
+            std::env::temp_dir().join(format!(
+                "chau7-history-normal-shutdown-{}",
+                uuid::Uuid::new_v4()
+            )),
+            true,
+        );
+        root.ensure_dirs().unwrap();
+        let mut settings = Settings::default();
+        settings.history.persistent_history = true;
+        let service = HistoryService::open(&root, &settings).unwrap();
+        let reader = service.store_handle(); // A live Settings/MCP reader is allowed.
+        let enabled = service.enabled.clone();
+        for index in 0..256 {
+            service.record(HistoryRecord::new(format!("owned queued {index}")));
+        }
+        cx.update(|cx| cx.set_global(service));
+        let shutdown_job = cx.update(shutdown).unwrap();
+        assert!(!enabled.load(std::sync::atomic::Ordering::Acquire));
+        assert!(cx.update(shutdown).is_none());
+        assert!(cx.update(|cx| super::service(cx).is_none()));
+        let caller = std::thread::current().id();
+        let (outcome, worker) = std::thread::spawn(move || {
+            (shutdown_job.finish().unwrap(), std::thread::current().id())
+        })
+        .join()
+        .unwrap();
+        assert_ne!(caller, worker);
+        assert_eq!((outcome.processed, outcome.failed), (256, 0));
+        assert_eq!(reader.lock().total_count(), 256);
+        drop(reader);
+        let reopened = HistoryStore::open(&root.history_db()).unwrap();
+        assert_eq!(reopened.total_count(), 256);
+        drop(reopened);
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+
+    #[test]
+    fn normal_shutdown_of_empty_or_disabled_writer_completes_without_records() {
+        let root = DataRoot::with_home(
+            std::env::temp_dir().join(format!(
+                "chau7-history-disabled-shutdown-{}",
+                uuid::Uuid::new_v4()
+            )),
+            true,
+        );
+        root.ensure_dirs().unwrap();
+        let mut settings = Settings::default();
+        settings.history.persistent_history = false;
+        let service = HistoryService::open(&root, &settings).unwrap();
+        service.record(HistoryRecord::new("owned disabled record"));
+        let pending = service.into_shutdown();
+        let outcome = std::thread::spawn(move || pending.finish().unwrap())
+            .join()
+            .unwrap();
+        assert_eq!((outcome.processed, outcome.failed), (0, 0));
+        let reopened = HistoryStore::open(&root.history_db()).unwrap();
+        assert_eq!(reopened.total_count(), 0);
+        drop(reopened);
         std::fs::remove_dir_all(root.home()).unwrap();
     }
 

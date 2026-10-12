@@ -278,6 +278,7 @@ fn main() {
             let cto_worker = cto::shutdown_state_writer();
             // Shells get SIGTERM at once (`closeSessionForTermination`).
             terminal::session::terminate_all_for_quit();
+            let history_writer = history::shutdown(cx);
             logging::flush();
             let performance_worker = performance::stop(cx);
             let hang_worker = hang_watchdog::stop(cx);
@@ -304,6 +305,21 @@ fn main() {
                 }
                 if let Some(worker) = cto_worker {
                     let _ = worker.join();
+                }
+                if let Some(history_writer) = history_writer {
+                    match history_writer.finish() {
+                        Ok(outcome) if outcome.failed > 0 => log::warn!(
+                            "History writer drained {} accepted records with {} failed inserts",
+                            outcome.processed,
+                            outcome.failed
+                        ),
+                        Ok(outcome) => log::debug!(
+                            "History writer drained {} accepted records with {} failed inserts",
+                            outcome.processed,
+                            outcome.failed
+                        ),
+                        Err(error) => log::error!("History shutdown failed: {error}"),
+                    }
                 }
                 incidents::shutdown();
                 if let Err(error) = instance.mark_clean() {
