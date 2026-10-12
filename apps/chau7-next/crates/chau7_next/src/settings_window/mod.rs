@@ -20,13 +20,18 @@ mod general;
 mod graphics;
 mod hover_card;
 mod injection;
+mod io_snapshot;
 mod keyboard;
 mod logs;
 mod mcp;
 mod mine;
 mod minimal_mode;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+mod native_cache_fixture;
 #[cfg(feature = "native-parity-fixture")]
 mod native_fixture;
+#[cfg(any(test, feature = "native-parity-fixture"))]
+mod native_locale;
 mod notification_triggers;
 mod notifications;
 mod panes;
@@ -47,6 +52,11 @@ mod widgets;
 mod windows;
 
 pub use about::open_about;
+pub(crate) use io_snapshot::invalidate_snippets;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) use io_snapshot::shutdown_native_fixture as shutdown_native_snapshots;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) use native_cache_fixture::verify_native_cache_fixture;
 #[cfg(feature = "native-parity-fixture")]
 pub(crate) use native_fixture::verify_native_fixture;
 
@@ -841,6 +851,11 @@ impl Render for SettingsView {
         self.mcp.refresh(cx);
         let chrome = Chrome::panels(cx);
         let sidebar = self.sidebar(chrome, cx);
+        #[cfg(any(test, feature = "native-parity-fixture"))]
+        let sidebar = {
+            use gpui_kit::test::TestSupportExt;
+            sidebar.test_support()
+        };
         let settings = Settings::get(cx).clone();
         let root = cx.global::<AppData>().root.clone();
         let files = cx.global::<ConfigFiles>();

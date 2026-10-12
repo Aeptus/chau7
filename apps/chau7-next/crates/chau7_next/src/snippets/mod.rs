@@ -37,6 +37,7 @@ pub fn migrate_legacy_files(root: &DataRoot) {
     let migrated =
         snippet_store::migrate_legacy_file(&root.snippets_file(), &root.user_snippets_dir(), true);
     if migrated > 0 {
+        crate::settings_window::invalidate_snippets(root);
         log::info!("snippets: split snippets.json into {migrated} files");
     }
 }
@@ -119,16 +120,19 @@ pub fn save_draft(
 ) -> Result<(), String> {
     let paths = paths(root, settings);
     let now = snippet_store::now_utc();
-    match entry {
+    let result = match entry {
         Some(entry) => snippet_store::update_snippet(&paths, entry, draft, active_repo, now),
         None => snippet_store::create_snippet(&paths, draft, active_repo, now),
     }
     .map(|_| ())
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string());
+    crate::settings_window::invalidate_snippets(root);
+    result
 }
 
 pub fn delete_entry(root: &DataRoot, settings: &ProductivitySettings, entry: &SnippetEntry) {
     snippet_store::delete_snippet(&paths(root, settings), entry);
+    crate::settings_window::invalidate_snippets(root);
 }
 
 pub fn toggle_pin(root: &DataRoot, settings: &ProductivitySettings, entry: &SnippetEntry) {
@@ -137,6 +141,7 @@ pub fn toggle_pin(root: &DataRoot, settings: &ProductivitySettings, entry: &Snip
     {
         log::warn!("snippets: pin failed: {err}");
     }
+    crate::settings_window::invalidate_snippets(root);
 }
 
 /// "Migrate Snippets to Clean JSON": rewrite every snippet file of Chau7
@@ -172,6 +177,7 @@ pub fn migrate_to_clean_json(
             done.push(format!("repo:{} ({count})", name.unwrap_or_default()));
         }
     }
+    crate::settings_window::invalidate_snippets(root);
     done
 }
 

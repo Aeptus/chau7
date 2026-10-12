@@ -31,6 +31,55 @@ History lines use `schema_version`, `timestamp`, `category` and `metrics`;
 Accepted records drain on the background quit worker. Repeated write failures
 produce one operational warning until a successful write resets it.
 
+## Persistence admission and completion
+
+The schema1 `persistence` object distinguishes queue admission from completed
+writes. Its counters are `accepted`, `written`, `drop_full`, `failure`,
+`disconnected`, `rejected_closed` and `worker_start_failure`. `accepted` means
+that the nonblocking queue admitted a sample. `written` means the latest-file
+replacement and history append/flush completed; it makes no fsync durability
+claim. A snapshot cannot acknowledge its own subsequent write.
+
+`state` is `running`, `draining`, `closed`, `disconnected` or `start_failed`.
+Before initialization, state, availability and counters are null; availability
+is true only while running. `last_error_category` uses a fixed I/O vocabulary,
+contains no error text or paths, and retains the last observed failure even if
+later writes succeed. Worker I/O and operational logging run outside the lock
+used by snapshot capture. Quit closes admission on the UI thread and drains
+accepted samples on the existing background quit worker.
+
+## Aethyme subprocess capture
+
+Actual bounded CLI captures emit background wall-time measurements under
+`aethyme.delivery` / `subprocess_capture_wall`, with four static callers for
+list, poll, claim and complete. They exclude the preceding polling interval and
+subsequent logging or recipient delivery; elapsed capture time is not CPU time.
+Consecutive incomplete captures of the same kind back off from30s to300s and
+warn once until that kind succeeds. Successful list/poll operations do not
+reset an incomplete claim/complete sequence. Shutdown cancellation produces no
+outage warning. An incomplete capture is not proof of a particular cause.
+
+## Delivery acceptance and history shutdown
+
+An in-memory Aethyme acceptance ledger prevents rewriting a prompt after an
+accepted terminal write whose CLI completion acknowledgement was incomplete.
+It matches canonical root, item, parsed tab UUID, native AI session, and the
+formatted prompt SHA256/byte length. Reclaimed generations acknowledge their
+current validated claim without writing the accepted prompt again. Only a fully
+captured successful Ready completion removes the acceptance record. A changed
+prompt cannot overwrite an earlier accepted fingerprint. The ledger caps entries
+at2,048 and key/digest payload at1MiB, rejects new writes when full, and never
+silently evicts pending acknowledgements. This is a running-process safeguard;
+it does not claim durable deduplication after a restart or exactly-once delivery
+by an external protocol. Metadata overhead is additional to the payload budget.
+
+Normal quit also closes history admission on the UI thread after producer
+shutdown. The existing background quit worker joins the actual history writer,
+then releases its observer and SQLite connection before reporting clean quit.
+Accepted and failed records remain distinguished. Joining a writer is separate
+from observing that a Weak reference no longer upgrades: SQLite destruction can
+still be running, particularly with Windows file locks.
+
 ## Measurements and limits
 
 JSON schema version 1 contains:
@@ -146,3 +195,21 @@ Files live in Next's own `reports/hangs/` directory:
 Recognized sample bundles are bounded to 40 bundles, 64 MiB total and seven days.
 Unrelated files are retained. The helper is intercepted before app initialization,
 so it never imports settings, installs integrations or starts a second GUI.
+
+## Owned normal app observation, 2026-10-12
+
+The ordinary feature-free 66753ed1 app exposes runtime identity, performance,
+timer inventory and journal via read-only MCP. A fresh synthetic profile restores
+two tabs, starts one selected PTY and settles with zero loading timers. Two
+post-startup snapshots 37.61s apart measure 2.912% of one logical CPU;
+resident memory is 113,475,584 bytes at the later capture. Sixteen active timers,
+32 work-profile entries and journal19/19 have no reported persistence error or
+hang. Per-stage CPU/GPU completion stay null. Schema1 performance latest/history
+files parse, and normal quit drains workers and saves both tabs.
+
+This is a scoped observation: provider services are disabled and compilation runs
+concurrently. Main-thread scheduler delay reaches127.267ms across16 samples.
+Native dee8163a additionally proves the actual80ms loading task cancels hidden,
+has zero hidden callbacks, resumes once and stops at real prompt/disposal.
+Its callback wall-time excludes interval waiting. Exact evidence and limits:
+[recovery validation](RECOVERY-VALIDATION-20261011.md).

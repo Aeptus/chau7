@@ -100,11 +100,11 @@ impl Workspace {
         }));
     }
 
-    pub(super) fn record_restore_selection(&mut self) {
+    pub(super) fn record_restore_selection(&mut self, cx: &App) {
         let selected = self.state.selected();
         if self.restore_lifecycle.selected != selected {
             self.restore_lifecycle.selected = selected;
-            self.restore_lifecycle.last_selection = Some(Instant::now());
+            self.restore_lifecycle.last_selection = Some(cx.background_executor().now());
         }
         if let Some(selected) = selected {
             self.restore_lifecycle
@@ -125,7 +125,13 @@ impl Workspace {
                         .pending_identity
                         .retain(|id| this.entries.contains_key(id));
                     let order: Vec<_> = this.state.tabs().iter().map(|t| t.id).collect();
-                    let elapsed = this.restore_lifecycle.last_selection.map(|at| at.elapsed());
+                    // Use the timer dispatcher's monotonic clock for both the
+                    // selection stamp and its deadline, including virtual time.
+                    let now = cx.background_executor().now();
+                    let elapsed = this
+                        .restore_lifecycle
+                        .last_selection
+                        .map(|at| now.saturating_duration_since(at));
                     match deferred_decision(
                         &this.restore_lifecycle.pending_identity,
                         &order,

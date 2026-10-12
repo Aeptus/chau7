@@ -118,3 +118,14 @@ commands and terminal content. Automatic sampling and graceful owned-app
 quit/session save passed. Diagnostic profile: `/private/tmp/c7perf-5af6659b5d`.
 The performance reports path is `~/.chau7-next/reports/performance`, through
 `DataRoot::reports_dir`, rather than the main log's App Support location.
+
+## Current owned normal package, 2026-10-12
+
+Source66753ed1 builds three normal Rust binaries without native fixture features.
+Clean source, matching Cargo artifact/fingerprint hashes, arm64/minimum macOS13.0,
+seven individual helper signatures and deep/strict bundle verification pass.
+A fresh UUID package launches in a new synthetic profile, exposes exact runtime
+SHA/PID and numeric diagnostics, restores two tabs and quits normally with session
+and performance persistence intact. Existing apps/profiles remain untouched.
+This owned diagnostic package is separate from the complete CI build artifact.
+See [recovery validation](RECOVERY-VALIDATION-20261011.md) for scope and limits.

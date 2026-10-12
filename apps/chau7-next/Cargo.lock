@@ -993,6 +993,7 @@ dependencies = [
  "chrono",
  "core-foundation 0.10.1",
  "core-foundation-sys",
+ "fsevent-sys",
  "futures",
  "gpui-kit",
  "gpui-pre",

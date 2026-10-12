@@ -41,16 +41,18 @@ pub(in super::super) fn section(ctx: &SectionContext) -> gpui::Div {
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(chrome.text_muted)
-                        .child(crate::l10n::count(
-                            "settings.productivity.snippets.count",
-                            "%d snippets",
-                            ctx.view.mine.user_snippets,
-                        )),
-                )
+                .child(div().text_sm().text_color(chrome.text_muted).child(
+                    ctx.view.mine.user_snippets.map_or_else(
+                        || crate::l10n::l("status.unknown", "Unknown"),
+                        |count| {
+                            crate::l10n::count(
+                                "settings.productivity.snippets.count",
+                                "%d snippets",
+                                count,
+                            )
+                        },
+                    ),
+                ))
                 .child(
                     small_button("manage-snippets", "Manage Snippets...", chrome)
                         .on_click(|_, _, cx| crate::snippets::manager::open(cx)),
