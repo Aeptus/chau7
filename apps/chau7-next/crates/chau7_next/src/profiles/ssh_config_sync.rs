@@ -1,7 +1,10 @@
 //! App-wide SSH-config cache. Native watches, bounded reads and parsing run
 //! on one serial worker; Settings rendering only copies this snapshot.
 use crate::{mcp::MainThread, monitoring::file_monitor::FileMonitor, workspace::AppData};
-use chau7_next_core::ssh_config::{self, SSHConfigEntry};
+use chau7_next_core::{
+    ssh_config::{self, SSHConfigEntry},
+    work_profiler::{self, Key, Queue},
+};
 use gpui::{App, Global};
 use std::{
     fs::File,
@@ -120,7 +123,22 @@ impl SshConfigSync {
                 monitor.start();
                 worker_wake.request();
                 while worker_wake.next() {
-                    let result = read_config(&path);
+                    // Include only actual bounded read/parse work, excluding
+                    // request coalescing, watcher recovery and UI publication.
+                    let result = {
+                        let mut cost = work_profiler::begin(Key::work(
+                            "ssh_config_sync",
+                            "read_parse",
+                            "global",
+                            "coalesced_request",
+                            Queue::Background,
+                        ));
+                        let result = read_config(&path);
+                        if let Ok(entries) = &result {
+                            cost.items(entries.len());
+                        }
+                        result
+                    };
                     let watching = monitor.is_watching_target();
                     let now = chrono::Utc::now().timestamp();
                     // Resolve timezone information before taking the UI cache
