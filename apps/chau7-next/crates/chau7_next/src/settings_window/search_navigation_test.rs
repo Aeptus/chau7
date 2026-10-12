@@ -258,7 +258,7 @@ fn real_search_change_centers_first_match_and_empty_retains_selection(
             SettingsSection::History => cx.update(|cx| {
                 assert_eq!(
                     value("maxRecords"),
-                    view.read(cx).pane_inputs.format_summary_count(8765)
+                    view.read(cx).pane_inputs.format_summary_count(10000)
                 );
             }),
             _ => {}
