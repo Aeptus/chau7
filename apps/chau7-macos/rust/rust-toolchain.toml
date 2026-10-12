@@ -4,4 +4,4 @@
 # release paths. Bump deliberately together with a full test pass.
 [toolchain]
 channel = "1.99.0"
-components = ["rustfmt", "clippy"]
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
