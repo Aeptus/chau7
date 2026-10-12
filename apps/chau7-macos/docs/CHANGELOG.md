@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Serialize only the five native vendor tests using private AppKit pasteboards and verify the image fixture starts empty, preserving existing clipboard assertions after an observed cross-test filenames result. Production clipboard behavior is unchanged; combined validation remains pending.
+
 - Register native Settings regional-format controls for actual hit testing and await the restored selected split's real PTY activation before asserting its pane state. Preserve existing selection, parked-tab, visibility and timing checks; combined native validation remains pending.
 
 - Move Swift recovery-helper comments inside the local function for current SwiftFormat compatibility, without changing recovery behavior.

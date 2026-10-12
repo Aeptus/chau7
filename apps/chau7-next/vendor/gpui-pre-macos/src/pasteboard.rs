@@ -328,6 +328,14 @@ impl UTType {
 
 #[cfg(test)]
 mod tests {
+    static PASTEBOARD_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_pasteboard_tests() -> std::sync::MutexGuard<'static, ()> {
+        PASTEBOARD_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     use cocoa::{
         appkit::{NSFilenamesPboardType, NSPasteboard, NSPasteboardTypeString},
         base::{id, nil},
@@ -369,6 +377,7 @@ mod tests {
 
     #[test]
     fn test_string() {
+        let _pasteboard_guard = lock_pasteboard_tests();
         let pasteboard = Pasteboard::unique();
         assert_eq!(pasteboard.read(), None);
 
@@ -415,6 +424,7 @@ mod tests {
 
     #[test]
     fn test_read_external_path() {
+        let _pasteboard_guard = lock_pasteboard_tests();
         let pasteboard = Pasteboard::unique();
 
         unsafe {
@@ -445,6 +455,7 @@ mod tests {
 
     #[test]
     fn test_read_external_paths_with_spaces() {
+        let _pasteboard_guard = lock_pasteboard_tests();
         let pasteboard = Pasteboard::unique();
         let paths = ["/some file with spaces.txt"];
 
@@ -464,6 +475,7 @@ mod tests {
 
     #[test]
     fn test_read_multiple_external_paths() {
+        let _pasteboard_guard = lock_pasteboard_tests();
         let pasteboard = Pasteboard::unique();
         let paths = ["/file.txt", "/image.png"];
 
@@ -496,8 +508,10 @@ mod tests {
 
     #[test]
     fn test_read_image() {
+        let _pasteboard_guard = lock_pasteboard_tests();
         let pasteboard = Pasteboard::unique();
 
+        assert_eq!(pasteboard.read(), None);
         // Smallest valid PNG: 1x1 transparent pixel
         let png_bytes: &[u8] = &[
             0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,

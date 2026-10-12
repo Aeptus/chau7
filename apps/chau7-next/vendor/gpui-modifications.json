@@ -537,9 +537,15 @@
           "before_sha256": "66744f8c74061c999547400dc9e3dccbc40ddd5c4749c60856ee3d5ce2b77a23",
           "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
           "kind": "semantic"
+        },
+        {
+          "after_sha256": "1051bf97c1047e6743b3de7694d318e08054e004d856c2a9159bc6cf5873cf79",
+          "before_sha256": "02787fa6e514a8a8e13dad4e749f8b9a7123c602d6718809f8d90fc586850cc7",
+          "description": "Serialize only the five tests using uniquely named AppKit pasteboards and assert the image test starts with an empty pasteboard; preserve existing assertions and leave the custom-type autorelease-pool test independent",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "02787fa6e514a8a8e13dad4e749f8b9a7123c602d6718809f8d90fc586850cc7",
+      "current_sha256": "1051bf97c1047e6743b3de7694d318e08054e004d856c2a9159bc6cf5873cf79",
       "original_sha256": "66744f8c74061c999547400dc9e3dccbc40ddd5c4749c60856ee3d5ce2b77a23",
       "package": "gpui-pre-macos",
       "path": "src/pasteboard.rs"
