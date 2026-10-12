@@ -102,12 +102,18 @@ fn center(cx: &mut App) -> &mut NotificationCenter {
     cx.global_mut::<NotificationCenter>()
 }
 
-/// Start the engine: permission request (the system asks once), the
+fn automatic_permission_request_allowed(isolated: bool) -> bool {
+    !isolated
+}
+
+/// Start the engine: permission request (except in isolated test mode), the
 /// platform event pump, Focus refresh and app event timers.
 pub fn init(cx: &mut App) {
     let mut nc = NotificationCenter::default();
     nc.limiter.config = Settings::get(cx).notifications.rules.rate_limit_config;
-    banner::request_permission(&mut nc.banner);
+    if automatic_permission_request_allowed(chau7_next_core::data_root::is_isolated_test_mode()) {
+        banner::request_permission(&mut nc.banner);
+    }
     cx.set_global(nc);
     hooks::init(cx);
     cx.spawn(async move |cx| {
@@ -759,4 +765,37 @@ fn apply_default_tab_style(event: &AiEvent, cx: &mut App) -> bool {
         center(cx).history.append_note(event.id, note.clone());
     }
     report.did_style_tab
+}
+
+#[cfg(test)]
+mod startup_isolation_tests {
+    #[test]
+    fn isolation_automatic_permission_decision_preserves_normal_requests() {
+        assert!(!super::automatic_permission_request_allowed(true));
+        assert!(super::automatic_permission_request_allowed(false));
+    }
+
+    #[test]
+    fn isolation_permission_guard_is_wired_only_to_automatic_startup() {
+        let source = include_str!("mod.rs");
+        let startup = source
+            .split_once("pub fn init(cx: &mut App) {")
+            .unwrap()
+            .1
+            .split_once("cx.set_global(nc);")
+            .unwrap()
+            .0;
+        assert!(startup.contains("if automatic_permission_request_allowed("));
+        assert!(startup.contains("chau7_next_core::data_root::is_isolated_test_mode()"));
+        assert!(startup.contains("banner::request_permission(&mut nc.banner);"));
+        let manual = source
+            .split_once("pub fn request_permission(cx: &mut App) {")
+            .unwrap()
+            .1
+            .split_once("/// Mute status")
+            .unwrap()
+            .0;
+        assert!(manual.contains("banner::request_permission(&mut center(cx).banner);"));
+        assert!(!manual.contains("automatic_permission_request_allowed"));
+    }
 }
