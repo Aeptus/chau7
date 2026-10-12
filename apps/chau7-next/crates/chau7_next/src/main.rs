@@ -180,6 +180,9 @@ fn main() {
     // from its timer (`app_actions::poll`).
     app.on_open_urls(app_actions::queue_open_urls);
     app.run(move |cx: &mut App| {
+        // Accepted work is admitted directly on background executors. Wait
+        // for its drains and checked resource closes before native exit.
+        cx.set_shutdown_timeout(None);
         window_backend::init(window_backend_state, cx);
         terminal::paint::init_cpu_text_system(terminal_text_system, cx);
         gpui_kit::init(cx);
