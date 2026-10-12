@@ -238,6 +238,39 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
             .map(|tab| tab.id)
             .collect::<Vec<_>>()
     });
+    // Observe admission before yielding to the native platform. First layout
+    // may itself take longer than 450ms, so a later fixed-delay check would
+    // incorrectly reject an identity hydrated before that check even starts.
+    let selection_at = Instant::now();
+    let admitted_after = std::sync::Arc::new(parking_lot::Mutex::new(None));
+    let observed_delay = admitted_after.clone();
+    let expected_directory = profile.directories[0].clone();
+    let parked_id = ids[0];
+    let _admission_observer = cx.update(|cx| {
+        cx.observe(&ws, move |ws, cx| {
+            let repaired = ws.read(cx).entries[&parked_id]
+                .panes
+                .read(cx)
+                .deferred_saved()
+                .is_some_and(|saved| saved.cwd == Some(expected_directory.clone()));
+            if repaired {
+                observed_delay
+                    .lock()
+                    .get_or_insert_with(|| selection_at.elapsed());
+            }
+        })
+    });
+    // All selections occur in one actual window update before the first await.
+    // No native paint cost can consume the quiet period before this fence.
+    handle
+        .update(cx, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.select_tab(ids[2], window, cx);
+                ws.select_tab(ids[3], window, cx);
+                ws.select_tab(ids[1], window, cx);
+            })
+        })
+        .map_err(error)?;
     settle(handle, cx).await?;
     let selected_panes = cx.update(
         |cx| -> Result<Vec<(u64, Entity<TerminalSession>)>, String> {
@@ -322,41 +355,6 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
             .all(|i| profile.directories[i].join("started").exists())
     })
     .await?;
-    pause(cx, Duration::from_millis(180)).await;
-    // All three selections occur in one real window update. A callback already
-    // preparing an old target may never activate either transient target.
-    handle
-        .update(cx, |_, window, cx| {
-            ws.update(cx, |ws, cx| {
-                ws.select_tab(ids[2], window, cx);
-                ws.select_tab(ids[3], window, cx);
-                ws.select_tab(ids[1], window, cx);
-            })
-        })
-        .map_err(error)?;
-    pause(cx, Duration::from_millis(200)).await;
-    cx.update(|cx| -> Result<(), String> {
-        let ws = ws.read(cx);
-        ensure(
-            ws.entries[&ids[0]]
-                .panes
-                .read(cx)
-                .deferred_saved()
-                .is_some_and(|saved| saved.cwd == Some(stale.clone())),
-            "metadata admitted before selection's 450ms quiet period",
-        )?;
-        for i in [0, 2, 3] {
-            ensure(
-                ws.entries[&ids[i]]
-                    .panes
-                    .read(cx)
-                    .pane_sessions(cx)
-                    .is_empty(),
-                "rapid transient selection launched a hidden shell",
-            )?;
-        }
-        Ok(())
-    })?;
     wait_until(cx, "parked identity-only metadata", |cx| {
         let tree = ws.read(cx).entries[&ids[0]].panes.read(cx);
         tree.pane_sessions(cx).is_empty()
@@ -365,6 +363,28 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
                 .is_some_and(|saved| saved.cwd == Some(profile.directories[0].clone()))
     })
     .await?;
+    let admission_ms = admitted_after
+        .lock()
+        .as_ref()
+        .map(Duration::as_millis)
+        .ok_or("identity admission was not observed")?;
+    ensure(
+        admission_ms >= 450,
+        "identity admitted before selection quiet period",
+    )?;
+    cx.update(|cx| -> Result<(), String> {
+        for i in [0, 2, 3] {
+            ensure(
+                ws.read(cx).entries[&ids[i]]
+                    .panes
+                    .read(cx)
+                    .pane_sessions(cx)
+                    .is_empty(),
+                "rapid selection or metadata hydration launched a parked shell",
+            )?;
+        }
+        Ok(())
+    })?;
     select(handle, &ws, ids[3], cx)?;
     settle(handle, cx).await?;
     profile.release_prompt(1)?;
@@ -403,6 +423,6 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
     }
     let closed = dispose(cx).await?;
     Ok(
-        serde_json::json!({"restored_tabs":4,"selected_initial_ptys":2,"preserved_split_leaves":2,"native_identities":2,"quiet_period_ms":450,"transient_selection_ptys":0,"parked_metadata_ptys":0,"resume_deliveries":2,"resume_line_terminators":0,"duplicate_deliveries":0,"closed_owned_ptys":closed,"manual_polling":false,"simulated_frames":false}),
+        serde_json::json!({"restored_tabs":4,"selected_initial_ptys":2,"preserved_split_leaves":2,"native_identities":2,"quiet_period_ms":450,"observed_identity_admission_ms":admission_ms,"transient_selection_ptys":0,"parked_metadata_ptys":0,"resume_deliveries":2,"resume_line_terminators":0,"duplicate_deliveries":0,"closed_owned_ptys":closed,"manual_polling":false,"simulated_frames":false}),
     )
 }
