@@ -838,6 +838,11 @@ async fn verify_retention(
     })
     .await?;
     let before = cx.update(|cx| ordinary.read(cx).buffer_text());
+    let cursor_before = cx.update(|cx| {
+        ordinary
+            .read(cx)
+            .with_terminal(|term| term.cursor_position())
+    });
     let history_rows_before = cx.update(|cx| {
         ordinary.read(cx).allocation_snapshot()["history_rows"]
             .as_u64()
@@ -921,9 +926,23 @@ async fn verify_retention(
     )
     .await?;
     let restored = cx.update(|cx| ordinary.read(cx).buffer_text());
+    let content_evidence = serde_json::json!({
+        "before_bytes":before.len(),"after_bytes":restored.len(),
+        "before_lines":before.lines().count(),"after_lines":restored.lines().count(),
+        "before_sha256":chau7_next_core::session_restore::transaction::ContextRef::new(before.as_bytes()).sha256,
+        "after_sha256":chau7_next_core::session_restore::transaction::ContextRef::new(restored.as_bytes()).sha256,
+        "first_diff_byte":before.bytes().zip(restored.bytes()).position(|(a,b)|a!=b),
+        "before_tail_bytes":before.as_bytes().iter().rev().take(16).copied().collect::<Vec<_>>(),
+        "after_tail_bytes":restored.as_bytes().iter().rev().take(16).copied().collect::<Vec<_>>(),
+        "same_except_final_newlines":before.trim_end_matches('\n')==restored.trim_end_matches('\n'),
+        "missing_history_rows":(0..200).filter(|i| !restored.contains(&format!("OWNED_HISTORY_{i:03}"))).collect::<Vec<_>>(),
+        "before_cursor":cursor_before,"after_cursor":cx.update(|cx| ordinary.read(cx).with_terminal(|term| term.cursor_position()))
+    });
     ensure(
         restored == before,
-        "real retained history reload changed ordinary native contents",
+        &format!(
+            "real retained history reload changed ordinary native contents: {content_evidence}"
+        ),
     )?;
     let reloaded = cx.update(|cx| memory_sample(memory_id, cx));
     select(handle, ws, ids[1], cx)?;
