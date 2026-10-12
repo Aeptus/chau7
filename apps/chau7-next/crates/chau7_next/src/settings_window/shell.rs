@@ -250,6 +250,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
 }
 
 /// Scrollback stepper: 1,000 lines per step (100 below 1,000), 100 to 100,000.
+#[cfg(test)]
 pub(crate) fn scrollback_step(current: usize, delta: i32) -> usize {
     let step: i64 = if current < 1000 || (current == 1000 && delta < 0) {
         100

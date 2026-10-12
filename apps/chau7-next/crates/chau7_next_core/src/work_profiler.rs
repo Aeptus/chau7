@@ -81,17 +81,21 @@ pub struct Aggregate {
     pub total_items: u64,
     pub max_items: usize,
     pub idle_samples: u64,
+    pub activity_unknown_samples: u64,
     pub idle_total_ms: f64,
 }
 impl Aggregate {
-    fn add(&mut self, ms: f64, bytes: usize, items: usize, idle: bool) {
+    fn add(&mut self, ms: f64, bytes: usize, items: usize, idle: Option<bool>) {
         self.sample_count = self.sample_count.saturating_add(1);
         self.total_ms = (self.total_ms + ms).min(f64::MAX);
         self.max_ms = self.max_ms.max(ms);
         self.total_bytes = self.total_bytes.saturating_add(bytes as u64);
         self.total_items = self.total_items.saturating_add(items as u64);
         self.max_items = self.max_items.max(items);
-        if idle {
+        if idle.is_none() {
+            self.activity_unknown_samples = self.activity_unknown_samples.saturating_add(1);
+        }
+        if idle == Some(true) {
             self.idle_samples = self.idle_samples.saturating_add(1);
             self.idle_total_ms = (self.idle_total_ms + ms).min(f64::MAX);
         }
@@ -104,13 +108,18 @@ impl Aggregate {
         self.total_items = self.total_items.saturating_add(other.total_items);
         self.max_items = self.max_items.max(other.max_items);
         self.idle_samples = self.idle_samples.saturating_add(other.idle_samples);
+        self.activity_unknown_samples = self
+            .activity_unknown_samples
+            .saturating_add(other.activity_unknown_samples);
         self.idle_total_ms = (self.idle_total_ms + other.idle_total_ms).min(f64::MAX);
     }
     fn json(self) -> serde_json::Value {
         serde_json::json!({"sample_count":self.sample_count,"total_ms":self.total_ms,
             "average_ms": (self.sample_count > 0).then(||self.total_ms / self.sample_count as f64),
             "max_ms":self.max_ms,"total_bytes":self.total_bytes,"total_items":self.total_items,
-            "max_items":self.max_items,"idle_samples":self.idle_samples,"idle_total_ms":self.idle_total_ms})
+            "max_items":self.max_items,"idle_samples":self.idle_samples,"idle_total_ms":self.idle_total_ms,
+            "activity_unknown_samples":self.activity_unknown_samples,
+            "activity_classified_samples":self.sample_count.saturating_sub(self.activity_unknown_samples)})
     }
 }
 #[derive(Default)]
@@ -132,6 +141,17 @@ impl Profiler {
         bytes: usize,
         items: usize,
         idle: bool,
+    ) {
+        self.record_at_with_activity(key, second, ms, bytes, items, Some(idle));
+    }
+    pub fn record_at_with_activity(
+        &mut self,
+        key: Key,
+        second: i64,
+        ms: f64,
+        bytes: usize,
+        items: usize,
+        idle: Option<bool>,
     ) {
         if !ms.is_finite() || ms < 0.0 {
             return;
@@ -219,10 +239,13 @@ pub fn enabled() -> bool {
     })
 }
 pub fn record(key: Key, ms: f64, bytes: usize, items: usize, idle: bool) {
+    record_with_activity(key, ms, bytes, items, Some(idle));
+}
+fn record_with_activity(key: Key, ms: f64, bytes: usize, items: usize, idle: Option<bool>) {
     if enabled()
         && let Ok(mut profiler) = shared().lock()
     {
-        profiler.record_at(key, second(), ms, bytes, items, idle);
+        profiler.record_at_with_activity(key, second(), ms, bytes, items, idle);
     }
 }
 pub struct Span {
@@ -230,7 +253,7 @@ pub struct Span {
     started: Option<Instant>,
     bytes: usize,
     items: usize,
-    idle: bool,
+    idle: Option<bool>,
 }
 impl Span {
     pub fn bytes(&mut self, bytes: usize) {
@@ -240,13 +263,13 @@ impl Span {
         self.items = items;
     }
     pub fn idle(&mut self, idle: bool) {
-        self.idle = idle;
+        self.idle = Some(idle);
     }
 }
 impl Drop for Span {
     fn drop(&mut self) {
         if let Some(started) = self.started {
-            record(
+            record_with_activity(
                 self.key,
                 started.elapsed().as_secs_f64() * 1000.0,
                 self.bytes,
@@ -262,8 +285,22 @@ pub fn begin(key: Key) -> Span {
         started: enabled().then(Instant::now),
         bytes: 0,
         items: 0,
-        idle: false,
+        idle: None,
     }
+}
+
+/// Measure an actual callback phase, excluding its timer and executor waits.
+/// Static source labels bound cardinality and contain no user context. Activity
+/// remains unknown unless the producer explicitly classifies its observed work.
+pub fn timer_callback(source: &'static str, phase: &'static str, queue: Queue) -> Span {
+    begin(Key {
+        kind: Kind::Wakeup,
+        operation: source,
+        phase,
+        visibility: "application",
+        caller: source,
+        queue,
+    })
 }
 pub fn measure<T>(key: Key, body: impl FnOnce() -> T) -> T {
     let _span = begin(key);
@@ -337,6 +374,38 @@ mod tests {
         }
         assert_eq!(p.entries.len(), MAX_KEYS);
         assert_eq!(p.dropped_keys, 21);
+    }
+    #[test]
+    fn unclassified_callbacks_are_not_reported_as_active_or_idle() {
+        let mut profiler = Profiler::default();
+        let key = key(Queue::Main);
+        profiler.record_at_with_activity(key, 100, 2.0, 0, 0, None);
+        profiler.record_at_with_activity(key, 100, 3.0, 0, 0, Some(true));
+        profiler.record_at_with_activity(key, 101, 5.0, 0, 1, Some(false));
+        let snapshot = profiler.snapshot_at(101);
+        for field in ["lifetime", "last_10s", "last_60s"] {
+            let aggregate = &snapshot["entries"][0][field];
+            assert_eq!(aggregate["sample_count"], 3);
+            assert_eq!(aggregate["activity_unknown_samples"], 1);
+            assert_eq!(aggregate["activity_classified_samples"], 2);
+            assert_eq!(aggregate["idle_samples"], 1);
+            assert_eq!(aggregate["idle_total_ms"], 3.0);
+            assert_eq!(aggregate["total_ms"], 10.0);
+        }
+    }
+    #[test]
+    fn callback_guard_preserves_queue_and_unknown_activity_until_observed() {
+        let mut span = timer_callback("test.timer", "capture", Queue::Background);
+        assert_eq!(span.key.kind, Kind::Wakeup);
+        assert_eq!(span.key.operation, "test.timer");
+        assert_eq!(span.key.caller, "test.timer");
+        assert_eq!(span.key.phase, "capture");
+        assert_eq!(span.key.queue, Queue::Background);
+        assert_eq!(span.idle, None);
+        span.idle(true);
+        assert_eq!(span.idle, Some(true));
+        span.idle(false);
+        assert_eq!(span.idle, Some(false));
     }
     #[test]
     fn instrumentation_switch_matches_current_swift_values() {

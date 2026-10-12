@@ -116,8 +116,10 @@ pub fn capture(cx: &App) -> Value {
         "incidents": crate::incidents::diagnostics(),
         "remote_grid": crate::remote::grid_diagnostics(cx),
         "work_profile": chau7_next_core::work_profiler::snapshot(),
-        "main_thread": {"timer_delay_ms": heartbeat.and_then(|h| h.last_delay_ms),
-            "max_timer_delay_ms": heartbeat.map(|h| h.max_delay_ms),
+        "main_thread": {"timer_delay_ms": heartbeat.and_then(|h| h.last_delay_ms)
+                .filter(|ms| ms.is_finite() && *ms >= 0.0),
+            "max_timer_delay_ms": heartbeat.filter(|h| h.sample_count > 0)
+                .map(|h| h.max_delay_ms).filter(|ms| ms.is_finite() && *ms >= 0.0),
             "sample_count": heartbeat.map(|h| h.sample_count),
             "timer_interval_seconds": INTERVAL.as_secs()},
         "window_count": live.len(), "terminal_count": terminal_count,
@@ -317,6 +319,52 @@ mod tests {
     }
 
     use super::*;
+    #[gpui::test]
+    fn actual_capture_keeps_unmeasured_delay_unknown_and_measured_zero_valid(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(|cx| {
+            // No window, service timers, provider calls or user profile access.
+            let root = chau7_next_core::data_root::DataRoot::with_home(
+                std::env::temp_dir()
+                    .join(format!("next-heartbeat-capture-{}", uuid::Uuid::new_v4())),
+                true,
+            );
+            cx.set_global(AppData::new(root));
+            cx.set_global(Heartbeat::default());
+            let initial = capture(cx);
+            assert!(initial["main_thread"]["timer_delay_ms"].is_null());
+            assert!(initial["main_thread"]["max_timer_delay_ms"].is_null());
+            assert_eq!(initial["main_thread"]["sample_count"], 0);
+            *cx.global_mut::<Heartbeat>() = Heartbeat {
+                last_delay_ms: Some(0.0),
+                max_delay_ms: 0.0,
+                sample_count: 1,
+            };
+            let measured = capture(cx);
+            assert_eq!(
+                measured["main_thread"]["timer_delay_ms"].as_f64(),
+                Some(0.0)
+            );
+            assert_eq!(
+                measured["main_thread"]["max_timer_delay_ms"].as_f64(),
+                Some(0.0)
+            );
+            assert_eq!(measured["main_thread"]["sample_count"], 1);
+            for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0] {
+                *cx.global_mut::<Heartbeat>() = Heartbeat {
+                    last_delay_ms: Some(invalid),
+                    max_delay_ms: invalid,
+                    sample_count: 1,
+                };
+                let invalid = capture(cx);
+                assert!(invalid["main_thread"]["timer_delay_ms"].is_null());
+                assert!(invalid["main_thread"]["max_timer_delay_ms"].is_null());
+                assert_eq!(invalid["main_thread"]["sample_count"], 1);
+            }
+        });
+    }
+
     #[test]
     fn cpu_is_a_delta_with_missing_and_reset_handling() {
         let mut sampler = CpuSampler::default();

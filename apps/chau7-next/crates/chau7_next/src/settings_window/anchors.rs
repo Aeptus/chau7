@@ -11,7 +11,23 @@ struct Scope {
 #[cfg(test)]
 thread_local! { static RENDERED: RefCell<std::collections::HashSet<&'static str>> = RefCell::new(Default::default()); }
 #[cfg(test)]
+thread_local! { static OBSERVATION_IDS: RefCell<HashMap<&'static str, std::collections::HashSet<String>>> = RefCell::new(Default::default()); }
+#[cfg(test)]
+pub(super) fn observed_target_ids(id: &str) -> Vec<String> {
+    OBSERVATION_IDS.with(|ids| {
+        ids.borrow()
+            .get(id)
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default()
+    })
+}
+#[cfg(test)]
+fn record_observation_ids(id: &'static str, ids: impl IntoIterator<Item = String>) {
+    OBSERVATION_IDS.with(|seen| seen.borrow_mut().entry(id).or_default().extend(ids));
+}
+#[cfg(test)]
 pub(super) fn take_rendered_targets() -> std::collections::HashSet<&'static str> {
+    OBSERVATION_IDS.with(|ids| ids.borrow_mut().clear());
     RENDERED.with(|seen| std::mem::take(&mut *seen.borrow_mut()))
 }
 #[cfg(test)]
@@ -141,7 +157,16 @@ pub(super) fn for_title(title: &str) -> Option<ScrollAnchor> {
         let id = scope.labels.get(&normalized(title))?;
         let (key, anchor) = scope.anchors.get_key_value(id)?;
         #[cfg(test)]
-        record_rendered_target(key);
+        {
+            record_rendered_target(key);
+            record_observation_ids(
+                key,
+                [
+                    format!("setting-label-{}", normalized(title)),
+                    format!("setting-header-{title}"),
+                ],
+            );
+        }
         #[cfg(not(test))]
         let _ = key;
         Some(anchor.clone())
@@ -158,7 +183,10 @@ pub(super) fn for_id(id: &str) -> Option<ScrollAnchor> {
         if present {
             let (key, anchor) = scope.anchors.get_key_value(id)?;
             #[cfg(test)]
-            record_rendered_target(key);
+            {
+                record_rendered_target(key);
+                record_observation_ids(key, [format!("setting-anchor-{id}")]);
+            }
             #[cfg(not(test))]
             let _ = key;
             Some(anchor.clone())
@@ -168,24 +196,32 @@ pub(super) fn for_id(id: &str) -> Option<ScrollAnchor> {
     })
 }
 pub(super) fn target(id: &str, element: impl IntoElement) -> gpui::Div {
-    div().child(
-        div()
-            .id(SharedString::from(format!("setting-anchor-{id}")))
-            .anchor_scroll(for_id(id))
-            .child(element),
-    )
+    let target = div()
+        .id(SharedString::from(format!("setting-anchor-{id}")))
+        .anchor_scroll(for_id(id))
+        .child(element);
+    #[cfg(test)]
+    let target = {
+        use gpui_kit::test::TestSupportExt;
+        target.test_support()
+    };
+    div().child(target)
 }
 
 pub(super) fn label_target(label: &str, element: impl IntoElement) -> gpui::Div {
-    div().child(
-        div()
-            .id(SharedString::from(format!(
-                "setting-label-{}",
-                normalized(label)
-            )))
-            .anchor_scroll(for_title(label))
-            .child(element),
-    )
+    let target = div()
+        .id(SharedString::from(format!(
+            "setting-label-{}",
+            normalized(label)
+        )))
+        .anchor_scroll(for_title(label))
+        .child(element);
+    #[cfg(test)]
+    let target = {
+        use gpui_kit::test::TestSupportExt;
+        target.test_support()
+    };
+    div().child(target)
 }
 
 #[cfg(test)]

@@ -25,8 +25,8 @@ pub fn imported_settings(base: &Settings, profile: &ImportableProfile) -> Settin
     if let Some(family) = profile.font_family.as_ref().filter(|f| !f.is_empty()) {
         settings.appearance.font_family = family.clone();
     }
-    if let Some(size) = profile.font_size.filter(|s| *s > 0) {
-        settings.appearance.font_size = size as f32;
+    if let Some(size) = profile.font_size {
+        settings.appearance.set_font_size(size as f32);
     }
     match profile.cursor_style.as_deref() {
         Some("block") => settings.appearance.cursor_shape = CursorShape::Block,
@@ -83,5 +83,31 @@ mod tests {
         let base = Settings::default();
         let p = ImportableProfile::new("Empty", ProfileSource::ITerm2);
         assert_eq!(imported_settings(&base, &p), base);
+    }
+
+    #[test]
+    fn imported_profile_font_uses_setting_bounds_without_changing_base_or_preferences() {
+        let mut base = Settings::default();
+        base.appearance.font_size = 19.0;
+        base.input.copy_on_select = false;
+        base.terminal.scrollback_lines = 2300;
+        for (raw, expected) in [
+            (-1, 8.0),
+            (0, 8.0),
+            (7, 8.0),
+            (8, 8.0),
+            (72, 72.0),
+            (73, 72.0),
+        ] {
+            let mut profile = ImportableProfile::new("Bounds", ProfileSource::ITerm2);
+            profile.font_size = Some(raw);
+            let actual = imported_settings(&base, &profile);
+            assert_eq!(actual.appearance.font_size, expected);
+            assert!(!actual.input.copy_on_select);
+            assert_eq!(actual.terminal.scrollback_lines, 2300);
+            let restored = Settings::from_profile_text(&actual.to_profile_text());
+            assert_eq!(restored.appearance.font_size, expected);
+            assert_eq!(base.appearance.font_size, 19.0);
+        }
     }
 }

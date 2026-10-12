@@ -106,14 +106,32 @@ pub fn start(cx: &mut App) {
             cx.background_executor()
                 .timer(Duration::from_millis(200))
                 .await;
-            let current = cx.update(bindings);
+            let current = cx.update(|cx| {
+                let mut callback = chau7_next_core::work_profiler::timer_callback(
+                    "runtime.codex_feedback",
+                    "capture",
+                    chau7_next_core::work_profiler::Queue::Main,
+                );
+                let current = bindings(cx);
+                callback.items(current.len());
+                callback.idle(current.is_empty());
+                current
+            });
             if current.is_empty() && watches.is_empty() {
                 continue;
             }
             let now = began.elapsed().as_millis().min(u64::MAX as u128) as u64;
             let sessions = sessions.clone();
             let (next, deliveries) = cx
-                .background_spawn(async move { poll(&sessions, watches, current, now) })
+                .background_spawn(async move {
+                    let mut callback = chau7_next_core::work_profiler::timer_callback(
+                        "runtime.codex_feedback",
+                        "poll",
+                        chau7_next_core::work_profiler::Queue::Background,
+                    );
+                    callback.items(current.len().saturating_add(watches.len()));
+                    poll(&sessions, watches, current, now)
+                })
                 .await;
             watches = next;
             let health: Vec<_> = watches
@@ -132,6 +150,12 @@ pub fn start(cx: &mut App) {
                 })
                 .collect();
             cx.update(|cx| {
+                let mut callback = chau7_next_core::work_profiler::timer_callback(
+                    "runtime.codex_feedback",
+                    "apply",
+                    chau7_next_core::work_profiler::Queue::Main,
+                );
+                callback.items(deliveries.len());
                 cx.default_global::<MonitorHealth>().0 = health;
                 let alive: HashSet<_> = bindings(cx)
                     .into_iter()

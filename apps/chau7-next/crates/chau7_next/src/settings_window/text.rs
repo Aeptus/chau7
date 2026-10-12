@@ -10,7 +10,13 @@ use gpui_kit::component::input::Input;
 use super::SectionContext;
 use super::update;
 use super::widgets::{chip, row, section as titled, stepper, toggle};
-use crate::settings::CursorShape;
+use crate::settings::{CursorShape, Settings};
+
+fn change_font_size(settings: &mut Settings, delta: i32) {
+    settings
+        .appearance
+        .set_font_size(settings.appearance.font_size + delta as f32);
+}
 
 /// `None` while the field is empty, else whether the font is installed.
 pub(super) fn validate_font(family: &str, installed: &[String]) -> Option<bool> {
@@ -115,9 +121,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                 "font-size",
                 format!("{:.0} pt", s.font_size),
                 chrome,
-                |s, d| {
-                    s.appearance.font_size = (s.appearance.font_size + d as f32).clamp(6.0, 72.0)
-                },
+                change_font_size,
             ),
             chrome,
         ))
@@ -263,5 +267,22 @@ mod tests {
         assert_eq!(weight_name(5), "Regular");
         assert_eq!(weight_name(9), "Bold");
         assert_eq!(weight_name(14), "Black");
+    }
+
+    #[test]
+    fn actual_font_control_uses_current_swift_setting_range() {
+        for (start, delta, expected) in [
+            (8.0, -1, 8.0),
+            (8.0, 1, 9.0),
+            (72.0, 1, 72.0),
+            (72.0, -1, 71.0),
+            (11.0, i32::MIN, 8.0),
+            (11.0, i32::MAX, 72.0),
+        ] {
+            let mut settings = Settings::default();
+            settings.appearance.font_size = start;
+            change_font_size(&mut settings, delta);
+            assert_eq!(settings.appearance.font_size, expected);
+        }
     }
 }

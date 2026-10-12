@@ -76,6 +76,11 @@ pub fn apply_menu_bar_only_mode(cx: &mut App) {
 /// Handle what the OS queued since the last call: links and menu bar item
 /// choices. Called from a timer on the main thread.
 pub fn poll(cx: &mut App) {
+    let _callback = chau7_next_core::work_profiler::timer_callback(
+        "app.poll",
+        "callback",
+        chau7_next_core::work_profiler::Queue::Main,
+    );
     // About once a second: the config file and the active directory's repo
     // config (`ConfigFileWatcher`).
     crate::settings::sync::tick(cx);

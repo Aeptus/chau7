@@ -151,7 +151,14 @@ pub fn init(cx: &mut App) {
                 rate_executor
                     .timer(std::time::Duration::from_millis(200))
                     .await;
+                let mut callback = chau7_next_core::work_profiler::timer_callback(
+                    "telemetry.transcript_rate",
+                    "poll",
+                    chau7_next_core::work_profiler::Queue::Background,
+                );
                 let runs = recorder.all_active_runs();
+                callback.items(runs.len());
+                callback.idle(runs.is_empty() && files.is_empty() && paths_cache.is_empty());
                 let active: std::collections::HashSet<_> =
                     runs.iter().filter_map(|r| r.tab_id.clone()).collect();
                 files.retain(|(tab, _), _| active.contains(tab));

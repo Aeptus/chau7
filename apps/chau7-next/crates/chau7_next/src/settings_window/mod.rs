@@ -261,6 +261,8 @@ pub struct SettingsView {
     entity: gpui::WeakEntity<SettingsView>,
     /// Shell section: custom shell, startup command, default directory.
     shell_inputs: shell::ShellInputs,
+    /// Scrollback section: independently held integer edit buffer.
+    pane_inputs: panes::PaneInputs,
     /// Repositories section editor fields.
     repo_inputs: repositories::RepoInputs,
     /// AI Integration section fields.
@@ -386,6 +388,7 @@ impl SettingsView {
             graphics_feedback: None,
             entity: cx.entity().downgrade(),
             shell_inputs: shell::ShellInputs::new(window, cx),
+            pane_inputs: panes::PaneInputs::new(window, cx),
             repo_inputs: repositories::RepoInputs::new(window, cx),
             ai_inputs: match api_key {
                 Some(key) => ai::AiInputs::new_with_api_key(window, cx, key),

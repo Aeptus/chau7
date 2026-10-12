@@ -112,6 +112,10 @@ macro_rules! bool_fields {
             $settings.terminal.split_panes_enabled
         );
         $visit!(
+            "dangerousCommandProtectChau7Enabled",
+            $settings.dangerous_commands.protect_chau7_enabled
+        );
+        $visit!(
             "dangerousOutputHighlightLowPowerEnabled",
             $settings.dangerous_commands.highlight_low_power
         );
@@ -196,6 +200,8 @@ pub(super) fn export(settings: &Settings, map: &mut Map<String, Value>) {
         ("urlHandler", json!(settings.productivity.url_handler.raw())),
         ("keybindingPreset", json!(settings.input.keybinding_preset)),
         ("dangerousCommandHighlightScope", json!(settings.dangerous_commands.scope.raw())),
+        ("dangerousCommandProtectChau7Level", json!(settings.dangerous_commands.protect_chau7_level.raw())),
+        ("dangerousCommandProtectedProcessPatterns", json!(settings.dangerous_commands.protected_process_patterns)),
         ("customShortcuts", json!(settings.input.shortcuts())),
         ("customAIDetectionRules", Value::Array(settings.ai.custom_rules.iter().map(|r| json!({"id":r.id,"pattern":r.pattern,"displayName":r.display_name,"colorName":r.color_name})).collect())),
         ("customColorScheme", settings.appearance.custom_color_scheme.as_deref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Value::Null)),
@@ -305,6 +311,24 @@ pub(super) fn import(settings: &mut Settings, map: &Map<String, Value>) {
     }
     bool_fields!(settings, flag);
     string_fields!(settings, string);
+    if let Some(level) = map
+        .get("dangerousCommandProtectChau7Level")
+        .and_then(Value::as_str)
+        .and_then(crate::settings::dangerous_commands::ProtectionLevel::from_raw)
+    {
+        settings.dangerous_commands.protect_chau7_level = level;
+    }
+    if let Some(patterns) = map
+        .get("dangerousCommandProtectedProcessPatterns")
+        .and_then(|value| serde_json::from_value::<Vec<String>>(value.clone()).ok())
+    {
+        // Current TerminalBehaviorStore trims and removes empty entries.
+        settings.dangerous_commands.protected_process_patterns = patterns
+            .into_iter()
+            .map(|pattern| pattern.trim().to_owned())
+            .filter(|pattern| !pattern.is_empty())
+            .collect();
+    }
     if let Some(n) = map.get("defaultZoomPercent").and_then(Value::as_u64) {
         settings.appearance.default_zoom_percent = n.clamp(50, 200) as u32;
     }
@@ -398,7 +422,9 @@ pub(super) fn import(settings: &mut Settings, map: &Map<String, Value>) {
             settings.appearance.custom_color_scheme = Some(value.to_string());
         }
         settings.appearance.color_scheme = chau7_next_core::color_schemes::ColorScheme::resolve(
-            settings.appearance.color_scheme.name,
+            map.get("colorSchemeName")
+                .and_then(Value::as_str)
+                .unwrap_or(settings.appearance.color_scheme.name),
             settings.appearance.custom_color_scheme.as_deref(),
         );
     }
@@ -486,6 +512,90 @@ mod tests {
         string_fields!(restored, check_import);
     }
 
+    #[test]
+    fn protect_chau7_shared_fields_round_trip_without_next_extension() {
+        use crate::settings::dangerous_commands::ProtectionLevel;
+        for level in ProtectionLevel::ALL {
+            let mut source = Settings::default();
+            source.dangerous_commands.protect_chau7_enabled = false;
+            source.dangerous_commands.protect_chau7_level = level;
+            source.dangerous_commands.protected_process_patterns =
+                vec!["helper \"literal\"".into(), "path\\helper".into()];
+            let mut map = document(&source);
+            map.remove(NEXT_KEY);
+            assert_eq!(map["dangerousCommandProtectChau7Enabled"], json!(false));
+            assert_eq!(map["dangerousCommandProtectChau7Level"], json!(level.raw()));
+            assert_eq!(
+                map["dangerousCommandProtectedProcessPatterns"],
+                json!(source.dangerous_commands.protected_process_patterns)
+            );
+            let mut restored = Settings::default();
+            import_json(&mut restored, &serde_json::to_string(&map).unwrap(), HOME).unwrap();
+            assert!(!restored.dangerous_commands.protect_chau7_enabled);
+            assert_eq!(restored.dangerous_commands.protect_chau7_level, level);
+            assert_eq!(
+                restored.dangerous_commands.protected_process_patterns,
+                source.dangerous_commands.protected_process_patterns
+            );
+        }
+    }
+    #[test]
+    fn protect_chau7_shared_missing_invalid_and_empty_values_match_current_store() {
+        use crate::settings::dangerous_commands::ProtectionLevel;
+        let mut actual = Settings::default();
+        actual.dangerous_commands.protect_chau7_enabled = false;
+        actual.dangerous_commands.protect_chau7_level = ProtectionLevel::Warning;
+        actual.dangerous_commands.protected_process_patterns = vec!["existing".into()];
+        let mut map = document(&actual);
+        map.remove(NEXT_KEY);
+        for key in [
+            "dangerousCommandProtectChau7Enabled",
+            "dangerousCommandProtectChau7Level",
+            "dangerousCommandProtectedProcessPatterns",
+        ] {
+            map.remove(key);
+        }
+        for invalid in [false, true] {
+            if invalid {
+                map.insert(
+                    "dangerousCommandProtectChau7Enabled".into(),
+                    json!("invalid"),
+                );
+                map.insert("dangerousCommandProtectChau7Level".into(), json!("unknown"));
+                map.insert(
+                    "dangerousCommandProtectedProcessPatterns".into(),
+                    json!(["partial", 17]),
+                );
+            }
+            import_json(&mut actual, &serde_json::to_string(&map).unwrap(), HOME).unwrap();
+            assert!(!actual.dangerous_commands.protect_chau7_enabled);
+            assert_eq!(
+                actual.dangerous_commands.protect_chau7_level,
+                ProtectionLevel::Warning
+            );
+            assert_eq!(
+                actual.dangerous_commands.protected_process_patterns,
+                ["existing"]
+            );
+        }
+        map.insert(
+            "dangerousCommandProtectedProcessPatterns".into(),
+            json!(["  helper  ", "", "  ", "other"]),
+        );
+        import_json(&mut actual, &serde_json::to_string(&map).unwrap(), HOME).unwrap();
+        assert_eq!(
+            actual.dangerous_commands.protected_process_patterns,
+            ["helper", "other"]
+        );
+        map.insert("dangerousCommandProtectedProcessPatterns".into(), json!([]));
+        import_json(&mut actual, &serde_json::to_string(&map).unwrap(), HOME).unwrap();
+        assert!(
+            actual
+                .dangerous_commands
+                .protected_process_patterns
+                .is_empty()
+        );
+    }
     #[test]
     fn next_extension_preserves_all_domain_preferences_absent_from_swift() {
         let mut source = Settings::default();
@@ -632,5 +742,79 @@ mod tests {
         let before = actual.input.clone();
         import_json(&mut actual, &json!({"fontFamily":"SF Mono","customShortcuts":[{"action":"newTab","key":"q","modifiers":["bogus"]}]}).to_string(), HOME).unwrap();
         assert_eq!(actual.input, before);
+    }
+
+    #[test]
+    fn shared_custom_palette_activates_actual_colors_and_round_trips() {
+        use chau7_next_core::color_schemes::ColorScheme;
+
+        let expected = ColorScheme::named("Dracula");
+        let palette: Value = serde_json::from_str(&expected.to_json()).unwrap();
+        let shared = json!({
+            "fontFamily": "SF Mono",
+            "colorSchemeName": "Custom",
+            "customColorScheme": palette,
+        });
+        let mut settings = Settings::default();
+        import_json(&mut settings, &shared.to_string(), HOME).unwrap();
+        for _ in 0..2 {
+            let actual = settings.appearance.color_scheme;
+            assert_eq!(actual.name, "Custom");
+            assert_eq!(actual.background, expected.background);
+            assert_eq!(actual.foreground, expected.foreground);
+            assert_eq!(actual.cursor, expected.cursor);
+            assert_eq!(actual.selection, expected.selection);
+            assert_eq!(actual.ansi, expected.ansi);
+            assert_eq!(document(&settings)["customColorScheme"], palette);
+            let mut exported = document(&settings);
+            exported.remove(NEXT_KEY);
+            let mut restored = Settings::default();
+            import_json(&mut restored, &Value::Object(exported).to_string(), HOME).unwrap();
+            settings = restored;
+        }
+        let selected_preset = json!({
+            "fontFamily": "SF Mono",
+            "colorSchemeName": "Nord",
+            "customColorScheme": palette,
+        });
+        import_json(&mut settings, &selected_preset.to_string(), HOME).unwrap();
+        assert_eq!(settings.appearance.color_scheme, ColorScheme::named("Nord"));
+        assert_eq!(document(&settings)["customColorScheme"], palette);
+    }
+
+    #[test]
+    fn shared_shell_export_retains_inactive_custom_path_and_legacy_selection() {
+        use chau7_next_core::shell_env::ShellType;
+
+        for legacy_shell in [None, Some("/bin/zsh"), Some("/bin/bash")] {
+            let mut source = Settings::default();
+            source.terminal.shell_type = None;
+            source.terminal.shell = legacy_shell.map(str::to_owned);
+            source.terminal.custom_shell_path = "/owned/remembered/custom-shell".into();
+            let mut shared = document(&source);
+            assert_eq!(shared["shellType"], legacy_shell.unwrap_or("system"));
+            assert_eq!(shared["customShellPath"], source.terminal.custom_shell_path);
+            shared.remove(NEXT_KEY);
+            let mut restored = Settings::default();
+            import_json(&mut restored, &Value::Object(shared).to_string(), HOME).unwrap();
+            assert_eq!(
+                restored.terminal.custom_shell_path,
+                source.terminal.custom_shell_path
+            );
+            assert_eq!(
+                restored.terminal.effective_shell_type(),
+                source.terminal.effective_shell_type()
+            );
+        }
+        let mut source = Settings::default();
+        source.terminal.shell = Some("/owned/active/legacy-shell".into());
+        source.terminal.custom_shell_path = "/owned/inactive/custom-shell".into();
+        let shared = document(&source);
+        assert_eq!(shared["shellType"], "custom");
+        assert_eq!(shared["customShellPath"], "/owned/active/legacy-shell");
+        source.terminal.shell_type = Some(ShellType::System);
+        let shared = document(&source);
+        assert_eq!(shared["shellType"], "system");
+        assert_eq!(shared["customShellPath"], source.terminal.custom_shell_path);
     }
 }

@@ -86,7 +86,12 @@ fn start_readiness_monitor(cx: &mut App) {
                 .timer(Duration::from_millis(500))
                 .await;
             let snapshots = cx.update(|cx| {
-                manager()
+                let mut callback = chau7_next_core::work_profiler::timer_callback(
+                    "runtime.readiness",
+                    "capture",
+                    chau7_next_core::work_profiler::Queue::Main,
+                );
+                let snapshots = manager()
                     .all_sessions(false)
                     .into_iter()
                     .filter(|session| {
@@ -101,13 +106,22 @@ fn start_readiness_monitor(cx: &mut App) {
                         launch_snapshot(&session, cx)
                             .map(|(snapshot, pid)| (session, snapshot, pid))
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                callback.items(snapshots.len());
+                callback.idle(snapshots.is_empty());
+                snapshots
             });
             if snapshots.is_empty() {
                 continue;
             }
             let snapshots = cx
                 .background_spawn(async move {
+                    let mut callback = chau7_next_core::work_profiler::timer_callback(
+                        "runtime.readiness",
+                        "process_probe",
+                        chau7_next_core::work_profiler::Queue::Background,
+                    );
+                    callback.items(snapshots.len());
                     snapshots
                         .into_iter()
                         .map(|(session, mut snapshot, pid)| {
@@ -128,6 +142,12 @@ fn start_readiness_monitor(cx: &mut App) {
                 })
                 .await;
             cx.update(|cx| {
+                let mut callback = chau7_next_core::work_profiler::timer_callback(
+                    "runtime.readiness",
+                    "apply",
+                    chau7_next_core::work_profiler::Queue::Main,
+                );
+                callback.items(snapshots.len());
                 use chau7_next_core::runtime::{launch_readiness, session_state::State};
                 for (session, snapshot) in snapshots {
                     session.observe_terminal_status(&snapshot.effective_status);
