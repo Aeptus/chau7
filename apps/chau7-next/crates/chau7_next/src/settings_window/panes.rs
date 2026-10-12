@@ -1,7 +1,82 @@
 //! Panes and restore: split panes on or off, lines of scrollback restored.
 
+use super::SettingsView;
 use crate::settings::Settings;
-use gpui::{div, prelude::*};
+use crate::settings::config_files::ConfigFiles;
+use gpui::{Context, Entity, Subscription, Window, div, prelude::*, px};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
+
+/// Own the edit buffer independently of refreshed settings snapshots.
+pub(crate) struct PaneInputs {
+    scrollback: Entity<InputState>,
+    edit_baseline: usize,
+    last_displayed: String,
+    editing: bool,
+    _subscription: Subscription,
+}
+
+impl PaneInputs {
+    pub(crate) fn new(window: &mut Window, cx: &mut Context<SettingsView>) -> Self {
+        let value = Settings::get(cx).terminal.scrollback_lines;
+        let baseline = cx.global::<ConfigFiles>().base.terminal.scrollback_lines;
+        let scrollback = cx.new(|cx| InputState::new(window, cx).default_value(value.to_string()));
+        let subscription = cx.subscribe_in(
+            &scrollback,
+            window,
+            |view, input, event: &InputEvent, window, cx| {
+                let current_base = cx.global::<ConfigFiles>().base.terminal.scrollback_lines;
+                match event {
+                    InputEvent::Focus => {
+                        if !view.pane_inputs.editing {
+                            let actual = Settings::get(cx).terminal.scrollback_lines.to_string();
+                            // A text edit may already be queued behind Focus. Only
+                            // refresh the previous displayed value, never that draft.
+                            if input.read(cx).value().as_str() == view.pane_inputs.last_displayed {
+                                input.update(cx, |state, cx| {
+                                    state.set_value(actual.clone(), window, cx)
+                                });
+                            }
+                            view.pane_inputs.last_displayed = actual;
+                            view.pane_inputs.edit_baseline = current_base;
+                        }
+                        view.pane_inputs.editing = true;
+                    }
+                    InputEvent::Change => {
+                        // Partial digits and signs remain draft text until submission.
+                        view.pane_inputs.editing = true;
+                    }
+                    InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                        let raw = input.read(cx).value().to_string();
+                        if view.pane_inputs.edit_baseline == current_base
+                            && let Ok(lines) = raw.trim().parse::<i128>()
+                        {
+                            super::update(cx, |settings| {
+                                settings.terminal.set_scrollback_lines(lines)
+                            });
+                        }
+                        let actual = Settings::get(cx).terminal.scrollback_lines.to_string();
+                        if raw != actual {
+                            input.update(cx, |state, cx| {
+                                state.set_value(actual.clone(), window, cx)
+                            });
+                        }
+                        view.pane_inputs.last_displayed = actual;
+                        view.pane_inputs.edit_baseline =
+                            cx.global::<ConfigFiles>().base.terminal.scrollback_lines;
+                        view.pane_inputs.editing = !matches!(event, InputEvent::Blur);
+                    }
+                }
+            },
+        );
+        Self {
+            scrollback,
+            edit_baseline: baseline,
+            last_displayed: value.to_string(),
+            editing: false,
+            _subscription: subscription,
+        }
+    }
+}
 
 use super::SectionContext;
 use super::widgets::{row, section as titled, stepper, toggle};
@@ -31,15 +106,9 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     titled("Scrollback", chrome)
         .child(row(
             "Scrollback lines",
-            stepper(
-                "scrollback",
-                format!("{}", s.scrollback_lines),
-                chrome,
-                |s, d| {
-                    s.terminal.scrollback_lines =
-                        super::shell::scrollback_step(s.terminal.scrollback_lines, d)
-                },
-            ),
+            div()
+                .w(px(100.0))
+                .child(Input::new(&ctx.view.pane_inputs.scrollback)),
             chrome,
         ))
         .child(row(
@@ -97,3 +166,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "panes_input_test.rs"]
+mod input_test;
