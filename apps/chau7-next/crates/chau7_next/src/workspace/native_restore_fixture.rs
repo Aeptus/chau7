@@ -39,6 +39,122 @@ fn activation_diagnostic(
     })
 }
 
+// Native window mutations can synchronously request a GPUI frame. The
+// foreground task calls them with no App/window borrow or state lock held.
+fn native_mutation(action: impl FnOnce()) -> Result<(), String> {
+    let _main = MainThreadMarker::new().ok_or("native fixture is not on main thread")?;
+    action();
+    Ok(())
+}
+fn activate_owned_application(application: &NSApplication) -> Result<(), String> {
+    native_mutation(|| {
+        // SAFETY: this actual retained AppKit application is on the verified
+        // main thread. Preserve GPUI's existing ignoring-other-apps selector.
+        unsafe { objc2::msg_send![application, activateIgnoringOtherApps: true] }
+    })
+}
+#[derive(serde::Serialize)]
+struct SessionSurfaceDiagnostic {
+    index: usize,
+    visible: bool,
+    suspended: bool,
+    live_frame: bool,
+}
+#[derive(serde::Serialize)]
+struct RevealDiagnostic {
+    stage: &'static str,
+    app_active: bool,
+    activation_policy: isize,
+    window_miniaturized: bool,
+    window_visible: bool,
+    window_key: bool,
+    window_can_become_key: bool,
+    window_occlusion_bits: usize,
+    gpui_visible: bool,
+    gpui_active: bool,
+    selected_session_count: usize,
+    session_sample_limit: usize,
+    sessions: Vec<SessionSurfaceDiagnostic>,
+    renderer_backend: Option<&'static str>,
+    submitted_frames: Option<u64>,
+    failed_frames: Option<u64>,
+}
+fn reveal_diagnostic(
+    stage: &'static str,
+    native: &NSWindow,
+    application: &NSApplication,
+    handle: WindowHandle<Root>,
+    sessions: &[(u64, Entity<TerminalSession>)],
+    cx: &mut AsyncApp,
+) -> Result<RevealDiagnostic, String> {
+    let _main = MainThreadMarker::new().ok_or("native fixture is not on main thread")?;
+    // Observe native state before entering the read-only GPUI update.
+    let mut snapshot = RevealDiagnostic {
+        stage,
+        app_active: application.isActive(),
+        activation_policy: application.activationPolicy().0,
+        window_miniaturized: native.isMiniaturized(),
+        window_visible: native.isVisible(),
+        window_key: native.isKeyWindow(),
+        window_can_become_key: native.canBecomeKeyWindow(),
+        window_occlusion_bits: native.occlusionState().0,
+        gpui_visible: false,
+        gpui_active: false,
+        selected_session_count: sessions.len(),
+        session_sample_limit: 8,
+        sessions: Vec::new(),
+        renderer_backend: None,
+        submitted_frames: None,
+        failed_frames: None,
+    };
+    handle
+        .update(cx, |_, window, cx| {
+            snapshot.gpui_visible = window.is_visible();
+            snapshot.gpui_active = window.is_window_active();
+            snapshot.sessions = sessions
+                .iter()
+                .take(snapshot.session_sample_limit)
+                .enumerate()
+                .map(|(index, (_, session))| {
+                    let session = session.read(cx);
+                    SessionSurfaceDiagnostic {
+                        index,
+                        visible: session.restore_surface_visible(),
+                        suspended: session.is_render_suspended(),
+                        live_frame: session.surface_has_live_frame(),
+                    }
+                })
+                .collect();
+            if let Some(renderer) = window.renderer_diagnostics() {
+                snapshot.renderer_backend = Some(renderer.backend);
+                snapshot.submitted_frames = renderer.submitted_frames;
+                snapshot.failed_frames = renderer.failed_frames;
+            }
+        })
+        .map_err(error)?;
+    Ok(snapshot)
+}
+async fn wait_for_reveal(
+    handle: WindowHandle<Root>,
+    native: &NSWindow,
+    application: &NSApplication,
+    sessions: &[(u64, Entity<TerminalSession>)],
+    cx: &mut AsyncApp,
+    stage: &'static str,
+    ready: impl FnMut(&App) -> bool,
+) -> Result<(), String> {
+    if let Err(error) = wait_until(cx, stage, ready).await {
+        // Diagnostic failure must not replace the original failed predicate.
+        if let Ok(snapshot) = reveal_diagnostic(stage, native, application, handle, sessions, cx)
+            && let Ok(snapshot) = serde_json::to_string(&snapshot)
+        {
+            eprintln!("native_surface_reveal_failure={snapshot}");
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+
 struct Profile {
     home: PathBuf,
     root: DataRoot,
@@ -535,7 +651,7 @@ async fn verify_loading_clock(
     let initial = cx.update(|cx| loading_timers(cx));
     ensure(initial[0]["interval_ms"] == 80, "loading clock is not 80ms")?;
     let samples_before = loading_callback_samples();
-    cx.update(|_| native.orderOut(None));
+    native_mutation(|| native.orderOut(None))?;
     wait_until(cx, "loading clock cancellation while ordered out", |cx| {
         !native.isVisible() && loading_timers(cx).is_empty()
     })
@@ -548,7 +664,7 @@ async fn verify_loading_clock(
         loading_callback_samples() == hidden_samples,
         "hidden workspace continued running loading callbacks",
     )?;
-    cx.update(|_| native.orderFront(None));
+    native_mutation(|| native.orderFront(None))?;
     settle(handle, cx).await?;
     wait_until(cx, "one replacement loading clock", |cx| {
         native.isVisible() && loading_timers(cx).len() == 1
@@ -716,7 +832,7 @@ async fn verify_surfaces(
         "injected critical policy reclaimed no actual renderer cache",
     )?;
     eprintln!("native_history_retention={retention}");
-    cx.update(|_| native.orderOut(None));
+    native_mutation(|| native.orderOut(None))?;
     wait_until(cx, "actual ordered-out window suspension", |cx| {
         !native.isVisible()
             && sessions.iter().all(|(_, s)| {
@@ -764,10 +880,8 @@ async fn verify_surfaces(
         application.activationPolicy() == NSApplicationActivationPolicy::Regular,
         "owned fixture activation policy is not Regular",
     )?;
-    cx.update(|cx| {
-        native.orderFront(None);
-        cx.activate(true);
-    });
+    native_mutation(|| native.orderFront(None))?;
+    activate_owned_application(&application)?;
     if let Err(error) = wait_until(cx, "owned fixture application activation", |_| {
         application.isActive()
     })
@@ -775,30 +889,36 @@ async fn verify_surfaces(
     {
         // Capture this owned application's actual AppKit state at the failed
         // gate, before cleanup changes it. Keep the original failure and timer.
-        let snapshot = cx.update(|_| {
-            activation_diagnostic(
-                application.isActive(),
-                application.activationPolicy().0,
-                native.isVisible(),
-                native.isKeyWindow(),
-                native.canBecomeKeyWindow(),
-            )
-        });
+        let snapshot = activation_diagnostic(
+            application.isActive(),
+            application.activationPolicy().0,
+            native.isVisible(),
+            native.isKeyWindow(),
+            native.canBecomeKeyWindow(),
+        );
         eprintln!("native_activation_failure={snapshot}");
         return Err(error);
     }
-    cx.update(|_| {
+    native_mutation(|| {
         native.orderFront(None);
         native.makeKeyWindow();
-    });
-    wait_until(cx, "actual ordered-front surface reveal", |cx| {
-        application.isActive()
-            && native.isVisible()
-            && native.isKeyWindow()
-            && sessions
-                .iter()
-                .all(|(_, s)| s.read(cx).restore_surface_visible())
-    })
+    })?;
+    wait_for_reveal(
+        handle,
+        &native,
+        &application,
+        sessions,
+        cx,
+        "actual ordered-front surface reveal",
+        |cx| {
+            application.isActive()
+                && native.isVisible()
+                && native.isKeyWindow()
+                && sessions
+                    .iter()
+                    .all(|(_, s)| s.read(cx).restore_surface_visible())
+        },
+    )
     .await?;
     settle(handle, cx).await?;
     cx.update(|cx| -> Result<(), String> {
@@ -809,27 +929,44 @@ async fn verify_surfaces(
             "ordered-front reveal did not paint actual terminal surfaces",
         )
     })?;
-    cx.update(|_| native.miniaturize(None));
-    wait_until(cx, "actual miniaturized window", |cx| {
-        native.isMiniaturized()
-            && sessions
-                .iter()
-                .all(|(_, s)| !s.read(cx).restore_surface_visible())
-    })
+    native_mutation(|| native.miniaturize(None))?;
+    wait_for_reveal(
+        handle,
+        &native,
+        &application,
+        sessions,
+        cx,
+        "actual miniaturized window",
+        |cx| {
+            native.isMiniaturized()
+                && sessions
+                    .iter()
+                    .all(|(_, s)| !s.read(cx).restore_surface_visible())
+        },
+    )
     .await?;
-    cx.update(|_| {
-        native.deminiaturize(None);
-        native.makeKeyWindow();
-    });
-    wait_until(cx, "actual deminiaturized surface reveal", |cx| {
-        !native.isMiniaturized()
-            && application.isActive()
-            && native.isVisible()
-            && native.isKeyWindow()
-            && sessions
-                .iter()
-                .all(|(_, s)| s.read(cx).restore_surface_visible())
-    })
+    native_mutation(|| native.deminiaturize(None))?;
+    // One explicit activation/key sequence; polling observes without refocusing.
+    native_mutation(|| native.orderFront(None))?;
+    activate_owned_application(&application)?;
+    native_mutation(|| native.makeKeyWindow())?;
+    wait_for_reveal(
+        handle,
+        &native,
+        &application,
+        sessions,
+        cx,
+        "actual deminiaturized surface reveal",
+        |cx| {
+            !native.isMiniaturized()
+                && application.isActive()
+                && native.isVisible()
+                && native.isKeyWindow()
+                && sessions
+                    .iter()
+                    .all(|(_, s)| s.read(cx).restore_surface_visible())
+        },
+    )
     .await?;
     settle(handle, cx).await?;
     let key_window_observed = native.isKeyWindow();
@@ -1110,7 +1247,51 @@ async fn verify_retention(
 
 #[cfg(test)]
 mod activation_diagnostic_tests {
-    use super::activation_diagnostic;
+    use super::{RevealDiagnostic, SessionSurfaceDiagnostic, activation_diagnostic};
+
+    #[test]
+    fn reveal_snapshot_preserves_each_conjunct_and_unknown_renderer_counts() {
+        let snapshot = serde_json::to_value(RevealDiagnostic {
+            stage: "actual deminiaturized surface reveal",
+            app_active: true,
+            activation_policy: 0,
+            window_miniaturized: false,
+            window_visible: true,
+            window_key: false,
+            window_can_become_key: true,
+            window_occlusion_bits: 2,
+            gpui_visible: false,
+            gpui_active: false,
+            selected_session_count: 2,
+            session_sample_limit: 8,
+            sessions: vec![SessionSurfaceDiagnostic {
+                index: 0,
+                visible: false,
+                suspended: true,
+                live_frame: false,
+            }],
+            renderer_backend: None,
+            submitted_frames: None,
+            failed_frames: Some(0),
+        })
+        .unwrap();
+        assert_eq!(snapshot["window_visible"], true);
+        assert_eq!(snapshot["gpui_visible"], false);
+        assert_eq!(snapshot["window_key"], false);
+        assert_eq!(snapshot["window_occlusion_bits"], 2);
+        assert_eq!(
+            snapshot["sessions"][0],
+            serde_json::json!({
+                "index": 0, "visible": false, "suspended": true, "live_frame": false,
+            })
+        );
+        assert_eq!(snapshot["selected_session_count"], 2);
+        assert_eq!(snapshot["session_sample_limit"], 8);
+        assert!(snapshot["renderer_backend"].is_null());
+        assert!(snapshot["submitted_frames"].is_null());
+        assert_eq!(snapshot["failed_frames"], 0);
+        assert_eq!(snapshot.as_object().unwrap().len(), 16);
+    }
 
     #[test]
     fn activation_timeout_snapshot_preserves_observed_states_and_numeric_policy() {
