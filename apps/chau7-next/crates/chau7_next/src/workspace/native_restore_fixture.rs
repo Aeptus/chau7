@@ -907,7 +907,7 @@ async fn verify_surfaces(
         application.activationPolicy() == NSApplicationActivationPolicy::Regular,
         "owned fixture activation policy is not Regular",
     )?;
-    native_mutation(|| native.orderFront(None))?;
+    native_mutation(|| native.makeKeyAndOrderFront(None))?;
     activate_owned_application(&application)?;
     if let Err(error) = wait_until(cx, "owned fixture application activation", |_| {
         application.isActive()
@@ -926,10 +926,6 @@ async fn verify_surfaces(
         eprintln!("native_activation_failure={snapshot}");
         return Err(error);
     }
-    native_mutation(|| {
-        native.orderFront(None);
-        native.makeKeyWindow();
-    })?;
     wait_for_reveal(
         handle,
         &native,
@@ -973,10 +969,9 @@ async fn verify_surfaces(
     )
     .await?;
     native_mutation(|| native.deminiaturize(None))?;
-    // One explicit activation/key sequence; polling observes without refocusing.
-    native_mutation(|| native.orderFront(None))?;
+    // Bring the owned window forward and key it once before app activation.
+    native_mutation(|| native.makeKeyAndOrderFront(None))?;
     activate_owned_application(&application)?;
-    native_mutation(|| native.makeKeyWindow())?;
     wait_for_reveal(
         handle,
         &native,

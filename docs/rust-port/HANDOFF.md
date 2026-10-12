@@ -26,7 +26,7 @@ Last updated 2026-10-12.
    Windows). The macOS job uploads `Chau7-Next-macOS-arm64`. To run it:
    unzip, `xattr -dr com.apple.quarantine "Chau7 Next.app"`, open.
    Local build instead: `cd apps/chau7-next && ./scripts/bundle-macos.sh`
-   (Rust, Xcode with the Metal toolchain, Go).
+   (Rust, Xcode command-line tools, Go; Metal shaders compile at runtime).
 3. Continue the existing draft PR [Aeptus/chau7#229](https://github.com/Aeptus/chau7/pull/229). Keep all parity work in that PR; it is not ready to merge.
 
 ## 3. Status
@@ -40,15 +40,23 @@ Last updated 2026-10-12.
   actual processes/profiles retired; no retries or reinterpretation. These
   historical outcomes remain preserved in
   [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
-- Current frozen source `d1f290ab` passes the 11-gate full prepush, 3,017 Next
-  workspace tests, 539 helper tests, focused HUP and seven injected EINTR cases,
-  and vendor production plus macOS/Apple test gates. The signed normal-app run
-  and precision-aware post-quit database verification close TEL-024. Current
-  native outcomes leave PRF-002 as the only partial inventory row: Software
-  Restore/Editor/Cache pass and Settings fails on the missing
-  `number-format-fr` control; the independent Auto run passes Editor/Cache and
-  fails Restore/Settings. All native-test PIDs are gone. Details and receipt
-  references are in [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
+- Frozen source `d3df6a48` passes 3,017 Next tests, 539 helper tests,
+  focused HUP and seven injected EINTR cases, strict Clippy, and all 36 macOS
+  and 23 Apple vendor tests. Its atomic publication passed six hook gates;
+  an explicit subsequent full-quality run passed ten gates, including Swift
+  and iOS. These are separate executions on the same clean source.
+- The signed normal d3df6a48 app runs two entire Software windows with zero
+  failed frames, accepts exact Unicode input via MCP and saves three tabs on
+  graceful quit. A separate local fake agent passes completed-run persistence
+  and independent post-quit SQLite verification. Performance snapshots and
+  16 active timer records are accessible via MCP.
+- Native d3df6a48 Software Settings and Cache pass. Restore passes its data,
+  split, PTY and resume checks but fails the final active/key-window reveal;
+  Editor fails the ordinary keyDown text assertion after successful marked
+  composition. All four native processes/profiles retired. PRF-002 remains
+  partial pending the complete eight-case Software/Auto acceptance. Original
+  outcomes and receipts are preserved in
+  [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
 - The current-source audit indexes all 652 Swift source files at official main
   `7733b1f0`, appends the current feature delta and reopens changed behaviour.
   [PARITY.md](PARITY.md) is the current status, including missing features.
@@ -81,21 +89,21 @@ Last updated 2026-10-12.
 
 ## 4. Next work, in order
 
-1. Resolve the current native Software Settings failure (missing
-   `number-format-fr` control) and Auto Restore/Settings failures. Repeat all
-   four cases under Software and Auto unavailable-device fallback on one frozen
-   combined artifact; preserve every assertion, deadline and historical
-   negative receipt.
+1. Resolve the current native Restore active/key-window reveal and Editor
+   ordinary keyDown failures. Settings regional control acceptance now passes.
+   Repeat all four cases under Software and Auto unavailable-device fallback
+   on one frozen combined artifact, keeping every assertion, deadline and
+   historical negative receipt.
 2. Settings/snippet/history render getters now consume bounded background
    snapshots. Keep the real cache FSEvents/SQLite error/recovery regression and
    Settings English/French/Arabic RTL/System Default checks in acceptance.
 3. Finish remaining Mac hand-test facets below. Existing native evidence
    proves scoped geometry/events/lifecycle, not every physical keyboard/IME,
    multi-display, provider or full AX interaction. Preserve running apps.
-4. Continue draft PR229. Official `2f089af2` passes Next PR and push
-   macOS/Linux/Windows, parity and quality CI. Current d1f290ab Next PR
-   macOS/Linux/Windows and parity CI pass; quality CI needs the reviewed
-   Swift docComments correction. PRF-002 native Settings/Auto cases remain open.
+4. Continue draft PR229. Current d3df6a48 Linux, Windows and parity CI
+   pass; macOS and quality jobs were still running at the latest check.
+   The Swift docComments correction is integrated. Check final CI outcomes
+   before claiming that the current revision is green.
 
 ## 5. Approved decisions and retained behavior
 

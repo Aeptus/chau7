@@ -64,6 +64,44 @@ fn composition_phase(
     });
     eprintln!("native_editor_composition_phase={snapshot}");
 }
+fn ordinary_keydown_phase(
+    phase: &'static str,
+    application: &NSApplication,
+    window: &NSWindow,
+    native: &NativeMarkdown,
+    event: &NSEvent,
+) {
+    let selected = native.text.selectedRange();
+    let current_event = application.currentEvent();
+    let current_event_details = current_event.as_ref().map(|current| {
+        serde_json::json!({
+            "timestamp": current.timestamp(),
+            "window_number": current.windowNumber(),
+            "event_type": current.r#type().0,
+        })
+    });
+    let snapshot = serde_json::json!({
+        "phase": phase,
+        "app_active": application.isActive(),
+        "window_key": window.isKeyWindow(),
+        "window_visible": window.isVisible(),
+        "source_first_responder": source_is_first_responder(native, window),
+        "source_input_context_present": native.text.inputContext().is_some(),
+        "has_marked_text": native.text.hasMarkedText(),
+        "selection_location": selected.location,
+        "selection_length": selected.length,
+        "event_key_code": event.keyCode(),
+        "event_timestamp": event.timestamp(),
+        "event_characters_ignoring_modifiers": event
+            .charactersIgnoringModifiers()
+            .map(|s| s.to_string()),
+        "event_window_number": event.windowNumber(),
+        "window_number": window.windowNumber(),
+        "application_current_event": current_event_details,
+        "source_text": native.text.string().to_string(),
+    });
+    eprintln!("native_editor_ordinary_keydown_phase={snapshot}");
+}
 async fn activate_owned_editor_window(
     application: &NSApplication,
     window: &NSWindow,
@@ -373,21 +411,30 @@ pub(in crate::panes::editor) async fn verify(
     })
     .map_err(error)?;
 
-    // Actual native bindings consume undo/redo and route actions through the
-    // same coalesced GPUI delivery used by normal source editing.
+    // Send the same window-targeted native key event through AppKit's normal
+    // NSApplication -> NSWindow -> first-responder route, outside the GPUI App
+    // borrow so AppKit may safely re-enter the host during event delivery.
+    let (undo, typed) = cx
+        .update(|_| {
+            let undo = native
+                .text
+                .undoManager()
+                .ok_or("owned history unavailable")?;
+            undo.removeAllActions();
+            undo.setGroupsByEvent(false);
+            undo.beginUndoGrouping();
+            native
+                .text
+                .setSelectedRange(NSRange::new(native.text.string().length(), 0));
+            let typed = event(&native, "x", NSEventModifierFlags::empty(), 7)?;
+            Ok::<_, String>((undo, typed))
+        })
+        .map_err(error)?;
+    MainThreadMarker::new().ok_or("ordinary source key dispatch is not on main thread")?;
+    ordinary_keydown_phase("before", &application, &native_window, &native, &typed);
+    application.sendEvent(&typed);
+    ordinary_keydown_phase("after", &application, &native_window, &native, &typed);
     cx.update(|_| {
-        let undo = native
-            .text
-            .undoManager()
-            .ok_or("owned history unavailable")?;
-        undo.removeAllActions();
-        undo.setGroupsByEvent(false);
-        undo.beginUndoGrouping();
-        native
-            .text
-            .setSelectedRange(NSRange::new(native.text.string().length(), 0));
-        let typed = event(&native, "x", NSEventModifierFlags::empty(), 7)?;
-        native.text.keyDown(&typed);
         ensure(
             native.text.string().to_string() == format!("{initial}日本x"),
             "ordinary keyDown did not reach the actual source text",
