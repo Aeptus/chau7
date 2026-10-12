@@ -72,8 +72,9 @@ Last updated 2026-10-12.
 1. Remove concrete render-time I/O found during animation review: snippet
    filesystem scans and history SQLite/metadata reads need observed snapshots
    produced off UI, bounded event invalidations and truthful pending/error.
-2. Extend owned native Settings verification to French, Arabic RTL and actual
-   System Default without changing macOS global language or existing apps.
+2. Owned native Settings verification now passes in English, French, Arabic
+   RTL and actual System Default (28b3dd9a; root a53f6bf4). Keep these four
+   variants in regression checks; macOS language was read without modification.
 3. Resolve TEL-024's retention-default policy and PRF-002's macOS window backend
    limitation. The complete scene backend is being implemented under
    [NON-METAL-BACKEND.md](NON-METAL-BACKEND.md); it remains unverified.

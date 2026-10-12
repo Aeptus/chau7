@@ -371,3 +371,32 @@ Official c52a14ba macOS/Linux/Windows CI succeeds for both PR38196961269 and
 push38196958433, verifying the later Linux checkpoint without proving the old
 failure cause. Newer source CI is separately tracked. Local evidence prefixes:
 native-dee8163a-*, source-safe667-*, normal-safe667-* in the recovery directory.
+
+## Native Settings language matrix (2026-10-12)
+
+Agent source `28b3dd9a6937db206b3500eeacf8a7d35f70520b`, integrated by
+root `a53f6bf4`, passes four actual owned AppKit/GPUI Settings windows:
+English, French, Arabic and System Default. All use binary SHA256
+`8bbfae8adef9ba9725430a8c8e9bc51aabbbfe442029a5a51c8d950a882fe056`.
+Each case proves 99/99 actual target rectangles visible, all 28 grouped
+summaries/114 cards, three InputState search queries plus unmatched/empty
+queries, bounded retry and actual animation/highlight frames. Arabic proves
+the sidebar on the right and detail on the left through native prepaint bounds.
+System Default remains selected and resolves to English from the actual
+read-only macOS preferred languages `[en-US, fr-FR]`; no OS language changes.
+
+French and Arabic queries use source catalog titles. Restored Scrollback uses
+the same English fallback as the current Swift catalog; this is recorded
+explicitly rather than counted as a translated title. The earlier French
+`1cc745dada19` negative fixture is retained: its sidebar test-support ID was
+not registered. The follow-up only exposes that ID for test/native-fixture
+builds; it adds no style/layout changes and removes no assertion.
+
+All four processes exit successfully, close their owned resources and remove
+their fresh profiles. Evidence: `native-settings-localized-matrix-28b3dd9a6937-20261012-053732.json`
+and its four referenced JSON files/logs in the recovery evidence directory.
+This proves native geometry and constructed widget events. Physical input,
+pixel acceptance and full accessibility acceptance remain separate hand tests.
+Agent-source release tests pass (505 app + 2,399 core, two existing ignored),
+strict Clippy with default and optional native features and formatting pass.
+These are exact agent-source checks; combined root checks follow integration.
