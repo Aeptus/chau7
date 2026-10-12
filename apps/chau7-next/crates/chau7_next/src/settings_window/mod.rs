@@ -26,6 +26,8 @@ mod logs;
 mod mcp;
 mod mine;
 mod minimal_mode;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+mod native_cache_fixture;
 #[cfg(feature = "native-parity-fixture")]
 mod native_fixture;
 mod notification_triggers;
@@ -49,6 +51,10 @@ mod windows;
 
 pub use about::open_about;
 pub(crate) use io_snapshot::invalidate_snippets;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) use io_snapshot::shutdown_native_fixture as shutdown_native_snapshots;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) use native_cache_fixture::verify_native_cache_fixture;
 #[cfg(feature = "native-parity-fixture")]
 pub(crate) use native_fixture::verify_native_fixture;
 

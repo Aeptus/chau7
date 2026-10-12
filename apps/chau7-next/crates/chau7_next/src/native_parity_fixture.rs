@@ -61,7 +61,10 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         eprintln!("native parity fixture requires explicit process-local opt-in");
         return Some(2);
     }
-    if !matches!(requested.as_str(), "restore" | "settings" | "editor") {
+    if !matches!(
+        requested.as_str(),
+        "restore" | "settings" | "editor" | "cache"
+    ) {
         eprintln!("unknown native parity fixture: {requested}");
         return Some(2);
     }
@@ -129,6 +132,7 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                     "restore" => crate::workspace::verify_native_restore_fixture(cx).await,
                     "settings" => crate::settings_window::verify_native_fixture(cx).await,
                     "editor" => crate::panes::editor::verify_native_fixture(cx).await,
+                    "cache" => crate::settings_window::verify_native_cache_fixture(cx).await,
                     _ => Err("unknown native case".into()),
                 }
             }
@@ -150,6 +154,16 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                     let _ = cx.update_window(window, |_, window, _| window.remove_window());
                 }
             });
+            // All cases use this unconditional fixture-only teardown, including
+            // timeout/early-error paths. No profile removal precedes guards,
+            // background readers, queued writes and the final SQLite close.
+            let snapshot_cleanup = crate::settings_window::shutdown_native_snapshots(cx).await;
+            let history_cleanup = crate::history::shutdown_native_cache_fixture(cx).await;
+            let owned_cache_closed = snapshot_cleanup.is_ok() && history_cleanup.is_ok();
+            let outcome = match (outcome, snapshot_cleanup, history_cleanup) {
+                (result, Ok(()), Ok(())) => result,
+                (_, Err(error), _) | (_, _, Err(error)) => Err(error),
+            };
             let memory_worker = cx.update(crate::memory_pressure::stop_native_fixture);
             let worker = cx.update(crate::observability::shutdown);
             cx.background_spawn(async move {
@@ -163,7 +177,18 @@ pub(crate) fn run_if_requested() -> Option<i32> {
             .await;
             // NSApplication::terminate exits the process; it does not return
             // from Application::run. Evidence and cleanup must precede quit.
-            let code = report(&case, &owned_home, outcome);
+            let code = if owned_cache_closed {
+                report(&case, &owned_home, outcome)
+            } else {
+                // Preserve the owned profile if resource closure was not
+                // confirmed; a failed run must not delete a live database.
+                let evidence = json!({"case":case,"pid":std::process::id(),"passed":false,
+                    "error":outcome.err(),"profile_isolated":true,
+                    "owned_profile_removed":false,"owned_resources_closed":false});
+                println!("{evidence}");
+                let _ = std::io::stdout().flush();
+                1
+            };
             completion.store(code, Ordering::Release);
             if code != 0 {
                 // Every owned window/session and the journal are closed above.
