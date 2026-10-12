@@ -85,8 +85,10 @@ Last updated 2026-10-12.
 4. Finish remaining Mac hand-test facets below. Existing native evidence
    proves scoped geometry/events/lifecycle, not every physical keyboard/IME,
    multi-display, provider or full AX interaction. Preserve running apps.
-5. Continue draft PR229. Official 34a16789 passes Next PR macOS/Linux/Windows,
-   parity and quality CI; later integrated source requires its own CI run.
+5. Continue draft PR229. Official `2f089af2` passes Next PR and push
+   macOS/Linux/Windows, parity and quality CI. Later integrated writer/startup,
+   editor composition/attachment and software optimization checkpoints require
+   their own combined gates, native acceptance and CI run.
 
 ## 5. Approved decisions and retained behavior
 

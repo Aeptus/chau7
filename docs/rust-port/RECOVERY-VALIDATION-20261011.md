@@ -659,3 +659,55 @@ exact published revisions, not the later local backend checkpoints.
 Evidence: chau7-root-bc1bf-* release/vendor receipts and logs,
 chau7-root-7bd546-* build/package/MCP receipts, normal-7bd546-* identity,
 performance and graceful-quit records in the private recovery evidence folder.
+
+## 2026-10-12: reviewed followups and retained negative results
+
+Official `2f089af2ac1505bb91a981b9899a70ffaaaf240c` completes the Next
+PR/push macOS, Linux and Windows matrix, parity and quality checks. Push Next
+run `38213719047` reports success; official Swift main remains
+`7733b1f0c4440c0193915b036c38d5b83f31a1b3`. Broker read operations 1491/1492
+and the numeric receipt `chau7-root-official-ci-source-0719.json` retain this
+verification. These results do not validate later local checkpoints.
+
+Integrated followups include ordered telemetry writes/snapshots/VACUUM/close
+(`9b8a5547`), native marked text and attachment generations (`a8244843`,
+`e98210ea`), actual Settings failure diagnostics (`70ade37c`) and the opaque
+integer-rectangle CPU path (`e1451554`). Independent source review finds the
+fast path equivalent to scalar quantization/clipping/order, with fractional,
+nonopaque, rounded and bordered cases retaining scalar rendering. The root
+26-file current-hash/change-chain receipt is durable as
+`chau7-root-opaque-e145-ledger-audit.json`; this is provenance validation, not
+a performance benchmark. The author reports 37 fork tests including unchanged
+actual Metal comparisons; combined root gates remain pending.
+
+Checked background initialization and memory-only telemetry diagnostics are
+integrated at `584c40a6`, with confirmed-corruption documentation at `93b3dfdd`.
+The author reports 2,959 workspace tests and both strict variants passing.
+Independent review finds one blocking shutdown path: if the writer thread
+cannot start, the absent JoinHandle can incorrectly authorize a clean marker.
+The correction and combined validation remain pending; TEL-024 stays partial.
+
+Native Software Settings still has an actual 500 ms negative, including a
+prior run without concurrent compilation. The first optimized-source editor
+launch produced no fixture JSON within 75 seconds; subsequent profile logs
+show ordinary startup rather than fixture entry, consistent with a normal
+workspace build replacing the optional runner artifact. Its receipt/profile
+is retained at `chau7-backend-native-owned-kl8rnyt3`; the owned PID was already
+absent before sampling. No app kill, provider call or input occurred. This
+negative does not establish a Settings or frame-waker failure. The next
+launch must verify a matching executable hash and optional-feature fingerprint
+after the final build. Five-second frame and 500 ms animation limits remain
+unchanged; the eight-case Software/Auto matrix is still pending.
+
+Read-only observation of the preserved older `79748ee9` app at 07:18 UTC
+verifies PID 3607 and its exact executable, then reads a bounded 256 KiB log
+tail: 2,054 lines, 342 warnings, 341 incomplete-capture warnings and no errors.
+The numeric snapshot reports 2.073558% of one logical CPU, 31,801,344 resident
+bytes and a healthy watchdog with zero stalls/recoveries. Other lane compilation
+was active: this is not a benchmark. Numeric-only metadata is retained as
+`chau7-old797-readonly-0719-summary.json`; raw log lines are not exported.
+The warning is from Aethyme delivery capture, whose older generic text cannot
+distinguish timeout, truncation, read failure or cancellation. Current code
+already uses bounded retry backoff and one warning per outage. The root adds
+actual result flags/status/static caller/byte counts to that warning without
+changing capture or acknowledgement behavior.

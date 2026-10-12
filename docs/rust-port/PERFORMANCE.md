@@ -234,3 +234,20 @@ show that software rendering has a measurable cost. Concurrent compilation and
 the synthetic workload prevent a controlled idle comparison. Intermittent native
 frame/resize barriers remain under investigation. See the recovery validation
 for exact source, observations and limits.
+
+### Telemetry startup and Aethyme capture diagnostics (2026-10-12)
+
+The additive `telemetry` object in the existing performance snapshot reads
+atomic store state, ordered writer counters and bounded in-memory cache/activity
+counts. It performs no SQLite query and exports no keys, values, repository
+paths or transcript content. Store states distinguish loading, ready, failed
+and closed; accepted queue jobs are not presented as durable writes. Combined
+validation and the reviewed missing-writer shutdown correction remain pending.
+
+Aethyme incomplete-capture warnings now include the actual timeout, output-limit,
+read-failure and cancellation flags, optional exit status, static caller and
+stdout/stderr byte lengths. They contain no command, root, prompt or output
+bytes. Existing 15-second/4 MiB bounds, one-warning outage suppression and
+30-to-300-second retry backoff are retained. The work profiler separately
+measures actual `aethyme.delivery` subprocess capture wall time on background
+workers. Old generic warnings cannot retrospectively identify those flags.
