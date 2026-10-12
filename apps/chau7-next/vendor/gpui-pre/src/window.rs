@@ -6783,6 +6783,11 @@ impl Window {
         }
     }
 
+    /// Actual backend and measured software storage; no display completion inference.
+    pub fn renderer_diagnostics(&self) -> Option<crate::WindowRendererDiagnostics> {
+        self.platform_window.renderer_diagnostics()
+    }
+
     /// Read information about the GPU backing this window.
     /// Currently returns None on Mac and Windows.
     pub fn gpu_specs(&self) -> Option<GpuSpecs> {

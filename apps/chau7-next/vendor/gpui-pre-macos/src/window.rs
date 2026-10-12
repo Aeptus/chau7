@@ -2113,6 +2113,28 @@ impl PlatformWindow for MacWindow {
         self.0.lock().renderer.sprite_atlas().clone()
     }
 
+    fn renderer_diagnostics(&self) -> Option<gpui::WindowRendererDiagnostics> {
+        let state = self.0.lock();
+        let metrics = state.renderer.software_metrics();
+        Some(gpui::WindowRendererDiagnostics {
+            backend: match state.renderer.backend() {
+                renderer::WindowBackend::Metal => "metal",
+                renderer::WindowBackend::Software => "software",
+            },
+            submitted_frames: metrics.as_ref().map(|m| m.submitted_frames),
+            failed_frames: metrics.as_ref().map(|m| m.failed_frames),
+            software_image_pixel_bytes: metrics.as_ref().map(|m| m.owned_image_pixel_bytes),
+            software_live_atlas_pixel_bytes: metrics.as_ref().map(|m| m.atlas_pixel_bytes),
+            last_primitive_counts: metrics.as_ref().and_then(|m| m.last_primitive_counts),
+            last_retired_sprite_batches: metrics
+                .as_ref()
+                .and_then(|m| m.last_retired_sprite_batches),
+            last_cpu_submit_microseconds: metrics
+                .as_ref()
+                .and_then(|m| m.last_cpu_submit_microseconds),
+        })
+    }
+
     fn gpu_specs(&self) -> Option<gpui::GpuSpecs> {
         None
     }

@@ -109,13 +109,16 @@ impl PackedTexture {
         size: Size<DevicePixels>,
         bytes: &[u8],
     ) -> Result<Option<AtlasTile>> {
-        self.prepare_write()?;
         let Some(allocation) = self
             .allocator
             .allocate(etagere::size2(size.width.0, size.height.0))
         else {
             return Ok(None);
         };
+        if let Err(error) = self.prepare_write() {
+            self.allocator.deallocate(allocation.id);
+            return Err(error);
+        }
         let texture = Arc::get_mut(&mut self.pixels).expect("exclusive checked software texture");
         let channels = Texture::channels(id.kind);
         let stride = texture.size.width.0 as usize * channels;
@@ -438,5 +441,27 @@ mod tests {
             ])[3],
             1.
         );
+    }
+    #[test]
+    fn a_borrowed_full_texture_is_not_copied_when_another_tile_cannot_fit() {
+        let mut pixels = Pixels::default();
+        let full = size(DevicePixels(1024), DevicePixels(1024));
+        let first = pixels
+            .insert(AtlasTextureKind::Monochrome, full, &vec![1; 1024 * 1024])
+            .unwrap();
+        let borrowed = pixels.textures[&first.texture_id].pixels.clone();
+        let second = pixels
+            .insert(
+                AtlasTextureKind::Monochrome,
+                size(DevicePixels(1), DevicePixels(1)),
+                &[2],
+            )
+            .unwrap();
+        assert_ne!(first.texture_id, second.texture_id);
+        assert!(Arc::ptr_eq(
+            &borrowed,
+            &pixels.textures[&first.texture_id].pixels
+        ));
+        assert_eq!(pixels.live_tiles, 2);
     }
 }

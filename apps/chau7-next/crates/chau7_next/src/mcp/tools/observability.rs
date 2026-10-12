@@ -72,6 +72,7 @@ pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<
             ctx.main
                 .read(|cx| {
                     let mut info = crate::performance::runtime_info();
+                    info["window_renderer"] = crate::window_backend::diagnostics(cx);
                     info["codex_feedback"] =
                         serde_json::to_value(crate::runtime::codex_feedback::health(cx))
                             .unwrap_or(Value::Null);
@@ -83,6 +84,7 @@ pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<
                 .unwrap_or_else(|error| {
                     let mut info = crate::performance::runtime_info();
                     info["main_thread"] = error.payload();
+                    info["window_renderer"] = Value::Null;
                     info["codex_feedback"] = Value::Null;
                     info["event_journal"] = Value::Null;
                     encode_sorted(&info)

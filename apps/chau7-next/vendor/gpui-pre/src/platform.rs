@@ -1141,6 +1141,21 @@ pub enum TextInputStateChange {
 }
 
 #[expect(missing_docs)]
+/// Actual selected window renderer and directly owned software storage.
+/// None measurements remain unknown; layer contents submission is not display
+/// completion and excludes native compositor/GPU allocation.
+#[derive(Clone, Debug)]
+pub struct WindowRendererDiagnostics {
+    pub backend: &'static str,
+    pub submitted_frames: Option<u64>,
+    pub failed_frames: Option<u64>,
+    pub software_image_pixel_bytes: Option<usize>,
+    pub software_live_atlas_pixel_bytes: Option<usize>,
+    pub last_primitive_counts: Option<[u64; 8]>,
+    pub last_retired_sprite_batches: Option<u64>,
+    pub last_cpu_submit_microseconds: Option<u64>,
+}
+
 pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn bounds(&self) -> Bounds<Pixels>;
     fn is_maximized(&self) -> bool;
@@ -1222,6 +1237,10 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn on_button_layout_changed(&self, _callback: Box<dyn FnMut()>) {}
     fn draw(&self, scene: &Scene);
     fn schedule_frame(&self) {}
+    /// Numeric renderer measurements when the platform implements them.
+    fn renderer_diagnostics(&self) -> Option<WindowRendererDiagnostics> {
+        None
+    }
     fn sprite_atlas(&self) -> Arc<dyn PlatformAtlas>;
     fn is_subpixel_rendering_supported(&self) -> bool;
 

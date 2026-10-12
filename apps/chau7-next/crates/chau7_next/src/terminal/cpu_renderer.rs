@@ -138,7 +138,7 @@ pub(super) struct FrameCache {
 impl FrameCache {
     pub fn diagnostics(&self) -> serde_json::Value {
         let mode = |gpu: bool| if gpu { "gpu" } else { "cpu" };
-        serde_json::json!({"requested_renderer":self.last_backend.map(|(requested,_,_)|mode(requested)),"actual_renderer":self.last_backend.map(|(_,actual,_)|mode(actual)),"last_paint_age_seconds":self.last_backend.map(|(_,_,at)|at.elapsed().as_secs_f64()),"fallback_reason":self.last_backend.and_then(|(requested,actual,_)|(!requested&&actual).then_some("cpu_text_system_unavailable")),"cached_cpu_bitmap_bytes":self.bytes()})
+        serde_json::json!({"requested_renderer":self.last_backend.map(|(requested,_,_)|mode(requested)),"actual_renderer":self.last_backend.map(|(_,actual,_)|mode(actual)),"last_paint_age_seconds":self.last_backend.map(|(_,_,at)|at.elapsed().as_secs_f64()),"fallback_reason":self.last_backend.and_then(|(requested,actual,_)|if !requested&&actual {Some("cpu_text_system_unavailable")} else if requested&&!actual {Some("software_window_backend")} else {None}),"cached_cpu_bitmap_bytes":self.bytes()})
     }
     pub fn bytes(&self) -> u64 {
         self.frame
@@ -376,6 +376,8 @@ impl<'a> GridCanvas<'a> {
         visibility: &'static str,
         cx: &mut App,
     ) -> Self {
+        let requested_gpu = gpu;
+        let gpu = gpu && !crate::window_backend::software_selected(cx);
         let text = (!gpu)
             .then(|| {
                 cx.try_global::<CpuTextGlobal>()
@@ -386,7 +388,7 @@ impl<'a> GridCanvas<'a> {
         if actual_gpu {
             cache.lock().drop_previous(window, cx);
         }
-        cache.lock().last_backend = Some((gpu, actual_gpu, std::time::Instant::now()));
+        cache.lock().last_backend = Some((requested_gpu, actual_gpu, std::time::Instant::now()));
         Self {
             surface: (!actual_gpu).then(|| Surface::new(bounds, window.scale_factor())),
             text,
@@ -711,6 +713,14 @@ mod tests {
         let cpu = cache.diagnostics();
         assert_eq!(cpu["actual_renderer"], "cpu");
         assert!(cpu["fallback_reason"].is_null());
+        cache.last_backend = Some((true, false, std::time::Instant::now()));
+        let software_window = cache.diagnostics();
+        assert_eq!(software_window["requested_renderer"], "gpu");
+        assert_eq!(software_window["actual_renderer"], "cpu");
+        assert_eq!(
+            software_window["fallback_reason"],
+            "software_window_backend"
+        );
     }
 
     #[test]
