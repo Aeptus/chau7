@@ -486,17 +486,14 @@ pub fn start(cx: &mut App) {
 #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
 pub(crate) fn inject_native_fixture_critical(cx: &mut App) -> u64 {
     start(cx);
-    let selected: HashSet<u64> = selected(cx)
-        .into_iter()
-        .filter_map(|(id, visible)| visible.then_some(id))
-        .collect();
     let service = cx.global::<Service>();
     let before = service.reclaimed_cache_bytes;
     service
         .pressure
         .lock()
         .record(policy::PressureLevel::Critical, service.epoch.elapsed());
-    reclaim_caches(&selected, true, cx);
+    // Exercise the ordinary phase transition and serial worker admission too.
+    tick(cx);
     cx.global::<Service>()
         .reclaimed_cache_bytes
         .saturating_sub(before)

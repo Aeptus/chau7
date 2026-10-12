@@ -7,8 +7,8 @@ use chau7_next_core::session_restore::models::SavedPane;
 use chau7_next_core::session_restore::{SavedAxis, SavedSplitNode};
 use gpui::{AppContext, AsyncApp, WindowHandle, WindowOptions, size};
 use gpui_kit::base::Root;
-use objc2::rc::Retained;
-use objc2_app_kit::{NSView, NSWindow};
+use objc2::{MainThreadMarker, rc::Retained};
+use objc2_app_kit::{NSApplication, NSView, NSWindow};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::os::unix::fs::PermissionsExt;
 
@@ -34,7 +34,7 @@ impl Profile {
         let root = DataRoot::with_home(home.clone(), true);
         root.ensure_dirs().map_err(error)?;
         let shell = home.join("fixture-shell");
-        std::fs::write(&shell, b"#!/bin/sh\n/bin/stty -echo -icanon min 1 time 0\nprintf started > started\nwhile [ ! -f ready ]; do /bin/sleep 0.01; done\nprintf '\x1b]133;A\x07fixture$ '\n(while [ ! -f hidden-output ]; do /bin/sleep 0.01; done; printf '\nOWNED_HIDDEN_GRID\n'; printf done > output-child-done) &\nexec /bin/cat > received\n").map_err(error)?;
+        std::fs::write(&shell, b"#!/bin/sh\n/bin/stty -echo -icanon min 1 time 0\nprintf started > started\nwhile [ ! -f ready ]; do /bin/sleep 0.01; done\nif [ -f ordinary-history ]; then /bin/cat ordinary-history; fi\nprintf '\x1b]133;A\x07fixture$ '\n(while [ ! -f hidden-output ]; do /bin/sleep 0.01; done; printf '\nOWNED_HIDDEN_GRID\n'; printf done > output-child-done) &\nexec /bin/cat > received\n").map_err(error)?;
         std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o700)).map_err(error)?;
         let directories: Vec<_> = (0..7).map(|i| home.join(format!("pane-{i}"))).collect();
         let ids: Vec<_> = (0..7).map(|_| uuid::Uuid::new_v4().to_string()).collect();
@@ -47,6 +47,10 @@ impl Profile {
             std::fs::create_dir_all(&folder).map_err(error)?;
             std::fs::write(folder.join(format!("{id}.jsonl")), b"{}\n").map_err(error)?;
         }
+        let ordinary_history = (0..200)
+            .map(|i| format!("OWNED_HISTORY_{i:03}\r\n"))
+            .collect::<String>();
+        std::fs::write(directories[5].join("ordinary-history"), ordinary_history).map_err(error)?;
         let history = directories
             .iter()
             .zip(&ids)
@@ -189,6 +193,10 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
         profile.tab(&[5]),
         profile.tab(&[6]),
     ];
+    // A genuine ordinary shell participates in the worker retention lifecycle.
+    tabs[4].panes[0].ai_provider = None;
+    tabs[4].panes[0].ai_session_id = None;
+    tabs[4].panes[0].ai_resume_command = None;
     let stale = profile.home.clone();
     tabs[0].cwd = Some(stale.clone());
     tabs[0].panes[0].directory = Some(stale.to_string_lossy().into_owned());
@@ -453,8 +461,8 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
     .await?;
     let closed = dispose(cx).await?;
     ensure(
-        closed == 4,
-        "cleanup did not close all four actual owned PTYs",
+        closed == 5,
+        "cleanup did not close all five actual owned PTYs",
     )?;
     Ok(
         serde_json::json!({"restored_tabs":6,"selected_initial_ptys":2,"preserved_split_leaves":2,"native_identities":2,"quiet_period_ms":450,"observed_identity_admission_ms":admission_ms,"transient_selection_ptys":0,"parked_metadata_ptys":0,"resume_deliveries":2,"resume_line_terminators":0,"duplicate_deliveries":0,"closed_owned_ptys":closed,"surfaces":surface,"manual_polling":false,"simulated_frames":false}),
@@ -623,12 +631,21 @@ async fn verify_surfaces(
             .any(|bytes| bytes == b"OWNED_HIDDEN_GRID"),
         "remote grid did not reflect output while presentation was suspended",
     )?;
+    let application = NSApplication::sharedApplication(
+        MainThreadMarker::new().ok_or("native fixture is not on main thread")?,
+    );
+    cx.update(|cx| cx.activate(true));
+    wait_until(cx, "owned fixture application activation", |_| {
+        application.isActive()
+    })
+    .await?;
     cx.update(|_| {
         native.orderFront(None);
         native.makeKeyWindow();
     });
     wait_until(cx, "actual ordered-front surface reveal", |cx| {
-        native.isVisible()
+        application.isActive()
+            && native.isVisible()
             && native.isKeyWindow()
             && sessions
                 .iter()
@@ -658,6 +675,7 @@ async fn verify_surfaces(
     });
     wait_until(cx, "actual deminiaturized surface reveal", |cx| {
         !native.isMiniaturized()
+            && application.isActive()
             && native.isVisible()
             && native.isKeyWindow()
             && sessions
@@ -666,30 +684,23 @@ async fn verify_surfaces(
     })
     .await?;
     settle(handle, cx).await?;
-    let reclaimed = cx.update(|cx| -> Result<u64, String> {
-        let histories: Vec<_> = sessions
-            .iter()
-            .map(|(_, s)| s.read(cx).buffer_text())
-            .collect();
-        let reclaimed = crate::memory_pressure::inject_native_fixture_critical(cx);
-        ensure(
-            reclaimed > 0,
-            "injected critical policy reclaimed no actual renderer cache",
-        )?;
-        ensure(
-            selected_views
-                .iter()
-                .all(|view| view.read(cx).overlays.cache_bytes() == 0),
-            "critical policy retained regenerable selected CPU caches",
-        )?;
-        for ((_, session), before) in sessions.iter().zip(histories) {
-            ensure(
-                session.read(cx).buffer_text() == before,
-                "critical cache reclaim changed native history",
-            )?;
-        }
-        Ok(reclaimed)
-    })?;
+    let key_window_observed = native.isKeyWindow();
+    let reclaimed_before = cx.update(|cx| {
+        crate::memory_pressure::diagnostics(cx)["regenerable_cache_bytes_released"]
+            .as_u64()
+            .unwrap_or(0)
+    });
+    let retention = verify_retention(handle, ws, ids, sessions, profile, cx).await?;
+    let reclaimed = cx.update(|cx| {
+        crate::memory_pressure::diagnostics(cx)["regenerable_cache_bytes_released"]
+            .as_u64()
+            .unwrap_or(0)
+            .saturating_sub(reclaimed_before)
+    });
+    ensure(
+        reclaimed > 0,
+        "injected critical policy reclaimed no actual renderer cache",
+    )?;
     let worker = cx.update(crate::memory_pressure::stop_native_fixture);
     cx.background_spawn(async move {
         if let Some(worker) = worker {
@@ -760,10 +771,151 @@ async fn verify_surfaces(
     Ok(
         serde_json::json!({"hover_live_budget_ms":2000,"hover_exit_budget_ms":500,
         "hover_parked_ptys":0,"hidden_raw_grid_updated":true,"hidden_remote_grid_updated":true,
-        "ordered_out_front":true,"native_mini_demini":true,"native_key_window":true,"actual_reveal_frames":true,
+        "ordered_out_front":true,"native_mini_demini":true,"native_key_window":key_window_observed,"native_app_active":application.isActive(),"actual_reveal_frames":true,
         "critical_pressure_source":"fixture_policy_injection","os_pressure_delivery_tested":false,
-        "critical_cache_bytes_reclaimed":reclaimed,"native_history_preserved":true,
+        "critical_cache_bytes_reclaimed":reclaimed,"native_history_preserved":true,"ordinary_history_retention":retention,
         "distant_split_cache_bytes":0,"neighbor_cpu_cache_bytes":neighbor_before,
         "retained_cpu_cache_bytes":retained_cache}),
+    )
+}
+
+fn memory_sample(id: u64, cx: &App) -> serde_json::Value {
+    crate::memory_pressure::diagnostics(cx)["sessions"]
+        .as_array()
+        .and_then(|samples| {
+            samples
+                .iter()
+                .find(|sample| sample["session_id"].as_u64() == Some(id))
+        })
+        .cloned()
+        .unwrap_or(serde_json::Value::Null)
+}
+async fn verify_retention(
+    handle: WindowHandle<Root>,
+    ws: &Entity<Workspace>,
+    ids: &[TabId],
+    protected: &[(u64, Entity<TerminalSession>)],
+    profile: &Profile,
+    cx: &mut AsyncApp,
+) -> Result<serde_json::Value, String> {
+    select(handle, ws, ids[4], cx)?;
+    settle(handle, cx).await?;
+    let (ordinary, memory_id) = cx.update(|cx| -> Result<_, String> {
+        let panes = ws.read(cx).entries[&ids[4]].panes.read(cx);
+        let session = panes
+            .pane_sessions(cx)
+            .into_iter()
+            .next()
+            .ok_or("ordinary PTY not activated")?
+            .1;
+        let view = panes
+            .views()
+            .into_iter()
+            .next()
+            .ok_or("ordinary terminal view absent")?;
+        Ok((session, view.read(cx).memory_session_id(cx)))
+    })?;
+    profile.release_prompt(5)?;
+    wait_until(cx, "ordinary native PTY history output", |cx| {
+        ordinary
+            .read(cx)
+            .buffer_text()
+            .contains("OWNED_HISTORY_199")
+            && ordinary.read(cx).is_at_prompt()
+    })
+    .await?;
+    let before = cx.update(|cx| ordinary.read(cx).buffer_text());
+    let history_rows_before = cx.update(|cx| {
+        ordinary.read(cx).allocation_snapshot()["history_rows"]
+            .as_u64()
+            .unwrap_or(0)
+    });
+    ensure(
+        history_rows_before > 50,
+        "ordinary shell did not produce more than the Hidden ring budget",
+    )?;
+    select(handle, ws, ids[1], cx)?;
+    settle(handle, cx).await?;
+    let protected_before: Vec<_> = cx.update(|cx| {
+        protected
+            .iter()
+            .map(|(_, s)| {
+                let s = s.read(cx);
+                (
+                    s.buffer_text(),
+                    s.allocation_snapshot()["history_rows"].clone(),
+                )
+            })
+            .collect()
+    });
+    cx.update(|cx| -> Result<(), String> {
+        crate::memory_pressure::inject_native_fixture_critical(cx);
+        ensure(
+            ws.read(cx).entries[&ids[1]]
+                .panes
+                .read(cx)
+                .views()
+                .iter()
+                .all(|view| view.read(cx).overlays.cache_bytes() == 0),
+            "critical policy retained regenerable selected CPU caches",
+        )
+    })?;
+    wait_until(
+        cx,
+        "ordinary Hidden worker persisted native history",
+        |cx| {
+            let sample = memory_sample(memory_id, cx);
+            sample["phase"] == "hidden"
+                && sample["retained_on_disk"] == true
+                && sample["flushes"].as_u64().is_some_and(|n| n > 0)
+        },
+    )
+    .await?;
+    let flushed = cx.update(|cx| memory_sample(memory_id, cx));
+    let hidden_rows = cx.update(|cx| {
+        ordinary.read(cx).allocation_snapshot()["history_rows"]
+            .as_u64()
+            .unwrap_or(u64::MAX)
+    });
+    ensure(
+        hidden_rows <= 50,
+        "worker persisted history without reducing the real native Hidden ring",
+    )?;
+    cx.update(|cx| -> Result<(), String> {
+        for ((_, session), (text, rows)) in protected.iter().zip(&protected_before) {
+            let session = session.read(cx);
+            ensure(
+                session.buffer_text() == *text
+                    && session.allocation_snapshot()["history_rows"] == *rows,
+                "Hidden worker changed selected native history",
+            )?;
+        }
+        Ok(())
+    })?;
+    select(handle, ws, ids[4], cx)?;
+    settle(handle, cx).await?;
+    wait_until(
+        cx,
+        "ordinary selected worker replayed retained native history",
+        |cx| {
+            let sample = memory_sample(memory_id, cx);
+            sample["retained_on_disk"] == false && sample["reloads"].as_u64().is_some_and(|n| n > 0)
+        },
+    )
+    .await?;
+    let restored = cx.update(|cx| ordinary.read(cx).buffer_text());
+    ensure(
+        restored == before,
+        "real retained history reload changed ordinary native contents",
+    )?;
+    let reloaded = cx.update(|cx| memory_sample(memory_id, cx));
+    select(handle, ws, ids[1], cx)?;
+    settle(handle, cx).await?;
+    Ok(
+        serde_json::json!({"pressure_source":"fixture_policy_injection","real_tick":true,
+        "ordinary_worker_flushes":flushed["flushes"],"ordinary_worker_reloads":reloaded["reloads"],
+        "native_history_rows_before":history_rows_before,"native_hidden_ring_rows":hidden_rows,
+        "native_history_round_trip_exact":true,"selected_history_preserved":true,
+        "worker_failures":reloaded["failures"],"os_pressure_delivery_tested":false}),
     )
 }
