@@ -1058,6 +1058,10 @@ async fn verify_retention(
         "ordinary fake PTY output or input changed during retention comparison",
     )?;
     let reloaded = cx.update(|cx| memory_sample(memory_id, cx));
+    ensure(
+        reloaded["failures"].as_u64() == Some(0),
+        "ordinary retention worker reported a failure",
+    )?;
     select(handle, ws, ids[1], cx)?;
     settle(handle, cx).await?;
     Ok(
