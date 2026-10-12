@@ -7,6 +7,10 @@
 //! the main thread and does the slow part ([`TelemetryRecorder::complete`],
 //! reading transcripts) on a background thread.
 
+mod writer;
+use writer::Writer;
+pub use writer::{AdmissionError, WriterShutdown, WriterStatus};
+
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -35,15 +39,18 @@ struct Active {
 
 pub struct TelemetryRecorder {
     store: Arc<TelemetryStore>,
-    providers: Vec<Box<dyn RunContentProvider>>,
+    providers: Arc<Vec<Box<dyn RunContentProvider>>>,
+    writer: Writer,
     active: Mutex<Active>,
 }
 
 impl TelemetryRecorder {
     pub fn new(store: Arc<TelemetryStore>, providers: Vec<Box<dyn RunContentProvider>>) -> Self {
+        let writer = Writer::new(store.clone());
         Self {
             store,
-            providers,
+            providers: Arc::new(providers),
+            writer,
             active: Mutex::new(Active::default()),
         }
     }
@@ -52,11 +59,55 @@ impl TelemetryRecorder {
         &self.store
     }
 
+    pub fn writer_status(&self) -> WriterStatus {
+        self.writer.status()
+    }
+    /// Background-only durability barrier, never a UI/render call.
+    pub fn flush(&self) -> Result<(), AdmissionError> {
+        self.writer.flush()
+    }
+    /// Close the sole admission sender now; join/drain the returned handle off UI.
+    pub fn shutdown(&self) -> Option<WriterShutdown> {
+        self.writer.shutdown()
+    }
+    pub fn record_latency(
+        &self,
+        sample: super::latency::LatencySample,
+    ) -> Result<(), AdmissionError> {
+        let bytes = serde_json::to_vec(&sample).map_or(usize::MAX, |v| v.len());
+        self.writer.admit(
+            "latency",
+            bytes,
+            Box::new(move |store| {
+                store
+                    .try_insert_latency_sample(&sample)
+                    .map_err(|e| e.to_string())
+            }),
+        )
+    }
+    pub fn record_remote_event(
+        &self,
+        event: super::remote_client_event::RemoteClientTelemetryEvent,
+    ) -> Result<(), AdmissionError> {
+        let bytes = serde_json::to_vec(&event).map_or(usize::MAX, |v| v.len());
+        self.writer.admit(
+            "remote_event",
+            bytes,
+            Box::new(move |store| {
+                store
+                    .try_insert_remote_client_event(&event)
+                    .map_err(|e| e.to_string())
+            }),
+        )
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Active> {
         self.active.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// TEL-001: an AI CLI started in a tab. Returns the run id.
+    /// TEL-001: preassign a run ID and admit its insert without SQLite or
+    /// waiting. Err means no active run/ID was accepted. Ok is queued, not a
+    /// claim of committed persistence; writer_status exposes pending/failures.
     pub fn run_started(
         &self,
         tab_id: &str,
@@ -64,22 +115,24 @@ impl TelemetryRecorder {
         cwd: &str,
         repo_path: Option<&str>,
         session_id: Option<&str>,
-    ) -> String {
+    ) -> Result<String, AdmissionError> {
         let mut run = TelemetryRun::new(provider, cwd);
         run.session_id = session_id.filter(|s| !s.is_empty()).map(str::to_string);
         run.tab_id = Some(tab_id.to_string());
         run.repo_path = repo_path.map(str::to_string);
         let id = run.id.clone();
-        {
-            let mut active = self.lock();
-            if let Some(previous) = active.by_tab.insert(tab_id.to_string(), id.clone()) {
-                active.runs.remove(&previous);
-            }
-            active.runs.insert(id.clone(), run.clone());
+        let mut active = self.lock();
+        let queued = run.clone();
+        self.writer.admit(
+            "start",
+            run_bytes(&run),
+            Box::new(move |store| store.try_insert_run(&queued).map_err(|e| e.to_string())),
+        )?;
+        if let Some(previous) = active.by_tab.insert(tab_id.to_string(), id.clone()) {
+            active.runs.remove(&previous);
         }
-        self.store.insert_run(&run);
-        log::info!("TelemetryRecorder: run started {id} provider={provider} cwd={cwd}");
-        id
+        active.runs.insert(id.clone(), run);
+        Ok(id)
     }
 
     /// TEL-002, first half: the AI CLI exited. The run leaves the active
@@ -98,162 +151,131 @@ impl TelemetryRecorder {
         Some(run)
     }
 
-    /// TEL-002, second half: content from the provider's transcript, else
-    /// the PTY log tail, else the terminal text (TEL-006), then one atomic
-    /// write. Slow (reads files): call it off the main thread.
+    /// Background-only synchronous completion API. Extraction and persistence
+    /// run off UI; flush is an actual ordered barrier, not a sleep/assertion.
     pub fn complete(
         &self,
-        mut run: TelemetryRun,
+        run: TelemetryRun,
         terminal_buffer: Option<String>,
         pty_log_path: Option<&Path>,
-    ) -> TelemetryRun {
-        let mut turns: Vec<TelemetryTurn> = Vec::new();
-        let mut tool_calls: Vec<TelemetryToolCall> = Vec::new();
-        if let Some(provider) = self.providers.iter().find(|p| p.can_handle(&run.provider)) {
-            match provider.extract_content(
-                &run.id,
-                run.session_id.as_deref(),
-                &run.cwd,
-                run.started_at,
-            ) {
-                Some(content) => {
-                    let (content, warning) = metrics_sanitizer::sanitize(&content, &run.provider);
-                    if let Some(warning) = warning {
-                        log::warn!("TelemetryRecorder: {warning} run={}", run.id);
-                    }
-                    run.model = content.model.clone().or(run.model);
-                    run.total_input_tokens = content.total_input_tokens;
-                    run.total_cached_input_tokens = content.total_cached_input_tokens;
-                    run.total_cache_creation_input_tokens =
-                        content.total_cache_creation_input_tokens;
-                    run.total_cache_read_input_tokens = content.total_cache_read_input_tokens;
-                    run.total_output_tokens = content.total_output_tokens;
-                    run.total_reasoning_output_tokens = content.total_reasoning_output_tokens;
-                    run.cost_usd = content.cost_usd;
-                    run.token_usage_source = content.token_usage_source;
-                    run.token_usage_state = content.token_usage_state;
-                    run.cost_source = content.cost_source;
-                    run.cost_state = content.cost_state;
-                    if run.cost_source == Some(super::token_metrics::CostSource::Estimated) {
-                        run.metadata.insert(
-                            "pricing_catalog_version".into(),
-                            super::pricing::VERSION.into(),
-                        );
-                    }
-                    run.raw_transcript_ref = content.raw_transcript_ref.clone();
-                    run.turn_count = content.turns.len() as i64;
-                    if content.token_usage_state == TelemetryMetricState::Invalid {
-                        run.error_message =
-                            Some("invalidated implausible token metrics during extraction".into());
-                    }
-                    turns = content.turns;
-                    tool_calls = content.tool_calls;
-                    log::info!(
-                        "TelemetryRecorder: extracted {} turns, {} tool calls, model={}",
-                        turns.len(),
-                        tool_calls.len(),
-                        run.model.as_deref().unwrap_or("?")
-                    );
-                }
-                None => log::warn!(
-                    "TelemetryRecorder: content extraction returned nil for run {} session={} cwd={}",
-                    run.id,
-                    run.session_id.as_deref().unwrap_or("nil"),
-                    run.cwd
-                ),
-            }
-        } else {
-            log::trace!(
-                "TelemetryRecorder: no content provider for {}",
-                run.provider
-            );
-        }
-
-        if turns.is_empty() {
-            let mut fallback = pty_log_path
-                .and_then(|p| read_pty_log_tail(p, PTY_LOG_TAIL_BYTES))
-                .map(|text| (text, "pty_log"));
-            if fallback.is_none() {
-                fallback = terminal_buffer
-                    .map(|t| t.trim().to_string())
-                    .filter(|t| !t.is_empty())
-                    .map(|text| (text, "terminal_buffer"));
-            }
-            if let Some((text, source)) = fallback {
-                log::info!(
-                    "TelemetryRecorder: using {source} fallback ({} chars) for run {}",
-                    text.chars().count(),
-                    run.id
-                );
-                let mut turn = TelemetryTurn::new(&run.id, 0, TurnRole::Assistant);
-                turn.id = format!("{}-t0", run.id);
-                turn.content = Some(text);
-                turn.timestamp = run.ended_at;
-                turns = vec![turn];
-                run.turn_count = 1;
-                run.raw_transcript_ref = Some(source.to_string());
-            }
-        }
-
-        self.store.finalize_run(&run, &turns, &tool_calls);
-        log::info!(
-            "TelemetryRecorder: run ended {} exit={} duration={}ms turns={}",
-            run.id,
-            run.exit_status.unwrap_or(-1),
-            run.duration_ms.unwrap_or(0),
-            run.turn_count
-        );
-        run
+    ) -> Result<TelemetryRun, AdmissionError> {
+        let (run, turns, tools) =
+            extract_content(&self.providers, run, terminal_buffer, pty_log_path);
+        let saved = run.clone();
+        let bytes = serde_json::to_vec(&(&run, &turns, &tools)).map_or(usize::MAX, |v| v.len());
+        self.writer.admit(
+            "finalize",
+            bytes,
+            Box::new(move |store| {
+                store
+                    .try_finalize_run(&saved, &turns, &tools)
+                    .map_err(|e| e.to_string())
+            }),
+        )?;
+        self.flush()?;
+        Ok(run)
+    }
+    /// Admit completion on the UI exit callback, including extraction, so
+    /// no detached delayed producer can outlive quit's admission close.
+    pub fn enqueue_completion(
+        &self,
+        run: TelemetryRun,
+        terminal_buffer: Option<String>,
+        pty_log_path: Option<std::path::PathBuf>,
+    ) -> Result<(), AdmissionError> {
+        let bytes = run_bytes(&run)
+            .saturating_add(terminal_buffer.as_ref().map_or(0, String::len))
+            .saturating_add(pty_log_path.as_ref().map_or(0, |p| p.as_os_str().len()));
+        let providers = self.providers.clone();
+        let ready_at = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        self.writer.admit(
+            "completion",
+            bytes,
+            Box::new(move |store| {
+                std::thread::sleep(ready_at.saturating_duration_since(std::time::Instant::now()));
+                let (run, turns, tools) =
+                    extract_content(&providers, run, terminal_buffer, pty_log_path.as_deref());
+                store
+                    .try_finalize_run(&run, &turns, &tools)
+                    .map_err(|e| e.to_string())
+            }),
+        )
     }
 
     /// TEL-003: the session id of a tab's running run became known.
-    pub fn update_session_id(&self, tab_id: &str, session_id: &str) {
-        let run_id = {
-            let mut active = self.lock();
-            let Some(id) = active.by_tab.get(tab_id).cloned() else {
-                return;
-            };
-            if let Some(run) = active.runs.get_mut(&id) {
-                if run.session_id.as_deref() == Some(session_id) {
-                    return;
-                }
-                run.session_id = Some(session_id.to_string());
-            }
-            id
+    pub fn update_session_id(&self, tab_id: &str, session_id: &str) -> Result<(), AdmissionError> {
+        let mut active = self.lock();
+        let Some(id) = active.by_tab.get(tab_id).cloned() else {
+            return Ok(());
         };
-        self.store.update_run_session_id(&run_id, session_id);
+        let Some(run) = active.runs.get_mut(&id) else {
+            return Ok(());
+        };
+        if run.session_id.as_deref() == Some(session_id) {
+            return Ok(());
+        }
+        let session = session_id.to_string();
+        let bytes = id.len().saturating_add(session.len());
+        let queued = session.clone();
+        self.writer.admit(
+            "session",
+            bytes,
+            Box::new(move |store| {
+                store
+                    .try_update_run_session_id(&id, &queued)
+                    .map_err(|e| e.to_string())
+            }),
+        )?;
+        run.session_id = Some(session);
+        Ok(())
     }
 
     /// TEL-003: a session id from a monitor that does not know the tab
     /// (Claude hooks, Codex history), matched by provider and folder (same
     /// folder, parent or child). Only runs without a session id are taken.
-    pub fn update_session_id_by_cwd(&self, provider: &str, cwd: &str, session_id: &str) {
+    pub fn update_session_id_by_cwd(
+        &self,
+        provider: &str,
+        cwd: &str,
+        session_id: &str,
+    ) -> Result<(), AdmissionError> {
         let provider = provider.to_lowercase();
-        let run_id = {
-            let mut active = self.lock();
-            let found = active.runs.values_mut().find(|run| {
+        let tab = self
+            .lock()
+            .runs
+            .values()
+            .find(|run| {
                 run.provider.to_lowercase().contains(&provider)
                     && run.session_id.as_deref().is_none_or(str::is_empty)
                     && folders_related(&run.cwd, cwd)
-            });
-            let Some(run) = found else { return };
-            run.session_id = Some(session_id.to_string());
-            run.id.clone()
-        };
-        self.store.update_run_session_id(&run_id, session_id);
-        log::info!(
-            "TelemetryRecorder: session ID updated via cwd match: {} -> run {}",
-            session_id.chars().take(8).collect::<String>(),
-            run_id.chars().take(8).collect::<String>()
-        );
+            })
+            .and_then(|run| run.tab_id.clone());
+        if let Some(tab) = tab {
+            self.update_session_id(&tab, session_id)?;
+        }
+        Ok(())
     }
-
-    /// TEL-009.
-    pub fn tag_run(&self, run_id: &str, tags: &[String]) {
-        if let Some(run) = self.lock().runs.get_mut(run_id) {
+    /// TEL-009: atomically admit the ordered update before changing memory.
+    pub fn tag_run(&self, run_id: &str, tags: &[String]) -> Result<(), AdmissionError> {
+        let id = run_id.to_string();
+        let queued = tags.to_vec();
+        let bytes = id
+            .len()
+            .saturating_add(queued.iter().map(String::len).sum::<usize>());
+        let mut active = self.lock();
+        self.writer.admit(
+            "tags",
+            bytes,
+            Box::new(move |store| {
+                store
+                    .try_update_run_tags(&id, &queued)
+                    .map_err(|e| e.to_string())
+            }),
+        )?;
+        if let Some(run) = active.runs.get_mut(run_id) {
             run.tags = tags.to_vec();
         }
-        self.store.update_run_tags(run_id, tags);
+        Ok(())
     }
 
     pub fn active_run_for_tab(&self, tab_id: &str) -> Option<TelemetryRun> {
@@ -293,11 +315,18 @@ impl TelemetryRecorder {
                 &run.cwd,
                 run.started_at,
             ) else {
-                self.store.invalidate_run_metrics(
-                    &run.id,
-                    Some("historical transcript repair failed to extract content"),
-                );
-                report.invalidated_runs += 1;
+                if self
+                    .store
+                    .try_invalidate_run_metrics(
+                        &run.id,
+                        Some("historical transcript repair failed to extract content"),
+                    )
+                    .is_ok()
+                {
+                    report.invalidated_runs += 1;
+                } else {
+                    report.failed_runs += 1;
+                }
                 continue;
             };
             let (repaired, warning) = metrics_sanitizer::sanitize(&content, &run.provider);
@@ -343,8 +372,14 @@ impl TelemetryRecorder {
             } else if run.error_message.as_deref() == Some(REPAIR_INVALID) {
                 run.error_message = None;
             }
-            self.store
-                .rewrite_completed_run(&run, &repaired.turns, &repaired.tool_calls);
+            if self
+                .store
+                .try_rewrite_completed_run(&run, &repaired.turns, &repaired.tool_calls)
+                .is_err()
+            {
+                report.failed_runs += 1;
+                continue;
+            }
             if invalid {
                 report.invalidated_runs += 1;
             } else {
@@ -362,9 +397,127 @@ pub struct RepairReport {
     pub rebuilt_runs: usize,
     pub invalidated_runs: usize,
     pub skipped_runs: usize,
+    pub failed_runs: usize,
 }
 
 /// Same folder, or one inside the other.
+fn extract_content(
+    providers: &[Box<dyn RunContentProvider>],
+    mut run: TelemetryRun,
+    terminal_buffer: Option<String>,
+    pty_log_path: Option<&Path>,
+) -> (TelemetryRun, Vec<TelemetryTurn>, Vec<TelemetryToolCall>) {
+    let mut turns: Vec<TelemetryTurn> = Vec::new();
+    let mut tool_calls: Vec<TelemetryToolCall> = Vec::new();
+    if let Some(provider) = providers.iter().find(|p| p.can_handle(&run.provider)) {
+        match provider.extract_content(&run.id, run.session_id.as_deref(), &run.cwd, run.started_at)
+        {
+            Some(content) => {
+                let (content, warning) = metrics_sanitizer::sanitize(&content, &run.provider);
+                if let Some(warning) = warning {
+                    log::warn!("TelemetryRecorder: {warning} run={}", run.id);
+                }
+                run.model = content.model.clone().or(run.model);
+                run.total_input_tokens = content.total_input_tokens;
+                run.total_cached_input_tokens = content.total_cached_input_tokens;
+                run.total_cache_creation_input_tokens = content.total_cache_creation_input_tokens;
+                run.total_cache_read_input_tokens = content.total_cache_read_input_tokens;
+                run.total_output_tokens = content.total_output_tokens;
+                run.total_reasoning_output_tokens = content.total_reasoning_output_tokens;
+                run.cost_usd = content.cost_usd;
+                run.token_usage_source = content.token_usage_source;
+                run.token_usage_state = content.token_usage_state;
+                run.cost_source = content.cost_source;
+                run.cost_state = content.cost_state;
+                if run.cost_source == Some(super::token_metrics::CostSource::Estimated) {
+                    run.metadata.insert(
+                        "pricing_catalog_version".into(),
+                        super::pricing::VERSION.into(),
+                    );
+                }
+                run.raw_transcript_ref = content.raw_transcript_ref.clone();
+                run.turn_count = content.turns.len() as i64;
+                if content.token_usage_state == TelemetryMetricState::Invalid {
+                    run.error_message =
+                        Some("invalidated implausible token metrics during extraction".into());
+                }
+                turns = content.turns;
+                tool_calls = content.tool_calls;
+                log::info!(
+                    "TelemetryRecorder: extracted {} turns, {} tool calls, model={}",
+                    turns.len(),
+                    tool_calls.len(),
+                    run.model.as_deref().unwrap_or("?")
+                );
+            }
+            None => log::warn!(
+                "TelemetryRecorder: content extraction returned nil for run {} session={} cwd={}",
+                run.id,
+                run.session_id.as_deref().unwrap_or("nil"),
+                run.cwd
+            ),
+        }
+    } else {
+        log::trace!(
+            "TelemetryRecorder: no content provider for {}",
+            run.provider
+        );
+    }
+
+    if turns.is_empty() {
+        let mut fallback = pty_log_path
+            .and_then(|p| read_pty_log_tail(p, PTY_LOG_TAIL_BYTES))
+            .map(|text| (text, "pty_log"));
+        if fallback.is_none() {
+            fallback = terminal_buffer
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+                .map(|text| (text, "terminal_buffer"));
+        }
+        if let Some((text, source)) = fallback {
+            log::info!(
+                "TelemetryRecorder: using {source} fallback ({} chars) for run {}",
+                text.chars().count(),
+                run.id
+            );
+            let mut turn = TelemetryTurn::new(&run.id, 0, TurnRole::Assistant);
+            turn.id = format!("{}-t0", run.id);
+            turn.content = Some(text);
+            turn.timestamp = run.ended_at;
+            turns = vec![turn];
+            run.turn_count = 1;
+            run.raw_transcript_ref = Some(source.to_string());
+        }
+    }
+
+    (run, turns, tool_calls)
+}
+
+fn run_bytes(run: &TelemetryRun) -> usize {
+    // Upper bound JSON escaping without serializing a run on UI admission.
+    1024usize.saturating_add(
+        [
+            Some(run.id.as_str()),
+            Some(run.provider.as_str()),
+            Some(run.cwd.as_str()),
+            run.session_id.as_deref(),
+            run.repo_path.as_deref(),
+            run.tab_id.as_deref(),
+            run.model.as_deref(),
+            run.raw_transcript_ref.as_deref(),
+            run.parent_run_id.as_deref(),
+            run.error_message.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .map(str::len)
+        .chain(run.tags.iter().map(String::len))
+        .chain(run.metadata.iter().map(|(k, v)| k.len() + v.len()))
+        .sum::<usize>()
+        .saturating_mul(6),
+    )
+}
+
 fn folders_related(a: &str, b: &str) -> bool {
     a == b || a.starts_with(&format!("{b}/")) || b.starts_with(&format!("{a}/"))
 }
@@ -441,16 +594,159 @@ mod tests {
     }
 
     #[test]
+    fn actual_sql_mutex_does_not_block_admission_and_ordered_shutdown_persists_identity_and_content()
+     {
+        use std::sync::mpsc;
+        let directory =
+            std::env::temp_dir().join(format!("next-telemetry-admission-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let store = Arc::new(TelemetryStore::open(&directory.join("owned.db")));
+        let rec = Arc::new(TelemetryRecorder::new(store.clone(), vec![]));
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let blocked_store = store.clone();
+        let blocker =
+            std::thread::spawn(move || blocked_store.hold_connection_test(locked_tx, release_rx));
+        locked_rx.recv().unwrap();
+        let producer = rec.clone();
+        let (result_tx, result_rx) = mpsc::channel();
+        let producer = std::thread::spawn(move || {
+            let id = producer
+                .run_started("TAB", "owned-fake", "/synthetic", None, None)
+                .unwrap();
+            producer
+                .update_session_id("TAB", "owned-native-id")
+                .unwrap();
+            producer.tag_run(&id, &["owned-tag".into()]).unwrap();
+            producer
+                .record_latency(super::super::latency::LatencySample {
+                    id: "owned-latency".into(),
+                    provider: "owned-fake".into(),
+                    metric_kind: super::super::latency::MetricKind::FirstResponse,
+                    latency_ms: 12,
+                    timestamp: Utc::now(),
+                    model: None,
+                    session_id: Some("owned-native-id".into()),
+                    run_id: Some(id.clone()),
+                    round_index: None,
+                    project_path: None,
+                    source_kind: "owned-synthetic".into(),
+                })
+                .unwrap();
+            producer.record_remote_event(super::super::remote_client_event::RemoteClientTelemetryEvent::new("owned-fake",super::super::remote_client_event::RemoteClientTelemetryEventType::TabSwitched)).unwrap();
+            let ended = producer.run_ended("TAB", Some(0)).unwrap();
+            producer
+                .enqueue_completion(ended, Some("owned fallback transcript".into()), None)
+                .unwrap();
+            result_tx.send(id).unwrap();
+        });
+        // A bounded watchdog diagnoses regression; release happens even on
+        // failure, so no synthetic thread or SQLite handle is left behind.
+        let admitted = result_rx.recv_timeout(std::time::Duration::from_secs(2));
+        release_tx.send(()).unwrap();
+        blocker.join().unwrap();
+        producer.join().unwrap();
+        let id = admitted.expect("UI admission must not wait for the real SQLite mutex");
+        let shutdown = rec.shutdown().unwrap();
+        assert!(rec.shutdown().is_none());
+        let outcome = std::thread::spawn(move || shutdown.finish().unwrap())
+            .join()
+            .unwrap();
+        assert_eq!(outcome.accepted, 6);
+        assert_eq!(outcome.processed, 6);
+        assert_eq!(outcome.failed, 0);
+        assert_eq!(outcome.pending_bytes, 0);
+        assert_eq!(
+            store
+                .latency_samples(None)
+                .iter()
+                .filter(|s| s.id == "owned-latency")
+                .count(),
+            1
+        );
+        assert_eq!(store.list_remote_client_events(10).len(), 1);
+        let row = store.get_run(&id).unwrap();
+        assert_eq!(row.id, id);
+        assert_eq!(row.session_id.as_deref(), Some("owned-native-id"));
+        assert_eq!(row.tags, ["owned-tag"]);
+        assert!(row.ended_at.is_some());
+        assert_eq!(
+            store.get_turns(&id)[0].content.as_deref(),
+            Some("owned fallback transcript")
+        );
+        drop(rec);
+        drop(store);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn failed_start_admission_never_publishes_an_id_or_orphan_update() {
+        use std::sync::mpsc;
+        let store = Arc::new(TelemetryStore::in_memory());
+        let rec = TelemetryRecorder {
+            store: store.clone(),
+            providers: Arc::new(vec![]),
+            writer: Writer::with_limits(store.clone(), 1, 4096),
+            active: Mutex::new(Active::default()),
+        };
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        rec.writer
+            .admit(
+                "blocked",
+                0,
+                Box::new(move |_| {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(())
+                }),
+            )
+            .unwrap();
+        started_rx.recv().unwrap();
+        let admitted = rec
+            .run_started("accepted", "fake", "/owned", None, None)
+            .unwrap();
+        assert_eq!(
+            rec.run_started("rejected", "fake", "/owned", None, None),
+            Err(AdmissionError::Full)
+        );
+        assert!(rec.active_run_for_tab("rejected").is_none());
+        assert_eq!(
+            rec.run_started("oversize", "fake", &"x".repeat(4096), None, None),
+            Err(AdmissionError::Oversize)
+        );
+        rec.update_session_id("rejected", "native").unwrap();
+        let shutdown = rec.shutdown().unwrap();
+        assert_eq!(
+            rec.run_started("closed", "fake", "/owned", None, None),
+            Err(AdmissionError::Closed)
+        );
+        release_tx.send(()).unwrap();
+        let outcome = std::thread::spawn(move || shutdown.finish().unwrap())
+            .join()
+            .unwrap();
+        assert_eq!(outcome.rejected, 3);
+        assert_eq!(outcome.failed, 0);
+        assert_eq!(store.run_count(), 1);
+        assert_eq!(
+            store.get_run(&admitted).unwrap().tab_id.as_deref(),
+            Some("accepted")
+        );
+    }
+
+    #[test]
     fn run_lifecycle_with_provider_content() {
         let rec = recorder(Some(ExtractedRunContent {
             model: Some("m".into()),
             total_input_tokens: Some(10),
             ..Default::default()
         }));
-        let id = rec.run_started("TAB", "claude", "/p", Some("/p"), None);
+        let id = rec
+            .run_started("TAB", "claude", "/p", Some("/p"), None)
+            .unwrap();
         assert_eq!(rec.active_run_for_tab("TAB").unwrap().id, id);
         assert_eq!(rec.all_active_runs().len(), 1);
-        rec.update_session_id("TAB", "S1");
+        rec.update_session_id("TAB", "S1").unwrap();
+        rec.flush().unwrap();
         assert_eq!(
             rec.store().get_run(&id).unwrap().session_id.as_deref(),
             Some("S1")
@@ -458,7 +754,7 @@ mod tests {
         let run = rec.run_ended("TAB", Some(0)).unwrap();
         assert!(rec.active_run_for_tab("TAB").is_none());
         assert!(rec.run_ended("TAB", Some(0)).is_none());
-        let run = rec.complete(run, None, None);
+        let run = rec.complete(run, None, None).unwrap();
         assert_eq!(run.turn_count, 1);
         let stored = rec.store().get_run(&id).unwrap();
         assert_eq!(stored.model.as_deref(), Some("m"));
@@ -477,30 +773,34 @@ mod tests {
         let log = dir.join("claude-pty.log");
         std::fs::write(&log, "\x1b[31mhello\x1b[0m  \n\n\n\n\n  world\n").unwrap();
 
-        rec.run_started("T", "claude", "/p", None, None);
+        rec.run_started("T", "claude", "/p", None, None).unwrap();
         let run = rec.run_ended("T", None).unwrap();
-        let run = rec.complete(run, Some("buffer".into()), Some(&log));
+        let run = rec
+            .complete(run, Some("buffer".into()), Some(&log))
+            .unwrap();
         assert_eq!(run.raw_transcript_ref.as_deref(), Some("pty_log"));
         let turns = rec.store().get_turns(&run.id);
         assert_eq!(turns[0].id, format!("{}-t0", run.id));
         assert_eq!(turns[0].content.as_deref(), Some("hello\n\n\nworld"));
 
-        rec.run_started("T", "codex", "/p", None, None);
+        rec.run_started("T", "codex", "/p", None, None).unwrap();
         let run = rec.run_ended("T", None).unwrap();
-        let run = rec.complete(
-            run,
-            Some("  screen text \n".into()),
-            Some(&dir.join("none")),
-        );
+        let run = rec
+            .complete(
+                run,
+                Some("  screen text \n".into()),
+                Some(&dir.join("none")),
+            )
+            .unwrap();
         assert_eq!(run.raw_transcript_ref.as_deref(), Some("terminal_buffer"));
         assert_eq!(
             rec.store().get_turns(&run.id)[0].content.as_deref(),
             Some("screen text")
         );
 
-        rec.run_started("T", "codex", "/p", None, None);
+        rec.run_started("T", "codex", "/p", None, None).unwrap();
         let run = rec.run_ended("T", None).unwrap();
-        let run = rec.complete(run, Some("   ".into()), None);
+        let run = rec.complete(run, Some("   ".into()), None).unwrap();
         assert_eq!(run.turn_count, 0);
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -508,16 +808,19 @@ mod tests {
     #[test]
     fn session_id_by_cwd_matches_related_folders_once() {
         let rec = recorder(None);
-        let id = rec.run_started("T", "claude", "/a/b", None, None);
-        rec.update_session_id_by_cwd("codex", "/a/b", "X");
+        let id = rec.run_started("T", "claude", "/a/b", None, None).unwrap();
+        rec.update_session_id_by_cwd("codex", "/a/b", "X").unwrap();
         assert!(rec.active_run_for_tab("T").unwrap().session_id.is_none());
-        rec.update_session_id_by_cwd("Claude", "/a/b/c", "S");
+        rec.update_session_id_by_cwd("Claude", "/a/b/c", "S")
+            .unwrap();
         assert_eq!(
             rec.active_run_for_tab("T").unwrap().session_id.as_deref(),
             Some("S")
         );
+        rec.flush().unwrap();
         // Already has one: not replaced.
-        rec.update_session_id_by_cwd("claude", "/a", "Z");
+        rec.update_session_id_by_cwd("claude", "/a", "Z").unwrap();
+        rec.flush().unwrap();
         assert_eq!(
             rec.store().get_run(&id).unwrap().session_id.as_deref(),
             Some("S")
@@ -527,16 +830,42 @@ mod tests {
     }
 
     #[test]
+    fn repair_sql_failure_is_counted_and_does_not_publish_a_false_rebuild() {
+        // Fixed supplies a valid turn for the requested run. Keep an invalid
+        // tool-call reference so the real SQL foreign-key failure reaches the
+        // checked rewrite rather than being normalized by the fake provider.
+        let bad_call = TelemetryToolCall::new(
+            "missing-owned-parent",
+            "missing-owned-turn",
+            "owned-fake-tool",
+        );
+        let rec = recorder(Some(ExtractedRunContent {
+            tool_calls: vec![bad_call],
+            ..Default::default()
+        }));
+        let mut run = TelemetryRun::new("claude", "/owned");
+        run.ended_at = Some(Utc::now());
+        rec.store().insert_run(&run);
+        let report = rec.rebuild_transcript_derived_runs(1);
+        assert_eq!(report.inspected_runs, 1);
+        assert_eq!(report.failed_runs, 1);
+        assert_eq!(report.rebuilt_runs, 0);
+        assert_eq!(report.invalidated_runs, 0);
+        assert_eq!(rec.store().get_run(&run.id).unwrap().turn_count, 0);
+        assert_eq!(rec.store().failure_count(), 1);
+        rec.shutdown().unwrap().finish().unwrap();
+    }
+    #[test]
     fn tags_and_repair() {
         let rec = recorder(Some(ExtractedRunContent {
             total_input_tokens: Some(200_000_000),
             ..Default::default()
         }));
-        let id = rec.run_started("T", "claude", "/p", None, None);
-        rec.tag_run(&id, &["control".into()]);
+        let id = rec.run_started("T", "claude", "/p", None, None).unwrap();
+        rec.tag_run(&id, &["control".into()]).unwrap();
         assert_eq!(rec.active_run_for_tab("T").unwrap().tags, vec!["control"]);
         let run = rec.run_ended("T", Some(1)).unwrap();
-        rec.complete(run, None, None);
+        rec.complete(run, None, None).unwrap();
         let stored = rec.store().get_run(&id).unwrap();
         assert_eq!(stored.token_usage_state, TelemetryMetricState::Invalid);
         assert_eq!(stored.tags, vec!["control"]);
@@ -544,6 +873,7 @@ mod tests {
         let report = rec.rebuild_transcript_derived_runs(500);
         assert_eq!(report.inspected_runs, 1);
         assert_eq!(report.invalidated_runs, 1);
+        rec.flush().unwrap();
         assert_eq!(
             rec.store().get_run(&id).unwrap().error_message.as_deref(),
             Some("historical transcript repair invalidated implausible token metrics")

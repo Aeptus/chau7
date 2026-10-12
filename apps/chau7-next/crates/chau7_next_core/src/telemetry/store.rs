@@ -241,6 +241,7 @@ pub struct RepoRunStats {
 pub struct TelemetryStore {
     conn: Mutex<Option<Connection>>,
     path: Option<PathBuf>,
+    failures: std::sync::atomic::AtomicU64,
 }
 
 /// A Swift raw value (`rawValue`) of a string enum.
@@ -530,6 +531,7 @@ impl TelemetryStore {
         Self {
             conn: Mutex::new(conn),
             path: Some(path.to_path_buf()),
+            failures: Default::default(),
         }
     }
 
@@ -543,6 +545,7 @@ impl TelemetryStore {
         Self {
             conn: Mutex::new(conn),
             path: None,
+            failures: Default::default(),
         }
     }
 
@@ -554,15 +557,81 @@ impl TelemetryStore {
     fn with<T>(&self, fallback: T, f: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> T {
         let guard = self.conn.lock();
         let Some(conn) = guard.as_ref() else {
+            self.record_failure();
             return fallback;
         };
         match f(conn) {
             Ok(value) => value,
             Err(err) => {
+                self.record_failure();
                 log::warn!("TelemetryStore: {err}");
                 fallback
             }
         }
+    }
+
+    /// Monotonic diagnostic count: background snapshot readers refuse to
+    /// publish fallback zeros as fresh SQL data when any read failed.
+    /// Close the actual connection after all accepted producers/readers have
+    /// drained. This method can wait for background SQL and must never run on UI.
+    pub fn close(&self) -> rusqlite::Result<()> {
+        self.close_using(|connection| connection.close().map_err(Box::new))
+    }
+    fn close_using(
+        &self,
+        close: impl FnOnce(Connection) -> Result<(), Box<(Connection, rusqlite::Error)>>,
+    ) -> rusqlite::Result<()> {
+        let mut held = self.conn.lock();
+        let Some(connection) = held.take() else {
+            return Ok(());
+        };
+        match close(connection) {
+            Ok(()) => Ok(()),
+            Err(returned) => {
+                let (connection, error) = *returned;
+                *held = Some(connection);
+                self.record_failure();
+                Err(error)
+            }
+        }
+    }
+    pub fn failure_count(&self) -> u64 {
+        self.failures.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    fn record_failure(&self) {
+        let _ = self.failures.fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |value| Some(value.saturating_add(1)),
+        );
+    }
+    #[cfg(test)]
+    pub(super) fn hold_connection_test(
+        &self,
+        started: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    ) {
+        let _guard = self.conn.lock();
+        started.send(()).unwrap();
+        release.recv().unwrap();
+    }
+    fn with_result<T>(
+        &self,
+        f: impl FnOnce(&Connection) -> rusqlite::Result<T>,
+    ) -> rusqlite::Result<T> {
+        let guard = self.conn.lock();
+        let result = guard
+            .as_ref()
+            .ok_or(rusqlite::Error::InvalidQuery)
+            .and_then(f);
+        if result.is_err() {
+            self.record_failure();
+        }
+        result
+    }
+    #[cfg(test)]
+    pub(super) fn try_execute_test(&self, sql: &str) -> rusqlite::Result<()> {
+        self.with_result(|conn| conn.execute_batch(sql))
     }
 
     /// Read-only preview for an explicit retention choice. Zero keeps forever.
@@ -585,9 +654,10 @@ impl TelemetryStore {
     ) -> rusqlite::Result<super::retention::PruneReport> {
         let guard = self.conn.lock();
         let conn = guard.as_ref().ok_or(rusqlite::Error::InvalidQuery)?;
-        super::retention::prune(conn, days, protected, limit, now)
+        super::retention::maintain(conn, days, protected, limit, now)
     }
-    /// Only called following the user's separate compaction confirmation.
+    /// Additional manual compaction never deletes rows. Retention maintenance
+    /// also reclaims disk automatically after actual policy-driven deletions.
     pub fn compact_confirmed(&self) -> rusqlite::Result<()> {
         let guard = self.conn.lock();
         let conn = guard.as_ref().ok_or(rusqlite::Error::InvalidQuery)?;
@@ -598,7 +668,12 @@ impl TelemetryStore {
 
     /// Insert a new run (`INSERT OR IGNORE`: safe to call twice).
     pub fn insert_run(&self, run: &TelemetryRun) {
-        self.with((), |c| {
+        if let Err(error) = self.try_insert_run(run) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_insert_run(&self, run: &TelemetryRun) -> rusqlite::Result<()> {
+        self.with_result( |c| {
             let tx=c.unchecked_transaction()?;
             tx.execute(
                 "INSERT OR IGNORE INTO runs
@@ -642,7 +717,7 @@ impl TelemetryStore {
             insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
             reconcile_proxy_window(&tx,run.started_at)?;
             tx.commit()
-        });
+        })
     }
 
     /// Finish a run: update its row and add its turns and tool calls in one
@@ -689,7 +764,15 @@ impl TelemetryStore {
 
     /// Latency writes are idempotent and preserve the original ingest order.
     pub fn insert_latency_sample(&self, sample: &super::latency::LatencySample) {
-        self.with((), |conn| insert_latency(conn, sample));
+        if let Err(error) = self.try_insert_latency_sample(sample) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_insert_latency_sample(
+        &self,
+        sample: &super::latency::LatencySample,
+    ) -> rusqlite::Result<()> {
+        self.with_result(|conn| insert_latency(conn, sample))
     }
     /// Resume historical latency reconstruction in bounded batches. The
     /// checkpoint and resulting samples commit together; interrupted work
@@ -772,7 +855,17 @@ impl TelemetryStore {
         turns: &[TelemetryTurn],
         tool_calls: &[TelemetryToolCall],
     ) {
-        self.with((), |c| {
+        if let Err(error) = self.try_finalize_run(run, turns, tool_calls) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_finalize_run(
+        &self,
+        run: &TelemetryRun,
+        turns: &[TelemetryTurn],
+        tool_calls: &[TelemetryToolCall],
+    ) -> rusqlite::Result<()> {
+        self.with_result( |c| {
             let tx = c.unchecked_transaction()?;
             tx.execute(
                 "UPDATE runs SET
@@ -806,16 +899,16 @@ impl TelemetryStore {
                 ],
             )?;
             for turn in turns {
-                insert_turn(&tx, turn);
+                try_insert_turn(&tx, turn)?;
             }
             for call in tool_calls {
-                insert_tool_call(&tx, call);
+                try_insert_tool_call(&tx, call)?;
             }
             replace_completed_latency(&tx, run, turns)?;
             insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
             reconcile_proxy_window(&tx,run.started_at)?;
             tx.commit()
-        });
+        })
     }
 
     /// Replace everything about a finished run (transcript repair).
@@ -825,7 +918,17 @@ impl TelemetryStore {
         turns: &[TelemetryTurn],
         tool_calls: &[TelemetryToolCall],
     ) {
-        self.with((), |c| {
+        if let Err(error) = self.try_rewrite_completed_run(run, turns, tool_calls) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_rewrite_completed_run(
+        &self,
+        run: &TelemetryRun,
+        turns: &[TelemetryTurn],
+        tool_calls: &[TelemetryToolCall],
+    ) -> rusqlite::Result<()> {
+        self.with_result(|c| {
             let tx = c.unchecked_transaction()?;
             tx.execute("DELETE FROM tool_calls WHERE run_id = ?", [&run.id])?;
             tx.execute("DELETE FROM turns WHERE run_id = ?", [&run.id])?;
@@ -870,21 +973,30 @@ impl TelemetryStore {
                 ],
             )?;
             for turn in turns {
-                insert_turn(&tx, turn);
+                try_insert_turn(&tx, turn)?;
             }
             for call in tool_calls {
-                insert_tool_call(&tx, call);
+                try_insert_tool_call(&tx, call)?;
             }
             replace_completed_latency(&tx, run, turns)?;
             insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
             reconcile_proxy_window(&tx,run.started_at)?;
             tx.commit()
-        });
+        })
     }
 
     /// Clear a run's tokens and cost and mark them invalid.
     pub fn invalidate_run_metrics(&self, run_id: &str, reason: Option<&str>) {
-        self.with((), |c| {
+        if let Err(error) = self.try_invalidate_run_metrics(run_id, reason) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_invalidate_run_metrics(
+        &self,
+        run_id: &str,
+        reason: Option<&str>,
+    ) -> rusqlite::Result<()> {
+        self.with_result(|c| {
             let tx=c.unchecked_transaction()?;
             tx.execute(
                 "UPDATE runs
@@ -904,7 +1016,7 @@ impl TelemetryStore {
             let run:Option<TelemetryRun>=tx.query_row("SELECT * FROM runs WHERE run_id=?1",[run_id],|row|Ok(parse_run(row))).optional()?.flatten();
             if let Some(run)=run {insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(&run))?;tx.execute("DELETE FROM proxy_run_baselines WHERE run_id=?1",[run_id])?;}
             tx.commit()
-        });
+        })
     }
 
     pub fn insert_turns(&self, turns: &[TelemetryTurn]) {
@@ -926,7 +1038,16 @@ impl TelemetryStore {
     }
 
     pub fn update_run_session_id(&self, run_id: &str, session_id: &str) {
-        self.with((), |conn| {
+        if let Err(error) = self.try_update_run_session_id(run_id, session_id) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_update_run_session_id(
+        &self,
+        run_id: &str,
+        session_id: &str,
+    ) -> rusqlite::Result<()> {
+        self.with_result(|conn| {
             let tx = conn.unchecked_transaction()?;
             tx.execute(
                 "UPDATE runs SET session_id=?1 WHERE run_id=?2",
@@ -943,23 +1064,36 @@ impl TelemetryStore {
                 reconcile_proxy_window(&tx, run.started_at)?;
             }
             tx.commit()
-        });
+        })
     }
 
     /// TEL-009: replace a run's tags (JSON array).
     pub fn update_run_tags(&self, run_id: &str, tags: &[String]) {
-        self.with((), |c| {
+        if let Err(error) = self.try_update_run_tags(run_id, tags) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_update_run_tags(&self, run_id: &str, tags: &[String]) -> rusqlite::Result<()> {
+        self.with_result(|c| {
             c.execute(
                 "UPDATE runs SET tags = ? WHERE run_id = ?",
                 params![encode_json(&tags), run_id],
             )
             .map(|_| ())
-        });
+        })
     }
 
     /// TEL-015: one event from the paired iPhone.
     pub fn insert_remote_client_event(&self, event: &RemoteClientTelemetryEvent) {
-        self.with((), |c| {
+        if let Err(error) = self.try_insert_remote_client_event(event) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_insert_remote_client_event(
+        &self,
+        event: &RemoteClientTelemetryEvent,
+    ) -> rusqlite::Result<()> {
+        self.with_result(|c| {
             c.execute(
                 "INSERT OR IGNORE INTO remote_client_events
                 (event_id, source, device_id, device_name, app_version, session_id,
@@ -982,7 +1116,7 @@ impl TelemetryStore {
                 ],
             )
             .map(|_| ())
-        });
+        })
     }
 
     pub fn list_remote_client_events(&self, limit: usize) -> Vec<RemoteClientTelemetryEvent> {
@@ -1456,7 +1590,12 @@ fn ensure_column(conn: &Connection, table: &str, name: &str, definition: &str) {
 }
 
 fn insert_turn(conn: &Connection, turn: &TelemetryTurn) {
-    if let Err(err) = conn.execute(
+    if let Err(error) = try_insert_turn(conn, turn) {
+        log::warn!("TelemetryStore: child insert failed: {error}");
+    }
+}
+fn try_insert_turn(conn: &Connection, turn: &TelemetryTurn) -> rusqlite::Result<()> {
+    conn.execute(
         "INSERT OR IGNORE INTO turns
         (turn_id, run_id, turn_index, role, content, input_tokens, cached_input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens,
          reasoning_output_tokens, tool_calls, timestamp, duration_ms)
@@ -1477,13 +1616,16 @@ fn insert_turn(conn: &Connection, turn: &TelemetryTurn) {
             turn.timestamp.as_ref().map(iso),
             turn.duration_ms,
         ],
-    ) {
-        log::warn!("TelemetryStore: insert turn failed for {}: {err}", turn.id);
-    }
+    ).map(|_| ())
 }
 
 fn insert_tool_call(conn: &Connection, call: &TelemetryToolCall) {
-    if let Err(err) = conn.execute(
+    if let Err(error) = try_insert_tool_call(conn, call) {
+        log::warn!("TelemetryStore: child insert failed: {error}");
+    }
+}
+fn try_insert_tool_call(conn: &Connection, call: &TelemetryToolCall) -> rusqlite::Result<()> {
+    conn.execute(
         "INSERT OR IGNORE INTO tool_calls
         (call_id, run_id, turn_id, tool_name, arguments, result, status, duration_ms, call_index)
         VALUES (?,?,?,?,?,?,?,?,?)",
@@ -1498,12 +1640,8 @@ fn insert_tool_call(conn: &Connection, call: &TelemetryToolCall) {
             call.duration_ms,
             call.call_index,
         ],
-    ) {
-        log::warn!(
-            "TelemetryStore: insert tool_call failed for {}: {err}",
-            call.id
-        );
-    }
+    )
+    .map(|_| ())
 }
 
 #[cfg(test)]
@@ -1520,6 +1658,23 @@ mod tests {
         run
     }
 
+    #[test]
+    fn disabled_retention_and_manual_compaction_preserve_owned_history() {
+        let store = TelemetryStore::in_memory();
+        let mut old = run("claude", Some("/owned"), Some("owned-tab"));
+        old.started_at = "2020-01-01T00:00:00Z".parse().unwrap();
+        old.ended_at = Some(old.started_at + Duration::seconds(1));
+        let mut turn = TelemetryTurn::new(&old.id, 0, TurnRole::Assistant);
+        turn.content = Some("owned retained transcript".into());
+        store.insert_run(&old);
+        store.finalize_run(&old, &[turn], &[]);
+        let report = store.prune_retained(0, &[], 100, Utc::now()).unwrap();
+        assert_eq!(report.rows(), 0);
+        assert!(!report.compacted);
+        store.compact_confirmed().unwrap();
+        assert_eq!(store.get_run(&old.id).unwrap().started_at, old.started_at);
+        assert_eq!(store.with(0, |conn| conn.query_row("SELECT count(*) FROM turns WHERE run_id=?1 AND content='owned retained transcript'", [&old.id], |row| row.get::<_,usize>(0))), 1);
+    }
     #[test]
     fn insert_finalize_and_read_back() {
         let store = TelemetryStore::in_memory();
@@ -2009,5 +2164,66 @@ mod tests {
         assert_eq!(totals.partial_run_count, 1);
         assert_eq!(totals.missing_cost_run_count, 1);
         assert_eq!(totals.priced_proxy_request_count, 2);
+    }
+}
+
+#[cfg(test)]
+mod ordered_failure_tests {
+    use super::*;
+    use std::sync::Arc;
+    #[test]
+    fn explicit_background_close_is_idempotent_and_releases_an_owned_file() {
+        let directory =
+            std::env::temp_dir().join(format!("next-telemetry-close-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let store = Arc::new(TelemetryStore::open(&directory.join("owned.db")));
+        let run = TelemetryRun::new("owned-fake", "/synthetic");
+        store.try_insert_run(&run).unwrap();
+        let closed = store.clone();
+        let caller = std::thread::current().id();
+        let worker = std::thread::spawn(move || {
+            closed.close().unwrap();
+            closed.close().unwrap();
+            std::thread::current().id()
+        })
+        .join()
+        .unwrap();
+        assert_ne!(caller, worker);
+        assert!(store.try_insert_run(&run).is_err());
+        assert_eq!(store.failure_count(), 1);
+        // Even a retained wrapper has no SQLite handle now, including on Windows.
+        std::fs::remove_dir_all(directory).unwrap();
+        drop(store);
+    }
+    #[test]
+    fn a_failed_close_restores_the_returned_connection_and_reports_the_real_sql_error() {
+        let store = TelemetryStore::in_memory();
+        let run = TelemetryRun::new("owned-fake", "/synthetic");
+        store.try_insert_run(&run).unwrap();
+        // Deterministically exercise Connection::close's returned-connection
+        // branch with an actual SQLite error rather than leaking statements.
+        let result = store.close_using(|connection| {
+            let error = connection
+                .execute("INSERT INTO missing_owned_table VALUES(1)", [])
+                .unwrap_err();
+            Err(Box::new((connection, error)))
+        });
+        assert!(result.is_err());
+        assert_eq!(store.failure_count(), 1);
+        assert_eq!(store.get_run(&run.id).unwrap().id, run.id);
+        store.close().unwrap();
+        store.close().unwrap();
+    }
+    #[test]
+    fn checked_finalization_rolls_back_everything_when_a_child_insert_fails() {
+        let store = TelemetryStore::in_memory();
+        let mut run = TelemetryRun::new("owned-fake", "/owned");
+        store.try_insert_run(&run).unwrap();
+        run.ended_at = Some(Utc::now());
+        let mut turn = TelemetryTurn::new(&run.id, 0, super::super::turn::TurnRole::Assistant);
+        turn.run_id = "missing-parent".into();
+        assert!(store.try_finalize_run(&run, &[turn], &[]).is_err());
+        assert!(store.get_run(&run.id).unwrap().ended_at.is_none());
+        assert_eq!(store.failure_count(), 1);
     }
 }
