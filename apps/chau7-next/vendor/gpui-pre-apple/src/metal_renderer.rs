@@ -462,49 +462,127 @@ impl MetalRenderer {
         }
     }
 
-    pub fn update_drawable_size(&mut self, size: Size<DevicePixels>) {
+    /// Checks the first viewport, instance buffer and both atlas texture formats
+    /// before a platform exposes any window or atlas. No backend switch is safe
+    /// after that exposure, so subsequent failures remain explicit errors.
+    pub fn try_prepare_startup(&mut self, size: Size<DevicePixels>) -> InitResult<()> {
+        if size.width.0 <= 0 || size.height.0 <= 0 {
+            return Err(RendererInitError::new(
+                RendererInitStage::Resource,
+                "initial viewport dimensions must be positive",
+            ));
+        }
+        self.try_update_drawable_size(size)?;
+        {
+            let mut pool = self.instance_buffer_pool.lock();
+            if pool.buffers.is_empty() {
+                pool.buffers.try_reserve(1).map_err(|_| {
+                    RendererInitError::new(
+                        RendererInitStage::Resource,
+                        "instance pool allocation failed",
+                    )
+                })?;
+                let options = if self.is_unified_memory {
+                    MTLResourceOptions::StorageModeShared
+                        | MTLResourceOptions::CPUCacheModeWriteCombined
+                } else {
+                    MTLResourceOptions::StorageModeManaged
+                };
+                let native = unsafe { &*self.device.as_ptr().cast::<AnyObject>() };
+                let raw: *mut AnyObject = unsafe {
+                    objc2::msg_send![native,
+                    newBufferWithLength: pool.buffer_size as u64, options: options.bits()]
+                };
+                let buffer = unsafe {
+                    initial_allocation(
+                        raw,
+                        RendererInitStage::Resource,
+                        "initial instance buffer allocation failed",
+                    )?
+                };
+                pool.buffers.push(buffer);
+            }
+        }
+        self.sprite_atlas.try_prepare_startup().map_err(|_| {
+            RendererInitError::new(
+                RendererInitStage::Resource,
+                "initial atlas texture allocation failed",
+            )
+        })?;
+        Ok(())
+    }
+
+    /// Fallible drawable preparation with all nullable allocations checked before
+    /// foreign ownership. A failure leaves the previous intermediate pair intact.
+    pub fn try_update_drawable_size(&mut self, size: Size<DevicePixels>) -> InitResult<()> {
+        self.try_update_path_intermediate_textures(size)?;
         if let Some(layer) = &self.layer {
             layer.set_drawable_size(CGSize::new(size.width.0 as f64, size.height.0 as f64));
         }
-        self.update_path_intermediate_textures(size);
+        Ok(())
+    }
+
+    pub fn update_drawable_size(&mut self, size: Size<DevicePixels>) {
+        if let Err(error) = self.try_update_drawable_size(size) {
+            log::error!("{error}");
+        }
     }
 
     fn update_path_intermediate_textures(&mut self, size: Size<DevicePixels>) {
-        // We are uncertain when this happens, but sometimes size can be 0 here. Most likely before
-        // the layout pass on window creation. Zero-sized texture creation causes SIGABRT.
-        // https://github.com/zed-industries/zed/issues/36229
+        if let Err(error) = self.try_update_path_intermediate_textures(size) {
+            log::error!("{error}");
+        }
+    }
+
+    fn try_update_path_intermediate_textures(
+        &mut self,
+        size: Size<DevicePixels>,
+    ) -> InitResult<()> {
+        // GPUI may resize to zero before its first layout or while hiding. Avoid
+        // Metal validation aborts; a real initial viewport is validated by the
+        // macOS context before backend selection.
         if size.width.0 <= 0 || size.height.0 <= 0 {
             self.path_intermediate_texture = None;
             self.path_intermediate_msaa_texture = None;
-            return;
+            return Ok(());
         }
-
-        let texture_descriptor = metal::TextureDescriptor::new();
-        texture_descriptor.set_width(size.width.0 as u64);
-        texture_descriptor.set_height(size.height.0 as u64);
-        texture_descriptor.set_pixel_format(metal::MTLPixelFormat::BGRA8Unorm);
-        texture_descriptor.set_storage_mode(metal::MTLStorageMode::Private);
-        texture_descriptor
+        if size.width.0 > 16384 || size.height.0 > 16384 {
+            return Err(RendererInitError::new(
+                RendererInitStage::Resource,
+                "initial viewport exceeds supported Metal texture dimensions",
+            ));
+        }
+        let descriptor = initial_texture_descriptor()?;
+        descriptor.set_width(size.width.0 as u64);
+        descriptor.set_height(size.height.0 as u64);
+        descriptor.set_pixel_format(metal::MTLPixelFormat::BGRA8Unorm);
+        descriptor.set_storage_mode(metal::MTLStorageMode::Private);
+        descriptor
             .set_usage(metal::MTLTextureUsage::RenderTarget | metal::MTLTextureUsage::ShaderRead);
-        self.path_intermediate_texture = Some(self.device.new_texture(&texture_descriptor));
-
-        if self.path_sample_count > 1 {
-            // https://developer.apple.com/documentation/metal/choosing-a-resource-storage-mode-for-apple-gpus
-            // Rendering MSAA textures are done in a single pass, so we can use memory-less storage on Apple Silicon
-            let storage_mode = if self.is_apple_gpu {
+        let texture = initial_texture(
+            &self.device,
+            &descriptor,
+            "path intermediate allocation failed",
+        )?;
+        let msaa = if self.path_sample_count > 1 {
+            descriptor.set_texture_type(metal::MTLTextureType::D2Multisample);
+            descriptor.set_storage_mode(if self.is_apple_gpu {
                 metal::MTLStorageMode::Memoryless
             } else {
                 metal::MTLStorageMode::Private
-            };
-
-            let msaa_descriptor = texture_descriptor;
-            msaa_descriptor.set_texture_type(metal::MTLTextureType::D2Multisample);
-            msaa_descriptor.set_storage_mode(storage_mode);
-            msaa_descriptor.set_sample_count(self.path_sample_count as _);
-            self.path_intermediate_msaa_texture = Some(self.device.new_texture(&msaa_descriptor));
+            });
+            descriptor.set_sample_count(self.path_sample_count as _);
+            Some(initial_texture(
+                &self.device,
+                &descriptor,
+                "path multisample allocation failed",
+            )?)
         } else {
-            self.path_intermediate_msaa_texture = None;
-        }
+            None
+        };
+        self.path_intermediate_texture = Some(texture);
+        self.path_intermediate_msaa_texture = msaa;
+        Ok(())
     }
 
     pub fn update_transparency(&mut self, transparent: bool) {
@@ -1486,6 +1564,28 @@ fn new_initial_library_with_source(
     unsafe { initial_allocation(raw, RendererInitStage::ShaderLibrary, &message) }
 }
 
+pub(crate) fn initial_texture_descriptor() -> InitResult<metal::TextureDescriptor> {
+    let raw: *mut AnyObject = unsafe { objc2::msg_send![objc2::class!(MTLTextureDescriptor), new] };
+    unsafe {
+        initial_allocation(
+            raw,
+            RendererInitStage::Resource,
+            "texture descriptor allocation failed",
+        )
+    }
+}
+pub(crate) fn initial_texture(
+    device: &metal::DeviceRef,
+    descriptor: &metal::TextureDescriptorRef,
+    label: &str,
+) -> InitResult<metal::Texture> {
+    let native = unsafe { &*device.as_ptr().cast::<AnyObject>() };
+    let descriptor = unsafe { &*descriptor.as_ptr().cast::<AnyObject>() };
+    let raw: *mut AnyObject =
+        unsafe { objc2::msg_send![native, newTextureWithDescriptor: descriptor] };
+    unsafe { initial_allocation(raw, RendererInitStage::Resource, label) }
+}
+
 fn new_initial_video_cache(device: &metal::DeviceRef) -> InitResult<CVMetalTextureCache> {
     let mut cache = ptr::null_mut();
     // SAFETY: CoreVideo receives a retained device; default dictionary arguments
@@ -2030,6 +2130,56 @@ mod initialization_error_tests {
             }
         }
     }
+    #[test]
+    fn actual_viewport_instance_and_atlas_preparation_is_fallible_and_idempotent() {
+        let pool = Arc::new(Mutex::new(InstanceBufferPool::default()));
+        let mut renderer = MetalRenderer::try_new(pool.clone(), false)
+            .expect("isolated viewport fixture requires an available Metal device");
+        let dimensions = size(DevicePixels(32), DevicePixels(24));
+        renderer.try_prepare_startup(dimensions).unwrap();
+        assert_eq!(pool.lock().buffers.len(), 1);
+        assert_eq!(pool.lock().buffers[0].length(), 2 * 1024 * 1024);
+        assert_eq!(renderer.sprite_atlas.startup_texture_count(), 2);
+        let texture = renderer.path_intermediate_texture.as_ref().unwrap();
+        assert_eq!((texture.width(), texture.height()), (32, 24));
+        assert_eq!(
+            renderer
+                .path_intermediate_msaa_texture
+                .as_ref()
+                .unwrap()
+                .sample_count(),
+            4
+        );
+        renderer.try_prepare_startup(dimensions).unwrap();
+        assert_eq!(pool.lock().buffers.len(), 1);
+        assert_eq!(renderer.sprite_atlas.startup_texture_count(), 2);
+        let previous = renderer
+            .path_intermediate_texture
+            .as_ref()
+            .unwrap()
+            .as_ptr();
+        for dimensions in [
+            size(DevicePixels(0), DevicePixels(24)),
+            size(DevicePixels(16_385), DevicePixels(24)),
+        ] {
+            assert!(matches!(renderer.try_prepare_startup(dimensions),
+                Err(error) if error.stage() == RendererInitStage::Resource));
+            assert_eq!(
+                renderer
+                    .path_intermediate_texture
+                    .as_ref()
+                    .unwrap()
+                    .as_ptr(),
+                previous
+            );
+        }
+        renderer
+            .try_update_drawable_size(size(DevicePixels(0), DevicePixels(0)))
+            .unwrap();
+        assert!(renderer.path_intermediate_texture.is_none());
+        assert!(renderer.path_intermediate_msaa_texture.is_none());
+    }
+
     #[test]
     fn actual_invalid_pipeline_is_a_typed_failure() {
         let device = MetalRenderer::try_create_device()
