@@ -356,12 +356,32 @@ mod tests {
     #[test]
     fn automatic_retention_and_compaction_run_inside_existing_background_worker() {
         let source = include_str!("../usage.rs");
-        let source = &source[source.find("pub fn refresh_latency(").unwrap()..];
-        let background = source.find("cx.background_executor()").unwrap();
-        let retention = source.find(".prune_retained(").unwrap();
-        assert!(background < retention);
-        assert!(source[..retention].contains(".spawn(async move"));
-        assert!(source[..retention].contains("if retention_days > 0"));
+        let (refresh, worker) = source
+            .split_once("pub fn refresh_latency(")
+            .unwrap()
+            .1
+            .split_once("\nfn refresh_latency_request(")
+            .unwrap();
+        let admission = refresh
+            .find("super::admission::background_observation(cx, async move {")
+            .unwrap();
+        let work = refresh.find("refresh_latency_request(request);").unwrap();
+        let observer = refresh.find("cx.spawn(async move |cx| {").unwrap();
+        assert!(admission < work && work < observer);
+        assert!(refresh[admission..work].contains("let _active = active;"));
+        assert!(refresh[admission..work].contains("pending.lock().next()"));
+        assert!(!refresh[observer..].contains("refresh_latency_request("));
+
+        let worker = worker
+            .split_once("\n#[derive(Debug, Clone, Default)]\npub struct RetentionView")
+            .unwrap()
+            .0;
+        let policy = worker.find("if retention_days > 0").unwrap();
+        let retention = worker.find(".prune_retained(").unwrap();
+        assert!(policy < retention);
+        assert!(worker[retention..].contains("report.compaction_error"));
+        // The real owned-file worker regression in usage::maintenance_tests
+        // verifies deletion, compaction and retained observations on SQL failure.
     }
     #[test]
     fn startup_calls_capture_before_writes_and_initialize_only_after_lock() {

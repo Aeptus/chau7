@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Verify automatic Next retention and compaction inside the admitted background worker, including ownership before UI publication. Preserve the real maintenance and fresh-install retention regressions.
+
 - Fence final telemetry panic and stale-generation test snapshots against cache refresh expiry, preserving closed-admission assertions even when CI runs slowly.
 
 - Reject native Settings animation observations at or beyond the existing 500ms deadline even when the late frame reports completion, retaining actual-frame and target visibility assertions.
