@@ -38,6 +38,7 @@ mod repositories;
 mod shell;
 mod shortcuts;
 mod start_here;
+mod summary;
 mod tabs;
 mod text;
 mod token_optimization;
@@ -80,6 +81,7 @@ pub(crate) struct SectionContext<'a> {
     /// Repositories section: the repository being edited.
     pub selected_repo: Option<String>,
     pub known_repo_roots: Vec<String>,
+    pub recent_repo_roots: Option<Vec<String>>,
     pub notification_warning: Option<String>,
     pub permissions: crate::permission_center::Snapshot,
     /// Config file state (General).
@@ -376,10 +378,11 @@ impl SettingsView {
                         ScrollAnchor::for_handle(scroll_handle.clone()),
                     )
                 })
-                .chain(std::iter::once((
-                    "permissions",
-                    ScrollAnchor::for_handle(scroll_handle.clone()),
-                )))
+                .chain(
+                    ["permissions", "pageSummary"]
+                        .into_iter()
+                        .map(|id| (id, ScrollAnchor::for_handle(scroll_handle.clone()))),
+                )
                 .collect(),
         );
         Self {
@@ -658,6 +661,16 @@ impl SettingsView {
                 )
                 .child(widgets::description(section.description(), chrome)),
         );
+        page = page.child(anchors::with_search_scope(
+            section,
+            self.search_anchors.clone(),
+            anchors::SearchPresentation {
+                bounds: self.target_bounds.clone(),
+                active: self.active_search_anchor_id(),
+                accent: chrome.accent,
+            },
+            || summary::section(context),
+        ));
         if let Some((text, error)) = cx.try_global::<UiMessage>().and_then(|m| m.0.clone()) {
             page = page.child(div().pb_3().child(widgets::banner(text, error, chrome)));
         }
@@ -749,6 +762,7 @@ impl Render for SettingsView {
             view: self,
             selected_repo: repositories::selected_repo(cx),
             known_repo_roots,
+            recent_repo_roots: crate::repository::recent_roots(cx).ok(),
             notification_warning: cx
                 .try_global::<crate::notifications::NotificationCenter>()
                 .and_then(|center| center.banner.warning().map(str::to_owned)),

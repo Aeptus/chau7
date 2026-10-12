@@ -35,7 +35,7 @@ fn parse_handles_comments_and_escapes() {
     assert_eq!(t.len(), 2);
 }
 
-// Explicit supplemental status keys only. Every original Swift key/value must
+// Explicit source-evidenced supplemental defaults. Every original Swift key/value must
 // remain identical. Unknown extras still fail the exact resource-sync test.
 // Source evidence: current Settings/Views/StartHereSettingsView.swift, except
 // fullDiskAccess also comes from ProductivitySettingsView.swift.
@@ -82,6 +82,76 @@ const NEXT_STATUS_DEFAULTS: &[(&str, &str)] = &[
     ),
 ];
 
+// Current SettingsPageSummaryView.swift source defaults, with no overrides
+// of any existing Swift language entry.
+const NEXT_SUMMARY_DEFAULTS: &[(&str, &str)] = &[
+    ("Profile Auto-Switching", "Profile Auto-Switching"),
+    ("settings.about.developmentVersion", "Development"),
+    ("settings.about.support", "Support"),
+    (
+        "settings.about.support.detail",
+        "GitHub, issues, documentation",
+    ),
+    ("settings.ai.autoTheme", "AI Tab Theme"),
+    ("settings.ai.errorExplain", "Error Explanation"),
+    ("settings.ai.numberFormat", "Number Format"),
+    ("settings.ai.usageMonitoring", "Usage Monitoring"),
+    ("settings.dangerous.highlightScope", "Highlight Scope"),
+    ("settings.dangerous.lowPower", "Low Power"),
+    ("settings.dangerous.patterns", "Patterns"),
+    ("settings.dangerous.protectChau7", "Protect Chau7"),
+    ("settings.editor.defaultEditor", "Default Editor"),
+    ("settings.editor.internalEditor", "Internal Editor"),
+    ("settings.general.icloudSync", "iCloud Sync"),
+    ("settings.graphics.cache", "Cache"),
+    ("settings.graphics.kitty", "Kitty Graphics"),
+    ("settings.graphics.sixel", "Sixel"),
+    ("settings.hover.aiSession", "AI Session"),
+    ("settings.hover.footer", "Footer"),
+    ("settings.hover.processes", "Processes"),
+    ("settings.injection.localRules", "Repo-Local Rules"),
+    ("settings.logs.telemetry", "AI Telemetry & Transcripts"),
+    ("settings.logs.telemetryRetention.forever.short", "Forever"),
+    ("settings.minimal.hideStatusBar", "Hide Status Bar"),
+    ("settings.minimal.hideTabBar", "Hide Tab Bar"),
+    ("settings.minimal.hideTitleBar", "Hide Title Bar"),
+    ("settings.notifications.actions", "Actions"),
+    ("settings.notifications.rateLimit", "Rate Limit"),
+    ("settings.performance.activeRefresh", "Active Refresh"),
+    ("settings.performance.renderer", "Renderer"),
+    ("settings.performance.restoredScrollback", "Restored Lines"),
+    ("settings.profileAutoSwitch.rules.count", "%d rules"),
+    ("settings.profileBar.profiles", "Profiles"),
+    ("settings.repositories.semanticSearch", "Semantic Search"),
+    ("settings.shortcuts.helper", "Shortcut Helper"),
+    ("settings.snippetsTools.bookmarks", "Bookmarks"),
+    (
+        "settings.snippetsTools.clipboardHistory",
+        "Clipboard History",
+    ),
+    ("settings.snippetsTools.repoSnippets", "Repo Snippets"),
+    ("settings.snippetsTools.snippets", "Snippets"),
+    ("settings.ssh.connections", "Chau7 Connections"),
+    ("settings.summary.accessibility", "%@ summary"),
+    ("settings.summary.days", "%d days"),
+    ("settings.summary.items", "%d items"),
+    (
+        "settings.summary.proxyNeeded",
+        "Proxy applies AI context rules.",
+    ),
+    ("settings.summary.rateLimit", "%d/min, %ds cooldown"),
+    ("settings.tabs.indicators.count", "%d visible"),
+    ("settings.windows.windowBlur", "Window Blur"),
+    ("ssh.lastSync.short", "Last Sync"),
+    ("status.available", "Available"),
+    ("status.configured", "Configured"),
+    ("status.error", "Error"),
+    ("status.hidden", "Hidden"),
+    ("status.never", "Never"),
+    ("status.unconfigured", "Unconfigured"),
+    ("status.visible", "Visible"),
+];
+
 #[test]
 fn tables_match_the_swift_resources() {
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -94,7 +164,7 @@ fn tables_match_the_swift_resources() {
         let swift = std::fs::read_to_string(&path).unwrap();
         let swift_table = parse_strings(&swift);
         let mut next_base = table(lang).clone();
-        for (key, _) in NEXT_STATUS_DEFAULTS {
+        for (key, _) in NEXT_STATUS_DEFAULTS.iter().chain(NEXT_SUMMARY_DEFAULTS) {
             if !swift_table.contains_key(*key) {
                 assert!(
                     next_base.remove(*key).is_some(),
@@ -368,4 +438,23 @@ fn next_status_defaults_have_current_swift_source_evidence() {
         );
     }
     assert_eq!(NEXT_STATUS_DEFAULTS.len(), 19);
+}
+
+#[test]
+fn current_summary_defaults_preserve_declared_swift_fallback_values() {
+    let swift = include_str!(
+        "../../../../../chau7-macos/Sources/Chau7/Settings/Views/SettingsPageSummaryView.swift"
+    );
+    for (key, default) in NEXT_SUMMARY_DEFAULTS {
+        assert!(
+            swift.contains(&format!("L(\"{key}\", \"{default}\")")),
+            "summary key/default lacks exact current Swift source: {key}"
+        );
+        assert_eq!(
+            table(Lang::En)[*key],
+            *default,
+            "summary English fallback: {key}"
+        );
+    }
+    assert_eq!(NEXT_SUMMARY_DEFAULTS.len(), 56);
 }

@@ -118,11 +118,30 @@ async fn verify(cx: &mut AsyncApp) -> Result<Value> {
                 "viewport":{"x":f32::from(bounds.origin.x),"y":f32::from(bounds.origin.y),"width":f32::from(bounds.size.width),"height":f32::from(bounds.size.height)},
                 "target":{"x":f32::from(target.origin.x),"y":f32::from(target.origin.y),"width":f32::from(target.size.width),"height":f32::from(target.size.height)}}));
         }
+        let mut summary_evidence = Vec::new();
+        for section in SettingsSection::ALL {
+            cx.update_window(handle, |_, window, cx| view.update(cx, |view, cx| {
+                view.navigation.search_query.clear();
+                view.select(section,window,cx);
+            })).context("owned summary window disappeared")?;
+            for _ in 0..3 {
+                crate::native_parity_fixture::next_frame(handle,cx).await.map_err(anyhow::Error::msg)?;
+            }
+            let cards = summary::observed(section);
+            ensure!(cards.len() >= 4, "summary lacks current minimum4 cards: {}",section.id());
+            let viewport=cx.update(|cx|view.read(cx).scroll_handle.bounds());
+            let visible=cx.update_window(handle,|_,window,_|cards.iter().all(|(id,_)| {
+                window.try_find(SharedString::from(format!("settings-summary-{}-{id}",section.id())))
+                    .is_some_and(|element|element.visible() && element.bounds().bottom()>viewport.top() && element.bounds().top()<viewport.bottom())
+            })).context("owned summary window disappeared during actual visibility check")?;
+            ensure!(visible,"summary cards are outside native viewport: {}",section.id());
+            summary_evidence.push(json!({"section":section.id(),"cards":cards.iter().map(|(id,value)|json!({"id":id,"value":value})).collect::<Vec<_>>(),"visible":visible}));
+        }
         let input = cx.update(|cx| view.read(cx).search_input.clone());
         let mut queries = Vec::new();
         // Exercise the actual InputState subscription. These are owned app
         // events, without OS keyboard input or a direct navigation shortcut.
-        for query in ["restored", "cursor", "no-such-current-setting-12345", ""] {
+        for query in ["restored", "config file", "cursor", "no-such-current-setting-12345", ""] {
             anchors::take_rendered_targets();
             let previous = cx.update(|cx| view.read(cx).navigation.selection);
             cx.update_window(handle, |_, window, cx| input.update(cx, |input, cx| {
@@ -162,7 +181,7 @@ async fn verify(cx: &mut AsyncApp) -> Result<Value> {
             }
         }
         Ok(json!({"case":"settings-search", "targets":SEARCHABLE_SETTINGS.len(), "visible_targets":evidence.len(), "target_evidence":evidence,
-            "automatic_query_evidence":queries,"query_event_delivery":"production_InputState_Change","query_frames":4,"highlight_pixel_acceptance":false,
+            "summary_evidence":summary_evidence,"summary_sections":28,"automatic_query_evidence":queries,"query_event_delivery":"production_InputState_Change","query_frames":4,"highlight_pixel_acceptance":false,
             "frame_delivery":"real_native_platform", "frames_per_target":3, "synthetic_frame_delivery":false,
             "keyboard_or_pointer_acceptance":false, "interface_language":chau7_next_core::l10n::current().code()}))
     }.await;
