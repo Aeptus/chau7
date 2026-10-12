@@ -321,3 +321,53 @@ verify this checkpoint. No retries, ignored tests or workflow gates were added.
 Local exact evidence: `native-5fa1-*`, `source-5fa1-*` and `source-26b5-*` in the
 recovery evidence directory. Negative29ac key-window evidence remains historical;
 the ordinary bundled positive establishes the later observed active/key state.
+
+## Native animation and isolated normal app safe667 (2026-10-12)
+
+Exact native source dee8163a passes all three real-platform cases with unchanged
+source. Restore PID41178 closes five owned PTYs, removes profile/bundle and exits.
+Worker failures are asserted zero, including rejecting a missing counter.
+Settings PID43591 renders 99/99 anchors, 28 grouped summaries/114 cards and five
+production InputState queries; every target observes one held retry and actual
+callbacks for 220ms centered scroll, 120ms retry and 180ms highlight. Bounds and
+observed offset share a prepaint, fixing callback-order double offset. Exact
+42-grapheme compact paths and 50,000/clamped history summary budget are implemented
+without changing stored settings. SET-137 closes these audited facets; physical
+input, pixels, full AX and multilingual acceptance remain separately scoped.
+Editor native composition/save/progress/disposal passes again.
+
+Integrated source 66753ed1c99a879881fbf7c9f65d2ec0ede59197 passes 2,906 release workspace
+tests (507 app, 2,399 core), two existing ignored tests/examples, strict release
+normal/optional workspace all-target Clippy and fmt. No test/lint/workflow bypass
+or retry was added.
+
+The ordinary feature-free app builds all three Rust binaries from clean source
+with exact artifact/fingerprint hashes. Four helpers retain verified unchanged
+source lineage; all seven are arm64/minimum macOS13.0, individually signed, with
+deep/strict bundle verification. Earlier 8b6a normal packaging succeeded but its
+launch was rejected before execution for automatic notification permission and
+provider health HTTP feeds; that package remains unlaunched. Safe667 removes
+these automatic actions and global URL registration only in isolated test mode.
+Normal launch and manual behavior are preserved.
+
+The fresh UUID app launches through ordinary LaunchServices and reports exact
+SHA/bundleID/PID60141 through read-only MCP. Two saved tabs restore; only the
+selected terminal starts a PTY, whose input recorder stays zero. No provider
+command executes. Two post-startup snapshots 37.61s apart measure 2.912%
+of one logical CPU and 113,475,584 resident bytes at the later capture. Compilation
+runs concurrently and provider services are disabled; this is no production
+performance comparison. Sixteen heartbeat samples show last28.732ms and
+maximum127.267ms scheduler delay. Hang count is zero; 32 work-profile entries keep
+actual wall-time queues/stages and per-stage CPU/GPU values stay null.
+Sixteen active timers include no shell loading or provider-health timer.
+Journal19/19 is durable with no persistence error. Performance latest/history
+are parseable schema1. Startup warnings only announce four missing files created
+inside this owned profile; stderr is empty and no logged error is observed.
+Normal AppleEvent quit exits the actual app, removes MCP socket, saves both tabs
+and marks launch continuity running=false. No forced process signal was sent.
+The owned app/profile/evidence are preserved; existing apps remain untouched.
+
+Official c52a14ba macOS/Linux/Windows CI succeeds for both PR38196961269 and
+push38196958433, verifying the later Linux checkpoint without proving the old
+failure cause. Newer source CI is separately tracked. Local evidence prefixes:
+native-dee8163a-*, source-safe667-*, normal-safe667-* in the recovery directory.

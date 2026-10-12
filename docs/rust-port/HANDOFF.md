@@ -31,10 +31,12 @@ Last updated 2026-10-12.
 
 ## 3. Status
 
-- Current integrated5fa1e4c4 native restoration, settings and editor acceptance
-  passes in fresh owned macOS profiles. Five restore/reveal/hover rows close;
-  search animation/summary formatter facets, retention default and unavailable
-  Metal startup remain open. Exact source/test/native scope and limits are in
+- Current source66753ed1 passes 2,906 release workspace tests and strict
+  normal/optional all-target Clippy. Native dee8163a restore/settings/editor pass,
+  including 99 search anchors and production animations. SET-137 closes; retention
+  default and unavailable-Metal window startup remain two partial inventory rows.
+  A fresh ordinary feature-free app launches/quits with numeric performance and
+  session persistence verified. Exact scope and limits are in
   [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
 - The current-source audit indexes all 652 Swift source files at official main
   `7733b1f0`, appends the current feature delta and reopens changed behaviour.
@@ -67,24 +69,18 @@ Last updated 2026-10-12.
 
 ## 4. Next work, in order
 
-1. Continue the 14 current-source batches in REBASE-ON-AEPTUS.md section 6.
-   Current active batches cover editor/runbook lifecycle, independent regional
-   formatting, agent dashboard, usage/rates, runtime delegation and structured
-   results. Use the agent playbook and preserve existing isolated app data.
-2. Complete observation/MCP parity: durable event spine, actual timer inventory,
-   subscriptions, control ownership and ready-state delivery. The new numeric
-   performance endpoint does not substitute for these behaviours.
-3. Implement the remaining repository/session files, settings/permissions,
-   hooks/routing, prompt rules, skills/CLI, restore/retention and remote deltas.
-   Remote credentials remain isolated; current Swift also relies on external
-   identity/provision commands, so a provision UI is not an established parity
-   requirement. Full/delta grid delivery and credential validation are.
-4. Validate every batch against current Swift tests, keep the generated parity
-   table honest, and finish the Mac checklist below. The running user's Next
-   may host active AI sessions; never stop it for a build or test. Use a separate
-   test bundle identity and fresh `CHAU7_NEXT_HOME_ROOT` for automated startup.
-5. CI runs the matrix for official feature pushes and PRs. Agent branch pushes
-   avoid duplicate runs. Inspect the complete PR checks, including quality gates.
+1. Remove concrete render-time I/O found during animation review: snippet
+   filesystem scans and history SQLite/metadata reads need observed snapshots
+   produced off UI, bounded event invalidations and truthful pending/error.
+2. Extend owned native Settings verification to French, Arabic RTL and actual
+   System Default without changing macOS global language or existing apps.
+3. Resolve TEL-024's retention-default policy and PRF-002's macOS window backend
+   limitation. Preserve existing history and never mark unsupported behavior done.
+4. Finish remaining Mac hand-test facets below. Native fixtures prove exact
+   geometry/events/lifecycle, not physical keyboard/IME, pixels or full AX.
+   Never stop the user's running Next/Swift or change their profiles.
+5. Keep work in draft PR229; verify complete macOS/Linux/Windows and quality
+   checks for published commits, including the identity of built artifacts.
 
 ## 5. Decisions waiting for Christophe
 
