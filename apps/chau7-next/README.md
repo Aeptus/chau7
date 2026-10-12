@@ -88,6 +88,8 @@ folder below; set `CHAU7_NEXT_LOG_STDOUT=1` to also print them).
 | Per-tab shell history | `~/.chau7/history/` | the shell's own default |
 | AI run telemetry | `~/.chau7/telemetry/runs.db` | `~/.chau7-next/telemetry/runs.db` |
 
+Open Help > Debug Console or press ⌥⌘L for runtime Logs and Performance. The separate AI Terminal Logs window is available from the Command Palette.
+
 The API analytics proxy is the same Go program as Chau7's
 (`apps/chau7-macos/chau7-proxy`, built into the app bundle; needs Go), run
 with Chau7 Next's own ports and files, so both proxies can run at once. Its

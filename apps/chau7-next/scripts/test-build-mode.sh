@@ -300,9 +300,10 @@ validate_bundle() {
   local manifest="$2"
   local mode="$3"
   local helper_target_dir="$4"
-  local verbose="$5"
-  local jobs="$6"
-  python3 - "$bundle" "$manifest" "$mode" "$helper_target_dir" "$verbose" "$jobs" "$FAKE_STATE/codesign.log" <<'PY'
+  local app_target_dir="$5"
+  local verbose="$6"
+  local jobs="$7"
+  python3 - "$bundle" "$manifest" "$mode" "$helper_target_dir" "$app_target_dir" "$verbose" "$jobs" "$FAKE_STATE/codesign.log" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -311,7 +312,7 @@ import sys
 
 bundle = pathlib.Path(sys.argv[1]).resolve()
 manifest_path = pathlib.Path(sys.argv[2]).resolve()
-mode, helper_target_dir, verbose, jobs, codesign_log = sys.argv[3:]
+mode, helper_target_dir, app_target_dir, verbose, jobs, codesign_log = sys.argv[3:]
 verified_paths = set()
 for line in pathlib.Path(codesign_log).read_text().splitlines():
     arguments = shlex.split(line)
@@ -374,6 +375,10 @@ for name, relative_path in expected.items():
     actual_hash = hashlib.sha256(artifact.read_bytes()).hexdigest()
     assert entry["sha256"] == actual_hash, name
     assert b"fake-codesigned" in artifact.read_bytes(), f"{name} was not signed before hashing"
+    if name == "Chau7 Next":
+        app_text = artifact.read_text()
+        actual_app_target = app_text.split("targetdir=", 1)[1].splitlines()[0]
+        assert pathlib.Path(actual_app_target).resolve() == pathlib.Path(app_target_dir).resolve(), app_text
     if name != "Chau7 Next":
         assert (bundle / relative_path).resolve() in verified_paths, name
 assert bundle in verified_paths
@@ -389,11 +394,10 @@ PY
 fast_paths="$(run_fake_bundle default fast '' '' 0 '')"
 fast_bundle="$(printf '%s\n' "$fast_paths" | sed -n '1p')"
 fast_manifest="$(printf '%s\n' "$fast_paths" | sed -n '2p')"
-validate_bundle "$fast_bundle" "$fast_manifest" fast "$FIXTURE_APP/target" 0 ''
+validate_bundle "$fast_bundle" "$fast_manifest" fast "$FIXTURE_APP/target" "$FIXTURE_APP/target" 0 ''
 assert_file_contains "$FAKE_STATE/go-args.log" '-s -w'
 [[ -f "$FIXTURE_APP/target/aarch64-apple-darwin/release/chau7-next" ]] || fail 'default main cache was not used'
 [[ -f "$FIXTURE_APP/target/aarch64-apple-darwin/release/chau7-optim" ]] || fail 'default shared helper cache was not used'
-assert_file_contains "$FIXTURE_APP/target/aarch64-apple-darwin/release/chau7-next" "targetdir=$FIXTURE_APP/target"
 
 # Diagnostic mode gets its own default app and helper cache, with package
 # evidence still checking the expected target and all seven signed artifacts.
@@ -402,13 +406,11 @@ diagnostic_default_paths="$(run_fake_bundle diagnostic diagnostic-default '' '' 
 diagnostic_default_bundle="$(printf '%s\n' "$diagnostic_default_paths" | sed -n '1p')"
 diagnostic_default_manifest="$(printf '%s\n' "$diagnostic_default_paths" | sed -n '2p')"
 validate_bundle "$diagnostic_default_bundle" "$diagnostic_default_manifest" diagnostic \
-  "$FIXTURE_APP/target/diagnostic" 0 ''
+  "$FIXTURE_APP/target/diagnostic" "$FIXTURE_APP/target/diagnostic" 0 ''
 [[ -f "$FIXTURE_APP/target/diagnostic/aarch64-apple-darwin/release/chau7-next" ]] \
   || fail 'default diagnostic app cache was not used'
 [[ -f "$FIXTURE_APP/target/diagnostic/aarch64-apple-darwin/release/chau7-optim" ]] \
   || fail 'default diagnostic helper cache was not used'
-assert_file_contains "$FIXTURE_APP/target/diagnostic/aarch64-apple-darwin/release/chau7-next" \
-  "targetdir=$FIXTURE_APP/target/diagnostic"
 
 # Explicit relative cache paths resolve from the app workspace. OPTIM_TARGET_DIR
 # wins for shared helpers even with CARGO_TARGET_DIR set; a stale default helper
@@ -424,7 +426,7 @@ custom_paths="$(run_fake_bundle diagnostic diagnostic "$custom_main" "$custom_he
 custom_bundle="$(printf '%s\n' "$custom_paths" | sed -n '1p')"
 custom_manifest="$(printf '%s\n' "$custom_paths" | sed -n '2p')"
 validate_bundle "$custom_bundle" "$custom_manifest" diagnostic \
-  "$FIXTURE_APP/$custom_helpers" 1 3
+  "$FIXTURE_APP/$custom_helpers" "$FIXTURE_APP/$custom_main" 1 3
 [[ -f "$FIXTURE_APP/$custom_main/aarch64-apple-darwin/release/chau7-next" ]] || fail 'explicit app CARGO_TARGET_DIR was ignored'
 [[ -f "$FIXTURE_APP/$custom_helpers/aarch64-apple-darwin/release/chau7-optim" ]] || fail 'explicit helper OPTIM_TARGET_DIR was ignored'
 custom_helpers_resolved="$(cd "$FIXTURE_APP/$custom_helpers" && pwd)"

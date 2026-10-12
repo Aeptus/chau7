@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Correct the Debug Console shortcut in the in-app help to match the current Swift and Next default (⌥⌘L), and list AI Terminal Logs among the command-palette entries.
+- Correct the Debug Console shortcut in Swift and Next help to the current default (⌥⌘L), and document Chau7 Next’s AI Terminal Logs Command Palette access.
 
 
 - Preserve the native background-Warm predicate and deadline while recording actual memory, selection and window state on timeout to diagnose the remaining fallback acceptance failure.
