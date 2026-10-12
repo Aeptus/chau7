@@ -843,6 +843,11 @@ impl Render for SettingsView {
         self.mcp.refresh(cx);
         let chrome = Chrome::panels(cx);
         let sidebar = self.sidebar(chrome, cx);
+        #[cfg(any(test, feature = "native-parity-fixture"))]
+        let sidebar = {
+            use gpui_kit::test::TestSupportExt;
+            sidebar.test_support()
+        };
         let settings = Settings::get(cx).clone();
         let root = cx.global::<AppData>().root.clone();
         let files = cx.global::<ConfigFiles>();
