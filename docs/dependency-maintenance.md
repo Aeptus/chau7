@@ -22,6 +22,12 @@ coordinate the exact manifest pins, affected vendor sources, provenance and
 modification ledgers, and Cargo.lock in one reviewed change. Do not merge a
 partial GPUI update.
 
+The Go proxy's modernc SQLite/libc versions are also a matched pair. The
+[driver guidance](https://pkg.go.dev/modernc.org/sqlite#section-readme) requires
+the exact libc version in the driver's go.mod because that dependency is
+fragile. SQLite 1.60.1 declares libc 1.77.1; an independently newer libc release
+is not a supported standalone upgrade of that pair.
+
 Root pnpm is the dependency-free quality runner, pinned by packageManager;
 service npm packages own package-lock.json and use npm ci. A root pnpm lock is
 unnecessary while the root has no dependency declarations. A scheduled update

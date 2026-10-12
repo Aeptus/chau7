@@ -44,7 +44,7 @@ fn native_content_view(
     cx: &mut AsyncApp,
 ) -> Result<Retained<NSView>, String> {
     handle
-        .update(cx, |_, window, _| {
+        .update(cx, |_, window, _| -> Result<Retained<NSView>, String> {
             let raw = HasWindowHandle::window_handle(window).map_err(error)?;
             let RawWindowHandle::AppKit(raw) = raw.as_raw() else {
                 return Err("owned accessibility window lacks AppKit handle".into());
@@ -56,7 +56,7 @@ fn native_content_view(
             view.window()
                 .ok_or("owned accessibility view lacks NSWindow")?
                 .contentView()
-                .ok_or("owned accessibility NSWindow lacks content view")
+                .ok_or_else(|| "owned accessibility NSWindow lacks content view".to_owned())
         })
         .map_err(error)?
 }

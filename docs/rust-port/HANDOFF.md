@@ -31,6 +31,17 @@ Last updated 2026-10-12.
 
 ## 3. Status
 
+- Frozen follow-up source `afc66fa27460213c54e29c381e3fe50e08554ef2`
+  passed nine commit gates and ten full-suite publication gates. Its fast
+  workspace execution passed 3,019 tests (two ignored), normal strict Clippy,
+  format and build/installer contracts. Native-feature Clippy failed because
+  the new accessibility fixture inferred a borrowed error type where an owned
+  String was required. The sequence stopped before vendor/package/native
+  stages; no new fixture app was launched. The subsequent batch corrects that
+  type, upgrades the Issues Worker tool cohort, and groups duplicate push/PR
+  CI builds while separating forks, target bases and manual runs. That batch
+  still requires exact-source compilation and native execution.
+
 - Published docs revision `e4715bd23a50d033f306c6a3da6a2fb39c6cf35d`
   passed all seven reported PR checks, including macOS, Linux, Windows and
   quality CI. Next workflow run `38305507183` produced macOS artifact

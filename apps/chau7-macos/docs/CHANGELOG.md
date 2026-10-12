@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 
+- Group Chau7 Next push and PR-to-default-branch CI runs by their shared head
+  repository/branch and target base, preserving distinct fork, other-base and
+  manual runs. Add a context-model contract; actual CI behavior still requires
+  validation on the new revision.
+- Upgrade the Issues Worker to Wrangler 4.149.0 and Prettier 3.9.10 with the
+  corresponding locked runtime/tool cohort, completing the captured npm
+  direct-version delta. Its existing Sharp 0.35.5 override remains current.
+
 - Cover the Chau7 Next Cargo workspace with weekly Dependabot updates,
   grouping coordinated GPUI version and security updates for review. Document
   the manifest/vendor/provenance/lockfile coordination required by that family.
@@ -79,6 +87,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show selected-tab tokens per second in the overlay across proxied Anthropic, OpenAI, and Gemini streams, with Claude Code and Codex transcript rates for direct CLI sessions; estimated readings are marked and explain their source and timing. Keep transient rate readings in a bounded recent-tab cache.
 
 ### Fixed
+
+- Fix the optional native accessibility fixture's borrowed/owned error type
+  inference reported by native-feature Clippy, preserving the same messages
+  and native content-view behavior. The failed afc66fa2 compiler receipt remains
+  historical; the correction requires a new exact-source compiler sequence.
 
 - Localize Chau7 Next tab accessibility labels and rename hints, timeline
   command/status/playback labels and controls, and the dashboard Timeline title
