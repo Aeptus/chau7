@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prepare the isolated native editor fixture's owned active/key window before awaiting visible deferred restoration, preserving its five-second wait and composition assertions. This setup correction awaits combined native acceptance.
+
 - Drain all accepted Chau7 Next quota, latency and maintenance operations independently of UI publication; foreground timer cancellation releases only its monitor lifetime guard without waiting for queued future destruction.
 
 - Admit Chau7 Next telemetry initialization and snapshot reads on the background executor before queuing UI publication, so graceful shutdown can drain accepted reads without requiring another foreground callback.

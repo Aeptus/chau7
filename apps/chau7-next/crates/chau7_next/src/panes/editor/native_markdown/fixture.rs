@@ -64,16 +64,13 @@ fn composition_phase(
     });
     eprintln!("native_editor_composition_phase={snapshot}");
 }
-async fn prepare_composition_owner(
-    native: &NativeMarkdown,
+async fn activate_owned_editor_window(
+    application: &NSApplication,
+    window: &NSWindow,
+    stage: &'static str,
     cx: &mut AsyncApp,
-) -> Result<(Retained<NSApplication>, Retained<NSWindow>), String> {
-    let mtm = MainThreadMarker::new().ok_or("owned composition setup is not on main thread")?;
-    let application = NSApplication::sharedApplication(mtm);
-    let window = native
-        .text
-        .window()
-        .ok_or("composition source has no current host")?;
+) -> Result<(), String> {
+    MainThreadMarker::new().ok_or("owned editor window setup is not on main thread")?;
     let started = std::time::Instant::now();
     if application.activationPolicy() != NSApplicationActivationPolicy::Regular {
         application.setActivationPolicy(NSApplicationActivationPolicy::Regular);
@@ -85,24 +82,66 @@ async fn prepare_composition_owner(
     // AppKit delegate callbacks can re-enter GPUI. Mutate this retained owned
     // window outside an App/entity borrow, on the verified foreground thread.
     window.makeKeyAndOrderFront(None);
-    // SAFETY: verified main-thread retained application and the exact selector
-    // used by GPUI's activate(true). Avoid an App borrow during its callbacks.
+    // SAFETY: verified main-thread application and the exact selector used by
+    // GPUI's activate(true). Avoid an App borrow during its callbacks.
     unsafe {
-        let _: () = objc2::msg_send![&*application, activateIgnoringOtherApps: true];
+        let _: () = objc2::msg_send![application, activateIgnoringOtherApps: true];
     }
     loop {
-        MainThreadMarker::new().ok_or("owned composition setup left main thread")?;
+        MainThreadMarker::new().ok_or("owned editor window setup left main thread")?;
         if application.isActive() && window.isKeyWindow() && window.isVisible() {
-            break;
+            return Ok(());
         }
         if started.elapsed() >= std::time::Duration::from_secs(5) {
-            composition_phase("before_mark", &application, &window, native);
+            let snapshot = serde_json::json!({
+                "stage": stage,
+                "app_active": application.isActive(),
+                "activation_policy": application.activationPolicy().0,
+                "window_key": window.isKeyWindow(),
+                "window_visible": window.isVisible(),
+                "can_become_key": window.canBecomeKeyWindow(),
+            });
+            eprintln!("native_editor_window_owner={snapshot}");
             return Err("owned editor input ownership setup exceeded five seconds".into());
         }
         cx.background_executor()
             .timer(std::time::Duration::from_millis(10))
             .await;
     }
+}
+async fn prepare_visible_owned_window(
+    handle: WindowHandle<Root>,
+    cx: &mut AsyncApp,
+) -> Result<(), String> {
+    let mtm = MainThreadMarker::new().ok_or("owned editor setup is not on main thread")?;
+    let application = NSApplication::sharedApplication(mtm);
+    // Retain the root through the production handle helper while borrowing
+    // GPUI; all NSWindow operations below happen after that borrow ends.
+    let view = cx
+        .update_window(handle.into(), |_, window, _| raw_view(window))
+        .map_err(error)?
+        .ok_or("owned editor native root view disappeared")?;
+    let window = view
+        .window()
+        .ok_or("owned editor native root lacks NSWindow")?;
+    activate_owned_editor_window(&application, &window, "before_materialization", cx).await
+}
+async fn prepare_composition_owner(
+    native: &NativeMarkdown,
+    cx: &mut AsyncApp,
+) -> Result<(Retained<NSApplication>, Retained<NSWindow>), String> {
+    let mtm = MainThreadMarker::new().ok_or("owned composition setup is not on main thread")?;
+    let application = NSApplication::sharedApplication(mtm);
+    let window = native
+        .text
+        .window()
+        .ok_or("composition source has no current host")?;
+    let activated =
+        activate_owned_editor_window(&application, &window, "before_composition", cx).await;
+    if activated.is_err() {
+        composition_phase("before_mark", &application, &window, native);
+    }
+    activated?;
     ensure(
         window.makeFirstResponder(Some(&native.text)),
         "composition source cannot own its local responder",
@@ -190,6 +229,10 @@ pub(in crate::panes::editor) async fn verify(
     let handle = handle
         .downcast::<Root>()
         .ok_or("owned editor window lacks Root")?;
+    // Deferred production panes require actual visibility, including occlusion.
+    // Establish this owned app/window's foreground state before awaiting that
+    // guard; source input ownership is still revalidated before marked text.
+    prepare_visible_owned_window(handle, cx).await?;
     // The production restored pane is deferred until its real window is
     // visible. Wait for that path rather than reading the placeholder layout.
     let started = std::time::Instant::now();
