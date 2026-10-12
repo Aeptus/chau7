@@ -251,6 +251,13 @@ impl Default for AppearanceSettings {
 }
 
 impl AppearanceSettings {
+    /// Current Swift's persisted base font setting (zoom has its own range).
+    pub fn set_font_size(&mut self, size: f32) {
+        if size.is_finite() {
+            self.font_size = size.clamp(8.0, 72.0);
+        }
+    }
+
     /// Font size for new tabs and Actual Size: the font size scaled by the
     /// default zoom (`applyDefaultFontSize`), within 6 to 72 pt.
     pub fn zoomed_font_size(&self) -> f32 {
@@ -317,8 +324,8 @@ impl SettingsDomain for AppearanceSettings {
             if let Some(family) = appearance.font_family.clone().filter(|f| !f.is_empty()) {
                 self.font_family = family;
             }
-            if let Some(size) = appearance.font_size.filter(|s| (6..=72).contains(s)) {
-                self.font_size = size as f32;
+            if let Some(size) = appearance.font_size {
+                self.set_font_size(size as f32);
             }
             if let Some(scheme) = &appearance.color_scheme {
                 self.color_scheme =
@@ -588,7 +595,7 @@ mod tests {
         let a: AppearanceSettings = load_text(
             "[appearance]\nfont_size = 200\ncursor_style = \"beam\"\nopacity = 0.1\n\n[next]\npadding = 99\ndefault_zoom_percent = 900\nfont_weight = -3\nkitty_cache_limit_mb = 10\n",
         );
-        assert_eq!(a.font_size, 11.0);
+        assert_eq!(a.font_size, 72.0);
         assert_eq!(a.cursor_shape, CursorShape::Bar);
         assert_eq!(a.opacity, 0.3);
         assert_eq!(a.padding, 40.0);
@@ -654,5 +661,29 @@ mod tests {
         assert_eq!(a.zoomed_font_size(), 18.0);
         a.default_zoom_percent = 50;
         assert_eq!(a.zoomed_font_size(), 6.0);
+    }
+
+    #[test]
+    fn base_font_setting_clamps_swift_boundaries_in_config_and_roundtrip() {
+        for (raw, expected) in [
+            (-1, 8.0),
+            (0, 8.0),
+            (7, 8.0),
+            (8, 8.0),
+            (11, 11.0),
+            (72, 72.0),
+            (73, 72.0),
+            (i64::MAX, 72.0),
+        ] {
+            let actual: AppearanceSettings =
+                load_text(&format!("[appearance]\nfont_size = {raw}\n"));
+            assert_eq!(actual.font_size, expected, "{raw}");
+            assert_eq!(round_trip(&actual).font_size, expected, "{raw}");
+        }
+        let mut actual = AppearanceSettings::default();
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            actual.set_font_size(value);
+            assert_eq!(actual.font_size, 11.0);
+        }
     }
 }
