@@ -16,7 +16,7 @@ use gpui_kit::{
         menu::{PopupMenu, PopupMenuItem},
     },
 };
-use objc2_app_kit::NSEventType;
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSEventType, NSWindow};
 use objc2_foundation::NSNotFound;
 
 fn ensure(condition: bool, message: &str) -> Result<(), String> {
@@ -37,6 +37,85 @@ async fn settle(handle: WindowHandle<Root>, cx: &mut AsyncApp) -> Result<(), Str
 }
 fn attached(native: &NativeMarkdown) -> bool {
     !native.scroll.isHidden() && unsafe { native.scroll.superview() }.is_some()
+}
+fn source_is_first_responder(native: &NativeMarkdown, window: &NSWindow) -> bool {
+    window
+        .firstResponder()
+        .and_then(|responder| responder.downcast::<SourceTextView>().ok())
+        .is_some_and(|source| std::ptr::eq(&*source, &*native.text))
+}
+fn composition_phase(
+    phase: &'static str,
+    application: &NSApplication,
+    window: &NSWindow,
+    native: &NativeMarkdown,
+) {
+    let marked = native.text.markedRange();
+    let snapshot = serde_json::json!({
+        "phase": phase,
+        "app_active": application.isActive(),
+        "window_key": window.isKeyWindow(),
+        "window_visible": window.isVisible(),
+        "source_first_responder": source_is_first_responder(native, window),
+        "has_marked_text": native.text.hasMarkedText(),
+        "marked_location": marked.location,
+        "marked_length": marked.length,
+        "mount_generation": native.mount_generation.get(),
+    });
+    eprintln!("native_editor_composition_phase={snapshot}");
+}
+async fn prepare_composition_owner(
+    native: &NativeMarkdown,
+    cx: &mut AsyncApp,
+) -> Result<(Retained<NSApplication>, Retained<NSWindow>), String> {
+    let mtm = MainThreadMarker::new().ok_or("owned composition setup is not on main thread")?;
+    let application = NSApplication::sharedApplication(mtm);
+    let window = native
+        .text
+        .window()
+        .ok_or("composition source has no current host")?;
+    let started = std::time::Instant::now();
+    if application.activationPolicy() != NSApplicationActivationPolicy::Regular {
+        application.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+    }
+    ensure(
+        application.activationPolicy() == NSApplicationActivationPolicy::Regular,
+        "owned editor fixture activation policy is not Regular",
+    )?;
+    // AppKit delegate callbacks can re-enter GPUI. Mutate this retained owned
+    // window outside an App/entity borrow, on the verified foreground thread.
+    window.makeKeyAndOrderFront(None);
+    // SAFETY: verified main-thread retained application and the exact selector
+    // used by GPUI's activate(true). Avoid an App borrow during its callbacks.
+    unsafe {
+        let _: () = objc2::msg_send![&*application, activateIgnoringOtherApps: true];
+    }
+    loop {
+        MainThreadMarker::new().ok_or("owned composition setup left main thread")?;
+        if application.isActive() && window.isKeyWindow() && window.isVisible() {
+            break;
+        }
+        if started.elapsed() >= std::time::Duration::from_secs(5) {
+            composition_phase("before_mark", &application, &window, native);
+            return Err("owned editor input ownership setup exceeded five seconds".into());
+        }
+        cx.background_executor()
+            .timer(std::time::Duration::from_millis(10))
+            .await;
+    }
+    ensure(
+        window.makeFirstResponder(Some(&native.text)),
+        "composition source cannot own its local responder",
+    )?;
+    composition_phase("before_mark", &application, &window, native);
+    ensure(
+        application.isActive()
+            && window.isKeyWindow()
+            && window.isVisible()
+            && source_is_first_responder(native, &window),
+        "owned editor source lacks active key-window input ownership",
+    )?;
+    Ok((application, window))
 }
 fn event(
     native: &NativeMarkdown,
@@ -159,6 +238,8 @@ pub(in crate::panes::editor) async fn verify(
     cx.update(|_| ensure(attached(&native), "actual NativeElement never attached"))
         .map_err(error)?;
 
+    let (application, native_window) = prepare_composition_owner(&native, cx).await?;
+
     // Keep an old frame's actual lifetime guard across a forced remount.
     let stale_attachment = Attachment {
         native: native.clone(),
@@ -168,14 +249,6 @@ pub(in crate::panes::editor) async fn verify(
     // Exercise NSTextInputClient on the production SourceTextView and let an
     // actual GPUI frame/restyle pass while its text is still marked.
     cx.update(|_| {
-        let window = native
-            .text
-            .window()
-            .ok_or("composition source has no current host")?;
-        ensure(
-            window.makeFirstResponder(Some(&native.text)),
-            "composition source cannot own its local responder",
-        )?;
         native
             .text
             .setSelectedRange(NSRange::new(initial.encode_utf16().count(), 0));
@@ -186,6 +259,7 @@ pub(in crate::panes::editor) async fn verify(
                 NSRange::new(NSNotFound as usize, 0),
             );
         }
+        composition_phase("after_mark", &application, &native_window, &native);
         ensure(
             native.text.hasMarkedText(),
             "AppKit did not enter marked-text composition",
@@ -202,7 +276,14 @@ pub(in crate::panes::editor) async fn verify(
     })
     .map_err(error)?;
     cx.update(|cx| editor.update(cx, |_, cx| cx.notify()));
-    settle(handle, cx).await?;
+    // Preserve exactly the two real settle frames and their existing deadlines,
+    // recording the native state after each without an extra frame or retry.
+    crate::native_parity_fixture::next_frame(handle.into(), cx).await?;
+    MainThreadMarker::new().ok_or("owned composition frame left main thread")?;
+    composition_phase("after_frame_one", &application, &native_window, &native);
+    crate::native_parity_fixture::next_frame(handle.into(), cx).await?;
+    MainThreadMarker::new().ok_or("owned composition frame left main thread")?;
+    composition_phase("after_frame_two", &application, &native_window, &native);
     cx.update(|_| {
         ensure(native.mount_generation.get() != previous_mount,
             "owned native source did not actually remount")?;
