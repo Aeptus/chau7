@@ -1,12 +1,86 @@
 //! Nested GPUI scroll anchors corresponding to current settings metadata.
 use chau7_next_core::settings_search::{SEARCHABLE_SETTINGS, SettingsSection};
-use gpui::{IntoElement, ScrollAnchor, SharedString, div, prelude::*};
+use gpui::{
+    Bounds, Hsla, IntoElement, Pixels, ScrollAnchor, SharedString, canvas, div, prelude::*,
+};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 #[derive(Clone)]
 struct Scope {
     section: SettingsSection,
     anchors: Rc<HashMap<&'static str, ScrollAnchor>>,
     labels: HashMap<String, &'static str>,
+    presentation: Option<SearchPresentation>,
+}
+#[derive(Clone, Default)]
+pub(super) struct TargetBounds(Rc<RefCell<HashMap<&'static str, Bounds<Pixels>>>>);
+impl TargetBounds {
+    pub(super) fn get(&self, id: &str) -> Option<Bounds<Pixels>> {
+        self.0.borrow().get(id).copied()
+    }
+    pub(super) fn clear(&self) {
+        self.0.borrow_mut().clear();
+    }
+}
+#[derive(Clone)]
+pub(super) struct SearchPresentation {
+    pub bounds: TargetBounds,
+    pub active: Option<&'static str>,
+    pub accent: Hsla,
+}
+pub(super) fn with_search_scope<T>(
+    section: SettingsSection,
+    anchors: Rc<HashMap<&'static str, ScrollAnchor>>,
+    presentation: SearchPresentation,
+    render: impl FnOnce() -> T,
+) -> T {
+    with_scope(section, anchors, || {
+        ACTIVE.with(|scope| scope.borrow_mut().as_mut().unwrap().presentation = Some(presentation));
+        render()
+    })
+}
+/// Real layout measurements are scoped to this view and bounded by its fixed
+/// setting catalog. Capturing geometry has no native queries or input handlers.
+fn present(id: Option<&'static str>, element: impl IntoElement) -> gpui::Div {
+    let presentation = ACTIVE.with(|scope| scope.borrow().as_ref()?.presentation.clone());
+    let Some((id, presentation)) = id.zip(presentation) else {
+        return div().child(element);
+    };
+    let highlighted = presentation.active == Some(id);
+    let bounds = presentation.bounds;
+    div()
+        .relative()
+        .rounded_md()
+        .border_1()
+        .border_color(if highlighted {
+            presentation.accent.opacity(0.45)
+        } else {
+            gpui::transparent_black()
+        })
+        .when(highlighted, |d| d.bg(presentation.accent.opacity(0.12)))
+        .child(element)
+        .child(
+            canvas(
+                move |value, _, _| {
+                    bounds.0.borrow_mut().insert(id, value);
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_full(),
+        )
+}
+fn title_id(title: &str) -> Option<&'static str> {
+    ACTIVE.with(|scope| {
+        scope
+            .borrow()
+            .as_ref()?
+            .labels
+            .get(&normalized(title))
+            .copied()
+    })
+}
+pub(super) fn title_target(title: &str, element: impl IntoElement) -> gpui::Div {
+    present(title_id(title), element)
 }
 #[cfg(any(test, feature = "native-parity-fixture"))]
 thread_local! { static RENDERED: RefCell<std::collections::HashSet<&'static str>> = RefCell::new(Default::default()); }
@@ -146,6 +220,7 @@ pub(super) fn with_scope<T>(
             section,
             anchors,
             labels,
+            presentation: None,
         }))
     });
     let _restore = Restore(previous);
@@ -206,7 +281,15 @@ pub(super) fn target(id: &str, element: impl IntoElement) -> gpui::Div {
         use gpui_kit::test::TestSupportExt;
         target.test_support()
     };
-    div().child(target)
+    let id = ACTIVE.with(|scope| {
+        scope
+            .borrow()
+            .as_ref()?
+            .anchors
+            .get_key_value(id)
+            .map(|(key, _)| *key)
+    });
+    present(id, target)
 }
 
 pub(super) fn label_target(label: &str, element: impl IntoElement) -> gpui::Div {
@@ -222,7 +305,7 @@ pub(super) fn label_target(label: &str, element: impl IntoElement) -> gpui::Div 
         use gpui_kit::test::TestSupportExt;
         target.test_support()
     };
-    div().child(target)
+    present(title_id(label), target)
 }
 
 #[cfg(test)]
