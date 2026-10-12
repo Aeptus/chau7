@@ -87,7 +87,12 @@ impl Canvas {
             let begin = (y * self.width + xs.start) * 4;
             let end = (y * self.width + xs.end) * 4;
             for output in self.bytes[begin..end].chunks_exact_mut(4) {
-                output.copy_from_slice(&pixel);
+                // Keep this fixed-width store local. The no-LTO native fixture
+                // otherwise calls the generic slice memcpy helper per pixel.
+                output[0] = pixel[0];
+                output[1] = pixel[1];
+                output[2] = pixel[2];
+                output[3] = pixel[3];
             }
         }
     }
@@ -121,6 +126,31 @@ pub fn quantize(value: f32) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn opaque_rect_fixed_stores_match_scalar_across_large_and_empty_rows() {
+        for width in [1, 7, 32, 2048] {
+            for color in [[0.2, 0.4, 0.6, 1.], [f32::NAN, -2., 3., 1.]] {
+                for inset in [0, 1] {
+                    let mut actual = Canvas::new(width, 4, true).unwrap();
+                    for (index, byte) in actual.bytes.iter_mut().enumerate() {
+                        *byte = (index % 251) as u8;
+                    }
+                    let mut expected = Canvas::new(width, 4, true).unwrap();
+                    expected.bytes.copy_from_slice(&actual.bytes);
+                    let xs = inset.min(width)..width.saturating_sub(inset).max(inset.min(width));
+                    let ys = 1..3;
+                    for y in ys.clone() {
+                        for x in xs.clone() {
+                            expected.blend(x, y, color, false);
+                        }
+                    }
+                    actual.opaque_rect(xs, ys, color);
+                    assert_eq!(actual.bytes, expected.bytes, "width={width}, inset={inset}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn alpha_blending_matches_attachment_factors_and_lcd_is_per_channel() {
         let mut c = Canvas::new(1, 1, true).unwrap();
