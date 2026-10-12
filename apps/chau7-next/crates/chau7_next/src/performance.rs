@@ -113,6 +113,7 @@ pub fn capture(cx: &App) -> Value {
         "runtime": runtime_info(), "uptime_seconds": identity().started.elapsed().as_secs_f64(),
         "process": process, "hang_watchdog":crate::hang_watchdog::snapshot(cx),
         "memory_retention": crate::memory_pressure::diagnostics(cx),
+        "window_renderer": crate::window_backend::diagnostics(cx),
         "incidents": crate::incidents::diagnostics(),
         "remote_grid": crate::remote::grid_diagnostics(cx),
         "work_profile": chau7_next_core::work_profiler::snapshot(),

@@ -246,6 +246,11 @@ impl MacPlatform {
         )
     }
 
+    /// Clone readonly backend state without retaining any native window.
+    pub fn renderer_context(&self) -> renderer::Context {
+        self.0.lock().renderer_context.clone()
+    }
+
     /// Actual whole-window backend choice; Unknown until the first preparation.
     pub fn backend_status(&self) -> renderer::BackendStatus {
         self.0.lock().renderer_context.status()

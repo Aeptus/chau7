@@ -128,6 +128,12 @@ def main():
         default="all",
     )
     parser.add_argument(
+        "--window-renderer",
+        choices=("auto", "metal", "software", "auto-device-failure"),
+        default="auto",
+        help="Optional fixture-only complete window backend; injection occurs before Metal calls",
+    )
+    parser.add_argument(
         "--toolchain",
         default="1.96.0",
         help="Exact already installed Rust release; never installed or upgraded by this script",
@@ -170,6 +176,7 @@ def main():
         "compiler": output([str(toolchain / "rustc"), "--version"]),
         "cargo": output([str(toolchain / "cargo"), "--version"]),
         "fixture_feature": "native-parity-fixture",
+        "window_renderer": args.window_renderer,
         "release_lto": "off",
         "target_triple": target_triple,
         "target_directory": str(target),
@@ -261,11 +268,13 @@ def main():
                     "HISTFILE",
                 ):
                     command.extend(["--env", name + "=" + child_environment[name]])
-                command.extend([str(bundle), "--args", "--native-parity-fixture", case])
+                command.extend(
+                    [str(bundle), "--args", "--native-parity-fixture", case, "--window-renderer", args.window_renderer]
+                )
                 process_stdout = evidence / "restore.launcher.stdout"
                 process_stderr = evidence / "restore.launcher.stderr"
             else:
-                command = [str(binary), "--native-parity-fixture", case]
+                command = [str(binary), "--native-parity-fixture", case, "--window-renderer", args.window_renderer]
                 process_stdout = stdout_path
                 process_stderr = stderr_path
             record["command"] = command

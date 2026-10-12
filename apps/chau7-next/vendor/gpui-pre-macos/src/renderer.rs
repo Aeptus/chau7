@@ -4,7 +4,8 @@
 use crate::software_renderer::presentation::{SoftwareMetrics, SoftwareRenderer};
 use anyhow::{Result, anyhow};
 use gpui::{DevicePixels, PlatformAtlas, Scene, Size};
-use gpui_apple::metal_renderer::{InstanceBufferPool, MetalRenderer, RendererInitStage};
+pub use gpui_apple::metal_renderer::RendererInitStage;
+use gpui_apple::metal_renderer::{InstanceBufferPool, MetalRenderer};
 use parking_lot::Mutex;
 use std::sync::Arc;
 

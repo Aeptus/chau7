@@ -53,6 +53,7 @@ mod telemetry;
 mod terminal;
 mod theme;
 mod views;
+mod window_backend;
 mod workspace;
 
 use chau7_next_core::data_root::DataRoot;
@@ -155,7 +156,8 @@ fn main() {
     );
 
     // The bundled icons (find bar, side pane headers, palette rows).
-    let platform = gpui_kit::platform::current_platform(false);
+    let (platform, window_backend_state) =
+        window_backend::create(settings.appearance.rendering.gpu_renderer);
     let terminal_text_system = platform.text_system();
     let app = gpui::Application::with_platform(platform).with_assets(assets::AppAssets);
     // macOS: clicking the Dock icon with no window open brings the hidden
@@ -169,6 +171,7 @@ fn main() {
     // from its timer (`app_actions::poll`).
     app.on_open_urls(app_actions::queue_open_urls);
     app.run(move |cx: &mut App| {
+        window_backend::init(window_backend_state, cx);
         terminal::paint::init_cpu_text_system(terminal_text_system, cx);
         gpui_kit::init(cx);
         cx.set_app_identity("com.chau7.next", "Chau7 Next");

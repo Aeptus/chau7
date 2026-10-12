@@ -115,9 +115,15 @@
           "before_sha256": "38baa588d112690d0bd824c21918816d1fc84d1efa5f6187de8898a989b124ae",
           "description": "Prepare immutable complete window backend before NSWindow/atlas exposure, match native packed atlas/filtering with retained snapshots, add actual seven-family zero-error Metal comparison; expose submission rather than display-completion counters",
           "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Avoid copying held atlas pixels on allocation misses; rollback unpublished allocation after fallible copy failure; pointer-stability regression",
+          "before_sha256": "9af4a8cc14e6e6954124dd6ac0c05ce7690e828fc8dbc319f68ae09cb0a76f67",
+          "after_sha256": "a4374d734d717fa848a3d86479af3bba95111d075b53c7de7b0d6655612ec2f4"
         }
       ],
-      "current_sha256": "9af4a8cc14e6e6954124dd6ac0c05ce7690e828fc8dbc319f68ae09cb0a76f67",
+      "current_sha256": "a4374d734d717fa848a3d86479af3bba95111d075b53c7de7b0d6655612ec2f4",
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/software_renderer/atlas.rs"
@@ -235,9 +241,15 @@
           "before_sha256": "eb0ff72b2d422fcdec18ef80e7e4f8366cd44eac4aeea91e6996ce250378c258",
           "description": "Prepare immutable complete window backend before NSWindow/atlas exposure, match native packed atlas/filtering with retained snapshots, add actual seven-family zero-error Metal comparison; expose submission rather than display-completion counters",
           "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Make native shadow comparison visible on contrasting background with isolated probe; preserve equivalence thresholds",
+          "before_sha256": "0fa33c69c3f175554666f5f6169b596e3efbf56ae910f1177996a72c3bcdda6c",
+          "after_sha256": "6aef9c6730f085ba1a47faad21f25cbba7cc5b2fa50805d0b77b1812bfce5f33"
         }
       ],
-      "current_sha256": "0fa33c69c3f175554666f5f6169b596e3efbf56ae910f1177996a72c3bcdda6c",
+      "current_sha256": "6aef9c6730f085ba1a47faad21f25cbba7cc5b2fa50805d0b77b1812bfce5f33",
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/software_renderer/scene.rs"
@@ -345,9 +357,15 @@
           "before_sha256": "b7db615645e77123b3b701034b278e3e3bbea6db128c6dab0cbd4ffdcda1c2a8",
           "description": "Prepare immutable complete window backend before NSWindow/atlas exposure, match native packed atlas/filtering with retained snapshots, add actual seven-family zero-error Metal comparison; expose submission rather than display-completion counters",
           "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Expose actual bounded window renderer diagnostics and shared immutable selection context without window ownership",
+          "before_sha256": "0d974af8bcce1f2524786d08e2c3592b574a827dd293ac78d56c8ddb04ad0b58",
+          "after_sha256": "f60ba10a9974322b410d86ab6df81e0874e142992ae446d43362adc900dec1de"
         }
       ],
-      "current_sha256": "0d974af8bcce1f2524786d08e2c3592b574a827dd293ac78d56c8ddb04ad0b58",
+      "current_sha256": "f60ba10a9974322b410d86ab6df81e0874e142992ae446d43362adc900dec1de",
       "original_sha256": "b7db615645e77123b3b701034b278e3e3bbea6db128c6dab0cbd4ffdcda1c2a8",
       "package": "gpui-pre-macos",
       "path": "src/platform.rs"
@@ -359,9 +377,15 @@
           "before_sha256": "9c951492ad9d7b3f48a14e0cdd00049f1de47451b6befac026c65dfaffc7ed93",
           "description": "Prepare immutable complete window backend before NSWindow/atlas exposure, match native packed atlas/filtering with retained snapshots, add actual seven-family zero-error Metal comparison; expose submission rather than display-completion counters",
           "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Expose readonly actual window backend and software submission/storage diagnostics",
+          "before_sha256": "686feabc22ed31a8cb3fbc7f7e5a714efebb77d204ba32bfaefa935a1a43f29d",
+          "after_sha256": "c754e2be51add2a6352a76e9d01f685a3597eaeda2efd9c72d9877262b96e3a1"
         }
       ],
-      "current_sha256": "686feabc22ed31a8cb3fbc7f7e5a714efebb77d204ba32bfaefa935a1a43f29d",
+      "current_sha256": "c754e2be51add2a6352a76e9d01f685a3597eaeda2efd9c72d9877262b96e3a1",
       "original_sha256": "9c951492ad9d7b3f48a14e0cdd00049f1de47451b6befac026c65dfaffc7ed93",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"
@@ -373,12 +397,60 @@
           "before_sha256": null,
           "description": "Prepare immutable complete window backend before NSWindow/atlas exposure, match native packed atlas/filtering with retained snapshots, add actual seven-family zero-error Metal comparison; expose submission rather than display-completion counters",
           "kind": "new_source"
+        },
+        {
+          "kind": "semantic",
+          "description": "Export bounded initialization stage for actual application backend diagnostics",
+          "before_sha256": "2eb58cf5c9b771819256c9b85bc5cbf11b37f2b0b16f8ca2c77353003767061e",
+          "after_sha256": "78bde0c5592acb9edf08434c66cb8133b4653017842885669bfa61d4ba9c853d"
         }
       ],
-      "current_sha256": "2eb58cf5c9b771819256c9b85bc5cbf11b37f2b0b16f8ca2c77353003767061e",
+      "current_sha256": "78bde0c5592acb9edf08434c66cb8133b4653017842885669bfa61d4ba9c853d",
       "original_sha256": null,
       "package": "gpui-pre-macos",
       "path": "src/renderer.rs"
+    },
+    {
+      "package": "gpui-pre",
+      "path": "src/app.rs",
+      "original_sha256": "56a04964b37ad71cb517cf578448725d55cf7cfa81a1a26648a80eedff593637",
+      "current_sha256": "9a393ecfb42c75f7355b6a00a7320090a9e622a110f873a0e5a205ac70a799fa",
+      "changes": [
+        {
+          "kind": "semantic",
+          "description": "Expose bounded actual live-window renderer snapshots without retaining windows",
+          "before_sha256": "56a04964b37ad71cb517cf578448725d55cf7cfa81a1a26648a80eedff593637",
+          "after_sha256": "9a393ecfb42c75f7355b6a00a7320090a9e622a110f873a0e5a205ac70a799fa"
+        }
+      ]
+    },
+    {
+      "package": "gpui-pre",
+      "path": "src/platform.rs",
+      "original_sha256": "9802da203ccd0526c6ff6827f9c5b79334b3c27b711f69e7b28e828a15894960",
+      "current_sha256": "84d0246c7f4dcbfebb059f622fe235a24a6983e358e118adde243cfba1a79bbf",
+      "changes": [
+        {
+          "kind": "semantic",
+          "description": "Expose actual bounded window renderer diagnostics and shared immutable selection context without window ownership",
+          "before_sha256": "9802da203ccd0526c6ff6827f9c5b79334b3c27b711f69e7b28e828a15894960",
+          "after_sha256": "84d0246c7f4dcbfebb059f622fe235a24a6983e358e118adde243cfba1a79bbf"
+        }
+      ]
+    },
+    {
+      "package": "gpui-pre",
+      "path": "src/window.rs",
+      "original_sha256": "2fe230dc311a9dc9b0475e2b5bbe3fbd6b4f54251e38c2b1a977d806fa3ae3e0",
+      "current_sha256": "497585605eb3e24c588e3f01b0f826ef01579e6f59b08eb2d762052e1c843c30",
+      "changes": [
+        {
+          "kind": "semantic",
+          "description": "Expose readonly actual window backend and software submission/storage diagnostics",
+          "before_sha256": "2fe230dc311a9dc9b0475e2b5bbe3fbd6b4f54251e38c2b1a977d806fa3ae3e0",
+          "after_sha256": "497585605eb3e24c588e3f01b0f826ef01579e6f59b08eb2d762052e1c843c30"
+        }
+      ]
     }
   ],
   "format_version": 1

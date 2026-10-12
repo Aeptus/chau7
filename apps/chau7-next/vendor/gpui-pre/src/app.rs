@@ -1411,6 +1411,21 @@ impl App {
             .collect()
     }
 
+    /// Bounded snapshots of actual window renderers. A None entry means that
+    /// the platform does not implement this metric or the window is currently
+    /// borrowed by an update. No window or native object is retained.
+    pub fn window_renderer_diagnostics(&self) -> Vec<Option<crate::WindowRendererDiagnostics>> {
+        self.windows
+            .values()
+            .take(64)
+            .map(|window| {
+                window
+                    .as_ref()
+                    .and_then(|window| window.renderer_diagnostics())
+            })
+            .collect()
+    }
+
     /// Returns the window handles ordered by their appearance on screen, front to back.
     ///
     /// The first window in the returned list is the active/topmost window of the application.

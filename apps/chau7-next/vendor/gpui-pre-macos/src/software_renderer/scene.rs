@@ -216,11 +216,11 @@ mod tests {
         scene.insert_primitive(Shadow {
             order: 0,
             blur_radius: ScaledPixels(2.),
-            bounds: b(2., 2., 10., 10.),
+            bounds: b(48., 2., 10., 10.),
             corner_radii: Corners::all(ScaledPixels(2.)),
             content_mask: mask,
-            color: black(),
-            element_bounds: b(2., 2., 10., 10.),
+            color: white(),
+            element_bounds: b(48., 2., 10., 10.),
             element_corner_radii: Corners::all(ScaledPixels(2.)),
             inset: 0,
             pad: 0,
@@ -371,9 +371,22 @@ mod tests {
                 absolute_error as f64 / (gpu.len() as f64) < 2.,
                 "CPU/Metal mean byte discrepancy exceeds explicit AA tolerance"
             );
+            let shadow_offset = (7 * 64 + 53) * 4;
+            assert!(
+                gpu[shadow_offset] > 100 && software[shadow_offset] > 100,
+                "independent white shadow must visibly contribute over black clear"
+            );
             // Interior samples in each independent family, distinct from edge
             // rasterization/MSAA and driver-dependent dither quantization.
-            for (x, y) in [(7, 7), (21, 7), (8, 17), (6, 28), (34, 28), (44, 28)] {
+            for (x, y) in [
+                (53, 7),
+                (7, 7),
+                (21, 7),
+                (8, 17),
+                (6, 28),
+                (34, 28),
+                (44, 28),
+            ] {
                 let offset = (y * 64 + x) * 4;
                 for channel in 0..4 {
                     assert!(
