@@ -81,12 +81,14 @@ impl Canvas {
         self.bytes[offset + 3] = 255;
     }
     /// Straight RGBA bytes for GPUI's existing image/test capture contract.
-    pub fn rgba(&self) -> Vec<u8> {
-        let mut bytes = self.bytes.clone();
+    pub fn rgba(&self) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(self.bytes.len())?;
+        bytes.extend_from_slice(&self.bytes);
         for pixel in bytes.chunks_exact_mut(4) {
             pixel.swap(0, 2);
         }
-        bytes
+        Ok(bytes)
     }
 }
 pub fn quantize(value: f32) -> u8 {
