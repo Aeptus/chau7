@@ -57,6 +57,14 @@ Last updated 2026-10-12.
   partial pending the complete eight-case Software/Auto acceptance. Original
   outcomes and receipts are preserved in
   [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
+- The next combined source `2386e7e8` passes all nine compiler stages, with
+  the canonical seal produced directly. Its native Software matrix passes
+  Restore, Settings, Editor and Cache. Auto unavailable-device Settings,
+  Editor and Cache pass; Restore times out waiting for the ordinary background
+  Warm phase before pressure injection. All eight PIDs/profiles retired.
+  No locale cases ran after the stopped matrix. The failing receipt lacks
+  memory-state values; the next batch adds failure diagnostics with the same
+  predicate and deadline. PRF-002 remains partial.
 - The current-source audit indexes all 652 Swift source files at official main
   `7733b1f0`, appends the current feature delta and reopens changed behaviour.
   [PARITY.md](PARITY.md) is the current status, including missing features.

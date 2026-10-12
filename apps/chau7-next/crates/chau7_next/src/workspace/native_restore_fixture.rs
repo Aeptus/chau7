@@ -1134,11 +1134,78 @@ async fn verify_retention(
     )?;
     select(handle, ws, ids[1], cx)?;
     settle(handle, cx).await?;
-    wait_until(cx, "ordinary background Warm without pressure", |cx| {
-        let sample = memory_sample(memory_id, cx);
-        sample["phase"] == "warm" && sample["retained_on_disk"] == false && sample["flushes"] == 0
+    let warm_started = Instant::now();
+    let mut last_warm_sample = serde_json::Value::Null;
+    let warm_result = wait_until(cx, "ordinary background Warm without pressure", |cx| {
+        last_warm_sample = memory_sample(memory_id, cx);
+        last_warm_sample["phase"] == "warm"
+            && last_warm_sample["retained_on_disk"] == false
+            && last_warm_sample["flushes"] == 0
     })
-    .await?;
+    .await;
+    if let Err(wait_error) = warm_result {
+        let elapsed_ms = warm_started.elapsed().as_millis();
+        let (selected_tab, selected_session_ids, pressure) = cx.update(|cx| {
+            let workspace = ws.read(cx);
+            let selected_tab = workspace.state.selected();
+            let selected_session_ids = workspace
+                .selected_panes()
+                .map(|panes| {
+                    panes
+                        .read(cx)
+                        .pane_sessions(cx)
+                        .into_iter()
+                        .map(|(_, session)| session.read(cx).id)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let pressure = crate::memory_pressure::diagnostics(cx);
+            (selected_tab, selected_session_ids, pressure)
+        });
+        let gpui_window = handle
+            .update(cx, |_, window, _| {
+                serde_json::json!({
+                    "visible": window.is_visible(),
+                    "active": window.is_window_active(),
+                })
+            })
+            .unwrap_or(serde_json::Value::Null);
+        let appkit_window = match MainThreadMarker::new() {
+            Some(main) => match native_window(handle, cx) {
+                Ok(native) => {
+                    let application = NSApplication::sharedApplication(main);
+                    serde_json::json!({
+                        "available": true,
+                        "application_active": application.isActive(),
+                        "activation_policy": application.activationPolicy().0,
+                        "visible": native.isVisible(),
+                        "key": native.isKeyWindow(),
+                        "miniaturized": native.isMiniaturized(),
+                        "can_become_key": native.canBecomeKeyWindow(),
+                        "occlusion_bits": native.occlusionState().0,
+                    })
+                }
+                Err(error) => serde_json::json!({"available": false, "error": error}),
+            },
+            None => serde_json::json!({"available": false, "error": "not on AppKit main thread"}),
+        };
+        let diagnostic = serde_json::json!({
+            "stage": "ordinary background Warm without pressure",
+            "elapsed_ms": elapsed_ms,
+            "last_memory_sample": last_warm_sample,
+            "expected_main_tab_selected": selected_tab == Some(ids[1]),
+            "ordinary_tab_selected": selected_tab == Some(ids[4]),
+            "selected_session_ids": selected_session_ids,
+            "ordinary_session_in_selected_panes": selected_session_ids.contains(&memory_id),
+            "under_pressure": pressure["under_pressure"],
+            "shed_best_effort": pressure["shed_best_effort"],
+            "native_pressure_source": pressure["native_pressure_source"],
+            "gpui_window": gpui_window,
+            "appkit_window": appkit_window,
+        });
+        eprintln!("native_memory_warm_failure={diagnostic}");
+        return Err(wait_error);
+    }
     let protected_before: Vec<_> = cx.update(|cx| {
         protected
             .iter()
