@@ -498,6 +498,29 @@ const SNIPPET_BUDGET: SnippetBudget = SnippetBudget {
     per_file: 4 * 1024 * 1024,
     total: 32 * 1024 * 1024,
 };
+/// Recheck the actual opened descriptor. The earlier filesystem metadata is
+/// only a preflight: an entry can become a FIFO/device before this open.
+fn open_snippet_handle(path: &Path) -> Result<std::fs::File, String> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Regular files retain ordinary read semantics. A replacement FIFO
+        // cannot wait indefinitely for a producer before we inspect its type.
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path).map_err(|error| error.to_string())?;
+    if !file
+        .metadata()
+        .map_err(|error| error.to_string())?
+        .is_file()
+    {
+        return Err("Snippet entries must be regular files".into());
+    }
+    Ok(file)
+}
+
 fn read_snippets(directory: &Path) -> Result<usize, String> {
     read_snippets_with_budget(directory, SNIPPET_BUDGET)
 }
@@ -536,7 +559,16 @@ fn read_snippets_with_budget(directory: &Path, budget: SnippetBudget) -> Result<
         }
         let remaining = budget.total.saturating_sub(bytes);
         let limit = budget.per_file.min(remaining);
-        let file = std::fs::File::open(&path).map_err(|error| error.to_string())?;
+        // Follow symlinks to regular files, as Swift's Data(contentsOf:)
+        // and the existing Next loader do. Directories, FIFOs and devices
+        // yield Unknown instead of a partial exact count or blocking read.
+        if !std::fs::metadata(&path)
+            .map_err(|error| error.to_string())?
+            .is_file()
+        {
+            return Err("Snippet entries must be regular files".into());
+        }
+        let file = open_snippet_handle(&path)?;
         let mut content = Vec::new();
         // Take+1 bounds the allocation even if a file grows after metadata.
         file.take(limit.saturating_add(1) as u64)
@@ -573,6 +605,78 @@ mod tests {
         root.ensure_dirs().unwrap();
         root
     }
+    #[test]
+    fn json_directories_are_unavailable_without_partial_counts() {
+        let root = owned_root("directory-entry");
+        let dir = root.user_snippets_dir();
+        snippet_store::save_snippet(&dir, &Snippet::new("valid", "Valid", "owned")).unwrap();
+        std::fs::create_dir(dir.join("folder.json")).unwrap();
+        assert!(read_snippets(&dir).is_err());
+        assert!(open_snippet_handle(&dir.join("folder.json")).is_err());
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owned_fifo_without_producer_and_replacement_race_are_nonblocking() {
+        use std::os::unix::ffi::OsStrExt;
+        fn fifo(path: &Path) {
+            let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+            assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        }
+        let root = owned_root("fifo-entry");
+        let dir = root.user_snippets_dir();
+        snippet_store::save_snippet(&dir, &Snippet::new("valid", "Valid", "owned")).unwrap();
+        let pipe = dir.join("pipe.json");
+        fifo(&pipe); // No writer/producer ever opens this owned pipe.
+        let started = std::time::Instant::now();
+        assert!(read_snippets(&dir).is_err());
+        assert!(open_snippet_handle(&pipe).is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        std::fs::remove_file(pipe).unwrap();
+
+        let race = dir.join("race.json");
+        std::fs::write(&race, "{}").unwrap();
+        assert!(std::fs::metadata(&race).unwrap().is_file());
+        // Deterministically replace after the exact production preflight;
+        // exercise the production open adapter against its resulting FIFO.
+        std::fs::remove_file(&race).unwrap();
+        fifo(&race);
+        let started = std::time::Instant::now();
+        assert!(open_snippet_handle(&race).is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        let batch = read_batch(&root, None, SNIPPETS, (1, 0));
+        assert!(batch.snippets.unwrap().value.is_err());
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn regular_symlinks_keep_counts_and_nonregular_or_broken_links_are_unknown() {
+        use std::os::unix::fs::symlink;
+        let root = owned_root("symlink-entry");
+        let dir = root.user_snippets_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = root.config_dir().join("owned-source.json");
+        std::fs::write(
+            &target,
+            serde_json::to_vec(&Snippet::new("linked", "Linked", "owned")).unwrap(),
+        )
+        .unwrap();
+        let link = dir.join("link.json");
+        symlink(&target, &link).unwrap();
+        assert_eq!(read_snippets(&dir).unwrap(), 1);
+        std::fs::remove_file(&link).unwrap();
+        let target_folder = root.config_dir().join("owned-folder");
+        std::fs::create_dir(&target_folder).unwrap();
+        symlink(&target_folder, &link).unwrap();
+        assert!(read_snippets(&dir).is_err());
+        std::fs::remove_file(&link).unwrap();
+        symlink(root.config_dir().join("missing-owned-file"), &link).unwrap();
+        assert!(read_snippets(&dir).is_err());
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+
     #[test]
     fn owned_files_and_sqlite_are_read_on_the_background_thread() {
         let root = owned_root("exact");
