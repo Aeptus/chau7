@@ -80,7 +80,7 @@ impl Canvas {
         }
         self.bytes[offset + 3] = 255;
     }
-    /// Straight RGBA bytes for GPUI's existing image/test capture contract.
+    /// Premultiplied RGBA bytes for GPUI's existing image/test capture contract.
     pub fn rgba(&self) -> Result<Vec<u8>> {
         let mut bytes = Vec::new();
         bytes.try_reserve_exact(self.bytes.len())?;

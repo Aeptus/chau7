@@ -1,7 +1,9 @@
-//! Pixel-retaining CPU atlas. Each tile has its own texture and never borrows
-//! another tile's storage when identifiers are retired or scene caches survive.
+//! Pixel-retaining CPU atlas using the locked Metal bucket allocator and
+//! texture geometry, including bilinear sampling beyond tile boundaries.
+//! Immutable frame snapshots survive atlas mutation and retirement.
 
 use anyhow::{Result, anyhow, ensure};
+use etagere::BucketedAtlasAllocator;
 use gpui::{
     AtlasBackend, AtlasKey, AtlasState, AtlasTextureId, AtlasTextureKind, AtlasTile, Bounds,
     DevicePixels, PlatformAtlas, Size, TileId,
@@ -72,13 +74,73 @@ impl Texture {
     }
 }
 
+struct PackedTexture {
+    pixels: Arc<Texture>,
+    allocator: BucketedAtlasAllocator,
+    live_tiles: usize,
+}
 #[derive(Default)]
 struct Pixels {
-    textures: HashMap<AtlasTextureId, Arc<Texture>>,
+    textures: HashMap<AtlasTextureId, PackedTexture>,
+    order: Vec<AtlasTextureId>,
     next_id: u32,
     retained_bytes: usize,
+    live_tiles: usize,
 }
-
+impl PackedTexture {
+    fn prepare_write(&mut self) -> Result<()> {
+        if Arc::get_mut(&mut self.pixels).is_none() {
+            // A frame still borrows the old pixels. Reserve a fallible snapshot
+            // before changing the allocator or publishing the next upload.
+            let mut bytes = Vec::new();
+            bytes.try_reserve_exact(self.pixels.bytes.len())?;
+            bytes.extend_from_slice(&self.pixels.bytes);
+            self.pixels = Arc::new(Texture {
+                size: self.pixels.size,
+                kind: self.pixels.kind,
+                bytes,
+            });
+        }
+        Ok(())
+    }
+    fn insert(
+        &mut self,
+        id: AtlasTextureId,
+        size: Size<DevicePixels>,
+        bytes: &[u8],
+    ) -> Result<Option<AtlasTile>> {
+        self.prepare_write()?;
+        let Some(allocation) = self
+            .allocator
+            .allocate(etagere::size2(size.width.0, size.height.0))
+        else {
+            return Ok(None);
+        };
+        let texture = Arc::get_mut(&mut self.pixels).expect("exclusive checked software texture");
+        let channels = Texture::channels(id.kind);
+        let stride = texture.size.width.0 as usize * channels;
+        let source_stride = size.width.0 as usize * channels;
+        let x = allocation.rectangle.min.x as usize * channels;
+        let y = allocation.rectangle.min.y as usize;
+        for row in 0..size.height.0 as usize {
+            texture.bytes[(y + row) * stride + x..(y + row) * stride + x + source_stride]
+                .copy_from_slice(&bytes[row * source_stride..(row + 1) * source_stride]);
+        }
+        self.live_tiles += 1;
+        Ok(Some(AtlasTile {
+            texture_id: id,
+            tile_id: allocation.id.into(),
+            padding: 0,
+            bounds: Bounds {
+                origin: gpui::point(
+                    DevicePixels(allocation.rectangle.min.x),
+                    DevicePixels(allocation.rectangle.min.y),
+                ),
+                size,
+            },
+        }))
+    }
+}
 impl AtlasBackend for Pixels {
     fn insert(
         &mut self,
@@ -87,8 +149,11 @@ impl AtlasBackend for Pixels {
         bytes: &[u8],
     ) -> Result<AtlasTile> {
         ensure!(
-            size.width.0 > 0 && size.height.0 > 0,
-            "CPU atlas dimensions must be positive"
+            size.width.0 > 0
+                && size.height.0 > 0
+                && size.width.0 <= 16384
+                && size.height.0 <= 16384,
+            "CPU atlas dimensions out of range"
         );
         let len = (size.width.0 as usize)
             .checked_mul(size.height.0 as usize)
@@ -96,52 +161,81 @@ impl AtlasBackend for Pixels {
             .ok_or_else(|| anyhow!("CPU atlas byte size overflow"))?;
         ensure!(bytes.len() == len, "CPU atlas source byte length mismatch");
         ensure!(
-            self.textures.len() < MAX_LIVE_TILES,
+            self.live_tiles < MAX_LIVE_TILES,
             "CPU atlas live tile limit reached"
         );
+        for id in self.order.iter().rev().filter(|id| id.kind == kind) {
+            if let Some(tile) = self
+                .textures
+                .get_mut(id)
+                .expect("ordered software texture")
+                .insert(*id, size, bytes)?
+            {
+                self.live_tiles += 1;
+                return Ok(tile);
+            }
+        }
+        let texture_size = gpui::size(
+            DevicePixels(size.width.0.max(1024)),
+            DevicePixels(size.height.0.max(1024)),
+        );
+        let texture_len = texture_size.width.0 as usize
+            * texture_size.height.0 as usize
+            * Texture::channels(kind);
         let total = self
             .retained_bytes
-            .checked_add(len)
+            .checked_add(texture_len)
             .ok_or_else(|| anyhow!("CPU atlas byte size overflow"))?;
         ensure!(
             total <= MAX_ATLAS_BYTES,
             "CPU atlas retained byte limit reached"
         );
-        let id = self
+        let index = self
             .next_id
             .checked_add(1)
             .ok_or_else(|| anyhow!("CPU atlas identifier exhausted"))?;
-        // Reserve before copying so an allocation failure does not partially
-        // publish a tile or consume its identifier.
         let mut owned = Vec::new();
-        owned.try_reserve_exact(len)?;
-        owned.extend_from_slice(bytes);
+        owned.try_reserve_exact(texture_len)?;
+        owned.resize(texture_len, 0);
         self.textures.try_reserve(1)?;
-        let texture_id = AtlasTextureId { index: id, kind };
-        self.textures.insert(
-            texture_id,
-            Arc::new(Texture {
-                size,
+        self.order.try_reserve(1)?;
+        let id = AtlasTextureId { index, kind };
+        let mut texture = PackedTexture {
+            pixels: Arc::new(Texture {
+                size: texture_size,
                 kind,
                 bytes: owned,
             }),
-        );
-        self.next_id = id;
+            allocator: BucketedAtlasAllocator::new(etagere::size2(
+                texture_size.width.0,
+                texture_size.height.0,
+            )),
+            live_tiles: 0,
+        };
+        let tile = texture
+            .insert(id, size, bytes)?
+            .ok_or_else(|| anyhow!("CPU atlas initial tile allocation failed"))?;
+        self.textures.insert(id, texture);
+        self.order.push(id);
+        self.next_id = index;
         self.retained_bytes = total;
-        Ok(AtlasTile {
-            texture_id,
-            tile_id: TileId(id),
-            padding: 0,
-            bounds: Bounds {
-                origin: Default::default(),
-                size,
-            },
-        })
+        self.live_tiles += 1;
+        Ok(tile)
     }
-
     fn remove(&mut self, tile: AtlasTile) {
-        if let Some(texture) = self.textures.remove(&tile.texture_id) {
-            self.retained_bytes -= texture.bytes.len();
+        let Some(texture) = self.textures.get_mut(&tile.texture_id) else {
+            return;
+        };
+        texture.allocator.deallocate(tile.tile_id.into());
+        texture.live_tiles -= 1;
+        self.live_tiles -= 1;
+        if texture.live_tiles == 0 {
+            let texture = self
+                .textures
+                .remove(&tile.texture_id)
+                .expect("retired software texture");
+            self.retained_bytes -= texture.pixels.bytes.len();
+            self.order.retain(|id| *id != tile.texture_id);
         }
     }
 }
@@ -153,7 +247,12 @@ pub struct SoftwareAtlas(Mutex<AtlasState<Pixels>>);
 impl SoftwareAtlas {
     /// Retains the exact texture used by a frame, even if its key is removed.
     pub fn texture(&self, id: AtlasTextureId) -> Option<Arc<Texture>> {
-        self.0.lock().backend.textures.get(&id).cloned()
+        self.0
+            .lock()
+            .backend
+            .textures
+            .get(&id)
+            .map(|texture| texture.pixels.clone())
     }
     /// Bytes retained by live atlas keys; a renderer separately counts any
     /// borrowed retired texture until its frame completes.
@@ -162,7 +261,7 @@ impl SoftwareAtlas {
     }
     /// Number of live tile allocations.
     pub fn live_tiles(&self) -> usize {
-        self.0.lock().backend.textures.len()
+        self.0.lock().backend.live_tiles
     }
 }
 
@@ -215,11 +314,12 @@ mod tests {
         );
         assert_eq!(calls.get(), 1);
         let borrowed = atlas.texture(first.texture_id).unwrap();
-        assert_eq!(atlas.retained_bytes(), 2);
+        assert_eq!(atlas.retained_bytes(), 1024 * 1024);
         atlas.remove(&key);
         assert_eq!(atlas.retained_bytes(), 0);
         assert!(atlas.texture(first.texture_id).is_none());
-        assert_eq!(borrowed.bytes, vec![32, 224]);
+        let offset = first.bounds.origin.y.0 as usize * 1024 + first.bounds.origin.x.0 as usize;
+        assert_eq!(&borrowed.bytes[offset..offset + 2], &[32, 224]);
         let second = atlas
             .get_or_insert_with(key, &mut || {
                 Ok(Some((
@@ -242,14 +342,20 @@ mod tests {
             .insert(AtlasTextureKind::Polychrome, dim, &[64, 128, 255, 192])
             .unwrap();
         assert_eq!(
-            pixels.textures[&tile.texture_id].sample([0.5, 0.5]),
+            pixels.textures[&tile.texture_id].pixels.sample([
+                tile.bounds.origin.x.0 as f32 + 0.5,
+                tile.bounds.origin.y.0 as f32 + 0.5
+            ]),
             [1., 128. / 255., 64. / 255., 192. / 255.]
         );
         let lcd = pixels
             .insert(AtlasTextureKind::Subpixel, dim, &[0, 128, 255, 255])
             .unwrap();
         assert_eq!(
-            pixels.textures[&lcd.texture_id].sample([-100., 100.]),
+            pixels.textures[&lcd.texture_id].pixels.sample([
+                lcd.bounds.origin.x.0 as f32 + 0.5,
+                lcd.bounds.origin.y.0 as f32 + 0.5
+            ]),
             [1., 128. / 255., 0., 1.]
         );
         let before = pixels.retained_bytes;
@@ -268,5 +374,69 @@ mod tests {
                 .is_err()
         );
         assert_eq!(before, pixels.retained_bytes);
+    }
+    #[test]
+    fn packed_tiles_match_metal_filter_edges_and_keep_borrowed_snapshots_immutable() {
+        let mut pixels = Pixels::default();
+        let dim = size(DevicePixels(1), DevicePixels(1));
+        let first = pixels
+            .insert(AtlasTextureKind::Monochrome, dim, &[255])
+            .unwrap();
+        let borrowed = pixels.textures[&first.texture_id].pixels.clone();
+        let second = pixels
+            .insert(AtlasTextureKind::Monochrome, dim, &[128])
+            .unwrap();
+        assert_eq!(first.texture_id, second.texture_id);
+        assert_ne!(first.bounds.origin, second.bounds.origin);
+        assert_eq!(
+            borrowed.sample([
+                first.bounds.origin.x.0 as f32 + 0.5,
+                first.bounds.origin.y.0 as f32 + 0.5
+            ])[3],
+            1.
+        );
+        assert_eq!(
+            borrowed.sample([
+                second.bounds.origin.x.0 as f32 + 0.5,
+                second.bounds.origin.y.0 as f32 + 0.5
+            ])[3],
+            0.
+        );
+        let current = pixels.textures[&second.texture_id].pixels.clone();
+        assert!(!Arc::ptr_eq(&borrowed, &current));
+        assert_eq!(
+            current.sample([
+                second.bounds.origin.x.0 as f32 + 0.5,
+                second.bounds.origin.y.0 as f32 + 0.5
+            ])[3],
+            128. / 255.
+        );
+        // Right/bottom edges sample the surrounding packed texture, not clamp
+        // to the tile's final texel as the initial standalone atlas did.
+        assert!(
+            (borrowed.sample([
+                first.bounds.origin.x.0 as f32 + 0.5625,
+                first.bounds.origin.y.0 as f32 + 0.5625
+            ])[3]
+                - 0.87890625)
+                .abs()
+                < 1e-6
+        );
+        pixels.remove(first);
+        assert!(pixels.textures.contains_key(&second.texture_id));
+        pixels.remove(second);
+        assert_eq!(pixels.retained_bytes, 0);
+        assert_eq!(pixels.live_tiles, 0);
+        let replacement = pixels
+            .insert(AtlasTextureKind::Monochrome, dim, &[0])
+            .unwrap();
+        assert_ne!(replacement.texture_id, first.texture_id);
+        assert_eq!(
+            borrowed.sample([
+                first.bounds.origin.x.0 as f32 + 0.5,
+                first.bounds.origin.y.0 as f32 + 0.5
+            ])[3],
+            1.
+        );
     }
 }

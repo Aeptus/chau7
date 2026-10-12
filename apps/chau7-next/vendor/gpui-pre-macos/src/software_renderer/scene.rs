@@ -168,9 +168,7 @@ mod tests {
             size(ScaledPixels(w), ScaledPixels(h)),
         )
     }
-    #[test]
-    fn ordered_scene_renders_every_family_and_requires_pixels() {
-        let atlas = SoftwareAtlas::default();
+    fn fixture(atlas: &dyn PlatformAtlas, lcd_enabled: bool) -> Scene {
         let insert = |key: gpui::AtlasKey, bytes: Vec<u8>| {
             atlas
                 .get_or_insert_with(key, &mut || {
@@ -210,7 +208,7 @@ mod tests {
             dilation: 0,
             is_emoji: false,
         });
-        let lcd = insert(lcd_key, vec![0, 128, 255, 255]);
+        let lcd = lcd_enabled.then(|| insert(lcd_key, vec![0, 128, 255, 255]));
         let mut scene = Scene::default();
         let mask = ContentMask {
             bounds: b(0., 0., 64., 64.),
@@ -262,15 +260,17 @@ mod tests {
             tile: mono,
             transformation: TransformationMatrix::unit(),
         });
-        scene.insert_primitive(SubpixelSprite {
-            order: 0,
-            pad: 0,
-            bounds: b(16., 24., 8., 8.),
-            content_mask: mask,
-            color: white(),
-            tile: lcd,
-            transformation: TransformationMatrix::unit(),
-        });
+        if let Some(lcd) = lcd {
+            scene.insert_primitive(SubpixelSprite {
+                order: 0,
+                pad: 0,
+                bounds: b(16., 24., 8., 8.),
+                content_mask: mask,
+                color: white(),
+                tile: lcd,
+                transformation: TransformationMatrix::unit(),
+            });
+        }
         scene.insert_primitive(PolychromeSprite {
             order: 0,
             pad: 0,
@@ -281,13 +281,34 @@ mod tests {
             corner_radii: Corners::all(ScaledPixels(2.)),
             tile: color,
         });
+        use core_foundation::{base::TCFType, dictionary::CFDictionary, string::CFString};
+        let empty = CFDictionary::<CFString, core_foundation::base::CFType>::from_CFType_pairs(&[]);
+        let key = unsafe {
+            CFString::wrap_under_get_rule(
+                core_video::pixel_buffer::kCVPixelBufferIOSurfacePropertiesKey,
+            )
+        };
+        let attributes = CFDictionary::from_CFType_pairs(&[(key, empty.as_CFType())]);
         let buffer = core_video::pixel_buffer::CVPixelBuffer::new(
             core_video::pixel_buffer::kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
             4,
             4,
-            None,
+            Some(&attributes),
         )
         .unwrap();
+        // Deterministic planar video pixels also make the native Metal/CPU
+        // comparator independent of allocator contents.
+        assert_eq!(buffer.lock_base_address(0), 0);
+        for plane in 0..2 {
+            let pointer = unsafe { buffer.get_base_address_of_plane(plane) }.cast::<u8>();
+            assert!(!pointer.is_null());
+            let length =
+                buffer.get_bytes_per_row_of_plane(plane) * buffer.get_height_of_plane(plane);
+            unsafe {
+                std::ptr::write_bytes(pointer, 128, length);
+            }
+        }
+        assert_eq!(buffer.unlock_base_address(0), 0);
         scene.insert_primitive(gpui::PaintSurface {
             order: 0,
             bounds: b(40., 24., 8., 8.),
@@ -295,6 +316,12 @@ mod tests {
             image_buffer: buffer,
         });
         scene.finish();
+        scene
+    }
+    #[test]
+    fn ordered_scene_renders_every_family_and_requires_pixels() {
+        let atlas = SoftwareAtlas::default();
+        let scene = fixture(&atlas, true);
         let frame = render(&scene, &atlas, 64, 64, false).unwrap();
         assert_eq!(frame.primitive_counts, [1; 8]);
         assert_eq!(frame.canvas.bytes.len(), 64 * 64 * 4);
@@ -307,5 +334,56 @@ mod tests {
         assert_eq!(retired.retired_sprite_batches, 1);
         assert_eq!(retired.primitive_counts[4], 0);
         assert_eq!(retired.primitive_counts[6], 1);
+    }
+    #[test]
+    fn native_metal_and_software_compare_all_seven_drawable_scene_families() {
+        objc2::rc::autoreleasepool(|_| {
+            let mut metal =
+                gpui_apple::metal_renderer::MetalRenderer::try_new(Default::default(), false)
+                    .unwrap();
+            let viewport = size(DevicePixels(64), DevicePixels(64));
+            metal.try_prepare_startup(viewport).unwrap();
+            let metal_scene = fixture(&**metal.sprite_atlas(), false);
+            let metal_image = metal.render_scene_to_image(&metal_scene, viewport).unwrap();
+            let atlas = SoftwareAtlas::default();
+            let software_scene = fixture(&atlas, false);
+            let frame = render(&software_scene, &atlas, 64, 64, false).unwrap();
+            assert_eq!(frame.primitive_counts, [1, 1, 1, 1, 1, 0, 1, 1]);
+            let software = frame.canvas.rgba().unwrap();
+            let gpu = metal_image.into_raw();
+            assert_eq!(gpu.len(), software.len());
+            let absolute_error: u64 = gpu
+                .iter()
+                .zip(&software)
+                .map(|(a, b)| a.abs_diff(*b) as u64)
+                .sum();
+            let max_error = gpu
+                .iter()
+                .zip(&software)
+                .map(|(a, b)| a.abs_diff(*b))
+                .max()
+                .unwrap();
+            eprintln!(
+                "Seven-family native Metal comparator: mean_byte_error={} max_byte_error={max_error}",
+                absolute_error as f64 / gpu.len() as f64
+            );
+            assert!(
+                absolute_error as f64 / (gpu.len() as f64) < 2.,
+                "CPU/Metal mean byte discrepancy exceeds explicit AA tolerance"
+            );
+            // Interior samples in each independent family, distinct from edge
+            // rasterization/MSAA and driver-dependent dither quantization.
+            for (x, y) in [(7, 7), (21, 7), (8, 17), (6, 28), (34, 28), (44, 28)] {
+                let offset = (y * 64 + x) * 4;
+                for channel in 0..4 {
+                    assert!(
+                        gpu[offset + channel].abs_diff(software[offset + channel]) <= 3,
+                        "family interior mismatch ({x},{y}) channel{channel}: GPU{} CPU{}",
+                        gpu[offset + channel],
+                        software[offset + channel]
+                    );
+                }
+            }
+        });
     }
 }

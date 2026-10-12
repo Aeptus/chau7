@@ -1,6 +1,6 @@
-//! Software scene renderer for ordinary AppKit windows. Source is assembled in
-//! reviewable stages; platform selection stays Metal until all contracts and
-//! native fixtures are connected.
+//! Complete software scene rendering and ordinary CALayer presentation.
+//! The platform selects this backend before its first native window when the
+//! fixed startup policy requires it or initial Metal preparation fails.
 pub mod atlas;
 pub mod fills;
 

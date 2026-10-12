@@ -149,6 +149,27 @@ impl PlatformDisplay for MacDisplay {
 }
 
 impl MacDisplay {
+    /// Read the actual target screen backing scale before window creation.
+    pub(crate) fn backing_scale_factor(&self) -> f32 {
+        unsafe {
+            let screen = self.get_nsscreen();
+            let screen = if screen.is_null() {
+                NSScreen::mainScreen(nil)
+            } else {
+                screen
+            };
+            if screen.is_null() {
+                return 1.;
+            }
+            let scale = NSScreen::backingScaleFactor(screen) as f32;
+            if scale.is_finite() && scale > 0. {
+                scale
+            } else {
+                1.
+            }
+        }
+    }
+
     /// Find the NSScreen corresponding to this display
     unsafe fn get_nsscreen(&self) -> id {
         let screens = unsafe { NSScreen::screens(nil) };
