@@ -17,7 +17,7 @@ the rows below keep the user-visible effects.
 | ID | Feature | Swift source | Tests | Rust | Status | macOS API |
 |---|---|---|---|---|---|---|
 | PRF-001 | Terminal text and backgrounds drawn on the GPU | `Performance/RustMetalDisplayCoordinator.swift`, `Performance/MetalTerminalRenderer.swift` | | `chau7_next/src/terminal/view.rs` (GPUI `paint_quad`, `shape_line`) | done | Metal |
-| PRF-002 | "Metal Renderer" selects GPU or CPU terminal-grid drawing. Swift also automatically keeps its CoreGraphics terminal path if Metal device/renderer creation fails; Next has the CPU grid switch but its GPUI macOS window still requires a compatible Metal device, so that unavailable-Metal fallback remains unsupported | `Settings/Views/ScrollbackPerfSettingsView.swift:65`; `RustBackend/RustTerminalView.swift:335`; `Overlay/OverlayTabsModel+Refresh.swift:181`; `Performance/RustMetalDisplayCoordinator.swift:167` | CPU raster/cache tests; signed native 8fe70406 GPU and CPU styled-text captures; actual-backend MCP snapshots with both initial/restored views registered | chau7_next/src/terminal/cpu_renderer.rs; chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs | partial | CoreText, Metal |
+| PRF-002 | "Metal Renderer" selects GPU or CPU drawing. Swift retains its CoreGraphics terminal path when Metal initialization fails; Next implements a whole-window software backend and startup fallback, with full native software Settings acceptance still pending | `Settings/Views/ScrollbackPerfSettingsView.swift:65`; `RustBackend/RustTerminalView.swift:335`; `Overlay/OverlayTabsModel+Refresh.swift:181`; `Performance/RustMetalDisplayCoordinator.swift:167` | CPU raster/cache tests; actual styled-text captures; normal signed 7bd54649 Software window/MCP/quit; 1d93cd72 unavailable-device editor and 0cfd5652 Software editor/restore acceptance; actual Settings 500 ms negative retained | chau7_next/src/terminal/cpu_renderer.rs; chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs; vendor/gpui/src/platform/mac/mac_window.rs; vendor/gpui/src/platform/mac/software_renderer.rs | partial | CoreText, Metal |
 | PRF-003 | Fallback fonts, double-width/bold/italic glyphs and complete multi-character grapheme clusters with continuation-cell spacing | `Performance/MetalTerminalRenderer.swift`; `RustBackend/RustTerminalView+Rendering.swift` | 17 native GridCopy paint fixtures; isolated macOS CPU/GPU-requested screenshots at e8f32e6014b0 | chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs | done | CoreText |
 | PRF-004 | Crisp text on Retina and when a window moves between screens with different scale factors | `Performance/RustMetalDisplayCoordinator.swift` (`configureFont`), `RustBackend/RustTerminalView.swift` (`viewDidMoveToWindow`) | | GPUI | done | |
 | PRF-005 | Rendering paced to the display refresh rate (ProMotion 120 Hz), vsync on, three drawables in flight | `Performance/OptimalMetalView.swift` (`configureForLowLatency`), `RustBackend/RustTerminalView.swift` (`displayRefreshInterval`) | | GPUI | done | CAMetalLayer, CVDisplayLink |
@@ -52,13 +52,19 @@ the rows below keep the user-visible effects.
   its AppKit view remains layer-backed. GPU composition of Next's CPU bitmap
   does not itself violate that preference. The source switch works; the earlier
   claim that off only disabled ligatures is obsolete.
-  The concrete remaining facet is Swift's advertised automatic fallback when
-  Metal is unavailable. Its optional `RustMetalDisplayCoordinator` returns nil
-  on missing device/renderer and leaves the CPU grid active; the current GPUI
-  macOS renderer exits if no compatible Metal device exists, before Next's grid
-  setting can help. No native unavailable-device test was performed. Existing
-  e8 screenshots recorded requested settings; native `actual_renderer` CPU/GPU
-  evidence follows the initial-view weak-registration fix (`5a4789bb`).
+  The user also requires an entire usable GPUI window without Metal. That
+  backend is implemented with ordinary AppKit/CALayer/CGImage composition,
+  truthful actual-backend diagnostics and bounded demand-driven frame waking.
+  A feature-free signed `7bd54649` app starts with saved Software settings,
+  accepts exact synthetic Unicode bytes through MCP and saves three owned tabs
+  on graceful quit. Actual native unavailable-device editor acceptance passes
+  at `1d93cd72`; explicit Software editor and restore pass at `0cfd5652`,
+  including marked-text and stale attachment-guard regression assertions.
+  Settings still exceeds its unchanged 500 ms navigation deadline, including
+  a run without concurrent compilation. Preserve this negative result; the
+  whole native Software and Auto acceptance matrix is not yet complete.
+  These receipts establish scoped startup/frame/lifecycle behavior, not hot
+  GPU-loss recovery or independence from normal WindowServer composition.
 - PRF-003: native macOS acceptance on `e8f32e6014b0` passes colors,
   bold/italic/underline, combining accents, composed woman-technologist skin
   tone, one family glyph, French flag and CJK. The fix reconstructs extended
