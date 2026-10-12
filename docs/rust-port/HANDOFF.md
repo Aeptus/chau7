@@ -75,7 +75,9 @@ Last updated 2026-10-12.
 2. Extend owned native Settings verification to French, Arabic RTL and actual
    System Default without changing macOS global language or existing apps.
 3. Resolve TEL-024's retention-default policy and PRF-002's macOS window backend
-   limitation. Preserve existing history and never mark unsupported behavior done.
+   limitation. The complete scene backend is being implemented under
+   [NON-METAL-BACKEND.md](NON-METAL-BACKEND.md); it remains unverified.
+   Preserve existing history and never mark unsupported behavior done.
 4. Finish remaining Mac hand-test facets below. Native fixtures prove exact
    geometry/events/lifecycle, not physical keyboard/IME, pixels or full AX.
    Never stop the user's running Next/Swift or change their profiles.
