@@ -27,6 +27,8 @@ mod mine;
 mod minimal_mode;
 #[cfg(feature = "native-parity-fixture")]
 mod native_fixture;
+#[cfg(any(test, feature = "native-parity-fixture"))]
+mod native_locale;
 mod notification_triggers;
 mod notifications;
 mod panes;
