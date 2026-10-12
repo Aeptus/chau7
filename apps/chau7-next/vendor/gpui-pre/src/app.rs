@@ -908,6 +908,7 @@ pub struct App {
     pending_updates: usize,
     quit_mode: QuitMode,
     quitting: bool,
+    shutdown_timeout: Option<Duration>,
 
     // We need to ensure the leak detector drops last, after all tasks, callbacks and things have been dropped.
     // Otherwise it may report false positives.
@@ -1005,6 +1006,7 @@ impl App {
                 inspector_element_registry: InspectorElementRegistry::default(),
                 quit_mode: QuitMode::default(),
                 quitting: false,
+                shutdown_timeout: Some(SHUTDOWN_TIMEOUT),
                 cursor_hide_mode: CursorHideMode::default(),
                 reduce_motion: false,
                 synced_animation_epoch,
@@ -1149,14 +1151,31 @@ impl App {
     #[cfg(all(feature = "test-support", not(any(test, gpui_leak_detection))))]
     pub fn assert_no_new_leaks(&self, _snapshot: &LeakDetectorSnapshot) {}
 
+    /// Set the native quit observer wait policy for this application.
+    ///
+    /// The default is `Some(SHUTDOWN_TIMEOUT)`. `None` waits for every quit
+    /// future to complete, so an application can finish accepted writes and
+    /// explicit resource closes before its process exits. Such futures must
+    /// not depend on App/window access after shutdown starts. Slow IO may
+    /// delay termination; this does not protect against forced exits/crashes.
+    /// WebAssembly cleanup remains asynchronous regardless of this setting.
+    pub fn set_shutdown_timeout(&mut self, timeout: Option<Duration>) {
+        self.shutdown_timeout = timeout;
+    }
+
+    /// The configured native quit observer timeout, or completion wait.
+    pub fn shutdown_timeout(&self) -> Option<Duration> {
+        self.shutdown_timeout
+    }
+
     /// Quit the application gracefully.
     ///
-    /// Native applications give handlers registered with [`Context::on_app_quit`]
-    /// [`SHUTDOWN_TIMEOUT`] to complete. WebAssembly runs them asynchronously as best-effort cleanup
-    /// because its event-loop thread cannot block.
+    /// Native applications use their configured quit observer wait policy,
+    /// which defaults to [`SHUTDOWN_TIMEOUT`]. WebAssembly runs observers
+    /// asynchronously because its event-loop thread cannot block.
     pub fn shutdown(&mut self) {
         // Requested first so the final hang poll overlaps with the quit
-        // handlers. It's awaited alongside them, within `SHUTDOWN_TIMEOUT`.
+        // handlers. It's awaited alongside them using the app's quit policy.
         #[cfg(all(feature = "profiler", not(target_family = "wasm")))]
         let hang_monitor_flush = self
             .hang_monitor
@@ -1188,12 +1207,19 @@ impl App {
 
         let futures = futures::future::join_all(futures);
         #[cfg(not(target_family = "wasm"))]
-        if self
-            .foreground_executor
-            .block_with_timeout(SHUTDOWN_TIMEOUT, futures)
-            .is_err()
-        {
-            log::error!("timed out waiting on app_will_quit");
+        match self.shutdown_timeout {
+            Some(timeout) => {
+                if self
+                    .foreground_executor
+                    .block_with_timeout(timeout, futures)
+                    .is_err()
+                {
+                    log::error!("timed out waiting on app_will_quit");
+                }
+            }
+            None => {
+                let _ = self.foreground_executor.block_on(futures);
+            }
         }
         #[cfg(target_family = "wasm")]
         self.foreground_executor.spawn(futures).detach();
@@ -2273,8 +2299,9 @@ impl App {
     /// and passes each poll's incidents, including empty polls, to `on_poll`
     /// on that thread. When the app quits, a final poll with
     /// [`HangMonitorPollReason::Flush`] runs during shutdown, concurrently
-    /// with quit handlers and within [`SHUTDOWN_TIMEOUT`], so `on_poll` can
-    /// deliver batched results.
+    /// with quit handlers using the native quit wait policy, so `on_poll`
+    /// can deliver batched results. The callback must not wait for App or
+    /// foreground thread work during shutdown.
     ///
     /// # Errors
     ///

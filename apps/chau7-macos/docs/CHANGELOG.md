@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Record Chau7 Next shutdown phase timings and retain failed worker, history, restore and telemetry outcomes before writing a clean termination marker. The complete native quit wait policy remains under validation.
+- Record Chau7 Next shutdown phase timings and retain failed worker, history, restore and telemetry outcomes before writing a clean termination marker. Expose an explicit native observer completion policy while preserving GPUI's default timeout. Next activation awaits the telemetry admission correction and native acceptance.
 
 - Reconcile Chau7 Next repository tab groups after setting changes, paint complete grapheme clusters, recover file watches across replacement, and preserve runbook save/execute guards. Add Spanish, counted UI strings and selectable regional number formatting.
 

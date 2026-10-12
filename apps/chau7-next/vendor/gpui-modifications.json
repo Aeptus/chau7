@@ -387,9 +387,21 @@
           "before_sha256": "dcde9e61f8f13da16d045d7d977731add76e317b3c6283fb61deb299b6e8418b",
           "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
           "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Add per-App native quit timeout policy with unchanged 200 ms default and explicit observer completion wait; verify default and slow-observer completion through Next public GPUI dependency tests",
+          "before_sha256": "b16c390e00e3394889da30f459302d8cd0bb7754726aa5636ff9c9b85c285ff1",
+          "after_sha256": "9746e9173966bfe5cf010982c67b0d02e9b381f94a7b4ad54eb810db6f7c0006"
+        },
+        {
+          "kind": "whitespace_only",
+          "description": "Format the native quit policy with pinned Rust 1.99.0 without changing behavior",
+          "before_sha256": "9746e9173966bfe5cf010982c67b0d02e9b381f94a7b4ad54eb810db6f7c0006",
+          "after_sha256": "37150c9dda0b98801e061eae708a00b3bd5a2d098b4b5ba299ec708bf96ff956"
         }
       ],
-      "current_sha256": "b16c390e00e3394889da30f459302d8cd0bb7754726aa5636ff9c9b85c285ff1",
+      "current_sha256": "37150c9dda0b98801e061eae708a00b3bd5a2d098b4b5ba299ec708bf96ff956",
       "original_sha256": "dcde9e61f8f13da16d045d7d977731add76e317b3c6283fb61deb299b6e8418b",
       "package": "gpui-pre",
       "path": "src/app.rs"
@@ -539,6 +551,20 @@
       "original_sha256": "df8374f075932996d58b99c043d97a82e1cefebab79e5b0f4648c8a3776ea5fe",
       "package": "gpui-pre-macos",
       "path": "src/system_notifications.rs"
+    },
+    {
+      "package": "gpui-pre",
+      "path": "src/app/context.rs",
+      "original_sha256": "b05a478fb75a5488887cb46e2ea151c5d85ea8543311aca9ac5e724200f03ecb",
+      "current_sha256": "bc123b21677c19f5873afcdb9bfe159e826f047476011fabb897dd7a4791ce4d",
+      "changes": [
+        {
+          "kind": "documentation",
+          "description": "Describe native quit observer completion policy and unchanged default timeout",
+          "before_sha256": "b05a478fb75a5488887cb46e2ea151c5d85ea8543311aca9ac5e724200f03ecb",
+          "after_sha256": "bc123b21677c19f5873afcdb9bfe159e826f047476011fabb897dd7a4791ce4d"
+        }
+      ]
     }
   ],
   "format_version": 1

@@ -47,6 +47,8 @@ mod session_store;
 mod settings;
 mod settings_window;
 mod shutdown;
+#[cfg(test)]
+mod shutdown_policy_test;
 mod snippets;
 mod status_bar;
 mod tab_bar;
