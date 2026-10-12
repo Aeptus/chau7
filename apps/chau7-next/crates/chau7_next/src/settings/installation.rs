@@ -266,6 +266,33 @@ mod tests {
     }
 
     #[test]
+    fn unreadable_section_or_misplaced_retention_never_overrides_explicit_zero() {
+        let root = root("header-comments");
+        initialize(&root);
+        let current = Settings::load(&root);
+        assert_eq!(current.general.telemetry_retention_days, 30);
+        for text in [
+            "[next] # comment\ntelemetry_retention_days = 0\n",
+            "[next] // comment\ntelemetry_retention_days = 0\n",
+            "[next] # comment\ntelemetry_retention_days = 91\n",
+            "[next] // comment\ntelemetry_retention_days = 91\n",
+            "telemetry_retention_days = 0\n",
+            "[general]\ntelemetry_retention_days = 0\n",
+        ] {
+            std::fs::write(root.config_file(), text).unwrap();
+            assert_eq!(Settings::load(&root).general.telemetry_retention_days, 0);
+            assert_eq!(
+                Settings::from_profile_text_local(text, &current)
+                    .general
+                    .telemetry_retention_days,
+                0
+            );
+            assert_eq!(std::fs::read_to_string(root.config_file()).unwrap(), text);
+        }
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+
+    #[test]
     fn late_population_or_preexisting_policy_never_gets_overwritten() {
         for marker in [false, true] {
             let root = root("race");

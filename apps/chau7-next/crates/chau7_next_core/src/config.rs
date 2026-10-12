@@ -49,6 +49,7 @@ pub fn is_valid_config(text: &str) -> bool {
                 break;
             }
         }
+        let original = line.trim();
         let line = line[..end].trim();
         if line.is_empty() {
             return true;
@@ -57,7 +58,10 @@ pub fn is_valid_config(text: &str) -> bool {
             return false;
         }
         if let Some(section) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-            return !section.trim().is_empty() && !section.contains(['[', ']']);
+            // parse_raw accepts a header only when the original line ends
+            // in ]. Normalizing a trailing comment here would hide the next
+            // section's explicit retention setting from the actual loader.
+            return line == original && !section.trim().is_empty() && !section.contains(['[', ']']);
         }
         let Some((key, value)) = line.split_once('=') else {
             return false;
