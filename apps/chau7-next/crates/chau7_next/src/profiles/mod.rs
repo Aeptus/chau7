@@ -84,7 +84,7 @@ pub fn load_profile(id: &str, cx: &mut App) -> bool {
     let Some(profile) = cx.global::<ProfilesState>().store.by_id(id).cloned() else {
         return false;
     };
-    let loaded = Settings::from_profile_text(&profile.config);
+    let loaded = Settings::from_profile_text_local(&profile.config, Settings::get(cx));
     settings_window::update(cx, |s| *s = loaded);
     edit(cx, |store| store.active = Some(profile.id.clone()));
     log::info!("profiles: loaded '{}'", profile.name);

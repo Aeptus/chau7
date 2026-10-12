@@ -110,6 +110,11 @@ impl DataRoot {
         self.config_dir.join("config.toml")
     }
 
+    /// Default policy recorded only for positively fresh installations.
+    pub fn installation_policy_file(&self) -> PathBuf {
+        self.state_dir.join("installation-policy-v1")
+    }
+
     /// User repository skill sources are shared project inputs and read only.
     pub fn repo_skills_source(repo_root: &Path) -> PathBuf {
         repo_root.join(REPO_FOLDER).join("skills")
