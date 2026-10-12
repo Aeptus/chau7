@@ -78,16 +78,31 @@ impl Shutdown {
                 }
                 Err(error) => Err(error),
             }
+        } else if self.store.is_some() {
+            // No handle is not a successful drain: OS worker creation may have
+            // failed before any initialization job could be admitted.
+            Err("telemetry writer unavailable for shutdown".into())
         } else {
             Ok(())
         };
+        let unavailable = self.store.as_ref().is_some_and(|store| {
+            matches!(
+                store.readiness(),
+                StoreReadiness::Loading | StoreReadiness::Failed
+            )
+        });
         // Retained Global/MCP Arc wrappers must not retain a SQLite handle.
         if let Some(store) = self.store {
             store
                 .close()
                 .map_err(|_| "telemetry SQLite close failed".to_string())?;
         }
-        drained
+        drained?;
+        if unavailable {
+            Err("telemetry initialization did not succeed".into())
+        } else {
+            Ok(())
+        }
     }
 }
 pub(crate) fn shutdown(cx: &mut App) -> Option<Shutdown> {
@@ -1053,5 +1068,34 @@ mod query_tests {
             Some("second run")
         );
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+
+    #[test]
+    fn missing_writer_never_authorizes_clean_shutdown_even_when_sqlite_close_succeeds() {
+        let store = Arc::new(TelemetryStore::in_memory());
+        assert_eq!(store.readiness(), StoreReadiness::Ready);
+        let shutdown = Shutdown {
+            transcript: cache::Activity::new(1).stop(),
+            reads: Vec::new(),
+            maintenance: None,
+            store: Some(store.clone()),
+            writer: None,
+        };
+        // The actual background quit decision must retain this Err after close;
+        // no SQLite handle remains, but the absent writer was never drained.
+        let result = std::thread::spawn(move || shutdown.finish())
+            .join()
+            .unwrap();
+        assert_eq!(
+            result,
+            Err("telemetry writer unavailable for shutdown".to_string())
+        );
+        assert_eq!(store.readiness(), StoreReadiness::Closed);
+        store.close().unwrap();
     }
 }
