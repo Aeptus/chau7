@@ -8,7 +8,7 @@ use chau7_next_core::session_restore::{SavedAxis, SavedSplitNode};
 use gpui::{AppContext, AsyncApp, WindowHandle, WindowOptions, size};
 use gpui_kit::base::Root;
 use objc2::{MainThreadMarker, rc::Retained};
-use objc2_app_kit::{NSApplication, NSView, NSWindow};
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSView, NSWindow};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::os::unix::fs::PermissionsExt;
 
@@ -634,6 +634,10 @@ async fn verify_surfaces(
     let application = NSApplication::sharedApplication(
         MainThreadMarker::new().ok_or("native fixture is not on main thread")?,
     );
+    ensure(
+        application.setActivationPolicy(NSApplicationActivationPolicy::Regular),
+        "owned fixture activation policy refused Regular",
+    )?;
     cx.update(|cx| cx.activate(true));
     wait_until(cx, "owned fixture application activation", |_| {
         application.isActive()
@@ -884,6 +888,10 @@ async fn verify_retention(
     cx.update(|cx| -> Result<(), String> {
         for ((_, session), (text, rows)) in protected.iter().zip(&protected_before) {
             let session = session.read(cx);
+            ensure(
+                session.allocation_snapshot()["render_phase"] == "active",
+                "selected surface entered a Hidden phase under policy pressure",
+            )?;
             ensure(
                 session.buffer_text() == *text
                     && session.allocation_snapshot()["history_rows"] == *rows,
