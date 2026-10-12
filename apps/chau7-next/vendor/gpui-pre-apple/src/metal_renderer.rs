@@ -284,7 +284,7 @@ impl MetalRenderer {
 
     fn try_create_device() -> InitResult<metal::Device> {
         #[cfg(target_os = "macos")]
-        if let Some(device) = metal::Device::all()
+        if let Some(device) = checked_devices()
             .into_iter()
             .min_by_key(|device| (device.is_removable(), !device.is_low_power()))
         {
@@ -1489,7 +1489,8 @@ fn new_initial_library_with_source(
 fn new_initial_video_cache(device: &metal::DeviceRef) -> InitResult<CVMetalTextureCache> {
     let mut cache = ptr::null_mut();
     // SAFETY: CoreVideo receives a retained device; default dictionary arguments
-    // are nullable. Check both status and pointer before taking the +1 CF owner.
+    // are nullable. Check the pointer before taking its +1 CF owner, and release
+    // that owner if the native operation reports failure.
     let status = unsafe {
         core_video::metal_texture_cache::CVMetalTextureCacheCreate(
             core_foundation::base::kCFAllocatorDefault,
@@ -1499,13 +1500,66 @@ fn new_initial_video_cache(device: &metal::DeviceRef) -> InitResult<CVMetalTextu
             &mut cache,
         )
     };
-    if status != core_video::r#return::kCVReturnSuccess || cache.is_null() {
-        return Err(RendererInitError::new(
-            RendererInitStage::Resource,
-            format!("CoreVideo texture cache allocation failed: {status}"),
-        ));
+    // A non-null output owns a +1 reference even when the native operation
+    // reports failure. Adopt it only after checking nil, then drop it on error.
+    let cache = if cache.is_null() {
+        None
+    } else {
+        Some(unsafe { CVMetalTextureCache::wrap_under_create_rule(cache) })
+    };
+    initial_resource_result(
+        cache,
+        status == core_video::r#return::kCVReturnSuccess,
+        format!("CoreVideo texture cache allocation failed: {status}"),
+    )
+}
+
+fn initial_resource_result<T>(
+    resource: Option<T>,
+    succeeded: bool,
+    error: impl std::fmt::Display,
+) -> InitResult<T> {
+    match (succeeded, resource) {
+        (true, Some(resource)) => Ok(resource),
+        (_, resource) => {
+            drop(resource);
+            Err(RendererInitError::new(RendererInitStage::Resource, error))
+        }
     }
-    Ok(unsafe { CVMetalTextureCache::wrap_under_create_rule(cache) })
+}
+
+#[cfg(target_os = "macos")]
+fn checked_devices() -> Vec<metal::Device> {
+    unsafe extern "C" {
+        fn MTLCopyAllDevices() -> *mut AnyObject;
+    }
+    // A copied device array is +1, but a missing array must not be wrapped or
+    // messaged. Default-device fallback remains the same after an empty list.
+    let array = unsafe { objc2::rc::Retained::from_raw(MTLCopyAllDevices()) };
+    devices_from_array(array)
+}
+
+#[cfg(target_os = "macos")]
+fn devices_from_array(array: Option<objc2::rc::Retained<AnyObject>>) -> Vec<metal::Device> {
+    let Some(array) = array else {
+        return Vec::new();
+    };
+    let count: NSUInteger = unsafe { objc2::msg_send![&*array, count] };
+    let mut devices = Vec::new();
+    for index in 0..count {
+        // NSArray entries are borrowed. Check nil before retaining and before
+        // passing the +1 Metal device to its foreign owner.
+        let raw: *mut AnyObject = unsafe { objc2::msg_send![&*array, objectAtIndex: index] };
+        if !raw.is_null() {
+            let retained: *mut AnyObject = unsafe { objc2::msg_send![&*raw, retain] };
+            if let Ok(device) = unsafe {
+                initial_allocation(retained, RendererInitStage::Device, "device retain failed")
+            } {
+                devices.push(device);
+            }
+        }
+    }
+    devices
 }
 
 fn new_initial_pipeline(
@@ -2018,6 +2072,34 @@ mod initialization_error_tests {
             .expect("this isolated native Metal fixture requires an available device");
         let result = new_initial_library_with_data(&device, b"owned invalid metallib fixture");
         assert!(matches!(result, Err(error) if error.stage() == RendererInitStage::ShaderLibrary));
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn absent_device_array_is_checked_before_native_messages_or_owners() {
+        assert!(devices_from_array(None).is_empty());
+    }
+    #[test]
+    fn failed_initial_resource_releases_its_non_null_owner() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct OwnedResource(Arc<AtomicUsize>);
+        impl Drop for OwnedResource {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        let drops = Arc::new(AtomicUsize::new(0));
+        let failed = initial_resource_result(Some(OwnedResource(drops.clone())), false, "failure");
+        assert!(matches!(failed, Err(error) if error.stage() == RendererInitStage::Resource));
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+        let owned =
+            initial_resource_result(Some(OwnedResource(drops.clone())), true, "unused").unwrap();
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+        drop(owned);
+        assert_eq!(drops.load(Ordering::SeqCst), 2);
+        for succeeded in [false, true] {
+            assert!(initial_resource_result::<OwnedResource>(None, succeeded, "nil").is_err());
+            assert_eq!(drops.load(Ordering::SeqCst), 2);
+        }
     }
     #[test]
     fn initialization_errors_are_typed_and_bounded() {
