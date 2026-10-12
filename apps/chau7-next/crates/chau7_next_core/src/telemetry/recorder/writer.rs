@@ -35,6 +35,7 @@ pub struct WriterStatus {
 }
 
 type Job = Box<dyn FnOnce(&TelemetryStore) -> Result<(), String> + Send>;
+type WorkerTask = Box<dyn FnOnce() -> WriterStatus + Send>;
 struct Command {
     job: Job,
     bytes: usize,
@@ -59,6 +60,26 @@ impl Writer {
         max_jobs: usize,
         max_bytes: usize,
     ) -> Self {
+        Self::with_spawner(store, max_jobs, max_bytes, |task| {
+            std::thread::Builder::new()
+                .name("next-telemetry-writer".into())
+                .spawn(task)
+        })
+    }
+    #[cfg(test)]
+    pub(super) fn unavailable(store: Arc<TelemetryStore>) -> Self {
+        Self::with_spawner(store, MAX_JOBS, MAX_BYTES, |_| {
+            Err(std::io::Error::other(
+                "owned injected worker creation failure",
+            ))
+        })
+    }
+    fn with_spawner(
+        store: Arc<TelemetryStore>,
+        max_jobs: usize,
+        max_bytes: usize,
+        spawn: impl FnOnce(WorkerTask) -> std::io::Result<JoinHandle<WriterStatus>>,
+    ) -> Self {
         let (sender, receiver) = mpsc::sync_channel::<Command>(max_jobs);
         let state = Arc::new(Mutex::new(State {
             sender: Some(sender),
@@ -68,39 +89,37 @@ impl Writer {
             },
         }));
         let shared = state.clone();
-        let worker = std::thread::Builder::new()
-            .name("next-telemetry-writer".into())
-            .spawn(move || {
-                while let Ok(command) = receiver.recv() {
-                    let mut span = crate::work_profiler::begin(crate::work_profiler::Key::work(
-                        "telemetry_writer",
-                        command.label,
-                        "telemetry",
-                        "telemetry_writer",
-                        crate::work_profiler::Queue::Background,
-                    ));
-                    span.bytes(command.bytes);
-                    span.items(1);
-                    let outcome = (command.job)(&store);
-                    let mut state = shared.lock().unwrap_or_else(|e| e.into_inner());
-                    state.status.pending_bytes =
-                        state.status.pending_bytes.saturating_sub(command.bytes);
-                    state.status.processed = state.status.processed.saturating_add(1);
-                    if let Err(error) = outcome {
-                        state.status.failed = state.status.failed.saturating_add(1);
-                        // SQL failure details remain diagnostic only; status has no
-                        // transcript, command line, or database/profile path.
-                        state.status.last_error = Some("telemetry persistence failed".into());
-                        drop(state);
-                        log::warn!("Telemetry writer {} failed: {error}", command.label);
-                    }
+        let worker = spawn(Box::new(move || {
+            while let Ok(command) = receiver.recv() {
+                let mut span = crate::work_profiler::begin(crate::work_profiler::Key::work(
+                    "telemetry_writer",
+                    command.label,
+                    "telemetry",
+                    "telemetry_writer",
+                    crate::work_profiler::Queue::Background,
+                ));
+                span.bytes(command.bytes);
+                span.items(1);
+                let outcome = (command.job)(&store);
+                let mut state = shared.lock().unwrap_or_else(|e| e.into_inner());
+                state.status.pending_bytes =
+                    state.status.pending_bytes.saturating_sub(command.bytes);
+                state.status.processed = state.status.processed.saturating_add(1);
+                if let Err(error) = outcome {
+                    state.status.failed = state.status.failed.saturating_add(1);
+                    // SQL failure details remain diagnostic only; status has no
+                    // transcript, command line, or database/profile path.
+                    state.status.last_error = Some("telemetry persistence failed".into());
+                    drop(state);
+                    log::warn!("Telemetry writer {} failed: {error}", command.label);
                 }
-                shared
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .status
-                    .clone()
-            });
+            }
+            shared
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .status
+                .clone()
+        }));
         let worker = match worker {
             Ok(worker) => Some(worker),
             Err(_) => {

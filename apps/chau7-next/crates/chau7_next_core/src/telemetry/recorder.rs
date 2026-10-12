@@ -76,7 +76,21 @@ impl TelemetryRecorder {
         initialize: InitializeStore,
     ) -> Self {
         let store = Arc::new(TelemetryStore::pending(path));
-        let recorder = Self::new(store.clone(), providers);
+        let writer = Writer::new(store.clone());
+        Self::with_initialization_writer(store, providers, writer, initialize)
+    }
+    fn with_initialization_writer(
+        store: Arc<TelemetryStore>,
+        providers: Vec<Box<dyn RunContentProvider>>,
+        writer: Writer,
+        initialize: InitializeStore,
+    ) -> Self {
+        let recorder = Self {
+            store: store.clone(),
+            providers: Arc::new(providers),
+            writer,
+            active: Mutex::new(Active::default()),
+        };
         if recorder
             .writer
             .admit(
@@ -637,6 +651,42 @@ mod tests {
             Arc::new(TelemetryStore::in_memory()),
             vec![Box::new(Fixed(content))],
         )
+    }
+
+    #[test]
+    fn unavailable_background_writer_fails_initialization_and_never_admits_or_claims_a_drain() {
+        use super::super::store::StoreReadiness;
+        let directory =
+            std::env::temp_dir().join(format!("next-no-worker-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("owned.db");
+        let store = Arc::new(TelemetryStore::pending(&path));
+        let writer = Writer::unavailable(store.clone());
+        let recorder = TelemetryRecorder::with_initialization_writer(
+            store.clone(),
+            Vec::new(),
+            writer,
+            Box::new(|_| panic!("unavailable writer must never execute initialization")),
+        );
+        assert_eq!(store.readiness(), StoreReadiness::Failed);
+        assert!(store.wait_until_initialized().is_err());
+        assert!(
+            recorder
+                .run_started("owned-tab", "claude", "/owned", None, None)
+                .is_err()
+        );
+        assert!(recorder.flush().is_err());
+        let status = recorder.writer_status();
+        assert!(!status.accepting);
+        assert_eq!(status.accepted, 0);
+        assert_eq!(status.processed, 0);
+        assert_eq!(status.rejected, 3);
+        assert!(status.last_error.is_some());
+        assert!(recorder.shutdown().is_none());
+        assert!(recorder.shutdown().is_none());
+        assert_eq!(store.readiness(), StoreReadiness::Failed);
+        assert!(!directory.exists());
+        store.close().unwrap();
+        assert_eq!(store.readiness(), StoreReadiness::Closed);
     }
 
     #[test]
