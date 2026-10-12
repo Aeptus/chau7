@@ -31,13 +31,16 @@ Last updated 2026-10-12.
 
 ## 3. Status
 
-- Integrated source bc1bf7dd passes 2,962 release workspace tests, strict
-  normal/optional all-target Clippy and 33 macOS fork plus 13 Apple tests.
-  A normal feature-free 7bd54649 package runs the complete software window
-  backend, receives exact synthetic Unicode input through MCP and saves all
-  three owned tabs on graceful quit. Full native software resize/frame
-  acceptance and post-prune telemetry maintenance remain in progress; two
-  inventory rows stay partial. Evidence and limits are in
+- Combined source feb5e199 passes 2,992 release workspace tests (two existing
+  ignored), strict normal/optional all-target Clippy, format, 38 macOS fork
+  and 13 Apple tests, including seven actual Metal comparison cases. The full
+  eight-case Software/Auto native matrix records six passes and two failures:
+  Software editor marked composition and Software Restore deminiaturized
+  reveal. Both Settings cases pass the unchanged 500 ms limit. All eight
+  actual processes/profiles retired; no retries or reinterpretation. A normal
+  feature-free thinLTO build is verified on this source; its new packaged
+  runtime/shutdown acceptance remains pending. Two inventory rows stay partial.
+  Evidence and limits are in
   [RECOVERY-VALIDATION-20261011.md](RECOVERY-VALIDATION-20261011.md).
 - The current-source audit indexes all 652 Swift source files at official main
   `7733b1f0`, appends the current feature delta and reopens changed behaviour.
@@ -71,12 +74,13 @@ Last updated 2026-10-12.
 
 ## 4. Next work, in order
 
-1. Finish actual software window frame/resize progress and the existing four
-   native cases under explicit Software and Auto with unavailable-device
-   injection. Keep actual frame callbacks and unchanged five-second deadlines.
-2. Finish TEL-024 post-prune VACUUM and ordered background telemetry writes,
-   demand-coalesced read snapshots, explicit database close and error-aware
-   shutdown. The approved new-installation policy is implemented and tested:
+1. Resolve the retained native editor/reveal negatives with valid owned
+   AppKit focus/activation and safe window mutation outside GPUI borrows.
+   Repeat all four cases under Software and Auto unavailable-device fallback
+   on one frozen combined artifact; preserve every assertion and deadline.
+2. Verify TEL-024 in the normal signed app: checked background Ready state,
+   ordered writer drain, error-aware clean marker and actual SQLite close.
+   The approved new-installation policy is implemented and tested:
    30 days only for positively fresh profiles; preserve existing zero/custom
    values, configuration and history. Ambiguous/invalid files retain zero.
 3. Settings/snippet/history render getters now consume bounded background
@@ -87,8 +91,9 @@ Last updated 2026-10-12.
    multi-display, provider or full AX interaction. Preserve running apps.
 5. Continue draft PR229. Official `2f089af2` passes Next PR and push
    macOS/Linux/Windows, parity and quality CI. Later integrated writer/startup,
-   editor composition/attachment and software optimization checkpoints require
-   their own combined gates, native acceptance and CI run.
+   editor composition/attachment and software optimization checkpoints now
+   pass combined feb5e199 gates. Two native negatives, final normal runtime
+   verification and their own official CI publication remain open.
 
 ## 5. Approved decisions and retained behavior
 

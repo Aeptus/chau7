@@ -17,7 +17,7 @@ the rows below keep the user-visible effects.
 | ID | Feature | Swift source | Tests | Rust | Status | macOS API |
 |---|---|---|---|---|---|---|
 | PRF-001 | Terminal text and backgrounds drawn on the GPU | `Performance/RustMetalDisplayCoordinator.swift`, `Performance/MetalTerminalRenderer.swift` | | `chau7_next/src/terminal/view.rs` (GPUI `paint_quad`, `shape_line`) | done | Metal |
-| PRF-002 | "Metal Renderer" selects GPU or CPU drawing. Swift retains its CoreGraphics terminal path when Metal initialization fails; Next implements a whole-window software backend and startup fallback, with full native software Settings acceptance still pending | `Settings/Views/ScrollbackPerfSettingsView.swift:65`; `RustBackend/RustTerminalView.swift:335`; `Overlay/OverlayTabsModel+Refresh.swift:181`; `Performance/RustMetalDisplayCoordinator.swift:167` | CPU raster/cache tests; actual styled-text captures; normal signed 7bd54649 Software window/MCP/quit; 1d93cd72 unavailable-device editor and 0cfd5652 Software editor/restore acceptance; actual Settings 500 ms negative retained | chau7_next/src/terminal/cpu_renderer.rs; chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs; vendor/gpui-pre-macos/src/window.rs; vendor/gpui-pre-macos/src/software_renderer/scene.rs | partial | CoreText, Metal |
+| PRF-002 | "Metal Renderer" selects GPU or CPU drawing. Swift retains its CoreGraphics terminal path when Metal initialization fails; Next implements a whole-window software backend and startup fallback, with the complete native Software acceptance still pending editor composition and deminiaturized reveal | `Settings/Views/ScrollbackPerfSettingsView.swift:65`; `RustBackend/RustTerminalView.swift:335`; `Overlay/OverlayTabsModel+Refresh.swift:181`; `Performance/RustMetalDisplayCoordinator.swift:167` | CPU raster/cache tests; actual styled-text captures; normal signed 7bd54649 Software window/MCP/quit; 1d93cd72 unavailable-device editor and 0cfd5652 Software editor/restore acceptance; actual Settings 500 ms negative retained | chau7_next/src/terminal/cpu_renderer.rs; chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs; vendor/gpui-pre-macos/src/window.rs; vendor/gpui-pre-macos/src/software_renderer/scene.rs | partial | CoreText, Metal |
 | PRF-003 | Fallback fonts, double-width/bold/italic glyphs and complete multi-character grapheme clusters with continuation-cell spacing | `Performance/MetalTerminalRenderer.swift`; `RustBackend/RustTerminalView+Rendering.swift` | 17 native GridCopy paint fixtures; isolated macOS CPU/GPU-requested screenshots at e8f32e6014b0 | chau7_next/src/terminal/paint.rs; chau7_next/src/terminal/view.rs | done | CoreText |
 | PRF-004 | Crisp text on Retina and when a window moves between screens with different scale factors | `Performance/RustMetalDisplayCoordinator.swift` (`configureFont`), `RustBackend/RustTerminalView.swift` (`viewDidMoveToWindow`) | | GPUI | done | |
 | PRF-005 | Rendering paced to the display refresh rate (ProMotion 120 Hz), vsync on, three drawables in flight | `Performance/OptimalMetalView.swift` (`configureForLowLatency`), `RustBackend/RustTerminalView.swift` (`displayRefreshInterval`) | | GPUI | done | CAMetalLayer, CVDisplayLink |
@@ -60,9 +60,13 @@ the rows below keep the user-visible effects.
   on graceful quit. Actual native unavailable-device editor acceptance passes
   at `1d93cd72`; explicit Software editor and restore pass at `0cfd5652`,
   including marked-text and stale attachment-guard regression assertions.
-  Settings still exceeds its unchanged 500 ms navigation deadline, including
-  a run without concurrent compilation. Preserve this negative result; the
-  whole native Software and Auto acceptance matrix is not yet complete.
+  Combined feb5e199 now passes both Settings cases at the unchanged 500 ms
+  deadline after preserving an existing same-target scroll deadline and exact
+  no-op positions. All eight cases were attempted without team compilers:
+  six pass; Software editor marked composition and Software Restore
+  deminiaturized reveal fail. The equivalent Auto cases pass on the same
+  artifact, so cause remains unproven. Preserve all prior negative receipts;
+  valid native focus/visibility diagnostics and final acceptance remain open.
   These receipts establish scoped startup/frame/lifecycle behavior, not hot
   GPU-loss recovery or independence from normal WindowServer composition.
 - PRF-003: native macOS acceptance on `e8f32e6014b0` passes colors,

@@ -1,11 +1,13 @@
 # Chau7 Next: genuine non-Metal window backend
 
 Status: implemented startup selection, complete CPU scene/atlas and ordinary
-AppKit presentation at bc1bf7dd. Root tests pass 33 macOS fork and 13 Apple cases.
-A normal feature-free 7bd54649 app starts both window renderers as Software,
-receives exact owned MCP terminal input and quits with session save. Full native
-frame/resize and injected-failure interaction acceptance remain pending; this
-row is not done. Original design below is retained as the acceptance contract.
+AppKit presentation. Combined feb5e199 passes 38 macOS fork and 13 Apple cases,
+including seven actual Metal comparisons. Its eight-case Software/Auto native
+matrix records six passes and two retained Software editor/reveal failures;
+both Settings cases pass their unchanged 500 ms limit. A normal feature-free
+7bd54649 app starts Software, receives owned MCP input and saves sessions on
+quit. A fresh feb5e199 normal build is verified; final packaged runtime and
+native focus/reveal acceptance remain pending. This row is not done. Original design below is retained as the acceptance contract.
 See [recovery validation](RECOVERY-VALIDATION-20261011.md).
 Application reviewed: 66753ed1c99a879881fbf7c9f65d2ec0ede59197.
 Locked engine: gpui-kit 0.7.1; gpui-pre family 0.3.8, Zed snapshot 279fe070bb389b79652e52065b2f001edcc0b11b.

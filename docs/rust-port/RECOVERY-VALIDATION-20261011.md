@@ -727,3 +727,70 @@ the original 500 ms limit at 529,208 us over seven frames (26,772 us latest
 CPU submission, zero failed frames). A separate Restore scenario fails its
 application activation deadline. These distinct negatives remain preserved;
 neither permits promoting PRF-002. The eight-case matrix remains incomplete.
+
+
+## 2026-10-12: exact combined gates and eight-case native matrix
+
+Frozen clean source `feb5e1991bd24471e16dcd6583833512aabd3ada` passes
+2,992 release workspace tests, zero failures and two existing ignored tests:
+569 app, three public GPUI integration and 2,420 core tests. Normal and optional
+strict all-target Clippy, format and diff checks pass. These normal gates use
+thinLTO/codegen16. Fork gates pass 38 macOS and 13 Apple cases, including seven
+actual Metal comparisons. All 26 modification chains/current hashes and 181
+unlisted originals verify against the unchanged pinned upstream manifest.
+Seven provenance tests pass; duplication is 0.907471% below the unchanged 2%.
+Receipts use the `chau7-root-combined-feb5e199-*` prefix.
+
+The Settings correction `273101d3`, integrated at `feb5e199`, preserves the
+original deadline for repeated identical targets and skips only exact already
+applied positions. Both actual Settings cases pass 99/99 visible targets and
+28 summaries with the original 500 ms limit. The Restore activation diagnostic
+`079ba0a1` is integrated at `a0a74b09`; the independent review also clears the
+static numeric Aethyme capture diagnostics without changing capture or ACK.
+
+The complete matrix attempts all eight independent cases on one verified
+optional artifact, SHA256
+`a39b514981b7a19307f8a7e7696f5268ed33528aa195c5aee0d82fd76d2a6458`:
+
+| Case | Software | Auto unavailable-device fallback |
+|---|---|---|
+| Editor | FAIL: marked metadata gone after actual repaint; text intact | PASS |
+| Settings | PASS, original 500 ms | PASS, original 500 ms |
+| Restore | FAIL: deminiaturized surface reveal; earlier activation passed | PASS |
+| Cache | PASS | PASS |
+
+There are no retries and no known team compiler during the matrix. All eight
+actual application PIDs are verified gone, all owned profiles deleted, and both
+signed Restore bundles removed. Failure receipts leave resources-closed null
+when not emitted. A LaunchServices waiter exit0 is not an application exit0;
+that application exit field remains null. Six positives do not close PRF-002.
+The matrix and every raw outcome remain in
+`agent8-software-window-20261012-4icg291m/combined-feb5e199-native-matrix-20261012/`.
+
+Readonly review finds no proven production cause yet. The editor fixture has no
+active/key setup assertion before native composition. Restore invokes native
+window mutations within an App borrow and does not establish activation after
+minimizing the last window. Valid owned focus, safe foreground native mutation
+and fixed boolean/numeric observations are the next correction; assertions,
+original real-frame counts, five-second and 500 ms limits remain unchanged.
+
+Both exact-source builds complete: normal three-bin feature-free thinLTO,
+and optional native runner in a separate LTOoff/codegen16 target. The optional
+runner's Cargo artifact and matching dependency hash/fingerprint are verified
+before launch. This runner is not a normal performance benchmark. The new normal
+app has not yet been packaged/launched; TEL-024 still needs normal Ready/drain,
+clean marker and readonly post-close SQLite integrity evidence.
+
+The official baseline recheck at 09:23 UTC still reports Swift main `7733b1f0`
+and existing draft PR229 at `2f089af2`. Earlier green CI applies to that exact
+published source, not these later checkpoints.
+
+The preserved older `79748ee9` app's readonly refresh at 08:35 UTC verifies
+its exact PID3607, executable and source before sampling. A bounded 256 KiB log
+tail has 2,035 lines, 304 warnings (all incomplete capture) and zero errors.
+Process CPU is 3.015911% of one logical CPU, RSS 31,064,064 bytes and main delay
+3.137875 ms; the watchdog is healthy with zero stalls/recoveries. Compilation
+runs concurrently, so this observation is not a benchmark or proof the T7 shell
+is ready. The initial sandbox socket EPERM is retained; the same authorized
+readonly probe succeeds with filesystem access. Only numeric summary
+`chau7-old797-readonly-0834-summary.json` is exported, not raw log lines.
