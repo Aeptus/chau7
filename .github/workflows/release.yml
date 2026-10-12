@@ -28,9 +28,9 @@ jobs:
         run: sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 26.11.1
       - name: Enable pnpm
-        run: corepack enable
+        run: npm install --global --allow-scripts=pnpm pnpm@12.11.2
       - name: Validate release quality policy
         run: pnpm quality:cloud-parity --include=quality-cloud-parity-required-workflows
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7

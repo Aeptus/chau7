@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Maintenance
 
 - Upgrade owned Chau7 Next SQLite, SHA-256, Base64 and TOML dependencies together with the four Rust helpers, preserving configuration serialization, canonical hashes, checked integer conversions and the terminal C header. Transfer pending PTY queues without collecting into a second vector; the GPUI family upgrade is coordinated separately.
+- Align local and CI quality tools with Node 26.11.1, Python 3.15, pnpm 12 and current formatter/audit releases. Retain the provenance-checked duplication gate and its 2% threshold; update local Swift helper comments for formatter compatibility.
+- Update the relay Workers, Vite and Vitest 5 cohort with explicit supported Node versions and a filesystem-cache compatibility setting for worktrees containing spaces. Refresh Go helper dependencies while retaining the SQLite driver's required libc version.
 
 ### Added
 

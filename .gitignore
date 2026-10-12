@@ -35,6 +35,8 @@ apps/chau7-macos/rust/chau7_parse/target/
 apps/chau7-macos/rust/chau7_terminal/target/
 apps/chau7-ios/BuildArtifacts/
 apps/chau7-macos/Libraries/
+# pnpm quality tooling creates this local workspace cache.
+/node_modules/
 services/chau7-relay/node_modules/
 services/chau7-issues/node_modules/
 services/chau7-remote/chau7-remote
