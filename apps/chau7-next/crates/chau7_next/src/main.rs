@@ -46,6 +46,7 @@ mod seams;
 mod session_store;
 mod settings;
 mod settings_window;
+mod shutdown;
 mod snippets;
 mod status_bar;
 mod tab_bar;
@@ -272,6 +273,7 @@ fn main() {
 
         cx.on_app_quit(move |cx| {
             let instance = instance.clone();
+            let mut progress = shutdown::Progress::new();
             memory_pressure::stop(cx);
             permission_center::stop(cx);
             save_session(cx, true);
@@ -293,57 +295,71 @@ fn main() {
             let performance_worker = performance::stop(cx);
             let hang_worker = hang_watchdog::stop(cx);
             let worker = observability::shutdown(cx);
+            progress.complete(shutdown::Phase::Producers, true);
             cx.background_spawn(async move {
-                if let Some(worker) = performance_worker {
-                    let _ = worker.join();
-                }
-                if let Some(worker) = hang_worker {
-                    let _ = worker.join();
-                }
-                if let Some(worker) = worker {
-                    let _ = worker.join();
-                }
-                if let Some(worker) = restore_worker {
-                    match worker.join() {
-                        Ok(stats) if stats.failed > 0 => log::warn!(
+                // Stop and admission-close calls precede this barrier. The actual
+                // thread joins and SQLite close run on this background task.
+                progress.complete(
+                    shutdown::Phase::Performance,
+                    shutdown::join_worker(performance_worker).is_ok(),
+                );
+                progress.complete(
+                    shutdown::Phase::Watchdog,
+                    shutdown::join_worker(hang_worker).is_ok(),
+                );
+                progress.complete(
+                    shutdown::Phase::Observability,
+                    shutdown::join_worker(worker).is_ok(),
+                );
+                let restore_drained = match shutdown::join_worker(restore_worker) {
+                    Ok(Some(stats)) if stats.failed > 0 => {
+                        log::warn!(
                             "Restore writer completed with {} failed captures",
                             stats.failed
-                        ),
-                        Err(_) => log::error!("Restore writer panicked during shutdown"),
-                        _ => (),
+                        );
+                        false
                     }
-                }
-                if let Some(worker) = cto_worker {
-                    let _ = worker.join();
-                }
+                    Err(_) => false,
+                    _ => true,
+                };
+                progress.complete(shutdown::Phase::Restore, restore_drained);
+                progress.complete(
+                    shutdown::Phase::Cto,
+                    shutdown::join_worker(cto_worker).is_ok(),
+                );
                 let telemetry_closed = telemetry_writer
                     .map(|writer| writer.finish())
                     .unwrap_or(Ok(()));
                 if let Err(error) = &telemetry_closed {
                     log::warn!("Telemetry shutdown incomplete: {error}");
                 }
-                if let Some(history_writer) = history_writer {
-                    match history_writer.finish() {
-                        Ok(outcome) if outcome.failed > 0 => log::warn!(
+                progress.complete(shutdown::Phase::Telemetry, telemetry_closed.is_ok());
+                let history_drained = match history_writer.map(|writer| writer.finish()) {
+                    Some(Ok(outcome)) => {
+                        log::debug!(
                             "History writer drained {} accepted records with {} failed inserts",
                             outcome.processed,
                             outcome.failed
-                        ),
-                        Ok(outcome) => log::debug!(
-                            "History writer drained {} accepted records with {} failed inserts",
-                            outcome.processed,
-                            outcome.failed
-                        ),
-                        Err(error) => log::error!("History shutdown failed: {error}"),
+                        );
+                        outcome.failed == 0
                     }
-                }
-                incidents::shutdown();
-                if telemetry_closed.is_ok() {
-                    if let Err(error) = instance.mark_clean() {
+                    Some(Err(error)) => {
+                        log::error!("History shutdown failed: {error}");
+                        false
+                    }
+                    None => true,
+                };
+                progress.complete(shutdown::Phase::History, history_drained);
+                let incidents_closed = incidents::shutdown();
+                progress.complete(shutdown::Phase::Incidents, incidents_closed.is_ok());
+                if progress.can_mark_clean() {
+                    let marked_clean = instance.mark_clean();
+                    if let Err(error) = &marked_clean {
                         log::warn!("Cannot mark clean termination: {error}");
                     }
+                    progress.complete(shutdown::Phase::CleanMarker, marked_clean.is_ok());
                 } else {
-                    log::warn!("Clean shutdown marker withheld after telemetry failure");
+                    log::warn!("Clean shutdown marker withheld after an incomplete shutdown phase");
                 }
                 logging::flush();
             })

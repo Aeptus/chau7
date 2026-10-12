@@ -156,7 +156,7 @@ pub fn diagnostics() -> serde_json::Value {
     serde_json::json!({"available":SERVICE.get().is_some_and(|s|s.alive.load(Ordering::Acquire)),"queue_capacity":CAPACITY,"dropped_observations":SERVICE.get().map(|s|s.dropped.load(Ordering::Relaxed)).unwrap_or(0),"max_log_bytes":chau7_next_core::incidents::MAX_LOG_BYTES,"max_entries":chau7_next_core::incidents::MAX_ENTRIES,"recent_incidents":recent()})
 }
 /// Called after diagnostic producers have joined, on the quit background worker.
-pub fn shutdown() {
+pub fn shutdown() -> Result<(), &'static str> {
     if let Some(service) = SERVICE.get() {
         service
             .sender
@@ -169,7 +169,10 @@ pub fn shutdown() {
             .unwrap_or_else(|e| e.into_inner())
             .take()
         {
-            let _ = worker.join();
+            worker
+                .join()
+                .map_err(|_| "Incident worker panicked during shutdown")?;
         }
     }
+    Ok(())
 }
