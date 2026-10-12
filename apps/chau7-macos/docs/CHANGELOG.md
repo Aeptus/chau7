@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 
+- Share compatible Next app and embedded Rust helper artifacts in one private worktree target cache by default, while preserving explicit cache overrides and artifact selection. Speed measurements remain pending.
+
 - Make optimized Next builds default to LTO off, 64 codegen units and local incremental caching, with an explicit diagnostic mode for symbols and verbose logs. Apply matching settings to the app and Rust helpers, verify all seven signed package artifacts and publish source/compiler/hash evidence. Select installed CLI binaries from actual Cargo artifacts to honor configured targets.
 
 - Install the official Rust LLVM tools component with both pinned toolchains and Next CI, so stripping native artifacts uses the compiler-matched LLVM runtime.

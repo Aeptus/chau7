@@ -81,10 +81,9 @@ done
 OPTIM_DIR="$ROOT/../chau7-macos/rust"
 HELPER_CARGO_COMMAND=()
 if [ -d "$OPTIM_DIR" ]; then
-  # Keep the default helper cache under this worktree. Explicit helper-cache
-  # selection wins; otherwise an explicit CARGO_TARGET_DIR applies to both
-  # Rust workspaces.
-  OPTIM_TARGET_DIR="${OPTIM_TARGET_DIR:-${CARGO_TARGET_DIR:-$ROOT/target/embedded-rust}}"
+  # Reuse the app's private per-worktree target cache by default. Explicit
+  # helper-cache selection wins; otherwise CARGO_TARGET_DIR applies to both.
+  OPTIM_TARGET_DIR="${OPTIM_TARGET_DIR:-${CARGO_TARGET_DIR:-$ROOT/target}}"
   case "$OPTIM_TARGET_DIR" in
     /*) ;;
     *) OPTIM_TARGET_DIR="$ROOT/$OPTIM_TARGET_DIR" ;;

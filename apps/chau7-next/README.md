@@ -46,10 +46,12 @@ incremental compilation for repeat local builds. The higher codegen-unit count
 favors build parallelism and can trade away some runtime optimization; no timing
 or runtime-performance claim is made without measurements. CI's explicit
 `CARGO_INCREMENTAL=0` remains in force. Both Rust workspaces use the same
-settings. Shared Rust helpers default to `target/embedded-rust` inside this
-worktree so CI can cache them with the app. `CARGO_BUILD_JOBS` passes through
-unchanged if you want to set a worker limit. Keep each writable `CARGO_TARGET_DIR`
-and `OPTIM_TARGET_DIR` private to one worktree.
+settings and share this worktree's `target` directory by default, allowing
+compatible host and build dependencies to reuse artifacts. Set
+`OPTIM_TARGET_DIR` to give the helpers a separate cache; an explicit
+`CARGO_TARGET_DIR` selects the cache for both workspaces. `CARGO_BUILD_JOBS`
+passes through unchanged if you want to set a worker limit. Keep each writable
+`CARGO_TARGET_DIR` and `OPTIM_TARGET_DIR` private to one worktree.
 
 If the fast build fails, request a single symbol-rich release rebuild:
 

@@ -365,23 +365,23 @@ assert pathlib.Path(actual_helper_target).resolve() == pathlib.Path(helper_targe
 PY
 }
 
-# Default fast packaging uses per-worktree caches and hashes bytes after the
-# fake codesign command has changed every executable.
+# Default fast packaging shares the per-worktree cache across Rust workspaces
+# and hashes bytes after fake codesign changes every executable.
 : > "$FAKE_STATE/go-args.log"
 fast_paths="$(run_fake_bundle default fast '' '' 0 '')"
 fast_bundle="$(printf '%s\n' "$fast_paths" | sed -n '1p')"
 fast_manifest="$(printf '%s\n' "$fast_paths" | sed -n '2p')"
-validate_bundle "$fast_bundle" "$fast_manifest" fast "$FIXTURE_APP/target/embedded-rust" 0 ''
+validate_bundle "$fast_bundle" "$fast_manifest" fast "$FIXTURE_APP/target" 0 ''
 assert_file_contains "$FAKE_STATE/go-args.log" '-s -w'
 [[ -f "$FIXTURE_APP/target/aarch64-apple-darwin/release/chau7-next" ]] || fail 'default main cache was not used'
-[[ -f "$FIXTURE_APP/target/embedded-rust/aarch64-apple-darwin/release/chau7-optim" ]] || fail 'default helper cache was not used'
+[[ -f "$FIXTURE_APP/target/aarch64-apple-darwin/release/chau7-optim" ]] || fail 'default shared helper cache was not used'
 
 # Explicit relative cache paths resolve from the app workspace. OPTIM_TARGET_DIR
 # wins for shared helpers even with CARGO_TARGET_DIR set; a stale default helper
 # is present to ensure the bundle uses the output from the selected cache.
 custom_main="cache/main-target"
 custom_helpers="cache/helper-target"
-stale_helpers="$FIXTURE_HELPERS/target/aarch64-apple-darwin/release"
+stale_helpers="$FIXTURE_APP/target/aarch64-apple-darwin/release"
 mkdir -p "$stale_helpers"
 printf 'stale-helper\n' > "$stale_helpers/chau7-optim"
 chmod 755 "$stale_helpers/chau7-optim"

@@ -17,10 +17,11 @@ one symbol-rich rebuild with `BUILD_MODE=diagnostic ./scripts/bundle-macos.sh`;
 there is no automatic second build. `CARGO_BUILD_VERBOSE=1 BUILD_LOG=target/logs/fast.log`
 adds verbose Cargo commands and records their output.
 
-The output is target/bundle/Chau7 Next.app. CARGO_TARGET_DIR and OUT_DIR may
-select a private per-worktree cache and output location; OPTIM_TARGET_DIR and
-BUILD_METADATA_DIR override the shared-helper cache and build-evidence output.
-An explicit OPTIM_TARGET_DIR is also passed to Cargo for the helper build, so
+The output is target/bundle/Chau7 Next.app. Both Rust workspaces share this
+worktree's target directory by default. An explicit CARGO_TARGET_DIR selects
+the cache for both workspaces; OPTIM_TARGET_DIR gives helpers a separate cache.
+OUT_DIR selects the output location, and BUILD_METADATA_DIR changes the
+build-evidence output. The selected helper cache is passed to Cargo, so
 packaging cannot silently copy an older helper from another cache.
 Do not share writable Cargo target directories across worktrees. Set
 CARGO_BUILD_JOBS explicitly only when a worker limit is needed; otherwise Cargo
