@@ -11,6 +11,31 @@
 
 use log::{debug, trace, warn};
 
+/// Keep Kitty's strict padded STANDARD format. The new engine detects AVX2
+/// or NEON once and uses its scalar backend when the running CPU lacks it.
+/// Other target architectures retain the ordinary scalar engine.
+fn decode_kitty_base64(payload: &[u8]) -> Result<Vec<u8>, base64::DecodeError> {
+    use base64::Engine;
+    #[cfg(any(
+        target_arch = "x86_64",
+        all(target_arch = "aarch64", target_feature = "neon")
+    ))]
+    {
+        static ENGINE: std::sync::LazyLock<base64::engine::simd::Simd> =
+            std::sync::LazyLock::new(|| {
+                base64::engine::simd::Simd::standard(base64::engine::general_purpose::PAD)
+            });
+        ENGINE.decode(payload)
+    }
+    #[cfg(not(any(
+        target_arch = "x86_64",
+        all(target_arch = "aarch64", target_feature = "neon")
+    )))]
+    {
+        base64::engine::general_purpose::STANDARD.decode(payload)
+    }
+}
+
 // ============================================================================
 // Public Types
 // ============================================================================
@@ -1084,8 +1109,7 @@ impl KittyAccumulator {
         }
 
         // Decode base64 payload
-        use base64::Engine;
-        let raw = match base64::engine::general_purpose::STANDARD.decode(&self.payload) {
+        let raw = match decode_kitty_base64(&self.payload) {
             Ok(data) => data,
             Err(e) => {
                 warn!("Kitty: base64 decode failed: {}", e);
@@ -1297,6 +1321,62 @@ impl ImageStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kitty_base64_engine_keeps_exact_scalar_bytes_and_errors() {
+        use base64::Engine;
+        let scalar = base64::engine::general_purpose::STANDARD;
+        // Include short tails and both SIMD block boundaries, plus a payload
+        // large enough to enter the vector path rather than only scalar tails.
+        for length in (0..=160).chain([1023, 1024, 1025, 4095, 4096, 4097]) {
+            let bytes: Vec<u8> = (0..length).map(|index| (index % 256) as u8).collect();
+            let encoded = scalar.encode(&bytes);
+            assert_eq!(decode_kitty_base64(encoded.as_bytes()).unwrap(), bytes);
+            for invalid in [b'?', 0, b'\n', 0xff] {
+                let mut malformed = encoded.as_bytes().to_vec();
+                malformed.push(invalid);
+                assert_eq!(decode_kitty_base64(&malformed), scalar.decode(&malformed));
+                if !encoded.is_empty() {
+                    malformed = encoded.as_bytes().to_vec();
+                    let index = malformed.len() / 2;
+                    malformed[index] = invalid;
+                    assert_eq!(decode_kitty_base64(&malformed), scalar.decode(&malformed));
+                }
+            }
+        }
+        for malformed in [
+            "Zg",
+            "Zh==",
+            "Zg===",
+            "Zg==\n",
+            "Zg==A",
+            "_w==",
+            "Zg==\0",
+            "=AAA",
+            "A=AA",
+            "AA=A",
+            "AAA=AAAA",
+            "日本語",
+            "é===",
+        ] {
+            assert_eq!(
+                decode_kitty_base64(malformed.as_bytes()),
+                scalar.decode(malformed)
+            );
+            assert!(decode_kitty_base64(malformed.as_bytes()).is_err());
+        }
+    }
+
+    #[test]
+    fn kitty_base64_pixels_are_owned_after_input_is_released() {
+        use base64::Engine;
+        let expected: Vec<u8> = (0..=255).collect();
+        let decoded = {
+            let payload = base64::engine::general_purpose::STANDARD.encode(&expected);
+            decode_kitty_base64(payload.as_bytes()).unwrap()
+        };
+        assert_eq!(decoded, expected);
+    }
 
     #[test]
     fn test_passthrough_normal_data() {
