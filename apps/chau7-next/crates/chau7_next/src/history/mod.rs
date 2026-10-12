@@ -434,13 +434,19 @@ mod tests {
         );
         assert_eq!(store.lock().statistics().unwrap().0, 0);
         let weak = Arc::downgrade(&store);
-        drop(service);
+        let pending = service.into_shutdown();
         drop(store);
-        let started = std::time::Instant::now();
-        while weak.upgrade().is_some() {
-            assert!(started.elapsed() < std::time::Duration::from_secs(5));
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        // Last-Arc disappearance can precede SQLite's destructor completing.
+        // Join the actual writer and close its observer/store on a worker
+        // before removing files, including on Windows with strict file locks.
+        let caller = std::thread::current().id();
+        let (outcome, worker) =
+            std::thread::spawn(move || (pending.finish().unwrap(), std::thread::current().id()))
+                .join()
+                .unwrap();
+        assert_ne!(caller, worker);
+        assert_eq!((outcome.processed, outcome.failed), (1, 0));
+        assert!(weak.upgrade().is_none());
         std::fs::remove_dir_all(root.home()).unwrap();
     }
 
