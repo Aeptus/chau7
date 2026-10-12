@@ -371,3 +371,426 @@ Official c52a14ba macOS/Linux/Windows CI succeeds for both PR38196961269 and
 push38196958433, verifying the later Linux checkpoint without proving the old
 failure cause. Newer source CI is separately tracked. Local evidence prefixes:
 native-dee8163a-*, source-safe667-*, normal-safe667-* in the recovery directory.
+
+## Native Settings language matrix (2026-10-12)
+
+Agent source `28b3dd9a6937db206b3500eeacf8a7d35f70520b`, integrated by
+root `a53f6bf4`, passes four actual owned AppKit/GPUI Settings windows:
+English, French, Arabic and System Default. All use binary SHA256
+`8bbfae8adef9ba9725430a8c8e9bc51aabbbfe442029a5a51c8d950a882fe056`.
+Each case proves 99/99 actual target rectangles visible, all 28 grouped
+summaries/114 cards, three InputState search queries plus unmatched/empty
+queries, bounded retry and actual animation/highlight frames. Arabic proves
+the sidebar on the right and detail on the left through native prepaint bounds.
+System Default remains selected and resolves to English from the actual
+read-only macOS preferred languages `[en-US, fr-FR]`; no OS language changes.
+
+French and Arabic queries use source catalog titles. Restored Scrollback uses
+the same English fallback as the current Swift catalog; this is recorded
+explicitly rather than counted as a translated title. The earlier French
+`1cc745dada19` negative fixture is retained: its sidebar test-support ID was
+not registered. The follow-up only exposes that ID for test/native-fixture
+builds; it adds no style/layout changes and removes no assertion.
+
+All four processes exit successfully, close their owned resources and remove
+their fresh profiles. Evidence: `native-settings-localized-matrix-28b3dd9a6937-20261012-053732.json`
+and its four referenced JSON files/logs in the recovery evidence directory.
+This proves native geometry and constructed widget events. Physical input,
+pixel acceptance and full accessibility acceptance remain separate hand tests.
+Agent-source release tests pass (505 app + 2,399 core, two existing ignored),
+strict Clippy with default and optional native features and formatting pass.
+These are exact agent-source checks; combined root checks follow integration.
+
+## Integrated restore clock regression (2026-10-12)
+
+Official3c4caf73 has mixed CI results: Next push38199570549 passes macOS,
+Linux and Windows; PR38199574152 fails one macOS restore test while its Linux
+and Windows jobs pass. The failing parked-metadata assertion used real
+Instant time alongside virtual executor timers, so an assertion intended
+before450ms could run after450ms. Agent `aec3542c482b`, integrated as root
+`fccea88e6b49b8ab58c3dc3100577dc29ca155a8`, uses the same executor monotonic
+clock for selection timestamps and timer deadlines, including production.
+Profiler wall time is unchanged. The real-PTY regression retains its exact
+resume bytes/once-only assertions and adds delayed dispatch: stale at449ms
+before/after draining, metadata admitted at450ms with zero parked PTYs.
+No retry, extra sleep, skipped assertion or relaxed gate is introduced.
+
+Exact combined root source passes 2,908 release workspace tests (509 app and
+2,399 core), with two pre-existing ignored tests, strict release all-target
+Clippy for default and optional native builds, and formatting. All three
+actual owned native cases pass using original binary SHA256
+`8225ccc549738a290f439815caca51e2af38780fd265716b58bd371889c7935a`.
+Restore PID76026 is admitted at460ms against450ms, retains two exact resume
+prefills without terminators or duplicates, starts no transient/parked PTYs
+and closes all five owned PTYs. Settings PID81839 retains99/99 visible
+targets/28 summaries/114 cards/five queries. Editor PID1645 retains native
+composition/undo/redo/save and owned-surface disposal. All actual PIDs are
+verified gone and owned profiles/resources are removed/closed. The restore
+application exit code remains unknown; its LaunchServices waiter exits0.
+The existing one finalLF history difference remains explicitly recorded.
+Evidence prefixes: `native-fccea88e6-*` and `source-fccea88e6-*`; original
+macOS CI negative remains `ci-3c4-macos-pr-failed.log`.
+
+Quality38199574215 runs all affected/full-suite/staged gates successfully,
+then fails its check that staged gates did not rewrite source. Ruff reformats
+`apps/chau7-next/scripts/native-parity.py`; this is a separate format-only
+correction and must be verified in a later official CI run.
+
+The proposed three GPUI forks have a separate independent provenance audit:
+all195 original files/9,848,773 bytes match their manifest SHA256/length and
+the locked local registry byte for byte. The two subsequent normalization
+changes have matching before/after hashes and preserve non-whitespace bytes.
+This verifies provenance only; it is not software-backend acceptance.
+
+## Quality correction and measured persistence integration (2026-10-12)
+
+Official7a13ed78 passes quality run38201979320 and Next PR run38201979374,
+including macOS/Linux/Windows and macOS packaging. The formatter-only follow-up
+therefore resolves the earlier staged-source-rewrite failure without changing
+assertions or gates. Swift main remains7733b1f0c4440c0193915b036c38d5b83f31a1b3
+when checked again on2026-10-12.
+
+Root45146bad validates the Aethyme incomplete-capture backoff and static
+subprocess wall-time instrumentation:10 focused tests and2,914 release workspace
+tests (515 app +2,399 core; two existing ignored), strict default and optional
+all-target Clippy, formatting and diff checks pass. Independent adapter review
+also passes. These tests use owned fake CLIs; no existing app, provider or real
+broker delivery was changed by testing.
+
+Agent cache checkpoint07e5752b7309896faaf87cd727d4e9364a259661 has real native
+acceptance: actual PID13069, binary SHA256
+a8f7a720219b91d0125f6d90ebd1273e41375ad9dfd8027d3102d147311a53cd,
+exit0 and verified removed owned profile/closed resources. Three actual Settings
+pages paint, real FSEvents observes valid/invalid/valid and a revision-fenced
+rename, real history writer insert/clear changes held statistics, a quiescent
+missing-primary error preserves last success and recovers, snippet read errors
+show Unknown and recover, and close/reopen observes exactly two snippets.
+Central cleanup waits for monitor/read/write completion and final SQLite close
+before deleting the owned profile. No injected cache values or ordinary provider
+history initialization. Source integrated as5fe39a846; combined checks follow.
+Evidence: `next-native-cache-20261012-062859.json` and its stdout/stderr.
+
+## Integrated cache and persistence acceptance (2026-10-12)
+
+Combined Rust source5fe39a846 passes2,934 release workspace tests (533 app,
+2,401 core; two existing ignored), strict default and optional-native all-target
+Clippy and formatting. Subsequent runner/document changes leave Rust sources
+unchanged. Exact source424cd1d2a3c5beecb160c69587fd6065e5f20f9d passes all four
+native cases with original binary SHA256
+0243aec3f21dc4e87cd607712408f446813100c894c42bcb0aa3a6e01c71041b.
+Restore actual PID80059 uses ordinary LaunchServices; settings PID82017,
+editor PID84342 and cache PID84361 exit0. All four real PIDs are verified gone,
+profiles removed and resources closed. Restore app exit code remains unknown,
+with the launcher separately exiting0. Source stays clean/unchanged throughout.
+Evidence prefixes `source-5fe39-*` and `native-424cd1d2-*` retain complete receipts.
+The runner now includes the cache in `--case all` and uses the repository's
+explicit `scripts/ruff.toml` configuration, checked idempotent.
+
+Fresh bounded read-only inspection of the unchanged old79748ee9 app at04:35UTC
+finds305 warnings, including301 incomplete Aethyme captures, and zero error
+lines in the trailing256KiB window. No arbitrary log lines are exported.
+The separate performance capture reports PID3607,72,302,592 resident bytes,
+5.314% of one logical CPU, healthy watchdog and zero stalls/recoveries. These
+are scoped observations of the old T7-consent-waiting app, not a benchmark or
+new-source acceptance. The cause of incomplete CLI capture is unproven.
+Evidence: `chau7-old797-readonly-20261012-summary.json`.
+
+Independent final GPUI prerequisite-ledger audit at2e2179b0627e verifies all
+four modified package paths, original/current SHA256 and complete before/after
+change chains. Provenance acceptance remains separate from software rendering.
+Evidence: `chau7-gpui-2e-ledger-root-audit.json`.
+
+## Integrated shutdown, acknowledgement and Windows correction (2026-10-12)
+
+Exact root1814234842f6e6d6d14a0ddb9b1ef8f1016ee13a passes2,947 release
+workspace tests (544 app,2 public GPUI prerequisite integration, 2,401 core;
+two existing ignored), strict default and optional-native all-target Clippy,
+formatting and diff checks. This integrates normal history shutdown/drain,
+nonblocking descriptor-checked snapshot reads, the bounded Aethyme acceptance
+ledger and a Windows test cleanup correction. Focused fake-CLI tests retain
+accepted prompts across incomplete completion and changed-generation reclaim;
+FIFO tests use producer-free pipes and a deterministic file-to-FIFO replacement.
+No real provider, paired device or existing app/profile was changed in testing.
+
+Officialc514f379 passes quality run38204650284 and Next macOS/Linux jobs in
+PR run38204650295 and push run38204646194. Both Next runs fail their Windows
+history observer test while deleting an owned SQLite folder. The test previously
+waited for Weak disappearance rather than completed destruction. The integrated
+039265a78665 test-only change joins the actual writer on a background thread,
+keeps both outside-store-lock observer assertions, and asserts processed1/failed0
+before deletion. Actual Windows confirmation is pending a later official run.
+
+The provenance-aware duplication check excludes only191 byte-identical locked
+upstream originals, verified by pinned manifest SHA256, regular ancestors and
+file hashes. Modified originals and new sources remain scanned at the unchanged
+2% threshold. Seven fail-closed regressions pass; the actual root181 scan reports
+0.90% duplicated lines. No blanket vendor ignore or threshold increase.
+
+The full local JavaScript quality suite remains negative: first run110/111,
+second109/111, with unchanged Swift package-graph tests timing out at120seconds.
+All four tests pass in an isolated invocation. An owned manifest-process sample
+shows a CoreServices bootstrap wait during Foundation directory enumeration;
+it does not establish a TCC, working-directory or source-code cause. No test,
+gate, timeout, OS permission or Swift manifest was changed to conceal this.
+Both failures, the isolated success and the owned process sample are retained.
+
+The earlier rootd0e12e54b prerequisite source passes2,936 release workspace tests
+and8 actual Apple initialization/ownership tests. These validate nullable initial
+Metal device/library/pipeline resources, not a usable software window. Original
+Cocoa deprecation warnings and the missing precompiled-Metal-toolchain result
+remain visible; no component installation or warning suppression was added.
+
+After the user reports granting removable-volume access, bounded read-only
+inspection of the old797 app at05:10UTC still finds347 warnings,343 incomplete
+captures and zero errors in the trailing256KiB window. Its separate performance
+capture reports PID3607,79,233,024 resident bytes,6.814% of one logical CPU,
+healthy watchdog and zero stalls/recoveries. Permission delivery and restored
+terminal readiness are unproven; this is neither a benchmark nor new-source
+acceptance. Only bounded numeric summaries are retained for this observation.
+
+Evidence: `source-181423-*`, `source-d0e12-*`, the named local quality/test/sample
+logs, `chau7-ci-c514-next-failed.log` and
+`chau7-old797-after-volume-consent-summary.json` in the private evidence folder.
+
+## Integrated CPU scene prerequisites, not window acceptance (2026-10-12)
+
+Exact rootbd6269459be60aaf88147dec13dd849b06e93417 passes2,948 release
+workspace tests (544 app,3 public GPUI integration, 2,401 core; two existing
+ignored), strict default and optional-native all-target Clippy, formatting and
+diff checks. Separate actual platform tests pass15 software renderer cases and
+13 Apple cases on the owned native target with release LTO disabled. These cover
+checked CPU atlas/frame/path storage, primitive families, actual CoreVideo read
+lease release, transformed sprite pixels, retained CGImage/ordinary CALayer
+ownership, and actual Metal initial viewport/pool/atlas preparation. Source stays
+clean and unchanged during all checks. The17-file current modification ledger
+and all before/after hash chains pass independent root verification. Actual
+duplication scan remains0.90% with188 byte-identical originals excluded; every
+modified/new renderer source stays eligible at the unchanged2% limit.
+
+The independent scene/resource/presenter reviews find no confirmed ownership or
+rendering blocker. Two descriptions require correction before diagnostics are
+exposed: image channel conversion remains premultiplied, and CALayer contents
+updates measure CPU submission, not completed OS presentation. The Metal alias
+is still selected at this checkpoint. These are staged prerequisites and do not
+close PRF-002 or prove startup/usable windows without Metal.
+
+The next actual seven-family CPU/Metal comparator finds a sprite sampling
+mismatch in the staged agent implementation: separate CPU texture edge clamping
+produces255 where the packed Metal atlas produces224. A matching packed CPU
+allocator corrects that actual comparison to mean/max byte error0 in the agent
+worktree; its checkpoint, integration and full native window acceptance remain
+pending. No tolerance was widened. The initial non-IOSurface video fixture
+constraint and comparator negative are preserved separately.
+
+Normal history shutdown releases writer-owned references after the actual join;
+other live readers can retain the store until their own teardown. The isolated
+observer test drops its separate reader first, so its completed join establishes
+SQLite close before directory removal. Do not infer the fixture's exclusive
+ownership condition for every ordinary live window.
+
+Evidence: `source-bd626-*`, `chau7-root-bd626-software15.log`,
+`chau7-root-bd626-apple13.log`, `chau7-root-bd626-duplication.log` and
+`chau7-gpui-bd626-ledger-root-audit.json` in the private evidence folder.
+
+## Whole software scene, policy and normal app checkpoint (2026-10-12)
+
+Exact root bc1bf7ddaa80 passes 2,962 default-feature release workspace tests
+(558 app, 3 public GPUI integration, 2,401 core; two existing ignored), strict
+normal/optional all-target Clippy, fmt and diff guards. All 33 macOS fork tests
+and 13 Apple tests pass separately on clean unchanged source. These include
+packed atlas lifetime/COW/bounds, seven-family actual Metal image comparison
+with visible shadow coverage, real CoreVideo reads and checked explicit sRGB
+CGImage/profile ownership. Root capture validates comparator assertions without
+changing thresholds; exact per-family mean/max values are not printed in that
+root capture. No AppKit window launches in these unit runs.
+
+The approved retention policy is integrated: only positively absent owned config
+and state roots can establish the durable 30 day installation default. Existing
+profiles, explicit zero/custom values, partial imports and local resets retain
+appropriate prior choices. Ambiguous, malformed and misplaced settings remain
+zero. Independent review caught inline-comment section headers that could hide
+explicit zero from the legacy parser; conservative validation plus owned
+load/import regressions correct that case without rewriting existing files.
+Post-prune VACUUM and ordered background writer/close work remain pending; TEL-024
+stays partial.
+
+A normal feature-free package at 7bd54649ddfd builds the three Rust binaries from
+clean source with matching Cargo artifact/fingerprint hashes. Four helpers have
+unchanged verified source lineage; seven arm64/minimum macOS13.0 executables are
+individually signed and the bundle passes deep/strict verification. The required
+GPUI original/modification manifests, notices and licenses are in the signed
+bundle. The native fixture feature is absent.
+
+The uniquely owned app launches through ordinary LaunchServices as actual
+PID 32659 with verified source/bundle UUID, synthetic profile and provider/remote
+services disabled. Saved use_metal_renderer=false selects Software before
+window setup without injection; both measured window backends are Software and
+the terminal uses CPU. After 66.88s the main window has 199 submitted images and
+the auxiliary window 5, with zero failed frames. Latest measured CPU submission
+is 139,217 us and 17,157 us respectively. App-process CPU snapshot 42.101% uses one
+logical CPU as 100%; RSS 144,457,728 bytes and watchdog zero stalls are observed.
+Compilation runs concurrently, so this is not an idle benchmark or a performance
+gain. GPU/compositor memory and display completion stay null.
+
+Authorized synthetic MCP tab_create adds one tab to the two restored tabs.
+Only after its local cat sink is ready, tab_send_input sends 68 Unicode bytes
+without an appended newline or shell evaluation. Exactly those bytes are
+observed in that tab's owned input file; the other input file remains empty.
+No provider/device is contacted. Normal AppleEvent quit removes the actual PID
+and MCP socket, saves all three tabs, marks continuity running=false and leaves
+input files unchanged. No POSIX signal or forced quit is used; package/profile
+and evidence are retained, and existing apps/profiles remain untouched.
+
+Actual isolated native surface probes expose intermittent five-second frame
+barrier failures, including after resize; the Metal control has the same timeout.
+AppKit source/capture colors pass after explicit sRGB image and empty capture
+profile ownership corrections, with thresholds unchanged. That does not prove
+all software interaction cases. These negatives remain preserved. PRF-002 stays
+partial pending actual frame demand/resize progress and all four cases under
+explicit Software and Auto unavailable-device fallback.
+
+Official 34a16789 passes the Next PR matrix38209626232, parity and quality
+38209626235. Its quality correction uses process.stdout.write instead of
+console.log without changing duplication pin/coverage/threshold. The earlier
+Windows join correction is confirmed by d1081dad Next PR38207094216 and
+push38207091081 across all three platforms. These CI successes apply to their
+exact published revisions, not the later local backend checkpoints.
+
+Evidence: chau7-root-bc1bf-* release/vendor receipts and logs,
+chau7-root-7bd546-* build/package/MCP receipts, normal-7bd546-* identity,
+performance and graceful-quit records in the private recovery evidence folder.
+
+## 2026-10-12: reviewed followups and retained negative results
+
+Official `2f089af2ac1505bb91a981b9899a70ffaaaf240c` completes the Next
+PR/push macOS, Linux and Windows matrix, parity and quality checks. Push Next
+run `38213719047` reports success; official Swift main remains
+`7733b1f0c4440c0193915b036c38d5b83f31a1b3`. Broker read operations 1491/1492
+and the numeric receipt `chau7-root-official-ci-source-0719.json` retain this
+verification. These results do not validate later local checkpoints.
+
+Integrated followups include ordered telemetry writes/snapshots/VACUUM/close
+(`9b8a5547`), native marked text and attachment generations (`a8244843`,
+`e98210ea`), actual Settings failure diagnostics (`70ade37c`) and the opaque
+integer-rectangle CPU path (`e1451554`). Independent source review finds the
+fast path equivalent to scalar quantization/clipping/order, with fractional,
+nonopaque, rounded and bordered cases retaining scalar rendering. The root
+26-file current-hash/change-chain receipt is durable as
+`chau7-root-opaque-e145-ledger-audit.json`; this is provenance validation, not
+a performance benchmark. The author reports 37 fork tests including unchanged
+actual Metal comparisons; combined root gates remain pending.
+
+Checked background initialization and memory-only telemetry diagnostics are
+integrated at `584c40a6`, with confirmed-corruption documentation at `93b3dfdd`.
+The author reports 2,959 workspace tests and both strict variants passing.
+Independent review found one blocking shutdown path: if the writer thread
+cannot start, the absent JoinHandle could incorrectly authorize a clean marker.
+The focused correction `a80350049d0cde392e3df64b9f259d162155065b` is published,
+independently reviewed and integrated at `2e905aef`. The author reports 2,961
+workspace tests plus two existing ignored tests, both strict variants and two
+focused failure regressions passing. Actual SQLite close must retain the
+missing-writer error; failed initialization cannot become successful shutdown.
+Combined-root validation and normal app verification remain pending; TEL-024
+stays partial.
+
+Native Software Settings still has an actual 500 ms negative, including a
+prior run without concurrent compilation. The first optimized-source editor
+launch produced no fixture JSON within 75 seconds; subsequent profile logs
+show ordinary startup rather than fixture entry, consistent with a normal
+workspace build replacing the optional runner artifact. Its receipt/profile
+is retained at `chau7-backend-native-owned-kl8rnyt3`; the owned PID was already
+absent before sampling. No app kill, provider call or input occurred. This
+negative does not establish a Settings or frame-waker failure. The next
+launch must verify a matching executable hash and optional-feature fingerprint
+after the final build. Five-second frame and 500 ms animation limits remain
+unchanged; the eight-case Software/Auto matrix is still pending.
+
+Read-only observation of the preserved older `79748ee9` app at 07:18 UTC
+verifies PID 3607 and its exact executable, then reads a bounded 256 KiB log
+tail: 2,054 lines, 342 warnings, 341 incomplete-capture warnings and no errors.
+The numeric snapshot reports 2.073558% of one logical CPU, 31,801,344 resident
+bytes and a healthy watchdog with zero stalls/recoveries. Other lane compilation
+was active: this is not a benchmark. Numeric-only metadata is retained as
+`chau7-old797-readonly-0719-summary.json`; raw log lines are not exported.
+The warning is from Aethyme delivery capture, whose older generic text cannot
+distinguish timeout, truncation, read failure or cancellation. Current code
+already uses bounded retry backoff and one warning per outage. The root adds
+actual result flags/status/static caller/byte counts to that warning without
+changing capture or acknowledgement behavior.
+
+The byte-equivalent opaque-pixel store followup
+`bd00bfe7f5ba117bf8c7e74a269428c931921ffb` is independently reviewed and
+integrated at `5ec3472b`. The author reports 38 software renderer tests, strict
+checks and 26 ledger chains passing. The native Software editor scenario
+passes on that exact author source. A quiet Software Settings run still fails
+the original 500 ms limit at 529,208 us over seven frames (26,772 us latest
+CPU submission, zero failed frames). A separate Restore scenario fails its
+application activation deadline. These distinct negatives remain preserved;
+neither permits promoting PRF-002. The eight-case matrix remains incomplete.
+
+
+## 2026-10-12: exact combined gates and eight-case native matrix
+
+Frozen clean source `feb5e1991bd24471e16dcd6583833512aabd3ada` passes
+2,992 release workspace tests, zero failures and two existing ignored tests:
+569 app, three public GPUI integration and 2,420 core tests. Normal and optional
+strict all-target Clippy, format and diff checks pass. These normal gates use
+thinLTO/codegen16. Fork gates pass 38 macOS and 13 Apple cases, including seven
+actual Metal comparisons. All 26 modification chains/current hashes and 181
+unlisted originals verify against the unchanged pinned upstream manifest.
+Seven provenance tests pass; duplication is 0.907471% below the unchanged 2%.
+Receipts use the `chau7-root-combined-feb5e199-*` prefix.
+
+The Settings correction `273101d3`, integrated at `feb5e199`, preserves the
+original deadline for repeated identical targets and skips only exact already
+applied positions. Both actual Settings cases pass 99/99 visible targets and
+28 summaries with the original 500 ms limit. The Restore activation diagnostic
+`079ba0a1` is integrated at `a0a74b09`; the independent review also clears the
+static numeric Aethyme capture diagnostics without changing capture or ACK.
+
+The complete matrix attempts all eight independent cases on one verified
+optional artifact, SHA256
+`a39b514981b7a19307f8a7e7696f5268ed33528aa195c5aee0d82fd76d2a6458`:
+
+| Case | Software | Auto unavailable-device fallback |
+|---|---|---|
+| Editor | FAIL: marked metadata gone after actual repaint; text intact | PASS |
+| Settings | PASS, original 500 ms | PASS, original 500 ms |
+| Restore | FAIL: deminiaturized surface reveal; earlier activation passed | PASS |
+| Cache | PASS | PASS |
+
+There are no retries and no known team compiler during the matrix. All eight
+actual application PIDs are verified gone, all owned profiles deleted, and both
+signed Restore bundles removed. Failure receipts leave resources-closed null
+when not emitted. A LaunchServices waiter exit0 is not an application exit0;
+that application exit field remains null. Six positives do not close PRF-002.
+The matrix and every raw outcome remain in
+`agent8-software-window-20261012-4icg291m/combined-feb5e199-native-matrix-20261012/`.
+
+Readonly review finds no proven production cause yet. The editor fixture has no
+active/key setup assertion before native composition. Restore invokes native
+window mutations within an App borrow and does not establish activation after
+minimizing the last window. Valid owned focus, safe foreground native mutation
+and fixed boolean/numeric observations are the next correction; assertions,
+original real-frame counts, five-second and 500 ms limits remain unchanged.
+
+Both exact-source builds complete: normal three-bin feature-free thinLTO,
+and optional native runner in a separate LTOoff/codegen16 target. The optional
+runner's Cargo artifact and matching dependency hash/fingerprint are verified
+before launch. This runner is not a normal performance benchmark. The new normal
+app has not yet been packaged/launched; TEL-024 still needs normal Ready/drain,
+clean marker and readonly post-close SQLite integrity evidence.
+
+The official baseline recheck at 09:23 UTC still reports Swift main `7733b1f0`
+and existing draft PR229 at `2f089af2`. Earlier green CI applies to that exact
+published source, not these later checkpoints.
+
+The preserved older `79748ee9` app's readonly refresh at 08:35 UTC verifies
+its exact PID3607, executable and source before sampling. A bounded 256 KiB log
+tail has 2,035 lines, 304 warnings (all incomplete capture) and zero errors.
+Process CPU is 3.015911% of one logical CPU, RSS 31,064,064 bytes and main delay
+3.137875 ms; the watchdog is healthy with zero stalls/recoveries. Compilation
+runs concurrently, so this observation is not a benchmark or proof the T7 shell
+is ready. The initial sandbox socket EPERM is retained; the same authorized
+readonly probe succeeds with filesystem access. Only numeric summary
+`chau7-old797-readonly-0834-summary.json` is exported, not raw log lines.

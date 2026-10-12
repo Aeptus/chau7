@@ -61,7 +61,10 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         eprintln!("native parity fixture requires explicit process-local opt-in");
         return Some(2);
     }
-    if !matches!(requested.as_str(), "restore" | "settings" | "editor") {
+    if !matches!(
+        requested.as_str(),
+        "restore" | "settings" | "editor" | "cache"
+    ) {
         eprintln!("unknown native parity fixture: {requested}");
         return Some(2);
     }
@@ -99,10 +102,21 @@ pub(crate) fn run_if_requested() -> Option<i32> {
     }
     let owned_home = home.clone();
     let case = requested.clone();
-    let platform = gpui_kit::platform::current_platform(false);
+    let selector = args
+        .iter()
+        .position(|arg| arg == "--window-renderer")
+        .and_then(|index| args.get(index + 1))
+        .map(String::as_str)
+        .unwrap_or("auto");
+    let requested_renderer = selector.to_owned();
+    let (platform, backend) = match crate::window_backend::create_fixture(selector) {
+        Ok(value) => value,
+        Err(error) => return Some(report(&requested, &owned_home, Err(error))),
+    };
     let terminal_text_system = platform.text_system();
     let app = gpui::Application::with_platform(platform).with_assets(crate::assets::AppAssets);
     app.run(move |cx: &mut App| {
+        crate::window_backend::init(backend, cx);
         crate::terminal::paint::init_cpu_text_system(terminal_text_system, cx);
         gpui_kit::init(cx);
         cx.set_app_identity(
@@ -125,18 +139,43 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                 .background_executor()
                 .timer(Duration::from_secs(deadline_secs));
             let verification = async {
-                match case.as_str() {
+                let surface = if requested_renderer != "auto" {
+                    Some(crate::window_backend::verify_native_surface(cx).await?)
+                } else {
+                    None
+                };
+                cx.update(|cx| {
+                    crate::window_backend::verify_fixture_selection(&requested_renderer, cx)
+                })?;
+                let details = match case.as_str() {
                     "restore" => crate::workspace::verify_native_restore_fixture(cx).await,
                     "settings" => crate::settings_window::verify_native_fixture(cx).await,
                     "editor" => crate::panes::editor::verify_native_fixture(cx).await,
+                    "cache" => crate::settings_window::verify_native_cache_fixture(cx).await,
                     _ => Err("unknown native case".into()),
                 }
+                .map_err(|error| format!("existing {case} case: {error}"))?;
+                let mut details = details;
+                if let Some(object) = details.as_object_mut() {
+                    object.insert(
+                        "backend_native_surface".into(),
+                        serde_json::to_value(surface).map_err(|error| error.to_string())?,
+                    );
+                }
+                Ok(details)
             }
             .boxed_local();
             let outcome = match futures::future::select(verification, deadline).await {
                 Either::Left((result, _)) => result,
                 Either::Right(_) => Err("native acceptance deadline exceeded".into()),
             };
+            let rendering = cx.update(|cx| crate::window_backend::diagnostics(cx));
+            let outcome = outcome.map(|mut details| {
+                if let Some(object) = details.as_object_mut() {
+                    object.insert("window_renderer".into(), rendering);
+                }
+                details
+            });
             let cleanup = crate::workspace::dispose_native_fixture(cx).await;
             let outcome = match (outcome, cleanup) {
                 (Ok(details), Ok(_)) => Ok(details),
@@ -150,6 +189,16 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                     let _ = cx.update_window(window, |_, window, _| window.remove_window());
                 }
             });
+            // All cases use this unconditional fixture-only teardown, including
+            // timeout/early-error paths. No profile removal precedes guards,
+            // background readers, queued writes and the final SQLite close.
+            let snapshot_cleanup = crate::settings_window::shutdown_native_snapshots(cx).await;
+            let history_cleanup = crate::history::shutdown_native_cache_fixture(cx).await;
+            let owned_cache_closed = snapshot_cleanup.is_ok() && history_cleanup.is_ok();
+            let outcome = match (outcome, snapshot_cleanup, history_cleanup) {
+                (result, Ok(()), Ok(())) => result,
+                (_, Err(error), _) | (_, _, Err(error)) => Err(error),
+            };
             let memory_worker = cx.update(crate::memory_pressure::stop_native_fixture);
             let worker = cx.update(crate::observability::shutdown);
             cx.background_spawn(async move {
@@ -163,7 +212,18 @@ pub(crate) fn run_if_requested() -> Option<i32> {
             .await;
             // NSApplication::terminate exits the process; it does not return
             // from Application::run. Evidence and cleanup must precede quit.
-            let code = report(&case, &owned_home, outcome);
+            let code = if owned_cache_closed {
+                report(&case, &owned_home, outcome)
+            } else {
+                // Preserve the owned profile if resource closure was not
+                // confirmed; a failed run must not delete a live database.
+                let evidence = json!({"case":case,"pid":std::process::id(),"passed":false,
+                    "error":outcome.err(),"profile_isolated":true,
+                    "owned_profile_removed":false,"owned_resources_closed":false});
+                println!("{evidence}");
+                let _ = std::io::stdout().flush();
+                1
+            };
             completion.store(code, Ordering::Release);
             if code != 0 {
                 // Every owned window/session and the journal are closed above.

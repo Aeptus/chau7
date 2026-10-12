@@ -35,10 +35,42 @@ async fn settled_frame(
         if settled && frames >= 3 {
             break;
         }
-        ensure!(
-            started.elapsed() < Duration::from_millis(500),
-            "native settings animation failed to settle within 500ms after {frames} actual frames"
-        );
+        if started.elapsed() >= Duration::from_millis(500) {
+            let state = cx.update(|cx| {
+                let view = view.read(cx);
+                let now = cx.background_executor().now();
+                json!({
+                    "anchor": view.navigation.anchor_id,
+                    "scroll_motion_pending": view.search_scroll_motion.is_some(),
+                    "scroll_motion_finished": view.search_scroll_motion.as_ref().map(|motion| motion.finished(now)),
+                    "retry_pending": view.search_retry_pending,
+                    "highlight_finished": view.search_highlights.finished(now),
+                    "elapsed_microseconds": started.elapsed().as_micros(),
+                    "actual_frames": frames,
+                    "scroll_attempts": view.search_scroll_trace,
+                    "scroll_attempt_limit": 4,
+                    "motion": view.search_scroll_motion.as_ref().map(|motion| motion.diagnostic(view.search_scroll_requested_at, now)),
+                    "actual_offset_y_px": f32::from(view.scroll_handle.offset().y),
+                })
+            });
+            let renderer = cx
+                .update_window(handle, |_, window, _| {
+                    window.renderer_diagnostics().map(|renderer| {
+                        json!({
+                            "backend": renderer.backend,
+                            "submitted_frames": renderer.submitted_frames,
+                            "failed_frames": renderer.failed_frames,
+                            "last_cpu_submit_microseconds": renderer.last_cpu_submit_microseconds,
+                            "last_primitive_counts": renderer.last_primitive_counts,
+                            "software_image_pixel_bytes": renderer.software_image_pixel_bytes,
+                        })
+                    })
+                })
+                .context("owned settings window disappeared during failure diagnosis")?;
+            anyhow::bail!(
+                "native settings animation failed to settle within 500ms after {frames} actual frames; state={state}; renderer={renderer:?}"
+            );
+        }
     }
     anchors::take_rendered_targets();
     cx.update(|cx| view.update(cx, |_, cx| cx.notify()));
@@ -152,11 +184,11 @@ async fn verify(cx: &mut AsyncApp) -> Result<Value> {
             ensure!(retries == 1, "native target must execute exactly one current120ms retry: {}",setting.anchor_id);
             let ids = anchors::observed_target_ids(setting.anchor_id);
             let rendered = anchors::take_rendered_targets();
-            let (offset, maximum, bounds, section, anchor) = cx.update(|cx| {
+            let (offset, maximum, bounds, section, anchor, scroll_attempts) = cx.update(|cx| {
                 let settings = view.read(cx);
                 (settings.scroll_handle.offset(), settings.scroll_handle.max_offset(),
                  settings.scroll_handle.bounds(), settings.navigation.selection,
-                 settings.navigation.anchor_id.clone())
+                 settings.navigation.anchor_id.clone(), settings.search_scroll_trace.clone())
             });
             ensure!(section == setting.section && anchor.as_deref() == Some(setting.anchor_id), "native settings navigation mismatch: {}", setting.anchor_id);
             ensure!(rendered.contains(setting.anchor_id), "native settings target did not render: {}", setting.anchor_id);
@@ -177,7 +209,7 @@ async fn verify(cx: &mut AsyncApp) -> Result<Value> {
                 else { sidebar.right() <= bounds.left() + px(1.) },
                 "native Settings sidebar is on the wrong side for {}: sidebar {sidebar:?}, viewport {bounds:?}",locale.resolved.code());
             let target = target_bounds.with_context(|| format!("native settings target not visible: {} (offset {offset:?}, maximum {maximum:?}, viewport {bounds:?})", setting.anchor_id))?;
-            evidence.push(json!({"animation_frames":animation_frames,"retry_attempts":retries,"sidebar_on_expected_side":true,"rtl":actual_rtl,"sidebar_x":f32::from(sidebar.origin.x),"sidebar_width":f32::from(sidebar.size.width),"id":setting.id,"anchor":setting.anchor_id,"section":setting.section.id(),
+            evidence.push(json!({"scroll_attempts":scroll_attempts,"scroll_attempt_limit":4,"animation_frames":animation_frames,"retry_attempts":retries,"sidebar_on_expected_side":true,"rtl":actual_rtl,"sidebar_x":f32::from(sidebar.origin.x),"sidebar_width":f32::from(sidebar.size.width),"id":setting.id,"anchor":setting.anchor_id,"section":setting.section.id(),
                 "offset_y":f32::from(offset.y),"max_offset_y":f32::from(maximum.y),
                 "viewport":{"x":f32::from(bounds.origin.x),"y":f32::from(bounds.origin.y),"width":f32::from(bounds.size.width),"height":f32::from(bounds.size.height)},
                 "target":{"x":f32::from(target.origin.x),"y":f32::from(target.origin.y),"width":f32::from(target.size.width),"height":f32::from(target.size.height)}}));

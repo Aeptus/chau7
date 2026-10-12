@@ -26,6 +26,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::history_record::{FrequentCommand, HistoryRecord};
 
+fn wal_path(database: &Path) -> PathBuf {
+    let mut path = database.as_os_str().to_os_string();
+    path.push("-wal");
+    PathBuf::from(path)
+}
+
 /// Default and bounds of the "maximum records" setting.
 pub const DEFAULT_MAX_RECORDS: usize = 50_000;
 pub const MIN_MAX_RECORDS: usize = 10_000;
@@ -405,11 +411,37 @@ impl HistoryStore {
             .unwrap_or(0)
     }
 
+    /// Exact read-only statistics for off-UI snapshots. Unlike legacy display
+    /// helpers, real read errors are preserved instead of becoming false zero.
+    pub fn statistics(&self) -> Result<(i64, u64), String> {
+        let records = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM history", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(|error| error.to_string())?;
+        let bytes = if let Some(path) = &self.path {
+            let database = std::fs::metadata(path)
+                .map_err(|error| error.to_string())?
+                .len();
+            let wal = wal_path(path);
+            let wal = match std::fs::metadata(wal) {
+                Ok(metadata) => metadata.len(),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+                Err(error) => return Err(error.to_string()),
+            };
+            database.saturating_add(wal)
+        } else {
+            0
+        };
+        Ok((records, bytes))
+    }
+
     /// Size of the database file (plus its write-ahead log) in bytes.
     pub fn database_size_bytes(&self) -> u64 {
         let Some(path) = &self.path else { return 0 };
         let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-        let wal = PathBuf::from(format!("{}-wal", path.display()));
+        let wal = wal_path(path);
         size(path) + size(&wal)
     }
 
@@ -494,6 +526,81 @@ mod tests {
             timestamp: adding_seconds(Utc::now(), offset),
             ..HistoryRecord::new(command)
         }
+    }
+
+    #[test]
+    fn statistics_preserve_exact_counts_and_actual_read_errors() {
+        let directory =
+            std::env::temp_dir().join(format!("chau7-history-statistics-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("owned.sqlite");
+        let store = HistoryStore::open(&path).unwrap();
+        store.insert(&HistoryRecord::new("owned")).unwrap();
+        let observed = store.statistics().unwrap();
+        assert_eq!(observed.0, 1);
+        assert_eq!(observed.1, store.database_size_bytes());
+        let database_bytes = std::fs::metadata(&path).unwrap().len();
+        let wal_bytes = std::fs::metadata(wal_path(&path)).unwrap().len();
+        assert!(wal_bytes > 0);
+        assert_eq!(observed.1, database_bytes + wal_bytes);
+        drop(store);
+        let memory = HistoryStore::open(Path::new(":memory:")).unwrap();
+        assert_eq!(memory.statistics().unwrap(), (0, 0));
+        memory.insert(&HistoryRecord::new("memory")).unwrap();
+        assert_eq!(memory.statistics().unwrap(), (1, 0));
+        // A readable SQLite handle must not invent a zero-sized on-disk DB
+        // after its path disappears. Reopen the now-empty primary path.
+        let mut store = HistoryStore::open(&path).unwrap();
+        store.path = Some(directory.join("missing-primary.sqlite"));
+        assert!(store.statistics().is_err());
+        drop(store);
+        drop(memory);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn wal_suffix_preserves_raw_os_string_bytes() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+        // APFS rejects creating non-UTF8 names. The byte-preserving path
+        // contract itself remains testable without inventing a disk filename.
+        let path = PathBuf::from(OsString::from_vec(b"history-\xff.db".to_vec()));
+        assert_eq!(
+            wal_path(&path).as_os_str().as_bytes(),
+            b"history-\xff.db-wal"
+        );
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn statistics_include_actual_wal_for_non_utf8_database_path() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let directory =
+            std::env::temp_dir().join(format!("chau7-history-byte-path-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(OsString::from_vec(b"history-\xff.db".to_vec()));
+        let source = directory.join("owned.sqlite");
+        let mut store = HistoryStore::open(&source).unwrap();
+        store
+            .insert(&HistoryRecord::new("owned path evidence"))
+            .unwrap();
+        // SQLite's macOS VFS rejects a non-UTF8 open path. Give the live,
+        // owned database and its real WAL byte-preserving filesystem aliases
+        // to isolate the metadata/suffix contract without changing that VFS.
+        std::fs::hard_link(&source, &path).unwrap();
+        std::fs::hard_link(wal_path(&source), wal_path(&path)).unwrap();
+        store.path = Some(path.clone());
+        let wal_bytes = std::fs::metadata(wal_path(&path)).unwrap().len();
+        assert!(wal_bytes > 0);
+        let expected = std::fs::metadata(&path).unwrap().len() + wal_bytes;
+        assert_eq!(store.statistics().unwrap(), (1, expected));
+        assert_eq!(store.database_size_bytes(), expected);
+        drop(store);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

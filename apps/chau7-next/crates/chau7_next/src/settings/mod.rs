@@ -20,6 +20,7 @@ mod general;
 mod history;
 mod hover_card;
 mod input;
+pub(crate) mod installation;
 pub mod mcp;
 mod minimal_mode;
 pub mod notifications;
@@ -62,6 +63,8 @@ pub use token_optimization::TokenOptimizationSettings;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Settings {
+    /// Installation-local factory policy, never exported into another profile.
+    installation_retention_default: i64,
     pub general: GeneralSettings,
     pub appearance: AppearanceSettings,
     pub terminal: TerminalSettings,
@@ -174,10 +177,41 @@ impl Settings {
 
     /// Load from the Chau7 Next config file. Missing or partial files keep defaults.
     pub fn load(root: &DataRoot) -> Self {
-        let Ok(text) = std::fs::read_to_string(root.config_file()) else {
-            return Settings::default();
-        };
-        Self::from_text(&text)
+        let fallback = installation::retention_default(root);
+        match std::fs::read_to_string(root.config_file()) {
+            Ok(text) => {
+                let mut settings = Self::from_text(&text);
+                if !config::is_valid_config(&text) {
+                    settings.general.telemetry_retention_days = 0;
+                    return settings;
+                }
+                settings.installation_retention_default = fallback;
+                let raw = config::parse_raw(&text);
+                if !raw
+                    .get("next")
+                    .is_some_and(|keys| keys.contains_key("telemetry_retention_days"))
+                {
+                    settings.general.telemetry_retention_days = if raw
+                        .values()
+                        .any(|keys| keys.contains_key("telemetry_retention_days"))
+                    {
+                        0
+                    } else {
+                        fallback
+                    };
+                }
+                settings
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let mut settings = Settings {
+                    installation_retention_default: fallback,
+                    ..Settings::default()
+                };
+                settings.general.telemetry_retention_days = fallback;
+                settings
+            }
+            Err(_) => Settings::default(),
+        }
     }
 
     fn from_text(text: &str) -> Self {
@@ -232,6 +266,33 @@ impl Settings {
         Self::from_text(text)
     }
 
+    /// Imported partial profiles retain the current local retention choice;
+    /// explicit zero/custom values win. Factory resets use this installation's
+    /// durable policy, which is intentionally absent from portable text.
+    pub(crate) fn from_profile_text_local(text: &str, current: &Self) -> Self {
+        let mut settings = Self::from_text(text);
+        settings.installation_retention_default = current.installation_retention_default;
+        if !config::is_valid_config(text) {
+            settings.general.telemetry_retention_days = 0;
+        } else {
+            let raw = config::parse_raw(text);
+            if !raw
+                .get("next")
+                .is_some_and(|keys| keys.contains_key("telemetry_retention_days"))
+            {
+                settings.general.telemetry_retention_days = if raw
+                    .values()
+                    .any(|keys| keys.contains_key("telemetry_retention_days"))
+                {
+                    0
+                } else {
+                    current.general.telemetry_retention_days
+                };
+            }
+        }
+        settings
+    }
+
     pub fn get(cx: &App) -> &Settings {
         cx.global::<Settings>()
     }
@@ -248,6 +309,7 @@ impl Settings {
                 let directory = self.general.default_directory.take();
                 let contact = self.general.remembered_bug_report_fields();
                 self.general = GeneralSettings::default();
+                self.general.telemetry_retention_days = self.installation_retention_default;
                 self.general.default_directory = directory;
                 self.general.restore_bug_report_fields(contact);
             }
@@ -352,7 +414,12 @@ impl Settings {
     /// Every setting back to its default ("Reset All Settings").
     pub fn reset_all(&mut self) {
         let contact = self.general.remembered_bug_report_fields();
-        *self = Settings::default();
+        let policy = self.installation_retention_default;
+        *self = Settings {
+            installation_retention_default: policy,
+            ..Settings::default()
+        };
+        self.general.telemetry_retention_days = policy;
         self.general.restore_bug_report_fields(contact);
     }
 }

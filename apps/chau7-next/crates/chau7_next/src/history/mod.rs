@@ -23,15 +23,21 @@ use std::sync::mpsc::{Sender, channel};
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::history_record::HistoryRecord;
 use chau7_next_core::history_store::HistoryStore;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+use gpui::AppContext;
 use gpui::{App, Global};
 use parking_lot::Mutex;
 
 use crate::settings::Settings;
 
+type StatisticsObserver = Arc<dyn Fn() + Send + Sync>;
+
 /// The command history database.
 pub struct HistoryService {
     store: Arc<Mutex<HistoryStore>>,
     tx: Sender<HistoryRecord>,
+    writer: std::thread::JoinHandle<WriterOutcome>,
+    statistics_observer: Arc<Mutex<Option<StatisticsObserver>>>,
     /// Records kept (the settings value, applied by [`apply_settings`]).
     enabled: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -54,19 +60,34 @@ impl HistoryService {
         let store = Arc::new(Mutex::new(store));
         let (tx, rx) = channel::<HistoryRecord>();
         let writer = store.clone();
-        std::thread::Builder::new()
+        let statistics_observer: Arc<Mutex<Option<StatisticsObserver>>> = Arc::default();
+        let observer = statistics_observer.clone();
+        let writer_handle = std::thread::Builder::new()
             .name("chau7-history-writer".into())
             .spawn(move || {
+                let mut outcome = WriterOutcome::default();
                 while let Ok(record) = rx.recv() {
-                    if let Err(err) = writer.lock().insert(&record) {
+                    outcome.processed += 1;
+                    let inserted = writer.lock().insert(&record);
+                    if let Err(err) = inserted {
+                        outcome.failed += 1;
                         log::error!("history insert failed: {err}");
                     }
+                    // The writer released its store lock before invalidating
+                    // the held statistics; the callback only coalesces a job.
+                    let notify = observer.lock().clone();
+                    if let Some(notify) = notify {
+                        notify();
+                    }
                 }
+                outcome
             })
             .ok()?;
         Some(Self {
             store,
             tx,
+            writer: writer_handle,
+            statistics_observer,
             enabled: Arc::new(std::sync::atomic::AtomicBool::new(
                 settings.history.persistent_history,
             )),
@@ -97,8 +118,145 @@ impl HistoryService {
 
     /// Change the database (clear, trim, import).
     pub fn with_store_mut<R>(&self, f: impl FnOnce(&mut HistoryStore) -> R) -> R {
-        f(&mut self.store.lock())
+        let result = f(&mut self.store.lock());
+        let observer = self.statistics_observer.lock().clone();
+        if let Some(observer) = observer {
+            observer();
+        }
+        result
     }
+
+    /// Register one app-owned snapshot observer. Its callback performs no
+    /// database work and should retain its consumer only weakly.
+    pub(crate) fn set_statistics_observer(&self, observer: StatisticsObserver) {
+        *self.statistics_observer.lock() = Some(observer);
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct WriterOutcome {
+    pub processed: u64,
+    pub failed: u64,
+}
+/// Resources move to the quit background future; neither SQLite's last Arc
+/// nor the thread join is disposed on the UI by taking the app Global.
+pub(crate) struct HistoryShutdown {
+    store: Arc<Mutex<HistoryStore>>,
+    writer: std::thread::JoinHandle<WriterOutcome>,
+    observer: Arc<Mutex<Option<StatisticsObserver>>>,
+}
+impl HistoryShutdown {
+    pub(crate) fn finish(self) -> Result<WriterOutcome, String> {
+        self.complete(false)
+    }
+    fn complete(self, exclusive: bool) -> Result<WriterOutcome, String> {
+        let Self {
+            store,
+            writer,
+            observer,
+        } = self;
+        let outcome = writer
+            .join()
+            .map_err(|_| "History writer panicked during shutdown".to_string())?;
+        drop(observer);
+        if exclusive && Arc::strong_count(&store) != 1 {
+            return Err("Owned history reader still holds its SQLite handle".into());
+        }
+        drop(store);
+        Ok(outcome)
+    }
+}
+impl HistoryService {
+    fn into_shutdown(self) -> HistoryShutdown {
+        let Self {
+            store,
+            tx,
+            writer,
+            statistics_observer,
+            enabled,
+        } = self;
+        enabled.store(false, std::sync::atomic::Ordering::Release);
+        // This is the only Sender: no clone is exposed or retained elsewhere.
+        // EOF is observed only after every previously accepted item is drained.
+        drop(tx);
+        HistoryShutdown {
+            store,
+            writer,
+            observer: statistics_observer,
+        }
+    }
+}
+/// Idempotently stop acceptance after producers are stopped. The caller must
+/// execute finish() on the existing background quit future before mark_clean.
+pub(crate) fn shutdown(cx: &mut App) -> Option<HistoryShutdown> {
+    cx.try_global::<HistoryService>()?;
+    Some(cx.remove_global::<HistoryService>().into_shutdown())
+}
+
+/// Fixture-only store/writer initialization. It never starts provider history
+/// monitors, recording, shell-history maintenance, or ordinary integration.
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) async fn init_native_cache_fixture(cx: &mut gpui::AsyncApp) -> Result<(), String> {
+    let (root, settings) = cx.update(|cx| {
+        if cx.try_global::<HistoryService>().is_some() {
+            return Err("Owned history fixture must not replace a service".into());
+        }
+        let root = cx.global::<crate::workspace::AppData>().root.clone();
+        if !chau7_next_core::data_root::is_isolated_test_mode()
+            || std::env::var("CHAU7_NEXT_NATIVE_PARITY_FIXTURE").as_deref() != Ok("1")
+            || root.state_dir() != root.home().join(".chau7-next-state")
+            || std::env::var_os(chau7_next_core::data_root::HOME_ROOT_ENV)
+                .map(std::path::PathBuf::from)
+                .as_deref()
+                != Some(root.home())
+        {
+            return Err("Owned history fixture requires the runner's isolated root".into());
+        }
+        Ok::<_, String>((root, cx.global::<Settings>().clone()))
+    })?;
+    let service = cx
+        .background_spawn(async move {
+            HistoryService::open(&root, &settings)
+                .ok_or_else(|| "Owned fixture history database could not open".to_string())
+        })
+        .await?;
+    cx.update(|cx| cx.set_global(service));
+    Ok(())
+}
+
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) fn clear_native_cache_fixture(cx: &App) -> Box<dyn FnOnce() + Send> {
+    let service = cx.global::<HistoryService>();
+    let store = service.store.clone();
+    let observer = service.statistics_observer.clone();
+    Box::new(move || {
+        store.lock().clear_all();
+        let notify = observer.lock().clone();
+        if let Some(notify) = notify {
+            notify();
+        }
+    })
+}
+
+/// The snapshots must finish their native guards and reader first. Closing
+/// the sole sender then joining guarantees every queued real write completed.
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) async fn shutdown_native_cache_fixture(cx: &mut gpui::AsyncApp) -> Result<(), String> {
+    let pending = cx.update(shutdown);
+    let Some(pending) = pending else {
+        return Ok(());
+    };
+    cx.background_spawn(async move {
+        let outcome = pending.complete(true)?;
+        if outcome.failed > 0 {
+            return Err(format!(
+                "Owned history writer had {} failed inserts",
+                outcome.failed
+            ));
+        }
+        Ok(())
+    })
+    .await
 }
 
 /// One-time import of `history.tsv` (the commands the shell hooks logged
@@ -240,6 +398,120 @@ mod tests {
         assert_eq!(format_duration(0.25), "250ms");
         assert_eq!(format_duration(1.5), "1.5s");
         assert_eq!(format_duration(125.0), "2m5s");
+    }
+
+    #[test]
+    fn statistics_observer_runs_after_owned_writer_and_mutation_release_the_store() {
+        let directory = std::env::temp_dir().join(format!(
+            "chau7-next-history-snapshot-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let root = DataRoot::with_home(directory, true);
+        root.ensure_dirs().unwrap();
+        let mut settings = Settings::default();
+        settings.history.persistent_history = true;
+        let service = HistoryService::open(&root, &settings).unwrap();
+        let store = service.store_handle();
+        let (events, completed) = std::sync::mpsc::sync_channel(1);
+        let observer_store = store.clone();
+        service.set_statistics_observer(Arc::new(move || {
+            // This would fail if notification ran while holding SQLite's mutex.
+            let unlocked = observer_store.try_lock().is_some();
+            let _ = events.try_send(unlocked);
+        }));
+        service.record(HistoryRecord::new("owned command"));
+        assert!(
+            completed
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap()
+        );
+        assert_eq!(store.lock().statistics().unwrap().0, 1);
+        service.with_store_mut(|store| store.clear_all());
+        assert!(
+            completed
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap()
+        );
+        assert_eq!(store.lock().statistics().unwrap().0, 0);
+        let weak = Arc::downgrade(&store);
+        let pending = service.into_shutdown();
+        drop(store);
+        // Last-Arc disappearance can precede SQLite's destructor completing.
+        // Join the actual writer and close its observer/store on a worker
+        // before removing files, including on Windows with strict file locks.
+        let caller = std::thread::current().id();
+        let (outcome, worker) =
+            std::thread::spawn(move || (pending.finish().unwrap(), std::thread::current().id()))
+                .join()
+                .unwrap();
+        assert_ne!(caller, worker);
+        assert_eq!((outcome.processed, outcome.failed), (1, 0));
+        assert!(weak.upgrade().is_none());
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+
+    #[gpui::test]
+    fn normal_shutdown_drains_accepted_writes_and_is_idempotent(cx: &mut gpui::TestAppContext) {
+        let root = DataRoot::with_home(
+            std::env::temp_dir().join(format!(
+                "chau7-history-normal-shutdown-{}",
+                uuid::Uuid::new_v4()
+            )),
+            true,
+        );
+        root.ensure_dirs().unwrap();
+        let mut settings = Settings::default();
+        settings.history.persistent_history = true;
+        let service = HistoryService::open(&root, &settings).unwrap();
+        let reader = service.store_handle(); // A live Settings/MCP reader is allowed.
+        let enabled = service.enabled.clone();
+        for index in 0..256 {
+            service.record(HistoryRecord::new(format!("owned queued {index}")));
+        }
+        cx.update(|cx| cx.set_global(service));
+        let shutdown_job = cx.update(shutdown).unwrap();
+        assert!(!enabled.load(std::sync::atomic::Ordering::Acquire));
+        assert!(cx.update(shutdown).is_none());
+        assert!(cx.update(|cx| super::service(cx).is_none()));
+        let caller = std::thread::current().id();
+        let (outcome, worker) = std::thread::spawn(move || {
+            (shutdown_job.finish().unwrap(), std::thread::current().id())
+        })
+        .join()
+        .unwrap();
+        assert_ne!(caller, worker);
+        assert_eq!((outcome.processed, outcome.failed), (256, 0));
+        assert_eq!(reader.lock().total_count(), 256);
+        drop(reader);
+        let reopened = HistoryStore::open(&root.history_db()).unwrap();
+        assert_eq!(reopened.total_count(), 256);
+        drop(reopened);
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+
+    #[test]
+    fn normal_shutdown_of_empty_or_disabled_writer_completes_without_records() {
+        let root = DataRoot::with_home(
+            std::env::temp_dir().join(format!(
+                "chau7-history-disabled-shutdown-{}",
+                uuid::Uuid::new_v4()
+            )),
+            true,
+        );
+        root.ensure_dirs().unwrap();
+        let mut settings = Settings::default();
+        settings.history.persistent_history = false;
+        let service = HistoryService::open(&root, &settings).unwrap();
+        service.record(HistoryRecord::new("owned disabled record"));
+        let pending = service.into_shutdown();
+        let outcome = std::thread::spawn(move || pending.finish().unwrap())
+            .join()
+            .unwrap();
+        assert_eq!((outcome.processed, outcome.failed), (0, 0));
+        let reopened = HistoryStore::open(&root.history_db()).unwrap();
+        assert_eq!(reopened.total_count(), 0);
+        drop(reopened);
+        std::fs::remove_dir_all(root.home()).unwrap();
     }
 
     #[test]

@@ -53,6 +53,7 @@ mod telemetry;
 mod terminal;
 mod theme;
 mod views;
+mod window_backend;
 mod workspace;
 
 use chau7_next_core::data_root::DataRoot;
@@ -101,6 +102,7 @@ fn main() {
     }
     clean_inherited_environment();
     let root = DataRoot::from_env();
+    let installation = settings::installation::FreshInstallation::capture(&root);
     if let Err(err) = root.ensure_dirs() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
     }
@@ -112,6 +114,11 @@ fn main() {
             std::process::exit(1);
         }
     };
+    if installation.initialize().is_err() {
+        eprintln!(
+            "Chau7 Next: installation policy unavailable; preserving legacy retention default"
+        );
+    }
     platform::defaults::disable_press_and_hold();
     logging::init(&root);
     incidents::start(&root);
@@ -155,7 +162,8 @@ fn main() {
     );
 
     // The bundled icons (find bar, side pane headers, palette rows).
-    let platform = gpui_kit::platform::current_platform(false);
+    let (platform, window_backend_state) =
+        window_backend::create(settings.appearance.rendering.gpu_renderer);
     let terminal_text_system = platform.text_system();
     let app = gpui::Application::with_platform(platform).with_assets(assets::AppAssets);
     // macOS: clicking the Dock icon with no window open brings the hidden
@@ -169,6 +177,7 @@ fn main() {
     // from its timer (`app_actions::poll`).
     app.on_open_urls(app_actions::queue_open_urls);
     app.run(move |cx: &mut App| {
+        window_backend::init(window_backend_state, cx);
         terminal::paint::init_cpu_text_system(terminal_text_system, cx);
         gpui_kit::init(cx);
         cx.set_app_identity("com.chau7.next", "Chau7 Next");
@@ -278,6 +287,8 @@ fn main() {
             let cto_worker = cto::shutdown_state_writer();
             // Shells get SIGTERM at once (`closeSessionForTermination`).
             terminal::session::terminate_all_for_quit();
+            let history_writer = history::shutdown(cx);
+            let telemetry_writer = telemetry::shutdown(cx);
             logging::flush();
             let performance_worker = performance::stop(cx);
             let hang_worker = hang_watchdog::stop(cx);
@@ -305,9 +316,34 @@ fn main() {
                 if let Some(worker) = cto_worker {
                     let _ = worker.join();
                 }
+                let telemetry_closed = telemetry_writer
+                    .map(|writer| writer.finish())
+                    .unwrap_or(Ok(()));
+                if let Err(error) = &telemetry_closed {
+                    log::warn!("Telemetry shutdown incomplete: {error}");
+                }
+                if let Some(history_writer) = history_writer {
+                    match history_writer.finish() {
+                        Ok(outcome) if outcome.failed > 0 => log::warn!(
+                            "History writer drained {} accepted records with {} failed inserts",
+                            outcome.processed,
+                            outcome.failed
+                        ),
+                        Ok(outcome) => log::debug!(
+                            "History writer drained {} accepted records with {} failed inserts",
+                            outcome.processed,
+                            outcome.failed
+                        ),
+                        Err(error) => log::error!("History shutdown failed: {error}"),
+                    }
+                }
                 incidents::shutdown();
-                if let Err(error) = instance.mark_clean() {
-                    log::warn!("Cannot mark clean termination: {error}");
+                if telemetry_closed.is_ok() {
+                    if let Err(error) = instance.mark_clean() {
+                        log::warn!("Cannot mark clean termination: {error}");
+                    }
+                } else {
+                    log::warn!("Clean shutdown marker withheld after telemetry failure");
                 }
                 logging::flush();
             })

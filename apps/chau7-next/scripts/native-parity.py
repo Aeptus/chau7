@@ -122,7 +122,17 @@ def case_passed(record):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case", choices=("all", "restore", "settings", "editor"), default="all")
+    parser.add_argument(
+        "--case",
+        choices=("all", "restore", "settings", "editor", "cache"),
+        default="all",
+    )
+    parser.add_argument(
+        "--window-renderer",
+        choices=("auto", "metal", "software", "auto-device-failure"),
+        default="auto",
+        help="Optional fixture-only complete window backend; injection occurs before Metal calls",
+    )
     parser.add_argument(
         "--toolchain",
         default="1.96.0",
@@ -166,6 +176,7 @@ def main():
         "compiler": output([str(toolchain / "rustc"), "--version"]),
         "cargo": output([str(toolchain / "cargo"), "--version"]),
         "fixture_feature": "native-parity-fixture",
+        "window_renderer": args.window_renderer,
         "release_lto": "off",
         "target_triple": target_triple,
         "target_directory": str(target),
@@ -204,7 +215,7 @@ def main():
     binary = target / target_triple / "release" / "chau7-next"
     manifest["binary_sha256"] = sha256(binary)
     manifest["original_binary_sha256"] = manifest["binary_sha256"]
-    cases = ("restore", "settings", "editor") if args.case == "all" else (args.case,)
+    cases = ("restore", "settings", "editor", "cache") if args.case == "all" else (args.case,)
     success = True
     for case in cases:
         # Do not create this directory: the runner validates and creates it.
@@ -257,11 +268,13 @@ def main():
                     "HISTFILE",
                 ):
                     command.extend(["--env", name + "=" + child_environment[name]])
-                command.extend([str(bundle), "--args", "--native-parity-fixture", case])
+                command.extend(
+                    [str(bundle), "--args", "--native-parity-fixture", case, "--window-renderer", args.window_renderer]
+                )
                 process_stdout = evidence / "restore.launcher.stdout"
                 process_stderr = evidence / "restore.launcher.stderr"
             else:
-                command = [str(binary), "--native-parity-fixture", case]
+                command = [str(binary), "--native-parity-fixture", case, "--window-renderer", args.window_renderer]
                 process_stdout = stdout_path
                 process_stderr = stderr_path
             record["command"] = command

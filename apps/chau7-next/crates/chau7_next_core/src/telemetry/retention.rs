@@ -1,9 +1,11 @@
-//! Opt-in retention. Zero days means keep forever, including existing profiles.
+//! Retention follows the resolved installation or explicit user policy.
+//! Zero days keeps forever, including preexisting profiles without a setting.
 //! Preview is read-only; pruning is bounded and never removes unfinished runs.
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params_from_iter, types::Value};
 use serde::Serialize;
 
+pub const DEFAULT_DAYS: i64 = 30;
 pub const MAX_DAYS: i64 = 3650;
 pub fn normalize_days(days: i64) -> i64 {
     days.clamp(0, MAX_DAYS)
@@ -36,6 +38,10 @@ pub struct PruneReport {
     pub evidence: usize,
     pub latency_samples: usize,
     pub remote_events: usize,
+    /// A full rewrite ran only after this pass actually removed rows.
+    pub compacted: bool,
+    /// Deletions stay committed even if subsequent disk reclamation fails.
+    pub compaction_error: Option<String>,
 }
 impl PruneReport {
     pub fn rows(&self) -> usize {
@@ -143,7 +149,7 @@ pub fn preview(
     }
     Ok(result)
 }
-/// Caller must supply a policy explicitly chosen by the user. No built-in expiry.
+/// Caller supplies the resolved installation or explicit user policy.
 pub fn prune(
     conn: &Connection,
     days: i64,
@@ -194,11 +200,53 @@ pub fn prune(
     tx.commit()?;
     Ok(result)
 }
+/// Background maintenance: prune a bounded transaction, then reclaim disk only
+/// if something was actually removed. The committed deletion report survives
+/// compaction failure, matching Swift's separate post-prune VACUUM outcome.
+pub fn maintain(
+    conn: &Connection,
+    days: i64,
+    protected: &[String],
+    limit: usize,
+    now: DateTime<Utc>,
+) -> rusqlite::Result<PruneReport> {
+    maintain_with_compaction(conn, days, protected, limit, now, |conn| {
+        conn.execute_batch("VACUUM")
+    })
+}
+fn maintain_with_compaction(
+    conn: &Connection,
+    days: i64,
+    protected: &[String],
+    limit: usize,
+    now: DateTime<Utc>,
+    compact: impl FnOnce(&Connection) -> rusqlite::Result<()>,
+) -> rusqlite::Result<PruneReport> {
+    let mut report = prune(conn, days, protected, limit, now)?;
+    if report.rows() > 0 {
+        let mut span = crate::work_profiler::begin(crate::work_profiler::Key::work(
+            "telemetry_retention",
+            "vacuum",
+            "telemetry",
+            "telemetry",
+            crate::work_profiler::Queue::Background,
+        ));
+        span.items(report.rows());
+        match compact(conn) {
+            Ok(()) => report.compacted = true,
+            Err(error) => report.compaction_error = Some(error.to_string()),
+        }
+    }
+    Ok(report)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     fn fixture() -> Connection {
-        let c = Connection::open_in_memory().unwrap();
+        fixture_at(std::path::Path::new(":memory:"))
+    }
+    fn fixture_at(path: &std::path::Path) -> Connection {
+        let c = Connection::open(path).unwrap();
         c.execute_batch("PRAGMA foreign_keys=ON;
         CREATE TABLE runs(run_id TEXT PRIMARY KEY,started_at TEXT,ended_at TEXT);
         CREATE TABLE turns(turn_id TEXT PRIMARY KEY,run_id TEXT REFERENCES runs(run_id) ON DELETE CASCADE);
@@ -211,6 +259,97 @@ mod tests {
     }
     fn now() -> DateTime<Utc> {
         "2026-10-11T13:00:00Z".parse().unwrap()
+    }
+
+    #[test]
+    fn actual_owned_database_reclaims_only_committed_deletions_and_keeps_boundary() {
+        let directory = std::env::temp_dir().join(format!(
+            "chau7-next-retention-vacuum-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let c = fixture_at(&directory.join("runs.db"));
+        c.execute_batch("INSERT INTO runs VALUES ('old','2026-09-10T23:59:59Z','2026-09-10'),('boundary','2026-09-11T00:00:00Z','2026-09-11'),('active','2020-01-01',NULL),('protected','2020-01-01','2020-01-02');
+        ALTER TABLE turns ADD COLUMN body BLOB;
+        INSERT INTO turns VALUES ('owned-turn','old',zeroblob(1048576));
+        INSERT INTO tool_calls VALUES ('owned-tool','old');
+        INSERT INTO usage_evidence VALUES ('run|old','old','2026-10-10'),('request|unscoped',NULL,'2026-09-10');
+        INSERT INTO provider_latency_samples VALUES (NULL,'2026-09-10');").unwrap();
+        let protected = vec!["protected".into(), "active".into()];
+        let before: i64 = c
+            .query_row("PRAGMA schema_version", [], |r| r.get(0))
+            .unwrap();
+        let report = maintain(&c, DEFAULT_DAYS, &protected, 100, now()).unwrap();
+        assert_eq!(
+            (report.runs, report.evidence, report.latency_samples),
+            (1, 2, 1)
+        );
+        assert!(report.compacted && report.compaction_error.is_none());
+        assert_eq!(count(&c, "SELECT count(*) FROM runs", &[]).unwrap(), 3);
+        assert_eq!(count(&c, "SELECT count(*) FROM turns", &[]).unwrap(), 0);
+        assert_eq!(
+            count(&c, "SELECT count(*) FROM tool_calls", &[]).unwrap(),
+            0
+        );
+        let after: i64 = c
+            .query_row("PRAGMA schema_version", [], |r| r.get(0))
+            .unwrap();
+        assert!(after > before);
+        let free: i64 = c
+            .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(free, 0);
+        let noop = maintain(&c, DEFAULT_DAYS, &protected, 100, now()).unwrap();
+        assert_eq!(noop.rows(), 0);
+        assert!(!noop.compacted && noop.compaction_error.is_none());
+        assert_eq!(
+            c.query_row("PRAGMA schema_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            after
+        );
+        c.execute(
+            "INSERT INTO runs VALUES ('forever','2020-01-01','2020-01-02')",
+            [],
+        )
+        .unwrap();
+        let disabled = maintain(&c, 0, &protected, 100, now()).unwrap();
+        assert_eq!(disabled.rows(), 0);
+        assert!(!disabled.compacted);
+        assert_eq!(count(&c, "SELECT count(*) FROM runs", &[]).unwrap(), 4);
+        assert_eq!(
+            c.query_row("PRAGMA schema_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            after
+        );
+        drop(c);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn unscoped_only_deletion_triggers_one_rewrite_and_compaction_failure_keeps_report() {
+        let c = fixture();
+        c.execute("INSERT INTO remote_client_events VALUES ('2026-09-10')", [])
+            .unwrap();
+        let mut attempts = 0;
+        let report = maintain_with_compaction(&c, DEFAULT_DAYS, &[], 100, now(), |conn| {
+            attempts += 1;
+            conn.execute_batch("VACUUM")
+        })
+        .unwrap();
+        assert_eq!(attempts, 1);
+        assert_eq!(report.remote_events, 1);
+        assert!(report.compacted);
+        c.execute(
+            "INSERT INTO runs VALUES ('old','2020-01-01','2020-01-02')",
+            [],
+        )
+        .unwrap();
+        let report = maintain_with_compaction(&c, DEFAULT_DAYS, &[], 100, now(), |_| {
+            Err(rusqlite::Error::InvalidQuery)
+        })
+        .unwrap();
+        assert_eq!(report.runs, 1);
+        assert!(!report.compacted && report.compaction_error.is_some());
+        assert_eq!(count(&c, "SELECT count(*) FROM runs", &[]).unwrap(), 0);
     }
     #[test]
     fn default_and_disabled_preview_never_remove_data() {

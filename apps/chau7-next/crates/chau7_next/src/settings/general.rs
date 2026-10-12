@@ -77,7 +77,8 @@ pub struct GeneralSettings {
     pub usage_monitoring: bool,
     pub claude_quota_capture: bool,
     pub usage_quota_warnings: bool,
-    /// Explicitly enabled retention only. Existing profiles keep history forever.
+    /// Existing profiles keep zero unless explicitly configured; positively new
+    /// installations receive the durable 30-day default during startup.
     pub telemetry_retention_days: i64,
     /// `app.launchAtLogin` (`[next] launch_at_login`). The login item itself
     /// is registered with the OS (`platform::login_item`).

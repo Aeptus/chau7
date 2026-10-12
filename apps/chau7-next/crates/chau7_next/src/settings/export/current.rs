@@ -271,7 +271,7 @@ pub(super) fn import_extension(
             .and_then(Value::as_str)
             .filter(|s| s.len() <= MAX_CONFIG_BYTES && s.contains("[next]"))
             .ok_or("invalid Chau7 Next settings payload")?;
-        let mut restored = Settings::from_profile_text(text);
+        let mut restored = Settings::from_profile_text_local(text, settings);
         match extension.get("legacyShell") {
             Some(Value::Null) => restored.terminal.shell = None,
             Some(Value::String(shell)) => restored.terminal.shell = Some(shell.clone()),

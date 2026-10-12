@@ -315,6 +315,14 @@ fn render(cx: &mut App) -> AnyElement {
     } else {
         timing = timing.child(ui::caption("No observed response latency yet.", chrome));
     }
+    if let Some(error) = &latency.error {
+        timing = timing.child(ui::caption(error.clone(), chrome));
+    } else if latency.refreshing {
+        timing = timing.child(ui::caption(
+            "Loading telemetry history; retaining the last successful observation when present.",
+            chrome,
+        ));
+    }
     if let Some(at) = latency.refreshed_at {
         timing=timing.child(ui::caption(format!("Updated {} · Terminal timing is an estimate; transcript rounds replace it. API response uses TTFT when observed.",at.with_timezone(&chrono::Local).format("%H:%M:%S")),chrome));
     }

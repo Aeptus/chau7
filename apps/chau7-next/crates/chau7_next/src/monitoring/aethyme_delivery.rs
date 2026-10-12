@@ -430,7 +430,17 @@ impl Runner {
         };
         if !result.completed() {
             if self.incomplete_capture(kind, Instant::now()) {
-                log::warn!("Aethyme capture incomplete; leaving any uncertain claim to expire");
+                log::warn!(
+                    "Aethyme capture incomplete; leaving any uncertain claim to expire; caller={} timed_out={} output_limit_exceeded={} read_failed={} cancelled={} status={:?} stdout_bytes={} stderr_bytes={}",
+                    kind.caller(),
+                    result.timed_out,
+                    result.output_limit_exceeded,
+                    result.read_failed,
+                    result.cancelled,
+                    result.status,
+                    result.stdout.len(),
+                    result.stderr.len(),
+                );
             }
             return None;
         }

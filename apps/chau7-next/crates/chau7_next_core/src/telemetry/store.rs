@@ -237,10 +237,33 @@ pub struct RepoRunStats {
     pub last_run_at: Option<DateTime<Utc>>,
 }
 
-/// The telemetry database.
+/// Memory-only initialization state. Reading this never takes the SQLite lock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreReadiness {
+    Loading,
+    Ready,
+    Failed,
+    Closed,
+}
+impl StoreReadiness {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Loading => "loading",
+            Self::Ready => "ready",
+            Self::Failed => "failed",
+            Self::Closed => "closed",
+        }
+    }
+}
+
+/// The telemetry database. Synchronous SQL access is for background callers.
 pub struct TelemetryStore {
     conn: Mutex<Option<Connection>>,
     path: Option<PathBuf>,
+    failures: std::sync::atomic::AtomicU64,
+    readiness: std::sync::atomic::AtomicU8,
+    initialization: std::sync::Mutex<()>,
+    initialized: std::sync::Condvar,
 }
 
 /// A Swift raw value (`rawValue`) of a string enum.
@@ -492,57 +515,116 @@ fn parse_remote_event(row: &Row) -> Option<RemoteClientTelemetryEvent> {
 const PRICED: &str = "SUM(CASE WHEN COALESCE(cost_state, 'missing') IN ('complete', 'estimated') AND cost_usd IS NOT NULL THEN 1 ELSE 0 END)";
 const MISSING_COST: &str = "SUM(CASE WHEN COALESCE(cost_state, 'missing') = 'missing' OR cost_usd IS NULL THEN 1 ELSE 0 END)";
 
+struct InitializationGuard<'a>(&'a TelemetryStore);
+impl Drop for InitializationGuard<'_> {
+    fn drop(&mut self) {
+        // A failed or unwinding initializer must wake readers rather than leave
+        // them waiting forever. No SQLite handle is created or closed on UI.
+        self.0.fail_initialization();
+    }
+}
+
 impl TelemetryStore {
-    /// Open (or create) the store at `path`. A database that fails
-    /// `PRAGMA quick_check` is deleted and created again (TEL-008).
-    pub fn open(path: &Path) -> Self {
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let mut conn = match Connection::open(path) {
-            Ok(conn) => Some(conn),
-            Err(err) => {
-                log::error!(
-                    "TelemetryStore: failed to open database at {}: {err}",
-                    path.display()
-                );
-                None
-            }
-        };
-        if let Some(c) = &conn {
-            configure(c);
-            if !integrity_ok(c) {
-                log::error!("TelemetryStore: database integrity check failed, recreating it");
-                drop(conn.take());
-                let _ = std::fs::remove_file(path);
-                let _ = std::fs::remove_file(path.with_extension("db-wal"));
-                let _ = std::fs::remove_file(path.with_extension("db-shm"));
-                conn = Connection::open(path).ok();
-                if let Some(c) = &conn {
-                    configure(c);
-                    log::info!("TelemetryStore: recreated database after corruption");
-                }
-            }
-        }
-        if let Some(c) = &conn {
-            setup(c);
-        }
+    /// A memory-only placeholder; no directories, files or SQL are touched.
+    pub(super) fn pending(path: &Path) -> Self {
         Self {
-            conn: Mutex::new(conn),
-            path: Some(path.to_path_buf()),
+            conn: Mutex::new(None),
+            path: Some(path.to_owned()),
+            failures: Default::default(),
+            readiness: std::sync::atomic::AtomicU8::new(0),
+            initialization: std::sync::Mutex::new(()),
+            initialized: std::sync::Condvar::new(),
         }
+    }
+    pub fn readiness(&self) -> StoreReadiness {
+        match self.readiness.load(std::sync::atomic::Ordering::Acquire) {
+            0 => StoreReadiness::Loading,
+            1 => StoreReadiness::Ready,
+            2 => StoreReadiness::Failed,
+            _ => StoreReadiness::Closed,
+        }
+    }
+    fn publish_readiness(&self, state: StoreReadiness) {
+        let _held = self
+            .initialization
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        self.readiness.store(
+            match state {
+                StoreReadiness::Loading => 0,
+                StoreReadiness::Ready => 1,
+                StoreReadiness::Failed => 2,
+                StoreReadiness::Closed => 3,
+            },
+            std::sync::atomic::Ordering::Release,
+        );
+        self.initialized.notify_all();
+    }
+    pub(super) fn fail_initialization(&self) {
+        if self.readiness() == StoreReadiness::Loading {
+            self.record_failure();
+            self.publish_readiness(StoreReadiness::Failed);
+        }
+    }
+    /// Background-only readiness barrier. UI uses the atomic snapshot instead.
+    pub fn wait_until_initialized(&self) -> rusqlite::Result<()> {
+        let mut held = self
+            .initialization
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        while self.readiness() == StoreReadiness::Loading {
+            held = self
+                .initialized
+                .wait(held)
+                .unwrap_or_else(|e| e.into_inner());
+        }
+        if self.readiness() == StoreReadiness::Ready {
+            Ok(())
+        } else {
+            Err(rusqlite::Error::InvalidQuery)
+        }
+    }
+    /// First ordered writer job: open/check/migrate before admitted run writes.
+    pub(super) fn initialize_background(&self) -> rusqlite::Result<()> {
+        let _guard = InitializationGuard(self);
+        let path = self.path.as_deref().ok_or(rusqlite::Error::InvalidQuery)?;
+        let connection = open_checked(path)?;
+        let mut held = self.conn.lock();
+        if self.readiness() != StoreReadiness::Loading {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        *held = Some(connection);
+        self.publish_readiness(StoreReadiness::Ready);
+        Ok(())
+    }
+    /// Open (or create) the store at `path`. Only confirmed corruption
+    /// permits deleting and recreating the database (TEL-008); ambiguous
+    /// integrity, I/O and schema failures preserve it and report Failed.
+    pub fn open(path: &Path) -> Self {
+        let store = Self::pending(path);
+        if let Err(error) = store.initialize_background() {
+            log::warn!("Telemetry store initialization failed: {error}");
+        }
+        store
     }
 
     /// A throwaway store (tests).
     pub fn in_memory() -> Self {
-        let conn = Connection::open_in_memory().ok();
-        if let Some(c) = &conn {
-            configure(c);
-            setup(c);
-        }
+        let conn = Connection::open_in_memory()
+            .and_then(|connection| {
+                configure_checked(&connection)?;
+                setup_checked(&connection)?;
+                Ok(connection)
+            })
+            .ok();
+        let ready = conn.is_some();
         Self {
             conn: Mutex::new(conn),
             path: None,
+            failures: Default::default(),
+            readiness: std::sync::atomic::AtomicU8::new(if ready { 1 } else { 2 }),
+            initialization: std::sync::Mutex::new(()),
+            initialized: std::sync::Condvar::new(),
         }
     }
 
@@ -552,17 +634,95 @@ impl TelemetryStore {
     }
 
     fn with<T>(&self, fallback: T, f: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> T {
+        if self.wait_until_initialized().is_err() {
+            self.record_failure();
+            return fallback;
+        }
         let guard = self.conn.lock();
         let Some(conn) = guard.as_ref() else {
+            self.record_failure();
             return fallback;
         };
         match f(conn) {
             Ok(value) => value,
             Err(err) => {
+                self.record_failure();
                 log::warn!("TelemetryStore: {err}");
                 fallback
             }
         }
+    }
+
+    /// Monotonic diagnostic count: background snapshot readers refuse to
+    /// publish fallback zeros as fresh SQL data when any read failed.
+    /// Close the actual connection after all accepted producers/readers have
+    /// drained. This method can wait for background SQL and must never run on UI.
+    pub fn close(&self) -> rusqlite::Result<()> {
+        self.close_using(|connection| connection.close().map_err(Box::new))
+    }
+    fn close_using(
+        &self,
+        close: impl FnOnce(Connection) -> Result<(), Box<(Connection, rusqlite::Error)>>,
+    ) -> rusqlite::Result<()> {
+        let mut held = self.conn.lock();
+        let Some(connection) = held.take() else {
+            self.publish_readiness(StoreReadiness::Closed);
+            return Ok(());
+        };
+        match close(connection) {
+            Ok(()) => {
+                self.publish_readiness(StoreReadiness::Closed);
+                Ok(())
+            }
+            Err(returned) => {
+                let (connection, error) = *returned;
+                *held = Some(connection);
+                self.record_failure();
+                Err(error)
+            }
+        }
+    }
+    pub fn failure_count(&self) -> u64 {
+        self.failures.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    fn record_failure(&self) {
+        let _ = self.failures.fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |value| Some(value.saturating_add(1)),
+        );
+    }
+    #[cfg(test)]
+    pub(super) fn hold_connection_test(
+        &self,
+        started: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    ) {
+        let _guard = self.conn.lock();
+        started.send(()).unwrap();
+        release.recv().unwrap();
+    }
+    fn with_result<T>(
+        &self,
+        f: impl FnOnce(&Connection) -> rusqlite::Result<T>,
+    ) -> rusqlite::Result<T> {
+        if let Err(error) = self.wait_until_initialized() {
+            self.record_failure();
+            return Err(error);
+        }
+        let guard = self.conn.lock();
+        let result = guard
+            .as_ref()
+            .ok_or(rusqlite::Error::InvalidQuery)
+            .and_then(f);
+        if result.is_err() {
+            self.record_failure();
+        }
+        result
+    }
+    #[cfg(test)]
+    pub(super) fn try_execute_test(&self, sql: &str) -> rusqlite::Result<()> {
+        self.with_result(|conn| conn.execute_batch(sql))
     }
 
     /// Read-only preview for an explicit retention choice. Zero keeps forever.
@@ -585,9 +745,10 @@ impl TelemetryStore {
     ) -> rusqlite::Result<super::retention::PruneReport> {
         let guard = self.conn.lock();
         let conn = guard.as_ref().ok_or(rusqlite::Error::InvalidQuery)?;
-        super::retention::prune(conn, days, protected, limit, now)
+        super::retention::maintain(conn, days, protected, limit, now)
     }
-    /// Only called following the user's separate compaction confirmation.
+    /// Additional manual compaction never deletes rows. Retention maintenance
+    /// also reclaims disk automatically after actual policy-driven deletions.
     pub fn compact_confirmed(&self) -> rusqlite::Result<()> {
         let guard = self.conn.lock();
         let conn = guard.as_ref().ok_or(rusqlite::Error::InvalidQuery)?;
@@ -598,7 +759,12 @@ impl TelemetryStore {
 
     /// Insert a new run (`INSERT OR IGNORE`: safe to call twice).
     pub fn insert_run(&self, run: &TelemetryRun) {
-        self.with((), |c| {
+        if let Err(error) = self.try_insert_run(run) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_insert_run(&self, run: &TelemetryRun) -> rusqlite::Result<()> {
+        self.with_result( |c| {
             let tx=c.unchecked_transaction()?;
             tx.execute(
                 "INSERT OR IGNORE INTO runs
@@ -642,7 +808,7 @@ impl TelemetryStore {
             insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
             reconcile_proxy_window(&tx,run.started_at)?;
             tx.commit()
-        });
+        })
     }
 
     /// Finish a run: update its row and add its turns and tool calls in one
@@ -689,7 +855,15 @@ impl TelemetryStore {
 
     /// Latency writes are idempotent and preserve the original ingest order.
     pub fn insert_latency_sample(&self, sample: &super::latency::LatencySample) {
-        self.with((), |conn| insert_latency(conn, sample));
+        if let Err(error) = self.try_insert_latency_sample(sample) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_insert_latency_sample(
+        &self,
+        sample: &super::latency::LatencySample,
+    ) -> rusqlite::Result<()> {
+        self.with_result(|conn| insert_latency(conn, sample))
     }
     /// Resume historical latency reconstruction in bounded batches. The
     /// checkpoint and resulting samples commit together; interrupted work
@@ -772,7 +946,17 @@ impl TelemetryStore {
         turns: &[TelemetryTurn],
         tool_calls: &[TelemetryToolCall],
     ) {
-        self.with((), |c| {
+        if let Err(error) = self.try_finalize_run(run, turns, tool_calls) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_finalize_run(
+        &self,
+        run: &TelemetryRun,
+        turns: &[TelemetryTurn],
+        tool_calls: &[TelemetryToolCall],
+    ) -> rusqlite::Result<()> {
+        self.with_result( |c| {
             let tx = c.unchecked_transaction()?;
             tx.execute(
                 "UPDATE runs SET
@@ -806,16 +990,16 @@ impl TelemetryStore {
                 ],
             )?;
             for turn in turns {
-                insert_turn(&tx, turn);
+                try_insert_turn(&tx, turn)?;
             }
             for call in tool_calls {
-                insert_tool_call(&tx, call);
+                try_insert_tool_call(&tx, call)?;
             }
             replace_completed_latency(&tx, run, turns)?;
             insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
             reconcile_proxy_window(&tx,run.started_at)?;
             tx.commit()
-        });
+        })
     }
 
     /// Replace everything about a finished run (transcript repair).
@@ -825,7 +1009,17 @@ impl TelemetryStore {
         turns: &[TelemetryTurn],
         tool_calls: &[TelemetryToolCall],
     ) {
-        self.with((), |c| {
+        if let Err(error) = self.try_rewrite_completed_run(run, turns, tool_calls) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_rewrite_completed_run(
+        &self,
+        run: &TelemetryRun,
+        turns: &[TelemetryTurn],
+        tool_calls: &[TelemetryToolCall],
+    ) -> rusqlite::Result<()> {
+        self.with_result(|c| {
             let tx = c.unchecked_transaction()?;
             tx.execute("DELETE FROM tool_calls WHERE run_id = ?", [&run.id])?;
             tx.execute("DELETE FROM turns WHERE run_id = ?", [&run.id])?;
@@ -870,21 +1064,30 @@ impl TelemetryStore {
                 ],
             )?;
             for turn in turns {
-                insert_turn(&tx, turn);
+                try_insert_turn(&tx, turn)?;
             }
             for call in tool_calls {
-                insert_tool_call(&tx, call);
+                try_insert_tool_call(&tx, call)?;
             }
             replace_completed_latency(&tx, run, turns)?;
             insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(run))?;
             reconcile_proxy_window(&tx,run.started_at)?;
             tx.commit()
-        });
+        })
     }
 
     /// Clear a run's tokens and cost and mark them invalid.
     pub fn invalidate_run_metrics(&self, run_id: &str, reason: Option<&str>) {
-        self.with((), |c| {
+        if let Err(error) = self.try_invalidate_run_metrics(run_id, reason) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_invalidate_run_metrics(
+        &self,
+        run_id: &str,
+        reason: Option<&str>,
+    ) -> rusqlite::Result<()> {
+        self.with_result(|c| {
             let tx=c.unchecked_transaction()?;
             tx.execute(
                 "UPDATE runs
@@ -904,7 +1107,7 @@ impl TelemetryStore {
             let run:Option<TelemetryRun>=tx.query_row("SELECT * FROM runs WHERE run_id=?1",[run_id],|row|Ok(parse_run(row))).optional()?.flatten();
             if let Some(run)=run {insert_evidence(&tx,&super::evidence::UsageEvidence::run_summary(&run))?;tx.execute("DELETE FROM proxy_run_baselines WHERE run_id=?1",[run_id])?;}
             tx.commit()
-        });
+        })
     }
 
     pub fn insert_turns(&self, turns: &[TelemetryTurn]) {
@@ -926,7 +1129,16 @@ impl TelemetryStore {
     }
 
     pub fn update_run_session_id(&self, run_id: &str, session_id: &str) {
-        self.with((), |conn| {
+        if let Err(error) = self.try_update_run_session_id(run_id, session_id) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_update_run_session_id(
+        &self,
+        run_id: &str,
+        session_id: &str,
+    ) -> rusqlite::Result<()> {
+        self.with_result(|conn| {
             let tx = conn.unchecked_transaction()?;
             tx.execute(
                 "UPDATE runs SET session_id=?1 WHERE run_id=?2",
@@ -943,23 +1155,36 @@ impl TelemetryStore {
                 reconcile_proxy_window(&tx, run.started_at)?;
             }
             tx.commit()
-        });
+        })
     }
 
     /// TEL-009: replace a run's tags (JSON array).
     pub fn update_run_tags(&self, run_id: &str, tags: &[String]) {
-        self.with((), |c| {
+        if let Err(error) = self.try_update_run_tags(run_id, tags) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_update_run_tags(&self, run_id: &str, tags: &[String]) -> rusqlite::Result<()> {
+        self.with_result(|c| {
             c.execute(
                 "UPDATE runs SET tags = ? WHERE run_id = ?",
                 params![encode_json(&tags), run_id],
             )
             .map(|_| ())
-        });
+        })
     }
 
     /// TEL-015: one event from the paired iPhone.
     pub fn insert_remote_client_event(&self, event: &RemoteClientTelemetryEvent) {
-        self.with((), |c| {
+        if let Err(error) = self.try_insert_remote_client_event(event) {
+            log::warn!("Telemetry persistence failed: {error}");
+        }
+    }
+    pub fn try_insert_remote_client_event(
+        &self,
+        event: &RemoteClientTelemetryEvent,
+    ) -> rusqlite::Result<()> {
+        self.with_result(|c| {
             c.execute(
                 "INSERT OR IGNORE INTO remote_client_events
                 (event_id, source, device_id, device_name, app_version, session_id,
@@ -982,7 +1207,7 @@ impl TelemetryStore {
                 ],
             )
             .map(|_| ())
-        });
+        })
     }
 
     pub fn list_remote_client_events(&self, limit: usize) -> Vec<RemoteClientTelemetryEvent> {
@@ -1382,40 +1607,63 @@ impl TelemetryStore {
     /// Apply the open-time migrations again (tests of TEL-007).
     #[doc(hidden)]
     pub fn reapply_migrations(&self) {
-        self.with((), |c| {
-            migrate(c);
-            Ok(())
-        });
+        self.with((), migrate_checked);
     }
 }
 
-fn configure(conn: &Connection) {
-    let _: Option<String> = conn
-        .query_row("PRAGMA journal_mode=WAL", [], |r| r.get(0))
-        .optional()
-        .ok()
-        .flatten();
-    let _ = conn.execute_batch("PRAGMA foreign_keys=ON");
+fn open_checked(path: &Path) -> rusqlite::Result<Connection> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|_| rusqlite::Error::InvalidPath(path.to_owned()))?;
+    }
+    let mut connection = Connection::open(path)?;
+    let integrity = check_integrity(&connection)?;
+    if integrity == IntegrityCheck::ConfirmedCorruption {
+        drop(connection);
+        std::fs::remove_file(path).map_err(|_| rusqlite::Error::InvalidPath(path.to_owned()))?;
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+        connection = Connection::open(path)?;
+    }
+    configure_checked(&connection)?;
+    setup_checked(&connection)?;
+    Ok(connection)
 }
 
-fn integrity_ok(conn: &Connection) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IntegrityCheck {
+    Healthy,
+    ConfirmedCorruption,
+}
+fn check_integrity(conn: &Connection) -> rusqlite::Result<IntegrityCheck> {
+    // A busy/unreadable database is unavailable, not evidence of corruption.
     match conn.query_row("PRAGMA quick_check", [], |r| r.get::<_, String>(0)) {
-        Ok(result) => result == "ok",
-        Err(err) => {
-            log::error!("TelemetryStore: quick_check failed: {err}");
-            false
+        Ok(result) => Ok(if result == "ok" {
+            IntegrityCheck::Healthy
+        } else {
+            IntegrityCheck::ConfirmedCorruption
+        }),
+        Err(rusqlite::Error::SqliteFailure(error, _))
+            if matches!(
+                error.code,
+                rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
+            ) =>
+        {
+            Ok(IntegrityCheck::ConfirmedCorruption)
         }
+        Err(error) => Err(error),
     }
 }
-
-fn setup(conn: &Connection) {
-    if let Err(err) = conn.execute_batch(SCHEMA) {
-        log::error!("TelemetryStore: schema creation failed: {err}");
-    }
-    migrate(conn);
+fn configure_checked(conn: &Connection) -> rusqlite::Result<()> {
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.execute_batch("PRAGMA foreign_keys=ON")
+}
+fn setup_checked(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(SCHEMA)?;
+    migrate_checked(conn)
 }
 
-fn migrate(conn: &Connection) {
+fn migrate_checked(conn: &Connection) -> rusqlite::Result<()> {
     for (table, name, definition) in [
         ("runs", "total_cached_input_tokens", "INTEGER"),
         ("runs", "total_cache_creation_input_tokens", "INTEGER"),
@@ -1430,33 +1678,38 @@ fn migrate(conn: &Connection) {
         ("turns", "cache_read_input_tokens", "INTEGER"),
         ("turns", "reasoning_output_tokens", "INTEGER"),
     ] {
-        ensure_column(conn, table, name, definition);
+        ensure_column(conn, table, name, definition)?;
     }
-    let _ = conn.execute_batch(BACKFILL_STATES);
-    let _ = conn.execute_batch(INVALIDATE_IMPLAUSIBLE);
+    conn.execute_batch(BACKFILL_STATES)?;
+    conn.execute_batch(INVALIDATE_IMPLAUSIBLE)?;
+    Ok(())
 }
 
-fn ensure_column(conn: &Connection, table: &str, name: &str, definition: &str) {
-    let exists = conn
-        .prepare(&format!("PRAGMA table_info({table})"))
-        .and_then(|mut stmt| {
-            let names = stmt.query_map([], |r| r.get::<_, String>(1))?;
-            Ok(names.filter_map(Result::ok).any(|n| n == name))
-        })
-        .unwrap_or(true);
-    if !exists
-        && conn
-            .execute_batch(&format!(
-                "ALTER TABLE {table} ADD COLUMN {name} {definition}"
-            ))
-            .is_err()
-    {
-        log::warn!("TelemetryStore: failed to add column {table}.{name}");
+fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    name: &str,
+    definition: &str,
+) -> rusqlite::Result<()> {
+    let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let names = statement
+        .query_map([], |r| r.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !names.iter().any(|n| n == name) {
+        conn.execute_batch(&format!(
+            "ALTER TABLE {table} ADD COLUMN {name} {definition}"
+        ))?;
     }
+    Ok(())
 }
 
 fn insert_turn(conn: &Connection, turn: &TelemetryTurn) {
-    if let Err(err) = conn.execute(
+    if let Err(error) = try_insert_turn(conn, turn) {
+        log::warn!("TelemetryStore: child insert failed: {error}");
+    }
+}
+fn try_insert_turn(conn: &Connection, turn: &TelemetryTurn) -> rusqlite::Result<()> {
+    conn.execute(
         "INSERT OR IGNORE INTO turns
         (turn_id, run_id, turn_index, role, content, input_tokens, cached_input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens,
          reasoning_output_tokens, tool_calls, timestamp, duration_ms)
@@ -1477,13 +1730,16 @@ fn insert_turn(conn: &Connection, turn: &TelemetryTurn) {
             turn.timestamp.as_ref().map(iso),
             turn.duration_ms,
         ],
-    ) {
-        log::warn!("TelemetryStore: insert turn failed for {}: {err}", turn.id);
-    }
+    ).map(|_| ())
 }
 
 fn insert_tool_call(conn: &Connection, call: &TelemetryToolCall) {
-    if let Err(err) = conn.execute(
+    if let Err(error) = try_insert_tool_call(conn, call) {
+        log::warn!("TelemetryStore: child insert failed: {error}");
+    }
+}
+fn try_insert_tool_call(conn: &Connection, call: &TelemetryToolCall) -> rusqlite::Result<()> {
+    conn.execute(
         "INSERT OR IGNORE INTO tool_calls
         (call_id, run_id, turn_id, tool_name, arguments, result, status, duration_ms, call_index)
         VALUES (?,?,?,?,?,?,?,?,?)",
@@ -1498,12 +1754,8 @@ fn insert_tool_call(conn: &Connection, call: &TelemetryToolCall) {
             call.duration_ms,
             call.call_index,
         ],
-    ) {
-        log::warn!(
-            "TelemetryStore: insert tool_call failed for {}: {err}",
-            call.id
-        );
-    }
+    )
+    .map(|_| ())
 }
 
 #[cfg(test)]
@@ -1520,6 +1772,23 @@ mod tests {
         run
     }
 
+    #[test]
+    fn disabled_retention_and_manual_compaction_preserve_owned_history() {
+        let store = TelemetryStore::in_memory();
+        let mut old = run("claude", Some("/owned"), Some("owned-tab"));
+        old.started_at = "2020-01-01T00:00:00Z".parse().unwrap();
+        old.ended_at = Some(old.started_at + Duration::seconds(1));
+        let mut turn = TelemetryTurn::new(&old.id, 0, TurnRole::Assistant);
+        turn.content = Some("owned retained transcript".into());
+        store.insert_run(&old);
+        store.finalize_run(&old, &[turn], &[]);
+        let report = store.prune_retained(0, &[], 100, Utc::now()).unwrap();
+        assert_eq!(report.rows(), 0);
+        assert!(!report.compacted);
+        store.compact_confirmed().unwrap();
+        assert_eq!(store.get_run(&old.id).unwrap().started_at, old.started_at);
+        assert_eq!(store.with(0, |conn| conn.query_row("SELECT count(*) FROM turns WHERE run_id=?1 AND content='owned retained transcript'", [&old.id], |row| row.get::<_,usize>(0))), 1);
+    }
     #[test]
     fn insert_finalize_and_read_back() {
         let store = TelemetryStore::in_memory();
@@ -2009,5 +2278,163 @@ mod tests {
         assert_eq!(totals.partial_run_count, 1);
         assert_eq!(totals.missing_cost_run_count, 1);
         assert_eq!(totals.priced_proxy_request_count, 2);
+    }
+}
+
+#[cfg(test)]
+mod ordered_failure_tests {
+    use super::*;
+    use std::sync::Arc;
+    #[test]
+    fn explicit_background_close_is_idempotent_and_releases_an_owned_file() {
+        let directory =
+            std::env::temp_dir().join(format!("next-telemetry-close-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let store = Arc::new(TelemetryStore::open(&directory.join("owned.db")));
+        let run = TelemetryRun::new("owned-fake", "/synthetic");
+        store.try_insert_run(&run).unwrap();
+        let closed = store.clone();
+        let caller = std::thread::current().id();
+        let worker = std::thread::spawn(move || {
+            closed.close().unwrap();
+            closed.close().unwrap();
+            std::thread::current().id()
+        })
+        .join()
+        .unwrap();
+        assert_ne!(caller, worker);
+        assert!(store.try_insert_run(&run).is_err());
+        assert_eq!(store.failure_count(), 1);
+        // Even a retained wrapper has no SQLite handle now, including on Windows.
+        std::fs::remove_dir_all(directory).unwrap();
+        drop(store);
+    }
+    #[test]
+    fn a_failed_close_restores_the_returned_connection_and_reports_the_real_sql_error() {
+        let store = TelemetryStore::in_memory();
+        let run = TelemetryRun::new("owned-fake", "/synthetic");
+        store.try_insert_run(&run).unwrap();
+        // Deterministically exercise Connection::close's returned-connection
+        // branch with an actual SQLite error rather than leaking statements.
+        let result = store.close_using(|connection| {
+            let error = connection
+                .execute("INSERT INTO missing_owned_table VALUES(1)", [])
+                .unwrap_err();
+            Err(Box::new((connection, error)))
+        });
+        assert!(result.is_err());
+        assert_eq!(store.failure_count(), 1);
+        assert_eq!(store.get_run(&run.id).unwrap().id, run.id);
+        store.close().unwrap();
+        store.close().unwrap();
+    }
+    #[test]
+    fn checked_finalization_rolls_back_everything_when_a_child_insert_fails() {
+        let store = TelemetryStore::in_memory();
+        let mut run = TelemetryRun::new("owned-fake", "/owned");
+        store.try_insert_run(&run).unwrap();
+        run.ended_at = Some(Utc::now());
+        let mut turn = TelemetryTurn::new(&run.id, 0, super::super::turn::TurnRole::Assistant);
+        turn.run_id = "missing-parent".into();
+        assert!(store.try_finalize_run(&run, &[turn], &[]).is_err());
+        assert!(store.get_run(&run.id).unwrap().ended_at.is_none());
+        assert_eq!(store.failure_count(), 1);
+    }
+}
+
+#[cfg(test)]
+mod checked_initialization_tests {
+    use super::*;
+    use std::sync::Arc;
+    #[test]
+    fn malformed_schema_fails_checked_initialization_without_recreating_owned_records() {
+        let directory =
+            std::env::temp_dir().join(format!("next-schema-failure-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("owned.db");
+        let original = Connection::open(&path).unwrap();
+        original.execute_batch("CREATE TABLE owned_preserved(value TEXT); INSERT INTO owned_preserved VALUES('owned-value'); CREATE VIEW runs AS SELECT 1 AS sentinel").unwrap();
+        original.close().unwrap();
+        let store = Arc::new(TelemetryStore::pending(&path));
+        let initializing = store.clone();
+        assert!(
+            std::thread::spawn(move || initializing.initialize_background())
+                .join()
+                .unwrap()
+                .is_err()
+        );
+        assert_eq!(store.readiness(), StoreReadiness::Failed);
+        assert_eq!(store.failure_count(), 1);
+        let preserved = Connection::open(&path).unwrap();
+        assert_eq!(
+            preserved
+                .query_row("SELECT value FROM owned_preserved", [], |r| r
+                    .get::<_, String>(0))
+                .unwrap(),
+            "owned-value"
+        );
+        preserved.close().unwrap();
+        store.close().unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn actual_busy_integrity_check_preserves_database_bytes_and_never_labels_it_corrupt() {
+        let directory =
+            std::env::temp_dir().join(format!("next-integrity-busy-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("owned.db");
+        let owner = Connection::open(&path).unwrap();
+        owner.execute_batch("CREATE TABLE owned_preserved(value TEXT); INSERT INTO owned_preserved VALUES('owned-value'); BEGIN EXCLUSIVE").unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let store = Arc::new(TelemetryStore::pending(&path));
+        let initializing = store.clone();
+        let error = std::thread::spawn(move || initializing.initialize_background())
+            .join()
+            .unwrap()
+            .unwrap_err();
+        assert!(
+            matches!(error, rusqlite::Error::SqliteFailure(ref e, _) if matches!(e.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked))
+        );
+        assert_eq!(store.readiness(), StoreReadiness::Failed);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(!path.with_extension("db-wal").exists());
+        assert!(!path.with_extension("db-shm").exists());
+        owner.execute_batch("ROLLBACK").unwrap();
+        assert_eq!(
+            owner
+                .query_row("SELECT COUNT(*) FROM owned_preserved", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        owner.close().unwrap();
+        store.close().unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn confirmed_corruption_recreates_only_the_owned_database_and_publishes_ready() {
+        let directory =
+            std::env::temp_dir().join(format!("next-confirmed-corrupt-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("owned.db");
+        std::fs::write(
+            &path,
+            b"owned synthetic invalid sqlite contents, sufficiently long",
+        )
+        .unwrap();
+        let connection = Connection::open(&path).unwrap();
+        assert_eq!(
+            check_integrity(&connection).unwrap(),
+            IntegrityCheck::ConfirmedCorruption
+        );
+        connection.close().unwrap();
+        let store = TelemetryStore::open(&path);
+        assert_eq!(store.readiness(), StoreReadiness::Ready);
+        store
+            .try_insert_run(&TelemetryRun::new("owned-fake", "/synthetic"))
+            .unwrap();
+        assert_eq!(store.run_count(), 1);
+        store.close().unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }
