@@ -114,8 +114,40 @@ fn inspect(window: &Window) -> Result<Value, String> {
         let bounds = view.bounds();
         let bitmap = view
             .bitmapImageRepForCachingDisplayInRect(bounds)
-            .ok_or("owned view bitmap allocation failed")?;
+            .and_then(|bitmap| {
+                bitmap.bitmapImageRepByRetaggingWithColorSpace(&NSColorSpace::sRGBColorSpace())
+            })
+            .ok_or("owned sRGB view bitmap allocation failed")?;
+        // Configure the EMPTY capture target before drawing. AppKit's default
+        // bitmap profile is display-dependent; converting its returned colors
+        // afterwards is not a reliable sRGB pixel assertion. No rendered data
+        // is retagged here, and zero initialization prevents a stale image from
+        // satisfying the proof if cacheDisplay does not draw the real view.
+        let length = usize::try_from(bitmap.bytesPerPlane())
+            .map_err(|_| "owned view bitmap length invalid")?;
+        let actual_profile = bitmap.colorSpace();
+        let expected_profile = NSColorSpace::sRGBColorSpace();
+        let profile_matches: bool =
+            unsafe { msg_send![&*actual_profile, isEqual: &*expected_profile] };
+        if !profile_matches {
+            return Err("owned empty capture target did not retain the actual sRGB profile".into());
+        }
+        let pixels = bitmap.bitmapData();
+        if bitmap.numberOfPlanes() != 1
+            || pixels.is_null()
+            || length == 0
+            || length > 16 * 1024 * 1024
+        {
+            return Err("owned view bitmap layout invalid".into());
+        }
+        unsafe { std::ptr::write_bytes(pixels, 0, length) };
         view.cacheDisplayInRect_toBitmapImageRep(bounds, &bitmap);
+        let after_profile = bitmap.colorSpace();
+        let profile_preserved: bool =
+            unsafe { msg_send![&*after_profile, isEqual: &*expected_profile] };
+        if !profile_preserved {
+            return Err("AppKit changed the owned capture target profile while drawing".into());
+        }
         let sample = |y: isize| -> Result<[f64; 4], String> {
             let color = bitmap
                 .colorAtX_y(bitmap.pixelsWide() / 2, y)
@@ -139,7 +171,7 @@ fn inspect(window: &Window) -> Result<Value, String> {
                 "actual owned NSView composition orientation/color mismatch: top{composed_top:?} bottom{composed_bottom:?}"
             ));
         }
-        json!({"width":width,"height":height,"actual_layer":"CALayer","top_bgra":top,"bottom_bgra":bottom,"source_image_pixel_bytes":width*height*4,"actual_nsview_top_srgba":composed_top,"actual_nsview_bottom_srgba":composed_bottom})
+        json!({"width":width,"height":height,"actual_layer":"CALayer","top_bgra":top,"bottom_bgra":bottom,"source_image_pixel_bytes":width*height*4,"actual_nsview_top_srgba":composed_top,"actual_nsview_bottom_srgba":composed_bottom,"capture_target_profile":"sRGB","capture_target_profile_verified":profile_matches,"capture_target_profile_preserved_after_draw":profile_preserved,"capture_target_zero_initialized_before_draw":true})
     } else {
         Value::Null
     };
