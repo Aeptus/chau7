@@ -833,6 +833,11 @@ impl MacWindowState {
 
     fn start_display_link(&mut self) {
         self.stop_display_link();
+        // Software requests actual AppKit layer updates only on demand. It
+        // must not require CoreVideo display-link availability or an idle tick.
+        if self.renderer.backend() == renderer::WindowBackend::Software {
+            return;
+        }
         unsafe {
             if !self
                 .native_window
@@ -1369,6 +1374,9 @@ impl MacWindow {
 impl Drop for MacWindow {
     fn drop(&mut self) {
         let mut this = self.0.lock();
+        if this.renderer.backend() == renderer::WindowBackend::Software {
+            this.closed.store(true, Ordering::Release);
+        }
         // `accesskit_macos::SubclassingAdapter::for_window` strong-retains the
         // window's content view, and that content view keeps the `GPUIView` it
         // hosts alive. Together with the `Arc<Mutex<MacWindowState>>` parked in
@@ -1415,6 +1423,70 @@ fn if_window_not_closed(closed: Arc<AtomicBool>, f: impl FnOnce()) {
 }
 
 impl PlatformWindow for MacWindow {
+    fn frame_waker(&self) -> Option<Rc<dyn Fn()>> {
+        let state = self.0.lock();
+        if state.renderer.backend() != renderer::WindowBackend::Software {
+            return None;
+        }
+        let foreground = state.foreground_executor.clone();
+        let background = state.background_executor.clone();
+        let closed = state.closed.clone();
+        drop(state);
+        let weak = Arc::downgrade(&self.0);
+        let clock = Rc::new(std::cell::RefCell::new(
+            crate::software_renderer::frame_clock::DemandClock::default(),
+        ));
+        Some(Rc::new(move || {
+            if closed.load(Ordering::Acquire) || weak.strong_count() == 0 {
+                return;
+            }
+            let Some(delay) = clock.borrow_mut().request(std::time::Instant::now()) else {
+                return;
+            };
+            let clock = clock.clone();
+            let weak = weak.clone();
+            let closed = closed.clone();
+            let background = background.clone();
+            foreground
+                .spawn(async move {
+                    // Even a zero-delay wake is deferred beyond the App borrow
+                    // invoking the invalidator. There is only one queued task.
+                    if !delay.is_zero() {
+                        background.timer(delay).await;
+                    }
+                    clock.borrow_mut().delivered(std::time::Instant::now());
+                    if closed.load(Ordering::Acquire) {
+                        return;
+                    }
+                    let Some(state) = weak.upgrade() else {
+                        return;
+                    };
+                    let layer = {
+                        let state = state.lock();
+                        if state.closed.load(Ordering::Acquire) {
+                            return;
+                        }
+                        state.renderer.layer_ptr() as *mut Objc2Object
+                    };
+                    // SAFETY: this is the live renderer's ordinary CALayer;
+                    // the main-thread task has no await between obtaining it
+                    // and retaining it. No App or window-state borrow remains.
+                    let Some(layer) = (unsafe { Retained::retain(layer) }) else {
+                        return;
+                    };
+                    unsafe {
+                        let _: () = objc2::msg_send![&*layer, setNeedsDisplay];
+                        // Actual CALayerDelegate delivery is needed even when
+                        // AppKit doesn't traverse an inactive/occluded window.
+                        // A skipped GPUI throttle re-arms this same bounded
+                        // demand clock; idle windows schedule nothing.
+                        let _: () = objc2::msg_send![&*layer, displayIfNeeded];
+                    }
+                })
+                .detach();
+        }))
+    }
+
     fn bounds(&self) -> Bounds<Pixels> {
         self.0.as_ref().lock().bounds()
     }
