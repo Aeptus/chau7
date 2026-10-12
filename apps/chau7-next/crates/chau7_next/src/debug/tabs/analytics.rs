@@ -440,7 +440,22 @@ impl DebugConsole {
             )
             .into_any_element();
         };
-        let data = (source.data)(cx);
+        let (data, status) = (source.data)(cx);
+        let Some(data) = data else {
+            return ui::page(
+                "analytics-page",
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(picker)
+                    .child(ui::empty_note(
+                        status.unwrap_or_else(|| "Loading analytics".into()),
+                        chrome,
+                    )),
+            )
+            .into_any_element();
+        };
         let tabs = snapshot::tabs(cx);
         let page = match self.analytics_mode {
             AnalyticsMode::ApiCalls => proxy_page(&data, chrome),
@@ -480,6 +495,7 @@ impl DebugConsole {
                 .gap_3()
                 .child(picker)
                 .child(live)
+                .children(status.map(|status| ui::caption(status, chrome)))
                 .child(page),
         )
         .into_any_element()

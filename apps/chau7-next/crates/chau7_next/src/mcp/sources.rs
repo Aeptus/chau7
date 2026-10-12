@@ -23,7 +23,7 @@ pub trait TelemetrySource: Send + Sync {
     fn runs(&self, filter: &TelemetryRunFilter) -> Vec<TelemetryRun>;
     fn tool_calls(&self, run_id: &str) -> Vec<TelemetryToolCall>;
     fn turns(&self, run_id: &str) -> Vec<TelemetryTurn>;
-    fn set_tags(&self, run_id: &str, tags: &[String]);
+    fn set_tags(&self, run_id: &str, tags: &[String]) -> Result<(), String>;
     fn latest_run_for_repo(&self, repo_path: &str, provider: Option<&str>) -> Option<TelemetryRun>;
     /// Session rows (`listSessions(repoPath:)`): objects with at least
     /// `session_id`.
@@ -77,7 +77,9 @@ impl TelemetrySource for Empty {
     fn turns(&self, _: &str) -> Vec<TelemetryTurn> {
         Vec::new()
     }
-    fn set_tags(&self, _: &str, _: &[String]) {}
+    fn set_tags(&self, _: &str, _: &[String]) -> Result<(), String> {
+        Err("Telemetry is unavailable".into())
+    }
     fn latest_run_for_repo(&self, _: &str, _: Option<&str>) -> Option<TelemetryRun> {
         None
     }

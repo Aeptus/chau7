@@ -97,121 +97,125 @@ fn init_health(cx: &mut App) {
         "usage",
         60_000,
     );
-    cx.background_executor()
-        .spawn(async move {
-            let _timer = timer;
-            loop {
-                let now = Utc::now();
-                if state.lock().next_allowed.is_none_or(|at| now >= at) {
-                    let fetched = std::thread::scope(|scope| {
-                        let handles: Vec<_> = [
-                            (
-                                "anthropic",
-                                "https://status.claude.com/api/v2/summary.json",
-                                vec!["Claude API", "Claude Code"],
-                            ),
-                            (
-                                "openai",
-                                "https://status.openai.com/api/v2/summary.json",
-                                vec![
-                                    "Responses",
-                                    "Codex API",
-                                    "VS Code extension",
-                                    "Codex in ChatGPT Desktop",
-                                ],
-                            ),
-                            (
-                                "github",
-                                "https://www.githubstatus.com/api/v2/summary.json",
-                                vec!["Copilot", "Copilot AI Model Providers"],
-                            ),
-                            (
-                                "google",
-                                "https://status.cloud.google.com/incidents.json",
-                                vec![],
-                            ),
-                        ]
-                        .into_iter()
-                        .map(|(provider, url, fragments)| {
-                            scope.spawn(move || {
-                                let output = std::process::Command::new("curl")
-                                    .args([
-                                        "--fail",
-                                        "--silent",
-                                        "--show-error",
-                                        "--location",
-                                        "--max-time",
-                                        "10",
-                                        "--max-filesize",
-                                        "1048576",
-                                        url,
-                                    ])
-                                    .output()
-                                    .map_err(|e| e.to_string())?;
-                                if !output.status.success() {
-                                    return Err(format!("{provider} status fetch failed"));
-                                }
-                                let value: Value = serde_json::from_slice(&output.stdout)
-                                    .map_err(|e| e.to_string())?;
-                                if provider == "google" {
-                                    chau7_next_core::telemetry::provider_health::google_cloud(
-                                        &value, url, now,
-                                    )
-                                } else {
-                                    chau7_next_core::telemetry::provider_health::status_page(
-                                        &value, provider, &fragments, url, now,
-                                    )
-                                }
-                            })
-                        })
-                        .collect();
-                        handles
-                            .into_iter()
-                            .map(|h| {
-                                h.join().unwrap_or_else(|_| {
-                                    Err("Provider status worker stopped".into())
-                                })
-                            })
-                            .collect::<Vec<_>>()
-                    });
-                    let mut state = state.lock();
-                    let mut successes = 0;
-                    for result in fetched {
-                        match result {
-                            Ok(snapshot) => {
-                                successes += 1;
-                                state.snapshots.insert(snapshot.provider.clone(), snapshot);
+    let active = cx
+        .global::<UsageGlobal>()
+        .activity
+        .begin()
+        .expect("new provider-health lifecycle accepts its monitor");
+    let task = cx.background_executor().spawn(async move {
+        let _active = active;
+        let _timer = timer;
+        loop {
+            let now = Utc::now();
+            if state.lock().next_allowed.is_none_or(|at| now >= at) {
+                let fetched = std::thread::scope(|scope| {
+                    let handles: Vec<_> = [
+                        (
+                            "anthropic",
+                            "https://status.claude.com/api/v2/summary.json",
+                            vec!["Claude API", "Claude Code"],
+                        ),
+                        (
+                            "openai",
+                            "https://status.openai.com/api/v2/summary.json",
+                            vec![
+                                "Responses",
+                                "Codex API",
+                                "VS Code extension",
+                                "Codex in ChatGPT Desktop",
+                            ],
+                        ),
+                        (
+                            "github",
+                            "https://www.githubstatus.com/api/v2/summary.json",
+                            vec!["Copilot", "Copilot AI Model Providers"],
+                        ),
+                        (
+                            "google",
+                            "https://status.cloud.google.com/incidents.json",
+                            vec![],
+                        ),
+                    ]
+                    .into_iter()
+                    .map(|(provider, url, fragments)| {
+                        scope.spawn(move || {
+                            let output = std::process::Command::new("curl")
+                                .args([
+                                    "--fail",
+                                    "--silent",
+                                    "--show-error",
+                                    "--location",
+                                    "--max-time",
+                                    "10",
+                                    "--max-filesize",
+                                    "1048576",
+                                    url,
+                                ])
+                                .output()
+                                .map_err(|e| e.to_string())?;
+                            if !output.status.success() {
+                                return Err(format!("{provider} status fetch failed"));
                             }
-                            Err(e) => log::debug!("Provider status unavailable: {e}"),
+                            let value: Value = serde_json::from_slice(&output.stdout)
+                                .map_err(|e| e.to_string())?;
+                            if provider == "google" {
+                                chau7_next_core::telemetry::provider_health::google_cloud(
+                                    &value, url, now,
+                                )
+                            } else {
+                                chau7_next_core::telemetry::provider_health::status_page(
+                                    &value, provider, &fragments, url, now,
+                                )
+                            }
+                        })
+                    })
+                    .collect();
+                    handles
+                        .into_iter()
+                        .map(|h| {
+                            h.join()
+                                .unwrap_or_else(|_| Err("Provider status worker stopped".into()))
+                        })
+                        .collect::<Vec<_>>()
+                });
+                let mut state = state.lock();
+                let mut successes = 0;
+                for result in fetched {
+                    match result {
+                        Ok(snapshot) => {
+                            successes += 1;
+                            state.snapshots.insert(snapshot.provider.clone(), snapshot);
                         }
+                        Err(e) => log::debug!("Provider status unavailable: {e}"),
                     }
-                    if successes == 0 {
-                        state.failures += 1;
-                        state.next_allowed = Some(
-                            now + chrono::Duration::seconds(
-                                chau7_next_core::telemetry::provider_health::retry_delay(
-                                    state.failures,
-                                ),
+                }
+                if successes == 0 {
+                    state.failures += 1;
+                    state.next_allowed = Some(
+                        now + chrono::Duration::seconds(
+                            chau7_next_core::telemetry::provider_health::retry_delay(
+                                state.failures,
                             ),
-                        );
-                    } else {
-                        state.failures = 0;
-                        state.next_allowed = None;
-                    }
-                    state.snapshots.retain(|_, s| {
-                        now.signed_duration_since(s.checked_at).num_seconds() <= 300
-                    });
+                        ),
+                    );
+                } else {
+                    state.failures = 0;
+                    state.next_allowed = None;
                 }
-                // Publish new observations and stale-observation removal even
-                // when quota monitoring is disabled. One dispatch per poll;
-                // the feed request and snapshot mutex remain off the UI thread.
-                if !main.dispatch(|cx| cx.refresh_windows()) {
-                    break;
-                }
-                executor.timer(std::time::Duration::from_secs(60)).await;
+                state
+                    .snapshots
+                    .retain(|_, s| now.signed_duration_since(s.checked_at).num_seconds() <= 300);
             }
-        })
-        .detach();
+            // Publish new observations and stale-observation removal even
+            // when quota monitoring is disabled. One dispatch per poll;
+            // the feed request and snapshot mutex remain off the UI thread.
+            if !main.dispatch(|cx| cx.refresh_windows()) {
+                break;
+            }
+            executor.timer(std::time::Duration::from_secs(60)).await;
+        }
+    });
+    cx.global_mut::<UsageGlobal>().health = Some(task);
 }
 
 struct UsageState {
@@ -227,6 +231,9 @@ struct UsageGlobal {
     snapshot: Arc<Mutex<UsageView>>,
     refreshing: Arc<std::sync::atomic::AtomicBool>,
     capture_working: Arc<std::sync::atomic::AtomicBool>,
+    activity: Arc<super::cache::Activity>,
+    timer: Option<gpui::Task<()>>,
+    health: Option<gpui::Task<()>>,
 }
 impl UsageGlobal {
     fn new(root: DataRoot) -> Self {
@@ -242,6 +249,9 @@ impl UsageGlobal {
             })),
             refreshing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             capture_working: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            activity: super::cache::Activity::new(4),
+            timer: None,
+            health: None,
         }
     }
 }
@@ -269,9 +279,9 @@ fn installed(root: &DataRoot) -> bool {
         .is_some_and(|s| s == helper(root).to_string_lossy())
 }
 pub fn init(cx: &mut App) {
-    init_health(cx);
     let root = cx.global::<AppData>().root.clone();
     cx.set_global(UsageGlobal::new(root));
+    init_health(cx);
     crate::debug::usage::register(cx);
     refresh(cx);
     let timer = crate::observability::register_timer(
@@ -281,7 +291,13 @@ pub fn init(cx: &mut App) {
         "usage",
         30_000,
     );
-    cx.spawn(async move |cx| {
+    let active = cx
+        .global::<UsageGlobal>()
+        .activity
+        .begin()
+        .expect("new quota lifecycle accepts its monitor");
+    let task = cx.spawn(async move |cx| {
+        let _active = active;
         let _timer = timer;
         loop {
             cx.background_executor()
@@ -296,8 +312,8 @@ pub fn init(cx: &mut App) {
                 }
             });
         }
-    })
-    .detach();
+    });
+    cx.global_mut::<UsageGlobal>().timer = Some(task);
 }
 impl UsageState {
     fn refresh_view(&mut self) {
@@ -429,6 +445,9 @@ pub fn refresh(cx: &mut App) {
     let Some(global) = cx.try_global::<UsageGlobal>() else {
         return;
     };
+    let Some(active) = global.activity.begin() else {
+        return;
+    };
     let state = global.worker.clone();
     let snapshot = global.snapshot.clone();
     let refreshing = global.refreshing.clone();
@@ -444,16 +463,19 @@ pub fn refresh(cx: &mut App) {
         let (warnings, mut view) = cx
             .background_executor()
             .spawn(async move {
+                let _active=active;
                 let mut worker = state2.lock();
                 let warnings = worker.capture(
                     settings.usage_monitoring,
                     settings.claude_quota_capture,
                     settings.usage_quota_warnings,
                 );
-                worker.view.recent_consumption = recorder.map(|r| {
-                    r.store()
-                        .consumption_per_provider(Some(Utc::now() - chrono::Duration::minutes(10)))
-                });
+                if let Some(recorder)=recorder {
+                    let before=recorder.store().failure_count();
+                    let consumption=recorder.store().consumption_per_provider(Some(Utc::now()-chrono::Duration::minutes(10)));
+                    if recorder.store().failure_count()==before && before!=u64::MAX { worker.view.recent_consumption=Some(consumption); }
+                    else {worker.view.last_error=Some("Telemetry usage is unavailable; retaining the last successful observation".into());}
+                }
                 (warnings, worker.view.clone())
             })
             .await;
@@ -523,6 +545,9 @@ pub fn set_capture(enabled: bool, cx: &mut App) {
     let Some(g) = cx.try_global::<UsageGlobal>() else {
         return;
     };
+    let Some(active) = g.activity.begin() else {
+        return;
+    };
     let state = g.worker.clone();
     let snapshot = g.snapshot.clone();
     let capture_working = g.capture_working.clone();
@@ -536,6 +561,7 @@ pub fn set_capture(enabled: bool, cx: &mut App) {
         let (result, mut view) = cx
             .background_executor()
             .spawn(async move {
+                let _active = active;
                 let result = configure_capture(&root, enabled);
                 let mut s = state.lock();
                 s.view.last_error = result.as_ref().err().cloned();
@@ -862,6 +888,7 @@ pub struct LatencyView {
     pub bucket_dashboards: Vec<LatencyBucketDashboard>,
     pub refreshed_at: Option<DateTime<Utc>>,
     pub refreshing: bool,
+    pub error: Option<String>,
     pub evidence: Option<EvidenceDiagnostics>,
     #[serde(skip_serializing)]
     generation: u64,
@@ -879,6 +906,7 @@ impl Default for LatencyView {
             refreshed_at: None,
             refreshing: false,
             generation: 0,
+            error: None,
             evidence: None,
         }
     }
@@ -958,6 +986,71 @@ fn build_bucket_dashboards(
         .collect()
 }
 
+struct LatencyRequest {
+    shared: Arc<Mutex<LatencyView>>,
+    selection: LatencyView,
+    root: chau7_next_core::data_root::DataRoot,
+    recorder: Arc<chau7_next_core::telemetry::recorder::TelemetryRecorder>,
+    retention_days: i64,
+}
+#[derive(Default)]
+struct MaintenancePending {
+    stopped: bool,
+    running: bool,
+    latest: Option<LatencyRequest>,
+}
+impl MaintenancePending {
+    fn replace(&mut self, request: LatencyRequest) -> bool {
+        if self.stopped {
+            return false;
+        }
+        self.latest = Some(request);
+        if self.running {
+            false
+        } else {
+            self.running = true;
+            true
+        }
+    }
+    fn next(&mut self) -> Option<LatencyRequest> {
+        if self.stopped {
+            self.latest = None;
+        }
+        let request = self.latest.take();
+        if request.is_none() {
+            self.running = false;
+        }
+        request
+    }
+}
+struct Maintenance {
+    pending: Arc<Mutex<MaintenancePending>>,
+    activity: Arc<super::cache::Activity>,
+    timer: Option<gpui::Task<()>>,
+}
+impl Global for Maintenance {}
+/// Stop new work and cancel the existing monitor. Completion waits off UI.
+pub(super) fn shutdown_quota(cx: &mut App) -> Option<super::cache::Drain> {
+    cx.try_global::<UsageGlobal>()?;
+    let usage = cx.global_mut::<UsageGlobal>();
+    drop(usage.timer.take());
+    drop(usage.health.take());
+    Some(usage.activity.stop())
+}
+pub(super) fn shutdown_maintenance(cx: &mut App) -> Option<super::cache::Drain> {
+    cx.try_global::<Maintenance>()?;
+    let global = cx.global_mut::<Maintenance>();
+    {
+        let mut pending = global.pending.lock();
+        pending.stopped = true;
+        pending.latest = None;
+    }
+    drop(global.timer.take());
+    Some(global.activity.stop())
+}
+fn maintenance_guard(cx: &App) -> Option<super::cache::WorkGuard> {
+    cx.try_global::<Maintenance>()?.activity.begin()
+}
 struct LatencyGlobal(Arc<Mutex<LatencyView>>);
 impl Global for LatencyGlobal {}
 pub fn latency_view(cx: &App) -> LatencyView {
@@ -966,6 +1059,11 @@ pub fn latency_view(cx: &App) -> LatencyView {
         .unwrap_or_default()
 }
 pub fn init_latency(cx: &mut App) {
+    cx.set_global(Maintenance {
+        pending: Arc::new(Mutex::new(MaintenancePending::default())),
+        activity: super::cache::Activity::new(6),
+        timer: None,
+    });
     cx.set_global(RetentionGlobal(Arc::new(Mutex::new(RetentionView {
         selected_days: Settings::get(cx).general.telemetry_retention_days,
         ..Default::default()
@@ -979,7 +1077,9 @@ pub fn init_latency(cx: &mut App) {
         "usage",
         30_000,
     );
-    cx.spawn(async move |cx| {
+    let active = maintenance_guard(cx).expect("new maintenance monitor accepts its task");
+    let task = cx.spawn(async move |cx| {
+        let _active = active;
         let _timer = timer;
         loop {
             cx.background_executor()
@@ -987,8 +1087,8 @@ pub fn init_latency(cx: &mut App) {
                 .await;
             cx.update(refresh_latency);
         }
-    })
-    .detach();
+    });
+    cx.global_mut::<Maintenance>().timer = Some(task);
 }
 pub fn select_latency(
     range: Option<chau7_next_core::telemetry::latency::TimeRange>,
@@ -1015,174 +1115,235 @@ pub fn select_latency(
     refresh_latency(cx);
 }
 pub fn refresh_latency(cx: &mut App) {
-    let (Some(global), Some(recorder)) = (
+    let (Some(global), Some(recorder), Some(maintenance)) = (
         cx.try_global::<LatencyGlobal>(),
         crate::telemetry::recorder(cx),
+        cx.try_global::<Maintenance>(),
     ) else {
         return;
     };
     let shared = global.0.clone();
+    let mut pending = maintenance.pending.lock();
+    if pending.stopped {
+        return;
+    }
     let selection = {
-        let mut s = shared.lock();
-        s.refreshing = true;
-        s.generation += 1;
-        s.clone()
+        let mut state = shared.lock();
+        state.refreshing = true;
+        state.generation = state.generation.wrapping_add(1);
+        state.clone()
     };
-    let root = cx.global::<AppData>().root.clone();
-    let retention_days = Settings::get(cx).general.telemetry_retention_days;
-    cx.background_executor()
-        .spawn(async move {
-            let now = Utc::now();
-            let start = selection.range.start(now);
-            let retained = chau7_next_core::proxy::ProxyAnalyticsStore::new(&root.proxy_db())
-                .evidence_batch(recorder.store().evidence_cursor(), 100);
-            recorder.store().ingest_evidence_batch(&retained);
-            if retention_days > 0 {
-                let protected = recorder
-                    .all_active_runs()
-                    .into_iter()
-                    .map(|r| r.id)
-                    .collect::<Vec<_>>();
-                match recorder
-                    .store()
-                    .prune_retained(retention_days, &protected, 100, now)
-                {
-                    Ok(report) if report.rows() > 0 => log::info!(
-                        "Opt-in telemetry retention: removed {} runs and {} independent records",
+    // A running request has at most one newest replacement, independent of
+    // rapid tab/metric selection. Only this worker performs the expensive I/O.
+    if !pending.replace(LatencyRequest {
+        shared: shared.clone(),
+        selection,
+        root: cx.global::<AppData>().root.clone(),
+        recorder,
+        retention_days: Settings::get(cx).general.telemetry_retention_days,
+    }) {
+        return;
+    }
+    let Some(active) = maintenance.activity.begin() else {
+        pending.latest = None;
+        pending.running = false;
+        let mut state = shared.lock();
+        state.refreshing = false;
+        state.error = Some("Telemetry maintenance is busy; request was not accepted".into());
+        return;
+    };
+    let pending = maintenance.pending.clone();
+    cx.spawn(async move |cx| {
+        cx.background_executor()
+            .spawn(async move {
+                let _active = active;
+                loop {
+                    let Some(request) = pending.lock().next() else {
+                        break;
+                    };
+                    refresh_latency_request(request);
+                }
+            })
+            .await;
+        cx.update(|cx| cx.refresh_windows());
+    })
+    .detach();
+}
+fn refresh_latency_request(request: LatencyRequest) {
+    let LatencyRequest {
+        shared,
+        selection,
+        root,
+        recorder,
+        retention_days,
+    } = request;
+    let mut span =
+        chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+            "telemetry_maintenance",
+            "refresh",
+            "telemetry",
+            "telemetry_maintenance",
+            chau7_next_core::work_profiler::Queue::Background,
+        ));
+    span.items(1);
+    let before = recorder.store().failure_count();
+    let proxy_path = root.proxy_db();
+    let proxy = chau7_next_core::proxy::ProxyAnalyticsStore::new(&proxy_path);
+    let now = Utc::now();
+    let start = selection.range.start(now);
+    let retained = proxy.evidence_batch(recorder.store().evidence_cursor(), 100);
+    recorder.store().ingest_evidence_batch(&retained);
+    if retention_days > 0 {
+        let protected = recorder
+            .all_active_runs()
+            .into_iter()
+            .map(|r| r.id)
+            .collect::<Vec<_>>();
+        match recorder
+            .store()
+            .prune_retained(retention_days, &protected, 100, now)
+        {
+            Ok(report) => {
+                if report.rows() > 0 {
+                    log::info!(
+                        "Telemetry retention: removed {} runs and {} independent records",
                         report.runs,
                         report.rows() - report.runs
-                    ),
-                    Err(error) => log::warn!("Opt-in telemetry retention failed: {error}"),
-                    _ => {}
+                    );
+                }
+                if let Some(error) = report.compaction_error {
+                    log::warn!("Telemetry post-retention compaction failed: {error}");
                 }
             }
-            recorder.store().backfill_latency_batch(100);
-            recorder.store().backfill_cost_batch(100);
-            let mut samples = recorder.store().latency_samples(start);
-            samples.extend(
-                chau7_next_core::proxy::ProxyAnalyticsStore::new(&root.proxy_db())
-                    .latency_samples(start),
-            );
-            let mut activity = recorder.store().activity_samples(start);
-            activity.extend(
-                chau7_next_core::proxy::ProxyAnalyticsStore::new(&root.proxy_db())
-                    .activity_samples(start),
-            );
-            let mut providers: Vec<_> = samples
-                .iter()
-                .map(|s| s.provider.clone())
-                .chain(activity.iter().map(|s| s.provider.clone()))
-                .collect();
-            providers.sort();
-            providers.dedup();
-            let selected = selection
-                .selected_provider
-                .filter(|p| providers.contains(p))
-                .or_else(|| {
-                    ["codex", "claude", "anthropic", "openai", "gemini"]
-                        .into_iter()
-                        .find(|p| providers.iter().any(|s| s == p))
-                        .map(str::to_string)
-                })
-                .or_else(|| providers.first().cloned());
-            let bucket_dashboards = selected
-                .as_ref()
-                .map(|provider| {
-                    build_bucket_dashboards(
-                        &samples,
-                        &activity,
-                        provider,
-                        selection.metric,
-                        selection.range,
-                        now,
-                    )
-                })
-                .unwrap_or_default();
-            let dashboard = bucket_dashboards
-                .iter()
-                .find(|bucket| bucket.kind == selection.bucket)
-                .map(|bucket| bucket.dashboard.clone());
-            let retained = recorder.store().usage_evidence(start, 5001);
-            let incomplete = retained.len() > 5000;
-            let selected_records: Vec<_> = retained
-                .iter()
-                .take(5000)
-                .filter(|e| selected.as_ref().is_none_or(|p| e.provider == *p))
-                .cloned()
-                .collect();
-            let report = chau7_next_core::telemetry::evidence::reconcile(&selected_records);
-            let runs =
-                recorder
-                    .store()
-                    .list_runs(&chau7_next_core::telemetry::run::TelemetryRunFilter {
-                        limit: Some(501),
-                        ..Default::default()
-                    });
-            let attributed =
-                chau7_next_core::telemetry::evidence::attributed(&selected_records, &runs);
-            let assigned: HashSet<_> = attributed
-                .values()
-                .flat_map(|a| a.evidence_ids.iter().cloned())
-                .collect();
-            let unassigned = selected_records
-                .iter()
-                .filter(|e| {
-                    e.source_kind == chau7_next_core::telemetry::evidence::SourceKind::Proxy
-                        && !e.unique_event_key.starts_with("run|")
-                        && !assigned.contains(&e.id)
-                })
-                .count();
-            let priced_groups = report
-                .groups
-                .iter()
-                .filter(|g| g.selected.evidence.cost_usd.is_some())
-                .count();
-            let evidence = EvidenceDiagnostics {
-                retained_records: selected_records.len(),
-                reconciled_groups: report.groups.len(),
-                priced_groups,
-                missing_cost_groups: report.groups.len() - priced_groups,
-                unassigned_requests: (runs.len() <= 500).then_some(unassigned),
-                token_groups: report
-                    .groups
-                    .iter()
-                    .filter(|g| g.selected.evidence.has_tokens())
-                    .count(),
-                total_cost_usd: (priced_groups > 0).then_some(report.total_cost_usd),
-                token_usage: report.total_token_usage,
-                incomplete_window: incomplete || runs.len() > 500,
-                groups: report
-                    .groups
-                    .iter()
-                    .take(32)
-                    .map(|g| EvidenceGroup {
-                        provider: g.provider.clone(),
-                        scope: g.reconciliation_key.clone(),
-                        source: format!("{:?}", g.selected.evidence.source_kind),
-                        confidence: g.confidence.clone(),
-                        tokens: g
-                            .selected
-                            .evidence
-                            .has_tokens()
-                            .then_some(g.selected.usage().total_billable_tokens()),
-                        cost_usd: g.selected.evidence.cost_usd,
-                        alternatives: g.alternatives.len(),
-                    })
-                    .collect(),
-            };
-            let mut s = shared.lock();
-            if s.generation != selection.generation {
-                return;
-            }
-            s.providers = providers;
-            s.selected_provider = selected;
-            s.dashboard = dashboard;
-            s.bucket_dashboards = bucket_dashboards;
-            s.evidence = Some(evidence);
-            s.refreshed_at = Some(now);
-            s.refreshing = false;
+            Err(error) => log::warn!("Telemetry retention failed: {error}"),
+        }
+    }
+    recorder.store().backfill_latency_batch(100);
+    recorder.store().backfill_cost_batch(100);
+    let mut samples = recorder.store().latency_samples(start);
+    samples.extend(proxy.latency_samples(start));
+    let mut activity = recorder.store().activity_samples(start);
+    activity.extend(proxy.activity_samples(start));
+    let mut providers: Vec<_> = samples
+        .iter()
+        .map(|s| s.provider.clone())
+        .chain(activity.iter().map(|s| s.provider.clone()))
+        .collect();
+    providers.sort();
+    providers.dedup();
+    let selected = selection
+        .selected_provider
+        .filter(|p| providers.contains(p))
+        .or_else(|| {
+            ["codex", "claude", "anthropic", "openai", "gemini"]
+                .into_iter()
+                .find(|p| providers.iter().any(|s| s == p))
+                .map(str::to_string)
         })
-        .detach();
+        .or_else(|| providers.first().cloned());
+    let bucket_dashboards = selected
+        .as_ref()
+        .map(|provider| {
+            build_bucket_dashboards(
+                &samples,
+                &activity,
+                provider,
+                selection.metric,
+                selection.range,
+                now,
+            )
+        })
+        .unwrap_or_default();
+    let dashboard = bucket_dashboards
+        .iter()
+        .find(|bucket| bucket.kind == selection.bucket)
+        .map(|bucket| bucket.dashboard.clone());
+    let retained = recorder.store().usage_evidence(start, 5001);
+    let incomplete = retained.len() > 5000;
+    let selected_records: Vec<_> = retained
+        .iter()
+        .take(5000)
+        .filter(|e| selected.as_ref().is_none_or(|p| e.provider == *p))
+        .cloned()
+        .collect();
+    let report = chau7_next_core::telemetry::evidence::reconcile(&selected_records);
+    let runs = recorder
+        .store()
+        .list_runs(&chau7_next_core::telemetry::run::TelemetryRunFilter {
+            limit: Some(501),
+            ..Default::default()
+        });
+    let attributed = chau7_next_core::telemetry::evidence::attributed(&selected_records, &runs);
+    let assigned: HashSet<_> = attributed
+        .values()
+        .flat_map(|a| a.evidence_ids.iter().cloned())
+        .collect();
+    let unassigned = selected_records
+        .iter()
+        .filter(|e| {
+            e.source_kind == chau7_next_core::telemetry::evidence::SourceKind::Proxy
+                && !e.unique_event_key.starts_with("run|")
+                && !assigned.contains(&e.id)
+        })
+        .count();
+    let priced_groups = report
+        .groups
+        .iter()
+        .filter(|g| g.selected.evidence.cost_usd.is_some())
+        .count();
+    let evidence = EvidenceDiagnostics {
+        retained_records: selected_records.len(),
+        reconciled_groups: report.groups.len(),
+        priced_groups,
+        missing_cost_groups: report.groups.len() - priced_groups,
+        unassigned_requests: (runs.len() <= 500).then_some(unassigned),
+        token_groups: report
+            .groups
+            .iter()
+            .filter(|g| g.selected.evidence.has_tokens())
+            .count(),
+        total_cost_usd: (priced_groups > 0).then_some(report.total_cost_usd),
+        token_usage: report.total_token_usage,
+        incomplete_window: incomplete || runs.len() > 500,
+        groups: report
+            .groups
+            .iter()
+            .take(32)
+            .map(|g| EvidenceGroup {
+                provider: g.provider.clone(),
+                scope: g.reconciliation_key.clone(),
+                source: format!("{:?}", g.selected.evidence.source_kind),
+                confidence: g.confidence.clone(),
+                tokens: g
+                    .selected
+                    .evidence
+                    .has_tokens()
+                    .then_some(g.selected.usage().total_billable_tokens()),
+                cost_usd: g.selected.evidence.cost_usd,
+                alternatives: g.alternatives.len(),
+            })
+            .collect(),
+    };
+    let mut s = shared.lock();
+    if s.generation != selection.generation {
+        return;
+    }
+    if proxy.failure_count() > 0 || recorder.store().failure_count() != before || before == u64::MAX
+    {
+        s.refreshing = false;
+        s.error = Some(
+            "Telemetry history is unavailable; retaining the last successful observation".into(),
+        );
+        return;
+    }
+    s.error = None;
+    s.providers = providers;
+    s.selected_provider = selected;
+    s.dashboard = dashboard;
+    s.bucket_dashboards = bucket_dashboards;
+    s.evidence = Some(evidence);
+    s.refreshed_at = Some(now);
+    s.refreshing = false;
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1215,6 +1376,12 @@ pub fn preview_retention(days: i64, cx: &mut App) {
         return;
     };
     let days = chau7_next_core::telemetry::retention::normalize_days(days);
+    let Some(active) = maintenance_guard(cx) else {
+        global.0.lock().error =
+            Some("Telemetry maintenance is busy or stopped; request was not accepted".into());
+        cx.refresh_windows();
+        return;
+    };
     let shared = global.0.clone();
     let generation = {
         let mut s = shared.lock();
@@ -1230,6 +1397,7 @@ pub fn preview_retention(days: i64, cx: &mut App) {
         let result = cx
             .background_executor()
             .spawn(async move {
+                let _active = active;
                 let protected = recorder
                     .all_active_runs()
                     .into_iter()
@@ -1290,12 +1458,19 @@ pub fn cancel_compaction(cx: &mut App) {
     }
     cx.refresh_windows();
 }
-/// No automatic VACUUM. The user explicitly confirms this separate operation.
+/// Separate manual compaction never deletes records. Retention also compacts
+/// automatically after a committed deletion, following the current Swift policy.
 pub fn compact_confirmed(cx: &mut App) {
     let (Some(global), Some(recorder)) = (
         cx.try_global::<RetentionGlobal>(),
         crate::telemetry::recorder(cx),
     ) else {
+        return;
+    };
+    let Some(active) = maintenance_guard(cx) else {
+        global.0.lock().error =
+            Some("Telemetry maintenance is busy or stopped; request was not accepted".into());
+        cx.refresh_windows();
         return;
     };
     let shared = global.0.clone();
@@ -1312,6 +1487,7 @@ pub fn compact_confirmed(cx: &mut App) {
         let result = cx
             .background_executor()
             .spawn(async move {
+                let _active = active;
                 recorder
                     .store()
                     .compact_confirmed()
@@ -1329,4 +1505,109 @@ pub fn compact_confirmed(cx: &mut App) {
         });
     })
     .detach();
+}
+
+#[cfg(test)]
+mod maintenance_tests {
+    use super::*;
+    use chau7_next_core::telemetry::{
+        recorder::TelemetryRecorder, run::TelemetryRun, store::TelemetryStore,
+    };
+    #[test]
+    fn actual_owned_worker_compacts_deleted_runs_and_preserves_snapshot_on_sql_failure() {
+        let directory = std::env::temp_dir().join(format!(
+            "next-telemetry-maintenance-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let root = chau7_next_core::data_root::DataRoot::with_home(directory.clone(), true);
+        root.ensure_dirs().unwrap();
+        let store = Arc::new(TelemetryStore::open(&root.telemetry_db()));
+        let mut expired = TelemetryRun::new("owned-fake", "/synthetic");
+        expired.started_at = Utc::now() - chrono::Duration::days(40);
+        expired.ended_at = Some(expired.started_at + chrono::Duration::seconds(1));
+        store.insert_run(&expired);
+        let recorder = Arc::new(TelemetryRecorder::new(store.clone(), vec![]));
+        let shared = Arc::new(Mutex::new(LatencyView::default()));
+        let request = LatencyRequest {
+            shared: shared.clone(),
+            selection: shared.lock().clone(),
+            root: root.clone(),
+            recorder: recorder.clone(),
+            retention_days: 30,
+        };
+        let caller = std::thread::current().id();
+        let worker = std::thread::spawn(move || {
+            let thread = std::thread::current().id();
+            refresh_latency_request(request);
+            thread
+        })
+        .join()
+        .unwrap();
+        assert_ne!(caller, worker);
+        assert!(store.get_run(&expired.id).is_none());
+        let success = shared.lock().clone();
+        assert!(success.refreshed_at.is_some());
+        assert!(success.error.is_none());
+        store.execute_raw("DROP TABLE runs");
+        let request = LatencyRequest {
+            shared: shared.clone(),
+            selection: shared.lock().clone(),
+            root,
+            recorder: recorder.clone(),
+            retention_days: 0,
+        };
+        std::thread::spawn(move || refresh_latency_request(request))
+            .join()
+            .unwrap();
+        let error = shared.lock().clone();
+        assert!(error.error.is_some());
+        assert_eq!(error.refreshed_at, success.refreshed_at);
+        assert_eq!(error.providers, success.providers);
+        assert!(!error.refreshing);
+        let writer = recorder.shutdown().unwrap();
+        std::thread::spawn(move || writer.finish().unwrap())
+            .join()
+            .unwrap();
+        drop(recorder);
+        drop(store);
+        drop(shared);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn pending_refresh_retains_only_the_latest_selection_without_io() {
+        let store = Arc::new(TelemetryStore::in_memory());
+        let recorder = Arc::new(TelemetryRecorder::new(store, vec![]));
+        let shared = Arc::new(Mutex::new(LatencyView::default()));
+        let root = chau7_next_core::data_root::DataRoot::with_home(
+            std::env::temp_dir().join("not-created-maintenance-policy"),
+            true,
+        );
+        let mut pending = MaintenancePending {
+            running: true,
+            ..Default::default()
+        };
+        for generation in 1..=200 {
+            let selection = LatencyView {
+                generation,
+                ..Default::default()
+            };
+            assert!(!pending.replace(LatencyRequest {
+                shared: shared.clone(),
+                selection,
+                root: root.clone(),
+                recorder: recorder.clone(),
+                retention_days: 0,
+            }));
+        }
+        assert!(pending.running);
+        assert_eq!(pending.latest.as_ref().unwrap().selection.generation, 200);
+        pending.stopped = true;
+        assert!(pending.next().is_none());
+        assert!(pending.latest.is_none());
+        assert!(!pending.running);
+        let writer = recorder.shutdown().unwrap();
+        std::thread::spawn(move || writer.finish().unwrap())
+            .join()
+            .unwrap();
+    }
 }

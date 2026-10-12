@@ -93,7 +93,7 @@ impl HealthRow {
 }
 
 type TokenOptimizerFn = Rc<dyn Fn(CtoPeriod, &App) -> TokenOptimizerData>;
-type AnalyticsFn = Rc<dyn Fn(&App) -> AnalyticsData>;
+type AnalyticsFn = Rc<dyn Fn(&App) -> (Option<AnalyticsData>, Option<String>)>;
 type ClaudeSessionsFn = Rc<dyn Fn(&App) -> Vec<ClaudeSessionState>>;
 type HealthFn = Rc<dyn Fn(&App) -> Vec<HealthRow>>;
 type ActionFn = Rc<dyn Fn(&mut App)>;

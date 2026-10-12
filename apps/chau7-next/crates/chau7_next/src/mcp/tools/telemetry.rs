@@ -128,10 +128,10 @@ pub fn call(name: &str, args: &Map<String, Value>) -> Option<String> {
             None => json_error("run_id is required"),
         },
         "run_tag" => match (arg_str(args, "run_id"), arg_str_list(args, "tags")) {
-            (Some(id), Some(tags)) => {
-                sources::telemetry().set_tags(id, &tags);
-                "{\"ok\":true}".to_string()
-            }
+            (Some(id), Some(tags)) => match sources::telemetry().set_tags(id, &tags) {
+                Ok(()) => "{\"ok\":true}".to_string(),
+                Err(error) => json_error(&error),
+            },
             _ => json_error("run_id and tags are required"),
         },
         "run_latest_for_repo" => match arg_str(args, "repo_path") {
