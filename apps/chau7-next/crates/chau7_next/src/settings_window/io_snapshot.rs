@@ -13,11 +13,14 @@ use chau7_next_core::{
     snippet_store::Snippet,
     work_profiler::{self, Key, Queue},
 };
+#[cfg(any(not(test), target_os = "macos"))]
+use futures::channel::oneshot;
 use futures::{StreamExt, channel::mpsc};
 use gpui::{App, AppContext, BorrowAppContext, Context, Global, Task, WeakEntity};
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
+    io::Read,
     path::{Path, PathBuf},
     sync::{
         Arc, OnceLock, Weak,
@@ -88,8 +91,51 @@ struct Snapshots {
     last_history_value: Option<(i64, u64)>,
     subscribers: Vec<WeakEntity<SettingsView>>,
     _worker: Task<()>,
+    #[cfg(not(test))]
+    monitor_stop: Option<oneshot::Sender<()>>,
+    #[cfg(not(test))]
+    monitor_done: Option<oneshot::Receiver<()>>,
 }
 impl Global for Snapshots {}
+#[cfg(not(test))]
+impl Snapshots {
+    fn stop_monitoring(&mut self) -> Option<oneshot::Receiver<()>> {
+        // Closing this sender only wakes the detached background owner. No
+        // native resource or join handle is ever dropped on this UI thread.
+        self.signal.active.store(false, Ordering::Release);
+        self.monitor_stop.take();
+        self.monitor_done.take()
+    }
+}
+#[cfg(not(test))]
+impl Drop for Snapshots {
+    fn drop(&mut self) {
+        self.stop_monitoring();
+    }
+}
+
+/// This entire scope runs on the background executor, including cancellation
+/// cleanup. Detaching its task prevents foreground Task cancellation from
+/// dropping native guards on the caller; only the stop channel ends it.
+#[cfg(any(not(test), target_os = "macos"))]
+async fn monitor_scope<T>(
+    create: impl FnOnce() -> (T, Result<(), String>),
+    ready: oneshot::Sender<Result<(), String>>,
+    stop: oneshot::Receiver<()>,
+    done: oneshot::Sender<()>,
+) {
+    let (resources, status) = create();
+    let _ = ready.send(status);
+    let _ = stop.await;
+    drop(resources);
+    let _ = done.send(());
+}
+#[cfg(any(not(test), unix))]
+fn wal_path(database: &Path) -> PathBuf {
+    let mut path = database.as_os_str().to_os_string();
+    path.push("-wal");
+    PathBuf::from(path)
+}
 
 pub(super) fn snippets(cx: &App) -> Option<usize> {
     let state = cx.try_global::<Snapshots>()?;
@@ -185,6 +231,10 @@ pub(super) fn init(cx: &mut Context<SettingsView>) {
     let worker_signal = signal.clone();
     let worker_root = root.clone();
     let worker_store = store.clone();
+    #[cfg(not(test))]
+    let (monitor_stop, monitor_stop_rx) = oneshot::channel();
+    #[cfg(not(test))]
+    let (monitor_done_tx, monitor_done) = oneshot::channel();
     let worker = cx.spawn(async move |_, cx| {
         // TestScheduler forbids native/background-thread foreground wakes.
         // Headless GPUI tests use a passive event source; standalone watcher
@@ -199,48 +249,57 @@ pub(super) fn init(cx: &mut Context<SettingsView>) {
         // Existing shared watchers are installed off UI, including canonical
         // paths and replacement/missing-parent recovery. No polling timer.
         #[cfg(not(test))]
-        let (_monitors, snippet_watch) = cx
-            .background_spawn(async move {
-                let mut monitors = Vec::new();
-                for (path, bit) in [
-                    (monitor_root.history_db(), HISTORY),
-                    (
-                        PathBuf::from(format!("{}-wal", monitor_root.history_db().display())),
-                        HISTORY,
-                    ),
-                ] {
-                    let signal = weak.clone();
-                    let monitor = FileMonitor::new(path, move || {
-                        if let Some(signal) = signal.upgrade() {
-                            signal.invalidate(bit);
-                        }
-                    });
-                    monitor.start();
-                    monitors.push(monitor);
-                }
-                #[cfg(target_os = "macos")]
-                let snippet_watch = fsevents::SnippetWatch::new(
-                    &monitor_root.user_snippets_dir(),
-                    monitor_root.config_dir(),
-                    Arc::new(move || {
-                        if let Some(signal) = weak.upgrade() {
-                            signal.invalidate(SNIPPETS);
-                        }
-                    }),
-                );
-                #[cfg(not(target_os = "macos"))]
-                let snippet_watch: Result<FileMonitor, String> = {
-                    let monitor = FileMonitor::new(monitor_root.user_snippets_dir(), move || {
-                        if let Some(signal) = weak.upgrade() {
-                            signal.invalidate(SNIPPETS);
-                        }
-                    });
-                    monitor.start();
-                    Ok(monitor)
-                };
-                (monitors, snippet_watch)
-            })
-            .await;
+        let snippet_watch = {
+            let (ready_tx, ready_rx) = oneshot::channel();
+            cx.background_spawn(monitor_scope(
+                move || {
+                    let mut monitors = Vec::new();
+                    for (path, bit) in [
+                        (monitor_root.history_db(), HISTORY),
+                        (wal_path(&monitor_root.history_db()), HISTORY),
+                    ] {
+                        let signal = weak.clone();
+                        let monitor = FileMonitor::new(path, move || {
+                            if let Some(signal) = signal.upgrade() {
+                                signal.invalidate(bit);
+                            }
+                        });
+                        monitor.start();
+                        monitors.push(monitor);
+                    }
+                    #[cfg(target_os = "macos")]
+                    let snippet_watch = fsevents::SnippetWatch::new(
+                        &monitor_root.user_snippets_dir(),
+                        monitor_root.config_dir(),
+                        Arc::new(move || {
+                            if let Some(signal) = weak.upgrade() {
+                                signal.invalidate(SNIPPETS);
+                            }
+                        }),
+                    );
+                    #[cfg(not(target_os = "macos"))]
+                    let snippet_watch: Result<FileMonitor, String> = {
+                        let monitor =
+                            FileMonitor::new(monitor_root.user_snippets_dir(), move || {
+                                if let Some(signal) = weak.upgrade() {
+                                    signal.invalidate(SNIPPETS);
+                                }
+                            });
+                        monitor.start();
+                        Ok(monitor)
+                    };
+                    let status = snippet_watch.as_ref().map(|_| ()).map_err(Clone::clone);
+                    ((monitors, snippet_watch), status)
+                },
+                ready_tx,
+                monitor_stop_rx,
+                monitor_done_tx,
+            ))
+            .detach();
+            ready_rx
+                .await
+                .unwrap_or_else(|_| Err("Snapshot monitors could not start".into()))
+        };
         while receiver.next().await.is_some() {
             let interested = cx.update(|cx| {
                 if !cx
@@ -311,6 +370,10 @@ pub(super) fn init(cx: &mut Context<SettingsView>) {
         last_history_value: None,
         subscribers: vec![view],
         _worker: worker,
+        #[cfg(not(test))]
+        monitor_stop: Some(monitor_stop),
+        #[cfg(not(test))]
+        monitor_done: Some(monitor_done),
     });
 }
 fn same_store(left: Option<&Store>, right: Option<&Store>) -> bool {
@@ -349,7 +412,23 @@ fn read_batch(root: &DataRoot, store: Option<&Store>, bits: u8, revisions: (u64,
         }),
     }
 }
+#[derive(Clone, Copy)]
+struct SnippetBudget {
+    entries: usize,
+    files: usize,
+    per_file: usize,
+    total: usize,
+}
+const SNIPPET_BUDGET: SnippetBudget = SnippetBudget {
+    entries: 16_384,
+    files: 4096,
+    per_file: 4 * 1024 * 1024,
+    total: 32 * 1024 * 1024,
+};
 fn read_snippets(directory: &Path) -> Result<usize, String> {
+    read_snippets_with_budget(directory, SNIPPET_BUDGET)
+}
+fn read_snippets_with_budget(directory: &Path, budget: SnippetBudget) -> Result<usize, String> {
     let mut span = work_profiler::begin(Key::work(
         "settings_snapshot",
         "snippet_count",
@@ -365,7 +444,10 @@ fn read_snippets(directory: &Path) -> Result<usize, String> {
     let mut count = 0;
     let mut bytes = 0;
     let mut files = 0;
-    for entry in entries {
+    for (index, entry) in entries.enumerate() {
+        if index >= budget.entries {
+            return Err("Snippet directory exceeds the entry budget".into());
+        }
         let path = entry.map_err(|error| error.to_string())?.path();
         if path.extension().is_none_or(|e| e != "json")
             || path
@@ -375,16 +457,28 @@ fn read_snippets(directory: &Path) -> Result<usize, String> {
             continue;
         }
         files += 1;
-        let text = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
-        bytes += text.len();
-        // Match the snippet loader's valid-snippet count; invalid JSON does
-        // not invent entries, while read errors remain explicitly unknown.
-        if serde_json::from_str::<Snippet>(&text).is_ok() {
+        span.items(files);
+        if files > budget.files {
+            return Err("Snippet directory exceeds the JSON file budget".into());
+        }
+        let remaining = budget.total.saturating_sub(bytes);
+        let limit = budget.per_file.min(remaining);
+        let file = std::fs::File::open(&path).map_err(|error| error.to_string())?;
+        let mut content = Vec::new();
+        // Take+1 bounds the allocation even if a file grows after metadata.
+        file.take(limit.saturating_add(1) as u64)
+            .read_to_end(&mut content)
+            .map_err(|error| error.to_string())?;
+        bytes += content.len();
+        span.bytes(bytes);
+        if content.len() > limit {
+            return Err("Snippet files exceed the byte budget".into());
+        }
+        let text = std::str::from_utf8(&content).map_err(|error| error.to_string())?;
+        if serde_json::from_str::<Snippet>(text).is_ok() {
             count += 1;
         }
     }
-    span.bytes(bytes);
-    span.items(files);
     Ok(count)
 }
 
@@ -449,6 +543,144 @@ mod tests {
         assert_eq!(store.lock().statistics().unwrap().0, 2);
         assert!(store.lock().statistics().unwrap().1 > 0);
         drop(store);
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+    #[test]
+    fn explicit_budgets_reject_oversize_and_file_bursts_without_partial_counts() {
+        let root = owned_root("budgets");
+        let directory = root.user_snippets_dir();
+        let snippet = Snippet::new("a", "A", "synthetic");
+        snippet_store::save_snippet(&directory, &snippet).unwrap();
+        let length = std::fs::metadata(directory.join("a.json")).unwrap().len() as usize;
+        let enough = SnippetBudget {
+            entries: 16,
+            files: 8,
+            per_file: length,
+            total: length,
+        };
+        assert_eq!(read_snippets_with_budget(&directory, enough).unwrap(), 1);
+        assert!(
+            read_snippets_with_budget(
+                &directory,
+                SnippetBudget {
+                    per_file: length - 1,
+                    ..enough
+                }
+            )
+            .is_err()
+        );
+        assert!(
+            read_snippets_with_budget(
+                &directory,
+                SnippetBudget {
+                    total: length - 1,
+                    ..enough
+                }
+            )
+            .is_err()
+        );
+        snippet_store::save_snippet(&directory, &Snippet::new("b", "B", "synthetic")).unwrap();
+        let enough = SnippetBudget {
+            entries: 16,
+            files: 8,
+            per_file: 4096,
+            total: 8192,
+        };
+        assert_eq!(read_snippets_with_budget(&directory, enough).unwrap(), 2);
+        assert!(
+            read_snippets_with_budget(&directory, SnippetBudget { files: 1, ..enough }).is_err()
+        );
+        assert!(
+            read_snippets_with_budget(
+                &directory,
+                SnippetBudget {
+                    entries: 1,
+                    ..enough
+                }
+            )
+            .is_err()
+        );
+        let oversized = std::fs::File::create(directory.join("oversized.json")).unwrap();
+        oversized
+            .set_len(SNIPPET_BUDGET.per_file as u64 + 1)
+            .unwrap();
+        assert!(read_snippets(&directory).is_err());
+        assert_eq!(SNIPPET_BUDGET.files, 4096);
+        assert_eq!(SNIPPET_BUDGET.entries, 16384);
+        assert_eq!(SNIPPET_BUDGET.total, 32 * 1024 * 1024);
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn wal_suffix_preserves_non_utf8_filesystem_bytes() {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+        let path = PathBuf::from(std::ffi::OsString::from_vec(b"owned-\xff.sqlite".to_vec()));
+        assert_eq!(
+            wal_path(&path).as_os_str().as_bytes(),
+            b"owned-\xff.sqlite-wal"
+        );
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn native_guards_join_on_the_background_owner_before_completion() {
+        use std::{sync::atomic::AtomicUsize, time::Duration};
+        struct Guard {
+            _watch: fsevents::SnippetWatch,
+            dropped: std::sync::mpsc::Sender<std::thread::ThreadId>,
+        }
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                let _ = self.dropped.send(std::thread::current().id());
+            }
+        }
+        let root = owned_root("teardown");
+        let directory = root.user_snippets_dir();
+        std::fs::create_dir_all(&directory).unwrap();
+        let worker_root = root.clone();
+        let worker_directory = directory.clone();
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let (done_tx, done_rx) = oneshot::channel();
+        let (dropped_tx, dropped_rx) = std::sync::mpsc::channel();
+        let callbacks = Arc::new(AtomicUsize::new(0));
+        let worker_callbacks = callbacks.clone();
+        let foreground = std::thread::current().id();
+        let worker = std::thread::spawn(move || {
+            futures::executor::block_on(monitor_scope(
+                move || {
+                    let watch = fsevents::SnippetWatch::new(
+                        &worker_directory,
+                        worker_root.config_dir(),
+                        Arc::new(move || {
+                            worker_callbacks.fetch_add(1, Ordering::SeqCst);
+                        }),
+                    )
+                    .unwrap();
+                    (
+                        Guard {
+                            _watch: watch,
+                            dropped: dropped_tx,
+                        },
+                        Ok(()),
+                    )
+                },
+                ready_tx,
+                stop_rx,
+                done_tx,
+            ));
+        });
+        futures::executor::block_on(ready_rx).unwrap().unwrap();
+        drop(stop_tx); // model foreground/global cancellation, no join here
+        futures::executor::block_on(done_rx).unwrap();
+        assert_ne!(
+            foreground,
+            dropped_rx.recv_timeout(Duration::from_secs(5)).unwrap()
+        );
+        worker.join().unwrap();
+        let completed = callbacks.load(Ordering::SeqCst);
+        std::fs::write(directory.join("after.json"), "synthetic").unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(callbacks.load(Ordering::SeqCst), completed);
         std::fs::remove_dir_all(root.home()).unwrap();
     }
     #[test]

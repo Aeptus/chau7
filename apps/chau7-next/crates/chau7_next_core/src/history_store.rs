@@ -26,6 +26,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::history_record::{FrequentCommand, HistoryRecord};
 
+fn wal_path(database: &Path) -> PathBuf {
+    let mut path = database.as_os_str().to_os_string();
+    path.push("-wal");
+    PathBuf::from(path)
+}
+
 /// Default and bounds of the "maximum records" setting.
 pub const DEFAULT_MAX_RECORDS: usize = 50_000;
 pub const MIN_MAX_RECORDS: usize = 10_000;
@@ -418,7 +424,7 @@ impl HistoryStore {
             let database = std::fs::metadata(path)
                 .map_err(|error| error.to_string())?
                 .len();
-            let wal = PathBuf::from(format!("{}-wal", path.display()));
+            let wal = wal_path(path);
             let wal = match std::fs::metadata(wal) {
                 Ok(metadata) => metadata.len(),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
@@ -435,7 +441,7 @@ impl HistoryStore {
     pub fn database_size_bytes(&self) -> u64 {
         let Some(path) = &self.path else { return 0 };
         let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-        let wal = PathBuf::from(format!("{}-wal", path.display()));
+        let wal = wal_path(path);
         size(path) + size(&wal)
     }
 
@@ -533,7 +539,10 @@ mod tests {
         let observed = store.statistics().unwrap();
         assert_eq!(observed.0, 1);
         assert_eq!(observed.1, store.database_size_bytes());
-        assert!(observed.1 > 0);
+        let database_bytes = std::fs::metadata(&path).unwrap().len();
+        let wal_bytes = std::fs::metadata(wal_path(&path)).unwrap().len();
+        assert!(wal_bytes > 0);
+        assert_eq!(observed.1, database_bytes + wal_bytes);
         drop(store);
         let memory = HistoryStore::open(Path::new(":memory:")).unwrap();
         assert_eq!(memory.statistics().unwrap(), (0, 0));
@@ -546,6 +555,51 @@ mod tests {
         assert!(store.statistics().is_err());
         drop(store);
         drop(memory);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn wal_suffix_preserves_raw_os_string_bytes() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+        // APFS rejects creating non-UTF8 names. The byte-preserving path
+        // contract itself remains testable without inventing a disk filename.
+        let path = PathBuf::from(OsString::from_vec(b"history-\xff.db".to_vec()));
+        assert_eq!(
+            wal_path(&path).as_os_str().as_bytes(),
+            b"history-\xff.db-wal"
+        );
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn statistics_include_actual_wal_for_non_utf8_database_path() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let directory =
+            std::env::temp_dir().join(format!("chau7-history-byte-path-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(OsString::from_vec(b"history-\xff.db".to_vec()));
+        let source = directory.join("owned.sqlite");
+        let mut store = HistoryStore::open(&source).unwrap();
+        store
+            .insert(&HistoryRecord::new("owned path evidence"))
+            .unwrap();
+        // SQLite's macOS VFS rejects a non-UTF8 open path. Give the live,
+        // owned database and its real WAL byte-preserving filesystem aliases
+        // to isolate the metadata/suffix contract without changing that VFS.
+        std::fs::hard_link(&source, &path).unwrap();
+        std::fs::hard_link(wal_path(&source), wal_path(&path)).unwrap();
+        store.path = Some(path.clone());
+        let wal_bytes = std::fs::metadata(wal_path(&path)).unwrap().len();
+        assert!(wal_bytes > 0);
+        let expected = std::fs::metadata(&path).unwrap().len() + wal_bytes;
+        assert_eq!(store.statistics().unwrap(), (1, expected));
+        assert_eq!(store.database_size_bytes(), expected);
+        drop(store);
         std::fs::remove_dir_all(directory).unwrap();
     }
 
