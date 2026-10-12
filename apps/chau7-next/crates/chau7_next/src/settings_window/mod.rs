@@ -35,6 +35,7 @@ mod proxy;
 mod remote;
 mod rendering;
 mod repositories;
+mod search_animation;
 mod shell;
 mod shortcuts;
 mod start_here;
@@ -278,6 +279,12 @@ pub struct SettingsView {
     scroll_handle: ScrollHandle,
     target_bounds: anchors::TargetBounds,
     search_scroll_generation: u64,
+    search_highlights: search_animation::Highlights,
+    search_scroll_motion: Option<search_animation::ScrollMotion>,
+    search_scroll_retry: Option<gpui::Task<()>>,
+    search_retry_pending: bool,
+    search_animation_frame_pending: bool,
+    search_retry_attempts: u64,
     search_anchors: std::rc::Rc<std::collections::HashMap<&'static str, ScrollAnchor>>,
     /// Snippets, links, command guard and profile sections.
     mine: mine::MineState,
@@ -353,6 +360,10 @@ impl SettingsView {
                         .map(|(section, _)| *section);
                     this.navigation.update_search_query(query, first);
                     this.search_scroll_generation = this.search_scroll_generation.wrapping_add(1);
+                    this.search_scroll_motion = None;
+                    this.search_scroll_retry = None;
+                    this.search_retry_pending = false;
+                    this.search_animation_frame_pending = false;
                     let view = this.entity.clone();
                     cx.defer(move |cx| {
                         let _ = search_window.update(cx, |_, window, cx| {
@@ -389,6 +400,12 @@ impl SettingsView {
             scroll_handle,
             target_bounds: Default::default(),
             search_scroll_generation: 0,
+            search_highlights: Default::default(),
+            search_scroll_motion: None,
+            search_scroll_retry: None,
+            search_retry_pending: false,
+            search_animation_frame_pending: false,
+            search_retry_attempts: 0,
             search_anchors,
             mcp,
             cto,
@@ -432,38 +449,107 @@ impl SettingsView {
 
     fn scroll_to_active_search_anchor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_scroll_generation = self.search_scroll_generation.wrapping_add(1);
+        self.search_scroll_motion = None;
+        self.search_scroll_retry = None;
+        self.search_retry_pending = false;
+        self.search_animation_frame_pending = false;
         self.target_bounds.clear();
         let generation = self.search_scroll_generation;
-        let Some(id) = self.active_search_anchor_id() else {
+        let id = self.active_search_anchor_id();
+        self.search_highlights
+            .begin(id, cx.background_executor().now());
+        self.schedule_search_animation_frame(window, cx);
+        let Some(id) = id else {
             cx.notify();
             return;
         };
         if self.navigation.selection == SettingsSection::Notifications {
             self.notif.focus_search_target(id);
         }
-        // Two frame barriers ensure the selected page is laid out. GPUI's
-        // built-in ScrollAnchor aligns to the top, so use actual target bounds
-        // for Swift's centered alignment and clamp to the rendered content.
+        // The target must have real layout before calculating centered offset.
         cx.on_next_frame(window, move |_, window, cx| {
-            cx.on_next_frame(window, move |this, _, cx| {
-                if this.search_scroll_generation != generation
-                    || this.active_search_anchor_id() != Some(id)
+            cx.on_next_frame(window, move |this, window, cx| {
+                if this.search_scroll_generation == generation
+                    && this.active_search_anchor_id() == Some(id)
                 {
-                    return;
-                }
-                if let Some(target) = this.target_bounds.get(id) {
-                    let viewport = this.scroll_handle.bounds();
-                    let maximum = this.scroll_handle.max_offset();
-                    let offset = this.scroll_handle.offset();
-                    let centered = offset.y + viewport.center().y - target.center().y;
-                    this.scroll_handle
-                        .set_offset(gpui::point(offset.x, centered.clamp(-maximum.y, px(0.0))));
-                    cx.notify();
+                    this.start_search_scroll_motion(id, window, cx);
                 }
             });
             cx.notify();
         });
+        // Swift retries at 120ms. Holding exactly one weak-entity task cancels
+        // obsolete retries when the query, section, target or window changes.
+        self.search_retry_pending = true;
+        self.search_scroll_retry = Some(cx.spawn_in(window, async move |view, cx| {
+            cx.background_executor()
+                .timer(search_animation::SCROLL_RETRY)
+                .await;
+            let _ = view.update_in(cx, |view, window, cx| {
+                if view.search_scroll_generation != generation
+                    || view.active_search_anchor_id() != Some(id)
+                {
+                    return;
+                }
+                view.search_retry_pending = false;
+                view.search_retry_attempts = view.search_retry_attempts.saturating_add(1);
+                view.start_search_scroll_motion(id, window, cx);
+            });
+        }));
         cx.notify();
+    }
+
+    fn start_search_scroll_motion(
+        &mut self,
+        id: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let viewport = self.scroll_handle.bounds();
+        let maximum = self.scroll_handle.max_offset();
+        if let Some(centered) = self.target_bounds.centered_offset(id, viewport, maximum.y) {
+            self.search_scroll_motion = Some(search_animation::ScrollMotion::new(
+                self.scroll_handle.offset().y,
+                centered,
+                cx.background_executor().now(),
+            ));
+            self.schedule_search_animation_frame(window, cx);
+        }
+    }
+
+    fn schedule_search_animation_frame(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_animation_frame_pending {
+            return;
+        }
+        self.search_animation_frame_pending = true;
+        let generation = self.search_scroll_generation;
+        cx.on_next_frame(window, move |view, window, cx| {
+            if view.search_scroll_generation != generation {
+                return;
+            }
+            view.search_animation_frame_pending = false;
+            let now = cx.background_executor().now();
+            if let Some(motion) = &view.search_scroll_motion {
+                let maximum = view.scroll_handle.max_offset();
+                let offset = view.scroll_handle.offset();
+                view.scroll_handle.set_offset(gpui::point(
+                    offset.x,
+                    motion.value(now).clamp(-maximum.y, px(0.)),
+                ));
+                if motion.finished(now) {
+                    view.search_scroll_motion = None;
+                }
+            }
+            cx.notify();
+            if !view.search_animations_finished(now) {
+                view.schedule_search_animation_frame(window, cx);
+            }
+        });
+    }
+
+    fn search_animations_finished(&self, now: std::time::Instant) -> bool {
+        self.search_scroll_motion.is_none()
+            && !self.search_retry_pending
+            && self.search_highlights.finished(now)
     }
 
     fn focus_search_result(
@@ -666,8 +752,11 @@ impl SettingsView {
             self.search_anchors.clone(),
             anchors::SearchPresentation {
                 bounds: self.target_bounds.clone(),
-                active: self.active_search_anchor_id(),
+                strengths: self
+                    .search_highlights
+                    .values(cx.background_executor().now()),
                 accent: chrome.accent,
+                scroll_handle: self.scroll_handle.clone(),
             },
             || summary::section(context),
         ));
@@ -715,8 +804,11 @@ impl SettingsView {
                 self.search_anchors.clone(),
                 anchors::SearchPresentation {
                     bounds: self.target_bounds.clone(),
-                    active: self.active_search_anchor_id(),
+                    strengths: self
+                        .search_highlights
+                        .values(cx.background_executor().now()),
                     accent: chrome.accent,
+                    scroll_handle: self.scroll_handle.clone(),
                 },
                 || page.children(blocks.iter().map(|block| block(context))),
             );
