@@ -6,9 +6,13 @@ use crate::settings::config_files::ConfigFiles;
 use gpui::{Context, Entity, Subscription, Window, div, prelude::*, px};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 
+#[path = "panes_number.rs"]
+mod number;
+
 /// Own the edit buffer independently of refreshed settings snapshots.
 pub(crate) struct PaneInputs {
     scrollback: Entity<InputState>,
+    number_format: number::NumberFormat,
     edit_baseline: usize,
     last_displayed: String,
     editing: bool,
@@ -19,7 +23,9 @@ impl PaneInputs {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<SettingsView>) -> Self {
         let value = Settings::get(cx).terminal.scrollback_lines;
         let baseline = cx.global::<ConfigFiles>().base.terminal.scrollback_lines;
-        let scrollback = cx.new(|cx| InputState::new(window, cx).default_value(value.to_string()));
+        let number_format = number::NumberFormat::current();
+        let displayed = number_format.format(value);
+        let scrollback = cx.new(|cx| InputState::new(window, cx).default_value(displayed.clone()));
         let subscription = cx.subscribe_in(
             &scrollback,
             window,
@@ -28,7 +34,10 @@ impl PaneInputs {
                 match event {
                     InputEvent::Focus => {
                         if !view.pane_inputs.editing {
-                            let actual = Settings::get(cx).terminal.scrollback_lines.to_string();
+                            let actual = view
+                                .pane_inputs
+                                .number_format
+                                .format(Settings::get(cx).terminal.scrollback_lines);
                             // A text edit may already be queued behind Focus. Only
                             // refresh the previous displayed value, never that draft.
                             if input.read(cx).value().as_str() == view.pane_inputs.last_displayed {
@@ -48,13 +57,16 @@ impl PaneInputs {
                     InputEvent::PressEnter { .. } | InputEvent::Blur => {
                         let raw = input.read(cx).value().to_string();
                         if view.pane_inputs.edit_baseline == current_base
-                            && let Ok(lines) = raw.trim().parse::<i128>()
+                            && let Some(lines) = view.pane_inputs.number_format.parse(&raw)
                         {
                             super::update(cx, |settings| {
-                                settings.terminal.set_scrollback_lines(lines)
+                                settings.terminal.set_scrollback_lines(i128::from(lines))
                             });
                         }
-                        let actual = Settings::get(cx).terminal.scrollback_lines.to_string();
+                        let actual = view
+                            .pane_inputs
+                            .number_format
+                            .format(Settings::get(cx).terminal.scrollback_lines);
                         if raw != actual {
                             input.update(cx, |state, cx| {
                                 state.set_value(actual.clone(), window, cx)
@@ -70,8 +82,9 @@ impl PaneInputs {
         );
         Self {
             scrollback,
+            number_format,
             edit_baseline: baseline,
-            last_displayed: value.to_string(),
+            last_displayed: displayed,
             editing: false,
             _subscription: subscription,
         }
