@@ -571,6 +571,7 @@ pub(super) struct NativeMarkdown {
     scroll: Retained<SourceScrollView>,
     text: Retained<SourceTextView>,
     shared: Rc<Shared>,
+    mount_generation: Cell<u64>,
 }
 impl NativeMarkdown {
     pub(super) fn create(
@@ -624,6 +625,7 @@ impl NativeMarkdown {
             scroll,
             text,
             shared: shared.clone(),
+            mount_generation: Cell::new(0),
         });
         start_delivery(shared.pending.clone(), shared.queued.clone(), receiver, cx);
         Some(result)
@@ -701,7 +703,8 @@ impl NativeMarkdown {
         }
         let mut doc = self.shared.document.borrow_mut();
         doc.update(text);
-        let range = if size_changed || loaded || self.shared.deferred_style.replace(false) {
+        let deferred_style = self.shared.deferred_style.replace(false);
+        let range = if size_changed || loaded || deferred_style {
             0..text.len()
         } else {
             doc.restyled_range()
@@ -780,14 +783,14 @@ impl NativeMarkdown {
             self.text.scrollRangeToVisible(self.text.selectedRange());
         }
     }
-    fn attach(&self, window: &Window, bounds: Bounds<Pixels>) {
+    fn attach(&self, window: &Window, bounds: Bounds<Pixels>) -> Option<u64> {
         if bounds.size.width <= gpui::px(0.) || bounds.size.height <= gpui::px(0.) {
             self.detach();
-            return;
+            return None;
         }
-        let Some(view) = raw_view(window) else {
-            return;
-        };
+        let view = raw_view(window)?;
+        let generation = self.mount_generation.get().wrapping_add(1);
+        self.mount_generation.set(generation);
         self.shared.host.bind(&view);
         let mut y = f64::from(f32::from(bounds.origin.y));
         let height = f64::from(f32::from(bounds.size.height));
@@ -815,8 +818,12 @@ impl NativeMarkdown {
         if !self.shared.pending.borrow().is_empty() {
             self.shared.signal();
         }
+        Some(generation)
     }
     pub(super) fn detach(&self) {
+        // Explicit modal/close/visibility teardown invalidates old frame guards.
+        self.mount_generation
+            .set(self.mount_generation.get().wrapping_add(1));
         self.shared.host.return_focus(&self.scroll);
         self.scroll.setHidden(true);
         self.scroll.removeFromSuperview();
@@ -854,10 +861,31 @@ impl Drop for NativeMarkdown {
     }
 }
 
-struct Attachment(Rc<NativeMarkdown>);
+struct Attachment {
+    native: Rc<NativeMarkdown>,
+    generation: u64,
+}
+impl Attachment {
+    fn for_mount(previous: Option<Self>, native: &Rc<NativeMarkdown>, generation: u64) -> Self {
+        if let Some(mut previous) = previous
+            && Rc::ptr_eq(&previous.native, native)
+        {
+            previous.generation = generation;
+            previous
+        } else {
+            Self {
+                native: native.clone(),
+                generation,
+            }
+        }
+    }
+}
 impl Drop for Attachment {
     fn drop(&mut self) {
-        self.0.detach();
+        // A previous frame/window must not detach a newly mounted same source.
+        if self.native.mount_generation.get() == self.generation {
+            self.native.detach();
+        }
     }
 }
 pub(super) struct NativeSource {
@@ -917,16 +945,18 @@ impl Element for NativeSource {
                 .downcast::<crate::workspace::Workspace>()
                 .is_ok_and(|w| w.read(cx).native_editor_allowed(cx));
         if allowed {
-            if let Some(id) = id {
+            if let Some(generation) = self
+                .native
+                .attach(window, bounds.intersect(&window.content_mask().bounds))
+                && let Some(id) = id
+            {
                 window.with_element_state(id, |previous: Option<Attachment>, _| {
                     (
                         (),
-                        previous.unwrap_or_else(|| Attachment(self.native.clone())),
+                        Attachment::for_mount(previous, &self.native, generation),
                     )
                 });
             }
-            self.native
-                .attach(window, bounds.intersect(&window.content_mask().bounds));
         } else {
             self.native.detach();
         }
