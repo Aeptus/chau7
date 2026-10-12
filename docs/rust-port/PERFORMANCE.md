@@ -75,7 +75,9 @@ by an external protocol. Metadata overhead is additional to the payload budget.
 
 Normal quit also closes history admission on the UI thread after producer
 shutdown. The existing background quit worker joins the actual history writer,
-then releases its observer and SQLite connection before reporting clean quit.
+then releases its writer-owned observer/store references before reporting clean
+quit. Live readers may retain the store until their own teardown; normal shutdown
+does not require exclusive ownership of every reader.
 Accepted and failed records remain distinguished. Joining a writer is separate
 from observing that a Weak reference no longer upgrades: SQLite destruction can
 still be running, particularly with Windows file locks.

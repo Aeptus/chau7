@@ -551,3 +551,43 @@ acceptance. Only bounded numeric summaries are retained for this observation.
 Evidence: `source-181423-*`, `source-d0e12-*`, the named local quality/test/sample
 logs, `chau7-ci-c514-next-failed.log` and
 `chau7-old797-after-volume-consent-summary.json` in the private evidence folder.
+
+## Integrated CPU scene prerequisites, not window acceptance (2026-10-12)
+
+Exact rootbd6269459be60aaf88147dec13dd849b06e93417 passes2,948 release
+workspace tests (544 app,3 public GPUI integration,2,401 core; two existing
+ignored), strict default and optional-native all-target Clippy, formatting and
+diff checks. Separate actual platform tests pass15 software renderer cases and
+13 Apple cases on the owned native target with release LTO disabled. These cover
+checked CPU atlas/frame/path storage, primitive families, actual CoreVideo read
+lease release, transformed sprite pixels, retained CGImage/ordinary CALayer
+ownership, and actual Metal initial viewport/pool/atlas preparation. Source stays
+clean and unchanged during all checks. The17-file current modification ledger
+and all before/after hash chains pass independent root verification. Actual
+duplication scan remains0.90% with188 byte-identical originals excluded; every
+modified/new renderer source stays eligible at the unchanged2% limit.
+
+The independent scene/resource/presenter reviews find no confirmed ownership or
+rendering blocker. Two descriptions require correction before diagnostics are
+exposed: image channel conversion remains premultiplied, and CALayer contents
+updates measure CPU submission, not completed OS presentation. The Metal alias
+is still selected at this checkpoint. These are staged prerequisites and do not
+close PRF-002 or prove startup/usable windows without Metal.
+
+The next actual seven-family CPU/Metal comparator finds a sprite sampling
+mismatch in the staged agent implementation: separate CPU texture edge clamping
+produces255 where the packed Metal atlas produces224. A matching packed CPU
+allocator corrects that actual comparison to mean/max byte error0 in the agent
+worktree; its checkpoint, integration and full native window acceptance remain
+pending. No tolerance was widened. The initial non-IOSurface video fixture
+constraint and comparator negative are preserved separately.
+
+Normal history shutdown releases writer-owned references after the actual join;
+other live readers can retain the store until their own teardown. The isolated
+observer test drops its separate reader first, so its completed join establishes
+SQLite close before directory removal. Do not infer the fixture's exclusive
+ownership condition for every ordinary live window.
+
+Evidence: `source-bd626-*`, `chau7-root-bd626-software15.log`,
+`chau7-root-bd626-apple13.log`, `chau7-root-bd626-duplication.log` and
+`chau7-gpui-bd626-ledger-root-audit.json` in the private evidence folder.
