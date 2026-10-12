@@ -30,6 +30,13 @@ pub type DrawOrder = u32;
 #[repr(transparent)]
 pub struct PaddedBool32(u32);
 
+impl PaddedBool32 {
+    /// Reads the canonical boolean without exposing its GPU-compatible storage.
+    pub const fn get(self) -> bool {
+        self.0 != 0
+    }
+}
+
 impl From<bool> for PaddedBool32 {
     fn from(value: bool) -> Self {
         PaddedBool32(value as u32)
