@@ -189,7 +189,8 @@ FAKE
 cat > "$FAKE_BIN/codesign" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$*" >> "$FAKE_STATE/codesign.log"
+printf '%q ' "$@" >> "$FAKE_STATE/codesign.log"
+printf '\n' >> "$FAKE_STATE/codesign.log"
 [[ " $* " == *' --verify '* ]] && exit 0
 target=''
 for argument in "$@"; do target="$argument"; done
@@ -199,6 +200,27 @@ elif [[ -d "$target" && -f "$target/Contents/MacOS/Chau7 Next" ]]; then
   printf '\nfake-codesigned\n' >> "$target/Contents/MacOS/Chau7 Next"
 fi
 FAKE
+
+# All package tool calls must resolve to these fakes. A missing executable
+# bit would otherwise allow PATH lookup to reach a real compiler or signer.
+chmod 755 \
+  "$FAKE_BIN/git" \
+  "$FAKE_BIN/rustup" \
+  "$FAKE_BIN/rustc" \
+  "$FAKE_BIN/cargo" \
+  "$FAKE_BIN/go" \
+  "$FAKE_BIN/clang" \
+  "$FAKE_BIN/codesign"
+assert_fake_tools_selected() (
+  local tool
+  local resolved
+  for tool in git rustup rustc cargo go clang codesign; do
+    resolved="$(PATH="$FAKE_BIN:$PATH" /bin/bash -c 'command -v "$1"' _ "$tool")"
+    [[ "$resolved" == "$FAKE_BIN/$tool" ]] \
+      || fail "expected fake $tool first in PATH"
+  done
+)
+assert_fake_tools_selected
 
 mkdir -p \
   "$FIXTURE_APP/scripts" \
@@ -266,12 +288,17 @@ validate_bundle() {
 import hashlib
 import json
 import pathlib
+import shlex
 import sys
 
 bundle = pathlib.Path(sys.argv[1]).resolve()
 manifest_path = pathlib.Path(sys.argv[2]).resolve()
 mode, helper_target_dir, verbose, jobs, codesign_log = sys.argv[3:]
-codesign_log = pathlib.Path(codesign_log).read_text()
+verified_paths = set()
+for line in pathlib.Path(codesign_log).read_text().splitlines():
+    arguments = shlex.split(line)
+    if len(arguments) == 4 and arguments[:3] == ["--verify", "--strict", "--verbose=2"]:
+        verified_paths.add(pathlib.Path(arguments[3]).resolve())
 manifest = json.loads(manifest_path.read_text())
 expected = {
     "Chau7 Next": "Contents/MacOS/Chau7 Next",
@@ -330,11 +357,11 @@ for name, relative_path in expected.items():
     assert entry["sha256"] == actual_hash, name
     assert b"fake-codesigned" in artifact.read_bytes(), f"{name} was not signed before hashing"
     if name != "Chau7 Next":
-        verification = f"--verify --strict --verbose=2 {bundle / relative_path}"
-        assert verification in codesign_log, name
-assert f"--verify --strict --verbose=2 {bundle}" in codesign_log
+        assert (bundle / relative_path).resolve() in verified_paths, name
+assert bundle in verified_paths
 helper = (bundle / expected["chau7-optim"]).read_text()
-assert f"targetdir={helper_target_dir}" in helper, helper
+actual_helper_target = helper.split("targetdir=", 1)[1].splitlines()[0]
+assert pathlib.Path(actual_helper_target).resolve() == pathlib.Path(helper_target_dir).resolve(), helper
 PY
 }
 
@@ -366,7 +393,8 @@ validate_bundle "$custom_bundle" "$custom_manifest" diagnostic \
   "$FIXTURE_APP/$custom_helpers" 1 3
 [[ -f "$FIXTURE_APP/$custom_main/aarch64-apple-darwin/release/chau7-next" ]] || fail 'explicit app CARGO_TARGET_DIR was ignored'
 [[ -f "$FIXTURE_APP/$custom_helpers/aarch64-apple-darwin/release/chau7-optim" ]] || fail 'explicit helper OPTIM_TARGET_DIR was ignored'
-assert_file_contains "$custom_bundle/Contents/MacOS/chau7-optim" "$FIXTURE_APP/$custom_helpers"
+custom_helpers_resolved="$(cd "$FIXTURE_APP/$custom_helpers" && pwd)"
+assert_file_contains "$custom_bundle/Contents/MacOS/chau7-optim" "$custom_helpers_resolved"
 assert_file_contains "$FIXTURE_APP/target/logs/diagnostic.log" 'fake cargo build'
 if grep -Fq -- '-s -w' "$FAKE_STATE/go-args.log"; then
   fail 'diagnostic Go build unexpectedly stripped symbols'

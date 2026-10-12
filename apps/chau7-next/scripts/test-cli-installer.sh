@@ -17,6 +17,10 @@ trap 'rm -rf "$TMP_ROOT"' EXIT
 cp "$APP_ROOT/scripts/install-chau7-next-cli.sh" "$FIXTURE_APP/scripts/install-chau7-next-cli.sh"
 cp "$APP_ROOT/scripts/build-mode.sh" "$FIXTURE_APP/scripts/build-mode.sh"
 cp -R "$APP_ROOT/resources/skills" "$FIXTURE_APP/resources/skills"
+if ! /bin/bash -n "$FIXTURE_APP/scripts/install-chau7-next-cli.sh"; then
+  echo 'FAIL: copied CLI installer is invalid for the system Bash' >&2
+  exit 1
+fi
 
 cat > "$FAKE_BIN/cargo" <<'FAKE'
 #!/usr/bin/env bash
@@ -47,6 +51,10 @@ print(json.dumps({
 PY
 FAKE
 chmod 755 "$FAKE_BIN/cargo"
+if [[ "$(PATH="$FAKE_BIN:$PATH" command -v cargo)" != "$FAKE_BIN/cargo" ]]; then
+  echo 'FAIL: cargo does not resolve to the fixture fake' >&2
+  exit 1
+fi
 
 run_installer() {
   local label="$1"
@@ -67,7 +75,15 @@ run_installer() {
     else
       unset CHAU7_NEXT_CLI_PRODUCT_BIN
     fi
-    "$FIXTURE_APP/scripts/install-chau7-next-cli.sh" > "$FAKE_STATE/$label.log" 2>&1
+    if ! "$FIXTURE_APP/scripts/install-chau7-next-cli.sh" > "$FAKE_STATE/$label.log" 2>&1; then
+      cat "$FAKE_STATE/$label.log" >&2
+      return 1
+    fi
+    if [[ ! -x "$TMP_ROOT/install-$label/chau7-next-cli" ]]; then
+      cat "$FAKE_STATE/$label.log" >&2
+      echo 'FAIL: installer returned without installing the CLI executable' >&2
+      return 1
+    fi
   )
 }
 
@@ -82,6 +98,7 @@ run_installer target-aware 0 ''
 INSTALLED="$TMP_ROOT/install-target-aware/chau7-next-cli"
 grep -Fq 'fresh-artifact target=aarch64-apple-darwin' "$INSTALLED" \
   || { echo 'FAIL: installer copied the stale host artifact' >&2; exit 1; }
+FRESH_PRODUCT="$(cd "$(dirname "$FRESH_PRODUCT")" && pwd -P)/$(basename "$FRESH_PRODUCT")"
 grep -Fq "$FRESH_PRODUCT" "$FAKE_STATE/target-aware.log" \
   || { echo 'FAIL: installer did not report the Cargo artifact path' >&2; exit 1; }
 grep -Fq -- '--message-format=json-render-diagnostics' "$FAKE_STATE/cargo-args.log" \

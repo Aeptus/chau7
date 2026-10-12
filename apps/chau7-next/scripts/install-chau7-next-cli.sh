@@ -54,7 +54,7 @@ for line_number, line in enumerate(artifact_stream.read_text(errors="replace").s
     try:
         message = json.loads(line)
     except json.JSONDecodeError:
-        # Cargo's verbose mode or a wrapper may add human-readable lines to
+        # Cargo verbose mode or a wrapper may add human-readable lines to
         # stderr, which run_cargo merges into this stream when logging.
         continue
     if not isinstance(message, dict):
