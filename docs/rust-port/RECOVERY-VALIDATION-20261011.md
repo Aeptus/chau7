@@ -441,3 +441,31 @@ all195 original files/9,848,773 bytes match their manifest SHA256/length and
 the locked local registry byte for byte. The two subsequent normalization
 changes have matching before/after hashes and preserve non-whitespace bytes.
 This verifies provenance only; it is not software-backend acceptance.
+
+## Quality correction and measured persistence integration (2026-10-12)
+
+Official7a13ed78 passes quality run38201979320 and Next PR run38201979374,
+including macOS/Linux/Windows and macOS packaging. The formatter-only follow-up
+therefore resolves the earlier staged-source-rewrite failure without changing
+assertions or gates. Swift main remains7733b1f0c4440c0193915b036c38d5b83f31a1b3
+when checked again on2026-10-12.
+
+Root45146bad validates the Aethyme incomplete-capture backoff and static
+subprocess wall-time instrumentation:10 focused tests and2,914 release workspace
+tests (515 app +2,399 core; two existing ignored), strict default and optional
+all-target Clippy, formatting and diff checks pass. Independent adapter review
+also passes. These tests use owned fake CLIs; no existing app, provider or real
+broker delivery was changed by testing.
+
+Agent cache checkpoint07e5752b7309896faaf87cd727d4e9364a259661 has real native
+acceptance: actual PID13069, binary SHA256
+a8f7a720219b91d0125f6d90ebd1273e41375ad9dfd8027d3102d147311a53cd,
+exit0 and verified removed owned profile/closed resources. Three actual Settings
+pages paint, real FSEvents observes valid/invalid/valid and a revision-fenced
+rename, real history writer insert/clear changes held statistics, a quiescent
+missing-primary error preserves last success and recovers, snippet read errors
+show Unknown and recover, and close/reopen observes exactly two snippets.
+Central cleanup waits for monitor/read/write completion and final SQLite close
+before deleting the owned profile. No injected cache values or ordinary provider
+history initialization. Source integrated as5fe39a846; combined checks follow.
+Evidence: `next-native-cache-20261012-062859.json` and its stdout/stderr.

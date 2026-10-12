@@ -31,6 +31,34 @@ History lines use `schema_version`, `timestamp`, `category` and `metrics`;
 Accepted records drain on the background quit worker. Repeated write failures
 produce one operational warning until a successful write resets it.
 
+## Persistence admission and completion
+
+The schema1 `persistence` object distinguishes queue admission from completed
+writes. Its counters are `accepted`, `written`, `drop_full`, `failure`,
+`disconnected`, `rejected_closed` and `worker_start_failure`. `accepted` means
+that the nonblocking queue admitted a sample. `written` means the latest-file
+replacement and history append/flush completed; it makes no fsync durability
+claim. A snapshot cannot acknowledge its own subsequent write.
+
+`state` is `running`, `draining`, `closed`, `disconnected` or `start_failed`.
+Before initialization, state, availability and counters are null; availability
+is true only while running. `last_error_category` uses a fixed I/O vocabulary,
+contains no error text or paths, and retains the last observed failure even if
+later writes succeed. Worker I/O and operational logging run outside the lock
+used by snapshot capture. Quit closes admission on the UI thread and drains
+accepted samples on the existing background quit worker.
+
+## Aethyme subprocess capture
+
+Actual bounded CLI captures emit background wall-time measurements under
+`aethyme.delivery` / `subprocess_capture_wall`, with four static callers for
+list, poll, claim and complete. They exclude the preceding polling interval and
+subsequent logging or recipient delivery; elapsed capture time is not CPU time.
+Consecutive incomplete captures of the same kind back off from30s to300s and
+warn once until that kind succeeds. Successful list/poll operations do not
+reset an incomplete claim/complete sequence. Shutdown cancellation produces no
+outage warning. An incomplete capture is not proof of a particular cause.
+
 ## Measurements and limits
 
 JSON schema version 1 contains:
