@@ -49,9 +49,15 @@
           "before_sha256": "72928305adc4671f3b8f4d97e2344738980e4c3e662926d840f4b69fc674f227",
           "description": "Add typed fallible startup, checking nullable Metal/CoreVideo resources before ownership; preserve all eight pipelines and default constructors; isolated initialization tests",
           "kind": "semantic"
+        },
+        {
+          "after_sha256": "7debde0fb8d2c754375a29dad7798582b02688218e1fa193ac3fb0a5b69d3c86",
+          "before_sha256": "aa7d475958a1b6512437c2ebeecf495024ff65b8e9c118d03c957c9eabd0a00d",
+          "description": "Check copied device arrays before native messages/owners and release non-null CoreVideo output on native failure; deterministic ownership/nil regressions",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "aa7d475958a1b6512437c2ebeecf495024ff65b8e9c118d03c957c9eabd0a00d",
+      "current_sha256": "7debde0fb8d2c754375a29dad7798582b02688218e1fa193ac3fb0a5b69d3c86",
       "original_sha256": "72928305adc4671f3b8f4d97e2344738980e4c3e662926d840f4b69fc674f227",
       "package": "gpui-pre-apple",
       "path": "src/metal_renderer.rs"
