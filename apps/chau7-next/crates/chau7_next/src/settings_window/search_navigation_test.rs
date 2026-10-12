@@ -35,6 +35,7 @@ fn real_search_change_centers_first_match_and_empty_retains_selection(
     });
     let input = cx.update(|cx| view.read(cx).search_input.clone());
     for query in ["restored", "cursor", "no-such-current-setting-12345", ""] {
+        anchors::take_rendered_targets();
         let previous = cx.update(|cx| view.read(cx).navigation.selection);
         handle
             .update(cx, |_, window, cx| {
@@ -66,10 +67,15 @@ fn real_search_change_centers_first_match_and_empty_retains_selection(
             if query.is_empty() || first.is_none() {
                 assert_eq!(view.navigation.selection, previous);
                 assert!(view.active_search_anchor_id().is_none());
+                assert!(anchors::highlighted_targets().is_empty());
             } else {
                 assert_eq!(Some(view.navigation.selection), first);
                 let expected = matching_settings(view.navigation.selection, query)[0].anchor_id;
                 assert_eq!(view.active_search_anchor_id(), Some(expected));
+                assert_eq!(
+                    anchors::highlighted_targets(),
+                    std::collections::HashSet::from([expected])
+                );
                 let target = view
                     .target_bounds
                     .get(expected)
