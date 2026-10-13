@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Skip Next cursor-blink redraws for unfocused terminal views that already
+  paint a solid cursor, and show the cursor immediately when focus returns.
+
 - Show Analytics generation-rate measurement times and identify retained older
   readings so historical throughput is not presented as a live measurement.
 

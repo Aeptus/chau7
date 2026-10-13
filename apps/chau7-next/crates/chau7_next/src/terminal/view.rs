@@ -65,6 +65,7 @@ pub struct TerminalView {
     bounds: Option<Bounds<Pixels>>,
     selecting: bool,
     cursor_on: bool,
+    cursor_focused: bool,
     marked_text: Option<String>,
     /// Button currently reported to the program (mouse reporting).
     reporting_button: Option<key_encoding::MouseButtonCode>,
@@ -207,6 +208,7 @@ impl TerminalView {
             bounds: None,
             selecting: false,
             cursor_on: true,
+            cursor_focused: false,
             marked_text: None,
             reporting_button: None,
             search_matches: Vec::new(),
@@ -268,9 +270,10 @@ impl TerminalView {
         self.session
             .read(cx)
             .mark_restore_surface(window.is_visible());
-        self.refresh_interactive = window.is_visible()
-            && window.is_window_active()
-            && self.focus_handle.is_focused(window);
+        let focused = self.focus_handle.is_focused(window);
+        self.cursor_on = cursor_on_after_focus_change(self.cursor_on, self.cursor_focused, focused);
+        self.cursor_focused = focused;
+        self.refresh_interactive = window.is_visible() && window.is_window_active() && focused;
         let window_key = crate::platform::drop_image::window_key(window);
         let (session_id, selection) = {
             let session = self.session.read(cx);
@@ -450,10 +453,20 @@ impl TerminalView {
             }
             return interval;
         }
-        if appearance.cursor_blink {
-            let on = self.overlays.blink_hold() || !self.cursor_on;
-            if on != self.cursor_on {
-                self.cursor_on = on;
+        let blink_hold = if appearance.cursor_blink {
+            self.overlays.blink_hold()
+        } else {
+            false
+        };
+        let transition = cursor_blink_transition(
+            self.cursor_on,
+            appearance.cursor_blink,
+            self.cursor_focused,
+            blink_hold,
+        );
+        if transition.cursor_on != self.cursor_on {
+            self.cursor_on = transition.cursor_on;
+            if transition.notify {
                 cx.notify();
             }
         }
@@ -730,8 +743,132 @@ impl Render for TerminalView {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CursorBlinkTransition {
+    cursor_on: bool,
+    notify: bool,
+}
+
+fn cursor_blink_transition(
+    cursor_on: bool,
+    blink_enabled: bool,
+    focused: bool,
+    hold: bool,
+) -> CursorBlinkTransition {
+    if !blink_enabled {
+        return CursorBlinkTransition {
+            cursor_on,
+            notify: false,
+        };
+    }
+
+    let next = hold || !cursor_on;
+    CursorBlinkTransition {
+        cursor_on: next,
+        notify: focused && next != cursor_on,
+    }
+}
+
+fn cursor_on_after_focus_change(cursor_on: bool, was_focused: bool, focused: bool) -> bool {
+    if focused && !was_focused {
+        true
+    } else {
+        cursor_on
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn focused_cursor_blink_changes_paint_and_requests_redraw() {
+        let transition = super::cursor_blink_transition(true, true, true, false);
+        assert_eq!(
+            transition,
+            super::CursorBlinkTransition {
+                cursor_on: false,
+                notify: true,
+            }
+        );
+    }
+
+    #[test]
+    fn unfocused_cursor_blink_advances_without_requesting_redraw() {
+        let transition = super::cursor_blink_transition(true, true, false, false);
+        assert_eq!(
+            transition,
+            super::CursorBlinkTransition {
+                cursor_on: false,
+                notify: false,
+            }
+        );
+    }
+
+    #[test]
+    fn disabled_blink_keeps_phase_without_redraw_even_when_held() {
+        let transition = super::cursor_blink_transition(false, false, true, true);
+        assert_eq!(
+            transition,
+            super::CursorBlinkTransition {
+                cursor_on: false,
+                notify: false,
+            }
+        );
+    }
+
+    #[test]
+    fn blink_hold_restores_solid_cursor_and_notifies_only_when_focused() {
+        assert_eq!(
+            super::cursor_blink_transition(false, true, true, true),
+            super::CursorBlinkTransition {
+                cursor_on: true,
+                notify: true,
+            }
+        );
+        assert_eq!(
+            super::cursor_blink_transition(false, true, false, true),
+            super::CursorBlinkTransition {
+                cursor_on: true,
+                notify: false,
+            }
+        );
+    }
+
+    #[test]
+    fn focus_regain_restores_visible_cursor_phase() {
+        assert!(super::cursor_on_after_focus_change(false, false, true));
+        assert!(!super::cursor_on_after_focus_change(false, true, false));
+        assert!(!super::cursor_on_after_focus_change(false, true, true));
+    }
+
+    #[test]
+    fn cursor_redraw_gate_is_wired_to_the_paint_focus_predicate() {
+        let source = include_str!("view.rs");
+        let pacing = source
+            .split("    fn update_refresh_pacing(")
+            .nth(1)
+            .unwrap()
+            .split("    /// Resize signals")
+            .next()
+            .unwrap();
+        assert!(pacing.contains("let focused = self.focus_handle.is_focused(window);"));
+        assert!(pacing.contains("self.cursor_focused = focused;"));
+        assert!(pacing.contains("&& focused;"));
+
+        let blink = source
+            .split("    fn blink_tick(")
+            .nth(1)
+            .unwrap()
+            .split("    fn metrics(")
+            .next()
+            .unwrap();
+        assert!(blink.contains("self.cursor_focused"));
+        assert!(blink.contains("cursor_blink_transition("));
+        assert!(blink.contains("if transition.notify"));
+
+        let paint = include_str!("paint.rs");
+        assert!(paint.contains("show_cursor: cursor_on || !focused || !appearance.cursor_blink"));
+    }
+
     #[test]
     fn collapsed_surface_keeps_actual_restored_grid_and_scrollback() {
         let terminal = chau7_terminal::Chau7Terminal::new_headless(80, 24).unwrap();
