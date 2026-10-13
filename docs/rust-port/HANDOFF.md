@@ -31,12 +31,37 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
-- Local source `916bbfd8` passed all nine compiler/package stages, 3,042
-  Rust tests (two ignored) and ten full quality gates. Swift build and 4,586
-  tests passed (three skipped). Its normal warm build took 77.382 seconds.
-  Follow-up Restore focus and measured post-deminiaturization frame assertions
-  await compiled and complete native acceptance. This is a local checkpoint;
-  the published source remains the separate checkpoint below.
+- Local checkpoint source `51c9e761` passed all nine compiler/package
+  stages, 3,042 Rust tests (two ignored), seven focused feature tests and ten
+  full quality gates. The Swift build and 4,586-test suite passed, with three
+  skipped and no failures. Its normal optimized warm build took 51.4346
+  seconds; this is one build observation, not a performance claim.
+  The sealed normal package passed the exact 68-byte input check, preserved
+  existing tab inputs, made no provider or device contact, and quit gracefully
+  with its owned child. Performance validation checked 1,684 numeric values,
+  sampled CPU data and Software counters for both windows (11 and 5 submitted
+  frames, zero failed), validated 16 timers, and verified the owned diagnostics
+  directory. These checks validate observability and clean retirement, not
+  performance thresholds or a benchmark.
+  The 21-row native-only sequence stopped during the Software matrix: Settings,
+  Editor and Cache passed; Restore failed with `owned window has no rendered
+  accessibility tree`. All owned fixture processes retired. Auto, locale and
+  accessibility cases were not launched. A fixture bootstrap for a real NSView
+  accessibility tree is being prepared before repeating the strict Restore
+  baseline. This is a fixture activation gap, not evidence of a production app
+  defect or an explanation for the historical stall. The bootstrap is not yet
+  validated. Complete native acceptance and the physical Mac checklist remain
+  open. The [parity workflow run 38391863656](https://github.com/Aeptus/chau7/actions/runs/38391863656)
+  passed; the [Quality run 38391863489](https://github.com/Aeptus/chau7/actions/runs/38391863489)
+  and [platform matrix run 38391863625](https://github.com/Aeptus/chau7/actions/runs/38391863625)
+  remain in progress. The earlier Python 3.15 CI failure is not yet resolved.
+- Previous local source `916bbfd8` passed all nine compiler/package stages,
+  3,042 Rust tests (two ignored) and ten full quality gates. Swift build and
+  4,586 tests passed (three skipped). Its normal warm build took 77.382
+  seconds. At that checkpoint, follow-up Restore focus and measured
+  post-deminiaturization frame assertions awaited validation; the 51 checkpoint
+  above records the later fixture attempt. The earlier source's isolated
+  68-byte MCP input and graceful quit are revision-scoped to `916bbfd8`.
 - Published source `84f82eb3` passed 3,037 Rust tests (two ignored), nine
   compiler/package stages and ten local quality gates. Its macOS, Linux,
   Windows and parity CI checks passed, but general Quality CI failed the

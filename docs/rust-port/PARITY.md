@@ -1,6 +1,48 @@
 # Chau7 Next parity with the current Swift app
 
-## Local validation checkpoint (2026-10-13)
+## Local validation checkpoint: `51c9e761` (2026-10-13)
+
+Source `51c9e761e43a51ce3a0558464b30f7973b8ee7f1` passed all nine
+compiler/package stages, 3,042 Rust tests (two ignored), seven focused
+feature tests and ten full local quality gates. Swift validation passed its
+build and executed 4,586 tests (three skipped, no failures). The normal
+optimized build took 51.4346 seconds with a warm cache. This is an
+observation, not a benchmark.
+
+The sealed normal package passed an owned runtime check: the exact 68-byte
+input was observed, the existing tab inputs remained unchanged, and no provider
+or device was contacted. Performance validation checked 1,684 numeric values,
+confirmed CPU samples and counters from both Software windows (11 and 5
+submitted frames, zero failed), and read 16 timers. The owned diagnostics
+directory was verified; the app and owned child quit gracefully without forced
+signals. These checks validate access to runtime data and clean retirement, not
+performance thresholds or a benchmark.
+
+The 21-row native-only sequence stopped during the Software matrix. Settings,
+Editor and Cache passed. Restore failed with `owned window has no rendered
+accessibility tree`; all owned fixture processes retired. Auto, locale and
+accessibility cases were not launched. This identifies a fixture activation
+and accessibility-tree gap. It does not establish a production application
+defect or explain the earlier delayed stall. A follow-up fixture change bootstraps a real
+NSView accessibility tree before repeating the strict Restore baseline;
+its compiled and native validation is pending.
+
+The source retains blank and clustered text borrowing, bounded
+`cpu_glyph_cache_release` and `cpu_bitmap_cache_reclaim` spans in the
+performance snapshot, diagnostic-build CTO filter bypass, and stage/status/
+bounded-stderr details for stdio failures. Cache byte/item values are
+pre-release cached weight, not RSS or memory actually freed. The Python 3.15
+CI failure remains unresolved until new exact-head CI evidence exists. The
+[parity workflow run 38391863656](https://github.com/Aeptus/chau7/actions/runs/38391863656)
+passed. The [Quality run 38391863489](https://github.com/Aeptus/chau7/actions/runs/38391863489)
+and [platform matrix run 38391863625](https://github.com/Aeptus/chau7/actions/runs/38391863625)
+are still in progress.
+
+Complete native and physical acceptance remain open. The previous local and
+published checkpoints are retained below.
+
+### Previous local validation checkpoint: `916bbfd8`
+
 
 Source `916bbfd8a0d8266a587cdfed187066379ca2d2df` passed all nine
 compiler/package stages, 3,042 Rust tests (two ignored) and ten full local

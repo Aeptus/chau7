@@ -13,7 +13,7 @@ use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSEvent, NSEventModifierFlags, NSEventType,
     NSView, NSWindow,
 };
-use objc2_foundation::{NSBundle, NSPoint, NSString};
+use objc2_foundation::{NSArray, NSBundle, NSObject, NSPoint, NSString};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -299,6 +299,37 @@ fn window_frame_evidence(
             })
         })
         .map_err(error)?
+}
+
+fn activate_native_accessibility_adapter(view: &NSView) -> Result<(), String> {
+    let _main = MainThreadMarker::new().ok_or("accessibility query is not on the main thread")?;
+    // Match the native accessibility fixture: querying the owned content
+    // view's AccessKit children activates AppKit's adapter without AX trust.
+    let root = unsafe {
+        Retained::<NSObject>::retain((view as *const NSView).cast_mut().cast::<NSObject>())
+    }
+    .ok_or("could not retain owned accessibility content view")?;
+    let children: Option<Retained<NSArray<NSObject>>> =
+        unsafe { objc2::msg_send![&*root, accessibilityChildren] };
+    let _children = children.ok_or("owned content view did not export accessibility children")?;
+    Ok(())
+}
+
+async fn bootstrap_rendered_accessibility_frame(
+    handle: WindowHandle<Root>,
+    native: &NSWindow,
+    cx: &mut AsyncApp,
+) -> Result<(), String> {
+    next_frame(handle.into(), cx).await?;
+    let content_view = native
+        .contentView()
+        .ok_or("owned native window lacks accessibility content view")?;
+    activate_native_accessibility_adapter(&content_view)?;
+    next_frame(handle.into(), cx).await?;
+    // Read GPUI's rendered tree after the AppKit query, matching the
+    // native accessibility fixture's adapter bootstrap sequence.
+    let _ = window_frame_evidence(handle, cx)?;
+    Ok(())
 }
 
 fn successful_frame_delta(
@@ -1665,6 +1696,7 @@ async fn verify_surfaces(
             "ordered-front reveal did not paint actual terminal surfaces",
         )
     })?;
+    bootstrap_rendered_accessibility_frame(handle, &native, cx).await?;
     native_mutation(|| native.miniaturize(None))?;
     wait_for_reveal(
         handle,
