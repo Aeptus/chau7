@@ -118,6 +118,7 @@ Review complete.
 class PreCommitCodexIdentityTests(unittest.TestCase):
     def valid_status(self):
         return {
+            "tab_id": "tab",
             "is_at_prompt": True,
             "status": "running",
             "raw_status": "running",
@@ -152,10 +153,47 @@ class PreCommitCodexIdentityTests(unittest.TestCase):
         wrong_state["raw_status"] = "done"
         self.assertIsNone(hook.codex_pid_from_status(wrong_state))
 
-    def test_expected_pid_must_remain_in_codex_process_rows(self):
+    def test_expected_pid_must_remain_unique_in_codex_process_rows(self):
         response = self.valid_status()
         self.assertEqual(hook.codex_pid_from_status(response, 321), 321)
         self.assertIsNone(hook.codex_pid_from_status(response, 322))
+        response["processes"].append({"pid": 322, "name": "codex"})
+        self.assertIsNone(hook.codex_pid_from_status(response, 321))
+
+    def test_live_identity_binds_the_requested_tab_id(self):
+        with (
+            mock.patch.object(hook, "get_tab", return_value=self.valid_status()),
+            mock.patch.object(hook, "codex_process_is_live", return_value=True) as probe,
+        ):
+            self.assertTrue(hook.has_live_codex_identity("tab", 321))
+            probe.assert_called_once_with(321)
+
+        wrong_tab = self.valid_status()
+        wrong_tab["tab_id"] = "another-tab"
+        with (
+            mock.patch.object(hook, "get_tab", return_value=wrong_tab),
+            mock.patch.object(hook, "codex_process_is_live", return_value=True) as probe,
+        ):
+            self.assertFalse(hook.has_live_codex_identity("tab", 321))
+            probe.assert_not_called()
+
+    def test_live_identity_compares_uuid_tab_ids_case_insensitively(self):
+        tab_id = "550e8400-e29b-41d4-a716-446655440000"
+        status = self.valid_status()
+        status["tab_id"] = tab_id.upper()
+        with (
+            mock.patch.object(hook, "get_tab", return_value=status),
+            mock.patch.object(hook, "codex_process_is_live", return_value=True),
+        ):
+            self.assertTrue(hook.has_live_codex_identity(tab_id, 321))
+
+    def test_status_probe_timeout_fails_closed(self):
+        with (
+            mock.patch.object(hook, "get_tab", side_effect=TimeoutError),
+            mock.patch.object(hook, "codex_process_is_live") as probe,
+        ):
+            self.assertFalse(hook.has_live_codex_identity("tab", 321))
+            probe.assert_not_called()
 
     def test_process_probe_requires_current_codex_comm(self):
         with mock.patch.object(
