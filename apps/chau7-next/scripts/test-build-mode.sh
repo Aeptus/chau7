@@ -327,6 +327,7 @@ mkdir -p \
 sed "s|/usr/bin/xcrun|$FAKE_BIN/xcrun|" "$APP_ROOT/scripts/bundle-macos.sh" > "$FIXTURE_APP/scripts/bundle-macos.sh"
 chmod 755 "$FIXTURE_APP/scripts/bundle-macos.sh"
 cp "$APP_ROOT/scripts/build-mode.sh" "$FIXTURE_APP/scripts/build-mode.sh"
+cp "$APP_ROOT/scripts/install-chau7-next-cli.sh" "$FIXTURE_APP/scripts/install-chau7-next-cli.sh"
 printf 'version = "0.1.0"\n' > "$FIXTURE_APP/Cargo.toml"
 printf 'fixture skill\n' > "$FIXTURE_APP/resources/skills/chau7-next-build/SKILL.md"
 printf 'icon\n' > "$FIXTURE_ROOT/apps/chau7-macos/Resources/AppDockIcon.icns"
