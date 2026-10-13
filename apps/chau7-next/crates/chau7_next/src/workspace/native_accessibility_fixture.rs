@@ -3,7 +3,9 @@ use std::collections::{HashSet, VecDeque};
 use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, Instant};
 
-use gpui::{AppContext, AsyncApp, Bounds, WindowBounds, WindowHandle, WindowOptions, px, size};
+use gpui::{
+    AppContext, AsyncApp, Bounds, Entity, WindowBounds, WindowHandle, WindowOptions, px, size,
+};
 use gpui_kit::base::Root;
 use objc2::{MainThreadMarker, rc::Retained, sel};
 use objc2_app_kit::NSView;
@@ -283,6 +285,76 @@ async fn wait_for_tab_selection_tree(
     }
 }
 
+fn validate_group_button(tree: &Value, label: &str) -> Result<(), String> {
+    let matches: Vec<_> = tree_nodes_with_role(tree, "Button")
+        .into_iter()
+        .filter(|node| tree_aria(node).get("label").and_then(Value::as_str) == Some(label))
+        .collect();
+    ensure(
+        matches.len() == 1,
+        "rendered tree did not export exactly one repository-group button",
+    )?;
+    ensure(
+        tree_aria(matches[0])
+            .get("on_action")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| {
+                actions
+                    .iter()
+                    .any(|action| action.as_str() == Some("Click"))
+            }),
+        "repository-group button did not advertise its AccessKit Click action",
+    )
+}
+
+async fn wait_for_dashboard_group(
+    window: WindowHandle<Root>,
+    workspace: Entity<Workspace>,
+    cx: &mut AsyncApp,
+    after_frame: u64,
+    group_id: &str,
+) -> Result<Value, String> {
+    const WAIT: Duration = Duration::from_secs(5);
+    let deadline = Instant::now() + WAIT;
+    let mut last_state = "no newer rendered tree was observed".to_owned();
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(format!(
+                "repository-group AX press did not open its dashboard within five seconds: {last_state}"
+            ));
+        }
+        crate::native_parity_fixture::next_frame_with_timeout(window.into(), cx, remaining).await?;
+        let tree = read_tree(window, cx)?;
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "repository-group AX press did not open its dashboard within five seconds: {last_state}"
+            ));
+        }
+        let current_frame = frame_number(&tree)?;
+        if current_frame <= after_frame {
+            last_state =
+                format!("rendered tree frame {current_frame} did not advance past {after_frame}");
+            continue;
+        }
+        let (is_open, root) = workspace
+            .update(cx, |workspace, _| {
+                (
+                    workspace.dashboard.is_open(),
+                    workspace.dashboard.fixture_root().map(str::to_owned),
+                )
+            })
+            .map_err(error)?;
+        if is_open && root.as_deref() == Some(group_id) {
+            return Ok(tree);
+        }
+        last_state = format!(
+            "dashboard state was open={is_open} for the expected repository group={}",
+            root.as_deref() == Some(group_id)
+        );
+    }
+}
+
 fn slider_value(tree: &Value) -> Result<f64, String> {
     let sliders = tree_nodes_with_role(tree, "Slider");
     ensure(
@@ -449,8 +521,17 @@ exec /bin/cat >/dev/null
             });
         })
         .map_err(error)?;
-    workspace
-        .update(cx, |workspace, cx| -> Result<(), String> {
+    let group_root = home.join("native-ax-repository");
+    std::fs::create_dir_all(&group_root).map_err(error)?;
+    let group_id = group_root.to_string_lossy().into_owned();
+    let group_name = group_root
+        .file_name()
+        .ok_or("fixture repository group root has no name")?
+        .to_string_lossy()
+        .into_owned();
+    let group_tag_label = format!("Repository group {group_name}");
+    let repository_group_member_count = workspace
+        .update(cx, |workspace, cx| -> Result<usize, String> {
             let tab_ids = workspace
                 .state
                 .tabs()
@@ -469,9 +550,18 @@ exec /bin/cat >/dev/null
                 workspace.mcp_rename(tab_ids[1], "AX Fixture B", cx) == "AX Fixture B",
                 "fixture could not assign its second unique tab title",
             )?;
-            Ok(())
+            for id in &tab_ids {
+                workspace.state.set_git_root(*id, Some(group_id.clone()));
+            }
+            workspace.state.group_all_same_repo(tab_ids[0]);
+            let members = workspace.state.group_members(&group_id);
+            ensure(
+                members.len() == 2 && members.iter().all(|id| tab_ids.contains(id)),
+                "production repository grouping did not coalesce the two fixture tabs",
+            )?;
+            Ok(members.len())
         })
-        .map_err(error)?;
+        .map_err(error)??;
 
     crate::native_parity_fixture::next_frame(window.into(), cx).await?;
     let lang = chau7_next_core::l10n::current();
@@ -511,6 +601,7 @@ exec /bin/cat >/dev/null
     let first_tree = read_tree(window, cx)?;
     let initial_frame = frame_number(&first_tree)?;
     let (selected_tab_count, unselected_tab_count) = validate_tabs(&first_tree, &expected_tabs)?;
+    validate_group_button(&first_tree, &group_tag_label)?;
     let native_tabs = native_accessibility_tree(&content_view)?;
     let expected_labels: Vec<_> = expected_tabs.iter().map(|tab| tab.label.as_str()).collect();
     let native_tab_labels_match = expected_labels
@@ -738,6 +829,71 @@ exec /bin/cat >/dev/null
         "timeline slider did not return to its baseline after native actions",
     )?;
 
+    let group_tree_before_press = read_tree(window, cx)?;
+    validate_group_button(&group_tree_before_press, &group_tag_label)?;
+    let (dashboard_was_open, dashboard_root_before_press) = workspace
+        .update(cx, |workspace, _| {
+            (
+                workspace.dashboard.is_open(),
+                workspace.dashboard.fixture_root().map(str::to_owned),
+            )
+        })
+        .map_err(error)?;
+    ensure(
+        !dashboard_was_open && dashboard_root_before_press.is_none(),
+        "fixture repository dashboard was already open before its AX action",
+    )?;
+    let group_frame_before_press = frame_number(&group_tree_before_press)?;
+    let group_elements = native_accessibility_tree(&content_view)?;
+    let group_buttons: Vec<_> = group_elements
+        .iter()
+        .filter(|element| {
+            element.role == "AXButton" && element.label.as_deref() == Some(group_tag_label.as_str())
+        })
+        .collect();
+    ensure(
+        group_buttons.len() == 1,
+        "native AppKit tree did not identify exactly one repository-group button",
+    )?;
+    let native_group_button = group_buttons[0];
+    let native_ax_group_press_advertised: bool = unsafe {
+        objc2::msg_send![
+            &*native_group_button.object,
+            isAccessibilitySelectorAllowed: sel!(accessibilityPerformPress)
+        ]
+    };
+    ensure(
+        native_ax_group_press_advertised,
+        "native AppKit repository-group button did not advertise AXPress",
+    )?;
+    let native_ax_group_press_accepted: bool =
+        unsafe { objc2::msg_send![&*native_group_button.object, accessibilityPerformPress] };
+    ensure(
+        native_ax_group_press_accepted,
+        "native AppKit repository-group button did not accept AXPress",
+    )?;
+    let dashboard_tree = wait_for_dashboard_group(
+        window,
+        workspace.clone(),
+        cx,
+        group_frame_before_press,
+        &group_id,
+    )
+    .await?;
+    let dashboard_frame_after_press = frame_number(&dashboard_tree)?;
+    let (dashboard_open, dashboard_root) = workspace
+        .update(cx, |workspace, _| {
+            (
+                workspace.dashboard.is_open(),
+                workspace.dashboard.fixture_root().map(str::to_owned),
+            )
+        })
+        .map_err(error)?;
+    ensure(
+        dashboard_open && dashboard_root.as_deref() == Some(group_id.as_str()),
+        "group AXPress did not open the dashboard for the exact fixture repository group",
+    )?;
+
     Ok(json!({
         "fixture_locale": locale,
         "effective_locale": effective_locale,
@@ -771,5 +927,12 @@ exec /bin/cat >/dev/null
         "slider_values": [slider_initial_value, increment_value, decrement_value],
         "rendered_frame_numbers": [initial_frame, slider_initial_frame, increment_frame, decrement_frame],
         "recording_frame_count": recording.frame_count,
+        "repository_group_member_count": repository_group_member_count,
+        "repository_group_tag_label": group_tag_label,
+        "native_ax_group_button_count": group_buttons.len(),
+        "native_ax_group_press_advertised": native_ax_group_press_advertised,
+        "native_ax_group_press_accepted": native_ax_group_press_accepted,
+        "repository_dashboard_opened_for_group": dashboard_open && dashboard_root.as_deref() == Some(group_id.as_str()),
+        "repository_dashboard_frame_numbers": [group_frame_before_press, dashboard_frame_after_press],
     }))
 }

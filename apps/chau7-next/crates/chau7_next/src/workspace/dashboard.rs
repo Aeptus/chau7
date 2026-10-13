@@ -17,6 +17,11 @@ impl DashboardUi {
         self.view.is_some()
     }
 
+    #[cfg(all(target_os = "macos", feature = "native-parity-fixture"))]
+    pub(super) fn fixture_root(&self) -> Option<&str> {
+        self.root.as_deref()
+    }
+
     pub(super) fn dismiss(&mut self) {
         self.root = None;
         self.subscription = None;

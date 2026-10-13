@@ -885,6 +885,7 @@ impl Workspace {
         let group_for_frames = group.clone();
         let group_for_press = group.clone();
         let group_for_menu = group.clone();
+        let group_for_accessibility = group.clone();
         let tabs: Vec<_> = members
             .iter()
             .map(|id| self.render_tab(*id, true, Some(group_color), chrome, cx))
@@ -903,7 +904,7 @@ impl Workspace {
             .child(
                 div()
                     .id(SharedString::from(format!("group-tag-{group}")))
-                    .role(Role::Label)
+                    .role(Role::Button)
                     .aria_label(format!("Repository group {name}"))
                     .flex_shrink_0()
                     .px(px(4.0))
@@ -947,7 +948,21 @@ impl Workspace {
                                 cx,
                             );
                         }),
-                    ),
+                    )
+                    .on_a11y_action(AccessibleAction::Click, {
+                        let workspace = cx.entity().downgrade();
+                        move |_, window, cx| {
+                            workspace
+                                .update(cx, |this, cx| {
+                                    this.toggle_dashboard(
+                                        group_for_accessibility.clone(),
+                                        window,
+                                        cx,
+                                    )
+                                })
+                                .ok();
+                        }
+                    }),
             )
             .children(tabs)
             .child(

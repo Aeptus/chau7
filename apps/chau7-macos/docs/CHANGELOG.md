@@ -33,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Exposed the repository-group dashboard action as an accessible button in Next.
+  Native fixtures press the actual macOS control and verify the exact group
+  dashboard after a newer rendered frame.
 - Added an accessibility Click action to tab radio buttons, using the same selection and
   focus path as the existing tab UI.
   Native regression fixtures also check the advertised press action and the selected
