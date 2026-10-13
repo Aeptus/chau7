@@ -10,6 +10,7 @@ import platform
 import plistlib
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -75,6 +76,122 @@ def prepare_restore_bundle(binary, record, evidence):
         )
     record["signed_bundle_binary_sha256"] = sha256(executable)
     return root, bundle
+
+
+RESTORE_CAPTURE_NAMES = {"stdout": "restore.stdout", "stderr": "restore.stderr"}
+
+
+def owned_restore_bundle_root(record, bundle_root):
+    root = Path(bundle_root)
+    if root.is_symlink():
+        raise ValueError("owned fixture bundle root must not be a symlink")
+    try:
+        resolved_root = root.resolve(strict=True)
+        recorded_root = Path(record["owned_bundle_root"])
+        recorded_bundle = Path(record["owned_bundle"])
+    except (KeyError, OSError) as error:
+        raise ValueError("owned fixture bundle root is not available") from error
+    if recorded_root.is_symlink() or recorded_root.resolve(strict=True) != resolved_root:
+        raise ValueError("owned fixture bundle root does not match its recorded path")
+    if recorded_bundle.is_symlink() or recorded_bundle != resolved_root / "Chau7 Next Native Fixture.app":
+        raise ValueError("owned fixture bundle path does not match its recorded root")
+    try:
+        root_info = resolved_root.lstat()
+        bundle_info = recorded_bundle.lstat()
+    except OSError as error:
+        raise ValueError("owned fixture bundle path is not available") from error
+    if not stat.S_ISDIR(root_info.st_mode) or not stat.S_ISDIR(bundle_info.st_mode):
+        raise ValueError("owned fixture bundle path must contain real directories")
+    return resolved_root
+
+
+def create_owned_restore_capture(record, bundle_root, name):
+    if name not in RESTORE_CAPTURE_NAMES.values():
+        raise ValueError("unsupported owned fixture capture name")
+    root = owned_restore_bundle_root(record, bundle_root)
+    capture = root / name
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(capture, flags, 0o600)
+    try:
+        capture_info = os.fstat(descriptor)
+        if not stat.S_ISREG(capture_info.st_mode) or capture_info.st_nlink != 1:
+            raise OSError("owned fixture capture is not a new regular file")
+        os.fchmod(descriptor, 0o600)
+    finally:
+        os.close(descriptor)
+    return capture
+
+
+def _archive_owned_restore_capture(record, bundle_root, evidence, name):
+    if name not in RESTORE_CAPTURE_NAMES.values():
+        raise ValueError("unsupported owned fixture capture name")
+    root = owned_restore_bundle_root(record, bundle_root)
+    capture = root / name
+    capture_key = next(key for key, value in RESTORE_CAPTURE_NAMES.items() if value == name)
+    capture_paths = record.get("launch_services_capture_paths")
+    if not isinstance(capture_paths, dict) or capture_paths.get(capture_key) != str(capture):
+        raise ValueError("owned fixture capture does not match its recorded path")
+    if capture.is_symlink():
+        raise ValueError("owned fixture capture must not be a symlink")
+    source_descriptor = os.open(
+        capture,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+    )
+    try:
+        source_stream = os.fdopen(source_descriptor, "rb")
+        source_descriptor = -1
+        with source_stream as source:
+            capture_info = os.fstat(source.fileno())
+            if not stat.S_ISREG(capture_info.st_mode) or capture_info.st_nlink != 1:
+                raise ValueError("owned fixture capture is not a single-link regular file")
+            evidence_root = Path(evidence)
+            if evidence_root.is_symlink():
+                raise ValueError("fixture evidence directory must not be a symlink")
+            evidence_root = evidence_root.resolve(strict=True)
+            if not evidence_root.is_dir():
+                raise ValueError("fixture evidence path must be a directory")
+            destination = evidence_root / name
+            destination_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            destination_descriptor = os.open(destination, destination_flags, 0o600)
+            with os.fdopen(destination_descriptor, "wb") as archived:
+                archived_info = os.fstat(archived.fileno())
+                if not stat.S_ISREG(archived_info.st_mode) or archived_info.st_nlink != 1:
+                    raise OSError("fixture evidence capture is not a new regular file")
+                os.fchmod(archived.fileno(), 0o600)
+                shutil.copyfileobj(source, archived)
+    finally:
+        if source_descriptor >= 0:
+            os.close(source_descriptor)
+    return evidence_root / name
+
+
+def archive_and_remove_owned_restore_bundle(record, bundle_root, evidence):
+    if (
+        record.get("application_pid_verified") is not True
+        or record.get("application_process_gone") is not True
+        or record.get("timed_out") is not False
+    ):
+        raise ValueError("owned fixture captures require verified application retirement")
+    root = owned_restore_bundle_root(record, bundle_root)
+    capture_paths = record.get("launch_services_capture_paths")
+    expected_paths = {key: str(root / name) for key, name in RESTORE_CAPTURE_NAMES.items()}
+    if capture_paths != expected_paths:
+        raise ValueError("owned fixture capture paths do not match the exact bundle root")
+    evidence_path = Path(evidence)
+    if evidence_path.is_symlink():
+        raise ValueError("fixture evidence directory must not be a symlink")
+    evidence_root = evidence_path.resolve(strict=True)
+    if evidence_path != evidence_root:
+        raise ValueError("fixture evidence directory must use its exact canonical path")
+    archive_paths = record.get("launch_services_capture_archive_paths")
+    expected_archive_paths = {key: str(evidence_root / name) for key, name in RESTORE_CAPTURE_NAMES.items()}
+    if archive_paths != expected_archive_paths:
+        raise ValueError("owned fixture archive paths do not match the exact evidence directory")
+    for name in RESTORE_CAPTURE_NAMES.values():
+        _archive_owned_restore_capture(record, root, evidence_root, name)
+    record["launch_services_captures_archived"] = True
+    shutil.rmtree(root)
+    record["owned_bundle_removed"] = not root.exists()
 
 
 def fixture_outcome(path, case):
@@ -1105,19 +1222,30 @@ def main():
         }
         manifest["results"].append(record)
         bundle_root = None
+        fixture_stdout_path = stdout_path
+        fixture_stderr_path = stderr_path
         try:
             if launch_services:
                 bundle_root, bundle = prepare_restore_bundle(binary, record, evidence)
-                stdout_path.touch(exist_ok=False)
-                stderr_path.touch(exist_ok=False)
+                fixture_stdout_path = create_owned_restore_capture(record, bundle_root, RESTORE_CAPTURE_NAMES["stdout"])
+                fixture_stderr_path = create_owned_restore_capture(record, bundle_root, RESTORE_CAPTURE_NAMES["stderr"])
+                record["launch_services_capture_paths"] = {
+                    "stdout": str(fixture_stdout_path),
+                    "stderr": str(fixture_stderr_path),
+                }
+                record["launch_services_capture_archive_paths"] = {
+                    "stdout": str(stdout_path),
+                    "stderr": str(stderr_path),
+                }
+                record["launch_services_captures_archived"] = False
                 command = [
                     "/usr/bin/open",
                     "-n",
                     "-W",
                     "--stdout",
-                    str(stdout_path),
+                    str(fixture_stdout_path),
                     "--stderr",
-                    str(stderr_path),
+                    str(fixture_stderr_path),
                 ]
                 for name in (
                     "CHAU7_NEXT_NATIVE_PARITY_FIXTURE",
@@ -1167,7 +1295,7 @@ def main():
                         process,
                         record,
                         bundle,
-                        stderr_path,
+                        fixture_stderr_path,
                         evidence,
                         child_environment,
                         args.window_renderer,
@@ -1181,7 +1309,7 @@ def main():
                         record["exit_code"] = None
             if not launch_services:
                 record["application_exit_code"] = record["exit_code"]
-            record["outcome"] = fixture_outcome(stdout_path, case)
+            record["outcome"] = fixture_outcome(fixture_stdout_path, case)
             outcome_pid = (record["outcome"] or {}).get("pid")
             record["application_process_id"] = outcome_pid
             record["process_id"] = outcome_pid if launch_services else process.pid
@@ -1200,9 +1328,8 @@ def main():
             record["owned_home_removed"] = not home.exists()
             record["passed"] = case_passed(record)
             if bundle_root is not None and gone and not record["timed_out"]:
-                shutil.rmtree(bundle_root)
-                record["owned_bundle_removed"] = not bundle_root.exists()
-        except (OSError, subprocess.CalledProcessError) as error:
+                archive_and_remove_owned_restore_bundle(record, bundle_root, evidence)
+        except (OSError, subprocess.CalledProcessError, ValueError) as error:
             record["passed"] = False
             record["error"] = str(error)
             record["owned_home_removed"] = not home.exists()

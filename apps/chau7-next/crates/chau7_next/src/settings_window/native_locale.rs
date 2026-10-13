@@ -14,14 +14,8 @@ pub(super) struct LocaleCase {
 }
 impl LocaleCase {
     pub fn new(requested: &str, preferred: Vec<String>) -> Result<Self, String> {
-        let setting = match requested {
-            "en" => AppLanguage::English,
-            "fr" => AppLanguage::French,
-            "es" => AppLanguage::Spanish,
-            "ar" => AppLanguage::Arabic,
-            "system" => AppLanguage::System,
-            _ => return Err(format!("unsupported native Settings language: {requested}")),
-        };
+        let setting = AppLanguage::from_id(requested)
+            .ok_or_else(|| format!("unsupported native Settings language: {requested}"))?;
         Ok(Self {
             setting,
             resolved: l10n::resolve(setting.id(), &preferred),
@@ -174,6 +168,19 @@ mod tests {
         assert_eq!(LANGUAGE_ENV, "CHAU7_NEXT_NATIVE_SETTINGS_LANGUAGE");
     }
     #[test]
+    fn native_choices_cover_every_production_language_including_hebrew() {
+        for setting in AppLanguage::ALL {
+            let case = LocaleCase::new(setting.id(), vec!["fr-FR".into()]).unwrap();
+            assert_eq!(case.setting, setting);
+            assert_eq!(case.resolved.is_rtl(), setting.is_rtl());
+        }
+        let hebrew = LocaleCase::new("he", vec!["en-US".into()]).unwrap();
+        assert_eq!(hebrew.setting, AppLanguage::Hebrew);
+        assert_eq!(hebrew.resolved, Lang::He);
+        assert!(hebrew.resolved.is_rtl());
+    }
+
+    #[test]
     fn regional_number_format_choices_are_typed_and_reject_unknown_values() {
         for (id, expected) in [
             ("fr", RegionalNumberFormat::French),
@@ -210,7 +217,7 @@ mod tests {
                 "source default: {key}"
             );
         }
-        for requested in ["en", "fr", "es", "ar", "system"] {
+        for requested in AppLanguage::ALL.map(AppLanguage::id) {
             let case = LocaleCase::new(requested, vec!["fr-FR".into()]).unwrap();
             let queries = case.queries();
             assert_eq!(queries.len(), 5);

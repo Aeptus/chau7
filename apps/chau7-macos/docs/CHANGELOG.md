@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Capture native LaunchServices fixture output in its private local bundle root
+  before archiving verified retired runs, avoiding external-volume spawn failures.
+
+- Accept every production language in the native Settings fixture, including
+  Hebrew, and check each language against Swift search metadata.
+
 - Validate native build-only mode before fixture locale selectors so invalid
   build invocations report their mode error consistently.
 

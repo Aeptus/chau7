@@ -470,6 +470,99 @@ class NativeActivationHandshakeTests(unittest.TestCase):
         self.assertIn("before the ordered-front", record["activation_request_error"])
 
 
+class NativeLaunchServicesCaptureTests(unittest.TestCase):
+    def make_fixture(self, directory):
+        parent = Path(directory).resolve(strict=True)
+        root = parent / "owned-bundle-root"
+        root.mkdir(mode=0o700)
+        bundle = root / "Chau7 Next Native Fixture.app"
+        bundle.mkdir()
+        evidence = parent / "evidence"
+        evidence.mkdir(mode=0o700)
+        record = {
+            "owned_bundle_root": str(root.resolve(strict=True)),
+            "owned_bundle": str(bundle.resolve(strict=True)),
+            "owned_bundle_removed": False,
+            "application_pid_verified": False,
+            "application_process_gone": False,
+            "timed_out": False,
+        }
+        captures = {
+            key: NATIVE_PARITY.create_owned_restore_capture(record, root, name)
+            for key, name in NATIVE_PARITY.RESTORE_CAPTURE_NAMES.items()
+        }
+        record["launch_services_capture_paths"] = {key: str(path) for key, path in captures.items()}
+        record["launch_services_capture_archive_paths"] = {
+            key: str(evidence / name) for key, name in NATIVE_PARITY.RESTORE_CAPTURE_NAMES.items()
+        }
+        record["launch_services_captures_archived"] = False
+        return root, evidence, record, captures
+
+    def test_captures_are_exclusively_created_under_the_owned_bundle_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, _, record, captures = self.make_fixture(directory)
+            for capture in captures.values():
+                self.assertEqual(capture.parent, root.resolve(strict=True))
+                self.assertTrue(capture.is_file())
+                self.assertEqual(capture.stat().st_mode & 0o777, 0o600)
+            with self.assertRaises(FileExistsError):
+                NATIVE_PARITY.create_owned_restore_capture(record, root, NATIVE_PARITY.RESTORE_CAPTURE_NAMES["stdout"])
+
+    def test_unknown_or_live_application_preserves_bundle_and_captures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, evidence, record, captures = self.make_fixture(directory)
+            captures["stdout"].write_bytes(b"fixture output")
+            with self.assertRaisesRegex(ValueError, "verified application retirement"):
+                NATIVE_PARITY.archive_and_remove_owned_restore_bundle(record, root, evidence)
+            self.assertTrue(root.is_dir())
+            self.assertTrue(all(path.is_file() for path in captures.values()))
+            self.assertFalse((evidence / "restore.stdout").exists())
+            self.assertFalse(record["owned_bundle_removed"])
+
+    def test_verified_retirement_archives_captures_then_removes_exact_owned_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, evidence, record, captures = self.make_fixture(directory)
+            captures["stdout"].write_bytes(b"fixture stdout")
+            captures["stderr"].write_bytes(b"fixture stderr")
+            record["application_pid_verified"] = True
+            record["application_process_gone"] = True
+            NATIVE_PARITY.archive_and_remove_owned_restore_bundle(record, root, evidence)
+            self.assertEqual((evidence / "restore.stdout").read_bytes(), b"fixture stdout")
+            self.assertEqual((evidence / "restore.stderr").read_bytes(), b"fixture stderr")
+            self.assertTrue(record["launch_services_captures_archived"])
+            self.assertTrue(record["owned_bundle_removed"])
+            self.assertFalse(root.exists())
+
+    def test_archive_rejects_symlinked_capture_without_following_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, evidence, record, captures = self.make_fixture(directory)
+            target = Path(directory) / "outside-capture"
+            target.write_bytes(b"untouched")
+            captures["stdout"].unlink()
+            captures["stdout"].symlink_to(target)
+            record["application_pid_verified"] = True
+            record["application_process_gone"] = True
+            with self.assertRaisesRegex(ValueError, "must not be a symlink"):
+                NATIVE_PARITY.archive_and_remove_owned_restore_bundle(record, root, evidence)
+            self.assertEqual(target.read_bytes(), b"untouched")
+            self.assertTrue(root.is_dir())
+            self.assertFalse((evidence / "restore.stdout").exists())
+
+    def test_archive_refuses_existing_symlink_destination(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, evidence, record, captures = self.make_fixture(directory)
+            captures["stdout"].write_bytes(b"fixture stdout")
+            target = Path(directory) / "outside-evidence"
+            target.write_bytes(b"untouched")
+            (evidence / "restore.stdout").symlink_to(target)
+            record["application_pid_verified"] = True
+            record["application_process_gone"] = True
+            with self.assertRaises(FileExistsError):
+                NATIVE_PARITY.archive_and_remove_owned_restore_bundle(record, root, evidence)
+            self.assertEqual(target.read_bytes(), b"untouched")
+            self.assertTrue(root.is_dir())
+
+
 class NativeOwnedActivationRequestTests(unittest.TestCase):
     def test_request_uses_exact_owned_pid_path_and_stage_ack(self):
         stages = {
