@@ -31,6 +31,17 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
+- Validated application source `5d35776c0c65825f49bc005ee3168fae23285c0e`
+  passed 17 core checks (3,053 Rust workspace tests), the normal fast package,
+  local quality, all 21 native cases and isolated fake-shell MCP/input,
+  performance persistence and graceful-quit checks. Diagnostic actions now
+  open native filesystem paths; retained token rates display age and UTC time.
+  Automatic grouping is available under Settings > Tabs > Repo Grouping;
+  Off remains the Swift-compatible default. See the current [PARITY.md](PARITY.md)
+  checkpoint for receipts and scope. Physical Mac and real integration
+  acceptance remain open; later documentation-only commits do not change the
+  application source covered by these receipts.
+
 - Current implementation adds the localized hover-card suspension row, owned
   helper SIGINT shutdown, token-rate export through Perf JSON/MCP and a
   FileMonitor test that waits for its watch to arm. The inventory contains
@@ -39,7 +50,7 @@ Last updated 2026-10-13.
   with its own strict ACK and five-second deadline before the existing reveal
   and deminiaturization checks. This changes fixture acceptance only; no
   production focus fix is claimed.
-- Current committed source `69461e60cb6bb65fe1a764510519fff599018b60` (tree
+- Previous source checkpoint `69461e60cb6bb65fe1a764510519fff599018b60` (tree
   `859d2497fa1bdfeb0fce634999b915cdf5ec851e`) passed all 17 exact-head core
   checks: 3,051 workspace tests (two ignored), 150 shared-terminal tests (one
   ignored), 35 native Python contract tests, seven focused Restore tests run
@@ -55,7 +66,7 @@ Last updated 2026-10-13.
   standard bundle receipt:
   `apps/chau7-next/target/bundle/Chau7-Next-aarch64-apple-darwin-fast.json`
   (SHA-256 `2115316bf63d0d770dbbfe0b0cc066b04402421c0539bb0c0a50864ac83af64c`).
-  Current-source local quality passed all nine selected gates uncached and
+  Source-69461e60 local quality passed all nine selected gates uncached and
   unattested; the two conditional drift gates were skipped as not applicable.
   The full local CI result reports 4,586 macOS Swift tests (three skipped,
   zero failures), and the iOS result reports 97 tests (zero failures). Focused
@@ -66,14 +77,14 @@ Last updated 2026-10-13.
   `/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011/resume-20261013-1433/quality-69461e60-v1/quality-local.log`
   (SHA-256 `61f8daca016bdf1b34a62b400b91ee34fe58768d135b90897e9afb32eab0b6ab`).
   The proposal records source log paths and hashes only; raw logs remain in the
-  worktree. The current-source
+  worktree. The source-69461e60
   native-parity fixture build passed in fast release mode with
   the `native-parity-fixture` feature. Receipt:
   `/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011/resume-20261013-1433/native-build-69461e60-v1/build-receipt.json` (SHA-256 `0bf4ba3c954cc7176a4694d11212b261c35211005ad6d20d9c07ab61b57842ec`), artifact SHA-256
-  `47235c8b3bae1b227380f20a46eb1701c4bb8478724729723d2eaba33293287e`. The current-source strict 21-row native matrix passed all 21 rows. Its
+  `47235c8b3bae1b227380f20a46eb1701c4bb8478724729723d2eaba33293287e`. The source-69461e60 strict 21-row native matrix passed all 21 rows. Its
   aggregate receipt is `/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011/resume-20261013-1433/native21-69461e60-v1/native21-manifest.json` (SHA-256 `ac451af55851470bb9232a317843c5cdbe8ad1ec501a91fb6f3171b8fdaff8cb`); it binds the
   same source, clean before/after state, and unchanged fixture binary. The
-  first current-source normal-runtime v2 attempt failed a strict SavedWindow
+  first source-69461e60 normal-runtime v2 attempt failed a strict SavedWindow
   check: it expected y=20 and read back y=34 after macOS clamped the window to
   the visible frame. Launch included a read-only `runtime_info` query; the
   subsequent preflight stopped before state-changing MCP operations and did
@@ -106,7 +117,7 @@ Last updated 2026-10-13.
   sink was available for two restored tabs; that v1 receipt remains negative.
   The separate 69461e… v2 attempt failed a strict SavedWindow geometry check
   before state-changing MCP work; its cleanup state was separately verified,
-  but no full acceptance passed. The later current-source v3 runtime run passed
+  but no full acceptance passed. The later source-69461e60 v3 runtime run passed
   the isolated MCP/input/performance/quit checks; physical Mac and real
   integration acceptance remain open. The latest ACE-bound strict
   native sequence attempted all 21
@@ -124,23 +135,23 @@ Last updated 2026-10-13.
   attempt later failed the strict geometry preflight; its cleanup state was
   separately verified without a quit-request exit code. The peer-reviewed v4
   helper (SHA-256 `b08bc8894656bf5ce947a0632527e414be504a1dd089f758f7b611ae98dd126c`)
-  then passed current-source v3 runtime acceptance. Exact receipts and observed
-  performance fields are documented in the current checkpoint above; these
+  then passed source-69461e60 v3 runtime acceptance. Exact receipts and observed
+  performance fields are documented in the previous-source checkpoint in PARITY.md; these
   results remain scoped to source 69461e60 and do not rewrite ACE history.
   A separate 2,000-line installed-profile-log audit found zero errors and one
   notification warning, but the source log is dated October 11 and does not
-  validate runtime behavior on `ace3659a`. The latest committed source is
+  validate runtime behavior on `ace3659a`. The previous validated source was
   `69461e60cb6bb65fe1a764510519fff599018b60` (tree
   `859d2497fa1bdfeb0fce634999b915cdf5ec851e`) and passed all 17 core checks
-  plus normal fast packaging. Current-source local quality passed, and the strict
-  native matrix passed 21/21. Current-source isolated normal-runtime v3
+  plus normal fast packaging. Source-69461e60 local quality passed, and the strict
+  native matrix passed 21/21. Source-69461e60 isolated normal-runtime v3
   acceptance also passed; previous ACE receipts do not validate it.
 - Previous local checkpoint `c6ccad2e` passed its nine compiler/package
   stages, 3,042 Rust tests (two ignored), seven focused tests and ten quality
   gates. Its Swift rerun passed 4,586 tests (three skipped, zero failures), all
   21 strict native rows passed, and its sealed normal package passed the
   isolated input/runtime checks listed in PARITY.md. These are historical C6
-  summary claims, not current-source results. Their associated `/private/tmp`
+  summary claims, not current application-source results. Their associated `/private/tmp`
   receipts are unavailable in this resumed workspace, so the claims were not
   independently revalidated here.
 - Previous local checkpoint source `07098279` passed all nine compiler/package

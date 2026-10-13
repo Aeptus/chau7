@@ -2,11 +2,68 @@
 
 ## Current implementation follow-up (2026-10-13)
 
-### Latest committed source: core and fast package passed
+### Validated application source: `5d35776c`
+
+Application source `5d35776c0c65825f49bc005ee3168fae23285c0e` (tree
+`be6a68ce39446bad269f69ca8d4b470f1b2a4277`) passed all 17 core checks: 3,053 Rust workspace
+tests (two ignored), 150 shared-terminal tests (one ignored), 35 native Python
+contracts, seven focused Restore tests, terminal HUP checks, formatting,
+build-mode and CLI-installer contracts, and strict Clippy in both feature modes.
+The normal fast package passed in 144.594 seconds with the existing cache after
+application changes; this is one observation, not a build-time benchmark.
+Local quality passed nine selected gates uncached, with two unrelated drift
+gates skipped conditionally; the focused Swift monitor run passed 13 tests. The strict native
+matrix passed all 21 cases using one source-bound fixture binary.
+
+The core EINTR filter exited zero but executed no tests; that original result
+is preserved and supplies no focused EINTR coverage. A supplemental run used
+the same already-built source-bound terminal test binary with the actual
+`reader_pool::retry_interrupted_tests::` filter and passed all seven tests,
+without rebuilding. These tests also overlap the shared-terminal suite and
+are not additional unique tests.
+
+The separately signed standard package passed isolated restoration of two tabs,
+creation of a third, exact 68-byte fake-shell input, Software window rendering,
+performance access and persistence, and graceful quit. All ten shutdown phases
+completed, the owned app, socket and fake-shell children retired, and prior
+acceptance data remained unchanged. No provider or paired device was contacted.
+The MCP sample exposed CPU/RSS, three Software windows with positive frames and
+zero failures, and 17 timer records (16 active). Performance history had seven
+records at the configured five-second cadence. The token-rate map was present
+but empty in this fake-shell run; no provider throughput result is claimed.
+
+This source fixes diagnostic path opening through native filesystem paths and
+labels retained generation-rate measurements with their age and UTC timestamp.
+Repository grouping defaults to Off in both Swift and Next; select
+**Settings > Tabs > Repo Grouping > Automatic** to enable automatic grouping.
+
+Receipts below are relative to
+`/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011/resume-20261013-1433/`:
+
+- `core-5d35776c-v1/manifest.json` (SHA-256 `aa9b446955852ed5476137240525a297f39b6a43ef3238ede61acb5d0b18469b`).
+- `package-5d35776c-v1/manifest.json` (SHA-256 `688c20f2cbfb47a9bdcbda9ef5a30edac4bbb7e458cff18405bf90ee0bc15685`).
+- `quality-5d35776c-v1/manifest.json` (SHA-256 `709f090d64a6c0fdfb2e6acc6d63a4463b3ca02412f5a0dff8b81e4d1273147a`).
+- `native21-5d35776c-v1/native21-manifest.json` (SHA-256 `5d2069adc8792cc7d0e9c3cba23fa41716aacb9588fe3a8633bd6c682b87d7b5`).
+- `normal-runtime/outputs/normal-5d35776c-v1/root-readonly-verifier.json` (SHA-256 `085611d3addc7f16b3d11f20422e534ee524c079065bf91ad1021cef03932129`).
+
+- `normal-runtime/outputs/normal-5d35776c-v1/manifest.json` (SHA-256 `771d6efff083941e4edce41a2270f11636d46f8d53e6f2d17b06eafc73010167`).
+
+- `terminal-eintr-5d35776c-supplement-v1/manifest.json` (SHA-256 `e9a997fe72c7a23006bf3692e1301713283b5141a56fe8ceffb33b7f24ab989e`).
+
+The native build receipt is `native-build-5d35776c-v1/build-receipt.json`;
+the standard package receipt is bound to source 5d35776c by SHA-256
+`5d22a65fa121262f83aa6e520bba6ed75dfaff6f728ec9b1589717f242411fa1`.
+Subsequent documentation commits require proof that all non-documentation Git
+entries remain identical to this validated application source. Local receipts
+remain scoped to 5d35776c; later CI results apply to their own reported revision.
+Physical keyboard/IME, VoiceOver, multi-display interaction and real provider,
+credential, trust and paired-device acceptance remain open. Inventory counts
+do not certify those checks. Historical results below retain their source scope.
+
+### Previous source checkpoint: 69461e60, core and fast package passed
 
 Source `69461e60cb6bb65fe1a764510519fff599018b60` (tree
-`859d2497fa1bdfeb0fce634999b915cdf5ec851e`) is the latest committed, clean
-source revision. Its exact-head core run passed all 17 checks: 3,051 workspace
+`859d2497fa1bdfeb0fce634999b915cdf5ec851e`) was the clean source revision for the previous checkpoint. Its exact-head core run passed all 17 checks: 3,051 workspace
 tests (two ignored), 150 shared-terminal tests (one ignored), 35 native Python
 contract tests, seven focused Restore tests run exactly once, terminal EINTR
 and HUP checks, formatting, build-mode and CLI-installer contracts, and strict
@@ -22,7 +79,7 @@ receipt is
 standard bundle receipt is
 `apps/chau7-next/target/bundle/Chau7-Next-aarch64-apple-darwin-fast.json`
 (SHA-256 `2115316bf63d0d770dbbfe0b0cc066b04402421c0539bb0c0a50864ac83af64c`).
-The current source also passed all nine selected local quality gates,
+Source 69461e60 also passed all nine selected local quality gates,
 uncached and unattested; only the two conditional drift gates were skipped as
 not applicable. The full local CI result reports 4,586 macOS Swift tests (three
 skipped, zero failures), and the iOS result reports 97 tests (zero failures).
@@ -33,14 +90,14 @@ structured result is
 `/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011/resume-20261013-1433/quality-69461e60-v1/quality-local.log` (SHA-256
 `61f8daca016bdf1b34a62b400b91ee34fe58768d135b90897e9afb32eab0b6ab`). The
 external proposal records source gate log paths and hashes only; raw logs stay
-in the worktree. The current-source native-parity fixture binary also built
+in the worktree. The source-69461e60 native-parity fixture binary also built
 successfully in fast release mode with the native-parity-fixture feature. Its
 receipt is
 `/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011/resume-20261013-1433/native-build-69461e60-v1/build-receipt.json` (SHA-256 `0bf4ba3c954cc7176a4694d11212b261c35211005ad6d20d9c07ab61b57842ec`); it binds artifact SHA-256
-`47235c8b3bae1b227380f20a46eb1701c4bb8478724729723d2eaba33293287e` to the same source and tree. The current-source strict 21-row native matrix passed all 21 rows. Its
+`47235c8b3bae1b227380f20a46eb1701c4bb8478724729723d2eaba33293287e` to the same source and tree. The source-69461e60 strict 21-row native matrix passed all 21 rows. Its
 aggregate receipt is
 `/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011/resume-20261013-1433/native21-69461e60-v1/native21-manifest.json` (SHA-256 `ac451af55851470bb9232a317843c5cdbe8ad1ec501a91fb6f3171b8fdaff8cb`); it binds the same source, clean
-before/after state, and unchanged fixture binary. The current-source isolated normal-runtime v2 attempt was negative. The app
+before/after state, and unchanged fixture binary. The source-69461e60 isolated normal-runtime v2 attempt was negative. The app
 launch included a read-only `runtime_info` query. Its subsequent SavedWindow
 preflight expected the first window at y=20 but read it back at y=34 after
 macOS applied the visible-frame clamp; the second window remained at y=92. The
@@ -53,7 +110,7 @@ acceptance. A later geometry-aware, cat-aware helper passed the full isolated
 runtime sequence; its evidence is recorded below. The ACE-bound results remain
 historical and do not validate this source.
 
-### Current-source isolated normal-package runtime: passed
+### Previous-source isolated normal-package runtime (69461e60): passed
 
 The isolated runtime run passed for source
 `69461e60cb6bb65fe1a764510519fff599018b60`, tree
@@ -194,7 +251,7 @@ The ACE-bound v1 runtime attempt above remains negative and source-scoped.
 The later 69461e… v2 attempt failed the strict geometry preflight before
 state-changing MCP work; its separate cleanup verifier confirmed retirement
 but did not establish a successful quit-request exit code. The geometry-aware
-v4 helper was then peer-reviewed and used for the passing current-source v3
+v4 helper was then peer-reviewed and used for the passing source-69461e60 v3
 runtime run summarized above. These later runs do not revise the ACE v1
 receipt.
 
@@ -217,15 +274,14 @@ failed because the existing settings fixture rejected `he` as an unsupported
 native Settings language. Hebrew Accessibility row 21 passed. This is a
 Settings-fixture locale mismatch; row 14 supplies no Hebrew Settings product
 acceptance result. The ACE-bound matrix remains a historical 18/21 result with those three
-negative observations; it is not the current-source result. The current
+negative observations; it is not the current-source result. The subsequent
 69461e… strict native sequence passed all 21 rows, without altering the ACE
 receipt or supplying Hebrew Settings product evidence for that earlier row.
 
 A separate `real-profile-log-audit.json` examined a 2,000-line tail and found
 zero errors and one notification warning. The installed log itself has an
-October 11 timestamp, so this is not runtime evidence for `ace3659a`. The current-source strict native matrix is complete at 21/21. A passing
-isolated normal-package runtime, the physical Mac and the real integration
-checklist remain open.
+October 11 timestamp, so this is not runtime evidence for `ace3659a`. The later 69461e60 native matrix and isolated normal-package runtime passed,
+as recorded above. Physical Mac and real integration acceptance remain open.
 
 
 ### Previous local validation checkpoint: `c6ccad2e` (2026-10-13)

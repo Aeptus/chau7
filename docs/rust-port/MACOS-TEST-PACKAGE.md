@@ -16,11 +16,11 @@ ancestry. The separate spike spec was retained with its status updated.
 Shared helper and viewer changes were reapplied by intent, as documented in
 [REBASE-ON-AEPTUS.md](REBASE-ON-AEPTUS.md).
 
-## Latest verified package (2026-10-13)
+## Verified package checkpoint (2026-10-13)
 
 Download [`Chau7-Next-macOS-arm64`, artifact 11834575717 from run
 38436092953](https://github.com/Aeptus/chau7/actions/runs/38436092953/artifacts/11834575717).
-This package is for PR head `fd997ec51ce90519042636e864cf09ec910820dd`.
+This older package checkpoint is for PR head `fd997ec51ce90519042636e864cf09ec910820dd`.
 Its macOS, Linux, Windows, Quality gates and parity checks passed. GitHub built
 the package from PR merge commit `2398fdfd5a9f74951e5794f17f56d969efa394f6`;
 the merge and PR head have the same tree
@@ -33,9 +33,10 @@ inner ZIP SHA-256 is
 The GitHub outer artifact digest was not independently verified. This CI
 package was neither installed nor launched during that verification.
 
-The application code is identical to the locally validated source
+This artifact's application code is identical to the locally validated source
 `69461e60cb6bb65fe1a764510519fff599018b60`; the subsequent changes were
-documentation only. That source passed 3,051 Rust workspace tests (two
+documentation only up to fd997ec5. It does not include the later application
+changes at 5d35776c. That earlier source passed 3,051 Rust workspace tests (two
 ignored), 4,586 macOS Swift tests (three skipped), and all 21 strict native
 fixture cases. A separately built, signed local package passed isolated MCP
 input, restore/save, Software rendering, performance persistence and graceful
@@ -162,10 +163,11 @@ The final app, ZIP and SHA-256 file are available locally in
 
 ## Obtain a package
 
-Use the [latest verified package above](#latest-verified-package-2026-10-13).
-For application changes after that checkpoint, choose an artifact from the
-successful **Chau7 Next** workflow whose metadata matches the PR head:
+Choose an artifact from the successful **Chau7 Next** workflow whose embedded
+source metadata matches the current PR head (or its verified PR merge tree):
 [GitHub Actions](https://github.com/Aeptus/chau7/actions/workflows/chau7-next.yml).
+The [verified package checkpoint above](#verified-package-checkpoint-2026-10-13)
+is the older fd997ec5 package, not a package of the later application changes.
 Follow the [macOS installation instructions](../../apps/chau7-next/README.md#install-on-macos).
 
 Local builds use `apps/chau7-next/scripts/bundle-macos.sh`. No production
