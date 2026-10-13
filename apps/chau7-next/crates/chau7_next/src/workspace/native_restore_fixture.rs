@@ -605,6 +605,7 @@ impl MetadataEventCounter {
     fn new(
         panes: gpui::Entity<PaneTree>,
         count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        total_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
         primary_root: PathBuf,
         presentation_root: PathBuf,
         cx: &mut gpui::Context<Self>,
@@ -613,6 +614,7 @@ impl MetadataEventCounter {
             if !matches!(event, PaneEvent::MetadataChanged) {
                 return;
             }
+            total_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let tree = panes.read(cx);
             let actual_primary = tree
                 .primary_session(cx)
@@ -1239,12 +1241,23 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
             .collect::<Vec<_>>()
     });
     let metadata_event_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let metadata_event_total_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let _metadata_event_counter = cx.update(|cx| {
         let panes = ws.read(cx).entries[&ids[1]].panes.clone();
         let count = metadata_event_count.clone();
+        let total_count = metadata_event_total_count.clone();
         let primary_root = profile.directories[1].clone();
         let presentation_root = profile.directories[2].clone();
-        cx.new(|cx| MetadataEventCounter::new(panes, count, primary_root, presentation_root, cx))
+        cx.new(|cx| {
+            MetadataEventCounter::new(
+                panes,
+                count,
+                total_count,
+                primary_root,
+                presentation_root,
+                cx,
+            )
+        })
     });
     // Observe admission before yielding to the native platform. First layout
     // may itself take longer than 450ms, so a later fixed-delay check would
@@ -1392,31 +1405,103 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
     .await?;
     let primary_repo_root = profile.directories[1].to_string_lossy().into_owned();
     let presentation_repo_root = profile.directories[2].to_string_lossy().into_owned();
-    wait_until(cx, "live split repository metadata reconciliation", |cx| {
-        let workspace = ws.read(cx);
-        let Some(meta) = workspace.state.get(ids[1]) else {
-            return false;
-        };
-        let tree = workspace.entries[&ids[1]].panes.read(cx);
-        let sessions = tree.pane_sessions(cx);
-        workspace.state.selected() == Some(ids[1])
-            && tree.focused_pane_id() == Some(102)
-            && sessions.iter().any(|(pane, session)| {
-                *pane == 101
-                    && session.read(cx).git_root.as_deref() == Some(Path::new(&primary_repo_root))
+    // Require an observed production metadata transition after both restored
+    // sessions exist. Saved identities may already hydrate roots and branches,
+    // so create a real branch change in this isolated fixture's synthetic repos
+    // instead of assuming a spontaneous event will occur.
+    let expected_primary_branch =
+        format!("native-fixture-primary-{}", uuid::Uuid::new_v4().simple());
+    let expected_presentation_branch =
+        format!("native-fixture-focused-{}", uuid::Uuid::new_v4().simple());
+    std::fs::write(
+        profile.directories[1].join(".git/HEAD"),
+        format!("ref: refs/heads/{expected_primary_branch}\n"),
+    )
+    .map_err(error)?;
+    std::fs::write(
+        profile.directories[2].join(".git/HEAD"),
+        format!("ref: refs/heads/{expected_presentation_branch}\n"),
+    )
+    .map_err(error)?;
+    let metadata_reconciliation =
+        wait_until(cx, "live split repository metadata reconciliation", |cx| {
+            let workspace = ws.read(cx);
+            let Some(meta) = workspace.state.get(ids[1]) else {
+                return false;
+            };
+            let tree = workspace.entries[&ids[1]].panes.read(cx);
+            let sessions = tree.pane_sessions(cx);
+            workspace.state.selected() == Some(ids[1])
+                && tree.focused_pane_id() == Some(102)
+                && sessions.iter().any(|(pane, session)| {
+                    *pane == 101
+                        && session.read(cx).git_root.as_deref()
+                            == Some(Path::new(&primary_repo_root))
+                        && session.read(cx).git_branch.as_deref()
+                            == Some(expected_primary_branch.as_str())
+                })
+                && sessions.iter().any(|(pane, session)| {
+                    *pane == 102
+                        && session.read(cx).git_root.as_deref()
+                            == Some(Path::new(&presentation_repo_root))
+                        && session.read(cx).git_branch.as_deref()
+                            == Some(expected_presentation_branch.as_str())
+                })
+                && meta.git_root.as_deref() == Some(presentation_repo_root.as_str())
+                && meta.primary_git_root.as_deref() == Some(primary_repo_root.as_str())
+                && meta.presentation_git_root.as_deref() == Some(presentation_repo_root.as_str())
+                && meta.repo_group_id.as_deref() == Some(primary_repo_root.as_str())
+                && metadata_event_count.load(std::sync::atomic::Ordering::Relaxed) > 0
+        })
+        .await;
+    if let Err(error) = metadata_reconciliation {
+        let snapshot = cx.update(|cx| {
+            let workspace = ws.read(cx);
+            let tree = workspace.entries[&ids[1]].panes.read(cx);
+            let sessions = tree
+                .pane_sessions(cx)
+                .into_iter()
+                .map(|(pane, session)| {
+                    let session = session.read(cx);
+                    serde_json::json!({
+                        "pane_id": pane,
+                        "cwd": session.cwd.as_ref().map(|path| path.to_string_lossy().into_owned()),
+                        "git_root": session.git_root.as_ref().map(|path| path.to_string_lossy().into_owned()),
+                        "git_branch": session.git_branch,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let meta = workspace.state.get(ids[1]).map(|meta| serde_json::json!({
+                "git_root": meta.git_root,
+                "primary_git_root": meta.primary_git_root,
+                "presentation_git_root": meta.presentation_git_root,
+                "repo_group_id": meta.repo_group_id,
+                "has_inherited_repo_group": meta.has_inherited_repo_group,
+            }));
+            serde_json::json!({
+                "error": error,
+                "selected_tab": workspace.state.selected(),
+                "focused_pane": tree.focused_pane_id(),
+                "workspace_auto_repo_grouping": workspace.state.auto_repo_grouping,
+                "global_repo_grouping_mode": format!("{:?}", cx.global::<Settings>().tabs.repo_grouping),
+                "tab_metadata": meta,
+                "sessions": sessions,
+                "metadata_events_total": metadata_event_total_count.load(std::sync::atomic::Ordering::Relaxed),
+                "metadata_events_with_both_expected_roots": metadata_event_count.load(std::sync::atomic::Ordering::Relaxed),
+                "expected": {
+                    "primary_root": primary_repo_root,
+                    "presentation_root": presentation_repo_root,
+                    "primary_branch": expected_primary_branch,
+                    "presentation_branch": expected_presentation_branch,
+                    "repo_group_id": primary_repo_root,
+                }
             })
-            && sessions.iter().any(|(pane, session)| {
-                *pane == 102
-                    && session.read(cx).git_root.as_deref()
-                        == Some(Path::new(&presentation_repo_root))
-            })
-            && meta.git_root.as_deref() == Some(presentation_repo_root.as_str())
-            && meta.primary_git_root.as_deref() == Some(primary_repo_root.as_str())
-            && meta.presentation_git_root.as_deref() == Some(presentation_repo_root.as_str())
-            && meta.repo_group_id.as_deref() == Some(primary_repo_root.as_str())
-            && metadata_event_count.load(std::sync::atomic::Ordering::Relaxed) > 0
-    })
-    .await?;
+        });
+        if let Ok(snapshot) = serde_json::to_string(&snapshot) {
+            eprintln!("native_restore_metadata_reconciliation_failure={snapshot}");
+        }
+        return Err(error);
+    }
     let automatic_grouping_summary = cx.update(|cx| {
         cx.global_mut::<Settings>().tabs.repo_grouping = crate::settings::RepoGroupingMode::Auto;
         let summary = (|| -> Result<serde_json::Value, String> {
@@ -1501,6 +1586,12 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
         })?;
     let split_repository_grouping = serde_json::json!({
         "metadata_event_count": metadata_event_count.load(std::sync::atomic::Ordering::Relaxed),
+        "metadata_event_total_count": metadata_event_total_count.load(std::sync::atomic::Ordering::Relaxed),
+        "metadata_transition": {
+            "origin": "owned synthetic .git/HEAD branch change",
+            "primary_branch": expected_primary_branch,
+            "presentation_branch": expected_presentation_branch,
+        },
         "selected_tab_preserved": true,
         "focused_pane_id": 102,
         "live_session_roots": {

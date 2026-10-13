@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Validate restored split metadata through real branch changes in owned
+  synthetic repositories and report each grouping predicate on failure.
+- Trace attribute-only AppKit text-storage edits during the isolated native
+  composition fixture with a bounded call stack, preserving the strict
+  marked-text survival assertion.
 - Regroup both the old and new automatic repository groups when a middle tab
   changes its primary repository or leaves it, preserving selection by tab identity.
 - Keep native print snapshot validation compatible with strict Rust 1.99 checks.

@@ -576,14 +576,36 @@ define_class!(
                 return;
             };
             let range = storage.editedRange();
+            let edited_mask = storage.editedMask().0;
+            let has_marked_text = self.hasMarkedText();
+            let marked_range = self.markedRange();
+            let attribute_edit_stack = if edited_mask == 1 && has_marked_text {
+                let stack = format!("{:?}", std::backtrace::Backtrace::force_capture());
+                Some(
+                    stack
+                        .lines()
+                        .take(96)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                        .chars()
+                        .take(16 * 1024)
+                        .collect::<String>(),
+                )
+            } else {
+                None
+            };
             self.ivars().shared.fixture_trace.record_details(
                 self,
                 "NSTextStorage::didProcessEditing",
                 serde_json::json!({
-                    "edited_mask": storage.editedMask().0,
+                    "edited_mask": edited_mask,
                     "edited_range_location": range.location,
                     "edited_range_length": range.length,
                     "change_in_length": storage.changeInLength(),
+                    "has_marked_text": has_marked_text,
+                    "marked_range_location": marked_range.location,
+                    "marked_range_length": marked_range.length,
+                    "attribute_edit_stack": attribute_edit_stack,
                 }),
             );
         }
