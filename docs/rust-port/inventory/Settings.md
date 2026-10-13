@@ -125,8 +125,8 @@ UserDefaults keys (Swift) or `config.toml` keys (`[section] key`).
 | SET-069 | Smart scroll: keep the scroll position when output arrives while scrolled up (`feature.smartScrollEnabled`) | `ScrollbackPerfSettingsView.swift` |  | chau7_next/src/settings/terminal.rs (smart_scroll), chau7_next/src/terminal/session.rs | done |  |
 | SET-070 | Restored scrollback lines when tabs are recovered, 0 to 10,000, 0 disables (`terminal.restoredScrollbackLines`) | `ScrollbackPerfSettingsView.swift` | `FeatureSettingsTests.testDefaultRestoredScrollbackLines` | `chau7_next/src/settings/terminal.rs` (`restored_scrollback_lines`), `chau7_next/src/settings_window/panes.rs`, `chau7_next/src/restore.rs` (`capture_tab`), `chau7_next_core/src/session_restore.rs` (`capture_scrollback`) | done |  |
 | SET-071 | Local echo: draw typed characters before the PTY echoes them (`feature.localEchoEnabled`) | `ScrollbackPerfSettingsView.swift` |  | `chau7_next/src/settings/input.rs` (`local_echo`), `chau7_next/src/settings_window/keyboard.rs`, `chau7_next/src/terminal/input.rs` | done |  |
-| SET-072 | Suspend background rendering and suspend delay in seconds (AppModel keys) | `ScrollbackPerfSettingsView.swift`, `App/AppModel.swift` | | | n/a | |
-| SET-073 | Metal renderer toggle (`feature.useMetalRenderer`) | `ScrollbackPerfSettingsView.swift` | | | n/a | Metal |
+| SET-072 | Suspend background rendering and suspend delay in seconds (AppModel keys) | `ScrollbackPerfSettingsView.swift`, `App/AppModel.swift` | | `chau7_next/src/settings_window/rendering.rs`, `chau7_next/src/settings/appearance.rs`, `chau7_next/src/terminal/view.rs`, `chau7_next_core/src/session_restore/lifecycle.rs` | done | |
+| SET-073 | Metal renderer toggle (`feature.useMetalRenderer`) | `ScrollbackPerfSettingsView.swift` | | `chau7_next/src/settings_window/rendering.rs`, `chau7_next/src/settings/appearance.rs`, `chau7_next/src/window_backend.rs`, `chau7_next/src/main.rs` | done | Metal |
 
 ### Dangerous Commands
 
@@ -290,9 +290,7 @@ UserDefaults keys (Swift) or `config.toml` keys (`[section] key`).
 - SET-017 and the other hidden keys: no settings UI writes them and (except
   menu bar only and floating window, SET-023) no code reads them, so they have
   no visible effect in Swift today.
-- SET-072 and SET-073 are `n/a`: GPUI always renders on the GPU and only
-  paints the visible tab, so the Metal toggle and background render
-  suspension have no equivalent to port.
+- SET-072 exposes the suspend toggle and delay; `terminal/view.rs` applies them to hidden surfaces. SET-073 controls terminal grid rasterization on each frame, while the saved setting also selects the whole-window backend at startup. The UI discloses that switching the window backend takes effect on the next launch; this is the GPUI adaptation of Swift's per-terminal Metal renderer.
 - SET-134 and SET-135 are `n/a`: UI building blocks and documentation, not
   user features.
 - `WindowsSettingsView` (overlay window buttons, fullscreen toolbar, split

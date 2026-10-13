@@ -107,6 +107,19 @@ JSON schema version 1 contains:
   monitoring, remote output, terminal painting and dangerous-command scans.
   The monitoring feature includes AI and dev-server monitoring. Empty feature
   arrays mean no instrumented work in that window; missing work is not zero.
+- `telemetry.token_rates_by_tab` contains latest observed generation-speed
+  readings keyed by local tab ID. Each typed reading preserves provider, tokens
+  per second, output-token count, duration, source and `updatedAt`. Snapshot
+  capture copies the existing bounded in-memory store; it performs no transcript,
+  SQLite or provider query. An unavailable store is `null`; an initialized
+  store with no readings is `{}`; tabs without observations are omitted, never
+  assigned zero. This export does not apply a freshness filter, so a retained
+  reading may be stale; use its timestamp when interpreting it. The tab-bar
+  badge is shown only while AI is running and when the signed age's integer
+  `num_seconds()` value is in the inclusive `0..=15` range. Debug Console
+  Analytics lists retained readings without an age filter. The existing store
+  prunes to 384 readings after exceeding 512. The field includes no prompts,
+  provider session IDs, transcript paths or credentials.
 - On macOS, measured feature scopes also emit paired `os_signpost` intervals
   under subsystem `com.chau7.next`, category `performance`, for Instruments.
   Begin/end IDs match even when a scope exits early. Emission skips disabled
@@ -251,3 +264,12 @@ bytes. Existing 15-second/4 MiB bounds, one-warning outage suppression and
 30-to-300-second retry backoff are retained. The work profiler separately
 measures actual `aethyme.delivery` subprocess capture wall time on background
 workers. Old generic warnings cannot retrospectively identify those flags.
+
+### Token-rate performance export (2026-10-13)
+
+The performance snapshot now includes `telemetry.token_rates_by_tab`. It reads
+the existing bounded in-memory token-rate store and is available through
+`chau7_performance_snapshot` and Debug Console Perf's Copy Performance JSON
+and Save Latest Snapshot controls. It preserves each reading's source and
+update timestamp; retained readings may be stale. Capture performs no transcript,
+SQLite or provider query.

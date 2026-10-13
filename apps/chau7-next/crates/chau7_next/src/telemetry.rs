@@ -362,12 +362,19 @@ pub fn init(cx: &mut App) {
     });
 }
 
-/// Numeric, memory-only state for the existing MCP/performance diagnostics.
-/// No run IDs, commands, context, database paths or SQL are captured here.
+/// Bounded, memory-only telemetry for the existing MCP/performance diagnostics.
+/// Token rates stay keyed by local tab ID and retain their source and timestamp;
+/// this does not read prompts, provider session IDs, transcript paths or SQL.
 pub fn diagnostics(cx: &App) -> Value {
+    // Reuse the existing in-memory store. Snapshot capture performs no transcript,
+    // SQLite, or provider query.
+    let token_rates_by_tab = cx
+        .try_global::<TokenRates>()
+        .map(|global| global.0.lock().snapshot());
     let Some(recorder) = recorder(cx) else {
         return serde_json::json!({"store_state":"unavailable", "writer":null, "store_failures":null,
-            "snapshots":null, "maintenance":usage::maintenance_diagnostics(cx)});
+            "snapshots":null, "token_rates_by_tab":token_rates_by_tab,
+            "maintenance":usage::maintenance_diagnostics(cx)});
     };
     let writer = recorder.writer_status();
     let snapshots = cx.try_global::<ReadSnapshots>().map(|s| {
@@ -383,7 +390,94 @@ pub fn diagnostics(cx: &App) -> Value {
             "pending_bytes":writer.pending_bytes,"rejected":writer.rejected,"failed":writer.failed,
             "accepting":writer.accepting,"last_error":writer.last_error,
             "acknowledgement":"admission is queued; completed includes failed jobs; failed is separate"},
-        "snapshots":snapshots,"maintenance":usage::maintenance_diagnostics(cx)})
+        "snapshots":snapshots,"token_rates_by_tab":token_rates_by_tab,
+        "maintenance":usage::maintenance_diagnostics(cx)})
+}
+
+#[cfg(test)]
+mod performance_diagnostics_tests {
+    use super::{TelemetryGlobal, TokenRates, diagnostics};
+    use chau7_next_core::telemetry::{
+        recorder::TelemetryRecorder,
+        store::TelemetryStore,
+        token_rate::{TokenRateSource, TokenRateStore},
+    };
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    fn install_recorder(cx: &mut gpui::App) {
+        let store = Arc::new(TelemetryStore::in_memory());
+        cx.set_global(TelemetryGlobal(Arc::new(TelemetryRecorder::new(
+            store,
+            vec![],
+        ))));
+    }
+
+    #[gpui::test]
+    fn performance_diagnostics_distinguishes_absent_and_empty_token_rates(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let absent = cx.update(|app| diagnostics(app));
+        assert!(absent["token_rates_by_tab"].is_null(), "{absent}");
+
+        let empty = cx.update(|app| {
+            app.set_global(TokenRates(Arc::new(Mutex::new(TokenRateStore::default()))));
+            diagnostics(app)
+        });
+        assert_eq!(
+            empty["token_rates_by_tab"],
+            serde_json::json!({}),
+            "{empty}"
+        );
+    }
+
+    #[gpui::test]
+    fn performance_diagnostics_exports_typed_rate_without_paths(cx: &mut gpui::TestAppContext) {
+        let updated_at = chrono::Utc::now();
+        let snapshot = cx.update(|app| {
+            install_recorder(app);
+            let mut rates = TokenRateStore::default();
+            assert!(rates.record_rate(
+                "tab-local-id",
+                "Claude",
+                31.25,
+                120,
+                3_840,
+                TokenRateSource::ProxyUsage,
+                updated_at,
+            ));
+            app.set_global(TokenRates(Arc::new(Mutex::new(rates))));
+            diagnostics(app)
+        });
+        let reading = &snapshot["token_rates_by_tab"]["tab-local-id"];
+        assert_eq!(reading["provider"], "Claude");
+        assert_eq!(reading["tokensPerSecond"], 31.25);
+        assert_eq!(reading["outputTokens"], 120);
+        assert_eq!(reading["durationMs"], 3_840);
+        assert_eq!(reading["source"], "proxyUsage");
+        assert_eq!(
+            reading["updatedAt"],
+            serde_json::to_value(updated_at).unwrap()
+        );
+        let mut fields = reading
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        fields.sort();
+        assert_eq!(
+            fields,
+            vec![
+                "durationMs",
+                "outputTokens",
+                "provider",
+                "source",
+                "tokensPerSecond",
+                "updatedAt",
+            ]
+        );
+    }
 }
 
 /// The shared recorder (and through it the store).

@@ -27,6 +27,22 @@ use crate::theme::{Chrome, tab_color};
 /// Card width (`TabHoverCard`: 280 pt, 12 pt from the window edges).
 const CARD_WIDTH: f32 = 280.0;
 
+/// Whether the hover card should report this tab's background rendering state.
+/// The prewarm snapshot records suspension before previewing resumes the session;
+/// it is a UI status flag and does not claim the session remains CPU-idle.
+fn should_show_render_suspension_row(
+    suspend_background_enabled: bool,
+    tab_selected: bool,
+    surface_visible: bool,
+    suspended_before_hover_prewarm: bool,
+    session_render_suspended: bool,
+) -> bool {
+    suspend_background_enabled
+        && !tab_selected
+        && !surface_visible
+        && (suspended_before_hover_prewarm || session_render_suspended)
+}
+
 pub(super) struct HoverState {
     pub(super) tab: TabId,
     pub(super) shown: bool,
@@ -38,6 +54,8 @@ pub(super) struct HoverState {
     /// Process sampling, only while the card is shown.
     _monitor: Option<Task<()>>,
     processes: Option<ProcessSnapshot>,
+    /// Captured before hover prewarming resumes a hidden surface.
+    was_render_suspended_before_prewarm: bool,
 }
 
 /// Global token optimization mode (`tokenOptimizationMode`); off hides the
@@ -59,6 +77,14 @@ impl Workspace {
         if self.drag.as_ref().is_some_and(|d| d.active) {
             return;
         }
+        // Hover prewarming resumes the hidden session; preserve its actual state
+        // first so the card can still report that the tab was suspended.
+        let was_render_suspended_before_prewarm = hovered
+            && self
+                .entries
+                .get(&id)
+                .and_then(|entry| entry.panes.read(cx).focused_session(cx))
+                .is_some_and(|session| session.read(cx).is_render_suspended());
         if self.state.selected() != Some(id)
             && let Some(panes) = self.entries.get(&id).map(|entry| entry.panes.clone())
         {
@@ -81,6 +107,7 @@ impl Workspace {
                     hover.tab = id;
                     hover.anchor_x = anchor_x;
                     hover.processes = None;
+                    hover.was_render_suspended_before_prewarm = was_render_suspended_before_prewarm;
                     self.start_process_monitor(cx);
                 }
                 if let Some(hover) = self.hover.as_mut() {
@@ -114,6 +141,7 @@ impl Workspace {
                 _timer: Some(timer),
                 _monitor: None,
                 processes: None,
+                was_render_suspended_before_prewarm,
             });
         } else if self.hover.as_ref().is_some_and(|h| h.tab == id) {
             log::info!("TABBAR cancel_prewarm tab={id}");
@@ -248,6 +276,13 @@ impl Workspace {
         let muted = primary.opacity(0.6);
         let color = |c: StyleColor| style_color(c, primary);
         let mono = "Menlo";
+        let is_render_suspended = should_show_render_suspension_row(
+            settings.appearance.rendering.suspend_background,
+            self.state.selected() == Some(id),
+            session.restore_surface_visible(),
+            hover.was_render_suspended_before_prewarm,
+            session.is_render_suspended(),
+        );
 
         // Header: AI logo (dim when not running) or color dot, title, status.
         let ai_app = session.ai_display_app_name();
@@ -692,6 +727,19 @@ impl Workspace {
                     .into_any_element(),
             );
         }
+        if is_render_suspended {
+            rows.push(
+                row("⏸︎", muted)
+                    .child(label(
+                        crate::l10n::l("hovercard.rendering", "Rendering").into(),
+                    ))
+                    .child(value(
+                        crate::l10n::l("hovercard.suspended", "Suspended").into(),
+                        muted,
+                    ))
+                    .into_any_element(),
+            );
+        }
         if show.show_notification_state
             && let Some(style) = entry.notification.as_ref()
         {
@@ -802,5 +850,48 @@ impl Workspace {
             .with_priority(3)
             .into_any_element(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_show_render_suspension_row;
+
+    #[test]
+    fn suspension_row_shows_live_or_pre_prewarm_state() {
+        assert!(should_show_render_suspension_row(
+            true, false, false, false, true
+        ));
+        assert!(should_show_render_suspension_row(
+            true, false, false, true, false
+        ));
+    }
+
+    #[test]
+    fn suspension_row_hides_when_setting_is_disabled() {
+        assert!(!should_show_render_suspension_row(
+            false, false, false, true, true
+        ));
+    }
+
+    #[test]
+    fn suspension_row_hides_for_selected_tab() {
+        assert!(!should_show_render_suspension_row(
+            true, true, false, true, true
+        ));
+    }
+
+    #[test]
+    fn suspension_row_hides_for_visible_surface() {
+        assert!(!should_show_render_suspension_row(
+            true, false, true, true, true
+        ));
+    }
+
+    #[test]
+    fn suspension_row_hides_when_neither_state_is_suspended() {
+        assert!(!should_show_render_suspension_row(
+            true, false, false, false, false
+        ));
     }
 }

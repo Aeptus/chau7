@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Show localized rendering suspension status in Next hover cards, preserving
+  the status before preview prewarming and hiding it for reactivated tabs.
+- Match Unix helper shutdown with SIGTERM, SIGINT and final owned-child kill,
+  keeping remote reaping off the UI thread.
+- Export existing bounded per-tab generation-speed readings through performance
+  JSON and MCP with measurement source/timestamp and explicit missing values.
+- Synchronize the Swift atomic-file-write test with its monitor's startup queue
+  to remove a readiness race without extending its five-second deadline.
+
 - Fix the AppKit window type import for fixture-only editor diagnostics.
 - Request explicit foreground activation for the owned native Restore fixture and add bounded editor focus/window diagnostics; preserve strict native acceptance assertions.
 - Activate the owned AppKit accessibility adapter before native Restore frame measurements.

@@ -296,29 +296,13 @@ impl Drop for AgentProcess {
         let Some(mut child) = self.child.take() else {
             return;
         };
-        if matches!(child.try_wait(), Ok(Some(_))) {
+        let start = crate::process_termination::begin_remote_stop(&mut child);
+        if start == crate::process_termination::RemoteStopStart::AlreadyExited {
             return;
-        }
-        #[cfg(unix)]
-        {
-            // SAFETY: signal only the still-owned child, never Chau7 or another process.
-            unsafe {
-                libc::kill(child.id() as i32, libc::SIGTERM);
-            }
         }
         if let Err(error) = std::thread::Builder::new()
             .name("remote-agent-reaper".into())
-            .spawn(move || {
-                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
-                while std::time::Instant::now() < deadline {
-                    if matches!(child.try_wait(), Ok(Some(_))) {
-                        return;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(25));
-                }
-                let _ = child.kill();
-                let _ = child.wait();
-            })
+            .spawn(move || crate::process_termination::finish_remote_stop(child, start))
         {
             log::error!("Cannot start remote helper reaper: {error}");
         }

@@ -168,27 +168,9 @@ impl ProxyProcess {
         }
     }
 
-    /// SIGTERM, a short wait, then kill (`ManagedProcess.terminate`).
-    pub fn stop(mut self) {
-        if self.try_exit().is_some() {
-            return;
-        }
-        #[cfg(unix)]
-        {
-            // SAFETY: plain kill(2) on our own child's pid.
-            unsafe {
-                libc::kill(self.child.id() as i32, libc::SIGTERM);
-            }
-            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
-            while std::time::Instant::now() < deadline {
-                if self.try_exit().is_some() {
-                    return;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(25));
-            }
-        }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+    /// Stop this owned helper with the Swift SIGTERM, SIGINT, then kill schedule.
+    pub fn stop(self) {
+        crate::process_termination::terminate_proxy_child(self.child);
     }
 }
 

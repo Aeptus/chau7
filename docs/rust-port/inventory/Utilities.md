@@ -21,7 +21,7 @@ paths and logging.
 | UTL-004 | Repo detection never touches protected folders (Downloads, Desktop, Documents, ~/Library, /Applications, /System, /Library), so no macOS privacy prompt appears, unless the user enables access | `Utilities/ProtectedPathPolicy.swift` (`shouldSkipAutoAccess`), used by `Repository/RepositoryCache.swift` |  | `chau7_next_core/src/protected_path.rs`, `chau7_next/src/protected_paths.rs`, `chau7_next/src/platform/process.rs` (`git_root`) | done | TCC |
 | UTL-005 | "Grant access" dialog to pick protected folders; access is kept as security-scoped bookmarks, re-activated at launch, refreshed when stale; a denied folder is retried after 5 minutes; Reset clears all checks | `Utilities/ProtectedPathPolicy.swift` (`requestAccessToProtectedFolders`, `activatePersistedBookmarks`, `resetAccessChecks`), `Settings/Views/ProductivitySettingsView.swift`, `App/AppDelegate.swift` |  | chau7_next/src/protected_paths.rs, chau7_next/src/platform/bookmarks.rs, chau7_next/src/settings_window/general.rs (Grant Access..., Reset Checks), chau7_next_core/src/protected_path.rs | done | NSOpenPanel, security-scoped bookmarks |
 | UTL-006 | (dev) Environment variables override log and monitor paths: `CHAU7_LOG_FILE`, `CHAU7_LOG_MAX_BYTES`, `CHAU7_VERBOSE`, `CHAU7_TRACE`, `CHAU7_EVENTS_LOG`, `CHAU7_CODEX_HISTORY_LOG`, `CHAU7_CLAUDE_HISTORY_LOG`, `CHAU7_IDLE_STALE_SECONDS`, `CHAU7_CODEX_TERMINAL_LOG`, `CHAU7_CLAUDE_TERMINAL_LOG`, `CHAU7_TERMINAL_NORMALIZE`, `CHAU7_TERMINAL_ANSI`, `CHAU7_IDLE_SECONDS`, `CHAU7_COMMAND_FALLBACK_SECONDS`, `CHAU7_CLEAR_ON_LAUNCH`, `CHAU7_PTY_DUMP_MAX_BYTES`, `CHAU7_PTY_LOG_MAX_BYTES`, `CHAU7_REMOTE_OUTPUT_BATCH`, each with a legacy `AI_*` or `SMART_OVERLAY_*` name | `Utilities/Utilities.swift` (`EnvVars`) |  | chau7_next_core/src/env_vars.rs, chau7_next/src/logging/mod.rs (env_override), chau7_next/src/history/monitor.rs, chau7_next/src/ai/hub.rs, chau7_next/src/ai/log_view.rs, chau7_next/src/remote/mod.rs, chau7_next/src/terminal/pty_capture.rs, chau7_next_core/src/shell_session.rs, chau7_next_core/src/ai/pty_log.rs | done |  |
-| UTL-007 | Helper processes (proxy, remote agent) are stopped with SIGTERM, then SIGINT after 1 s, then SIGKILL | `Utilities/ManagedProcess.swift` | `ManagedProcessTests` | | n/a | |
+| UTL-007 | Helper processes (proxy, remote agent) are stopped with SIGTERM, then SIGINT after 1 s, then SIGKILL | `Utilities/ManagedProcess.swift` | `ManagedProcessTests` | `chau7_next/src/process_termination.rs`, `chau7_next/src/proxy/process.rs`, `chau7_next/src/remote/agent.rs` | done | |
 | UTL-008 | `git` is resolved from Homebrew before the Xcode shim | `Utilities/Utilities.swift` (`GitBinary`) | | | n/a | |
 | UTL-009 | Accessibility helpers: Dynamic Type scaled fonts, high contrast colors, reduce motion, VoiceOver announcements, focus rings, list item hints | `Utilities/AccessibilityUtilities.swift` | | | n/a | NSAccessibility |
 | UTL-010 | Typed errors with recovery suggestions and input validation for host, port, path and user name | `Utilities/Chau7Error.swift` (`Chau7Error`, `InputValidation`, `RateLimiter`) | | | n/a | |
@@ -31,9 +31,8 @@ paths and logging.
 
 ## Notes
 
+- UTL-007 uses the shared owned-child termination policy: SIGTERM, a one-second grace period, SIGINT, a 500 ms grace period, then kill and reap. Proxy stop retains its existing synchronous behavior; Remote sends SIGTERM immediately and keeps waiting/reaping off the UI thread. The pure schedule regression preserves the Unix signal order and grace periods; Windows retains direct-child kill/reap.
 - n/a reasons:
-  - UTL-007: plumbing for Proxy and Remote; port it with those modules (Rust
-    `std::process::Child` plus `libc::kill`).
   - UTL-008: `GitBinary` has no caller in the Swift app, and Chau7 Next reads
     `.git/HEAD` directly (`platform/process.rs`) instead of running `git`.
   - UTL-009: none of these modifiers or `AccessibilityAnnouncement` has a caller

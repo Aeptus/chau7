@@ -1,6 +1,46 @@
 # Chau7 Next parity with the current Swift app
 
-## Local validation checkpoint: `07098279` (2026-10-13)
+## Current implementation follow-up (2026-10-13)
+
+The inventory audit found six stale n/a classifications. Background suspension,
+the renderer controls and CPU fallback were already implemented. This follow-up
+adds the missing localized hover-card suspension row and the SIGINT stage for
+owned helper shutdown. The implementation inventory now contains 1,273 done and
+36 n/a rows; implementation counts do not certify physical Mac acceptance.
+
+Performance JSON and MCP additionally expose the existing bounded in-memory
+token-rate readings, preserving source and timestamps. Unavailable measurements
+remain null or absent, and retained readings may be stale. The FileMonitor
+atomic-write test now waits for its watch to arm instead of assuming a 200 ms
+scheduling delay is sufficient. These changes have regression tests and await
+their combined compilation and native validation after commit.
+
+### Latest validated source: c6ccad2e (2026-10-13)
+
+Source c6ccad2e4df1a8ed40378b95b5814acf5d0ad2fa passed all nine compiler/package
+stages, 3,042 Rust tests (two ignored), seven focused feature tests and ten local
+quality gates. The first full quality run had one unchanged Swift FileMonitor
+startup-ordering timeout; its evidence is retained. All 13 focused FileMonitor
+tests and the full rerun passed: Swift build, 4,586 tests, three skipped, zero
+failures. The warm normal build took 65.931 seconds on this execution; this is
+an observation, not a benchmark.
+
+All 21 strict native rows passed across Software, injected Metal device failure,
+settings languages/number formats and accessibility. The legacy single-settings
+child wrapper reports an incomplete four-case matrix; the 21-case aggregator
+separately validates the actual requested settings row, exact locale/number
+evidence and native frames. It records those child exit statuses transparently.
+Both Editor fixtures report that real OS IME input-source automation is false;
+these passes do not explain the earlier intermittent composition failure.
+
+The sealed normal package passed exact 68-byte isolated terminal input and
+graceful app/child quit. Its performance export validated 1,477 finite values,
+16 timers and two Software windows with 12 and 5 submitted frames and zero
+failures. These samples establish access and measured counters, not speed
+thresholds. No provider or remote device was contacted. The physical Mac and
+real integration checklist remains open.
+
+### Previous local validation checkpoint: `07098279` (2026-10-13)
 
 Source `07098279263c086a7b639bdc5ba94b8485506991` passed all nine
 compiler/package stages, 3,042 Rust tests (two ignored), seven focused
@@ -224,7 +264,7 @@ stale table.
 | [Monitoring](inventory/Monitoring.md) | 2 | 24 | 24 | 0 | 0 | 0 | 0 | 0 |
 | [Notifications](inventory/Notifications.md) | 2 | 45 | 45 | 0 | 0 | 0 | 0 | 0 |
 | [Observability](inventory/Observability.md) | 3 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
-| [Overlay](inventory/Overlay.md) | 1 | 121 | 116 | 0 | 0 | 5 | 0 | 0 |
+| [Overlay](inventory/Overlay.md) | 1 | 121 | 118 | 0 | 0 | 3 | 0 | 0 |
 | [Performance](inventory/Performance.md) | 1 | 18 | 14 | 0 | 0 | 4 | 0 | 0 |
 | [Profiles](inventory/Profiles.md) | 1 | 20 | 20 | 0 | 0 | 0 | 0 | 0 |
 | [Proxy](inventory/Proxy.md) | 3 | 22 | 22 | 0 | 0 | 0 | 0 | 0 |
@@ -234,18 +274,18 @@ stale table.
 | [Runtime](inventory/Runtime.md) | 3 | 33 | 33 | 0 | 0 | 0 | 0 | 0 |
 | [RustBackend](inventory/RustBackend.md) | 1 | 62 | 58 | 0 | 0 | 4 | 0 | 0 |
 | [Scripting](inventory/Scripting.md) | 3 | 15 | 15 | 0 | 0 | 0 | 0 | 0 |
-| [Settings](inventory/Settings.md) | 1 | 145 | 140 | 0 | 0 | 5 | 0 | 0 |
+| [Settings](inventory/Settings.md) | 1 | 145 | 142 | 0 | 0 | 3 | 0 | 0 |
 | [Skills](inventory/Skills.md) | 3 | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | [Snippets](inventory/Snippets.md) | 1 | 37 | 37 | 0 | 0 | 0 | 0 | 0 |
 | [SplitPanes](inventory/SplitPanes.md) | 1 | 27 | 27 | 0 | 0 | 0 | 0 | 0 |
 | [StatusBar](inventory/StatusBar.md) | 5 | 17 | 16 | 0 | 0 | 1 | 0 | 0 |
 | [Telemetry](inventory/Telemetry.md) | 3 | 24 | 24 | 0 | 0 | 0 | 0 | 0 |
-| [Terminal](inventory/Terminal.md) | 1 | 68 | 65 | 0 | 0 | 3 | 0 | 0 |
+| [Terminal](inventory/Terminal.md) | 1 | 68 | 66 | 0 | 0 | 2 | 0 | 0 |
 | [TokenOptimization](inventory/TokenOptimization.md) | 3 | 24 | 23 | 0 | 0 | 1 | 0 | 0 |
 | [Usage](inventory/Usage.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
-| [Utilities](inventory/Utilities.md) | 1 | 13 | 6 | 0 | 0 | 7 | 0 | 0 |
+| [Utilities](inventory/Utilities.md) | 1 | 13 | 7 | 0 | 0 | 6 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1309** | **1267** | **0** | **0** | **42** | **0** | |
+| **Total** | | **1309** | **1273** | **0** | **0** | **36** | **0** | |
 
 Finished (done, n/a or dropped): 1309 of 1309 rows (100%). Partial: 0.
 

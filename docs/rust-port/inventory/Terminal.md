@@ -79,7 +79,7 @@ reported to notifications, telemetry and remote control.
 | TRM-061 | (dev) PTY capture: `CHAU7_PTY_DUMP=1` writes escaped output to `pty-capture.log` (`CHAU7_PTY_DUMP_PATH`), trimmed past 20 MB (`CHAU7_PTY_DUMP_MAX_BYTES`) | `Terminal/Rendering/TerminalOutputCapture.swift` |  | chau7_next/src/terminal/pty_capture.rs, chau7_next_core/src/shell_output.rs, chau7_next_core/src/data_root.rs (pty_capture_file) | done |  |
 | TRM-062 | (dev) Latency telemetry: input, output (to the drawn frame) and highlight latency (last 120 samples, p50/p95), spikes over 60/120/120 ms logged with a 15 s cooldown into a lag timeline for the debug console | `Terminal/Session/TerminalSessionModel+Telemetry.swift` | `TerminalSessionModelTests` (testLagKind*, testLagEvent*) | chau7_next_core/src/shell_latency.rs, chau7_next/src/terminal/session.rs (mark_frame_drawn, record_highlight_latency), chau7_next/src/terminal/view.rs, chau7_next/src/terminal/view/danger.rs, chau7_next/src/debug/tabs/lag.rs | done |  |
 | TRM-063 | Hidden tabs stop rendering unless an AI tool runs; a cached frame image makes switching back instant | `Terminal/Session/TerminalSessionModel.swift` (`shouldKeepLiveRenderingInBackground`, `lastRenderedSnapshot`) | | | n/a | |
-| TRM-064 | Metal GPU renderer toggle with CPU fallback; highlight layer kept above it | `Terminal/Views/TerminalViewRepresentable.swift` (`RustTerminalContainerView`) | | | n/a | Metal |
+| TRM-064 | Metal GPU renderer toggle with CPU fallback; highlight layer kept above it | `Terminal/Views/TerminalViewRepresentable.swift` (`RustTerminalContainerView`) | | `chau7_next/src/terminal/paint.rs`, `chau7_next/src/terminal/cpu_renderer.rs`, `chau7_next/src/window_backend.rs` | done | Metal |
 
 | TRM-065 | Shell launcher uses own per-tab history files, Codex proxy wrapper and transport-attribution env, safely removes inherited Swift wrapper/history paths | `Terminal/Session/ShellLaunchConfigurator.swift` | Isolated shell/Codex launcher and owned history regressions | chau7_next_core/src/{shell_env,shell_integration,codex_proxy_wrapper.sh}; chau7_next/src/history/shell_file.rs; chau7_next/src/terminal/session.rs | done |  |
 
@@ -128,7 +128,6 @@ reported to notifications, telemetry and remote control.
   `scheduleShellIntegration`/`applyShellIntegration` are no-ops.
 - **n/a rows.** TRM-009: a Chau7 Next session owns its PTY from creation, so
   writes never precede the view. TRM-063: GPUI only paints visible views.
-  TRM-064: GPUI renders on the GPU (PARITY.md "Performance: replaced").
 - **Waiting-input patterns** (TRM-042): `Yes/No`, `[y/N]`, `[Y/n]`, `(y/n)`,
   `Allow?`, `Approve?`, `Continue?`, `Proceed?`, `Permission`, `> `, `? `,
   `Enter your`, `Type your`, `waiting for` (case-insensitive, only while an AI

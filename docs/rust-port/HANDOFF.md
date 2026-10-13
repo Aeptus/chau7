@@ -31,7 +31,22 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
-- Current local checkpoint source `07098279` passed all nine compiler/package
+- Current implementation follow-up adds hover suspension status, Unix SIGINT
+  helper shutdown and in-memory token-rate export through Perf JSON/MCP, and
+  synchronizes the Swift file-watch test before replacement. The current
+  inventory has 1,273 done and 36 n/a rows; combined validation is pending.
+- Latest validated source c6ccad2e passed nine compiler/package stages, 3,042
+  Rust tests (two ignored), seven focused tests and ten quality gates. One
+  initial Swift FileMonitor timeout is retained; all 13 focused tests and the
+  full rerun passed (4,586 Swift tests, three skipped, zero failures). All 21
+  strict native rows passed. The legacy single-settings child wrapper reports
+  incomplete matrix status, while the strict aggregator separately verifies
+  each requested row. Real OS IME automation and physical acceptance remain
+  open. Normal isolated input, 1,477 numeric performance values, 16 timers,
+  Software frames 12/5 with zero failures, and graceful app/child quit passed.
+  No provider or remote device was contacted; the follow-up needs its own
+  revision-scoped validation. See the current checkpoint in PARITY.md.
+- Previous local checkpoint source `07098279` passed all nine compiler/package
   stages, 3,042 Rust tests (two ignored), seven focused feature tests and ten
   local quality gates. Swift build and tests passed: 4,586 executed, three
   skipped, zero failures. The sealed normal runtime read 1,783 finite values
