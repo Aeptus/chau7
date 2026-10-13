@@ -2343,10 +2343,19 @@ fn capture_print_snapshot(
                 .iter()
                 .filter(|px| px[0] == 7 && px[1] == 8 && px[2] == 9 && px[3] == 255)
                 .count();
-            ensure(
-                nontransparent_pixels > 0 && styled_background_pixels > 0,
-                "print snapshot lost rendered content or restored ANSI background RGB",
-            )?;
+            let styled_foreground_pixels = rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|px| px[0] == 12 && px[1] == 34 && px[2] == 56 && px[3] == 255)
+                .count();
+            if nontransparent_pixels == 0 || styled_background_pixels == 0 {
+                return Err(format!(
+                    "print snapshot lost rendered content or restored ANSI background RGB; \
+                     nontransparent_pixels={nontransparent_pixels}, ANSI background [7, 8, 9] pixels={styled_background_pixels}, \
+                     ANSI foreground [12, 34, 56] pixels={styled_foreground_pixels}"
+                ));
+            }
             Ok(serde_json::json!({
                 "png_bytes": bitmap.png.len(),
                 "point_size": bitmap.point_size,
@@ -2355,6 +2364,8 @@ fn capture_print_snapshot(
                 "nontransparent_pixels": nontransparent_pixels,
                 "expected_ansi_background_rgb": [7, 8, 9],
                 "expected_ansi_background_pixel_count": styled_background_pixels,
+                "expected_ansi_foreground_rgb": [12, 34, 56],
+                "expected_ansi_foreground_pixel_count": styled_foreground_pixels,
                 "displayed_cpu_cache_bytes_before": cache_before,
                 "displayed_cpu_cache_bytes_after": cache_after,
                 "print_panel_opened": false,
@@ -2412,6 +2423,15 @@ async fn verify_retention(
     let before = cx.update(|cx| ordinary.read(cx).buffer_text());
     let styled_cells_before =
         cx.update(|cx| ordinary.read(cx).with_terminal(styled_scrollback_sample))?;
+    // Let the production poll/refresh path publish the raw terminal scroll to
+    // the cached grid that print_snapshot actually paints.
+    wait_until(cx, "cached styled scrollback viewport for print", |cx| {
+        let grid = &ordinary.read(cx).grid;
+        grid.scrollback_rows > 0
+            && grid.display_offset == grid.scrollback_rows
+            && grid.cells.iter().any(|cell| cell.bg == (7, 8, 9))
+    })
+    .await?;
     // Snapshot this real selected view at the retained styled marker. Decode
     // the production PNG and check its exact ANSI background RGB, without
     // opening or submitting an NSPrintOperation.

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Await the production cached scrollback grid before native print
+  acceptance, retaining exact ANSI color checks and pixel diagnostics.
 - Start the production repository registry in isolated native Restore
   acceptance and drain its writes before removing the fixture profile.
 - Validate restored split metadata through real branch changes in owned
