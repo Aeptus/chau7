@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import plistlib
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -56,6 +57,14 @@ class NativeParityArgumentTests(unittest.TestCase):
             NATIVE_PARITY.argument_parser().parse_args(["--case", "keyboard"]).case,
             "keyboard",
         )
+
+    def test_only_restore_and_keyboard_use_launchservices(self):
+        for case in ("restore", "keyboard"):
+            with self.subTest(case=case):
+                self.assertTrue(NATIVE_PARITY.launch_services_for(case))
+        for case in ("settings", "editor", "cache", "accessibility"):
+            with self.subTest(case=case):
+                self.assertFalse(NATIVE_PARITY.launch_services_for(case))
 
     def test_parser_rejects_unknown_cases(self):
         with self.assertRaises(SystemExit):
@@ -480,6 +489,7 @@ class NativeLaunchServicesCaptureTests(unittest.TestCase):
         evidence = parent / "evidence"
         evidence.mkdir(mode=0o700)
         record = {
+            "case": "restore",
             "owned_bundle_root": str(root.resolve(strict=True)),
             "owned_bundle": str(bundle.resolve(strict=True)),
             "owned_bundle_removed": False,
@@ -547,6 +557,20 @@ class NativeLaunchServicesCaptureTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b"untouched")
             self.assertTrue(root.is_dir())
             self.assertFalse((evidence / "restore.stdout").exists())
+
+    def test_keyboard_bundle_can_archive_only_the_existing_guarded_restore_capture_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, evidence, record, captures = self.make_fixture(directory)
+            record["case"] = "keyboard"
+            captures["stdout"].write_bytes(b"keyboard fixture stdout")
+            captures["stderr"].write_bytes(b"keyboard fixture stderr")
+            record["application_pid_verified"] = True
+            record["application_process_gone"] = True
+            NATIVE_PARITY.archive_and_remove_owned_restore_bundle(record, root, evidence)
+            self.assertEqual((evidence / "restore.stdout").read_bytes(), b"keyboard fixture stdout")
+            self.assertEqual((evidence / "restore.stderr").read_bytes(), b"keyboard fixture stderr")
+            self.assertTrue(record["launch_services_captures_archived"])
+            self.assertTrue(record["owned_bundle_removed"])
 
     def test_archive_refuses_existing_symlink_destination(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -647,9 +671,168 @@ class NativeOwnedActivationRequestTests(unittest.TestCase):
                 open_bundle.assert_not_called()
 
 
+class NativeKeyboardInitialOpenTests(unittest.TestCase):
+    def test_initial_open_observes_the_exact_staged_executable_without_ack_handshakes(self):
+        class PollingProcess:
+            def __init__(self):
+                self.values = iter((None, None, 0))
+
+            def poll(self):
+                return next(self.values)
+
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / "Owned Fixture.app"
+            executable = bundle / "Contents" / "MacOS" / "chau7-next"
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"owned fixture executable")
+            process = PollingProcess()
+            record = {}
+            with (
+                mock.patch.object(
+                    NATIVE_PARITY,
+                    "owned_executable_pids",
+                    side_effect=[[1234], [1234]],
+                ) as owned_pids,
+                mock.patch.object(NATIVE_PARITY.time, "sleep"),
+            ):
+                NATIVE_PARITY.wait_owned_keyboard_fixture(process, record, bundle)
+            expected = executable.resolve(strict=True)
+            self.assertEqual(owned_pids.call_count, 2)
+            self.assertEqual(owned_pids.call_args_list[0].args[0], expected)
+            self.assertEqual(owned_pids.call_args_list[1].args[0], expected)
+            self.assertEqual(record["application_process_id_observed"], 1234)
+            self.assertTrue(record["application_pid_observed_exact_executable"])
+            self.assertEqual(record["application_executable_path"], str(expected))
+            self.assertEqual(record["exit_code"], 0)
+            self.assertNotIn("activation_request", record)
+            self.assertNotIn("ordered_front_activation_request", record)
+
+    def test_initial_open_exit_observed_at_deadline_is_a_timeout(self):
+        process = mock.Mock(spec=["poll"])
+        process.poll.return_value = 0
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / "Owned Fixture.app"
+            executable = bundle / "Contents" / "MacOS" / "chau7-next"
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"owned fixture executable")
+            with (
+                mock.patch.object(NATIVE_PARITY.time, "monotonic", side_effect=[0.0, 75.0]),
+                mock.patch.object(NATIVE_PARITY, "owned_executable_pids") as owned_pids,
+            ):
+                record = {}
+                result = NATIVE_PARITY.wait_owned_keyboard_fixture(process, record, bundle)
+            self.assertIsNone(result)
+            self.assertTrue(record["timed_out"])
+            self.assertIsNone(record["exit_code"])
+            owned_pids.assert_not_called()
+            self.assertFalse(hasattr(process, "terminate"))
+            self.assertFalse(hasattr(process, "kill"))
+
+    def test_initial_open_rejects_a_changed_application_pid(self):
+        class RunningProcess:
+            def poll(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / "Owned Fixture.app"
+            executable = bundle / "Contents" / "MacOS" / "chau7-next"
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"owned fixture executable")
+            with (
+                mock.patch.object(
+                    NATIVE_PARITY,
+                    "owned_executable_pids",
+                    side_effect=[[1234], [5678]],
+                ),
+                mock.patch.object(NATIVE_PARITY.time, "sleep"),
+                self.assertRaisesRegex(RuntimeError, "PID changed"),
+            ):
+                NATIVE_PARITY.wait_owned_keyboard_fixture(RunningProcess(), {}, bundle)
+
+    def test_pid_scan_timeout_expired_retries_without_termination_methods(self):
+        process = mock.Mock(spec=["poll"])
+        process.poll.side_effect = [None, None, 0]
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / "Owned Fixture.app"
+            executable = bundle / "Contents" / "MacOS" / "chau7-next"
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"owned fixture executable")
+            with (
+                mock.patch.object(
+                    NATIVE_PARITY,
+                    "owned_executable_pids",
+                    side_effect=[
+                        subprocess.TimeoutExpired(cmd=["/bin/ps"], timeout=5),
+                        [1234],
+                    ],
+                ) as owned_pids,
+                mock.patch.object(NATIVE_PARITY.time, "monotonic", return_value=0.0),
+                mock.patch.object(NATIVE_PARITY.time, "sleep"),
+            ):
+                record = {}
+                NATIVE_PARITY.wait_owned_keyboard_fixture(process, record, bundle)
+            self.assertEqual(owned_pids.call_count, 2)
+            self.assertEqual(record["application_pid_scan_timeouts"], 1)
+            self.assertEqual(record["application_process_id_observed"], 1234)
+            self.assertTrue(record["application_pid_observed_exact_executable"])
+            self.assertEqual(record["exit_code"], 0)
+            self.assertFalse(record.get("timed_out", False))
+            self.assertFalse(hasattr(process, "terminate"))
+            self.assertFalse(hasattr(process, "kill"))
+
+    def test_pid_scan_timeout_expired_at_outer_deadline_preserves_timeout_metadata(self):
+        process = mock.Mock(spec=["poll"])
+        process.poll.return_value = None
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / "Owned Fixture.app"
+            executable = bundle / "Contents" / "MacOS" / "chau7-next"
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"owned fixture executable")
+            with (
+                mock.patch.object(
+                    NATIVE_PARITY,
+                    "owned_executable_pids",
+                    side_effect=subprocess.TimeoutExpired(cmd=["/bin/ps"], timeout=5),
+                ) as owned_pids,
+                mock.patch.object(
+                    NATIVE_PARITY.time,
+                    "monotonic",
+                    side_effect=[0.0, 74.0, 74.0, 75.0],
+                ),
+                mock.patch.object(NATIVE_PARITY.time, "sleep") as sleep,
+            ):
+                record = {}
+                NATIVE_PARITY.wait_owned_keyboard_fixture(process, record, bundle)
+            self.assertEqual(owned_pids.call_count, 1)
+            self.assertEqual(owned_pids.call_args.args[1], 75.0)
+            self.assertEqual(record["application_pid_scan_timeouts"], 1)
+            self.assertTrue(record["timed_out"])
+            self.assertIsNone(record["exit_code"])
+            sleep.assert_not_called()
+            self.assertFalse(hasattr(process, "terminate"))
+            self.assertFalse(hasattr(process, "kill"))
+
+    def test_initial_open_rejects_multiple_exact_bundle_processes(self):
+        class RunningProcess:
+            def poll(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / "Owned Fixture.app"
+            executable = bundle / "Contents" / "MacOS" / "chau7-next"
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"owned fixture executable")
+            with (
+                mock.patch.object(NATIVE_PARITY, "owned_executable_pids", return_value=[1234, 5678]),
+                self.assertRaisesRegex(RuntimeError, "multiple application PIDs"),
+            ):
+                NATIVE_PARITY.wait_owned_keyboard_fixture(RunningProcess(), {}, bundle)
+
+
 class NativeParityResultTests(unittest.TestCase):
     def passing_record(self, launch_services):
         return {
+            "case": "restore" if launch_services else "settings",
             "launch_services": launch_services,
             "timed_out": False,
             "exit_code": 0,
@@ -661,6 +844,12 @@ class NativeParityResultTests(unittest.TestCase):
             "owned_home_removed": True,
             "application_pid_verified": True,
             "application_process_gone": True,
+            "launcher_process_id": 50 if launch_services else None,
+            "process_id": 60,
+            "application_process_id": 60,
+            "launch_services_captures_archived": True if launch_services else None,
+            "owned_bundle_removed": True if launch_services else None,
+            "launch_services_initial_open_passed": False,
             "ordered_front_activation_request_passed": False,
             "activation_request_passed": False,
         }
@@ -679,6 +868,35 @@ class NativeParityResultTests(unittest.TestCase):
                         NATIVE_PARITY.case_passed(record),
                         ordered_front_passed and deminiaturized_passed,
                     )
+
+    def test_keyboard_initial_open_passes_without_restore_acknowledgements(self):
+        record = self.passing_record(launch_services=True)
+        record.update(
+            case="keyboard",
+            launch_services_initial_open_passed=True,
+        )
+        self.assertTrue(NATIVE_PARITY.case_passed(record))
+
+    def test_keyboard_launchservices_rejects_launcher_pid_as_application_pid(self):
+        record = self.passing_record(launch_services=True)
+        record.update(
+            case="keyboard",
+            launch_services_initial_open_passed=True,
+            launcher_process_id=60,
+        )
+        self.assertFalse(NATIVE_PARITY.case_passed(record))
+
+    def test_keyboard_launchservices_requires_initial_open_and_retirement(self):
+        for field, invalid in (
+            ("launch_services_initial_open_passed", False),
+            ("launch_services_captures_archived", False),
+            ("owned_bundle_removed", False),
+        ):
+            with self.subTest(field=field):
+                record = self.passing_record(launch_services=True)
+                record.update(case="keyboard", launch_services_initial_open_passed=True)
+                record[field] = invalid
+                self.assertFalse(NATIVE_PARITY.case_passed(record))
 
     def test_direct_fixture_result_does_not_require_activation_requests(self):
         record = self.passing_record(launch_services=False)

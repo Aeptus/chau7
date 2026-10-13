@@ -30,7 +30,9 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def prepare_restore_bundle(binary, record, evidence):
+def prepare_restore_bundle(binary, record, evidence, case="restore"):
+    if case not in LAUNCH_SERVICES_CASES:
+        raise ValueError("unsupported owned LaunchServices fixture case")
     # A fresh identity gives this owned acceptance process normal AppKit
     # LaunchServices activation without changing production packaging.
     nonce = uuid.uuid4().hex
@@ -61,7 +63,7 @@ def prepare_restore_bundle(binary, record, evidence):
     }
     with (bundle / "Contents" / "Info.plist").open("xb") as plist:
         plistlib.dump(info, plist)
-    with (evidence / "restore.codesign.log").open("x") as log:
+    with (evidence / f"{case}.codesign.log").open("x") as log:
         subprocess.run(
             ["/usr/bin/codesign", "--force", "--sign", "-", str(bundle)],
             stdout=log,
@@ -79,9 +81,12 @@ def prepare_restore_bundle(binary, record, evidence):
 
 
 RESTORE_CAPTURE_NAMES = {"stdout": "restore.stdout", "stderr": "restore.stderr"}
+LAUNCH_SERVICES_CASES = frozenset(("restore", "keyboard"))
 
 
 def owned_restore_bundle_root(record, bundle_root):
+    if record.get("case") not in LAUNCH_SERVICES_CASES:
+        raise ValueError("owned LaunchServices bundle is not bound to an allowed fixture case")
     root = Path(bundle_root)
     if root.is_symlink():
         raise ValueError("owned fixture bundle root must not be a symlink")
@@ -541,6 +546,50 @@ def wait_owned_fixture(
         time.sleep(0.05)
 
 
+def wait_owned_keyboard_fixture(process, record, bundle):
+    """Wait for one initial LaunchServices open; keyboard emits no activation ACKs."""
+    deadline = time.monotonic() + 75
+    executable = (Path(bundle).resolve(strict=True) / "Contents" / "MacOS" / "chau7-next").resolve(strict=True)
+    record["application_executable_path"] = str(executable)
+    observed_pid = None
+    scan_timeouts = 0
+    while True:
+        exit_code = process.poll()
+        if exit_code is not None:
+            if time.monotonic() >= deadline:
+                record["timed_out"] = True
+                record["exit_code"] = None
+                return None
+            record["exit_code"] = exit_code
+            return exit_code
+        if time.monotonic() >= deadline:
+            # Preserve uncertain fixture state; never terminate on an acceptance timeout.
+            record["timed_out"] = True
+            record["exit_code"] = None
+            return None
+        scan_deadline = min(deadline, time.monotonic() + 5)
+        try:
+            exact_pids = owned_executable_pids(executable, scan_deadline)
+        except (TimeoutError, subprocess.TimeoutExpired):
+            scan_timeouts += 1
+            record["application_pid_scan_timeouts"] = scan_timeouts
+            if time.monotonic() >= deadline:
+                record["timed_out"] = True
+                record["exit_code"] = None
+                return None
+            time.sleep(0.05)
+            continue
+        if len(exact_pids) > 1:
+            raise RuntimeError("keyboard LaunchServices bundle resolved to multiple application PIDs")
+        if exact_pids:
+            if observed_pid is not None and exact_pids != [observed_pid]:
+                raise RuntimeError("keyboard LaunchServices application PID changed during initial open")
+            observed_pid = exact_pids[0]
+            record["application_process_id_observed"] = observed_pid
+            record["application_pid_observed_exact_executable"] = True
+        time.sleep(0.05)
+
+
 def _pid_executable_path(pid):
     library = ctypes.CDLL("/usr/lib/libproc.dylib")
     proc_pidpath = library.proc_pidpath
@@ -573,7 +622,7 @@ def application_gone(pid):
 
 def case_passed(record):
     outcome = record.get("outcome") or {}
-    return (
+    base = (
         not record.get("timed_out", False)
         and record.get("exit_code") == 0
         and outcome.get("passed") is True
@@ -582,18 +631,34 @@ def case_passed(record):
         and record.get("owned_home_removed") is True
         and record.get("application_pid_verified") is True
         and record.get("application_process_gone") is True
-        and (
-            not record.get("launch_services")
-            or (
-                record.get("ordered_front_activation_request_passed") is True
-                and record.get("activation_request_passed") is True
-            )
-        )
     )
+    if not base or not record.get("launch_services"):
+        return base
+    if (
+        record.get("launcher_process_id") == record.get("process_id")
+        or not valid_pid(record.get("launcher_process_id"))
+        or not valid_pid(record.get("application_process_id"))
+        or record.get("application_process_id") != record.get("process_id")
+        or record.get("launch_services_captures_archived") is not True
+        or record.get("owned_bundle_removed") is not True
+    ):
+        return False
+    if record.get("case") == "restore":
+        return (
+            record.get("ordered_front_activation_request_passed") is True
+            and record.get("activation_request_passed") is True
+        )
+    if record.get("case") == "keyboard":
+        return record.get("launch_services_initial_open_passed") is True
+    return False
 
 
 def cases_for(case):
     return ("restore", "settings", "editor", "cache") if case == "all" else (case,)
+
+
+def launch_services_for(case):
+    return case in LAUNCH_SERVICES_CASES
 
 
 def fixture_locale_for(case, locales):
@@ -1201,9 +1266,12 @@ def main():
         )
         if case == "settings" and args.settings_locale:
             child_environment["CHAU7_NEXT_NATIVE_SETTINGS_LANGUAGE"] = args.settings_locale
+        if case == "keyboard":
+            child_environment["HOME"] = str(home)
+            child_environment["ZDOTDIR"] = str(home)
         stdout_path = evidence / f"{case}.stdout"
         stderr_path = evidence / f"{case}.stderr"
-        launch_services = case == "restore"
+        launch_services = launch_services_for(case)
         record = {
             "case": case,
             "fixture_locale": fixture_locale if case == "accessibility" else None,
@@ -1212,6 +1280,15 @@ def main():
             "timed_out": False,
             "owned_home": str(home),
             "launch_services": launch_services,
+            "launch_strategy": (
+                "unique_signed_fixture_bundle_initial_open"
+                if case == "keyboard"
+                else "unique_signed_fixture_bundle_restoration"
+                if case == "restore"
+                else None
+            ),
+            "launch_services_initial_open_passed": False if case == "keyboard" else None,
+            "application_pid_observed_exact_executable": False if case == "keyboard" else None,
             "exit_code_basis": ("launch_services_waiter" if launch_services else "application_process"),
             "application_exit_code": None,
             "original_binary_sha256": manifest["binary_sha256"],
@@ -1226,7 +1303,7 @@ def main():
         fixture_stderr_path = stderr_path
         try:
             if launch_services:
-                bundle_root, bundle = prepare_restore_bundle(binary, record, evidence)
+                bundle_root, bundle = prepare_restore_bundle(binary, record, evidence, case)
                 fixture_stdout_path = create_owned_restore_capture(record, bundle_root, RESTORE_CAPTURE_NAMES["stdout"])
                 fixture_stderr_path = create_owned_restore_capture(record, bundle_root, RESTORE_CAPTURE_NAMES["stderr"])
                 record["launch_services_capture_paths"] = {
@@ -1234,8 +1311,8 @@ def main():
                     "stderr": str(fixture_stderr_path),
                 }
                 record["launch_services_capture_archive_paths"] = {
-                    "stdout": str(stdout_path),
-                    "stderr": str(stderr_path),
+                    "stdout": str(evidence / RESTORE_CAPTURE_NAMES["stdout"]),
+                    "stderr": str(evidence / RESTORE_CAPTURE_NAMES["stderr"]),
                 }
                 record["launch_services_captures_archived"] = False
                 command = [
@@ -1247,12 +1324,13 @@ def main():
                     "--stderr",
                     str(fixture_stderr_path),
                 ]
-                for name in (
+                environment_names = (("HOME", "ZDOTDIR") if case == "keyboard" else ()) + (
                     "CHAU7_NEXT_NATIVE_PARITY_FIXTURE",
                     "CHAU7_NEXT_ISOLATED_TEST_MODE",
                     "CHAU7_NEXT_HOME_ROOT",
                     "HISTFILE",
-                ):
+                )
+                for name in environment_names:
                     command.extend(["--env", name + "=" + child_environment[name]])
                 command.extend(
                     [
@@ -1264,8 +1342,8 @@ def main():
                         args.window_renderer,
                     ]
                 )
-                process_stdout = evidence / "restore.launcher.stdout"
-                process_stderr = evidence / "restore.launcher.stderr"
+                process_stdout = evidence / f"{case}.launcher.stdout"
+                process_stderr = evidence / f"{case}.launcher.stderr"
             else:
                 command = [
                     str(binary),
@@ -1290,7 +1368,7 @@ def main():
                 record["launcher_process_id"] = process.pid if launch_services else None
                 record["direct_process_id"] = None if launch_services else process.pid
                 (evidence / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-                if launch_services:
+                if case == "restore":
                     wait_owned_fixture(
                         process,
                         record,
@@ -1300,6 +1378,8 @@ def main():
                         child_environment,
                         args.window_renderer,
                     )
+                elif case == "keyboard":
+                    wait_owned_keyboard_fixture(process, record, bundle)
                 else:
                     try:
                         record["exit_code"] = process.wait(timeout=75)
@@ -1313,9 +1393,34 @@ def main():
             outcome_pid = (record["outcome"] or {}).get("pid")
             record["application_process_id"] = outcome_pid
             record["process_id"] = outcome_pid if launch_services else process.pid
-            record["application_pid_verified"] = valid_pid(outcome_pid) and (
-                launch_services or outcome_pid == process.pid
+            expected_executable = (
+                (Path(record["owned_bundle"]) / "Contents" / "MacOS" / "chau7-next") if launch_services else None
             )
+            if case == "keyboard" and launch_services:
+                record["application_pid_verified"] = (
+                    valid_pid(outcome_pid)
+                    and outcome_pid == record.get("application_process_id_observed")
+                    and record.get("application_pid_observed_exact_executable") is True
+                    and record.get("application_executable_path") == str(expected_executable)
+                )
+                record["launch_services_initial_open_passed"] = (
+                    record.get("exit_code") == 0 and record["application_pid_verified"]
+                )
+            elif case == "restore" and launch_services:
+                ordered = record.get("ordered_front_activation_handshake") or {}
+                activation = record.get("activation_handshake") or {}
+                record["application_pid_verified"] = (
+                    valid_pid(outcome_pid)
+                    and ordered.get("pid") == outcome_pid
+                    and activation.get("pid") == outcome_pid
+                    and ordered.get("bundle_path") == record.get("owned_bundle")
+                    and activation.get("bundle_path") == record.get("owned_bundle")
+                    and record.get("ordered_front_activation_request_passed") is True
+                    and record.get("activation_request_passed") is True
+                )
+                record["application_executable_path"] = str(expected_executable)
+            else:
+                record["application_pid_verified"] = valid_pid(outcome_pid) and outcome_pid == process.pid
             gone = False
             if record["application_pid_verified"] and not record["timed_out"]:
                 deadline = time.monotonic() + 5
@@ -1326,10 +1431,10 @@ def main():
                     time.sleep(0.05)
             record["application_process_gone"] = gone
             record["owned_home_removed"] = not home.exists()
-            record["passed"] = case_passed(record)
             if bundle_root is not None and gone and not record["timed_out"]:
                 archive_and_remove_owned_restore_bundle(record, bundle_root, evidence)
-        except (OSError, subprocess.CalledProcessError, ValueError) as error:
+            record["passed"] = case_passed(record)
+        except (OSError, subprocess.CalledProcessError, RuntimeError, ValueError) as error:
             record["passed"] = False
             record["error"] = str(error)
             record["owned_home_removed"] = not home.exists()
