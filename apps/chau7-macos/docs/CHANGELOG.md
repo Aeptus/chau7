@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Validation
 
+- Source `7c7a3e0c9f78d0272f85c2c1ae8fb42edfc9938b` passed separate
+  ten-gate full quality and 3,023 Rust workspace tests (two ignored). Normal
+  and native-feature strict Clippy rejected two explicit early-return blocks
+  in the deferred MCP read paths. Formatting and build/installer contracts
+  passed; the sequence stopped before packaging or app launch. The follow-up
+  uses equivalent Option propagation without warning suppressions. Fresh
+  compiler and runtime validation remains pending.
+
 
 - Exact source `baf03cb83fdc6925849e82e9345a4c443929339f` passed all nine
   compiler/package stages, separate ten-gate full quality, 3,019 workspace

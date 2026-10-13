@@ -644,9 +644,7 @@ pub(crate) fn status(tab_id: &str, ctx: &ToolContext) -> String {
         let ws = tab.window.workspace.read(cx);
         let mut summary = ws.mcp_summary(tab.tab, cx);
         let Some(session) = ws.mcp_session(tab.tab, cx) else {
-            if ws.mcp_deferred_saved(tab.tab, cx).is_none() {
-                return None;
-            }
+            ws.mcp_deferred_saved(tab.tab, cx)?;
             add_deferred_status_fields(&mut summary);
             return Some((summary, None));
         };

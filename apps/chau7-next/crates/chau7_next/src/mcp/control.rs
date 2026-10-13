@@ -151,9 +151,7 @@ fn snapshot_on_main(tab_id: &str, owner: &str, cx: &mut App) -> Option<Map<Strin
     let tab = find_tab(tab_id, cx)?;
     let ws = tab.window.workspace.read(cx);
     let Some(session) = ws.mcp_session(tab.tab, cx) else {
-        if ws.mcp_deferred_saved(tab.tab, cx).is_none() {
-            return None;
-        }
+        ws.mcp_deferred_saved(tab.tab, cx)?;
         return Some(deferred_status_projection(
             ws.mcp_readiness_summary(tab.tab, cx),
         ));
