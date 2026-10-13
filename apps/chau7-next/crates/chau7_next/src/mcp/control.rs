@@ -117,12 +117,47 @@ pub fn forget_closed_tab(tab_id: &str) {
         state.pending_commands.retain(|(tab, _)| *tab != uuid);
     }
 }
+/// Projects a parked restored tab as known-but-unavailable, without creating
+/// a terminal or granting the caller mutation authority.
+fn deferred_status_projection(mut out: Map<String, Value>) -> Map<String, Value> {
+    let terminal = Readiness::evaluate(&ExecutionSnapshot {
+        shell_loading: true,
+        at_prompt: false,
+        has_view: false,
+        status: "unknown".into(),
+        approval_pending: false,
+    });
+    out.insert("restore_state".into(), json!("deferred"));
+    out.insert("status".into(), json!("unknown"));
+    out.insert("is_at_prompt".into(), false.into());
+    out.insert("is_mcp_controlled".into(), false.into());
+    out.insert("shell_loading".into(), true.into());
+    out.insert("has_terminal_view".into(), false.into());
+    out.insert("command_approval_pending".into(), false.into());
+    out.insert("mcp_mutation_allowed".into(), false.into());
+    out.insert("mcp_control_required".into(), true.into());
+    out.insert(
+        "terminal_can_accept_exec".into(),
+        terminal.can_accept.into(),
+    );
+    out.insert("terminal_ready_for_exec".into(), terminal.ready.into());
+    terminal.project(false).insert(&mut out);
+    out
+}
+
 /// Lightweight readiness snapshot; wait_ready never samples process CPU or
 /// reads the scrollback on each poll.
 fn snapshot_on_main(tab_id: &str, owner: &str, cx: &mut App) -> Option<Map<String, Value>> {
     let tab = find_tab(tab_id, cx)?;
     let ws = tab.window.workspace.read(cx);
-    let session = ws.mcp_session(tab.tab, cx)?;
+    let Some(session) = ws.mcp_session(tab.tab, cx) else {
+        if ws.mcp_deferred_saved(tab.tab, cx).is_none() {
+            return None;
+        }
+        return Some(deferred_status_projection(
+            ws.mcp_readiness_summary(tab.tab, cx),
+        ));
+    };
     let session = session.read(cx);
     let uuid = parse_tab_id(tab_id)?;
     let mut out = ws.mcp_readiness_summary(tab.tab, cx);
@@ -713,5 +748,38 @@ mod tests {
                     .is_some()
             );
         }
+    }
+
+    #[test]
+    fn deferred_status_projection_forces_read_only_blocked_state() {
+        let base = json!({
+            "tab_id": "parked-uuid",
+            "title": "Restored",
+            "status": "idle",
+            "cwd": "/tmp/project",
+            "is_at_prompt": true,
+            "is_mcp_controlled": true
+        });
+        let projected = deferred_status_projection(base.as_object().unwrap().clone());
+
+        assert_eq!(projected["tab_id"], "parked-uuid");
+        assert_eq!(projected["cwd"], "/tmp/project");
+        assert_eq!(projected["status"], "unknown");
+        assert_eq!(projected["is_at_prompt"], false);
+        assert_eq!(projected["is_mcp_controlled"], false);
+        assert_eq!(projected["restore_state"], "deferred");
+        assert_eq!(projected["shell_loading"], true);
+        assert_eq!(projected["has_terminal_view"], false);
+        assert_eq!(projected["command_approval_pending"], false);
+        assert_eq!(projected["mcp_mutation_allowed"], false);
+        assert_eq!(projected["mcp_control_required"], true);
+
+        // The parked terminal is queued underneath, while this MCP caller is blocked.
+        assert_eq!(projected["terminal_can_accept_exec"], true);
+        assert_eq!(projected["terminal_ready_for_exec"], false);
+        assert_eq!(projected["can_accept_exec"], false);
+        assert_eq!(projected["ready_for_exec"], false);
+        assert_eq!(projected["exec_acceptance_mode"], "blocked");
+        assert_eq!(projected["readiness_reason"], "mcp_control_required");
     }
 }

@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use super::{AppData, Workspace};
 use crate::pane::PaneTree;
+use crate::session_store::SavedTab;
 use crate::tab_bar::TabId;
 use crate::terminal::session::TerminalSession;
 
@@ -65,6 +66,14 @@ impl Workspace {
         self.entries.get(&id).map(|e| e.panes.clone())
     }
 
+    /// Saved data for a restored tab whose pane tree is still parked. This is
+    /// metadata-only; callers must not use it to construct a terminal session.
+    pub(crate) fn mcp_deferred_saved(&self, id: TabId, cx: &App) -> Option<SavedTab> {
+        self.entries
+            .get(&id)
+            .and_then(|entry| entry.panes.read(cx).deferred_saved().cloned())
+    }
+
     /// The session shown for the tab (`displaySession ?? session`): the
     /// focused pane.
     pub(crate) fn mcp_session(&self, id: TabId, cx: &App) -> Option<Entity<TerminalSession>> {
@@ -99,28 +108,53 @@ impl Workspace {
         };
         let session = self.mcp_session(id, cx);
         let session = session.as_ref().map(|s| s.read(cx));
+        let deferred_saved = if session.is_none() {
+            self.mcp_deferred_saved(id, cx)
+        } else {
+            None
+        };
         let mode = token_optimization_mode(cx);
         let is_ai = session.is_some_and(|s| s.is_ai_running());
         out.insert("tab_id".into(), json!(uuid_string(meta.uuid)));
         out.insert("title".into(), json!(self.tab_title(id, cx)));
         // The AI CLI's history state wins over the shell's (`effectiveStatus`,
         // `effectiveIsAtPrompt`).
-        let statuses = crate::history::monitor::session_statuses(cx);
+        let statuses = if session.is_some() {
+            crate::history::monitor::session_statuses(cx)
+        } else {
+            Vec::new()
+        };
         let effective = session.map(|s| effective_state(s, &statuses));
         let status = effective.map(|(st, _)| st.as_str()).unwrap_or("unknown");
         out.insert("status".into(), json!(status));
-        out.insert(
-            "cwd".into(),
-            json!(
-                session
-                    .and_then(|s| s.cwd.as_ref())
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .unwrap_or_default()
-            ),
-        );
+        let cwd = session
+            .and_then(|s| s.cwd.as_ref())
+            .map(|p| p.to_string_lossy().into_owned())
+            .or_else(|| {
+                deferred_saved.as_ref().and_then(|saved| {
+                    saved
+                        .focused_terminal()
+                        .and_then(|pane| pane.directory.clone())
+                        .filter(|path| !path.trim().is_empty())
+                        .or_else(|| {
+                            saved
+                                .cwd
+                                .as_ref()
+                                .map(|path| path.to_string_lossy().into_owned())
+                        })
+                })
+            })
+            .unwrap_or_default();
+        out.insert("cwd".into(), json!(cwd));
+        if deferred_saved.is_some() {
+            out.insert("restore_state".into(), json!("deferred"));
+        }
         let at_prompt = effective.is_some_and(|(_, p)| p);
         out.insert("is_at_prompt".into(), json!(at_prompt));
-        out.insert("is_mcp_controlled".into(), json!(meta.mcp_controlled));
+        out.insert(
+            "is_mcp_controlled".into(),
+            json!(deferred_saved.is_none() && meta.mcp_controlled),
+        );
         out.insert(
             "cto_active".into(),
             json!(should_be_active(mode, meta.token_opt_override, is_ai)),

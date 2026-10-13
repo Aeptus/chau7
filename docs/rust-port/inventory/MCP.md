@@ -59,7 +59,7 @@ Chau7 runs an MCP server on a Unix socket so AI agents (Claude Code, Codex, Curs
 | MCP-046 | "Enable MCP" setting (default on): when off, `tab_create` (and new-tab runtime sessions) are refused; the server still runs | `MCP/TerminalControlService.swift`, `Settings/Views/MCPSettingsView.swift` |  | `chau7_next/src/mcp/tools/tabs.rs`, `chau7_next/src/settings/mcp.rs`, `chau7_next/src/settings_window/mcp.rs` | done |  |
 | MCP-047 | "Require Approval" setting (default off): Allow/Deny dialog before an agent opens a tab | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/approval.rs`, `chau7_next/src/settings/mcp.rs`, `chau7_next/src/settings_window/mcp.rs` | done | NSAlert |
 | MCP-048 | MCP tab limit setting (default 4, hard max 50), counted per window over MCP-created tabs | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/tools/tabs.rs`, `chau7_next/src/settings/mcp.rs`, `chau7_next/src/settings_window/mcp.rs` | done |  |
-| MCP-049 | MCP-created tabs stay attached to a live terminal even when far from the selected tab (not render-suspended) so agents can read them | `Overlay/OverlayTabsModel.swift` |  | `chau7_next/src/terminal/session.rs` | done |  |
+| MCP-049 | MCP ownership does not pin non-selected views: tabs stay warm without memory pressure and may become hidden under pressure when render suspension is enabled; PTYs keep draining and MCP reads materialized session state | `Overlay/OverlayTabsModel+RenderSuspension.swift`, `Chau7Core/TabRenderLifecycle.swift` | `OverlayTabsModelTests.testRenderSuspensionSuspendsBackgroundTabsOnlyUnderMemoryPressure` | `chau7_next/src/terminal/session.rs`, `chau7_next/src/mcp/tools/tabs.rs` | done |  |
 | MCP-050 | "Show Tab Indicator" setting (default on) | `Settings/Views/MCPSettingsView.swift` |  | chau7_next/src/settings/mcp.rs; chau7_next/src/settings_window/mcp.rs; chau7_next/src/workspace/tab_bar_view.rs | done |  |
 | MCP-051 | Stable `window_id` per window (0, 1, 2...) that does not shift when a window closes; tab lookups search all windows | `MCP/TerminalControlService.swift` | `TerminalControlServiceTests` | `chau7_next/src/mcp/windows.rs` | done |  |
 | MCP-052 | MCP actions are logged (tab created, exec, input, key press, close, blocked/allowed commands) | `MCP/TerminalControlService.swift` |  | `chau7_next/src/mcp/tools/tabs.rs`, `chau7_next/src/mcp/approval.rs` | done |  |
@@ -207,9 +207,13 @@ Chau7 runs an MCP server on a Unix socket so AI agents (Claude Code, Codex, Curs
   `seams.rs` register them at launch. Runs are keyed by the terminal's
   `tab_identifier` (Swift `tabIdentifier`), so `tab_get` looks up the active
   run of the tab's focused terminal.
-- MCP-049: sessions run without a view in Chau7 Next (PTY and emulator live
-  in `TerminalSession`), Suspend Background Rendering only slows the grid
-  copy, and MCP reads the emulator, so background MCP tabs always work.
+- MCP-049: Once a session is materialized, Chau7 Next keeps its PTY/grid in
+  `TerminalSession` independently of native view attachment, so MCP can read
+  session state. Swift applies its ordinary render lifecycle regardless of MCP
+  ownership: non-selected tabs stay `.warm` normally and may become `.hidden`
+  under memory pressure when render suspension is enabled; PTYs continue
+  draining. Parked deferred restores have no session yet and need a separate
+  deferred-state response from MCP status/output.
 - Settings live in config.toml `[next]`: `mcp_enabled`, `mcp_max_tabs`,
   `mcp_requires_approval`, `mcp_show_tab_indicator`, `mcp_permission_mode`
   (Swift raw values), and `mcp_allowed_commands`, `mcp_blocked_commands`,

@@ -7,8 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Read-only MCP status and buffer queries now recognize restored tabs whose
+  terminal panes remain deferred. These queries report unavailable terminal
+  state without activating the pane; mutations still require a live session
+  and explicit MCP control.
+
 ### Validation
 
+
+- Exact source `baf03cb83fdc6925849e82e9345a4c443929339f` passed all nine
+  compiler/package stages, separate ten-gate full quality, 3,019 workspace
+  tests (two ignored), all 21 isolated native outcomes, and the separate
+  keyboard fixture. Normal-package MCP input, numeric performance persistence,
+  active-child graceful quit, and all five synthetic RunData stages passed.
+  All seven PR checks passed. The normal optimized build took 39.319 seconds
+  with a warm cache; no cold-build or speed-gain claim is made.
+- An additional two-process normal-app test preserved its styled scrollback
+  sidecar unchanged after both graceful shutdowns. It exposed a read-only MCP
+  gap for existing deferred background tabs: lookup succeeded, but status and
+  buffer output required a live terminal session and reported a missing tab.
+  The follow-up recognizes those tabs without activating a shell or granting
+  control. Status preserves blocked caller readiness; buffer output is empty
+  until a terminal is attached, matching Swift. Fresh validation of this
+  correction is pending. Saved sidecar persistence does not prove second-process
+  live emulator replay. All owned test app processes have retired.
 - Source `d8a04d4944a36556bf3346390b497d11814bf402` passed five staged
   commit gates, five publication gates, ten separate full-quality gates and
   the exact optional keyboard-case unit test. Its fast workspace tests, normal

@@ -631,13 +631,25 @@ fn press_key(tab_id: &str, key: &str, modifiers: &[String], ctx: &ToolContext) -
         .unwrap_or_else(no_window)
 }
 
+pub(super) fn add_deferred_status_fields(summary: &mut Map<String, Value>) {
+    summary.insert("restore_state".into(), json!("deferred"));
+    summary.insert("shell_loading".into(), true.into());
+    summary.insert("processes".into(), Value::Array(Vec::new()));
+}
+
 pub(crate) fn status(tab_id: &str, ctx: &ToolContext) -> String {
     let id = tab_id.to_string();
     let found = ctx.main.call(move |cx| {
         let tab = find_tab(&id, cx)?;
         let ws = tab.window.workspace.read(cx);
-        let session = ws.mcp_session(tab.tab, cx)?;
         let mut summary = ws.mcp_summary(tab.tab, cx);
+        let Some(session) = ws.mcp_session(tab.tab, cx) else {
+            if ws.mcp_deferred_saved(tab.tab, cx).is_none() {
+                return None;
+            }
+            add_deferred_status_fields(&mut summary);
+            return Some((summary, None));
+        };
         let s = session.read(cx);
         summary.insert("shell_loading".into(), json!(s.is_loading()));
         let pid = if s.exited.is_some() {
@@ -645,46 +657,48 @@ pub(crate) fn status(tab_id: &str, ctx: &ToolContext) -> String {
         } else {
             s.shell_pid() as u32
         };
-        Some((summary, pid, s.tab_identifier.clone()))
+        Some((summary, Some((pid, s.tab_identifier.clone()))))
     });
     let Some(found) = found else {
         return no_window();
     };
-    let Some((mut summary, shell_pid, telemetry_key)) = found else {
+    let Some((mut summary, live)) = found else {
         return not_found(tab_id);
     };
-    // `ProcessResourceMonitor`: the shell's descendants by CPU, sampled
-    // twice for the CPU percentage.
-    let mut samples = CpuSamples::new();
-    sample_processes(shell_pid, &mut samples);
-    std::thread::sleep(Duration::from_millis(250));
-    let snapshot = sample_processes(shell_pid, &mut samples);
-    let processes: Vec<Value> = snapshot
-        .children
-        .iter()
-        .map(|p| {
-            json!({
-                "pid": p.pid,
-                "name": p.name,
-                "cpu_percent": p.cpu_percent,
-                "rss_bytes": p.rss_bytes
+    if let Some((shell_pid, telemetry_key)) = live {
+        // `ProcessResourceMonitor`: the shell's descendants by CPU, sampled
+        // twice for the CPU percentage.
+        let mut samples = CpuSamples::new();
+        sample_processes(shell_pid, &mut samples);
+        std::thread::sleep(Duration::from_millis(250));
+        let snapshot = sample_processes(shell_pid, &mut samples);
+        let processes: Vec<Value> = snapshot
+            .children
+            .iter()
+            .map(|p| {
+                json!({
+                    "pid": p.pid,
+                    "name": p.name,
+                    "cpu_percent": p.cpu_percent,
+                    "rss_bytes": p.rss_bytes
+                })
             })
-        })
-        .collect();
-    summary.insert("processes".into(), Value::Array(processes));
-    // Runs are keyed by the terminal's `tabIdentifier`, as in Swift.
-    if let Some(run) = crate::mcp::sources::telemetry().active_run_for_tab(&telemetry_key) {
-        let elapsed = (chrono::Utc::now() - run.started_at).num_milliseconds();
-        summary.insert(
-            "active_run".into(),
-            json!({
-                "run_id": run.id,
-                "provider": run.provider,
-                "started_at": run.started_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                "session_id": run.session_id,
-                "duration_so_far_ms": elapsed
-            }),
-        );
+            .collect();
+        summary.insert("processes".into(), Value::Array(processes));
+        // Runs are keyed by the terminal's `tabIdentifier`, as in Swift.
+        if let Some(run) = crate::mcp::sources::telemetry().active_run_for_tab(&telemetry_key) {
+            let elapsed = (chrono::Utc::now() - run.started_at).num_milliseconds();
+            summary.insert(
+                "active_run".into(),
+                json!({
+                    "run_id": run.id,
+                    "provider": run.provider,
+                    "started_at": run.started_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                    "session_id": run.session_id,
+                    "duration_so_far_ms": elapsed
+                }),
+            );
+        }
     }
     encode_sorted(&Value::Object(summary))
 }
@@ -734,8 +748,21 @@ pub(crate) fn close_tab(tab_id: &str, force: bool, cx: &mut App) -> String {
 /// is gone.
 fn buffer_text(tab_id: &str, cx: &mut App) -> Option<String> {
     let tab = find_tab(tab_id, cx)?;
-    let session = tab.window.workspace.read(cx).mcp_session(tab.tab, cx)?;
-    Some(session.read(cx).buffer_text())
+    let ws = tab.window.workspace.read(cx);
+    if let Some(session) = ws.mcp_session(tab.tab, cx) {
+        return Some(session.read(cx).buffer_text());
+    }
+    ws.mcp_deferred_saved(tab.tab, cx).map(|_| String::new())
+}
+
+fn encode_buffer_output(tab_id: &str, text: &str, lines: usize) -> String {
+    let (output, count) = format_buffer_output(text, lines);
+    encode_sorted(&json!({
+        "tab_id": tab_id,
+        "output": output,
+        "lines": count,
+        "source": "buffer"
+    }))
 }
 
 fn output(
@@ -772,40 +799,56 @@ fn output(
     match text {
         None => no_window(),
         Some(None) => not_found(tab_id),
-        Some(Some(text)) => {
-            let (output, count) = format_buffer_output(&text, lines);
-            encode_sorted(&json!({
-                "tab_id": tab_id,
-                "output": output,
-                "lines": count,
-                "source": "buffer"
-            }))
-        }
+        Some(Some(text)) => encode_buffer_output(tab_id, &text, lines),
     }
 }
 
 /// `source=pty_log`: the cleaned tail of the tab's last AI PTY log.
+#[derive(Debug, PartialEq, Eq)]
+enum PtyLogLookup {
+    MissingTab,
+    NoLog,
+    Path(PathBuf),
+}
+
+fn classify_pty_log_lookup(tab_found: bool, path: Option<PathBuf>) -> PtyLogLookup {
+    if !tab_found {
+        PtyLogLookup::MissingTab
+    } else if let Some(path) = path {
+        PtyLogLookup::Path(path)
+    } else {
+        PtyLogLookup::NoLog
+    }
+}
+
+fn empty_pty_log_output(tab_id: &str) -> String {
+    encode_sorted(&json!({
+        "tab_id": tab_id, "output": "", "lines": 0, "source": "pty_log"
+    }))
+}
+
 fn pty_log_output(tab_id: &str, lines: usize, ctx: &ToolContext) -> String {
     let id = tab_id.to_string();
-    let found = ctx.main.call(move |cx| {
-        let tab = find_tab(&id, cx)?;
-        let session = tab.window.workspace.read(cx).mcp_session(tab.tab, cx)?;
-        Some(session.read(cx).last_ai_log_path().map(|p| p.to_path_buf()))
+    let lookup = ctx.main.call(move |cx| {
+        let tab = find_tab(&id, cx);
+        let path = tab.as_ref().and_then(|tab| {
+            let ws = tab.window.workspace.read(cx);
+            ws.mcp_session(tab.tab, cx)
+                .and_then(|session| session.read(cx).last_ai_log_path().map(|p| p.to_path_buf()))
+        });
+        classify_pty_log_lookup(tab.is_some(), path)
     });
-    let path = match found {
+    let lookup = match lookup {
         None => return no_window(),
-        Some(None) => return not_found(tab_id),
-        Some(Some(path)) => path,
+        Some(lookup) => lookup,
     };
-    let Some(path) = path else {
-        return json_error(&format!(
-            "No PTY log available for tab {tab_id}. The tab may not have run an AI tool."
-        ));
+    let path = match lookup {
+        PtyLogLookup::MissingTab => return not_found(tab_id),
+        PtyLogLookup::NoLog => return empty_pty_log_output(tab_id),
+        PtyLogLookup::Path(path) => path,
     };
     let Some(text) = read_pty_log_tail(&path) else {
-        return encode_sorted(&json!({
-            "tab_id": tab_id, "output": "", "lines": 0, "source": "pty_log"
-        }));
+        return empty_pty_log_output(tab_id);
     };
     let (output, count) = format_pty_log_output(&text, lines);
     encode_sorted(&json!({
@@ -929,5 +972,79 @@ mod close_tests {
         for status in [Idle, Done, Exited] {
             assert!(!close_requires_force(status));
         }
+    }
+}
+
+#[cfg(test)]
+mod deferred_read_tests {
+    use super::*;
+
+    #[test]
+    fn deferred_status_adds_loading_and_empty_process_projection() {
+        let mut summary = json!({
+            "tab_id": "parked-uuid",
+            "cwd": "/tmp/project",
+            "status": "unknown",
+            "is_mcp_controlled": false,
+            "restore_state": "active",
+            "shell_loading": false,
+            "processes": [{"pid": 12}]
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+
+        add_deferred_status_fields(&mut summary);
+
+        assert_eq!(summary["tab_id"], "parked-uuid");
+        assert_eq!(summary["cwd"], "/tmp/project");
+        assert_eq!(summary["status"], "unknown");
+        assert_eq!(summary["is_mcp_controlled"], false);
+        assert_eq!(summary["restore_state"], "deferred");
+        assert_eq!(summary["shell_loading"], true);
+        assert_eq!(summary["processes"], json!([]));
+        assert!(!summary.contains_key("active_run"));
+    }
+
+    #[test]
+    fn deferred_buffer_output_is_successful_and_empty() {
+        let encoded = encode_buffer_output("parked-uuid", "", 160);
+        let response: Value = serde_json::from_str(&encoded).expect("valid JSON buffer response");
+
+        assert_eq!(
+            response,
+            json!({
+                "tab_id": "parked-uuid",
+                "output": "",
+                "lines": 0,
+                "source": "buffer"
+            })
+        );
+    }
+
+    #[test]
+    fn pty_log_lookup_keeps_missing_tabs_distinct_from_tabs_without_a_log() {
+        assert_eq!(
+            classify_pty_log_lookup(false, None),
+            PtyLogLookup::MissingTab
+        );
+        assert_eq!(classify_pty_log_lookup(true, None), PtyLogLookup::NoLog);
+        let path = PathBuf::from("/tmp/pty.log");
+        assert_eq!(
+            classify_pty_log_lookup(true, Some(path.clone())),
+            PtyLogLookup::Path(path)
+        );
+
+        let encoded = empty_pty_log_output("parked-uuid");
+        let response: Value = serde_json::from_str(&encoded).expect("valid JSON PTY log response");
+        assert_eq!(
+            response,
+            json!({
+                "tab_id": "parked-uuid",
+                "output": "",
+                "lines": 0,
+                "source": "pty_log"
+            })
+        );
     }
 }
