@@ -828,9 +828,15 @@ impl SourceTextView {
             shared,
             history: editing::SourceHistory::new(mtm),
         });
-        unsafe {
+        let text: Retained<Self> = unsafe {
             msg_send![super(this),initWithFrame:NSRect::new(NSPoint::new(0.,0.),NSSize::new(400.,400.))]
-        }
+        };
+        // The ruler and checkbox hit testing use NSLayoutManager. NSTextView's
+        // default TextKit 2 backend may lazily reconfigure its storage when
+        // layoutManager() is first requested; do that while the source is
+        // empty, before a live marked-text range can be invalidated.
+        let _ = unsafe { text.layoutManager() };
+        text
     }
     fn toggle_checkbox(&self, event: &NSEvent) -> bool {
         let Some(layout) = (unsafe { self.layoutManager() }) else {
