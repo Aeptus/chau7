@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Avoid restarting Next settings scroll animations for subpixel layout adjustments;
+  preserve the existing deadline and apply the exact final offset on a real frame.
 - Exposed the repository-group dashboard action as an accessible button in Next.
   Native fixtures press the actual macOS control and verify the exact group
   dashboard after a newer rendered frame.

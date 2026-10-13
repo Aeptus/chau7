@@ -72,40 +72,94 @@ pub(super) fn update_motion(
     }
 }
 
+const SUBPIXEL_RETARGET_LIMIT: f32 = 1.0;
+
 pub(super) struct ScrollMotion {
     from: Pixels,
     to: Pixels,
     start: Instant,
+    duration: Duration,
+    deadline: Instant,
 }
 impl ScrollMotion {
     pub(super) fn new(from: Pixels, to: Pixels, start: Instant) -> Self {
-        Self { from, to, start }
+        Self::with_duration(from, to, start, SCROLL_DURATION)
     }
+
+    fn with_duration(from: Pixels, to: Pixels, start: Instant, duration: Duration) -> Self {
+        Self {
+            from,
+            to,
+            start,
+            duration,
+            deadline: start + duration,
+        }
+    }
+
+    fn with_deadline(
+        from: Pixels,
+        to: Pixels,
+        start: Instant,
+        duration: Duration,
+        deadline: Instant,
+    ) -> Self {
+        Self {
+            from,
+            to,
+            start,
+            duration,
+            deadline,
+        }
+    }
+
+    fn remaining(&self, now: Instant) -> Duration {
+        self.deadline.saturating_duration_since(now)
+    }
+
     /// Repeated scrollTo for unchanged layout keeps the in-flight endpoint.
-    /// A moved target starts a new easing from the currently observed offset.
+    /// Subpixel target corrections reuse the original deadline; larger moves
+    /// get a fresh Swift-length ease from the currently observed offset.
     pub(super) fn retarget(&mut self, from: Pixels, to: Pixels, now: Instant) -> bool {
         if self.to == to {
             return false;
         }
-        *self = Self::new(from, to, now);
+
+        let target_delta = f32::from(to - self.to).abs();
+        if target_delta < SUBPIXEL_RETARGET_LIMIT {
+            let deadline = self.deadline;
+            let remaining = self.remaining(now);
+            *self = Self::with_deadline(from, to, now, remaining, deadline);
+        } else {
+            *self = Self::new(from, to, now);
+        }
         true
     }
+
     #[cfg(feature = "native-parity-fixture")]
     pub(super) fn diagnostic(&self, origin: Instant, now: Instant) -> serde_json::Value {
         serde_json::json!({
             "from_px": f32::from(self.from),
             "to_px": f32::from(self.to),
             "started_microseconds": self.start.saturating_duration_since(origin).as_micros(),
-            "ends_microseconds": (self.start + SCROLL_DURATION).saturating_duration_since(origin).as_micros(),
+            "duration_microseconds": self.duration.as_micros(),
+            "nominal_duration_microseconds": SCROLL_DURATION.as_micros(),
+            "remaining_microseconds": self.remaining(now).as_micros(),
+            "ends_microseconds": self.deadline.saturating_duration_since(origin).as_micros(),
             "age_microseconds": now.saturating_duration_since(self.start).as_micros(),
             "finished": self.finished(now),
         })
     }
+
     pub(super) fn value(&self, now: Instant) -> Pixels {
-        self.from + (self.to - self.from) * progress(now, self.start, SCROLL_DURATION)
+        if self.duration.is_zero() || self.finished(now) {
+            self.to
+        } else {
+            self.from + (self.to - self.from) * progress(now, self.start, self.duration)
+        }
     }
+
     pub(super) fn finished(&self, now: Instant) -> bool {
-        now.saturating_duration_since(self.start) >= SCROLL_DURATION
+        now >= self.deadline
     }
 }
 #[cfg(test)]
@@ -215,6 +269,115 @@ mod tests {
         assert_eq!(
             motion.as_ref().unwrap().value(moved + SCROLL_DURATION),
             px(-600.)
+        );
+    }
+
+    #[test]
+    fn subpixel_retarget_is_continuous_and_preserves_original_deadline() {
+        let start = Instant::now();
+        let mut motion = ScrollMotion::new(px(0.), px(-130.25), start);
+        let original_end = start + SCROLL_DURATION;
+        let retarget_at = start + Duration::from_millis(100);
+        let observed = motion.value(retarget_at);
+        let target = px(-130.213_26);
+
+        assert!(f32::from(target - motion.to).abs() < SUBPIXEL_RETARGET_LIMIT);
+        assert!(motion.retarget(observed, target, retarget_at));
+        assert_eq!(motion.value(retarget_at), observed);
+        assert_eq!(motion.duration, original_end.duration_since(retarget_at));
+        assert_eq!(motion.deadline, original_end);
+        assert!(!motion.finished(original_end - Duration::from_nanos(1)));
+        assert!(motion.finished(original_end));
+        assert_eq!(motion.value(original_end), target);
+    }
+
+    #[test]
+    fn subpixel_retargets_preserve_deadline_for_both_drift_directions() {
+        for target in [px(-130.213_26), px(-130.286_74)] {
+            let start = Instant::now();
+            let mut motion = ScrollMotion::new(px(0.), px(-130.25), start);
+            let original_end = start + SCROLL_DURATION;
+            let retarget_at = start + Duration::from_millis(120);
+            let observed = motion.value(retarget_at);
+
+            assert!(f32::from(target - motion.to).abs() < SUBPIXEL_RETARGET_LIMIT);
+            assert!(motion.retarget(observed, target, retarget_at));
+            assert_eq!(motion.value(retarget_at), observed);
+            assert_eq!(motion.deadline, original_end);
+            assert_eq!(motion.value(original_end), target);
+        }
+    }
+
+    #[test]
+    fn repeated_subpixel_retargets_keep_the_first_deadline() {
+        let start = Instant::now();
+        let mut motion = ScrollMotion::new(px(0.), px(-130.25), start);
+        let original_end = start + SCROLL_DURATION;
+        let first = start + Duration::from_millis(80);
+        let observed = motion.value(first);
+        assert!(motion.retarget(observed, px(-130.1), first));
+        assert_eq!(motion.deadline, original_end);
+
+        let second = start + Duration::from_millis(150);
+        let observed = motion.value(second);
+        let target = px(-129.8);
+        assert!(motion.retarget(observed, target, second));
+        assert_eq!(motion.value(second), observed);
+        assert_eq!(motion.duration, original_end.duration_since(second));
+        assert_eq!(motion.deadline, original_end);
+        assert!(!motion.finished(original_end - Duration::from_nanos(1)));
+        assert!(motion.finished(original_end));
+        assert_eq!(motion.value(original_end), target);
+    }
+
+    #[test]
+    fn one_pixel_target_move_restarts_full_duration_from_observed_offset() {
+        let start = Instant::now();
+        let mut motion = ScrollMotion::new(px(0.), px(-130.25), start);
+        let retarget_at = start + Duration::from_millis(100);
+        let observed = motion.value(retarget_at);
+        let target = px(-131.25);
+
+        assert_eq!(f32::from(target - motion.to).abs(), SUBPIXEL_RETARGET_LIMIT);
+        assert!(motion.retarget(observed, target, retarget_at));
+        assert_eq!(motion.value(retarget_at), observed);
+        assert_eq!(motion.start, retarget_at);
+        assert_eq!(motion.duration, SCROLL_DURATION);
+        assert_eq!(motion.deadline, retarget_at + SCROLL_DURATION);
+        assert!(!motion.finished(retarget_at + SCROLL_DURATION - Duration::from_nanos(1)));
+        assert!(motion.finished(retarget_at + SCROLL_DURATION));
+        assert_eq!(motion.value(retarget_at + SCROLL_DURATION), target);
+    }
+
+    #[test]
+    fn finished_subpixel_retarget_keeps_deadline_and_requests_exact_final_frame() {
+        let start = Instant::now();
+        let mut slot = Some(ScrollMotion::new(px(0.), px(-130.25), start));
+        let deadline = start + SCROLL_DURATION;
+        let late = deadline + Duration::from_millis(7);
+        let observed = slot.as_ref().unwrap().value(late);
+        let target = px(-130.75);
+
+        assert!(slot.as_ref().unwrap().finished(late));
+        assert!(update_motion(&mut slot, observed, target, late));
+        let motion = slot.as_ref().unwrap();
+        assert_eq!(motion.start, late);
+        assert!(motion.duration.is_zero());
+        assert_eq!(motion.deadline, deadline);
+        assert!(motion.finished(late));
+        // The caller still schedules a real frame because retarget returned true;
+        // that frame applies this exact endpoint before clearing the motion.
+        assert_eq!(motion.value(late), target);
+    }
+
+    #[test]
+    fn finished_value_returns_exact_endpoint_for_mixed_sign_large_offsets() {
+        let start = Instant::now();
+        let motion = ScrollMotion::new(px(16_777_216.), px(-1.), start);
+        assert_eq!(motion.value(start + SCROLL_DURATION), px(-1.));
+        assert_eq!(
+            motion.value(start + SCROLL_DURATION + Duration::from_secs(1)),
+            px(-1.)
         );
     }
 
