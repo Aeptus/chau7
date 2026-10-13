@@ -30,7 +30,7 @@ assert_file_contains() {
 # Fast mode is the default, retains a local incremental profile, and preserves
 # the CI-wide CARGO_INCREMENTAL=0 override when one is already set.
 (
-  unset BUILD_MODE CARGO_INCREMENTAL BUILD_LOG CARGO_BUILD_VERBOSE
+  unset BUILD_MODE CARGO_INCREMENTAL BUILD_LOG CARGO_BUILD_VERBOSE CHAU7_CTO_OPTIM_ACTIVE
   unset CARGO_TARGET_DIR OPTIM_TARGET_DIR
   unset CARGO_PROFILE_RELEASE_DEBUG CARGO_PROFILE_RELEASE_STRIP
   unset CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG
@@ -40,6 +40,7 @@ assert_file_contains() {
   # shellcheck source=apps/chau7-next/scripts/build-mode.sh
   source "$APP_ROOT/scripts/build-mode.sh"
   [[ "$BUILD_MODE" == fast ]]
+  [[ -z "${CHAU7_CTO_OPTIM_ACTIVE:-}" ]]
   [[ -z "${CARGO_TARGET_DIR:-}" ]]
   [[ "$CARGO_PROFILE_RELEASE_OPT_LEVEL" == 3 ]]
   [[ "$CARGO_PROFILE_RELEASE_CODEGEN_UNITS" == 64 ]]
@@ -66,6 +67,23 @@ check_ci_incremental_override() {
 }
 check_ci_incremental_override
 
+# Fast mode leaves an active caller's CTO recursion/output-bypass sentinel intact.
+check_fast_preserves_cto_sentinel() (
+  unset BUILD_MODE CARGO_INCREMENTAL BUILD_LOG CARGO_BUILD_VERBOSE
+  unset CARGO_TARGET_DIR OPTIM_TARGET_DIR
+  unset CARGO_PROFILE_RELEASE_DEBUG CARGO_PROFILE_RELEASE_STRIP
+  unset CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG
+  unset CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP
+  unset CARGO_PROFILE_RELEASE_INCREMENTAL CARGO_PROFILE_RELEASE_LTO
+  unset CARGO_PROFILE_RELEASE_OPT_LEVEL CARGO_PROFILE_RELEASE_CODEGEN_UNITS
+  export CHAU7_CTO_OPTIM_ACTIVE=caller-sentinel
+  # shellcheck source=apps/chau7-next/scripts/build-mode.sh
+  source "$APP_ROOT/scripts/build-mode.sh"
+  [[ "$BUILD_MODE" == fast ]]
+  [[ "$CHAU7_CTO_OPTIM_ACTIVE" == caller-sentinel ]]
+)
+check_fast_preserves_cto_sentinel
+
 # Invalid mode fails during setup, before any compiler command is invoked.
 set +e
 BUILD_MODE=invalid bash -c 'source "$1"' _ "$APP_ROOT/scripts/build-mode.sh" >/dev/null 2>&1
@@ -77,16 +95,20 @@ set -e
 # without changing debug assertions. Verbose Cargo output is captured on demand.
 cat > "$FAKE_BIN/cargo-probe" <<'FAKE'
 #!/usr/bin/env bash
+printf 'optimizer sentinel: %s\n' "${CHAU7_CTO_OPTIM_ACTIVE:-unset}"
 printf 'probe output: %s\n' "$*"
 FAKE
 chmod 755 "$FAKE_BIN/cargo-probe"
 run_diagnostic_probe() (
   cd "$APP_ROOT"
   local BUILD_MODE=diagnostic CARGO_BUILD_VERBOSE=1 CARGO_TARGET_DIR=''
+  # This fixture intentionally isolates the caller's sentinel in its subshell.
+  # shellcheck disable=SC2030
+  local CHAU7_CTO_OPTIM_ACTIVE=''
   local BUILD_LOG="$TMP_ROOT/logs/diagnostic-cargo.log"
   local CARGO_INCREMENTAL CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS
   unset CARGO_INCREMENTAL CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS
-  export BUILD_MODE CARGO_BUILD_VERBOSE BUILD_LOG CARGO_TARGET_DIR
+  export BUILD_MODE CARGO_BUILD_VERBOSE BUILD_LOG CARGO_TARGET_DIR CHAU7_CTO_OPTIM_ACTIVE
   # shellcheck source=apps/chau7-next/scripts/build-mode.sh
   source "$APP_ROOT/scripts/build-mode.sh"
   [[ "$CARGO_TARGET_DIR" == "$APP_ROOT/target/diagnostic" ]]
@@ -95,11 +117,13 @@ run_diagnostic_probe() (
   [[ "$CARGO_PROFILE_RELEASE_DEBUG" == 2 ]]
   [[ "$CARGO_PROFILE_RELEASE_STRIP" == none ]]
   [[ "$CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG" == 2 ]]
+  [[ "$CHAU7_CTO_OPTIM_ACTIVE" == 1 ]]
   [[ -z "${CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS:-}" ]]
   [[ " ${CARGO_BUILD_ARGS[*]} " == *" -vv "* ]]
   run_cargo "$FAKE_BIN/cargo-probe" diagnostic-check
 )
 run_diagnostic_probe
+assert_file_contains "$TMP_ROOT/logs/diagnostic-cargo.log" 'optimizer sentinel: 1'
 assert_file_contains "$TMP_ROOT/logs/diagnostic-cargo.log" 'probe output: diagnostic-check'
 
 # An explicit diagnostic CARGO_TARGET_DIR wins over the isolated default.

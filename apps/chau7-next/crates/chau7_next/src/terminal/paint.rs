@@ -19,6 +19,7 @@ use cpu_renderer::{FrameCache, GridCanvas};
 pub(crate) use cpu_renderer::{glyph_cache_bytes, glyph_cache_entries, release_glyph_cache};
 use parking_lot::Mutex;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
@@ -159,7 +160,17 @@ impl Overlays {
         self.cpu_frame.lock().bytes()
     }
     pub fn reclaim_cache(&mut self, cx: &mut App) -> u64 {
-        let bytes = self.cache_bytes();
+        let mut work =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                "cpu_bitmap_cache_reclaim",
+                "memory_pressure",
+                "application",
+                "terminal_overlays",
+                chau7_next_core::work_profiler::Queue::Main,
+            ));
+        let (bytes, items) = self.cpu_frame.lock().reclaim_footprint();
+        work.bytes(usize::try_from(bytes).unwrap_or(usize::MAX));
+        work.items(items);
         self.release_cpu_frame(cx);
         bytes
     }
@@ -475,7 +486,7 @@ fn text_chunks(
             continue;
         }
         let offset = text.len();
-        text.push_str(&cell_text(cell, clusters.get(&(start + col))));
+        text.push_str(cell_text(cell, clusters.get(&(start + col))).as_ref());
         spans.push((col, offset, text.len()));
     }
     let mut chunks: Vec<TextChunk> = Vec::new();
@@ -518,14 +529,17 @@ fn text_chunks(
     chunks
 }
 
-fn cell_text(cell: &OwnedCell, cluster: Option<&String>) -> String {
+fn cell_text<'a>(cell: &OwnedCell, cluster: Option<&'a String>) -> Cow<'a, str> {
     if cell.flags & CELL_FLAG_HIDDEN != 0 {
-        return " ".to_string();
+        return Cow::Borrowed(" ");
     }
-    cluster.cloned().unwrap_or_else(|| match cell.character {
-        '\0' => " ".to_string(),
-        c => c.to_string(),
-    })
+    if let Some(cluster) = cluster {
+        return Cow::Borrowed(cluster.as_str());
+    }
+    match cell.character {
+        '\0' => Cow::Borrowed(" "),
+        character => Cow::Owned(character.to_string()),
+    }
 }
 
 fn cell_colors(cell: &OwnedCell) -> ((u8, u8, u8), (u8, u8, u8)) {
@@ -750,8 +764,9 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
                         color: Some(color),
                     });
                 let len = contents.len();
-                any_visible |= contents != " " || underline.is_some() || strikethrough.is_some();
-                text.push_str(&contents);
+                any_visible |=
+                    contents.as_ref() != " " || underline.is_some() || strikethrough.is_some();
+                text.push_str(contents.as_ref());
                 match runs.last_mut() {
                     Some(last)
                         if last.color == color
@@ -1044,6 +1059,70 @@ fn paint_cursor(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_cells_borrow_a_space_and_ignore_grapheme_clusters() {
+        let cell = OwnedCell {
+            character: 'x',
+            flags: CELL_FLAG_HIDDEN,
+            ..Default::default()
+        };
+        let cluster = String::from("👩🏽‍💻");
+        match cell_text(&cell, Some(&cluster)) {
+            Cow::Borrowed(text) => assert_eq!(text.as_bytes(), b" "),
+            Cow::Owned(text) => panic!("hidden cell allocated text: {text:?}"),
+        }
+    }
+
+    #[test]
+    fn nul_cells_borrow_a_space() {
+        let cell = OwnedCell {
+            character: '\0',
+            ..Default::default()
+        };
+        match cell_text(&cell, None) {
+            Cow::Borrowed(text) => assert_eq!(text.as_bytes(), b" "),
+            Cow::Owned(text) => panic!("NUL cell allocated text: {text:?}"),
+        }
+    }
+
+    #[test]
+    fn grapheme_clusters_borrow_the_exact_multi_unicode_text() {
+        let cell = OwnedCell {
+            character: '👩',
+            ..Default::default()
+        };
+        let cluster = String::from("👩🏽‍💻e\u{301}");
+        match cell_text(&cell, Some(&cluster)) {
+            Cow::Borrowed(text) => {
+                assert!(std::ptr::eq(text, cluster.as_str()));
+                assert_eq!(text.as_bytes(), cluster.as_bytes());
+                assert_eq!(text, "👩🏽‍💻e\u{301}");
+            }
+            Cow::Owned(text) => panic!("grapheme cluster was copied: {text:?}"),
+        }
+    }
+
+    #[test]
+    fn ordinary_ascii_and_unicode_characters_are_owned_with_unchanged_utf8() {
+        let ascii = OwnedCell {
+            character: 'A',
+            ..Default::default()
+        };
+        match cell_text(&ascii, None) {
+            Cow::Owned(text) => assert_eq!(text.as_bytes(), b"A"),
+            Cow::Borrowed(text) => panic!("ASCII character was borrowed: {text:?}"),
+        }
+
+        let unicode = OwnedCell {
+            character: 'é',
+            ..Default::default()
+        };
+        match cell_text(&unicode, None) {
+            Cow::Owned(text) => assert_eq!(text.as_bytes(), "é".as_bytes()),
+            Cow::Borrowed(text) => panic!("Unicode character was borrowed: {text:?}"),
+        }
+    }
 
     #[test]
     fn concealed_color_emoji_never_reaches_either_renderer() {

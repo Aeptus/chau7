@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Build
 
+- Diagnostic Next builds bypass CTO output filtering so the full Cargo log
+  streams directly. Fast builds retain their existing output and profile.
+- Preserve Python MCP request stage, child status and bounded stderr on a
+  response timeout; upload quality logs on CI failure without changing deadlines.
+- Use modern AppKit activation and an exact owned-app handshake in the native
+  restore fixture, retaining strict focus, visibility and rendered-frame checks.
 - Corrected native accessibility fixture reads to use GPUI's direct entity
   update return values. Native action and dashboard assertions are unchanged.
 - Locate the unique styled scrollback marker in the retained-history viewport
@@ -35,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Borrow blank and grapheme-cluster terminal text during painting to avoid
+  temporary allocations while preserving exact UTF-8 bytes and styling.
+- Expose bitmap and glyph cache reclaim wall time, cached bytes and entry counts
+  through the existing performance work profile. Cached bytes are not RSS freed.
 - Avoid restarting Next settings scroll animations for subpixel layout adjustments;
   preserve the existing deadline and apply the exact final offset on a real frame.
 - Exposed the repository-group dashboard action as an accessible button in Next.

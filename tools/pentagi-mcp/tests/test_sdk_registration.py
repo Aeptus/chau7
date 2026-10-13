@@ -62,15 +62,38 @@ class SdkRegistrationTests(unittest.IsolatedAsyncioTestCase):
             stderr=asyncio.subprocess.PIPE,
             env=environment,
         )
+        stderr_tail = bytearray()
+
+        async def capture_stderr() -> None:
+            while chunk := await process.stderr.read(1024):
+                stderr_tail.extend(chunk)
+                del stderr_tail[:-4096]
+
+        stderr_reader = asyncio.create_task(capture_stderr())
+
+        def stderr_summary() -> str:
+            return bytes(stderr_tail[-2048:]).decode(errors="replace")
 
         async def send(message: dict) -> None:
             process.stdin.write((json.dumps(message) + "\n").encode())
             await process.stdin.drain()
 
-        async def response(identifier: int) -> dict:
+        async def response(identifier: int, stage: str) -> dict:
             while True:
-                line = await asyncio.wait_for(process.stdout.readline(), timeout=5)
-                self.assertTrue(line, "stdio server exited before replying")
+                try:
+                    line = await asyncio.wait_for(process.stdout.readline(), timeout=5)
+                except TimeoutError as error:
+                    raise TimeoutError(
+                        f"timed out waiting for {stage} response id={identifier}; "
+                        f"child_returncode={process.returncode}; "
+                        f"child_stderr_tail={stderr_summary()!r}"
+                    ) from error
+                self.assertTrue(
+                    line,
+                    f"stdio server exited before response id={identifier} ({stage}); "
+                    f"child_returncode={process.returncode}; "
+                    f"child_stderr_tail={stderr_summary()!r}",
+                )
                 parsed = json.loads(line)
                 if parsed.get("id") == identifier:
                     return parsed
@@ -88,12 +111,12 @@ class SdkRegistrationTests(unittest.IsolatedAsyncioTestCase):
                     },
                 }
             )
-            initialized = await response(1)
+            initialized = await response(1, "initialize")
             self.assertNotIn("error", initialized)
             self.assertEqual(initialized["result"]["protocolVersion"], "2025-06-18")
             await send({"jsonrpc": "2.0", "method": "notifications/initialized"})
             await send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
-            listed = await response(2)
+            listed = await response(2, "tools/list")
             self.assertIn("engagement_list", [tool["name"] for tool in listed["result"]["tools"]])
             await send(
                 {
@@ -106,11 +129,16 @@ class SdkRegistrationTests(unittest.IsolatedAsyncioTestCase):
                     },
                 }
             )
-            called = await response(3)
+            called = await response(3, "tools/call")
             self.assertNotIn("error", called)
             self.assertFalse(called["result"].get("isError", False))
             self.assertEqual(called["result"]["structuredContent"], {"result": []})
         finally:
             if process.returncode is None:
                 process.terminate()
-            await asyncio.wait_for(process.wait(), timeout=5)
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5)
+            finally:
+                if not stderr_reader.done():
+                    stderr_reader.cancel()
+                await asyncio.gather(stderr_reader, return_exceptions=True)

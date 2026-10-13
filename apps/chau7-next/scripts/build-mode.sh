@@ -10,6 +10,8 @@ case "$BUILD_MODE" in
     export CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=0
     ;;
   diagnostic)
+    # Bypass CTO output filtering so compiler diagnostics reach the normal build log.
+    export CHAU7_CTO_OPTIM_ACTIVE=1
     export CARGO_PROFILE_RELEASE_DEBUG=2
     export CARGO_PROFILE_RELEASE_STRIP=none
     export CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=2

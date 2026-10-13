@@ -39,10 +39,19 @@ pub(crate) fn release_glyph_cache(cx: &App) -> u64 {
     let Some(text) = cx.try_global::<CpuTextGlobal>() else {
         return 0;
     };
+    let mut work = work_profiler::begin(Key::work(
+        "cpu_glyph_cache_release",
+        "memory_pressure",
+        "application",
+        "cpu_renderer",
+        Queue::Main,
+    ));
     let mut glyphs = text.0.glyphs.lock();
-    let bytes = glyphs.bytes as u64;
+    let bytes = glyphs.bytes;
+    work.bytes(bytes);
+    work.items(glyphs.items.len());
     *glyphs = GlyphCache::default();
-    bytes
+    bytes as u64
 }
 
 pub fn init(platform: Arc<dyn PlatformTextSystem>, cx: &mut App) {
@@ -141,10 +150,10 @@ impl FrameCache {
         serde_json::json!({"requested_renderer":self.last_backend.map(|(requested,_,_)|mode(requested)),"actual_renderer":self.last_backend.map(|(_,actual,_)|mode(actual)),"last_paint_age_seconds":self.last_backend.map(|(_,_,at)|at.elapsed().as_secs_f64()),"fallback_reason":self.last_backend.and_then(|(requested,actual,_)|if !requested&&actual {Some("cpu_text_system_unavailable")} else if requested&&!actual {Some("software_window_backend")} else {None}),"cached_cpu_bitmap_bytes":self.bytes()})
     }
     pub fn bytes(&self) -> u64 {
-        self.frame
-            .as_ref()
-            .and_then(|frame| frame.image.as_bytes(0))
-            .map_or(0, |bytes| bytes.len() as u64)
+        self.reclaim_footprint().0
+    }
+    pub fn reclaim_footprint(&self) -> (u64, usize) {
+        reclaim_footprint(self.frame.as_ref().map(|frame| frame.image.as_ref()))
     }
     pub fn release(&mut self, cx: &mut App) {
         if let Some(frame) = self.frame.take() {
@@ -166,6 +175,14 @@ impl FrameCache {
             }
         }
     }
+}
+
+fn reclaim_footprint(image: Option<&RenderImage>) -> (u64, usize) {
+    let Some(image) = image else {
+        return (0, 0);
+    };
+    let bytes = image.as_bytes(0).map_or(0, |bytes| bytes.len() as u64);
+    (bytes, 1)
 }
 
 /// A straight-alpha BGRA surface. Allocation is bounded even on very large
@@ -721,6 +738,17 @@ mod tests {
             software_window["fallback_reason"],
             "software_window_backend"
         );
+    }
+
+    #[test]
+    fn frame_reclaim_footprint_reports_cached_render_image_bytes_and_count() {
+        assert_eq!(FrameCache::default().reclaim_footprint(), (0, 0));
+        assert_eq!(reclaim_footprint(None), (0, 0));
+
+        let image = RenderImage::new(vec![image::Frame::new(
+            image::RgbaImage::from_raw(2, 1, vec![1, 2, 3, 4, 5, 6, 7, 8]).unwrap(),
+        )]);
+        assert_eq!(reclaim_footprint(Some(&image)), (8, 1));
     }
 
     #[test]

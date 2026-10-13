@@ -2,6 +2,7 @@
 """Run owned macOS parity fixtures and retain exact source/binary evidence."""
 
 import argparse
+import ctypes
 import hashlib
 import json
 import os
@@ -88,6 +89,261 @@ def fixture_outcome(path, case):
     return outcomes[0] if len(outcomes) == 1 else None
 
 
+ACTIVATION_HANDSHAKE_PREFIX = "native_activation_handshake="
+ACTIVATION_ACK_FILENAME = "native-parity-activation.ack"
+ACTIVATION_GUARD_ENV = (
+    "CHAU7_NEXT_NATIVE_PARITY_FIXTURE",
+    "CHAU7_NEXT_ISOLATED_TEST_MODE",
+    "CHAU7_NEXT_HOME_ROOT",
+    "HISTFILE",
+)
+ACTIVATION_DEADLINE_SECONDS = 3
+
+
+def parse_activation_handshake(stderr_text):
+    lines = []
+    incomplete = False
+    for line in stderr_text.splitlines(keepends=True):
+        if not line.startswith(ACTIVATION_HANDSHAKE_PREFIX):
+            continue
+        if not line.endswith("\n"):
+            incomplete = True
+            continue
+        lines.append(line[len(ACTIVATION_HANDSHAKE_PREFIX) :].rstrip("\r\n"))
+    # A reader may observe the flushed JSON while its final newline is still
+    # being written; wait for the complete record before making a request.
+    if incomplete or not lines:
+        return None
+    if len(lines) != 1:
+        raise ValueError("native fixture emitted more than one activation handshake")
+    try:
+        value = json.loads(lines[0])
+    except json.JSONDecodeError as error:
+        raise ValueError("native fixture activation handshake is invalid JSON") from error
+    if not isinstance(value, dict):
+        raise ValueError("native fixture activation handshake must be an object")
+    if value.get("stage") != "deminiaturized_surface_reveal":
+        raise ValueError("native fixture activation handshake has an unexpected stage")
+    if not valid_pid(value.get("pid")):
+        raise ValueError("native fixture activation handshake has an invalid PID")
+    if not isinstance(value.get("bundle_identifier"), str) or not value["bundle_identifier"]:
+        raise ValueError("native fixture activation handshake has no bundle identifier")
+    if not isinstance(value.get("bundle_path"), str) or not value["bundle_path"]:
+        raise ValueError("native fixture activation handshake has no bundle path")
+    if not isinstance(value.get("activation_ack_path"), str) or not value["activation_ack_path"]:
+        raise ValueError("native fixture activation handshake has no activation acknowledgement path")
+    return value
+
+
+def _activation_remaining(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("owned fixture activation exceeded its 3-second total deadline")
+    return remaining
+
+
+def owned_executable_pids(expected_executable, deadline):
+    result = subprocess.run(
+        ["/bin/ps", "-axo", "pid="],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=_activation_remaining(deadline),
+    )
+    _activation_remaining(deadline)
+    expected = Path(expected_executable).resolve(strict=True)
+    _activation_remaining(deadline)
+    matches = []
+    for value in result.stdout.split():
+        _activation_remaining(deadline)
+        if not value.isdigit() or int(value) <= 0:
+            continue
+        pid = int(value)
+        try:
+            actual = Path(os.fsdecode(_pid_executable_path(pid))).resolve(strict=True)
+        except OSError:
+            continue
+        _activation_remaining(deadline)
+        if actual == expected:
+            matches.append(pid)
+    return sorted(matches)
+
+
+def activation_request_command(bundle, environment, window_renderer):
+    if environment.get("CHAU7_NEXT_NATIVE_PARITY_FIXTURE") != "1":
+        raise ValueError("activation reopen requires the native fixture opt-in guard")
+    if environment.get("CHAU7_NEXT_ISOLATED_TEST_MODE") != "1":
+        raise ValueError("activation reopen requires the isolated test mode guard")
+    if not environment.get("CHAU7_NEXT_HOME_ROOT"):
+        raise ValueError("activation reopen requires the owned fixture home guard")
+    if environment.get("HISTFILE") != "":
+        raise ValueError("activation reopen requires the empty history guard")
+    command = ["/usr/bin/open"]
+    for name in ACTIVATION_GUARD_ENV:
+        command.extend(["--env", name + "=" + environment[name]])
+    command.extend(
+        [
+            "-a",
+            str(bundle),
+            "--args",
+            "--native-parity-fixture",
+            "restore",
+            "--window-renderer",
+            window_renderer,
+        ]
+    )
+    return command
+
+
+def request_owned_activation(
+    bundle,
+    bundle_identifier,
+    handshake,
+    evidence,
+    environment,
+    window_renderer,
+):
+    deadline = time.monotonic() + ACTIVATION_DEADLINE_SECONDS
+    bundle = Path(bundle).resolve(strict=True)
+    executable = bundle / "Contents" / "MacOS" / "chau7-next"
+    expected_executable = executable.resolve(strict=True)
+    if handshake["bundle_path"] != str(bundle):
+        raise ValueError("activation handshake names a different bundle path")
+    if handshake["bundle_identifier"] != bundle_identifier:
+        raise ValueError("activation handshake names a different bundle identifier")
+    try:
+        with (bundle / "Contents" / "Info.plist").open("rb") as info_file:
+            bundle_info = plistlib.load(info_file)
+    except (OSError, plistlib.InvalidFileException) as error:
+        raise ValueError("owned bundle path has no readable identifier") from error
+    if not isinstance(bundle_info, dict) or bundle_info.get("CFBundleIdentifier") != bundle_identifier:
+        raise ValueError("owned bundle path does not have the exact handshake identifier")
+    _activation_remaining(deadline)
+    home = Path(environment["CHAU7_NEXT_HOME_ROOT"]).resolve(strict=True)
+    activation_ack_path = home / ACTIVATION_ACK_FILENAME
+    if handshake["activation_ack_path"] != str(activation_ack_path):
+        raise ValueError("activation handshake names a different acknowledgement path")
+    _activation_remaining(deadline)
+    pid = handshake["pid"]
+    actual_executable = Path(os.fsdecode(_pid_executable_path(pid))).resolve(strict=True)
+    _activation_remaining(deadline)
+    if actual_executable != expected_executable:
+        raise ValueError("activation handshake PID is not the exact owned executable")
+    before = owned_executable_pids(expected_executable, deadline)
+    if before != [pid]:
+        raise ValueError("expected exactly the handshake PID before LaunchServices reopen")
+    command = activation_request_command(bundle, environment, window_renderer)
+    _activation_remaining(deadline)
+    with (
+        (evidence / "restore.activation.stdout").open("x") as stdout,
+        (evidence / "restore.activation.stderr").open("x") as stderr,
+    ):
+        result = subprocess.run(
+            command,
+            cwd=Path(tempfile.gettempdir()).resolve(),
+            env=environment,
+            stdout=stdout,
+            stderr=stderr,
+            check=False,
+            timeout=_activation_remaining(deadline),
+        )
+    _activation_remaining(deadline)
+    if result.returncode != 0:
+        raise RuntimeError(f"targeted LaunchServices reopen exited {result.returncode}")
+    after = owned_executable_pids(expected_executable, deadline)
+    if after != [pid]:
+        raise RuntimeError("LaunchServices reopen changed the exact owned application PID set")
+    _activation_remaining(deadline)
+    acknowledgement_payload = b"owned activation request completed\n"
+    with activation_ack_path.open("xb") as acknowledgement:
+        acknowledgement.write(acknowledgement_payload)
+    _activation_remaining(deadline)
+    return {
+        "command": command,
+        "pid_before": before,
+        "pid_after": after,
+        "exit_code": result.returncode,
+        "activation_ack_path": str(activation_ack_path),
+        "activation_ack_bytes": len(acknowledgement_payload),
+        "activation_ack_sha256": hashlib.sha256(acknowledgement_payload).hexdigest(),
+    }
+
+
+def wait_owned_fixture(
+    process,
+    record,
+    bundle,
+    stderr_path,
+    evidence,
+    child_environment,
+    window_renderer,
+):
+    """Wait for an already-launched owned restore fixture and request activation once."""
+    deadline = time.monotonic() + 75
+    record.setdefault("activation_request_attempted", False)
+    record.setdefault("activation_request_passed", False)
+    while True:
+        if not record["activation_request_attempted"]:
+            try:
+                handshake = parse_activation_handshake(stderr_path.read_text(errors="replace"))
+            except (OSError, ValueError) as error:
+                record["activation_request_attempted"] = True
+                record["activation_request_error"] = str(error)
+            else:
+                if handshake is not None:
+                    record["activation_request_attempted"] = True
+                    record["activation_handshake"] = handshake
+                    if process.poll() is not None:
+                        record["activation_request_error"] = "owned fixture exited before its activation request"
+                    else:
+                        try:
+                            record["activation_request"] = request_owned_activation(
+                                bundle,
+                                record["bundle_identifier"],
+                                handshake,
+                                evidence,
+                                child_environment,
+                                window_renderer,
+                            )
+                            record["activation_request_passed"] = True
+                        except (
+                            OSError,
+                            RuntimeError,
+                            ValueError,
+                            subprocess.SubprocessError,
+                        ) as error:
+                            record["activation_request_error"] = str(error)
+        exit_code = process.poll()
+        if exit_code is not None:
+            record["exit_code"] = exit_code
+            if not record["activation_request_attempted"]:
+                record["activation_request_attempted"] = True
+                record["activation_request_error"] = "owned fixture exited before emitting an activation handshake"
+            return exit_code
+        if time.monotonic() >= deadline:
+            # Leave the fixture, owned bundle and profile intact for diagnosis.
+            # Never send termination signals on an acceptance timeout.
+            record["timed_out"] = True
+            record["exit_code"] = None
+            if not record["activation_request_attempted"]:
+                record["activation_request_attempted"] = True
+                record["activation_request_error"] = "owned fixture did not emit an activation handshake before timeout"
+            return None
+        time.sleep(0.05)
+
+
+def _pid_executable_path(pid):
+    library = ctypes.CDLL("/usr/lib/libproc.dylib")
+    proc_pidpath = library.proc_pidpath
+    proc_pidpath.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
+    proc_pidpath.restype = ctypes.c_int
+    buffer = ctypes.create_string_buffer(4096)
+    length = proc_pidpath(pid, buffer, len(buffer))
+    if length <= 0:
+        raise OSError(f"could not resolve exact executable path for PID {pid}")
+    return buffer.value
+
+
 def valid_pid(pid):
     return isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
 
@@ -117,6 +373,7 @@ def case_passed(record):
         and record.get("owned_home_removed") is True
         and record.get("application_pid_verified") is True
         and record.get("application_process_gone") is True
+        and (not record.get("launch_services") or record.get("activation_request_passed") is True)
     )
 
 
@@ -136,7 +393,15 @@ def argument_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--case",
-        choices=("all", "restore", "settings", "editor", "cache", "accessibility", "keyboard"),
+        choices=(
+            "all",
+            "restore",
+            "settings",
+            "editor",
+            "cache",
+            "accessibility",
+            "keyboard",
+        ),
         default="all",
     )
     parser.add_argument(
@@ -271,6 +536,8 @@ def main():
             # open -W has no application exit-code contract.
             "application_exit_code": None,
             "original_binary_sha256": manifest["binary_sha256"],
+            "activation_request_attempted": False if launch_services else None,
+            "activation_request_passed": False if launch_services else None,
         }
         manifest["results"].append(record)
         bundle_root = None
@@ -298,12 +565,25 @@ def main():
                 ):
                     command.extend(["--env", name + "=" + child_environment[name]])
                 command.extend(
-                    [str(bundle), "--args", "--native-parity-fixture", case, "--window-renderer", args.window_renderer]
+                    [
+                        str(bundle),
+                        "--args",
+                        "--native-parity-fixture",
+                        case,
+                        "--window-renderer",
+                        args.window_renderer,
+                    ]
                 )
                 process_stdout = evidence / "restore.launcher.stdout"
                 process_stderr = evidence / "restore.launcher.stderr"
             else:
-                command = [str(binary), "--native-parity-fixture", case, "--window-renderer", args.window_renderer]
+                command = [
+                    str(binary),
+                    "--native-parity-fixture",
+                    case,
+                    "--window-renderer",
+                    args.window_renderer,
+                ]
                 if case == "accessibility":
                     command.extend(["--fixture-locale", fixture_locale])
                 process_stdout = stdout_path
@@ -321,13 +601,24 @@ def main():
                 record["direct_process_id"] = None if launch_services else process.pid
                 # Persist ownership before waiting, including when the app stalls.
                 (evidence / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-                try:
-                    record["exit_code"] = process.wait(timeout=75)
-                except subprocess.TimeoutExpired:
-                    # Leave process, owned bundle and profile intact for diagnosis.
-                    # Never send termination signals on an acceptance timeout.
-                    record["timed_out"] = True
-                    record["exit_code"] = None
+                if launch_services:
+                    wait_owned_fixture(
+                        process,
+                        record,
+                        bundle,
+                        stderr_path,
+                        evidence,
+                        child_environment,
+                        args.window_renderer,
+                    )
+                else:
+                    try:
+                        record["exit_code"] = process.wait(timeout=75)
+                    except subprocess.TimeoutExpired:
+                        # Leave process and owned profile intact for diagnosis.
+                        # Never send termination signals on an acceptance timeout.
+                        record["timed_out"] = True
+                        record["exit_code"] = None
             if not launch_services:
                 record["application_exit_code"] = record["exit_code"]
             record["outcome"] = fixture_outcome(stdout_path, case)

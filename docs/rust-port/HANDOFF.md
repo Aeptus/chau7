@@ -31,7 +31,17 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
-- Latest validated application source checkpoint is `c842a2412be33b8bda24bd61eeeb4acd79eb5029`
+- Published source `84f82eb3` passed 3,037 Rust tests (two ignored), nine
+  compiler/package stages and ten local quality gates. Its macOS, Linux,
+  Windows and parity CI checks passed, but general Quality CI failed the
+  Python stdio response deadline. Fresh Software diagnostic runtime passed
+  68-byte input, 305-second probes and graceful quit. A fresh fast-package
+  copy subsequently passed that same isolated scenario and retired cleanly.
+  Native Settings, Editor
+  and Cache passed; Restore timed out on app activation/key status while its
+  surfaces were visible and drawing. Full native and physical acceptance
+  remain open. See the current checkpoint in [PARITY.md](PARITY.md).
+- Preceding validated application source checkpoint is `c842a2412be33b8bda24bd61eeeb4acd79eb5029`
   (2026-10-13), including the token-rate provider-label correction. Its
   workspace validation passed 3,024 tests (two ignored); a normal optimized
   build took 58.159 seconds with a warm cache. This is one warm observation,

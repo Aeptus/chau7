@@ -1,12 +1,58 @@
 # Chau7 Next parity with the current Swift app
 
-## Validated application checkpoint (2026-10-13)
+## Published checkpoint and open acceptance (2026-10-13)
 
-The latest validated application source is `c842a2412be33b8bda24bd61eeeb4acd79eb5029`,
+Published source `84f82eb302e45b84f7c7eb0ca55eabccaf946767` preserves settings
+scroll deadlines for subpixel layout changes. Local validation passed 3,037
+Rust tests (two ignored), all nine compiler/package stages and ten separate
+full-quality gates. The normal optimized build took 61.133 seconds with a warm
+cache. The separate diagnostic build took 321.243 seconds with a cold cache.
+These are individual observations, not a comparative build-speed benchmark.
+
+The macOS, Linux, Windows and parity checks passed. General Quality CI failed
+in the Python stdio MCP test on Python 3.15; its existing five-second response
+deadline expired without identifying the request stage. The local quality run
+passed on its separate Python environment. This is an unresolved CI failure.
+
+The [macOS artifact from run 38374191149](https://github.com/Aeptus/chau7/actions/runs/38374191149/artifacts/11801801582)
+was locally verified for arm64, seven executable hashes and strict signatures.
+Its recorded revision is PR merge commit `3371f885b871642d827306188bd752e6b7b64142`,
+with parents main `7733b1f0` and PR head `84f82eb3`. Its tree
+`318fa7f3c35540fd9560e525fca674f00f42a153` equals the validated local tree.
+The artifact was not installed or launched; the GitHub outer digest was not
+independently verified.
+
+Fresh diagnostic app copies passed read-only startup and graceful quit on GPU
+and Software. The Software copy also passed two owned fake-shell children,
+an exact 68-byte Unicode input, four read-only MCP exports after 305 seconds
+and graceful quit in 0.386 seconds. Performance exports contained finite
+numeric values, actual Software frames, timer inventory and watchdog data.
+This diagnostic result does not establish a fix for the earlier fast-app
+stall. That old process is now absent but its socket remains; clean graceful
+retirement was not verified.
+
+A fresh isolated copy of the sealed fast package also passed the same exact
+68-byte input, four read-only exports after 305.001 seconds and graceful quit.
+Both fake-shell children and the MCP socket were gone afterward. It used no
+provider or device, performed no build and sent no forced app signal. This
+independent reproduction does not establish the cause or a fix for the older
+stall or replace that package's incomplete retirement evidence.
+
+An independent native Software matrix passed Settings, Editor and Cache.
+Restore failed the strict foreground/key-window requirement after
+programmatic deminiaturization, although the window and both terminal
+surfaces were visible and drawing live frames. The sequence stopped before
+Auto, locale and accessibility cases. Keep this negative evidence and all
+existing deadlines. The complete native matrix and physical Mac checklist
+remain open; inventory completion below means implementation coverage.
+
+## Earlier validated application checkpoint (2026-10-13)
+
+The earlier validated application source is `c842a2412be33b8bda24bd61eeeb4acd79eb5029`,
 including the token-rate provider-label correction. Its workspace validation
 passed 3,024 tests (two ignored). A normal optimized build took 58.159 seconds
 with a warm cache; this is one observation, not a build-speed benchmark. Five
-checks passed for the current PR head: macOS, Linux, Windows, Quality gates
+checks passed for that PR head: macOS, Linux, Windows, Quality gates
 and parity.
 
 The published `Chau7-Next-macOS-arm64` artifact is [artifact 11787133890 from

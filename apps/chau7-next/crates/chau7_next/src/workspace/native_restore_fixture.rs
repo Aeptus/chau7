@@ -13,9 +13,11 @@ use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSEvent, NSEventModifierFlags, NSEventType,
     NSView, NSWindow,
 };
-use objc2_foundation::{NSPoint, NSString};
+use objc2_foundation::{NSBundle, NSPoint, NSString};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 fn error(error: impl std::fmt::Display) -> String {
     error.to_string()
@@ -168,11 +170,32 @@ fn native_mutation(action: impl FnOnce()) -> Result<(), String> {
     Ok(())
 }
 fn activate_owned_application(application: &NSApplication) -> Result<(), String> {
-    native_mutation(|| {
-        // SAFETY: this actual retained AppKit application is on the verified
-        // main thread. Preserve GPUI's existing ignoring-other-apps selector.
-        unsafe { objc2::msg_send![application, activateIgnoringOtherApps: true] }
-    })
+    native_mutation(|| application.activate())
+}
+
+fn emit_activation_handshake(stage: &str, activation_ack_path: &Path) -> Result<(), String> {
+    let bundle_identifier = NSBundle::mainBundle()
+        .bundleIdentifier()
+        .map(|value| value.to_string())
+        .ok_or("owned native fixture has no bundle identifier")?;
+    let executable = std::env::current_exe().map_err(error)?;
+    let bundle = executable
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .ok_or("owned native fixture executable is outside an app bundle")?;
+    let bundle_path = bundle.to_string_lossy().into_owned();
+    let activation_ack_path = activation_ack_path.to_string_lossy().into_owned();
+    let handshake = serde_json::json!({
+        "stage": stage,
+        "pid": std::process::id(),
+        "bundle_identifier": bundle_identifier,
+        "bundle_path": bundle_path,
+        "activation_ack_path": activation_ack_path,
+    });
+    let mut stderr = std::io::stderr().lock();
+    writeln!(stderr, "native_activation_handshake={handshake}").map_err(error)?;
+    stderr.flush().map_err(error)
 }
 
 fn send_owned_key_event(
@@ -1466,6 +1489,10 @@ async fn verify_surfaces(
     // Bring the owned window forward and key it once before app activation.
     native_mutation(|| native.makeKeyAndOrderFront(None))?;
     activate_owned_application(&application)?;
+    // Keep this owned process alive inside the existing reveal deadline until
+    // the runner has reopened its exact bundle and verified the PID set.
+    let activation_ack_path = profile.home.join("native-parity-activation.ack");
+    emit_activation_handshake("deminiaturized_surface_reveal", &activation_ack_path)?;
     wait_for_reveal(
         handle,
         &native,
@@ -1474,7 +1501,8 @@ async fn verify_surfaces(
         cx,
         "actual deminiaturized surface reveal",
         |cx| {
-            !native.isMiniaturized()
+            activation_ack_path.exists()
+                && !native.isMiniaturized()
                 && application.isActive()
                 && native.isVisible()
                 && native.isKeyWindow()
