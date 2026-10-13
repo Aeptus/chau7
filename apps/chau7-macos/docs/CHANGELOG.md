@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added an accessibility Click action to tab radio buttons, using the same selection and
   focus path as the existing tab UI.
+  Native regression fixtures also check the advertised press action and the selected
+  values exported by macOS.
 - Scoped Chau7 Next's Services selection to the focused terminal and window,
   refreshed it when selection changes, and cleared it when terminal input or
   Clear Screen resets the selection. Swift does not advertise an NSServices

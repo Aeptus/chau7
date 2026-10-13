@@ -471,7 +471,7 @@ exec /bin/cat >/dev/null
             )?;
             Ok(())
         })
-        .map_err(error)??;
+        .map_err(error)?;
 
     crate::native_parity_fixture::next_frame(window.into(), cx).await?;
     let lang = chau7_next_core::l10n::current();
