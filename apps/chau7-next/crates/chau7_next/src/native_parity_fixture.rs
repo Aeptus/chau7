@@ -184,6 +184,12 @@ pub(crate) fn run_if_requested() -> Option<i32> {
             crate::l10n::settings_applied(cx);
         }
         crate::observability::init(cx);
+        if case == "restore" {
+            // Restore acceptance exercises the same repository cache/probe
+            // service that normal app startup installs before any workspace.
+            // Its DataRoot is the fixture's private temporary profile.
+            crate::repository::init(cx);
+        }
         if case == "keyboard" {
             // Install the production keymap and native menu route only in this
             // focused case; the original fixture cases keep their old setup.
@@ -265,6 +271,10 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                     let _ = cx.update_window(window, |_, window, _| window.remove_window());
                 }
             });
+            // `flush` is a no-op in cases that did not start the repository
+            // service; Restore drains probes and identity writes before the
+            // owned temporary profile is removed by report().
+            cx.update(|cx| crate::repository::flush(cx));
             // All cases use this unconditional fixture-only teardown, including
             // timeout/early-error paths. No profile removal precedes guards,
             // background readers, queued writes and the final SQLite close.

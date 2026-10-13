@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Start the production repository registry in isolated native Restore
+  acceptance and drain its writes before removing the fixture profile.
 - Validate restored split metadata through real branch changes in owned
   synthetic repositories and report each grouping predicate on failure.
 - Trace attribute-only AppKit text-storage edits during the isolated native
