@@ -31,26 +31,38 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
-- Checkpoint `c8ede4d4662a3b38a25bfe6f4885978769454ab1` passed all nine
-  fast compiler/package stages, ten separate full-quality gates and 3,023
-  Rust tests (two ignored). The normal build took 50.614 seconds with a warm
-  cache. Software native acceptance passed 4/4; Auto with unavailable Metal
-  passed Restore, Settings and Cache but failed Editor composition (3/4).
+- Preceding validated checkpoint `c8ede4d4662a3b38a25bfe6f4885978769454ab1`
+  passed all nine fast compiler/package stages, ten separate full-quality gates
+  and 3,023 Rust tests (two ignored). The normal build took 50.614 seconds with
+  a warm cache. Software native acceptance passed 4/4; Auto with unavailable
+  Metal passed Restore, Settings and Cache but failed Editor composition (3/4).
   The sequence stopped before locale and accessibility cases. The separate
   keyboard fixture passed. No cause or production fix is established for the
   composition loss between frame callbacks. All eight matrix apps retired.
-- On that same checkpoint, two-process deferred-tab MCP acceptance passed:
-  known parked terminals returned blocked read-only readiness and empty buffer
-  and PTY-log snapshots, without starting the target shell or granting control.
-  Saved tab/pane identity and styled scrollback persisted through two graceful
-  quits. Live emulator replay remains unverified. The normal package passed
-  exact 68-byte MCP input, active-child graceful quit, numeric validation of
-  1,868 values and 16 persisted performance rows, and all five synthetic
-  RunData checks. All owned test apps retired; no provider or device was contacted.
+- On c8ede4d, two-process deferred-tab MCP acceptance passed: known parked
+  terminals returned blocked read-only readiness and empty buffer and PTY-log
+  snapshots without starting the target shell or granting control. Saved
+  tab/pane identity and styled scrollback persisted through two graceful quits;
+  live emulator replay remains unverified. The normal package passed exact
+  68-byte MCP input, active-child graceful quit, numeric validation of 1,868
+  values and 16 persisted performance rows, and all five synthetic RunData
+  checks. All owned test apps retired; no provider or device was contacted.
+- Preceding fixture-only source `e0cd62d9761e1d76580adb47aa92f6b2c7c78300`
+  (tree `6c01fea08b58eabfc7d7db69693bc50dd067c773`) passed commit operation
+  1968 and publication operation 1969, five selected gates each. Its separate
+  exact-head full-quality run passed ten gates in 136.210 seconds with the
+  source clean before and after (log SHA256
+  `0f52b8ced0c3cc8c3f649f39bfb142a633f8d322673345770d42af76fff6c49a`).
+  The optional `native-parity-fixture` IME-diagnostic build then failed at
+  `native_markdown/fixture.rs:433` with E0277: `?` was applied to the returned
+  `FixtureStorageObserver` after `cx.update(...).map_err(error)`. The app was
+  not launched, and there is no native diagnostic result for e0cd62d. The
+  canonical nine-stage fast compiler sequence has not been rerun; this follow-up
+  removes the extra try operator, with validation pending. At PR read 1970,
+  three parity checks passed while the OS matrix and Quality were still running.
 
-The fixture-only follow-up adds bounded timing/event/storage diagnostics.
-Its diagnostic build has not run. Older checkpoint results below retain
-their original scope; they do not validate this follow-up.
+Older checkpoint results below retain their original scope; they do not
+validate e0cd62d.
 
 
 - Exact source `baf03cb83fdc6925849e82e9345a4c443929339f` passed all nine
@@ -317,19 +329,18 @@ their original scope; they do not validate this follow-up.
 
 ## 4. Next work, in order
 
-1. Investigate the current ab647613 Software Editor failure without weakening
-   its marked-composition assertion or deadline. The current native run passed
-   three of four Software cases and stopped before Auto, localized Settings and
-   accessibility acceptance. After any source fix, rerun the exact-source
-   compiler and native sequence; preserve this negative receipt.
+1. Validate the fixture-only observer-registration correction after
+   the e0cd62d diagnostic failure, rerunning the exact-source compiler sequence
+   and the diagnostic case. The captured E0277 failure stopped before any app
+   launch; no native diagnostic result exists yet. Preserve the assertion and
+   deadlines and retain the compile-failure receipt.
 2. Complete the separate physical Mac checklist below, especially actual
    keyboard/dead-key/IME input, multi-display interactions, accessibility and
    real helper/provider integrations. Isolated native fixtures and the fake
    local CLI run do not cover those physical or production integrations.
-3. Keep the b639 failure and its diagnostic evidence in recovery history. The
-   the ab647613 Editor case observed marked-composition loss between repaint
-   frames; neither result establishes a production cause or fix. Preserve
-   assertions and deadlines in any follow-up.
+3. Keep the b639 and ab647 marked-composition failures and their diagnostics
+   in recovery history. The later c8 failure likewise does not establish a
+   production cause or fix. Preserve assertions and deadlines in any follow-up.
 4. Continue PR #229 and update this handoff only with evidence from the exact
    revision tested. Preserve prior negative receipts and the distinction
    between scoped fixture acceptance and manual acceptance.

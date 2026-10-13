@@ -432,7 +432,7 @@ pub(in crate::panes::editor) async fn verify(
     // actual GPUI frame/restyle pass while its text is still marked.
     let _storage_edit_observer = cx
         .update(|_| FixtureStorageObserver::register(&native.text))
-        .map_err(error)??;
+        .map_err(error)?;
     native
         .shared
         .fixture_trace

@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Validation
 
+- Published source `e0cd62d9761e1d76580adb47aa92f6b2c7c78300` passed five
+  selected commit gates, five selected publication gates and a separate
+  ten-gate exact-head full-quality run (136.210 seconds, source clean before
+  and after). Its optional fixture-feature IME-diagnostic build failed with
+  E0277 at `native_markdown/fixture.rs:433`, where `?` was applied to a
+  `FixtureStorageObserver`. The build stopped before app launch, so no native
+  diagnostic result exists. The canonical nine-stage compiler sequence has
+  not been rerun; this follow-up removes the extra try operator, with validation
+  pending. At PR read 1970, three parity checks passed and the OS matrix and Quality checks
+  were still running.
 - Checkpoint `c8ede4d4662a3b38a25bfe6f4885978769454ab1` passed all nine
   fast compiler/package stages, ten separate full-quality gates and 3,023
   Rust tests (two ignored). The normal build took 50.614 seconds with a warm
