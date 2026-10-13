@@ -1,6 +1,6 @@
 //! The menu bar item (NSStatusItem, StatusBar module): an icon or title in
 //! the macOS menu bar, with either a menu or a click handler (the command
-//! center popover opens a GPUI window under the item's frame).
+//! center popover opens a GPUI window under the clicked button's screen frame).
 //!
 //! Main thread only. Clicks and chosen menu items arrive as
 //! [`StatusItemEvent`]s: drain them with [`drain_events`] on the main thread.
@@ -128,14 +128,19 @@ mod imp {
             // SAFETY: action method signature `- (void)action:(id)sender`.
             #[unsafe(method(buttonClicked:))]
             fn button_clicked(&self, sender: Option<&NSView>) {
-                let frame = sender.and_then(|view| view.window()).map(|window| {
-                    let rect = window.frame();
-                    ScreenRect {
+                let frame = sender.and_then(|button| {
+                    let window = button.window()?;
+                    // Convert the button's bounds through its host window so
+                    // the event is anchored to the visible status item, not
+                    // to the much larger status-bar window.
+                    let in_window = button.convertRect_toView(button.bounds(), None);
+                    let rect = window.convertRectToScreen(in_window);
+                    Some(ScreenRect {
                         x: rect.origin.x,
                         y: rect.origin.y,
                         width: rect.size.width,
                         height: rect.size.height,
-                    }
+                    })
                 });
                 EVENTS.push(StatusItemEvent::Clicked {
                     item: self.ivars().item,

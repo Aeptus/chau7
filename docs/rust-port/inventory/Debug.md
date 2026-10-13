@@ -48,9 +48,10 @@ The Debug Console is a separate window with nine tabs that shows live app state,
   Cmd+Opt+L, the menu, the palette and the settings buttons all dispatch
   `ToggleDebugConsole`. The partial rows wait for data sources of other
   modules: Token Optimizer (DBG-008 to 011), Events (012), Analytics (018 to 020)
-  and notification reliability (023). DBG-006: the sliders store
-  `highlight_idle_delay_ms` and `highlight_max_interval_ms`, but the danger
-  highlighter does not read them yet. DBG-025: Open Diff and Preview File
+  and notification reliability (023). DBG-006 persists the
+  `highlight_idle_delay_ms` and `highlight_max_interval_ms` controls, which
+  `terminal/view/danger.rs` reads when scheduling dangerous-output highlights.
+  DBG-025: Open Diff and Preview File
   dispatch the placeholder actions until the diff viewer and file preview exist.
 - DBG-024 in Rust: badge ("...", check or cross with duration), the
   `lastCommandBadge` setting and the hover card (duration, exit code and the

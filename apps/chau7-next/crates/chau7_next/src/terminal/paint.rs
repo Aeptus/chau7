@@ -14,6 +14,7 @@
 #[path = "cpu_renderer.rs"]
 mod cpu_renderer;
 
+pub(crate) use cpu_renderer::CpuBitmap;
 pub use cpu_renderer::init as init_cpu_text_system;
 use cpu_renderer::{FrameCache, GridCanvas};
 pub(crate) use cpu_renderer::{glyph_cache_bytes, glyph_cache_entries, release_glyph_cache};
@@ -351,8 +352,26 @@ const MAX_VISIBLE_MATCHES: usize = 300;
 /// timestamps for this viewport.
 pub fn prepaint(
     session: &TerminalSession,
+    inputs: FrameInputs,
+    overlays: &mut Overlays,
+) -> PaintState {
+    prepaint_inner(session, inputs, overlays, true)
+}
+
+/// Prepare owned paint state without changing the view's displayed-frame state.
+pub(crate) fn snapshot_state(
+    session: &TerminalSession,
+    inputs: FrameInputs,
+    overlays: &mut Overlays,
+) -> PaintState {
+    prepaint_inner(session, inputs, overlays, false)
+}
+
+fn prepaint_inner(
+    session: &TerminalSession,
     mut inputs: FrameInputs,
     overlays: &mut Overlays,
+    commit_view_state: bool,
 ) -> PaintState {
     let visibility = session.profiling_phase();
     let mut stage =
@@ -364,7 +383,9 @@ pub fn prepaint(
             chau7_next_core::work_profiler::Queue::Main,
         ));
     stage.items(session.grid.cells.len());
-    overlays.last_paint = Instant::now();
+    if commit_view_state {
+        overlays.last_paint = Instant::now();
+    }
     let grid = &session.grid;
     let offset = grid.display_offset as i32;
     let cursor_row = session.cursor.1 as i32 + offset;
@@ -400,10 +421,19 @@ pub fn prepaint(
     }
     let m = &inputs.metrics;
     let images = if overlays.images.is_empty() {
-        overlays.images.last_placements.clear();
+        if commit_view_state {
+            overlays.images.last_placements.clear();
+        }
         Vec::new()
-    } else {
+    } else if commit_view_state {
         overlays.images.place(
+            (f32::from(m.cell_width), f32::from(m.line_height)),
+            (grid.cols, grid.rows),
+            grid.scrollback_rows,
+            grid.display_offset,
+        )
+    } else {
+        overlays.images.placements(
             (f32::from(m.cell_width), f32::from(m.line_height)),
             (grid.cols, grid.rows),
             grid.scrollback_rows,
@@ -622,7 +652,31 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
         state.visibility,
         cx,
     );
-    let window = &mut canvas;
+    paint_grid_content(bounds, state, &mut canvas, cx);
+    canvas.finish(cx);
+}
+
+/// Render a view-sized snapshot through the same grid painter, forcing the
+/// existing software canvas and leaving the displayed-frame cache untouched.
+pub(crate) fn render_snapshot(
+    state: PaintState,
+    size: gpui::Size<Pixels>,
+    window: &mut Window,
+    cx: &mut App,
+) -> anyhow::Result<CpuBitmap> {
+    let bounds = Bounds::new(point(px(0.0), px(0.0)), size);
+    let mut canvas = GridCanvas::new_offscreen(window, bounds, state.visibility, cx)?;
+    paint_grid_content(bounds, state, &mut canvas, cx);
+    canvas.finish_offscreen()
+}
+
+fn paint_grid_content(
+    bounds: Bounds<Pixels>,
+    state: PaintState,
+    canvas: &mut GridCanvas<'_>,
+    cx: &mut App,
+) {
+    let window = canvas;
     let inputs = &state.inputs;
     let m = &inputs.metrics;
     let cols = state.cols as usize;
@@ -893,7 +947,6 @@ fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Wind
             cx,
         );
     }
-    canvas.finish(cx);
 }
 
 fn scheme_fg_muted(background: Hsla) -> Hsla {

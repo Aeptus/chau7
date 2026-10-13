@@ -77,6 +77,17 @@ impl SavedTab {
             .find(|pane| Some(pane.id) == self.focused_pane)
             .or_else(|| self.panes.first())
     }
+
+    /// Primary terminal follows visual split order, independently of focus.
+    pub fn primary_terminal(&self) -> Option<&SavedPane> {
+        match self.layout.as_ref() {
+            Some(layout) => layout
+                .terminal_ids()
+                .first()
+                .and_then(|id| self.panes.iter().find(|pane| pane.id == *id)),
+            None => self.panes.first(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -106,6 +117,47 @@ mod tests {
         assert_eq!(pane.ai_session_id_source, None);
         assert_eq!(serde_json::to_value(pane).unwrap(), value);
     }
+    #[test]
+    fn primary_terminal_uses_first_visual_terminal_even_when_another_is_focused() {
+        let saved = SavedTab {
+            layout: Some(SavedSplitNode::Split {
+                id: 1,
+                axis: SavedAxis::Horizontal,
+                ratios: vec![0.5, 0.5],
+                children: vec![
+                    SavedSplitNode::Terminal {
+                        id: 10,
+                        directory: Some("/primary".into()),
+                    },
+                    SavedSplitNode::Terminal {
+                        id: 20,
+                        directory: Some("/display".into()),
+                    },
+                ],
+            }),
+            focused_pane: Some(20),
+            panes: vec![
+                SavedPane {
+                    id: 20,
+                    known_repo_root: Some("/display".into()),
+                    ..Default::default()
+                },
+                SavedPane {
+                    id: 10,
+                    known_repo_root: Some("/primary".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(saved.primary_terminal().unwrap().id, 10);
+        assert_eq!(
+            saved.primary_terminal().unwrap().known_repo_root.as_deref(),
+            Some("/primary")
+        );
+        assert_eq!(saved.focused_terminal().unwrap().id, 20);
+    }
+
     #[test]
     fn saved_activity_and_provenance_round_trip_without_defaults_becoming_evidence() {
         let pane = SavedPane {

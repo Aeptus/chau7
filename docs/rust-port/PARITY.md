@@ -1,5 +1,19 @@
 # Chau7 Next parity with the current Swift app
 
+## Active implementation batch (2026-10-14)
+
+Source changes after `0121b9ab` correct split repository grouping, restored
+primary-directory inference, tab-bar recovery actions, isolated Keychain
+replacement, native Services/image-drop retirement, status-item anchoring and
+bundle-only CLI installation. Read-only MCP summaries now report grouping mode,
+group ID, primary/displayed roots and provisional inheritance.
+
+Current batch validation is pending. Earlier source, CI artifact and native
+receipts below retain their original revisions. They do not validate this
+batch. Printing now uses an owned PNG from the shared CPU terminal painter;
+its native fixture checks PNG dimensions, styled RGB and frame-cache isolation. Physical input and real system/service acceptance remain
+open; the user will hand-test after autonomous work is finished.
+
 ## Current implementation follow-up (2026-10-13)
 
 ### Current validated application source: `8c2ef35e`
@@ -738,7 +752,7 @@ stale table.
 |---|---|---|---|---|---|---|---|---|
 | [AI](inventory/AI.md) | 2 | 17 | 17 | 0 | 0 | 0 | 0 | 0 |
 | [Analytics](inventory/Analytics.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
-| [App](inventory/App.md) | 1 | 85 | 83 | 0 | 0 | 2 | 0 | 0 |
+| [App](inventory/App.md) | 1 | 85 | 85 | 0 | 0 | 0 | 0 | 0 |
 | [Appearance](inventory/Appearance.md) | 1 | 16 | 16 | 0 | 0 | 0 | 0 | 0 |
 | [CLI](inventory/CLI.md) | 3 | 3 | 3 | 0 | 0 | 0 | 0 | 0 |
 | [Chau7Core](inventory/Chau7Core.md) | per row | 76 | 73 | 0 | 0 | 3 | 0 | 0 |
@@ -749,7 +763,7 @@ stale table.
 | [Editor](inventory/Editor.md) | 4 | 15 | 15 | 0 | 0 | 0 | 0 | 0 |
 | [Events](inventory/Events.md) | 2 | 10 | 10 | 0 | 0 | 0 | 0 | 0 |
 | [History](inventory/History.md) | 2 | 17 | 17 | 0 | 0 | 0 | 0 | 0 |
-| [Keyboard](inventory/Keyboard.md) | 1 | 70 | 69 | 0 | 0 | 1 | 0 | 0 |
+| [Keyboard](inventory/Keyboard.md) | 1 | 70 | 70 | 0 | 0 | 0 | 0 | 0 |
 | [Localization](inventory/Localization.md) | 5 | 9 | 9 | 0 | 0 | 0 | 0 | 0 |
 | [Logging](inventory/Logging.md) | 5 | 30 | 28 | 0 | 0 | 2 | 0 | 0 |
 | [MCP](inventory/MCP.md) | 3 | 63 | 63 | 0 | 0 | 0 | 0 | 0 |
@@ -757,7 +771,7 @@ stale table.
 | [Monitoring](inventory/Monitoring.md) | 2 | 24 | 24 | 0 | 0 | 0 | 0 | 0 |
 | [Notifications](inventory/Notifications.md) | 2 | 45 | 45 | 0 | 0 | 0 | 0 | 0 |
 | [Observability](inventory/Observability.md) | 3 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
-| [Overlay](inventory/Overlay.md) | 1 | 121 | 118 | 0 | 0 | 3 | 0 | 0 |
+| [Overlay](inventory/Overlay.md) | 1 | 121 | 119 | 0 | 0 | 2 | 0 | 0 |
 | [Performance](inventory/Performance.md) | 1 | 18 | 14 | 0 | 0 | 4 | 0 | 0 |
 | [Profiles](inventory/Profiles.md) | 1 | 20 | 20 | 0 | 0 | 0 | 0 | 0 |
 | [Proxy](inventory/Proxy.md) | 3 | 22 | 22 | 0 | 0 | 0 | 0 | 0 |
@@ -778,7 +792,7 @@ stale table.
 | [Usage](inventory/Usage.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | [Utilities](inventory/Utilities.md) | 1 | 13 | 7 | 0 | 0 | 6 | 0 | 0 |
 | [Views](inventory/Views.md) | 5 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| **Total** | | **1309** | **1273** | **0** | **0** | **36** | **0** | |
+| **Total** | | **1309** | **1277** | **0** | **0** | **32** | **0** | |
 
 Finished (done, n/a or dropped): 1309 of 1309 rows (100%). Partial: 0.
 

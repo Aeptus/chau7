@@ -223,6 +223,20 @@ impl ImageLayer {
         history: u32,
         display_offset: u32,
     ) -> Vec<Placement> {
+        let out = self.placements(cell, grid, history, display_offset);
+        self.last_placements = out.clone();
+        out
+    }
+
+    /// Compute placements without changing the hit-test list for the last
+    /// displayed frame (used by immutable print snapshots).
+    pub fn placements(
+        &self,
+        cell: (f32, f32),
+        grid: (u16, u16),
+        history: u32,
+        display_offset: u32,
+    ) -> Vec<Placement> {
         let mut out = Vec::new();
         for image in &self.images {
             let row = inline_image::viewport_row(image.anchor_line, history, display_offset);
@@ -244,7 +258,6 @@ impl ImageLayer {
                 render: image.render.clone(),
             });
         }
-        self.last_placements = out.clone();
         out
     }
 
@@ -477,6 +490,23 @@ mod tests {
         assert_eq!(layer.place((8.0, 16.0), (80, 24), 35, 30).len(), 1);
         assert_eq!(layer.hit(point(px(20.0), px(20.0))), Some(1));
         assert_eq!(layer.hit(point(px(0.0), px(0.0))), None);
+    }
+
+    #[test]
+    fn snapshot_placements_do_not_replace_the_displayed_hit_test_regions() {
+        let mut layer = ImageLayer::default();
+        layer.ingest(
+            vec![iterm("inline=1", &png_bytes(20, 10), 1, 5)],
+            &Settings::default(),
+        );
+        let displayed = layer.place((8.0, 16.0), (80, 24), 5, 0);
+        let hit_regions = layer.last_placements.clone();
+
+        let snapshot = layer.placements((10.0, 20.0), (80, 24), 5, 0);
+        assert_eq!(snapshot.len(), 1);
+        assert_ne!(snapshot[0].bounds, displayed[0].bounds);
+        assert_eq!(layer.last_placements.len(), hit_regions.len());
+        assert_eq!(layer.last_placements[0].bounds, hit_regions[0].bounds);
     }
 
     #[test]

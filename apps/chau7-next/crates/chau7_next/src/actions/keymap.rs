@@ -145,6 +145,7 @@ fn tab_bindings() -> Vec<KeyBinding> {
             KeyBinding::new("ctrl-shift-alt-]", MoveTabRight, None),
             KeyBinding::new("ctrl-shift-alt-[", MoveTabLeft, None),
             KeyBinding::new("ctrl-shift-alt-m", ToggleMinimalMode, None),
+            KeyBinding::new("ctrl-shift-alt-r", RefreshTabBar, None),
             KeyBinding::new("ctrl-shift-b", AddBookmark, Some("Workspace")),
             // Help menu (Swift Cmd+Opt+I, Cmd+Opt+L).
             KeyBinding::new("ctrl-shift-alt-i", ReportIssue, None),
@@ -228,6 +229,7 @@ fn macos_bindings() -> Vec<KeyBinding> {
         // Window. macOS reports Cmd+Shift+] as "cmd-}" (Shift folded into the
         // character), as in Zed's keymap.
         KeyBinding::new("cmd-alt-r", RenameTab, None),
+        KeyBinding::new("cmd-alt-shift-r", RefreshTabBar, None),
         KeyBinding::new("cmd-}", NextTab, None),
         KeyBinding::new("cmd-{", PreviousTab, None),
         KeyBinding::new("cmd-alt-}", MoveTabRight, None),
@@ -281,6 +283,7 @@ pub fn action_for_swift_name(name: &str) -> Option<Box<dyn Action>> {
         "addBookmark" => Box::new(AddBookmark),
         "showChangedFiles" => Box::new(ShowChangedFiles),
         "renameTab" => Box::new(RenameTab),
+        "refreshTabBar" => Box::new(RefreshTabBar),
         // Swift: horizontal = side by side (Cmd+D), vertical = stacked.
         "splitHorizontal" => Box::new(SplitRight),
         "splitVertical" => Box::new(SplitDown),
@@ -412,8 +415,7 @@ mod tests {
 
     #[test]
     fn every_swift_key_action_is_bindable() {
-        // `KeyAction.allCases` raw values (KBD-021), except refreshTabBar
-        // (the SwiftUI tab bar recovery, KBD-034, n/a).
+        // All KeyAction raw values, including recovery commands.
         for name in [
             "newTab",
             "closeTab",
@@ -444,6 +446,7 @@ mod tests {
             "addBookmark",
             "showSnippets",
             "renameTab",
+            "refreshTabBar",
             "debugConsole",
             "splitHorizontal",
             "splitVertical",
@@ -484,8 +487,7 @@ mod tests {
             .filter(|s| action_for_swift_name(&s.action).is_none())
             .map(|s| s.action)
             .collect();
-        // The SwiftUI tab bar recovery shortcut (KBD-034, n/a).
-        assert_eq!(missing, ["refreshTabBar"]);
+        assert!(missing.is_empty(), "{missing:?}");
     }
 
     /// Swift's shortcuts on macOS (`Chau7App.swift` menus, the AppDelegate

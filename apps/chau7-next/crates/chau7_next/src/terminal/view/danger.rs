@@ -126,6 +126,40 @@ impl TerminalView {
         }));
     }
 
+    /// Copy the danger rows from the last displayed frame for an immutable
+    /// snapshot. Any due scan remains scheduled for the next live frame.
+    pub(super) fn danger_rows_for_snapshot(
+        &self,
+        session: &TerminalSession,
+        settings: &Settings,
+    ) -> Vec<usize> {
+        if settings.dangerous_commands.scope == HighlightScope::Disabled {
+            return Vec::new();
+        }
+        let grid = &session.grid;
+        let top = grid.scrollback_rows as i64 - grid.display_offset as i64;
+        let bottom = top + grid.rows as i64 - 1;
+        let mut rows: Vec<usize> = self
+            .danger
+            .input_rows
+            .visible_rows(top, bottom)
+            .into_iter()
+            .map(|row| (row - top) as usize)
+            .collect();
+        if output_scope_allows(settings, session) {
+            rows.extend(
+                self.danger
+                    .output_rows
+                    .iter()
+                    .filter(|row| (top..=bottom).contains(*row))
+                    .map(|row| (row - top) as usize),
+            );
+        }
+        rows.sort_unstable();
+        rows.dedup();
+        rows
+    }
+
     /// Viewport rows to tint in this frame (`dangerousRowTints`). Scans the
     /// output rows when a scan is due or the viewport moved.
     pub(super) fn danger_rows_for_frame(

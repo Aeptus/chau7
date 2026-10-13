@@ -49,7 +49,7 @@ impl Workspace {
                         self.window_submenu(cx, |index| op(TabMenuOp::MoveGroupToWindow(index))),
                     );
             }
-        } else if meta.git_root.is_some() {
+        } else if meta.presentation_git_root.is_some() {
             menu = menu
                 .menu(
                     crate::l10n::tr("Add to Repo Group"),

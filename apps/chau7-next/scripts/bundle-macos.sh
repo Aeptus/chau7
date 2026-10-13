@@ -57,6 +57,9 @@ cp "$BIN" "$APP/Contents/MacOS/Chau7 Next"
 cp "$BRIDGE" "$APP/Contents/MacOS/chau7-next-mcp-bridge"
 cp "$RELEASE_DIR/chau7-next-cli" "$APP/Contents/MacOS/chau7-next-cli"
 cp -R "$ROOT/resources/skills" "$APP/Contents/Resources/Skills"
+# The installer is opt-in; launching Chau7 Next never installs shell commands.
+cp "$ROOT/scripts/install-chau7-next-cli.sh" "$APP/Contents/Resources/install-chau7-next-cli.sh"
+chmod 755 "$APP/Contents/Resources/install-chau7-next-cli.sh"
 cp "$ROOT/../chau7-macos/Resources/AppDockIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Ship attribution and the source audit trail for the three modified, locked

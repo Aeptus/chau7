@@ -9,6 +9,8 @@
 //! text is queued for the app, which pastes it into the focused terminal of
 //! that window ([`drain_returned_text`]). Main thread only.
 
+#[cfg(any(target_os = "macos", test))]
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 use gpui::EntityId;
@@ -22,6 +24,26 @@ use super::EventQueue;
 pub struct ReturnedText {
     pub window: usize,
     pub text: String,
+}
+
+/// The native windows currently eligible to participate in Services.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Default)]
+struct TerminalWindows(HashSet<usize>);
+
+#[cfg(any(target_os = "macos", test))]
+impl TerminalWindows {
+    fn insert(&mut self, window: usize) {
+        self.0.insert(window);
+    }
+
+    fn remove(&mut self, window: usize) -> bool {
+        self.0.remove(&window)
+    }
+
+    fn contains(&self, window: usize) -> bool {
+        self.0.contains(&window)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +86,13 @@ impl SelectionState {
             .owner
             .is_some_and(|owner| owner.session_id == session_id)
         {
+            self.text = None;
+        }
+    }
+
+    fn retire_window(&mut self, window: usize) {
+        if self.owner.is_some_and(|owner| owner.window == window) {
+            self.owner = None;
             self.text = None;
         }
     }
@@ -153,6 +182,25 @@ pub fn install(window: &gpui::Window) {
     imp::install(window)
 }
 
+/// Retire this terminal window's Services ownership before removing its
+/// native window. This also discards service replies already queued for it,
+/// so AppKit pointer reuse cannot route them into a later terminal window.
+pub fn uninstall(window: &gpui::Window) {
+    let Some(key) = imp::window_key(window) else {
+        return;
+    };
+    SELECTION
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retire_window(key);
+    discard_returned_for_window(&RETURNED, key);
+    imp::uninstall(key);
+}
+
+fn discard_returned_for_window(queue: &EventQueue<ReturnedText>, window: usize) {
+    queue.retain(|returned| returned.window != window);
+}
+
 /// Text returned by services since the last call.
 pub fn drain_returned_text() -> Vec<ReturnedText> {
     RETURNED.drain()
@@ -160,7 +208,6 @@ pub fn drain_returned_text() -> Vec<ReturnedText> {
 
 #[cfg(target_os = "macos")]
 mod imp {
-    use std::collections::HashSet;
     use std::sync::{Mutex, Once};
 
     use objc2::rc::Retained;
@@ -176,8 +223,8 @@ mod imp {
     /// `public.utf8-plain-text` (`NSPasteboard.PasteboardType.string`).
     const TEXT_TYPE: &str = "public.utf8-plain-text";
 
-    /// NSWindow pointers of the terminal windows.
-    static TERMINAL_WINDOWS: Mutex<Option<HashSet<usize>>> = Mutex::new(None);
+    /// NSWindow pointers of the terminal windows, retired before close.
+    static TERMINAL_WINDOWS: Mutex<Option<super::TerminalWindows>> = Mutex::new(None);
     static ADD_METHODS: Once = Once::new();
 
     type RequestorFn = unsafe extern "C-unwind" fn(
@@ -200,13 +247,29 @@ mod imp {
         Some(unsafe { appkit.ns_view.cast::<NSView>().as_ref() })
     }
 
+    pub fn window_key(window: &gpui::Window) -> Option<usize> {
+        let view = ns_view(window)?;
+        let ns_window = view.window()?;
+        Some(Retained::as_ptr(&ns_window) as usize)
+    }
+
+    pub fn uninstall(key: usize) {
+        if let Some(windows) = TERMINAL_WINDOWS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_mut()
+        {
+            windows.remove(key);
+        }
+    }
+
     /// The NSWindow of a view, as a key, when it is a terminal window.
     fn terminal_window_of(view: &AnyObject) -> Option<usize> {
         // SAFETY: every NSView answers `window`.
         let window: Option<Retained<NSWindow>> = unsafe { msg_send![view, window] };
         let key = Retained::as_ptr(&window?) as usize;
         let windows = TERMINAL_WINDOWS.lock().unwrap_or_else(|e| e.into_inner());
-        windows.as_ref()?.contains(&key).then_some(key)
+        windows.as_ref()?.contains(key).then_some(key)
     }
 
     fn is_text_type(kind: *mut AnyObject) -> bool {
@@ -312,7 +375,7 @@ mod imp {
         TERMINAL_WINDOWS
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .get_or_insert_with(HashSet::new)
+            .get_or_insert_with(super::TerminalWindows::default)
             .insert(Retained::as_ptr(&ns_window) as usize);
         let object: &AnyObject = view;
         let class = object.class();
@@ -360,11 +423,20 @@ mod imp {
 mod imp {
     /// Only macOS has Services.
     pub fn install(_window: &gpui::Window) {}
+
+    pub fn window_key(_window: &gpui::Window) -> Option<usize> {
+        None
+    }
+
+    pub fn uninstall(_key: usize) {}
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{EntityId, SelectionOwner, SelectionState};
+    use super::{
+        EntityId, SelectionOwner, SelectionState, TerminalWindows, discard_returned_for_window,
+    };
+    use crate::platform::EventQueue;
 
     fn owner(window: usize, session_id: u64, view_id: u64) -> SelectionOwner {
         SelectionOwner {
@@ -491,5 +563,52 @@ mod tests {
             state.selection_for_window(1).as_deref(),
             Some("new selection")
         );
+    }
+
+    #[test]
+    fn retiring_a_window_clears_only_its_selection_and_allows_pointer_reuse() {
+        let mut state = SelectionState::default();
+        let old = owner(7, 42, 70);
+        state.focus(old, Some("old selection".into()));
+        state.retire_window(7);
+        assert_eq!(state.owner, None);
+        assert_eq!(state.selection_for_window(7), None);
+
+        let reused = owner(7, 84, 71);
+        state.focus(reused, Some("new selection".into()));
+        assert_eq!(
+            state.selection_for_window(7).as_deref(),
+            Some("new selection")
+        );
+    }
+
+    #[test]
+    fn terminal_window_registry_retires_exact_ids_before_reuse() {
+        let mut windows = TerminalWindows::default();
+        windows.insert(7);
+        windows.insert(8);
+        assert!(windows.remove(7));
+        assert!(!windows.contains(7));
+        assert!(windows.contains(8));
+        windows.insert(7);
+        assert!(windows.contains(7));
+    }
+
+    #[test]
+    fn retiring_a_window_purges_only_its_queued_service_reply() {
+        let queue = EventQueue::new();
+        queue.push(super::ReturnedText {
+            window: 7,
+            text: "old".into(),
+        });
+        queue.push(super::ReturnedText {
+            window: 8,
+            text: "keep".into(),
+        });
+        discard_returned_for_window(&queue, 7);
+        let remaining = queue.drain();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].window, 8);
+        assert_eq!(remaining[0].text, "keep");
     }
 }

@@ -52,6 +52,7 @@ actions!(
         Minimize,
         Zoom,
         BringAllToFront,
+        RefreshTabBar,
         SeedDebugTabs,
         ToggleBroadcast,
         ShowClipboardHistory,

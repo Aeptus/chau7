@@ -24,6 +24,21 @@ ported so far.
 
 The CI build is for Apple Silicon. On an Intel Mac, build locally.
 
+### Optional command-line tools
+
+The app bundle includes an installer for the standalone `chau7-next` command and
+its bundled skills. Run it from Terminal only if you want those commands:
+
+```bash
+"/Applications/Chau7 Next.app/Contents/Resources/install-chau7-next-cli.sh"
+```
+
+For an app in `~/Applications`, use that path instead of `/Applications`. The
+installer places `chau7-next` and `chau7-next-cli` in `~/.local/bin` and copies
+the built-in skills to `~/.local/share/chau7-next/skills`; add `~/.local/bin` to
+`PATH` if needed. Installing is opt-in: opening Chau7 Next does not install
+commands or change the Swift app's helpers or data.
+
 ### Build locally
 
 Requires the repository-pinned Rust 1.99 toolchain and Apple developer

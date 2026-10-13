@@ -194,6 +194,46 @@ struct Surface {
     height: usize,
     bytes: Vec<u8>,
 }
+
+/// Owned, capture-free raster from the same CPU canvas used by the software
+/// terminal renderer. `point_size` keeps the terminal's measured cell geometry
+/// when the printer lays out the bitmap.
+#[derive(Debug, Clone)]
+pub(crate) struct CpuBitmap {
+    pub(crate) png: Vec<u8>,
+    pub(crate) point_size: (f64, f64),
+    pub(crate) pixel_size: (u32, u32),
+}
+
+impl Surface {
+    fn into_bitmap(self) -> anyhow::Result<CpuBitmap> {
+        let width = u32::try_from(self.width)?;
+        let height = u32::try_from(self.height)?;
+        let pixel_size = (width, height);
+        let point_size = (
+            f64::from(self.bounds.size.width),
+            f64::from(self.bounds.size.height),
+        );
+        let mut rgba = self.bytes;
+        // Surface is BGRA for GPUI. PNG and NSImage consume RGBA.
+        for pixel in rgba.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        let mut png = Vec::new();
+        image::ImageEncoder::write_image(
+            image::codecs::png::PngEncoder::new(&mut png),
+            &rgba,
+            width,
+            height,
+            image::ExtendedColorType::Rgba8,
+        )?;
+        Ok(CpuBitmap {
+            png,
+            point_size,
+            pixel_size,
+        })
+    }
+}
 impl Surface {
     fn new(bounds: Bounds<Pixels>, requested_scale: f32) -> Self {
         let w = f32::from(bounds.size.width).max(1.0);
@@ -385,6 +425,27 @@ pub(super) struct GridCanvas<'a> {
     visibility: &'static str,
 }
 impl<'a> GridCanvas<'a> {
+    /// Create a CPU-only canvas for printing. It has a private, empty cache and
+    /// never submits a frame to the live window or mutates the view's cache.
+    pub fn new_offscreen(
+        window: &'a mut Window,
+        bounds: Bounds<Pixels>,
+        visibility: &'static str,
+        cx: &mut App,
+    ) -> anyhow::Result<Self> {
+        let text = cx
+            .try_global::<CpuTextGlobal>()
+            .map(|global| global.0.clone())
+            .ok_or_else(|| anyhow::anyhow!("CPU text renderer is unavailable for printing"))?;
+        Ok(Self {
+            surface: Some(Surface::new(bounds, window.scale_factor())),
+            text: Some(text),
+            window,
+            cache: Arc::new(Mutex::new(FrameCache::default())),
+            visibility,
+        })
+    }
+
     pub fn new(
         window: &'a mut Window,
         bounds: Bounds<Pixels>,
@@ -561,6 +622,13 @@ impl<'a> GridCanvas<'a> {
                 .paint_image(mask, bounds, corners, image, frame, grayscale)
         }
     }
+    pub fn finish_offscreen(mut self) -> anyhow::Result<CpuBitmap> {
+        self.surface
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("offscreen canvas did not produce a CPU surface"))?
+            .into_bitmap()
+    }
+
     pub fn finish(mut self, cx: &mut App) {
         let Some(surface) = self.surface.take() else {
             return;
@@ -714,6 +782,24 @@ mod tests {
             dilation: 0,
         }
     }
+    #[test]
+    fn offscreen_bitmap_preserves_point_bounds_and_encodes_surface_channels() {
+        let mut surface = surface();
+        for pixel in surface.bytes.chunks_exact_mut(4) {
+            pixel.copy_from_slice(&[10, 20, 30, 255]); // BGRA
+        }
+        surface.bytes[..4].copy_from_slice(&[0, 0, 255, 128]); // straight-alpha red
+        surface.bytes[4..8].copy_from_slice(&[255, 0, 0, 128]); // straight-alpha blue
+
+        let bitmap = surface.into_bitmap().unwrap();
+        assert_eq!(bitmap.point_size, (4.0, 3.0));
+        assert_eq!(bitmap.pixel_size, (8, 6));
+        let decoded = image::load_from_memory(&bitmap.png).unwrap().to_rgba8();
+        assert_eq!(decoded.dimensions(), (8, 6));
+        assert_eq!(decoded.get_pixel(0, 0).0, [255, 0, 0, 128]);
+        assert_eq!(decoded.get_pixel(1, 0).0, [0, 0, 255, 128]);
+    }
+
     #[test]
     fn renderer_diagnostics_report_observed_path_without_faking_unpainted_values() {
         let mut cache = FrameCache::default();

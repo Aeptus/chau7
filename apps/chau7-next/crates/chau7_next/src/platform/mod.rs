@@ -20,7 +20,7 @@
 //! | [`autofill`] | Password AutoFill ("AutoFill from Passwords...") |
 //! | [`workspace`] | NSWorkspace: open with a given app, default app, file icons |
 //! | [`pasteboard`] | NSPasteboard change count (copies made in other apps) |
-//! | [`print`] | NSPrintOperation: print the terminal text |
+//! | [`print`] | NSPrintOperation: print a CPU-rendered terminal snapshot |
 //! | [`icloud`] | iCloud key-value store for the settings sync (`CloudStore`) |
 //! | [`login_item`] | Launch at login, SMAppService (`LoginItem`) |
 //! | [`status_item`] | NSStatusItem menu bar item with a menu (`StatusItem`) |
@@ -164,6 +164,14 @@ impl<T> EventQueue<T> {
             .push_back(event);
     }
 
+    /// Remove queued events owned by a resource that is being retired.
+    pub fn retain(&self, mut keep: impl FnMut(&T) -> bool) {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|event| keep(event));
+    }
+
     /// Every queued event, oldest first.
     pub fn drain(&self) -> Vec<T> {
         self.inner
@@ -222,6 +230,16 @@ mod tests {
         queue.push(2);
         assert_eq!(queue.drain(), vec![1, 2]);
         assert!(queue.drain().is_empty());
+    }
+
+    #[test]
+    fn event_queue_can_retire_one_owner_without_reordering_others() {
+        let queue = EventQueue::new();
+        queue.push((1, "old window"));
+        queue.push((2, "other window"));
+        queue.push((1, "old window, later event"));
+        queue.retain(|(owner, _)| *owner != 1);
+        assert_eq!(queue.drain(), vec![(2, "other window")]);
     }
 
     #[test]

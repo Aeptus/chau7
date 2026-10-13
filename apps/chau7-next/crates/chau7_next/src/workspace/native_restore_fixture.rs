@@ -30,6 +30,41 @@ fn ensure(condition: bool, message: &str) -> Result<(), String> {
     }
 }
 
+fn verify_grouping_summary(
+    summary: &serde_json::Map<String, serde_json::Value>,
+    mode: &str,
+    group_id: &str,
+    primary_root: &str,
+    presentation_root: &str,
+) -> Result<(), String> {
+    let grouping = summary
+        .get("repo_grouping")
+        .and_then(serde_json::Value::as_object)
+        .ok_or("MCP summary omitted repository grouping")?;
+    ensure(
+        grouping.get("mode").and_then(serde_json::Value::as_str) == Some(mode),
+        "MCP repository grouping mode changed",
+    )?;
+    ensure(
+        grouping.get("group_id").and_then(serde_json::Value::as_str) == Some(group_id),
+        "MCP repository grouping selected the wrong group",
+    )?;
+    ensure(
+        grouping
+            .get("primary_repo_root")
+            .and_then(serde_json::Value::as_str)
+            == Some(primary_root),
+        "MCP primary repository root changed",
+    )?;
+    ensure(
+        grouping
+            .get("presentation_repo_root")
+            .and_then(serde_json::Value::as_str)
+            == Some(presentation_root),
+        "MCP presentation repository root changed",
+    )
+}
+
 fn styled_scrollback_sample(term: &Chau7Terminal) -> Result<serde_json::Value, String> {
     // Sample the first retained row, not the recent screen tail, before
     // persistence and after the production reload.
@@ -562,6 +597,41 @@ async fn settle_with_deadline(
     Ok(())
 }
 
+struct MetadataEventCounter {
+    _subscription: gpui::Subscription,
+}
+
+impl MetadataEventCounter {
+    fn new(
+        panes: gpui::Entity<PaneTree>,
+        count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        primary_root: PathBuf,
+        presentation_root: PathBuf,
+        cx: &mut gpui::Context<Self>,
+    ) -> Self {
+        let subscription = cx.subscribe(&panes, move |_, panes, event: &PaneEvent, cx| {
+            if !matches!(event, PaneEvent::MetadataChanged) {
+                return;
+            }
+            let tree = panes.read(cx);
+            let actual_primary = tree
+                .primary_session(cx)
+                .and_then(|session| session.read(cx).git_root.clone());
+            let actual_presentation = tree
+                .presentation_session(cx)
+                .and_then(|session| session.read(cx).git_root.clone());
+            if actual_primary.as_deref() == Some(primary_root.as_path())
+                && actual_presentation.as_deref() == Some(presentation_root.as_path())
+            {
+                count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        });
+        Self {
+            _subscription: subscription,
+        }
+    }
+}
+
 struct Profile {
     home: PathBuf,
     root: DataRoot,
@@ -578,8 +648,25 @@ impl Profile {
         std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o700)).map_err(error)?;
         let directories: Vec<_> = (0..7).map(|i| home.join(format!("pane-{i}"))).collect();
         let ids: Vec<_> = (0..7).map(|_| uuid::Uuid::new_v4().to_string()).collect();
-        for (directory, id) in directories.iter().zip(&ids) {
+        for (index, (directory, id)) in directories.iter().zip(&ids).enumerate() {
             std::fs::create_dir_all(directory).map_err(error)?;
+            if matches!(index, 1 | 2) {
+                let git_dir = directory.join(".git");
+                std::fs::create_dir_all(git_dir.join("objects")).map_err(error)?;
+                std::fs::create_dir_all(git_dir.join("refs/heads")).map_err(error)?;
+                let branch = if index == 1 {
+                    "fixture-primary"
+                } else {
+                    "fixture-focused"
+                };
+                std::fs::write(git_dir.join("HEAD"), format!("ref: refs/heads/{branch}\n"))
+                    .map_err(error)?;
+                std::fs::write(
+                    git_dir.join("config"),
+                    b"[core]\n\trepositoryformatversion = 0\n\tbare = false\n",
+                )
+                .map_err(error)?;
+            }
             let project = directory.to_string_lossy();
             let folder = home.join(".claude/projects").join(
                 chau7_next_core::session_restore::claude_project_dir_name(&project),
@@ -622,6 +709,8 @@ impl Profile {
             ai_provider: Some("claude".into()),
             ai_session_id: Some(self.ids[index].clone()),
             ai_resume_command: Some(format!("claude --resume {}", self.ids[index])),
+            known_repo_root: matches!(index, 1 | 2)
+                .then(|| self.directories[index].to_string_lossy().into_owned()),
             ..Default::default()
         }
     }
@@ -1088,43 +1177,48 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
     });
     let selected_layout = tabs[1].layout.clone().ok_or("fixture split missing")?;
     let selected_uuid = tabs[1].uuid.ok_or("fixture UUID missing")?;
+    let previous_repo_grouping = cx.update(|cx| cx.global::<Settings>().tabs.repo_grouping);
     crate::restore::preparation::register_saved_identity_hints(&profile.root, tabs.iter());
     cx.update(|cx| {
         let settings = cx.global_mut::<Settings>();
+        settings.tabs.repo_grouping = crate::settings::RepoGroupingMode::Auto;
         settings.terminal.shell = Some(profile.shell.to_string_lossy().into_owned());
         settings.appearance.rendering.gpu_renderer = false;
         settings.appearance.rendering.suspend_background = true;
         settings.appearance.rendering.suspend_delay_secs = 0.05;
     });
-    let (handle, ws) = cx
-        .update(|cx| {
-            gpui_kit::open_window(
-                WindowOptions {
-                    show: true,
-                    focus: false,
-                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                        gpui::point(px(0.), px(0.)),
-                        size(px(1000.), px(600.)),
-                    ))),
-                    ..Default::default()
-                },
-                cx,
-                |window, cx| {
-                    cx.new(|cx| {
-                        Workspace::new(
-                            Some(SavedWindow {
-                                tabs,
-                                selected: 1,
-                                ..Default::default()
-                            }),
-                            window,
-                            cx,
-                        )
-                    })
-                },
-            )
-        })
-        .map_err(error)?;
+    let opened = cx.update(|cx| {
+        let opened = gpui_kit::open_window(
+            WindowOptions {
+                show: true,
+                focus: false,
+                window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                    gpui::point(px(0.), px(0.)),
+                    size(px(1000.), px(600.)),
+                ))),
+                ..Default::default()
+            },
+            cx,
+            |window, cx| {
+                cx.new(|cx| {
+                    Workspace::new(
+                        Some(SavedWindow {
+                            tabs,
+                            selected: 1,
+                            ..Default::default()
+                        }),
+                        window,
+                        cx,
+                    )
+                })
+            },
+        );
+        // Keep Auto active while Workspace initializes its grouping state, then
+        // restore the process-wide setting before any later fixture can run.
+        cx.global_mut::<Settings>().tabs.repo_grouping = previous_repo_grouping;
+        opened
+    });
+    let (handle, ws) = opened.map_err(error)?;
     let handle = handle
         .downcast::<Root>()
         .ok_or("owned restore window lacks Root")?;
@@ -1143,6 +1237,14 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
             .iter()
             .map(|tab| tab.id)
             .collect::<Vec<_>>()
+    });
+    let metadata_event_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let _metadata_event_counter = cx.update(|cx| {
+        let panes = ws.read(cx).entries[&ids[1]].panes.clone();
+        let count = metadata_event_count.clone();
+        let primary_root = profile.directories[1].clone();
+        let presentation_root = profile.directories[2].clone();
+        cx.new(|cx| MetadataEventCounter::new(panes, count, primary_root, presentation_root, cx))
     });
     // Observe admission before yielding to the native platform. First layout
     // may itself take longer than 450ms, so a later fixed-delay check would
@@ -1288,6 +1390,127 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
             .all(|i| profile.directories[i].join("started").exists())
     })
     .await?;
+    let primary_repo_root = profile.directories[1].to_string_lossy().into_owned();
+    let presentation_repo_root = profile.directories[2].to_string_lossy().into_owned();
+    wait_until(cx, "live split repository metadata reconciliation", |cx| {
+        let workspace = ws.read(cx);
+        let Some(meta) = workspace.state.get(ids[1]) else {
+            return false;
+        };
+        let tree = workspace.entries[&ids[1]].panes.read(cx);
+        let sessions = tree.pane_sessions(cx);
+        workspace.state.selected() == Some(ids[1])
+            && tree.focused_pane_id() == Some(102)
+            && sessions.iter().any(|(pane, session)| {
+                *pane == 101
+                    && session.read(cx).git_root.as_deref() == Some(Path::new(&primary_repo_root))
+            })
+            && sessions.iter().any(|(pane, session)| {
+                *pane == 102
+                    && session.read(cx).git_root.as_deref()
+                        == Some(Path::new(&presentation_repo_root))
+            })
+            && meta.git_root.as_deref() == Some(presentation_repo_root.as_str())
+            && meta.primary_git_root.as_deref() == Some(primary_repo_root.as_str())
+            && meta.presentation_git_root.as_deref() == Some(presentation_repo_root.as_str())
+            && meta.repo_group_id.as_deref() == Some(primary_repo_root.as_str())
+            && metadata_event_count.load(std::sync::atomic::Ordering::Relaxed) > 0
+    })
+    .await?;
+    let automatic_grouping_summary = cx.update(|cx| {
+        cx.global_mut::<Settings>().tabs.repo_grouping = crate::settings::RepoGroupingMode::Auto;
+        let summary = (|| -> Result<serde_json::Value, String> {
+            let workspace = ws.read(cx);
+            ensure(
+                workspace.state.selected() == Some(ids[1]),
+                "automatic grouping changed selected tab",
+            )?;
+            let summary = workspace.mcp_summary(ids[1], cx);
+            verify_grouping_summary(
+                &summary,
+                "auto",
+                &primary_repo_root,
+                &primary_repo_root,
+                &presentation_repo_root,
+            )?;
+            Ok(serde_json::Value::Object(summary))
+        })();
+        cx.global_mut::<Settings>().tabs.repo_grouping = previous_repo_grouping;
+        summary
+    })?;
+    let (manual_grouping_summary, restored_automatic_summary) =
+        ws.update(cx, |workspace, cx| -> Result<_, String> {
+            let transition = (|| -> Result<_, String> {
+                cx.global_mut::<Settings>().tabs.repo_grouping =
+                    crate::settings::RepoGroupingMode::Manual;
+                workspace.state.set_auto_repo_grouping(false);
+                workspace.state.add_to_repo_group(ids[1]);
+                ensure(
+                    workspace.state.selected() == Some(ids[1]),
+                    "manual grouping changed selected tab",
+                )?;
+                ensure(
+                    workspace
+                        .state
+                        .get(ids[1])
+                        .and_then(|tab| tab.repo_group_id.as_deref())
+                        == Some(presentation_repo_root.as_str()),
+                    "manual grouping did not use the focused pane repository",
+                )?;
+                let manual_summary = workspace.mcp_summary(ids[1], cx);
+                verify_grouping_summary(
+                    &manual_summary,
+                    "manual",
+                    &presentation_repo_root,
+                    &primary_repo_root,
+                    &presentation_repo_root,
+                )?;
+                cx.global_mut::<Settings>().tabs.repo_grouping =
+                    crate::settings::RepoGroupingMode::Auto;
+                workspace.state.set_auto_repo_grouping(true);
+                ensure(
+                    workspace.state.selected() == Some(ids[1]),
+                    "restoring automatic grouping changed selected tab",
+                )?;
+                ensure(
+                    workspace
+                        .state
+                        .get(ids[1])
+                        .and_then(|tab| tab.repo_group_id.as_deref())
+                        == Some(primary_repo_root.as_str()),
+                    "automatic grouping did not restore the primary repository",
+                )?;
+                let automatic_summary = workspace.mcp_summary(ids[1], cx);
+                verify_grouping_summary(
+                    &automatic_summary,
+                    "auto",
+                    &primary_repo_root,
+                    &primary_repo_root,
+                    &presentation_repo_root,
+                )?;
+                Ok((
+                    serde_json::Value::Object(manual_summary),
+                    serde_json::Value::Object(automatic_summary),
+                ))
+            })();
+            cx.global_mut::<Settings>().tabs.repo_grouping = previous_repo_grouping;
+            workspace.state.set_auto_repo_grouping(
+                previous_repo_grouping == crate::settings::RepoGroupingMode::Auto,
+            );
+            transition
+        })?;
+    let split_repository_grouping = serde_json::json!({
+        "metadata_event_count": metadata_event_count.load(std::sync::atomic::Ordering::Relaxed),
+        "selected_tab_preserved": true,
+        "focused_pane_id": 102,
+        "live_session_roots": {
+            "primary_pane_101": primary_repo_root,
+            "focused_pane_102": presentation_repo_root,
+        },
+        "automatic": automatic_grouping_summary,
+        "manual": manual_grouping_summary,
+        "automatic_restored": restored_automatic_summary,
+    });
     wait_until(cx, "parked identity-only metadata", |cx| {
         let tree = ws.read(cx).entries[&ids[0]].panes.read(cx);
         tree.pane_sessions(cx).is_empty()
@@ -1385,7 +1608,7 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
         "cleanup did not close all five actual owned PTYs",
     )?;
     Ok(
-        serde_json::json!({"restored_tabs":6,"selected_initial_ptys":2,"preserved_split_leaves":2,"native_identities":2,"quiet_period_ms":450,"observed_identity_admission_ms":admission_ms,"transient_selection_ptys":0,"parked_metadata_ptys":0,"resume_deliveries":2,"resume_line_terminators":0,"duplicate_deliveries":0,"closed_owned_ptys":closed,"surfaces":surface,"loading_clock":loading_clock,"manual_polling":false,"simulated_frames":false}),
+        serde_json::json!({"restored_tabs":6,"selected_initial_ptys":2,"preserved_split_leaves":2,"native_identities":2,"quiet_period_ms":450,"observed_identity_admission_ms":admission_ms,"transient_selection_ptys":0,"parked_metadata_ptys":0,"resume_deliveries":2,"resume_line_terminators":0,"duplicate_deliveries":0,"closed_owned_ptys":closed,"surfaces":surface,"loading_clock":loading_clock,"split_repository_grouping":split_repository_grouping,"manual_polling":false,"simulated_frames":false}),
     )
 }
 
@@ -1984,6 +2207,64 @@ async fn verify_surfaces(
     )
 }
 
+fn capture_print_snapshot(
+    handle: WindowHandle<Root>,
+    ws: &Entity<Workspace>,
+    tab_id: TabId,
+    cx: &mut AsyncApp,
+) -> Result<serde_json::Value, String> {
+    handle
+        .update(cx, |_, window, cx| -> Result<_, String> {
+            let view = ws.read(cx).entries[&tab_id]
+                .panes
+                .read(cx)
+                .focused_view()
+                .ok_or("styled print fixture has no focused terminal view")?;
+            let cache_before = view.read(cx).overlays.cache_bytes();
+            let bitmap = view
+                .update(cx, |view, cx| view.print_snapshot(window, cx))
+                .map_err(error)?;
+            let cache_after = view.read(cx).overlays.cache_bytes();
+            ensure(
+                cache_after == cache_before,
+                "print snapshot changed the displayed CPU frame cache",
+            )?;
+
+            let decoded = image::load_from_memory(&bitmap.png)
+                .map_err(error)?
+                .to_rgba8();
+            ensure(
+                bitmap.pixel_size.0 > 0
+                    && bitmap.pixel_size.1 > 0
+                    && decoded.dimensions() == bitmap.pixel_size,
+                "print snapshot PNG dimensions are empty or inconsistent",
+            )?;
+            let rgba = decoded.as_raw();
+            let nontransparent_pixels = rgba.chunks_exact(4).filter(|px| px[3] > 0).count();
+            let styled_background_pixels = rgba
+                .chunks_exact(4)
+                .filter(|px| px[0] == 7 && px[1] == 8 && px[2] == 9 && px[3] == 255)
+                .count();
+            ensure(
+                nontransparent_pixels > 0 && styled_background_pixels > 0,
+                "print snapshot lost rendered content or restored ANSI background RGB",
+            )?;
+            Ok(serde_json::json!({
+                "png_bytes": bitmap.png.len(),
+                "point_size": bitmap.point_size,
+                "pixel_size": bitmap.pixel_size,
+                "decoded_dimensions": decoded.dimensions(),
+                "nontransparent_pixels": nontransparent_pixels,
+                "expected_ansi_background_rgb": [7, 8, 9],
+                "expected_ansi_background_pixel_count": styled_background_pixels,
+                "displayed_cpu_cache_bytes_before": cache_before,
+                "displayed_cpu_cache_bytes_after": cache_after,
+                "print_panel_opened": false,
+            }))
+        })
+        .map_err(error)?
+}
+
 fn memory_sample(id: u64, cx: &App) -> serde_json::Value {
     crate::memory_pressure::diagnostics(cx)["sessions"]
         .as_array()
@@ -2033,6 +2314,11 @@ async fn verify_retention(
     let before = cx.update(|cx| ordinary.read(cx).buffer_text());
     let styled_cells_before =
         cx.update(|cx| ordinary.read(cx).with_terminal(styled_scrollback_sample))?;
+    // Snapshot this real selected view at the retained styled marker. Decode
+    // the production PNG and check its exact ANSI background RGB, without
+    // opening or submitting an NSPrintOperation.
+    settle(handle, cx).await?;
+    let print_snapshot = capture_print_snapshot(handle, ws, ids[4], cx)?;
     let pty_bytes_before = cx.update(|cx| ordinary.read(cx).with_terminal(|term| term.stats().1));
     let cursor_before = cx.update(|cx| {
         ordinary
@@ -2253,7 +2539,8 @@ async fn verify_retention(
         "content_evidence":content_evidence,"synthetic_rows_preserved_once":200,
         "ordinary_pty_bytes_before":pty_bytes_before,"ordinary_pty_bytes_after":pty_bytes_after,
         "ordinary_input_bytes":0,"ordinary_background_warm":true,"selected_history_preserved":true,
-        "worker_failures":reloaded["failures"],"styled_cell_replay_exact":true,"os_pressure_delivery_tested":false}),
+        "worker_failures":reloaded["failures"],"styled_cell_replay_exact":true,
+        "print_snapshot":print_snapshot,"os_pressure_delivery_tested":false}),
     )
 }
 

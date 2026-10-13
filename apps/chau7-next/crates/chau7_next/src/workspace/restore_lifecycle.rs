@@ -167,7 +167,7 @@ impl Workspace {
                                     .retain(|pending| *pending != id);
                             }
                             if let Some(entry) = this.entries.get(&id) {
-                                let directory = entry.panes.read(cx).cwd(cx);
+                                let directory = entry.panes.read(cx).primary_cwd(cx);
                                 this.state.setup_repo_group_in_directory(
                                     id,
                                     directory.as_deref(),

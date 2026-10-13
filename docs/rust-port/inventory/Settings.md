@@ -35,7 +35,7 @@ UserDefaults keys (Swift) or `config.toml` keys (`[section] key`).
 | SET-014 | "Load Config Files" toggle (`feature.configFile`, default on) | `ConfigFileSettingsView.swift` |  | `chau7_next/src/settings/general.rs` (`load_config_files`), `chau7_next/src/settings_window/general.rs` | done |  |
 | SET-015 | Config file status: path, last loaded time, last error | `ConfigFileSettingsView.swift` |  | `chau7_next/src/settings_window/general.rs` (path, last loaded, last error), `chau7_next/src/settings/config_files.rs` | done |  |
 | SET-016 | Create Default Config, Open in Editor, Reload Now buttons | `ConfigFileSettingsView.swift` | | `chau7_next/src/main.rs` (`OpenConfigFile` writes the default file if missing, `ReloadConfig`), `settings_window/` ("Open config.toml", "Show data folder") | done | |
-| SET-017 | (hidden) Stored keys with no UI and no reader: font weight (`terminal.fontWeight`), cursor color (`terminal.cursorColor`), cursor blink rate (`terminal.cursorBlinkRate`), Unicode ambiguous width (`terminal.unicodeAmbiguousWidth`), visual bell (`terminal.bellVisual`), bell rate limit (`terminal.bellRateLimitSeconds`), dangerous output highlight tuning (`terminal.dangerousOutputHighlight*`) | `Settings/FeatureSettings.swift` | | | n/a | |
+| SET-017 | Legacy stored keys with no current reader: Unicode ambiguous width (`terminal.unicodeAmbiguousWidth`), visual-bell flag (`terminal.bellVisual`), and bell rate limit (`terminal.bellRateLimitSeconds`) | `Settings/FeatureSettings.swift` | | | n/a | Visual-only bell behavior maps to SET-067; see notes for other moved settings |
 
 ### General
 
@@ -287,9 +287,12 @@ UserDefaults keys (Swift) or `config.toml` keys (`[section] key`).
   floating window, mouse reporting, click to position, Metal, local echo,
   smart scroll, API analytics, CTO mode, LLM settings, bug report contact,
   config file toggle.
-- SET-017 and the other hidden keys: no settings UI writes them and (except
-  menu bar only and floating window, SET-023) no code reads them, so they have
-  no visible effect in Swift today.
+- SET-017 lists the legacy values with no current reader:
+  `terminal.unicodeAmbiguousWidth`, `terminal.bellRateLimitSeconds`, and the old
+  `terminal.bellVisual` flag. Visual Only behavior is provided by `SET-067`.
+  Font weight maps to `APR-014`, cursor color and blink rate to `APR-015`, and
+  dangerous-output highlight tuning to `DBG-006`. Other hidden preferences
+  include menu bar only and floating window (`SET-023`).
 - SET-072 exposes the suspend toggle and delay; `terminal/view.rs` applies them to hidden surfaces. SET-073 controls terminal grid rasterization on each frame, while the saved setting also selects the whole-window backend at startup. The UI discloses that switching the window backend takes effect on the next launch; this is the GPUI adaptation of Swift's per-terminal Metal renderer.
 - SET-134 and SET-135 are `n/a`: UI building blocks and documentation, not
   user features.

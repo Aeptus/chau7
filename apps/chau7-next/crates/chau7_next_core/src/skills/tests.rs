@@ -447,3 +447,152 @@ fn standalone_installer_preserves_swift_helpers_and_forwards_arguments() {
         );
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn bundled_installer_uses_sibling_artifacts_without_checkout_or_cargo() {
+    use std::{ffi::OsString, os::unix::fs::PermissionsExt, process::Command};
+
+    let fixture = Fixture::new();
+    let bundle = fixture.0.join("bundle with spaces/Chau7 Next.app");
+    let contents = bundle.join("Contents");
+    let resources = contents.join("Resources");
+    let macos = contents.join("MacOS");
+    std::fs::create_dir_all(resources.join("Skills")).unwrap();
+    std::fs::create_dir_all(&macos).unwrap();
+
+    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    std::fs::copy(
+        workspace.join("scripts/install-chau7-next-cli.sh"),
+        resources.join("install-chau7-next-cli.sh"),
+    )
+    .unwrap();
+    for name in ["chau7-next-build", "chau7-next-mcp"] {
+        let source = workspace
+            .join("resources/skills")
+            .join(name)
+            .join("SKILL.md");
+        let target = resources.join("Skills").join(name);
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::copy(source, target.join("SKILL.md")).unwrap();
+    }
+
+    let bundled_cli = macos.join("chau7-next-cli");
+    std::fs::write(&bundled_cli, "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n").unwrap();
+    std::fs::set_permissions(&bundled_cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let app_binary = macos.join("Chau7 Next");
+    std::fs::write(&app_binary, "Swift app binary sentinel").unwrap();
+
+    let home = fixture.0.join("test home");
+    let bin = home.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    for name in ["chau7", "chau7-cli"] {
+        std::fs::write(bin.join(name), "Swift production helper").unwrap();
+    }
+    for name in ["chau7-next", "chau7-next-cli"] {
+        std::fs::write(bin.join(name), "old Next destination").unwrap();
+    }
+    let swift_state = home.join(".chau7/swift-state.json");
+    std::fs::create_dir_all(swift_state.parent().unwrap()).unwrap();
+    std::fs::write(&swift_state, "preserve Swift state").unwrap();
+
+    let skills_destination = home.join(".local/share/chau7-next/skills");
+    std::fs::create_dir_all(&skills_destination).unwrap();
+    std::fs::write(
+        skills_destination.join("existing-user-file"),
+        "preserve installed data",
+    )
+    .unwrap();
+
+    let fake_bin = fixture.0.join("fake commands");
+    std::fs::create_dir_all(&fake_bin).unwrap();
+    let cargo_marker = fixture.0.join("cargo was called");
+    let fake_cargo = fake_bin.join("cargo");
+    std::fs::write(
+        &fake_cargo,
+        "#!/bin/sh\nprintf 'called\\n' >> \"$CARGO_CALL_MARKER\"\nexit 97\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake_cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut path = OsString::from(fake_bin.as_os_str());
+    path.push(":");
+    path.push(std::env::var_os("PATH").unwrap_or_default());
+
+    let output = Command::new("/bin/bash")
+        .arg(resources.join("install-chau7-next-cli.sh"))
+        .env("HOME", &home)
+        .env("PATH", &path)
+        .env("CARGO_CALL_MARKER", &cargo_marker)
+        .env_remove("CHAU7_NEXT_CLI_SKIP_BUILD")
+        .env_remove("CHAU7_NEXT_CLI_PRODUCT_BIN")
+        .env_remove("CHAU7_NEXT_CLI_SKILLS_SOURCE")
+        .env_remove("CHAU7_NEXT_CLI_INSTALL_DIR")
+        .env_remove("CHAU7_NEXT_CLI_BIN")
+        .env_remove("CARGO_TARGET_DIR")
+        .env_remove("CARGO_BUILD_TARGET")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "status={} stdout={} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!cargo_marker.exists(), "bundle installation invoked Cargo");
+    assert_eq!(
+        std::fs::read_to_string(bin.join("chau7-next-cli")).unwrap(),
+        "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(app_binary).unwrap(),
+        "Swift app binary sentinel"
+    );
+    assert_eq!(
+        std::fs::read_to_string(swift_state).unwrap(),
+        "preserve Swift state"
+    );
+    for name in ["chau7", "chau7-cli"] {
+        assert_eq!(
+            std::fs::read_to_string(bin.join(name)).unwrap(),
+            "Swift production helper"
+        );
+    }
+    assert_eq!(
+        std::fs::read_to_string(skills_destination.join("existing-user-file")).unwrap(),
+        "preserve installed data"
+    );
+
+    let arguments = [
+        "skills",
+        "validate",
+        "path with spaces",
+        "$literal",
+        "backtick",
+    ];
+    let output = Command::new(bin.join("chau7-next"))
+        .args(arguments)
+        .env_remove("CHAU7_NEXT_CLI_BIN")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        arguments
+    );
+    for name in ["chau7-next-build", "chau7-next-mcp"] {
+        assert_eq!(
+            std::fs::read(skills_destination.join(name).join("SKILL.md")).unwrap(),
+            std::fs::read(
+                workspace
+                    .join("resources/skills")
+                    .join(name)
+                    .join("SKILL.md")
+            )
+            .unwrap()
+        );
+    }
+}

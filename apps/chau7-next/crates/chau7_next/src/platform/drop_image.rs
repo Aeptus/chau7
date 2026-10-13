@@ -33,6 +33,20 @@ pub fn install(window: &gpui::Window) {
     imp::install(window)
 }
 
+/// Stop accepting image drops and discard pending drops before removing this
+/// native terminal window. Queue ownership is a raw NSWindow pointer, so it
+/// must be retired before that pointer can identify another window.
+pub fn uninstall(window: &gpui::Window) {
+    if let Some(key) = window_key(window) {
+        discard_events_for_window(&EVENTS, key);
+        imp::uninstall(window);
+    }
+}
+
+fn discard_events_for_window(queue: &EventQueue<ImageDrop>, window: usize) {
+    queue.retain(|event| event.window != window);
+}
+
 /// A key identifying a window in [`ImageDrop::window`].
 pub fn window_key(window: &gpui::Window) -> Option<usize> {
     imp::window_key(window)
@@ -181,6 +195,15 @@ mod imp {
             .unwrap_or(Bool::NO)
     }
 
+    pub fn uninstall(window: &gpui::Window) {
+        if let Some(ns_window) = ns_window(window) {
+            // SAFETY: this retires the drag destination registrations from
+            // the exact NSWindow being removed, after queued drops were
+            // purged and before GPUI releases the native window.
+            unsafe { ns_window.unregisterDraggedTypes() };
+        }
+    }
+
     pub fn install(window: &gpui::Window) {
         let Some(ns_window) = ns_window(window) else {
             return;
@@ -235,5 +258,34 @@ mod imp {
 
     pub fn window_key(_window: &gpui::Window) -> Option<usize> {
         None
+    }
+
+    pub fn uninstall(_window: &gpui::Window) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EventQueue, ImageDrop, discard_events_for_window};
+
+    #[test]
+    fn retiring_a_window_purges_only_its_queued_image_drops() {
+        let queue = EventQueue::new();
+        queue.push(ImageDrop {
+            window: 7,
+            x: 1.0,
+            y: 2.0,
+            data: vec![1],
+        });
+        queue.push(ImageDrop {
+            window: 8,
+            x: 3.0,
+            y: 4.0,
+            data: vec![2],
+        });
+        discard_events_for_window(&queue, 7);
+        let remaining = queue.drain();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].window, 8);
+        assert_eq!(remaining[0].data, vec![2]);
     }
 }

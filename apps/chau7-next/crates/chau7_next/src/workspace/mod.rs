@@ -444,6 +444,27 @@ impl Workspace {
                 }
             })
             .map(|p| p.to_string_lossy().to_string());
+        {
+            let tree = panes.read(cx);
+            meta.primary_git_root = tree
+                .primary_session(cx)
+                .and_then(|session| session.read(cx).git_root.clone())
+                .map(|root| root.to_string_lossy().to_string())
+                .or_else(|| {
+                    tree.deferred_saved()
+                        .and_then(|saved| saved.primary_terminal())
+                        .and_then(|pane| pane.known_repo_root.clone())
+                });
+            meta.presentation_git_root = tree
+                .presentation_session(cx)
+                .and_then(|session| session.read(cx).git_root.clone())
+                .map(|root| root.to_string_lossy().to_string())
+                .or_else(|| {
+                    tree.deferred_saved()
+                        .and_then(|saved| saved.focused_terminal())
+                        .and_then(|pane| pane.known_repo_root.clone())
+                });
+        }
         if let Some(saved) = &saved {
             if let Some(uuid) = saved.uuid {
                 meta.set_uuid(uuid);
@@ -478,7 +499,10 @@ impl Workspace {
                 self.state.push(meta, select);
             }
         }
-        if let Some(root) = self.state.get(id).and_then(|tab| tab.git_root.clone())
+        if let Some(root) = self
+            .state
+            .get(id)
+            .and_then(|tab| tab.primary_git_root.clone())
             && !self.known_repo_roots.contains(&root)
         {
             crate::settings_window::record_recent_repo(&root, cx);
@@ -486,9 +510,8 @@ impl Workspace {
         }
         let directory = panes
             .read(cx)
-            .focused_session(cx)
-            .and_then(|session| session.read(cx).cwd.clone())
-            .or_else(|| cwd.clone());
+            .primary_cwd(cx)
+            .or_else(|| saved_grouping_directory_fallback(saved.as_ref(), cwd.clone()));
         self.state
             .setup_repo_group_in_directory(id, directory.as_deref(), &self.known_repo_roots);
         // A saved token optimizer override goes to the tab's shells (the
@@ -538,27 +561,41 @@ impl Workspace {
                 }
             }
             PaneEvent::MetadataChanged => {
-                let session = panes.read(cx).focused_session(cx);
-                let root = session
+                let tree = panes.read(cx);
+                let session = tree.focused_session(cx);
+                let primary_session = tree.primary_session(cx);
+                let presentation_session = tree.presentation_session(cx);
+                let focused_root = session
                     .as_ref()
                     .and_then(|s| s.read(cx).git_root.clone())
                     .map(|p| p.to_string_lossy().to_string());
-                // `recordRecentRepo`: a tab entered a repository.
-                if let Some(root) = &root
-                    && this.state.get(id).and_then(|t| t.git_root.as_ref()) != Some(root)
+                let primary_root = primary_session
+                    .as_ref()
+                    .and_then(|s| s.read(cx).git_root.clone())
+                    .map(|p| p.to_string_lossy().to_string());
+                let presentation_root = presentation_session
+                    .as_ref()
+                    .and_then(|s| s.read(cx).git_root.clone())
+                    .map(|p| p.to_string_lossy().to_string());
+                let directory = primary_session
+                    .as_ref()
+                    .and_then(|session| session.read(cx).cwd.clone())
+                    .or_else(|| tree.primary_cwd(cx));
+                // Automatic grouping and recent-root tracking follow the primary terminal.
+                if let Some(root) = &primary_root
+                    && this.state.get(id).and_then(|t| t.primary_git_root.as_ref()) != Some(root)
                 {
                     crate::settings_window::record_recent_repo(root, cx);
                     if !this.known_repo_roots.contains(root) {
                         this.known_repo_roots.push(root.clone());
                     }
                 }
-                let directory = session
-                    .as_ref()
-                    .and_then(|session| session.read(cx).cwd.clone());
 
-                this.state.set_git_root_in_directory(
+                this.state.set_repository_roots_in_directory(
                     id,
-                    root,
+                    focused_root,
+                    primary_root,
+                    presentation_root,
                     directory.as_deref(),
                     &this.known_repo_roots,
                 );
@@ -960,6 +997,7 @@ impl Workspace {
                 if answer == Some(0) {
                     log::info!("closeTab: last tab - user chose to close window");
                     this.entries.remove(&id);
+                    Self::retire_native_window(window);
                     window.remove_window();
                 } else {
                     log::info!("closeTab: last tab - replacing with fresh tab");
@@ -1006,6 +1044,8 @@ impl Workspace {
                 chau7_next_core::tabs_state::known_repo_root(dir, None, &self.known_repo_roots)
             })
         });
+        meta.primary_git_root = meta.git_root.clone();
+        meta.presentation_git_root = meta.git_root.clone();
         panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
         self.entries.remove(&id);
         self.insert_entry(new_id, panes, cx);
@@ -1255,6 +1295,7 @@ impl Workspace {
                 selected: 0,
                 bounds,
             });
+            Self::retire_native_window(window);
             window.remove_window();
         }
         Some((meta, entry.panes))
@@ -1448,8 +1489,7 @@ impl Workspace {
                 entry
                     .panes
                     .read(cx)
-                    .focused_session(cx)
-                    .and_then(|session| session.read(cx).cwd.clone())
+                    .primary_cwd(cx)
                     .map(|directory| (*id, directory))
             })
             .collect::<Vec<_>>();
@@ -1693,6 +1733,25 @@ fn close_other_tabs_prompt_text(
     (title, message)
 }
 
+fn saved_grouping_directory_fallback(
+    saved: Option<&SavedTab>,
+    directory: Option<PathBuf>,
+) -> Option<PathBuf> {
+    let Some(saved) = saved else {
+        return directory;
+    };
+    let terminal_count = saved
+        .layout
+        .as_ref()
+        .map(|layout| layout.terminal_ids().len())
+        .unwrap_or(saved.panes.len());
+    if (saved.layout.is_some() && terminal_count == 0) || terminal_count > 1 {
+        None
+    } else {
+        directory
+    }
+}
+
 /// Title and message of the close confirmation (`confirmTabClose`) for a
 /// tab that is not the window's last; `running` is 0 in "always warn" mode.
 fn close_tab_prompt_text(running: usize) -> (String, String) {
@@ -1714,7 +1773,71 @@ fn close_tab_prompt_text(running: usize) -> (String, String) {
 
 #[cfg(test)]
 mod tests {
-    use super::{close_other_tabs_prompt_text, close_tab_prompt_text};
+    use std::path::PathBuf;
+
+    use super::{
+        close_other_tabs_prompt_text, close_tab_prompt_text, saved_grouping_directory_fallback,
+    };
+
+    #[test]
+    fn grouping_directory_fallback_does_not_use_focused_cwd_for_saved_splits() {
+        use crate::session_store::{SavedPane, SavedTab};
+        use chau7_next_core::session_restore::{SavedAxis, SavedSplitNode};
+
+        let focused_secondary = PathBuf::from("/secondary-repo/src");
+        let saved_split = SavedTab {
+            cwd: Some(focused_secondary.clone()),
+            layout: Some(SavedSplitNode::Split {
+                id: 1,
+                axis: SavedAxis::Horizontal,
+                ratios: vec![0.5, 0.5],
+                children: vec![
+                    SavedSplitNode::Terminal {
+                        id: 10,
+                        directory: None,
+                    },
+                    SavedSplitNode::Terminal {
+                        id: 20,
+                        directory: Some("/secondary-repo/src".into()),
+                    },
+                ],
+            }),
+            focused_pane: Some(20),
+            panes: vec![
+                SavedPane {
+                    id: 10,
+                    ..Default::default()
+                },
+                SavedPane {
+                    id: 20,
+                    directory: Some("/secondary-repo/src".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            saved_grouping_directory_fallback(Some(&saved_split), Some(focused_secondary.clone())),
+            None
+        );
+        assert_eq!(
+            saved_grouping_directory_fallback(None, Some(PathBuf::from("/new-tab"))),
+            Some(PathBuf::from("/new-tab"))
+        );
+
+        let editor_only = SavedTab {
+            cwd: Some(focused_secondary.clone()),
+            layout: Some(SavedSplitNode::Editor {
+                id: 30,
+                path: Some("/secondary-repo/src/README.md".into()),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            saved_grouping_directory_fallback(Some(&editor_only), Some(focused_secondary),),
+            None
+        );
+    }
 
     #[test]
     fn close_other_tabs_wording() {

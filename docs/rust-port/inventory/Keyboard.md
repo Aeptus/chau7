@@ -50,7 +50,7 @@ answers "does this key do the same thing in Chau7 Next".
 | KBD-031 | Cmd+Opt+Right and Cmd+Opt+Left next and previous tab (while the tab shortcuts are not customized and no text field has focus) | `App/AppDelegate.swift` (`handleKeyEvent`, `shouldUseAlternateTabNavigationShortcuts`) |  | `chau7_next/src/actions/keymap.rs` (`bind_shortcut_settings`) | done |  |
 | KBD-032 | Cmd+Opt+Shift+] and Cmd+Opt+Shift+[ move the tab right and left | `App/Chau7App.swift` |  | `chau7_next/src/actions/keymap.rs`, `chau7_next/src/workspace/keys.rs` (`move_selected_tab`) | done |  |
 | KBD-033 | Cmd+Opt+R rename tab | `App/Chau7App.swift` | | `chau7_next/src/actions/` | done | |
-| KBD-034 | Cmd+Opt+Shift+R refresh tab bar (recovery) | `App/Chau7App.swift` | | | n/a | |
+| KBD-034 | Cmd+Opt+Shift+R refresh tab bar (recovery) | `App/Chau7App.swift` | actions::keymap::tests; workspace::pickers::extras::tests | chau7_next/src/actions/keymap.rs; chau7_next/src/workspace/pickers/extras.rs | done |  |
 | KBD-035 | Cmd+C copies the selection, or sends Ctrl+C (interrupt) when nothing is selected | `App/AppDelegate.swift` (`copyOrInterrupt`), `RustBackend/RustTerminalView.swift` (`copy`) |  | `chau7_next/src/terminal/view.rs` (`copy`) | done |  |
 | KBD-036 | Cmd+X copies (a terminal cannot cut) | `App/AppDelegate.swift` (`cut`) |  | `chau7_next/src/actions/keymap.rs`, `chau7_next/src/terminal/input.rs` | done |  |
 | KBD-037 | Cmd+V paste | `App/Chau7App.swift` | | `chau7_next/src/actions/` | done | |
@@ -81,7 +81,7 @@ answers "does this key do the same thing in Chau7 Next".
 | KBD-062 | Cmd+Opt+G show changed files | `App/Chau7App.swift` |  | chau7_next/src/actions/keymap.rs,chau7_next/src/panes/mod.rs | done |  |
 | KBD-063 | Cmd+Shift+O SSH connections | `App/Chau7App.swift` |  | `chau7_next/src/actions/keymap.rs` | done |  |
 | KBD-064 | Cmd+Shift+S export terminal text to a file | `App/Chau7App.swift`, `App/AppDelegate.swift` (`exportText`) |  | `chau7_next/src/actions/keymap.rs`, `chau7_next/src/workspace/keys.rs` (`export_text`) | done | NSSavePanel |
-| KBD-065 | Cmd+P print the terminal | `App/Chau7App.swift`, `App/AppDelegate.swift` (`printTerminal`) |  | `chau7_next/src/platform/print.rs`, `chau7_next/src/workspace/keys.rs` (`print_terminal`): prints the visible text in the terminal font (GPUI has no printable NSView) | done | NSPrintOperation |
+| KBD-065 | Cmd+P print the terminal | `App/Chau7App.swift`, `App/AppDelegate.swift` (`printTerminal`) |  | `chau7_next/src/platform/print.rs`, `chau7_next/src/workspace/keys.rs` (`print_terminal`), `terminal/paint.rs` (`render_snapshot`): prints the visible grid through an owned CPU PNG, preserving ANSI colors, glyphs and overlays | done | NSPrintOperation |
 | KBD-066 | Cmd+, settings | `App/Chau7App.swift` | | `chau7_next/src/actions/` | done | |
 | KBD-067 | Cmd+/ keyboard shortcuts help | `App/Chau7App.swift` |  | `chau7_next/src/actions/keymap.rs`, `chau7_next/src/settings_window/shortcuts.rs` | done |  |
 | KBD-068 | Cmd+Opt+I report issue | `App/Chau7App.swift` |  | chau7_next/src/actions/keymap.rs, chau7_next/src/debug/mod.rs, chau7_next/src/debug/report_window.rs | done |  |
@@ -111,8 +111,8 @@ answers "does this key do the same thing in Chau7 Next".
   `showSnippets`, ...) in `KeyAction.fromShortcutAction`. Chau7 Next accepts
   both (`shortcuts::canonical_action`). Its keymap maps `debugConsole`,
   `openTextEditor`, `showChangedFiles`, `showBookmarks` and `addBookmark`.
-  `refreshTabBar` is the remaining excluded action; it belongs to SwiftUI's
-  tab-bar recovery UI (KBD-034, n/a in Next).
+  `refreshTabBar` also maps to the explicit Next redraw recovery action
+  (KBD-034), with Cmd+Opt+Shift+R as its macOS default.
 - **Split naming.** In Swift `splitHorizontal` means side by side
   (`SplitDirection.horizontal`, Cmd+D) and `splitVertical` means stacked;
   `action_for_swift_name` follows that (fixed, it used to be reversed).
@@ -143,8 +143,9 @@ answers "does this key do the same thing in Chau7 Next".
   unchanged) and encodes keys in `chau7_next_core::input::kitty`.
 - **Minimal mode shortcut.** Settings advertise Cmd+Shift+M for minimal mode
   but no menu item or monitor binds it (see Appearance.md APR-008).
-- **n/a row.** KBD-034 recovers from a SwiftUI tab bar rendering glitch that
-  the GPUI tab bar does not have.
+- **Recovery.** KBD-034 refreshes the Next window and tab menu without
+  replacing terminal sessions. It is available through configured shortcuts,
+  the default binding, the Window menu and the palette.
 - **Clipboard polling** (KBD-001) needs a platform pasteboard change counter
   (`NSPasteboard.changeCount` on macOS); put it behind a trait with a stub
   elsewhere.

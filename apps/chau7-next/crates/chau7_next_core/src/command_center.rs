@@ -374,9 +374,9 @@ pub struct Rect {
 /// Top left corner of the popover in window coordinates (origin at the top
 /// left of the main screen, y down), under the menu bar item.
 ///
-/// `item` is the item's window frame in AppKit coordinates (origin at the
-/// bottom left of the main screen, y up); `main_height` is the height of the
-/// main screen; `screen_x` is the horizontal extent of the screen the item
+/// `item` is the clicked status button's frame in AppKit screen coordinates
+/// (bottom-left origin of the main screen, y up); `main_height` is the main
+/// screen height; `screen_x` is the horizontal extent of the screen the item
 /// is on. The popover is centered under the item and kept on the screen; with
 /// no frame it sits at the right end of the menu bar.
 pub fn popover_origin(item: Option<Rect>, main_height: f64, screen_x: (f64, f64)) -> (f64, f64) {

@@ -31,7 +31,7 @@ hooks) and owns the notification permission state.
 | APP-014 | `CLAUDECODE` is removed from the environment so Claude Code starts inside tabs when Chau7 was launched from a Claude Code session | `App/AppDelegate.swift` |  | `chau7_next_core/src/shell_env.rs` (`inherited_cleanup`) | done |  |
 | APP-015 | Broken pipe writes never kill the app (SIGPIPE ignored) | `App/AppDelegate.swift` | | Rust runtime ignores SIGPIPE by default | done | |
 | APP-016 | Background services start at launch and stop at quit: API proxy and its IPC server, token optimizer wrappers, MCP server, remote control agent | `App/AppDelegate.swift` (`applicationDidFinishLaunching`, `applicationWillTerminate`) |  | chau7_next/src/main.rs (mcp::start, mcp::stop, scripting::stop, cto::init, cto::teardown, proxy::init), chau7_next/src/proxy/mod.rs (init, on_app_quit), chau7_next/src/cto/mod.rs (init, teardown), chau7_next/src/remote/mod.rs (init, on_app_quit) | done | Unix sockets |
-| APP-017 | PTY logs over 10 MB in `~/Library/Logs/Chau7/` are trimmed to their last 5 MB at launch | `App/AppDelegate.swift` (`purgeLargePTYLogs`) | | | n/a | |
+| APP-017 | At launch, PTY logs over 10 MB are trimmed to their last 5 MB (Swift path: `~/Library/Logs/Chau7/`) | `App/AppDelegate.swift` (`purgeLargePTYLogs`) | | `chau7_next/src/main.rs` (`purge_large_logs` launch call), `chau7_next/src/logging/ai_pty.rs` (`purge_large_logs`), `chau7_next_core/src/data_root.rs` (`ai_logs_dir`) | done | |
 | APP-018 | Dock icon from the bundle (`AppDockIcon`), with a generated bell icon when running unbundled | `App/AppIcon.swift` |  | apps/chau7-next/scripts/bundle-macos.sh (bundle icon), chau7_next/src/app_icon.rs, chau7_next/src/platform/attention.rs (set_unbundled_app_icon), chau7_next_core/src/app_icon.rs | done | NSApplication.applicationIconImage |
 | APP-019 | Only one instance can run (`LSMultipleInstancesProhibited`) | `Scripts/build-app.sh` |  | apps/chau7-next/scripts/bundle-macos.sh (`LSMultipleInstancesProhibited`) | done | Info.plist |
 | APP-020 | Menu bar only mode (hidden preference `window.menuBarOnlyMode`): no Dock icon, app lives in the status item | `App/Chau7App.swift` |  | `chau7_next/src/app_actions.rs` (`apply_menu_bar_only_mode`), `chau7_next/src/platform/defaults.rs` | done | NSApplication.ActivationPolicy |
@@ -81,7 +81,7 @@ hooks) and owns the notification permission state.
 | APP-064 | Window menu: Show Next Tab, Show Previous Tab (Cmd+Shift+], Cmd+Shift+[) | `App/Chau7App.swift` | | `chau7_next/src/actions/` | done | |
 | APP-065 | Window menu: Move Tab Right, Move Tab Left (Cmd+Opt+Shift+], Cmd+Opt+Shift+[) | `App/AppDelegate.swift` |  | `chau7_next/src/workspace/mod.rs` (MoveTabLeft, MoveTabRight), `chau7_next/src/actions/keymap.rs` | done |  |
 | APP-066 | Window menu: Select Tab submenu listing tab names, tabs 1 to 9 on Cmd+1..9, later tabs without shortcut | `App/Chau7App.swift` |  | `chau7_next/src/actions/menus.rs` (Select Tab submenu from tab titles), `chau7_next/src/workspace/mod.rs` (`sync_window_menu`) | done |  |
-| APP-067 | Window menu: Refresh Tab Bar (Cmd+Opt+Shift+R) rebuilds a stale toolbar tab bar | `App/AppDelegate.swift` (`refreshTabBar`) | | | n/a | |
+| APP-067 | Window menu: Refresh Tab Bar (Cmd+Opt+Shift+R) rebuilds a stale toolbar tab bar | `App/AppDelegate.swift` (`refreshTabBar`) | actions::keymap::tests; actions::menus::tests; workspace::pickers::extras::tests | chau7_next/src/actions/menus.rs; chau7_next/src/actions/keymap.rs; chau7_next/src/workspace/pickers/extras.rs | done |  |
 | APP-068 | Window menu: system window list and Bring All to Front | system Window menu |  | chau7_next/src/actions/menus.rs (Window menu, Bring All to Front), chau7_next/src/app_actions.rs (bring_all_to_front) | done | NSApplication windows menu |
 | APP-069 | Help menu: Welcome to Chau7 reopens the welcome screen | `App/AppDelegate.swift` (`showWelcomeFromMenu`) |  | chau7_next/src/views/launch.rs | done |  |
 | APP-070 | Help menu: Chau7 Help opens the help window | `App/AppDelegate.swift` (`showHelp`) |  | chau7_next/src/views/help_window.rs | done |  |
@@ -129,9 +129,13 @@ hooks) and owns the notification permission state.
   notification has no observer).
 - APP-024 is partial because only the toggle was checked in Rust; whether the
   GPUI titlebar tab bar stays visible in full screen is not verified.
-- APP-017 is n/a while Chau7 Next writes no PTY logs; port it with PTY logging.
-- APP-067 is a workaround for the Swift NSToolbar hosting view going stale; the
-  GPUI tab bar does not need it.
+- APP-017 is implemented in Chau7 Next: startup calls
+  `logging::ai_pty::purge_large_logs(root.ai_logs_dir())`; the helper trims
+  matching PTY logs larger than 10 MiB to their last 5 MiB. Next uses its own
+  `ai_logs_dir`, while Swift uses `~/Library/Logs/Chau7/`.
+- APP-067 retains the explicit recovery action in the Window menu, palette
+  and shortcut. Next refreshes the window and menu without replacing terminal
+  sessions or changing selection. Validation of the new handler is pending.
 - URL scheme: Swift registers `chau7` (`CFBundleURLName` `com.chau7.terminal`).
   Per DUAL-SHIP.md, Chau7 Next must register its own scheme while both apps ship.
   `chau7://ssh` and `chau7://cd` quote the argument with single quotes; `run`

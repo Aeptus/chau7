@@ -224,6 +224,12 @@ fn catalog() -> Vec<Entry> {
             I::RotateCw,
             typed(ForceRefreshTab),
         ),
+        entry(
+            "Refresh Tab Bar",
+            "Tabs",
+            I::RefreshCw,
+            typed(RefreshTabBar),
+        ),
     ];
     for (n, title) in [
         "Select Tab 1",
@@ -431,6 +437,8 @@ mod tests {
             "Previous Input Line",
             "Next Input Line",
             "Keyboard Shortcuts...",
+            "Force Refresh Tab",
+            "Refresh Tab Bar",
         ] {
             assert!(titles.contains(&needed), "{needed}");
         }

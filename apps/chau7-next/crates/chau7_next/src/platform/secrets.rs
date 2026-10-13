@@ -19,13 +19,18 @@ pub const SERVICE_PREFIX: &str = "com.chau7.next.";
 /// `CHAU7_NEXT_KEYCHAIN_SERVICE_PREFIX` goes in front
 /// (`RuntimeIsolation.keychainServiceName`).
 pub fn service_name(service: &str) -> String {
+    let prefix = std::env::var(chau7_next_core::data_root::KEYCHAIN_PREFIX_ENV).ok();
+    service_name_with_prefix(service, prefix.as_deref())
+}
+
+fn service_name_with_prefix(service: &str, prefix: Option<&str>) -> String {
     let short = service.trim().trim_start_matches('.');
     let full = if short.starts_with(SERVICE_PREFIX) {
         short.to_string()
     } else {
         format!("{SERVICE_PREFIX}{short}")
     };
-    chau7_next_core::data_root::keychain_service_name_from_env(&full)
+    chau7_next_core::data_root::keychain_service_name(&full, prefix)
 }
 
 /// Store for small UTF-8 secrets, keyed by service and account.
@@ -90,6 +95,15 @@ mod imp {
         PlatformError::Failed(format!("Keychain: {err}"))
     }
 
+    /// Remove exactly the resolved item; callers apply isolation once.
+    fn delete_resolved(service: &str, account: &str) -> Result<()> {
+        match delete_generic_password(service, account) {
+            Ok(()) => Ok(()),
+            Err(err) if err.code() == ITEM_NOT_FOUND => Ok(()),
+            Err(err) => Err(failed(err)),
+        }
+    }
+
     impl super::SecretStore for Store {
         fn get(&self, service: &str, account: &str) -> Result<Option<String>> {
             match get_generic_password(&service_name(service), account) {
@@ -117,7 +131,7 @@ mod imp {
             let service = service_name(service);
             // Replace any item (an update would keep the old item's
             // accessibility), as `KeychainHelper.save` deletes then adds.
-            super::SecretStore::delete(self, &service, account)?;
+            delete_resolved(&service, account)?;
             let mut options = PasswordOptions::new_generic_password(&service, account);
             // Readable only on this Mac while it is unlocked
             // (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`).
@@ -134,11 +148,7 @@ mod imp {
         }
 
         fn delete(&self, service: &str, account: &str) -> Result<()> {
-            match delete_generic_password(&service_name(service), account) {
-                Ok(()) => Ok(()),
-                Err(err) if err.code() == ITEM_NOT_FOUND => Ok(()),
-                Err(err) => Err(failed(err)),
-            }
+            delete_resolved(&service_name(service), account)
         }
     }
 }
@@ -177,6 +187,52 @@ mod tests {
         );
         assert_eq!(service_name("com.chau7.next.ssh"), "com.chau7.next.ssh");
         assert_eq!(service_name(" .ssh "), "com.chau7.next.ssh");
+    }
+
+    #[test]
+    fn isolated_service_names_normalize_logical_names_once() {
+        for name in ["ssh", " .ssh ", "com.chau7.next.ssh"] {
+            assert_eq!(
+                service_name_with_prefix(name, Some(" fixture-123 ")),
+                "fixture-123.com.chau7.next.ssh"
+            );
+        }
+        assert_eq!(
+            service_name_with_prefix("llm.openai.apikey", Some("fixture-123")),
+            "fixture-123.com.chau7.next.llm.openai.apikey"
+        );
+    }
+
+    #[test]
+    fn blank_isolation_prefix_preserves_production_namespace() {
+        for prefix in [None, Some(""), Some("  ")] {
+            assert_eq!(
+                service_name_with_prefix("ssh", prefix),
+                "com.chau7.next.ssh"
+            );
+        }
+    }
+
+    #[test]
+    fn keychain_replacement_and_delete_use_one_resolved_name() {
+        // Wiring contract only: never read or write the system Keychain.
+        let source = include_str!("secrets.rs");
+        let mac = source
+            .split("#[cfg(target_os = \"macos\")]")
+            .nth(1)
+            .unwrap();
+        let mac = mac
+            .split("#[cfg(not(target_os = \"macos\"))]")
+            .next()
+            .unwrap();
+        let set = mac.split("fn set(").nth(1).unwrap();
+        let set = set.split("fn delete(").next().unwrap();
+        assert!(set.contains("let service = service_name(service);"));
+        assert!(set.contains("delete_resolved(&service, account)?;"));
+        assert!(!set.contains("SecretStore::delete("));
+        assert!(set.contains("PasswordOptions::new_generic_password(&service, account)"));
+        let delete = mac.split("fn delete(").nth(1).unwrap();
+        assert!(delete.contains("delete_resolved(&service_name(service), account)"));
     }
 
     #[test]

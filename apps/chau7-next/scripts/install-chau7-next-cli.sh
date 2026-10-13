@@ -1,17 +1,38 @@
 #!/usr/bin/env bash
 # Install standalone Next commands and skills without replacing Swift helpers.
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [ -n "${CARGO_TARGET_DIR:-}" ]; then
-  case "$CARGO_TARGET_DIR" in
-    /*) ;;
-    *) CARGO_TARGET_DIR="$ROOT/$CARGO_TARGET_DIR" ;;
-  esac
-  export CARGO_TARGET_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUNDLE_MODE=0
+ROOT=""
+BUNDLE_PRODUCT=""
+BUNDLE_SKILLS=""
+if [ "$(basename "$SCRIPT_DIR")" = "Resources" ] \
+  && [ "$(basename "$(dirname "$SCRIPT_DIR")")" = "Contents" ]; then
+  # A shipped Resources copy is self-contained: use the app's sibling CLI and
+  # bundled skills, and never try to build from the app bundle.
+  BUNDLE_MODE=1
+  BUNDLE_PRODUCT="$(dirname "$SCRIPT_DIR")/MacOS/chau7-next-cli"
+  BUNDLE_SKILLS="$SCRIPT_DIR/Skills"
+  if [ "${CHAU7_NEXT_CLI_SKIP_BUILD:-1}" != "1" ]; then
+    echo "error: the app-bundle installer cannot build; use the checkout installer to build" >&2
+    exit 1
+  fi
+  CHAU7_NEXT_CLI_SKIP_BUILD=1
+  PRODUCT_BIN="${CHAU7_NEXT_CLI_PRODUCT_BIN:-$BUNDLE_PRODUCT}"
+  SKILLS_SOURCE="${CHAU7_NEXT_CLI_SKILLS_SOURCE:-$BUNDLE_SKILLS}"
+else
+  ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+  if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    case "$CARGO_TARGET_DIR" in
+      /*) ;;
+      *) CARGO_TARGET_DIR="$ROOT/$CARGO_TARGET_DIR" ;;
+    esac
+    export CARGO_TARGET_DIR
+  fi
+  PRODUCT_BIN="${CHAU7_NEXT_CLI_PRODUCT_BIN:-}"
+  SKILLS_SOURCE="${CHAU7_NEXT_CLI_SKILLS_SOURCE:-$ROOT/resources/skills}"
 fi
 INSTALL_DIR="${CHAU7_NEXT_CLI_INSTALL_DIR:-$HOME/.local/bin}"
-SKILLS_SOURCE="${CHAU7_NEXT_CLI_SKILLS_SOURCE:-$ROOT/resources/skills}"
-PRODUCT_BIN="${CHAU7_NEXT_CLI_PRODUCT_BIN:-}"
 CARGO_OUTPUT=""
 binary_tmp=""
 wrapper_tmp=""
@@ -24,9 +45,13 @@ cleanup() {
 trap cleanup EXIT
 
 if [ "${CHAU7_NEXT_CLI_SKIP_BUILD:-0}" = "1" ]; then
-  # Keep the existing skip-build location behavior. Set
-  # CHAU7_NEXT_CLI_PRODUCT_BIN to select a non-default/configured target.
-  PRODUCT_BIN="${CHAU7_NEXT_CLI_PRODUCT_BIN:-${CARGO_TARGET_DIR:-$ROOT/target}/release/chau7-next-cli}"
+  if [ "$BUNDLE_MODE" = "1" ]; then
+    PRODUCT_BIN="${CHAU7_NEXT_CLI_PRODUCT_BIN:-$BUNDLE_PRODUCT}"
+  else
+    # Keep the existing checkout skip-build location behavior. Set
+    # CHAU7_NEXT_CLI_PRODUCT_BIN to select a non-default/configured target.
+    PRODUCT_BIN="${CHAU7_NEXT_CLI_PRODUCT_BIN:-${CARGO_TARGET_DIR:-$ROOT/target}/release/chau7-next-cli}"
+  fi
 else
   if [ -z "$PRODUCT_BIN" ] && ! command -v python3 >/dev/null 2>&1; then
     echo "error: python3 is required to read Cargo's executable artifact message" >&2

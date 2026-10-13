@@ -473,6 +473,55 @@ impl TerminalView {
         interval
     }
 
+    /// Build an immutable, CPU-rendered snapshot for the Print command. The
+    /// snapshot uses this view's real overlays and last laid-out viewport but
+    /// does not submit a frame to or replace the on-screen CPU cache.
+    pub(crate) fn print_snapshot(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> anyhow::Result<paint::CpuBitmap> {
+        let settings = Settings::get(cx).clone();
+        let metrics = self.metrics(window, cx);
+        let focused = self.focus_handle.is_focused(window);
+        let mut inputs = FrameInputs::new(
+            &settings,
+            metrics.clone(),
+            focused,
+            self.cursor_on,
+            self.search_matches.clone(),
+            self.active_match,
+            self.marked_text.clone(),
+        );
+        inputs.local_echo = self.local_echo_cells();
+
+        let snapshot_size = self.bounds.map(|bounds| bounds.size);
+        let state = {
+            let session_entity = self.session.clone();
+            let session = session_entity.read(cx);
+            inputs.danger_rows = self.danger_rows_for_snapshot(session, &settings);
+            let size = snapshot_size.unwrap_or_else(|| {
+                let gutter = if settings.appearance.display.line_timestamps {
+                    let chars = chau7_next_core::line_timestamps::gutter_chars(
+                        &settings.appearance.display.timestamp_format,
+                    );
+                    let label_cell =
+                        metrics.cell_width * (9.0 / f32::from(metrics.font_size).max(1.0));
+                    label_cell * chars as f32 + px(6.0)
+                } else {
+                    px(0.0)
+                };
+                gpui::size(
+                    metrics.cell_width * f32::from(session.grid.cols) + gutter,
+                    metrics.line_height * f32::from(session.grid.rows),
+                )
+            });
+            let state = paint::snapshot_state(session, inputs, &mut self.overlays);
+            (state, size)
+        };
+        paint::render_snapshot(state.0, state.1, window, cx)
+    }
+
     fn metrics(&mut self, window: &mut Window, cx: &App) -> CellMetrics {
         let settings = Settings::get(cx);
         let key = MetricSettings::new(settings);

@@ -30,12 +30,21 @@ impl Workspace {
 
     /// Park the tabs in `AppData` so closing the window does not end them.
     pub(super) fn hide_tabs(&mut self, window: &Window, cx: &mut Context<Self>) {
+        Self::retire_native_window(window);
         if !cfg!(target_os = "macos") {
             return;
         }
         if let Some(parked) = self.park_tabs(window) {
             cx.global_mut::<super::AppData>().hidden.push(parked);
         }
+    }
+
+    /// Retire raw AppKit pointer registrations and queued events before GPUI
+    /// removes a terminal window. Only windows created by a terminal
+    /// `Workspace` call this helper.
+    pub(super) fn retire_native_window(window: &Window) {
+        crate::platform::services::uninstall(window);
+        crate::platform::drop_image::uninstall(window);
     }
 
     /// Closing with the window's close button hides the window too.

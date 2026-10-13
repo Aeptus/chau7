@@ -428,6 +428,22 @@ mod tests {
     }
 
     #[test]
+    fn grid_copy_swaps_foreground_and_background_for_selected_cells() {
+        let term = Chau7Terminal::new_headless(10, 3).unwrap();
+        term.inject_output(b"\x1b[38;2;240;20;30;48;2;10;40;220mAB\x1b[0m");
+        term.selection_start(0, 0, 0);
+        term.selection_update(0, 0);
+
+        let grid = term.grid_copy();
+        let selected = grid.cells[0];
+        let unselected = grid.cells[1];
+        assert_eq!(selected.fg, (10, 40, 220));
+        assert_eq!(selected.bg, (240, 20, 30));
+        assert_eq!(unselected.fg, (240, 20, 30));
+        assert_eq!(unselected.bg, (10, 40, 220));
+    }
+
+    #[test]
     fn grid_copy_keeps_clusters_and_wide_cells() {
         let term = Chau7Terminal::new_headless(10, 2).unwrap();
         // e + combining acute (normalized to one char), a wide CJK char,

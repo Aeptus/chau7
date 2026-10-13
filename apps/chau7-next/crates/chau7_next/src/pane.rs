@@ -36,6 +36,49 @@ pub fn live_cwd(session: &TerminalSession) -> Option<PathBuf> {
     session.cwd.clone()
 }
 
+fn preferred_available_id<T: Copy + Eq>(
+    available: &[T],
+    preferred: Option<T>,
+    fallback: Option<T>,
+) -> Option<T> {
+    preferred
+        .filter(|id| available.contains(id))
+        .or_else(|| fallback.filter(|id| available.contains(id)))
+}
+
+fn session_metadata_updates_tab(
+    changed: EntityId,
+    focused: Option<EntityId>,
+    primary: Option<EntityId>,
+    presentation: Option<EntityId>,
+) -> bool {
+    focused == Some(changed) || primary == Some(changed) || presentation == Some(changed)
+}
+
+fn restored_primary_cwd(saved: &SavedTab, deferred_cwd: Option<&PathBuf>) -> Option<PathBuf> {
+    let terminal_count = saved
+        .layout
+        .as_ref()
+        .map(|layout| layout.terminal_ids().len())
+        .unwrap_or(saved.panes.len());
+    // An explicit non-terminal layout has no primary shell. Its tab cwd may
+    // belong to a displayed secondary pane, so it cannot seed auto grouping.
+    if saved.layout.is_some() && terminal_count == 0 {
+        return None;
+    }
+    let primary_directory = saved
+        .primary_terminal()
+        .and_then(|pane| pane.directory.as_deref())
+        .map(PathBuf::from);
+    if primary_directory.is_some() {
+        return primary_directory;
+    }
+    if terminal_count > 1 {
+        return None;
+    }
+    deferred_cwd.cloned().or_else(|| saved.cwd.clone())
+}
+
 fn close_warning_status(status: chau7_next_core::shell_session::CommandStatus) -> bool {
     use chau7_next_core::shell_session::CommandStatus;
     matches!(
@@ -61,7 +104,7 @@ pub enum PaneEvent {
     Empty,
     /// Output arrived in some pane.
     Activity,
-    /// Title/directory/git/AI info changed in the focused pane.
+    /// Focused, primary-terminal, or displayed-terminal metadata changed.
     MetadataChanged,
     Bell,
     /// A command started in some pane (its text).
@@ -690,7 +733,13 @@ impl PaneTree {
                     SessionEvent::Output => cx.emit(PaneEvent::Activity),
                     SessionEvent::MetadataChanged => {
                         this.attach_session_notes(window, cx);
-                        if this.focused == Some(view_id) {
+                        let primary = this.views().first().map(|view| view.entity_id());
+                        if session_metadata_updates_tab(
+                            view_id,
+                            this.focused,
+                            primary,
+                            this.presentation_terminal,
+                        ) {
                             cx.emit(PaneEvent::MetadataChanged);
                         }
                         // Shell loading overlay.
@@ -1013,6 +1062,38 @@ impl PaneTree {
 
     pub fn focused_session(&self, cx: &App) -> Option<Entity<TerminalSession>> {
         self.focused_view().map(|v| v.read(cx).session.clone())
+    }
+
+    /// First terminal in visual split order; automatic grouping follows it.
+    pub fn primary_session(&self, cx: &App) -> Option<Entity<TerminalSession>> {
+        self.views()
+            .first()
+            .map(|view| view.read(cx).session.clone())
+    }
+
+    /// Terminal currently represented by the tab; manual grouping follows it.
+    pub fn presentation_session(&self, cx: &App) -> Option<Entity<TerminalSession>> {
+        let views = self.views();
+        let available = views
+            .iter()
+            .map(|view| view.entity_id())
+            .collect::<Vec<_>>();
+        let fallback = self.focused_view().map(|view| view.entity_id());
+        let id = preferred_available_id(&available, self.presentation_terminal, fallback)?;
+        views
+            .iter()
+            .find(|view| view.entity_id() == id)
+            .map(|view| view.read(cx).session.clone())
+    }
+
+    /// Primary terminal directory; parked restores read the saved first
+    /// terminal without constructing a PTY.
+    pub fn primary_cwd(&self, cx: &App) -> Option<PathBuf> {
+        if let Some(saved) = &self.deferred_saved {
+            return restored_primary_cwd(saved, self.deferred_cwd.as_ref());
+        }
+        self.primary_session(cx)
+            .and_then(|session| session.read(cx).cwd.clone())
     }
 
     /// Panes of every kind (`allPaneIDs.count`).
@@ -1968,6 +2049,112 @@ impl Focusable for PaneTree {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use super::{SavedAxis, SavedPane, SavedSplitNode};
+
+    #[test]
+    fn displayed_terminal_wins_when_focus_falls_back_from_a_side_pane() {
+        let available = [1, 2];
+        // A focused side pane has no terminal ID, so focused_view() falls back
+        // to the first terminal while presentation_terminal retains the last
+        // displayed terminal.
+        assert_eq!(
+            super::preferred_available_id(&available, Some(2), Some(1)),
+            Some(2)
+        );
+        // If a displayed terminal was removed, use the focused terminal only
+        // when it is still in the current split tree.
+        assert_eq!(
+            super::preferred_available_id(&available, Some(3), Some(1)),
+            Some(1)
+        );
+        assert_eq!(
+            super::preferred_available_id(&available, Some(3), None),
+            None
+        );
+    }
+
+    #[test]
+    fn restored_primary_directory_does_not_fall_back_to_focused_secondary() {
+        let saved = super::SavedTab {
+            cwd: Some(PathBuf::from("/secondary-repo")),
+            layout: Some(SavedSplitNode::Split {
+                id: 1,
+                axis: SavedAxis::Horizontal,
+                ratios: vec![0.5, 0.5],
+                children: vec![
+                    SavedSplitNode::Terminal {
+                        id: 10,
+                        directory: None,
+                    },
+                    SavedSplitNode::Terminal {
+                        id: 20,
+                        directory: Some("/secondary-repo/src".into()),
+                    },
+                ],
+            }),
+            focused_pane: Some(20),
+            panes: vec![
+                SavedPane {
+                    id: 10,
+                    directory: None,
+                    ..Default::default()
+                },
+                SavedPane {
+                    id: 20,
+                    directory: Some("/secondary-repo/src".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let deferred_cwd = PathBuf::from("/secondary-repo/src");
+        assert_eq!(
+            super::restored_primary_cwd(&saved, Some(&deferred_cwd)),
+            None
+        );
+
+        let editor_only = super::SavedTab {
+            cwd: Some(PathBuf::from("/focused-repo")),
+            layout: Some(SavedSplitNode::Editor {
+                id: 30,
+                path: Some("/focused-repo/README.md".into()),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            super::restored_primary_cwd(&editor_only, Some(&deferred_cwd)),
+            None
+        );
+    }
+
+    #[test]
+    fn primary_and_displayed_session_metadata_reaches_tab_state() {
+        let focused = super::EntityId::from(1_u64);
+        let primary = super::EntityId::from(2_u64);
+        let displayed = super::EntityId::from(3_u64);
+        let unrelated = super::EntityId::from(4_u64);
+        assert!(super::session_metadata_updates_tab(
+            primary,
+            Some(focused),
+            Some(primary),
+            Some(displayed)
+        ));
+        assert!(super::session_metadata_updates_tab(
+            displayed,
+            Some(focused),
+            Some(primary),
+            Some(displayed)
+        ));
+        assert!(!super::session_metadata_updates_tab(
+            unrelated,
+            Some(focused),
+            Some(primary),
+            Some(displayed)
+        ));
+    }
+
     #[test]
     fn close_counts_match_all_current_swift_statuses() {
         use chau7_next_core::shell_session::CommandStatus::*;

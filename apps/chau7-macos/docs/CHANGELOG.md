@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Print the Next terminal through its shared CPU grid painter, preserving ANSI
+  colors, graphemes, images and overlays in an owned PNG without replacing the
+  displayed frame cache.
+- Keep Next automatic repository groups attached to the first terminal in a
+  split, use the displayed terminal for manual grouping, and expose those roles
+  in read-only MCP diagnostics.
+- Restore explicit tab-bar refresh commands, retire native Services and image
+  drop registrations when windows close, and anchor the status popover to its
+  menu-bar button.
+- Resolve isolated Keychain service names once when replacing credentials.
+- Ship an opt-in CLI installer that works directly from the Next app bundle
+  without a source checkout or Rust toolchain.
+
 - Skip Next cursor-blink redraws for unfocused terminal views that already
   paint a solid cursor, and show the cursor immediately when focus returns.
 

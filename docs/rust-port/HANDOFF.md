@@ -1,5 +1,21 @@
 # Chau7 Next: handoff
 
+## Active follow-up (2026-10-14)
+
+Session 6 continues on the existing parity worktree and authorized draft PR229.
+The active source batch follows published `0121b9ab`; it separates focused,
+primary and displayed repository roots, corrects restore inference, adds MCP
+grouping diagnostics and the explicit Refresh Tab Bar action, fixes isolated
+Keychain replacement, retires native window integrations, and ships the opt-in
+CLI installer in the bundle. Printing now uses the shared CPU
+painter and has an isolated native PNG validation path. Build only after this parallel code batch has landed.
+
+Validation of this batch is pending. The receipts below are historical to the
+active changes. Preserve the unrelated root files `+`, `-` and `return` using
+the recorded park/restore helper when exact clean-source validation requires
+it. Do not install or relaunch the user's apps, contact real providers, or ask
+for serious hand testing before the autonomous work finishes.
+
 Read this first when picking up Chau7 Next (the Rust/GPUI port of Chau7).
 Last updated 2026-10-13.
 

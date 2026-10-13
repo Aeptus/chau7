@@ -33,6 +33,8 @@ impl Workspace {
                 if let Some(meta) = self.state.get_mut(*id) {
                     meta.repo_group_id = Some(group.to_string());
                     meta.git_root = Some(group.to_string());
+                    meta.primary_git_root = Some(group.to_string());
+                    meta.presentation_git_root = Some(group.to_string());
                 }
             }
             self.state.coalesce_group(group);

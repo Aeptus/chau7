@@ -236,6 +236,8 @@ fn window_menu(tab_titles: &[String]) -> Menu {
                 disabled: false,
             }),
             MenuItem::separator(),
+            MenuItem::action("Refresh Tab Bar", RefreshTabBar),
+            MenuItem::separator(),
             MenuItem::action("Broadcast Input to All Tabs", ToggleBroadcast),
             MenuItem::action("Load Demo Tabs (debug)", SeedDebugTabs),
             MenuItem::action("Feature Profiler (debug)", ShowFeatureProfiler),
@@ -306,6 +308,7 @@ mod tests {
             assert!(file.iter().any(|n| n == item), "File lacks {item}");
         }
         let window = &menus[4];
+        assert!(names(window).contains(&"Refresh Tab Bar".to_string()));
         let select = window
             .items
             .iter()

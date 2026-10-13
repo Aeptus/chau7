@@ -35,9 +35,13 @@ paths and logging.
 - n/a reasons:
   - UTL-008: `GitBinary` has no caller in the Swift app, and Chau7 Next reads
     `.git/HEAD` directly (`platform/process.rs`) instead of running `git`.
-  - UTL-009: none of these modifiers or `AccessibilityAnnouncement` has a caller
-    outside `AccessibilityUtilities.swift`; accessibility work in Rust belongs to
-    the views that need it.
+  - UTL-009: `Utilities/AccessibilityUtilities.swift` is absent from the
+    current Swift source tree, so this row describes no active shared helper
+    entrypoints. Chau7 Next adds accessibility labels and descriptions directly
+    to GPUI views (for example `workspace/tab_bar_view.rs` and
+    `workspace/timeline.rs`). The n/a status describes the Swift helper layer;
+    it does not mean the app has no accessibility support or establish full
+    parity for Dynamic Type, reduce motion, or VoiceOver announcements.
   - UTL-010: `Chau7Error` is only produced by `InputValidation`, which has no
     caller outside the file; Rust uses `Result` with its own error types.
   - UTL-011 to UTL-013: plain helpers; Rust has its own equivalents

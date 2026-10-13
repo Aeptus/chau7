@@ -1,5 +1,13 @@
 # Chau7 Next macOS test package
 
+## Active package rebuild (2026-10-14)
+
+A new source batch after `0121b9ab` is in progress for split grouping, native
+integration, terminal printing and the bundle-only CLI installer. Its combined
+build and source-bound runtime validation are pending. Download and runtime
+receipts below belong to their stated earlier source; no new package acceptance
+is claimed yet. The original downloaded bundle remains uninstalled.
+
 Package identity: an Apple Silicon macOS test app called **Chau7 Next**,
 installed beside Chau7. The user has now requested full current Swift parity;
 track that active work in [PARITY.md](PARITY.md) and [HANDOFF.md](HANDOFF.md). This is an ad-hoc signed test package, not a notarized release.

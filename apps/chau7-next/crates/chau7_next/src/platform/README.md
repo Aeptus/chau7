@@ -35,7 +35,7 @@ log once and return `PlatformError::Unsupported` or a neutral value.
 | NSTextInputClient (discard marked text on focus loss) | `input_method` | `input_method::discard_marked_text()` |
 | NSServices (selection to Services, text back) | `services` | `services::install(window)`, `set_selection(..)`, `drain_returned_text()` |
 | NSDraggingDestination (raw PNG/TIFF dropped, no file) | `drop_image` | `drop_image::install(window)`, `window_key(window)`, `drain_events()` |
-| NSPrintOperation | `print` | `print::print_text(text, font, size)` (print panel for the terminal text) |
+| NSPrintOperation | `print` | `print::print_png(png, point_size)` (print panel for the CPU-rendered terminal grid) |
 | Unix sockets (MCP server) | `local_socket` | `Listener::bind(path)` (stale file removed, mode 0600), `accept()`, `remove(path)`; real on every Unix, stub on Windows |
 | UserDefaults (hidden preferences set with `defaults write`) | `defaults` | `app_bool`, `app_string`, `app_int`, `set_app_bool`, `disable_press_and_hold` |
 | NSAppearance (app theme), NSWindow alphaValue, NSWindow level | `window_style` | `set_app_theme(Some(dark))`, `set_window_alpha(window, a)`, `set_window_floating(window, on)` |

@@ -18,6 +18,7 @@ use uuid::Uuid;
 use super::{AppData, Workspace};
 use crate::pane::PaneTree;
 use crate::session_store::SavedTab;
+use crate::settings::{RepoGroupingMode, Settings};
 use crate::tab_bar::TabId;
 use crate::terminal::session::TerminalSession;
 
@@ -27,6 +28,21 @@ pub(crate) use crate::monitoring::processes::{CpuSamples, sample as sample_proce
 /// The global token optimization mode.
 pub(crate) fn token_optimization_mode(cx: &App) -> TokenOptimizationMode {
     super::hover_card::token_optimization_mode(cx)
+}
+
+/// Read-only grouping diagnostics. Roots retain their separate split roles;
+/// null never borrows another pane's repository.
+fn repo_group_summary(
+    meta: &chau7_next_core::tabs_state::TabMeta,
+    mode: RepoGroupingMode,
+) -> Value {
+    json!({
+        "mode": mode.raw(),
+        "group_id": meta.repo_group_id,
+        "primary_repo_root": meta.primary_git_root,
+        "presentation_repo_root": meta.presentation_git_root,
+        "inherited": meta.has_inherited_repo_group,
+    })
 }
 
 impl Workspace {
@@ -122,6 +138,10 @@ impl Workspace {
         let is_ai = session.is_some_and(|s| s.is_ai_running());
         out.insert("tab_id".into(), json!(uuid_string(meta.uuid)));
         out.insert("title".into(), json!(self.tab_title(id, cx)));
+        out.insert(
+            "repo_grouping".into(),
+            repo_group_summary(meta, Settings::get(cx).tabs.repo_grouping),
+        );
         // The AI CLI's history state wins over the shell's (`effectiveStatus`,
         // `effectiveIsAtPrompt`).
         let statuses = if session.is_some() {
@@ -351,4 +371,39 @@ fn effective_state(session: &TerminalSession, statuses: &[SessionStatus]) -> (Co
 /// UUIDs as Swift prints them (`uuidString`: upper case).
 pub(crate) fn uuid_string(uuid: Uuid) -> String {
     uuid.hyphenated().to_string().to_uppercase()
+}
+
+#[cfg(test)]
+mod grouping_diagnostics_tests {
+    use super::*;
+    use chau7_next_core::tabs_state::{TabColor, TabMeta};
+
+    #[test]
+    fn summaries_keep_repository_roles_and_report_the_actual_setting() {
+        let mut meta = TabMeta::new(1, TabColor::Blue);
+        meta.git_root = Some("/focused".into());
+        meta.primary_git_root = Some("/primary".into());
+        meta.presentation_git_root = Some("/displayed".into());
+        meta.repo_group_id = Some("/manual-tag".into());
+        meta.has_inherited_repo_group = true;
+        for mode in RepoGroupingMode::ALL {
+            let value = repo_group_summary(&meta, mode);
+            assert_eq!(value["mode"], mode.raw());
+            assert_eq!(value["group_id"], "/manual-tag");
+            assert_eq!(value["primary_repo_root"], "/primary");
+            assert_eq!(value["presentation_repo_root"], "/displayed");
+            assert_eq!(value["inherited"], true);
+        }
+    }
+
+    #[test]
+    fn absent_repository_roles_remain_null_despite_a_focused_root() {
+        let mut meta = TabMeta::new(2, TabColor::Blue);
+        meta.git_root = Some("/focused".into());
+        let value = repo_group_summary(&meta, RepoGroupingMode::Auto);
+        assert!(value["group_id"].is_null());
+        assert!(value["primary_repo_root"].is_null());
+        assert!(value["presentation_repo_root"].is_null());
+        assert_eq!(value["inherited"], false);
+    }
 }

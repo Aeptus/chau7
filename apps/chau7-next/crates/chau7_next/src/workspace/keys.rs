@@ -23,7 +23,7 @@ pub(super) fn register_key_actions(
         }
     }))
     .on_action(cx.listener(|this, _: &ExportText, window, cx| this.export_text(window, cx)))
-    .on_action(cx.listener(|this, _: &PrintTerminal, _, cx| this.print_terminal(cx)))
+    .on_action(cx.listener(|this, _: &PrintTerminal, window, cx| this.print_terminal(window, cx)))
     .on_action(
         cx.listener(|_, _: &ShowKeyboardShortcuts, _, cx| {
             crate::settings_window::open_shortcuts(cx)
@@ -32,40 +32,31 @@ pub(super) fn register_key_actions(
 }
 
 impl Workspace {
-    /// Print (Cmd+P): the visible text of the selected pane.
-    fn print_terminal(&mut self, cx: &mut Context<Self>) {
-        let Some(session) = self
+    /// Print (Cmd+P): the current visible grid, using the same CPU painter as
+    /// the software renderer before AppKit lays the bitmap out for the printer.
+    fn print_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(view) = self
             .selected_panes()
-            .and_then(|p| p.read(cx).focused_session(cx))
+            .and_then(|panes| panes.read(cx).focused_view())
         else {
             return;
         };
-        let grid = &session.read(cx).grid;
-        let cols = grid.cols.max(1) as usize;
-        let text: Vec<String> = grid
-            .cells
-            .chunks(cols)
-            .map(|row| {
-                row.iter()
-                    .map(|c| {
-                        if c.character == '\0' {
-                            ' '
-                        } else {
-                            c.character
-                        }
-                    })
-                    .collect::<String>()
-                    .trim_end()
-                    .to_string()
-            })
-            .collect();
-        let appearance = &Settings::get(cx).appearance;
-        if let Err(err) = crate::platform::print::print_text(
-            text.join("\n").trim_end(),
-            &appearance.font_family,
-            appearance.font_size as f64,
-        ) {
-            log::warn!("print: {err}");
+        match view.update(cx, |view, cx| view.print_snapshot(window, cx)) {
+            Ok(bitmap) => {
+                log::debug!(
+                    "print snapshot: {}x{} pixels, {}x{} points, {} PNG bytes",
+                    bitmap.pixel_size.0,
+                    bitmap.pixel_size.1,
+                    bitmap.point_size.0,
+                    bitmap.point_size.1,
+                    bitmap.png.len(),
+                );
+                if let Err(err) = crate::platform::print::print_png(&bitmap.png, bitmap.point_size)
+                {
+                    log::warn!("print: {err}");
+                }
+            }
+            Err(err) => log::warn!("print snapshot: {err:#}"),
         }
     }
 
