@@ -109,6 +109,7 @@ pub struct SavedSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session_restore::SavedAxis;
     #[test]
     fn old_saved_pane_omits_new_metadata_and_decodes_unchanged() {
         let value = serde_json::json!({"id":7,"directory":"/repo","scrollback":true,"ai_provider":"codex","ai_session_id":"thread-1","ai_resume_command":"codex resume thread-1"});

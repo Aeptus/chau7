@@ -2240,9 +2240,16 @@ fn capture_print_snapshot(
                 "print snapshot PNG dimensions are empty or inconsistent",
             )?;
             let rgba = decoded.as_raw();
-            let nontransparent_pixels = rgba.chunks_exact(4).filter(|px| px[3] > 0).count();
+            let nontransparent_pixels = rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|px| px[3] > 0)
+                .count();
             let styled_background_pixels = rgba
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .filter(|px| px[0] == 7 && px[1] == 8 && px[2] == 9 && px[3] == 255)
                 .count();
             ensure(

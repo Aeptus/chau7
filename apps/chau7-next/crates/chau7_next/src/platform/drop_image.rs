@@ -200,7 +200,7 @@ mod imp {
             // SAFETY: this retires the drag destination registrations from
             // the exact NSWindow being removed, after queued drops were
             // purged and before GPUI releases the native window.
-            unsafe { ns_window.unregisterDraggedTypes() };
+            ns_window.unregisterDraggedTypes();
         }
     }
 

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep native print snapshot validation compatible with strict Rust 1.99 checks.
 - Print the Next terminal through its shared CPU grid painter, preserving ANSI
   colors, graphemes, images and overlays in an owned PNG without replacing the
   displayed frame cache.

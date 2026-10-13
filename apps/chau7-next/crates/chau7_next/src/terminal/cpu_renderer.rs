@@ -216,7 +216,7 @@ impl Surface {
         );
         let mut rgba = self.bytes;
         // Surface is BGRA for GPUI. PNG and NSImage consume RGBA.
-        for pixel in rgba.chunks_exact_mut(4) {
+        for pixel in rgba.as_chunks_mut::<4>().0 {
             pixel.swap(0, 2);
         }
         let mut png = Vec::new();
@@ -785,7 +785,7 @@ mod tests {
     #[test]
     fn offscreen_bitmap_preserves_point_bounds_and_encodes_surface_channels() {
         let mut surface = surface();
-        for pixel in surface.bytes.chunks_exact_mut(4) {
+        for pixel in surface.bytes.as_chunks_mut::<4>().0 {
             pixel.copy_from_slice(&[10, 20, 30, 255]); // BGRA
         }
         surface.bytes[..4].copy_from_slice(&[0, 0, 255, 128]); // straight-alpha red
