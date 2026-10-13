@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Build
 
+- Corrected native accessibility fixture reads to use GPUI's direct entity
+  update return values. Native action and dashboard assertions are unchanged.
 - Locate the unique styled scrollback marker in the retained-history viewport
   without assuming row zero; preserve exact cell and grapheme replay checks.
 - Refreshed compatible Rust lockfile resolutions, including `proptest` 1.12.0,

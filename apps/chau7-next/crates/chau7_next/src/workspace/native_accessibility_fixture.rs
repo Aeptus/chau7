@@ -337,14 +337,12 @@ async fn wait_for_dashboard_group(
                 format!("rendered tree frame {current_frame} did not advance past {after_frame}");
             continue;
         }
-        let (is_open, root) = workspace
-            .update(cx, |workspace, _| {
-                (
-                    workspace.dashboard.is_open(),
-                    workspace.dashboard.fixture_root().map(str::to_owned),
-                )
-            })
-            .map_err(error)?;
+        let (is_open, root) = workspace.update(cx, |workspace, _| {
+            (
+                workspace.dashboard.is_open(),
+                workspace.dashboard.fixture_root().map(str::to_owned),
+            )
+        });
         if is_open && root.as_deref() == Some(group_id) {
             return Ok(tree);
         }
@@ -561,7 +559,7 @@ exec /bin/cat >/dev/null
             )?;
             Ok(members.len())
         })
-        .map_err(error)??;
+        .map_err(error)?;
 
     crate::native_parity_fixture::next_frame(window.into(), cx).await?;
     let lang = chau7_next_core::l10n::current();
@@ -831,14 +829,12 @@ exec /bin/cat >/dev/null
 
     let group_tree_before_press = read_tree(window, cx)?;
     validate_group_button(&group_tree_before_press, &group_tag_label)?;
-    let (dashboard_was_open, dashboard_root_before_press) = workspace
-        .update(cx, |workspace, _| {
-            (
-                workspace.dashboard.is_open(),
-                workspace.dashboard.fixture_root().map(str::to_owned),
-            )
-        })
-        .map_err(error)?;
+    let (dashboard_was_open, dashboard_root_before_press) = workspace.update(cx, |workspace, _| {
+        (
+            workspace.dashboard.is_open(),
+            workspace.dashboard.fixture_root().map(str::to_owned),
+        )
+    });
     ensure(
         !dashboard_was_open && dashboard_root_before_press.is_none(),
         "fixture repository dashboard was already open before its AX action",
@@ -881,14 +877,12 @@ exec /bin/cat >/dev/null
     )
     .await?;
     let dashboard_frame_after_press = frame_number(&dashboard_tree)?;
-    let (dashboard_open, dashboard_root) = workspace
-        .update(cx, |workspace, _| {
-            (
-                workspace.dashboard.is_open(),
-                workspace.dashboard.fixture_root().map(str::to_owned),
-            )
-        })
-        .map_err(error)?;
+    let (dashboard_open, dashboard_root) = workspace.update(cx, |workspace, _| {
+        (
+            workspace.dashboard.is_open(),
+            workspace.dashboard.fixture_root().map(str::to_owned),
+        )
+    });
     ensure(
         dashboard_open && dashboard_root.as_deref() == Some(group_id.as_str()),
         "group AXPress did not open the dashboard for the exact fixture repository group",
