@@ -1,5 +1,32 @@
 # Chau7 Next parity with the current Swift app
 
+## Local validation checkpoint (2026-10-13)
+
+Source `916bbfd8a0d8266a587cdfed187066379ca2d2df` passed all nine
+compiler/package stages, 3,042 Rust tests (two ignored) and ten full local
+quality gates. The Swift build passed and its suite executed 4,586 tests,
+with three skipped and no failures. The normal optimized build took 77.382
+seconds with a warm cache; this is an observation, not a benchmark.
+
+The sealed normal package also passed isolated 68-byte Unicode MCP input
+and graceful quit with its owned fake-shell child. No provider or device was
+contacted; the original delayed-stall cause remains unproven.
+
+This source borrows blank and clustered painted text and exposes bounded
+`cpu_glyph_cache_release` and `cpu_bitmap_cache_reclaim` work through the
+existing performance snapshot. Their byte counts measure cache weight,
+not process memory released. Diagnostic builds bypass CTO filtering so
+compiler output remains available. The stdio test now identifies response
+stage, child exit status and a bounded stderr tail; CI retains failure logs.
+The Python 3.15 CI failure remains unresolved until new CI evidence exists.
+
+Ten native driver unit tests passed on that checkpoint. Restore activation
+uses an owned bundle handshake and exact PID verification. The follow-up
+fixture requires final foreground/key-window state and measured rendered
+frames after deminiaturization; its compiled and native validation is pending.
+Complete native and physical acceptance remain open. The previous published
+checkpoint is retained below.
+
 ## Published checkpoint and open acceptance (2026-10-13)
 
 Published source `84f82eb302e45b84f7c7eb0ca55eabccaf946767` preserves settings

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Strengthen native Restore acceptance to measure post-reopen frames and require final app/key-window focus; keep existing deadlines.
+
 ### Build
 
 - Diagnostic Next builds bypass CTO output filtering so the full Cargo log

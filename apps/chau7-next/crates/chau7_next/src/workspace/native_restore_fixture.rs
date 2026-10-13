@@ -255,6 +255,118 @@ struct RevealDiagnostic {
     submitted_frames: Option<u64>,
     failed_frames: Option<u64>,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RendererFrameCounters {
+    submitted: u64,
+    failed: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct WindowFrameEvidence {
+    frame_number: u64,
+    renderer_backend: Option<&'static str>,
+    renderer_counters: Option<RendererFrameCounters>,
+}
+
+fn window_frame_evidence(
+    handle: WindowHandle<Root>,
+    cx: &mut AsyncApp,
+) -> Result<WindowFrameEvidence, String> {
+    handle
+        .update(cx, |_, window, _| -> Result<WindowFrameEvidence, String> {
+            let raw = window
+                .debug_a11y_tree_json()
+                .ok_or("owned window has no rendered accessibility tree")?;
+            let tree: serde_json::Value = serde_json::from_str(&raw).map_err(error)?;
+            let frame_number = tree
+                .get("frame")
+                .and_then(|frame| frame.get("frame_number"))
+                .and_then(serde_json::Value::as_u64)
+                .ok_or("rendered accessibility tree lacks frame number")?;
+            let renderer = window.renderer_diagnostics();
+            let renderer_backend = renderer.as_ref().map(|sample| sample.backend);
+            let renderer_counters = renderer.and_then(|sample| {
+                Some(RendererFrameCounters {
+                    submitted: sample.submitted_frames?,
+                    failed: sample.failed_frames?,
+                })
+            });
+            Ok(WindowFrameEvidence {
+                frame_number,
+                renderer_backend,
+                renderer_counters,
+            })
+        })
+        .map_err(error)?
+}
+
+fn successful_frame_delta(
+    before: RendererFrameCounters,
+    after: RendererFrameCounters,
+) -> Option<u64> {
+    if after.failed != before.failed {
+        return None;
+    }
+    after
+        .submitted
+        .checked_sub(before.submitted)
+        .filter(|delta| *delta > 0)
+}
+
+fn rendered_frame_delta(before: u64, after: u64) -> Option<u64> {
+    after.checked_sub(before).filter(|delta| *delta > 0)
+}
+
+fn rendered_reveal_delta(baseline: u64, first_live: u64, after_settle: u64) -> Option<u64> {
+    if rendered_frame_delta(baseline, first_live).is_none() || after_settle < first_live {
+        return None;
+    }
+    rendered_frame_delta(baseline, after_settle)
+}
+
+fn supplemental_renderer_delta(
+    before: WindowFrameEvidence,
+    after: WindowFrameEvidence,
+) -> Option<Option<u64>> {
+    if before.renderer_backend != after.renderer_backend {
+        return None;
+    }
+    match (
+        before.renderer_backend,
+        before.renderer_counters,
+        after.renderer_counters,
+    ) {
+        (Some("software"), Some(before), Some(after)) => {
+            successful_frame_delta(before, after).map(Some)
+        }
+        (Some("metal"), None, None) => Some(None),
+        _ => None,
+    }
+}
+
+fn restore_surface_frame_ready(visible: bool, live_frame: bool, suspended: bool) -> bool {
+    visible && live_frame && !suspended
+}
+
+fn final_native_focus_ready(
+    app_active: bool,
+    window_visible: bool,
+    window_key: bool,
+    window_miniaturized: bool,
+) -> bool {
+    app_active && window_visible && window_key && !window_miniaturized
+}
+
+fn request_restore_surface_frames(sessions: &[(u64, Entity<TerminalSession>)], cx: &mut App) {
+    for (_, session) in sessions {
+        session.update(cx, |session, cx| {
+            session.request_surface_frame();
+            session.refresh(cx);
+        });
+    }
+}
+
 fn reveal_diagnostic(
     stage: &'static str,
     native: &NSWindow,
@@ -327,6 +439,90 @@ async fn wait_for_reveal(
             eprintln!("native_surface_reveal_failure={snapshot}");
         }
         return Err(error);
+    }
+    Ok(())
+}
+
+async fn wait_for_activation_reveal(
+    handle: WindowHandle<Root>,
+    native: &NSWindow,
+    application: &NSApplication,
+    sessions: &[(u64, Entity<TerminalSession>)],
+    cx: &mut AsyncApp,
+    activation_ack_path: &Path,
+) -> Result<(WindowFrameEvidence, WindowFrameEvidence, Instant), String> {
+    let stage = "actual deminiaturized surface reveal";
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut frame_at_ack = None;
+
+    loop {
+        if activation_ack_path.exists() && frame_at_ack.is_none() {
+            let baseline = window_frame_evidence(handle, cx)?;
+            // The ACK follows the isolated LaunchServices reopen. Reset each
+            // protected terminal here so an older presented-frame bit cannot
+            // satisfy the deminiaturized reveal gate.
+            cx.update(|cx| request_restore_surface_frames(sessions, cx));
+            frame_at_ack = Some(baseline);
+        }
+
+        let current_frame = if frame_at_ack.is_some() {
+            Some(window_frame_evidence(handle, cx)?)
+        } else {
+            None
+        };
+        let surfaces_live = cx.update(|cx| {
+            sessions.iter().all(|(_, session)| {
+                let session = session.read(cx);
+                restore_surface_frame_ready(
+                    session.restore_surface_visible(),
+                    session.surface_has_live_frame(),
+                    session.is_render_suspended(),
+                )
+            })
+        });
+        let ready = frame_at_ack
+            .zip(current_frame)
+            .is_some_and(|(baseline, current)| {
+                rendered_frame_delta(baseline.frame_number, current.frame_number).is_some()
+                    && supplemental_renderer_delta(baseline, current).is_some()
+                    && surfaces_live
+                    && final_native_focus_ready(
+                        application.isActive(),
+                        native.isVisible(),
+                        native.isKeyWindow(),
+                        native.isMiniaturized(),
+                    )
+            });
+        if Instant::now() < deadline && activation_ack_path.exists() && ready {
+            return Ok((
+                frame_at_ack.ok_or_else(|| "activation ACK baseline was absent".to_owned())?,
+                current_frame.ok_or_else(|| "later rendered frame was absent".to_owned())?,
+                deadline,
+            ));
+        }
+        if Instant::now() >= deadline {
+            // Diagnostic failure must not replace the original failed predicate.
+            if let Ok(snapshot) =
+                reveal_diagnostic(stage, native, application, handle, sessions, cx)
+                && let Ok(snapshot) = serde_json::to_string(&snapshot)
+            {
+                eprintln!("native_surface_reveal_failure={snapshot}");
+            }
+            return Err(format!("owned native fixture deadline: {stage}"));
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        pause(cx, remaining.min(Duration::from_millis(10))).await;
+    }
+}
+
+async fn settle_with_deadline(
+    handle: WindowHandle<Root>,
+    cx: &mut AsyncApp,
+    deadline: Instant,
+) -> Result<(), String> {
+    for _ in 0..2 {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        crate::native_parity_fixture::next_frame_with_timeout(handle.into(), cx, remaining).await?;
     }
     Ok(())
 }
@@ -1489,31 +1685,85 @@ async fn verify_surfaces(
     // Bring the owned window forward and key it once before app activation.
     native_mutation(|| native.makeKeyAndOrderFront(None))?;
     activate_owned_application(&application)?;
-    // Keep this owned process alive inside the existing reveal deadline until
-    // the runner has reopened its exact bundle and verified the PID set.
+    // Keep this owned process alive inside the existing 5-second reveal
+    // deadline until the runner has reopened its exact bundle and verified the
+    // PID set. The ACK path resets each restored terminal's presentation flag.
+    // A later rendered accessibility frame and live terminal surfaces prove
+    // repaint; software renderer counters add a backend-specific check.
     let activation_ack_path = profile.home.join("native-parity-activation.ack");
     emit_activation_handshake("deminiaturized_surface_reveal", &activation_ack_path)?;
-    wait_for_reveal(
+    let (frame_at_ack, first_live_frame, reveal_deadline) = wait_for_activation_reveal(
         handle,
         &native,
         &application,
         sessions,
         cx,
-        "actual deminiaturized surface reveal",
-        |cx| {
-            activation_ack_path.exists()
-                && !native.isMiniaturized()
-                && application.isActive()
-                && native.isVisible()
-                && native.isKeyWindow()
-                && sessions
-                    .iter()
-                    .all(|(_, s)| s.read(cx).restore_surface_visible())
-        },
+        &activation_ack_path,
     )
     .await?;
-    settle(handle, cx).await?;
-    let key_window_observed = native.isKeyWindow();
+    settle_with_deadline(handle, cx, reveal_deadline).await?;
+    let frame_after_settle = window_frame_evidence(handle, cx)?;
+    ensure(
+        Instant::now() < reveal_deadline,
+        "owned native fixture deadline: actual deminiaturized surface reveal",
+    )?;
+    let (post_demini_surfaces_live, post_demini_surfaces_suspended) = cx.update(|cx| {
+        let live = sessions.iter().all(|(_, session)| {
+            let session = session.read(cx);
+            restore_surface_frame_ready(
+                session.restore_surface_visible(),
+                session.surface_has_live_frame(),
+                session.is_render_suspended(),
+            )
+        });
+        let suspended = sessions
+            .iter()
+            .any(|(_, session)| session.read(cx).is_render_suspended());
+        (live, suspended)
+    });
+    ensure(
+        post_demini_surfaces_live && !post_demini_surfaces_suspended,
+        "post-deminiaturization terminal surfaces lost visibility, live frames, or render eligibility after settle",
+    )?;
+    let rendered_frame_delta_after_ack = rendered_reveal_delta(
+        frame_at_ack.frame_number,
+        first_live_frame.frame_number,
+        frame_after_settle.frame_number,
+    )
+    .ok_or_else(|| {
+        format!(
+            "post-deminiaturization rendered accessibility frame did not advance: before={} after={}",
+            frame_at_ack.frame_number, frame_after_settle.frame_number
+        )
+    })?;
+    let renderer_counter_delta = supplemental_renderer_delta(frame_at_ack, frame_after_settle)
+        .ok_or_else(|| {
+            format!(
+                "post-deminiaturization renderer evidence failed for backend {:?}: before={:?} after={:?}",
+                frame_at_ack.renderer_backend,
+                frame_at_ack.renderer_counters,
+                frame_after_settle.renderer_counters
+            )
+        })?;
+    ensure(
+        Instant::now() < reveal_deadline,
+        "owned native fixture deadline: actual deminiaturized surface reveal",
+    )?;
+    let actual_reveal_frames = post_demini_surfaces_live
+        && !post_demini_surfaces_suspended
+        && rendered_frame_delta_after_ack > 0
+        && final_native_focus_ready(
+            application.isActive(),
+            native.isVisible(),
+            native.isKeyWindow(),
+            native.isMiniaturized(),
+        );
+    ensure(
+        actual_reveal_frames,
+        "post-deminiaturization reveal lacks a later rendered frame, live terminal surfaces, or native focus",
+    )?;
+    ensure_terminal_focus(handle, ws, ids[1], cx)?;
+    let post_reveal_terminal_input_focus = true;
     let worker = cx.update(crate::memory_pressure::stop_native_fixture);
     cx.background_spawn(async move {
         if let Some(worker) = worker {
@@ -1581,10 +1831,74 @@ async fn verify_surfaces(
         )?;
         Ok(total)
     })?;
+    let final_selected_tab = cx.update(|cx| ws.read(cx).state.selected());
+    ensure(
+        final_selected_tab == Some(ids[5]),
+        &format!(
+            "native cache checks ended on an unexpected selected tab: expected={:?} actual={final_selected_tab:?}",
+            ids[5]
+        ),
+    )?;
+    ensure_terminal_focus(handle, ws, ids[5], cx)?;
+    let final_terminal_input_focus = true;
+    let final_native_app_active = application.isActive();
+    let final_native_window_visible = native.isVisible();
+    let final_native_key_window = native.isKeyWindow();
+    let final_native_window_miniaturized = native.isMiniaturized();
+    let final_native_focus_passed = final_native_focus_ready(
+        final_native_app_active,
+        final_native_window_visible,
+        final_native_key_window,
+        final_native_window_miniaturized,
+    );
+    if !final_native_focus_passed {
+        eprintln!(
+            "native_restore_final_focus_failure={}",
+            serde_json::json!({
+                "app_active": final_native_app_active,
+                "window_visible": final_native_window_visible,
+                "window_key": final_native_key_window,
+                "window_miniaturized": final_native_window_miniaturized,
+                "activation_policy": application.activationPolicy().0,
+                "stage": "immediately_before_restore_fixture_success",
+            })
+        );
+        return Err(format!(
+            "final owned native focus assertion failed before fixture success: app_active={} window_visible={} key_window={} miniaturized={}",
+            final_native_app_active,
+            final_native_window_visible,
+            final_native_key_window,
+            final_native_window_miniaturized,
+        ));
+    }
     Ok(
         serde_json::json!({"hover_live_budget_ms":2000,"hover_exit_budget_ms":500,
         "hover_parked_ptys":0,"hidden_raw_grid_updated":true,"hidden_remote_grid_updated":true,
-        "ordered_out_front":true,"native_mini_demini":true,"native_key_window":key_window_observed,"native_app_active":application.isActive(),"native_activation_policy_before":policy_before.0,"native_activation_policy_after":application.activationPolicy().0,"actual_reveal_frames":true,
+        "ordered_out_front":true,"native_mini_demini":true,
+        "native_key_window":final_native_key_window,"native_app_active":final_native_app_active,
+        "native_window_visible":final_native_window_visible,
+        "native_window_miniaturized":final_native_window_miniaturized,
+        "final_native_focus_passed":final_native_focus_passed,
+        "post_reveal_terminal_input_focus":post_reveal_terminal_input_focus,
+        "final_terminal_input_focus":final_terminal_input_focus,
+        "native_activation_policy_before":policy_before.0,"native_activation_policy_after":application.activationPolicy().0,
+        "restore_surfaces_live_after_demin":post_demini_surfaces_live,
+        "restore_surfaces_suspended_after_demin":post_demini_surfaces_suspended,
+        "actual_reveal_frames":actual_reveal_frames,
+        "reveal_frame_evidence":{"baseline":"after_owned_activation_ack_before_surface_refresh",
+        "window_rendered_frame_at_ack":frame_at_ack.frame_number,
+        "window_rendered_frame_first_live_after_ack":first_live_frame.frame_number,
+        "window_rendered_frame_after_two_native_frames":frame_after_settle.frame_number,
+        "window_rendered_frame_delta_after_ack":rendered_frame_delta_after_ack,
+        "renderer_backend":frame_at_ack.renderer_backend,
+        "renderer_counter_status":if renderer_counter_delta.is_some(){"measured_clean_submission"}else{"unavailable_for_metal"},
+        "submitted_frames_at_ack":frame_at_ack.renderer_counters.map(|counters|counters.submitted),
+        "failed_frames_at_ack":frame_at_ack.renderer_counters.map(|counters|counters.failed),
+        "submitted_frames_first_live_after_ack":first_live_frame.renderer_counters.map(|counters|counters.submitted),
+        "failed_frames_first_live_after_ack":first_live_frame.renderer_counters.map(|counters|counters.failed),
+        "submitted_frames_after_two_native_frames":frame_after_settle.renderer_counters.map(|counters|counters.submitted),
+        "failed_frames_after_two_native_frames":frame_after_settle.renderer_counters.map(|counters|counters.failed),
+        "submitted_frame_delta_after_ack":renderer_counter_delta},
         "critical_pressure_source":"fixture_policy_injection","os_pressure_delivery_tested":false,
         "critical_cache_bytes_reclaimed":reclaimed,"native_history_preserved":true,"ordinary_history_retention":retention,
         "distant_split_cache_bytes":0,"neighbor_cpu_cache_bytes":neighbor_before,
@@ -1866,8 +2180,167 @@ async fn verify_retention(
 }
 
 #[cfg(test)]
-mod activation_diagnostic_tests {
-    use super::{RevealDiagnostic, SessionSurfaceDiagnostic, activation_diagnostic};
+mod tests {
+    use super::{
+        RendererFrameCounters, RevealDiagnostic, SessionSurfaceDiagnostic, WindowFrameEvidence,
+        activation_diagnostic, final_native_focus_ready, rendered_frame_delta,
+        rendered_reveal_delta, restore_surface_frame_ready, successful_frame_delta,
+        supplemental_renderer_delta,
+    };
+
+    #[test]
+    fn post_demini_surface_gate_requires_visible_live_unsuspended_surface() {
+        assert!(restore_surface_frame_ready(true, true, false));
+        assert!(!restore_surface_frame_ready(false, true, false));
+        assert!(!restore_surface_frame_ready(true, false, false));
+        assert!(!restore_surface_frame_ready(true, true, true));
+    }
+
+    #[test]
+    fn final_native_focus_gate_rejects_stolen_or_miniaturized_focus() {
+        assert!(final_native_focus_ready(true, true, true, false));
+        assert!(!final_native_focus_ready(false, true, true, false));
+        assert!(!final_native_focus_ready(true, false, true, false));
+        assert!(!final_native_focus_ready(true, true, false, false));
+        assert!(!final_native_focus_ready(true, true, true, true));
+    }
+
+    #[test]
+    fn reveal_frame_evidence_requires_a_later_clean_renderer_submission() {
+        let before = RendererFrameCounters {
+            submitted: 7,
+            failed: 2,
+        };
+        assert_eq!(
+            successful_frame_delta(
+                before,
+                RendererFrameCounters {
+                    submitted: 8,
+                    failed: 2,
+                }
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            successful_frame_delta(
+                before,
+                RendererFrameCounters {
+                    submitted: 7,
+                    failed: 2,
+                }
+            ),
+            None
+        );
+        assert_eq!(
+            successful_frame_delta(
+                before,
+                RendererFrameCounters {
+                    submitted: 8,
+                    failed: 3,
+                }
+            ),
+            None
+        );
+        assert_eq!(
+            successful_frame_delta(
+                before,
+                RendererFrameCounters {
+                    submitted: 6,
+                    failed: 2,
+                }
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn reveal_frame_evidence_requires_a_later_rendered_accessibility_frame() {
+        assert_eq!(rendered_frame_delta(12, 13), Some(1));
+        assert_eq!(rendered_frame_delta(12, 12), None);
+        assert_eq!(rendered_frame_delta(12, 11), None);
+        assert_eq!(rendered_reveal_delta(12, 13, 15), Some(3));
+        assert_eq!(rendered_reveal_delta(12, 11, 15), None);
+        assert_eq!(rendered_reveal_delta(12, 13, 12), None);
+    }
+
+    #[test]
+    fn renderer_counters_are_supplemental_for_metal_and_strict_for_software() {
+        let metal_before = WindowFrameEvidence {
+            frame_number: 12,
+            renderer_backend: Some("metal"),
+            renderer_counters: None,
+        };
+        let metal_after = WindowFrameEvidence {
+            frame_number: 13,
+            renderer_backend: Some("metal"),
+            renderer_counters: None,
+        };
+        assert_eq!(
+            supplemental_renderer_delta(metal_before, metal_after),
+            Some(None)
+        );
+        let metal_with_counters = WindowFrameEvidence {
+            renderer_counters: Some(RendererFrameCounters {
+                submitted: 7,
+                failed: 2,
+            }),
+            ..metal_before
+        };
+        assert_eq!(
+            supplemental_renderer_delta(metal_with_counters, metal_with_counters),
+            None
+        );
+
+        let software_before = WindowFrameEvidence {
+            renderer_backend: Some("software"),
+            renderer_counters: Some(RendererFrameCounters {
+                submitted: 7,
+                failed: 2,
+            }),
+            ..metal_before
+        };
+        let software_after = WindowFrameEvidence {
+            frame_number: 13,
+            renderer_counters: Some(RendererFrameCounters {
+                submitted: 8,
+                failed: 2,
+            }),
+            ..software_before
+        };
+        assert_eq!(
+            supplemental_renderer_delta(software_before, software_after),
+            Some(Some(1))
+        );
+
+        let failed_after = WindowFrameEvidence {
+            renderer_counters: Some(RendererFrameCounters {
+                submitted: 8,
+                failed: 3,
+            }),
+            ..software_after
+        };
+        assert_eq!(
+            supplemental_renderer_delta(software_before, failed_after),
+            None
+        );
+
+        let missing_software = WindowFrameEvidence {
+            renderer_counters: None,
+            ..software_before
+        };
+        assert_eq!(
+            supplemental_renderer_delta(software_before, missing_software),
+            None
+        );
+        let unsupported_backend = WindowFrameEvidence {
+            renderer_backend: Some("unsupported"),
+            ..metal_before
+        };
+        assert_eq!(
+            supplemental_renderer_delta(unsupported_backend, unsupported_backend),
+            None
+        );
+    }
 
     #[test]
     fn reveal_snapshot_preserves_each_conjunct_and_unknown_renderer_counts() {

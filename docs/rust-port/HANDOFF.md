@@ -31,6 +31,12 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
+- Local source `916bbfd8` passed all nine compiler/package stages, 3,042
+  Rust tests (two ignored) and ten full quality gates. Swift build and 4,586
+  tests passed (three skipped). Its normal warm build took 77.382 seconds.
+  Follow-up Restore focus and measured post-deminiaturization frame assertions
+  await compiled and complete native acceptance. This is a local checkpoint;
+  the published source remains the separate checkpoint below.
 - Published source `84f82eb3` passed 3,037 Rust tests (two ignored), nine
   compiler/package stages and ten local quality gates. Its macOS, Linux,
   Windows and parity CI checks passed, but general Quality CI failed the

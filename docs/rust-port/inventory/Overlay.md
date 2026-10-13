@@ -142,38 +142,24 @@ with AI session resume).
 
 ## Notes
 
-Gaps behind the `partial` and `missing` rows, and how some rows are done:
+Implementation notes for current `done` rows (source references describe code; they do not assert manual or native UI acceptance):
 
-- OVL-002: on macOS the window is always the blurred material (`WindowBackgroundAppearance::Blurred`); the titlebar and tab bar get a translucent HUD tint (`theme::hud_titlebar_background`) and only the terminal area is painted opaque, so the blur shows behind the tab bar only. Not an NSVisualEffectView, so check the look on a Mac.
-- OVL-010, 057, and the Vite part of 013: the session tracks its dev server (`TerminalSession::dev_server`, Monitoring). OVL-015 shows the Vite bolt from it.
-- OVL-013: no "Editor" title (no editor panes yet).
-- OVL-020: drawn for `TabMeta::mcp_controlled` (set by `mcp_create_tab`) when `mcp_show_tab_indicator` is on.
-- OVL-041: GPUI cannot hide a single window: the emptied source window closes and is parked with its frame (`AppData::hidden`, no tabs); the next Dock click or Show Chau7 reopens it there with a fresh tab.
-- OVL-053: the status pill follows `TerminalSession::status` (Idle, Running, Waiting, Stuck, Exited).
-- OVL-056: "Shell integration active" once the shell has sent an OSC 133 mark (`hasShellIntegration`), else "Heuristic detection".
-- OVL-059: the command text of the last finished command block, ✓/✗ and the duration (Rust also shows "exit N" on failure).
-- OVL-060, 061: read the telemetry store (`mcp::sources::telemetry`; repo stats through `repository::set_ai_stats_provider`, registered in `seams.rs`). That store stays empty until the Telemetry port registers one with `mcp::sources::set_telemetry`; until then OVL-060 shows the AI tool name and OVL-061 the command counts only. OVL-062 reads the conflict detector (`ai::hub`), OVL-067 the session's AI session id.
-- OVL-056: "Shell integration active" once the shell has reported a command through OSC 133, else "Heuristic detection".
-- OVL-059: the session does not keep the command text, so the row shows "Last command" with ✓/✗ and the duration.
-- OVL-060, 061: AI telemetry (`runs.db`, `telemetry::hover_summary`) and repo stats (`history.db` plus `runs.db`). OVL-060 looks for the active run of any terminal of the tab, else the latest run when it belongs to one of them (Swift compares the tab UUID, which never matches the recorder's key). OVL-062 reads the conflict detector (`ai::hub`), OVL-067 the session's AI session id.
-- OVL-063: the row, the override cycle and `allowTabCTOToggle` are wired; the global token optimization mode is not a setting yet (TokenOptimization), so it reads "off" and the row hides, as Swift does in that mode.
-- OVL-077: the color comes from the AI tool detected in the tab (`ai_app`) and the custom AI detection rules' colors, not from each command line.
-- OVL-085: the closed tab's split layout, scrollback (kept in the scrollback folder while the tab can be reopened) and AI sessions are captured at close (`closed_tab_snapshot`) and restored with `PaneTree::from_saved`, under the same tab UUID.
-- OVL-094: positions are saved in `DataRoot::panel_positions_file`; Reset Window Positions clears them.
-- OVL-101, 103 to 106: the clipboard and snippet panels are the pickers in `pickers.rs` (same features as KBD-003/005 and SNP-003, 005, 019, 026, 027).
-- OVL-108: needs the proxy task lifecycle (`ProxyIPCServer` candidates and tasks, Proxy module), not ported.
-- OVL-116: a trace line (`log_visual_state`) whenever the tab count, the selected tab or the open panel changes, plus the `TABBAR` lines; there is no tab bar watchdog to summarize (OVL-011 is n/a).
-- OVL-079: `Workspace::new_tab_at(directory, select)` exists (demo tabs use it); MCP and scripting call it once ported.
-- OVL-080: needs the app event system (Events, `appEventConfig`).
-- OVL-085: Rust keeps 10 closed tabs with position, title, color, group, directory and token override; split layout, scrollback and AI resume come with session restore (OVL-112 to 114).
-- OVL-094: positions are kept for the session only (not saved across launches).
-- OVL-095: find, rename, bookmarks and the pickers close each other and a click outside find, rename or bookmarks closes them; the picker sheet (`pickers.rs`) still ignores clicks on its backdrop.
-- OVL-098: the Aa and .* defaults are off; `findCaseSensitiveDefault` and `findRegexDefault` (SET-101) are not settings yet.
-- OVL-099: needs semantic search (SET-100) and command blocks in the session.
-- OVL-101, 103 to 106: the clipboard and snippet panels are the pickers in `pickers.rs`, the same features as KBD-003/005 and SNP-003, 005, 019, 026, 027; left to the owners of those rows so there is one implementation.
-- OVL-108: `workspace/tasks.rs`, with the proxy state in `proxy/mod.rs` (PRX-012 to PRX-014).
-- OVL-109: needs the keyboard shortcuts window, Report Issue and `isShortcutHelperHintEnabled` (SET-092).
-- OVL-116: logs cover tab bar clicks, hover and menus; no periodic overlay or watchdog summaries.
+- OVL-002: `workspace/window.rs::background_appearance` selects the GPUI window background from the blur and opacity settings. `theme.rs::hud_titlebar_background` tints the titlebar/tab bar, while `workspace/mod.rs` leaves the terminal area opaque.
+- OVL-010, 013, 015, 057: terminal monitoring supplies dev-server data; `Workspace::tab_title` resolves custom title, AI name, server name, then Editor/Shell; the tab bar renders the Vite bolt and server capsule, and `hover_card.rs` renders the server row (`terminal/session.rs`, `workspace/ai.rs`, `workspace/tab_bar_view.rs`, `workspace/mod.rs`).
+- OVL-020: `workspace/mcp.rs` sets MCP-controlled tab metadata; `workspace/tab_bar_view.rs` shows its indicator when `mcp.show_tab_indicator` is enabled.
+- OVL-041: `Workspace::take_tab` stores an emptied source window's bounds in `AppData::hidden` and removes that window; `main.rs::open_parked_window` reopens the parked window.
+- OVL-043, 120: tab creation/restoration sets repository groups from known roots, and settings changes re-evaluate automatic grouping (`workspace/mod.rs`, `chau7_next_core/src/tabs_state.rs`).
+- OVL-053, 056, 059: the hover card reads terminal status, OSC 133 shell-integration state, and the last command's text, exit result, and duration (`workspace/hover_card.rs`, `terminal/session.rs`).
+- OVL-060 to 062, 067: the AI session row queries telemetry for the tab's terminal identifiers; repo stats are connected through `telemetry::connect`, while conflicts and session IDs come from the AI hub and terminal session (`telemetry.rs`, `seams.rs`, `repository/mod.rs`, `workspace/hover_card.rs`). Displayed totals depend on recorded runs and repository history.
+- OVL-063: the row reads the configured global `cto.mode` and cycles the per-tab override through the core state policy; it is hidden when the global mode is Off (`settings/token_optimization.rs`, `workspace/hover_card.rs`, `workspace/mcp.rs`, `chau7_next_core/src/tabs_state.rs`).
+- OVL-077: automatic color uses the detected AI command and configured color rules (`chau7_next_core/src/tabs_state.rs::auto_color_for_command`, `settings/ai.rs`).
+- OVL-079, 080: MCP and runtime tab creation use `Workspace::new_tab_at`; the scripting `tab_create` route uses the same tab tool. Workspace tab creation/closure emits the configured app events (`workspace/mcp.rs`, `workspace/mod.rs`, `notifications/app_events.rs`, `scripting.rs`).
+- OVL-085: the core tab state retains the last ten closed-tab metadata entries; closing also captures pane layout and session restore data, and reopening reconstructs the saved panes under the tab UUID (`chau7_next_core/src/tabs_state.rs`, `workspace/mod.rs`, `restore.rs`).
+- OVL-094, 095: panel positions are read from and written to `DataRoot::panel_positions_file` by workspace and panel key; Reset Window Positions clears them. Panel exclusivity and outside-click dismissal are wired through `close_other_panels`, the floating-panel handler, and the picker modal backdrop (`workspace/panel.rs`, `workspace/widgets.rs`, `workspace/pickers.rs`).
+- OVL-098, 099: find case/regex defaults are settings-backed (SET-101); semantic command search is available through the find panel when enabled (SET-100), using terminal command blocks (`settings/productivity.rs`, `workspace/find.rs`, `terminal/session.rs`).
+- OVL-101, 103 to 106: clipboard controls and snippet management, editing, and variable entry are implemented in the picker and snippet UI modules, with clipboard history and snippet parsing in core (`workspace/pickers.rs`, `workspace/pickers/snippets_ui.rs`, `chau7_next_core/src/input/clipboard_history.rs`, `chau7_next_core/src/snippet_store.rs`).
+- OVL-108, 109: task candidate/assessment UI is connected to proxy task state; the shortcut hint reads its input setting and configured Report Issue shortcut (`workspace/tasks.rs`, `proxy/mod.rs`, `workspace/keys.rs`).
+- OVL-116: trace logging records visual-state changes, and `TABBAR` lines record tab-bar interactions. There is no periodic watchdog summary because OVL-011 is n/a (`workspace/debug.rs`, `workspace/mod.rs`, `workspace/`).
 
 Rust differences that are not gaps: the tab path is shortened in the middle to 28 characters (SwiftUI truncates by width); glyphs replace SF Symbols; the hover card text is always light on its dark background. Swift's own tab switch slide never moves (both offsets are 0 for unselected tabs); Rust slides the incoming terminal 30 pt as the code intends. Swift's shell loading bar uses `isShellLoading` and a never-set `shellStartupSlow`; Rust shows the bar while the new shell has drawn nothing and the centered "Shell initializing…" after 5 s without output.
 
