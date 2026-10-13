@@ -12,9 +12,9 @@ use chau7_next_core::tab_bar_layout::TabBarLayoutItem;
 use chau7_next_core::tab_bar_text::{command_badge, idle_duration, truncate_middle};
 use chau7_next_core::tabs_state::{TabColor, repo_group_color, repo_group_name};
 use gpui::{
-    Animation, AnimationExt, App, Bounds, Context, Hsla, Image, ImageFormat, MouseButton,
-    MouseDownEvent, PathBuilder, Pixels, Role, ScrollHandle, SharedString, Window, anchored,
-    bounce, canvas, deferred, div, ease_in_out, img, point, prelude::*, px,
+    AccessibleAction, Animation, AnimationExt, App, Bounds, Context, Hsla, Image, ImageFormat,
+    MouseButton, MouseDownEvent, PathBuilder, Pixels, Role, ScrollHandle, SharedString, Window,
+    anchored, bounce, canvas, deferred, div, ease_in_out, img, point, prelude::*, px,
 };
 
 use super::{AppData, Workspace};
@@ -662,6 +662,14 @@ impl Workspace {
                 .absolute()
                 .size_full(),
             )
+            .on_a11y_action(AccessibleAction::Click, {
+                let workspace = cx.entity().downgrade();
+                move |_, window, cx| {
+                    workspace
+                        .update(cx, |this, cx| this.select_tab(id, window, cx))
+                        .ok();
+                }
+            })
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {

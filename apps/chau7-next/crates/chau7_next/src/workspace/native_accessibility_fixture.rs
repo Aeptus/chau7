@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 
 use gpui::{AppContext, AsyncApp, Bounds, WindowBounds, WindowHandle, WindowOptions, px, size};
 use gpui_kit::base::Root;
-use objc2::{MainThreadMarker, rc::Retained};
+use objc2::{MainThreadMarker, rc::Retained, sel};
 use objc2_app_kit::NSView;
-use objc2_foundation::{NSArray, NSObject, NSString};
+use objc2_foundation::{NSArray, NSNumber, NSObject, NSString};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use serde_json::{Value, json};
 
@@ -126,6 +126,27 @@ fn native_find<'a>(
         .find(|element| element.role == role && element.label.as_deref() == Some(label))
 }
 
+fn native_radio_selected(elements: &[NativeElement], label: &str) -> Result<bool, String> {
+    let _main =
+        MainThreadMarker::new().ok_or("accessibility value query is not on the main thread")?;
+    let matches: Vec<_> = elements
+        .iter()
+        .filter(|element| {
+            element.role == "AXRadioButton" && element.label.as_deref() == Some(label)
+        })
+        .collect();
+    ensure(
+        matches.len() == 1,
+        "native AppKit tree did not identify exactly one tab radio button by its localized title",
+    )?;
+    // AccessKit exposes a tab radio button's selected state as its AX value.
+    let value: Option<Retained<NSNumber>> =
+        unsafe { objc2::msg_send![&*matches[0].object, accessibilityValue] };
+    value
+        .map(|value| value.boolValue())
+        .ok_or_else(|| "native AppKit tab radio button did not export a selected value".into())
+}
+
 fn tree_nodes_with_role<'a>(tree: &'a Value, role: &str) -> Vec<&'a Value> {
     tree.get("nodes")
         .and_then(Value::as_object)
@@ -195,6 +216,71 @@ fn validate_tabs(tree: &Value, expected: &[TabExpected]) -> Result<(usize, usize
         "fixture must expose one selected and one unselected tab",
     )?;
     Ok((selected, unselected))
+}
+
+async fn wait_for_tab_selection_tree(
+    window: WindowHandle<Root>,
+    content_view: &NSView,
+    cx: &mut AsyncApp,
+    after_frame: u64,
+    expected: &[TabExpected],
+) -> Result<(Value, Vec<bool>), String> {
+    const WAIT: Duration = Duration::from_secs(5);
+    let deadline = Instant::now() + WAIT;
+    let mut last_state = "no newer rendered tree was observed".to_owned();
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(format!(
+                "native tab press did not render the expected selection within five seconds: {last_state}"
+            ));
+        }
+        crate::native_parity_fixture::next_frame_with_timeout(window.into(), cx, remaining).await?;
+        let tree = read_tree(window, cx)?;
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "native tab press did not render the expected selection within five seconds: {last_state}"
+            ));
+        }
+        let current_frame = frame_number(&tree)?;
+        if current_frame <= after_frame {
+            last_state =
+                format!("rendered tree frame {current_frame} did not advance past {after_frame}");
+            continue;
+        }
+        match validate_tabs(&tree, expected) {
+            Ok(_) => {
+                let native_states = native_accessibility_tree(content_view).and_then(|elements| {
+                    expected
+                        .iter()
+                        .map(|tab| native_radio_selected(&elements, &tab.label))
+                        .collect::<Result<Vec<_>, _>>()
+                });
+                match native_states {
+                    Ok(states)
+                        if states
+                            .iter()
+                            .zip(expected)
+                            .all(|(selected, tab)| *selected == tab.selected) =>
+                    {
+                        if Instant::now() >= deadline {
+                            return Err(format!(
+                                "native tab press did not render the expected selection within five seconds: {last_state}"
+                            ));
+                        }
+                        return Ok((tree, states));
+                    }
+                    Ok(_) => {
+                        last_state =
+                            "native AppKit radio-button values did not match rendered selection"
+                                .to_owned();
+                    }
+                    Err(error) => last_state = error,
+                }
+            }
+            Err(error) => last_state = error,
+        }
+    }
 }
 
 fn slider_value(tree: &Value) -> Result<f64, String> {
@@ -363,6 +449,29 @@ exec /bin/cat >/dev/null
             });
         })
         .map_err(error)?;
+    workspace
+        .update(cx, |workspace, cx| -> Result<(), String> {
+            let tab_ids = workspace
+                .state
+                .tabs()
+                .iter()
+                .map(|tab| tab.id)
+                .collect::<Vec<_>>();
+            ensure(
+                tab_ids.len() == 2,
+                "fixture did not create exactly two tabs before assigning test titles",
+            )?;
+            ensure(
+                workspace.mcp_rename(tab_ids[0], "AX Fixture A", cx) == "AX Fixture A",
+                "fixture could not assign its first unique tab title",
+            )?;
+            ensure(
+                workspace.mcp_rename(tab_ids[1], "AX Fixture B", cx) == "AX Fixture B",
+                "fixture could not assign its second unique tab title",
+            )?;
+            Ok(())
+        })
+        .map_err(error)??;
 
     crate::native_parity_fixture::next_frame(window.into(), cx).await?;
     let lang = chau7_next_core::l10n::current();
@@ -418,6 +527,137 @@ exec /bin/cat >/dev/null
     ensure(
         native_tab_count >= expected_tabs.len(),
         "native AppKit tree did not export both tabs",
+    )?;
+
+    let pressed_tab_label = expected_tabs
+        .iter()
+        .find(|tab| !tab.selected)
+        .map(|tab| tab.label.clone())
+        .ok_or("fixture did not identify one initially unselected tab")?;
+    let previously_selected_tab_label = expected_tabs
+        .iter()
+        .find(|tab| tab.selected)
+        .map(|tab| tab.label.clone())
+        .ok_or("fixture did not identify one initially selected tab")?;
+    let pressed_tab_index = expected_tabs
+        .iter()
+        .position(|tab| tab.label == pressed_tab_label)
+        .ok_or("fixture lost the initially unselected tab identity")?;
+    let previously_selected_tab_index = expected_tabs
+        .iter()
+        .position(|tab| tab.label == previously_selected_tab_label)
+        .ok_or("fixture lost the initially selected tab identity")?;
+    let native_pressed_tab_selected_before_press =
+        native_radio_selected(&native_tabs, &pressed_tab_label)?;
+    let native_previous_tab_selected_before_press =
+        native_radio_selected(&native_tabs, &previously_selected_tab_label)?;
+    ensure(
+        !native_pressed_tab_selected_before_press && native_previous_tab_selected_before_press,
+        "native AppKit tab values did not match the initial selected and unselected tabs",
+    )?;
+    let press_targets: Vec<_> = tree_nodes_with_role(&first_tree, "Tab")
+        .into_iter()
+        .filter(|node| {
+            let aria = tree_aria(node);
+            aria.get("label").and_then(Value::as_str) == Some(pressed_tab_label.as_str())
+                && aria.get("selected").and_then(Value::as_bool) == Some(false)
+        })
+        .collect();
+    ensure(
+        press_targets.len() == 1,
+        "rendered tree did not identify exactly one unselected localized target tab",
+    )?;
+    let click_actions = tree_aria(press_targets[0])
+        .get("on_action")
+        .and_then(Value::as_array);
+    ensure(
+        click_actions.is_some_and(|actions| {
+            actions
+                .iter()
+                .any(|action| action.as_str() == Some("Click"))
+        }),
+        "rendered unselected tab did not advertise its AccessKit Click action",
+    )?;
+
+    let native_press_targets: Vec<_> = native_tabs
+        .iter()
+        .filter(|element| {
+            element.role == "AXRadioButton"
+                && element.label.as_deref() == Some(pressed_tab_label.as_str())
+        })
+        .collect();
+    ensure(
+        native_press_targets.len() == 1,
+        "native AppKit tree did not identify exactly one matching AXRadioButton",
+    )?;
+    let native_press_target = native_press_targets[0];
+    let native_ax_press_advertised: bool = unsafe {
+        objc2::msg_send![
+            &*native_press_target.object,
+            isAccessibilitySelectorAllowed: sel!(accessibilityPerformPress)
+        ]
+    };
+    ensure(
+        native_ax_press_advertised,
+        "native AppKit AXRadioButton did not advertise AXPress",
+    )?;
+    let native_ax_press_accepted: bool =
+        unsafe { objc2::msg_send![&*native_press_target.object, accessibilityPerformPress] };
+    ensure(
+        native_ax_press_accepted,
+        "native AppKit unselected AXRadioButton did not accept AXPress",
+    )?;
+
+    let expected_tabs_after_press = expected_tabs
+        .iter()
+        .map(|tab| {
+            let selected = tab.label == pressed_tab_label;
+            TabExpected {
+                label: tab.label.clone(),
+                description: super::tab_bar_view::tab_accessibility_description(lang, selected),
+                selected,
+            }
+        })
+        .collect::<Vec<_>>();
+    let (selection_tree, native_tab_selected_values_after_press) = wait_for_tab_selection_tree(
+        window,
+        &content_view,
+        cx,
+        initial_frame,
+        &expected_tabs_after_press,
+    )
+    .await?;
+    let selection_frame = frame_number(&selection_tree)?;
+    let (selected_tabs_after_press, unselected_tabs_after_press) =
+        validate_tabs(&selection_tree, &expected_tabs_after_press)?;
+    let selected_nodes_after_press = tree_nodes_with_role(&selection_tree, "Tab");
+    let pressed_tab_selected_after_press = selected_nodes_after_press.iter().any(|node| {
+        tree_aria(node).get("label").and_then(Value::as_str) == Some(pressed_tab_label.as_str())
+            && tree_aria(node).get("selected").and_then(Value::as_bool) == Some(true)
+    });
+    let previously_selected_tab_deselected_after_press =
+        selected_nodes_after_press.iter().any(|node| {
+            tree_aria(node).get("label").and_then(Value::as_str)
+                == Some(previously_selected_tab_label.as_str())
+                && tree_aria(node).get("selected").and_then(Value::as_bool) == Some(false)
+        });
+    ensure(
+        pressed_tab_selected_after_press
+            && previously_selected_tab_deselected_after_press
+            && selected_tabs_after_press == 1
+            && unselected_tabs_after_press == 1,
+        "native AXPress did not select the exact target tab and deselect the previous tab",
+    )?;
+    let native_pressed_tab_selected_after_press = native_tab_selected_values_after_press
+        .get(pressed_tab_index)
+        .copied()
+        .ok_or("native accessibility result omitted the pressed tab selected value")?;
+    let native_previous_tab_deselected_after_press = native_tab_selected_values_after_press
+        .get(previously_selected_tab_index)
+        .is_some_and(|selected| !selected);
+    ensure(
+        native_pressed_tab_selected_after_press && native_previous_tab_deselected_after_press,
+        "native NSAccessibility values did not reflect the AXPress tab selection",
     )?;
 
     window
@@ -508,6 +748,17 @@ exec /bin/cat >/dev/null
         "unselected_tab_count": unselected_tab_count,
         "native_ax_tab_count": native_tab_count,
         "tab_labels_match_production_formatters": native_tab_labels_match,
+        "native_ax_unselected_tab_press_advertised": native_ax_press_advertised,
+        "native_ax_unselected_tab_press_accepted": native_ax_press_accepted,
+        "native_ax_pressed_tab_selected_before_press": native_pressed_tab_selected_before_press,
+        "native_ax_previous_tab_selected_before_press": native_previous_tab_selected_before_press,
+        "native_ax_pressed_tab_selected_after_press": native_pressed_tab_selected_after_press,
+        "native_ax_previous_tab_deselected_after_press": native_previous_tab_deselected_after_press,
+        "pressed_tab_selected_after_press": pressed_tab_selected_after_press,
+        "previously_selected_tab_deselected_after_press": previously_selected_tab_deselected_after_press,
+        "selected_tab_count_after_press": selected_tabs_after_press,
+        "unselected_tab_count_after_press": unselected_tabs_after_press,
+        "tab_selection_frame_numbers": [initial_frame, selection_frame],
         "timeline_open_button_count": open_count,
         "native_ax_timeline_open_press_accepted": open_accepted,
         "timeline_slider_role": "Slider",
