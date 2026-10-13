@@ -1327,14 +1327,7 @@ mod tests {
         }
         s.select(2);
 
-        s.set_repository_roots_in_directory(
-            2,
-            None,
-            None,
-            None,
-            Some(Path::new("/outside")),
-            &[],
-        );
+        s.set_repository_roots_in_directory(2, None, None, None, Some(Path::new("/outside")), &[]);
 
         assert_eq!(s.selected(), Some(2));
         assert_eq!(ids(&s), vec![1, 3, 2]);
