@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Chau7 Next streamed token-rate details use the same provider display names
+  and optional model suffix as Swift, including Unknown and future providers.
+  Added pure mapping and IPC parser regression coverage.
 - Pre-commit review checks fresh live Codex state before sending or submitting
   review input, rejecting stale terminal banners after the agent exits.
 - Deferred MCP terminal queries exclude saved layouts containing only editors;

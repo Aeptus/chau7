@@ -628,6 +628,21 @@ fn parse_time(text: &str) -> Option<DateTime<Utc>> {
         .map(|d| d.with_timezone(&Utc))
 }
 
+/// Matches Swift's streamed token-rate label: provider display name, plus model when present.
+fn streaming_rate_provider_label(provider: &str, model: Option<&str>) -> String {
+    let display_name = match provider {
+        "anthropic" => "Anthropic",
+        "openai" => "OpenAI",
+        "gemini" => "Google",
+        "unknown" => "Unknown",
+        _ => provider,
+    };
+    match model {
+        Some(model) => format!("{display_name} · {model}"),
+        None => display_name.to_owned(),
+    }
+}
+
 /// Decode one IPC line. `Err` for lines that are not JSON or miss fields
 /// of their type (Swift logs and drops them).
 pub fn parse_message(line: &str, now: DateTime<Utc>) -> Result<ProxyMessage, String> {
@@ -717,7 +732,9 @@ pub fn parse_message(line: &str, now: DateTime<Utc>) -> Result<ProxyMessage, Str
         }
         "generation_progress" => {
             let tab = text(&data, "tab_id").unwrap_or_default();
-            let provider = text(&data, "provider").unwrap_or_default();
+            let raw_provider = text(&data, "provider").unwrap_or_default();
+            let model = text(&data, "model");
+            let provider = streaming_rate_provider_label(&raw_provider, model.as_deref());
             let mut store = crate::telemetry::token_rate::TokenRateStore::default();
             store.record_rate(
                 &tab,
@@ -1486,15 +1503,45 @@ mod tests {
     }
 
     #[test]
+    fn streaming_rate_provider_label_matches_swift_display_mapping() {
+        assert_eq!(
+            streaming_rate_provider_label("anthropic", Some("claude-sonnet")),
+            "Anthropic · claude-sonnet"
+        );
+        assert_eq!(
+            streaming_rate_provider_label("openai", Some("gpt-5")),
+            "OpenAI · gpt-5"
+        );
+        assert_eq!(
+            streaming_rate_provider_label("gemini", Some("gemini-pro")),
+            "Google · gemini-pro"
+        );
+        assert_eq!(streaming_rate_provider_label("openai", None), "OpenAI");
+        assert_eq!(
+            streaming_rate_provider_label("unknown", Some("unlisted-model")),
+            "Unknown · unlisted-model"
+        );
+        assert_eq!(
+            streaming_rate_provider_label("future-provider", None),
+            "future-provider"
+        );
+        assert_eq!(
+            streaming_rate_provider_label("future-provider", Some("future-model")),
+            "future-provider · future-model"
+        );
+    }
+
+    #[test]
     fn generation_progress_and_optional_usage_preserve_confidence() {
         let now = now();
-        let line = r#"{"type":"generation_progress","data":{"tab_id":"tab","provider":"claude","output_tokens_estimate":50,"tokens_per_second":25.0,"duration_ms":2000,"timestamp":"2026-04-01T10:00:00Z"}}"#;
+        let line = r#"{"type":"generation_progress","data":{"tab_id":"tab","provider":"anthropic","model":"claude-sonnet","output_tokens_estimate":50,"tokens_per_second":25.0,"duration_ms":2000,"timestamp":"2026-04-01T10:00:00Z"}}"#;
         let ProxyMessage::GenerationProgress { tab_id, reading } =
             parse_message(line, now).unwrap()
         else {
             panic!("progress")
         };
         assert_eq!(tab_id, "tab");
+        assert_eq!(reading.provider, "Anthropic · claude-sonnet");
         assert_eq!(reading.formatted(), "~25 t/s");
         let line = r#"{"type":"api_call","data":{"session_id":"s","tab_id":"tab","provider":"claude","model":"m","endpoint":"/v1/messages","input_tokens":null,"output_tokens":50,"cost_usd":null,"latency_ms":3000,"ttft_ms":1000,"is_streaming":true,"status_code":200,"timestamp":"2026-04-01T10:00:00Z"}}"#;
         let ProxyMessage::ApiCall {
