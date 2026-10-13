@@ -492,7 +492,12 @@ fn bundled_installer_uses_sibling_artifacts_without_checkout_or_cargo() {
     for name in ["chau7-next", "chau7-next-cli"] {
         std::fs::write(bin.join(name), "old Next destination").unwrap();
     }
-    let swift_state = home.join(".chau7/swift-state.json");
+    // Use the central source-path catalogue for this isolated preservation sentinel.
+    let legacy_config = DataRoot::with_home(home.clone(), true)
+        .importable_files()
+        .remove(0)
+        .0;
+    let swift_state = legacy_config.with_file_name("swift-state.json");
     std::fs::create_dir_all(swift_state.parent().unwrap()).unwrap();
     std::fs::write(&swift_state, "preserve Swift state").unwrap();
 

@@ -1293,6 +1293,56 @@ mod tests {
     }
 
     #[test]
+    fn automatic_root_change_keeps_remaining_old_group_contiguous_and_selection() {
+        let mut s = state_with(3);
+        s.auto_repo_grouping = true;
+        for tab in s.tabs.iter_mut() {
+            tab.repo_group_id = Some("/repo-a".into());
+            tab.primary_git_root = Some("/repo-a".into());
+        }
+        s.select(2);
+
+        s.set_repository_roots_in_directory(
+            2,
+            Some("/repo-b".into()),
+            Some("/repo-b".into()),
+            Some("/repo-b".into()),
+            Some(Path::new("/repo-b/src")),
+            &[],
+        );
+
+        assert_eq!(s.selected(), Some(2));
+        assert_eq!(ids(&s), vec![1, 3, 2]);
+        assert_eq!(s.group_members("/repo-a"), vec![1, 3]);
+        assert_eq!(s.group_members("/repo-b"), vec![2]);
+    }
+
+    #[test]
+    fn automatic_root_loss_keeps_remaining_old_group_contiguous_and_selection() {
+        let mut s = state_with(3);
+        s.auto_repo_grouping = true;
+        for tab in s.tabs.iter_mut() {
+            tab.repo_group_id = Some("/repo-a".into());
+            tab.primary_git_root = Some("/repo-a".into());
+        }
+        s.select(2);
+
+        s.set_repository_roots_in_directory(
+            2,
+            None,
+            None,
+            None,
+            Some(Path::new("/outside")),
+            &[],
+        );
+
+        assert_eq!(s.selected(), Some(2));
+        assert_eq!(ids(&s), vec![1, 3, 2]);
+        assert_eq!(s.group_members("/repo-a"), vec![1, 3]);
+        assert!(s.get(2).unwrap().repo_group_id.is_none());
+    }
+
+    #[test]
     fn attached_and_restored_tabs_seed_groups_even_with_automatic_mode_off() {
         let mut s = state_with(3);
         set_all_roots(&mut s, 1, "/repo");
