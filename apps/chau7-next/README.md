@@ -60,9 +60,15 @@ If the fast build fails, request a single symbol-rich release rebuild:
 BUILD_MODE=diagnostic ./scripts/bundle-macos.sh
 ```
 
-It keeps the optimized release profile and LTO off, includes full Rust and Go
-symbols, and does not enable debug assertions. It runs only when explicitly
-requested. `CARGO_BUILD_VERBOSE=1 BUILD_LOG=target/logs/fast.log` adds verbose
+It keeps the optimized release profile and LTO off, includes Rust DWARF
+symbols and unstripped Go symbols, and does not enable debug assertions. After
+signing, the packager creates a UUID-matched dSYM for the main Rust app binary
+beside the app bundle. Its absolute path, UUID, architecture, and DWARF size are
+recorded in the build metadata JSON with a SHA-256 for the DWARF file and the
+resolved Apple tool paths. The Xcode toolchain's dsymutil and dwarfdump are
+required; packaging fails if either tool is missing or the dSYM UUID or
+architecture does not match the signed app binary. Fast mode does not run these
+symbol tools. It runs only when explicitly requested. `CARGO_BUILD_VERBOSE=1 BUILD_LOG=target/logs/fast.log` adds verbose
 Cargo commands and captures their output. After a successful package build,
 `target/bundle/Chau7-Next-<target>-<mode>.json` records the source revision,
 working-tree status, compiler versions, compile settings and SHA-256 values for

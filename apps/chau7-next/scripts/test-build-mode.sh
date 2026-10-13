@@ -170,7 +170,7 @@ case "$PWD" in
   *) exit 3 ;;
 esac
 for product in "${products[@]}"; do
-  printf 'fresh:%s|cwd=%s|targetdir=%s\n' "$product" "$PWD" "$cache_dir" > "$out_dir/$product"
+  printf 'fresh:%s|cwd=%s|targetdir=%s\nuuid=01234567-89AB-CDEF-0123-456789ABCDEF\n' "$product" "$PWD" "$cache_dir" > "$out_dir/$product"
   chmod 755 "$out_dir/$product"
 done
 printf 'fake cargo build cwd=%s target=%s targetdir=%s\n' "$PWD" "$target" "$cache_dir"
@@ -197,6 +197,45 @@ done
 mkdir -p "$(dirname "$output")"
 printf 'fresh-go:%s\n' "$output" > "$output"
 chmod 755 "$output"
+FAKE
+
+cat > "$FAKE_BIN/dsymutil" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+output=''
+input=''
+while (($#)); do
+  if [[ "$1" == --out-file ]]; then output="$2"; shift 2; else input="$1"; shift; fi
+done
+[[ -n "$output" && -n "$input" ]] || exit 2
+[[ ! -e "$FAKE_STATE/dsymutil-empty" ]] || exit 0
+mkdir -p "$output/Contents/Resources/DWARF"
+cp "$input" "$output/Contents/Resources/DWARF/$(basename "$input")"
+FAKE
+
+cat > "$FAKE_BIN/dwarfdump" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == --uuid ]] || exit 2
+input="$2"
+uuid="$(sed -n 's/^uuid=//p' "$input" | head -n 1)"
+[[ -n "$uuid" ]] || exit 3
+if [[ -e "$FAKE_STATE/dwarfdump-mismatch" && "$input" == */Contents/Resources/DWARF/* ]]; then
+  uuid='00000000-0000-0000-0000-000000000000'
+fi
+printf 'UUID: %s (arm64) %s\n' "$uuid" "$input"
+FAKE
+
+cat > "$FAKE_BIN/xcrun" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$FAKE_STATE/xcrun.log"
+[[ "$1" == --find ]] || exit 2
+case "$2" in
+  dsymutil) printf '%s\n' "$FAKE_BIN/dsymutil" ;;
+  dwarfdump) printf '%s\n' "$FAKE_BIN/dwarfdump" ;;
+  *) exit 2 ;;
+esac
 FAKE
 
 cat > "$FAKE_BIN/clang" <<'FAKE'
@@ -227,12 +266,15 @@ chmod 755 \
   "$FAKE_BIN/rustc" \
   "$FAKE_BIN/cargo" \
   "$FAKE_BIN/go" \
+  "$FAKE_BIN/dsymutil" \
+  "$FAKE_BIN/dwarfdump" \
+  "$FAKE_BIN/xcrun" \
   "$FAKE_BIN/clang" \
   "$FAKE_BIN/codesign"
 assert_fake_tools_selected() (
   local tool
   local resolved
-  for tool in git rustup rustc cargo go clang codesign; do
+  for tool in git rustup rustc cargo go dsymutil dwarfdump xcrun clang codesign; do
     resolved="$(PATH="$FAKE_BIN:$PATH" /bin/bash -c 'command -v "$1"' _ "$tool")"
     [[ "$resolved" == "$FAKE_BIN/$tool" ]] \
       || fail "expected fake $tool first in PATH"
@@ -248,7 +290,8 @@ mkdir -p \
   "$FIXTURE_ROOT/apps/chau7-macos/chau7-proxy" \
   "$FIXTURE_HELPERS" \
   "$FIXTURE_ROOT/services/chau7-remote"
-cp "$APP_ROOT/scripts/bundle-macos.sh" "$FIXTURE_APP/scripts/bundle-macos.sh"
+sed "s|/usr/bin/xcrun|$FAKE_BIN/xcrun|" "$APP_ROOT/scripts/bundle-macos.sh" > "$FIXTURE_APP/scripts/bundle-macos.sh"
+chmod 755 "$FIXTURE_APP/scripts/bundle-macos.sh"
 cp "$APP_ROOT/scripts/build-mode.sh" "$FIXTURE_APP/scripts/build-mode.sh"
 printf 'version = "0.1.0"\n' > "$FIXTURE_APP/Cargo.toml"
 printf 'fixture skill\n' > "$FIXTURE_APP/resources/skills/chau7-next-build/SKILL.md"
@@ -273,6 +316,7 @@ run_fake_bundle() {
   local -a env_args=(
     "PATH=$FAKE_BIN:$PATH"
     "FAKE_STATE=$FAKE_STATE"
+    "FAKE_BIN=$FAKE_BIN"
     TARGET=aarch64-apple-darwin
     "BUILD_NUMBER=fixture-$label"
     "OUT_DIR=$output_dir"
@@ -291,7 +335,7 @@ run_fake_bundle() {
       cat "$FAKE_STATE/$label-package.log" >&2
       return 1
     fi
-  )
+  ) || return $?
   printf '%s\n' "$output_dir/Chau7 Next.app" "$output_dir/Chau7-Next-aarch64-apple-darwin-${mode/default/fast}.json"
 }
 
@@ -332,6 +376,23 @@ assert manifest["buildMode"] == mode
 assert manifest["sourceDirty"] is False
 assert manifest["sourceRevision"] == "0123456789abcdef0123456789abcdef01234567"
 assert manifest["appSignatureVerified"] is True
+if mode == "fast":
+    assert manifest["rustDsym"] is None
+else:
+    dsym = manifest["rustDsym"]
+    dsym_bundle = pathlib.Path(dsym["path"]).resolve()
+    dwarf_file = dsym_bundle / "Contents/Resources/DWARF/Chau7 Next"
+    assert dsym_bundle.parent == bundle.parent
+    assert dsym_bundle.name == "Chau7 Next.app.dSYM"
+    assert bundle not in dsym_bundle.parents
+    assert dwarf_file.is_file() and dwarf_file.stat().st_size > 0
+    assert int(dsym["dwarfSizeBytes"]) == dwarf_file.stat().st_size
+    assert dsym["uuid"] == "01234567-89AB-CDEF-0123-456789ABCDEF"
+    assert dsym["architecture"] == "arm64"
+    assert len(dsym["dwarfSha256"]) == 64
+    assert hashlib.sha256(dwarf_file.read_bytes()).hexdigest() == dsym["dwarfSha256"]
+    assert pathlib.Path(dsym["dsymutilPath"]).name == "dsymutil"
+    assert pathlib.Path(dsym["dwarfdumpPath"]).name == "dwarfdump"
 assert manifest["target"] == "aarch64-apple-darwin"
 assert manifest["minimumMacOS"] == "13.0"
 verbosity_args = ["-vv"] if verbose == "1" else []
@@ -388,10 +449,29 @@ assert pathlib.Path(actual_helper_target).resolve() == pathlib.Path(helper_targe
 PY
 }
 
+expect_diagnostic_failure() {
+  local label="$1"
+  local expected_error="$2"
+  if run_fake_bundle diagnostic "$label" '' '' 0 '' >/dev/null 2>&1; then
+    fail "$label unexpectedly passed diagnostic symbol validation"
+  fi
+  assert_file_contains "$FAKE_STATE/$label-package.log" "$expected_error"
+}
+
+# Diagnostic validation must reject mismatched UUIDs and absent DWARF output.
+: > "$FAKE_STATE/dwarfdump-mismatch"
+expect_diagnostic_failure diagnostic-uuid-mismatch 'UUID/architecture does not match'
+rm "$FAKE_STATE/dwarfdump-mismatch"
+: > "$FAKE_STATE/dsymutil-empty"
+expect_diagnostic_failure diagnostic-empty-dsym 'did not produce DWARF data'
+rm "$FAKE_STATE/dsymutil-empty"
+
 # Default fast packaging shares the per-worktree cache across Rust workspaces
 # and hashes bytes after fake codesign changes every executable.
 : > "$FAKE_STATE/go-args.log"
+: > "$FAKE_STATE/xcrun.log"
 fast_paths="$(run_fake_bundle default fast '' '' 0 '')"
+[[ ! -s "$FAKE_STATE/xcrun.log" ]] || fail 'fast mode unexpectedly invoked Apple symbol tools'
 fast_bundle="$(printf '%s\n' "$fast_paths" | sed -n '1p')"
 fast_manifest="$(printf '%s\n' "$fast_paths" | sed -n '2p')"
 validate_bundle "$fast_bundle" "$fast_manifest" fast "$FIXTURE_APP/target" "$FIXTURE_APP/target" 0 ''
@@ -403,6 +483,8 @@ assert_file_contains "$FAKE_STATE/go-args.log" '-s -w'
 # evidence still checking the expected target and all seven signed artifacts.
 : > "$FAKE_STATE/go-args.log"
 diagnostic_default_paths="$(run_fake_bundle diagnostic diagnostic-default '' '' 0 '')"
+[[ "$(wc -l < "$FAKE_STATE/xcrun.log" | tr -d ' ')" -eq 2 ]] \
+  || fail 'diagnostic mode did not resolve exactly dsymutil and dwarfdump'
 diagnostic_default_bundle="$(printf '%s\n' "$diagnostic_default_paths" | sed -n '1p')"
 diagnostic_default_manifest="$(printf '%s\n' "$diagnostic_default_paths" | sed -n '2p')"
 validate_bundle "$diagnostic_default_bundle" "$diagnostic_default_manifest" diagnostic \

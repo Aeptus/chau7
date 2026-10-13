@@ -31,6 +31,18 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
+- Latest application checkpoint `4d8f55b1b3db7c47109426222455c2236a7b70fa`
+  passed nine compiler/package stages, 3,023 Rust tests (two ignored), ten
+  separate full-quality gates, all six reported CI checks, all 21 isolated
+  native cases and the separate keyboard fixture. Normal MCP/performance,
+  five RunData stages and two-process deferred reads passed; live terminal
+  replay remains unverified. All owned test apps retired.
+- The subsequent packaging-only batch supplies a UUID-matched main-app dSYM
+  beside diagnostic bundles, with its hash and tool paths in the metadata.
+  Fast mode performs no symbol-tool work. Application Rust/Go source is
+  unchanged from the checkpoint. Manual acceptance in section 6 stays open;
+  the earlier composition failure has no established cause or production fix.
+
 - Preceding validated checkpoint `c8ede4d4662a3b38a25bfe6f4885978769454ab1`
   passed all nine fast compiler/package stages, ten separate full-quality gates
   and 3,023 Rust tests (two ignored). The normal build took 50.614 seconds with

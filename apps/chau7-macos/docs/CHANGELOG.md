@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Build
+
+- Explicit Chau7 Next diagnostic packaging emits a UUID-matched main-app
+  dSYM beside the signed bundle and records its hash and resolved Xcode tools.
+  Fast packaging performs no symbol-tool work. Source contracts cover absent
+  DWARF and UUID mismatch failures; application Rust/Go source is unchanged.
+- Application checkpoint `4d8f55b1` passed all 21 isolated native cases, the
+  separate keyboard fixture, 3,023 Rust tests (two ignored), nine compiler
+  stages, ten separate quality gates and all six reported CI checks. These
+  passes do not establish a fix for the previous intermittent IME failure;
+  physical input-method and remaining Mac checklist acceptance stay open.
+
 ### Fixed
 
 - Pre-commit review checks fresh live Codex state before sending or submitting

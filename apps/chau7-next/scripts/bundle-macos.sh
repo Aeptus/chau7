@@ -204,7 +204,8 @@ case "$BUILD_METADATA_DIR" in
 esac
 BUILD_METADATA="$BUILD_METADATA_DIR/Chau7-Next-$TARGET-$BUILD_MODE.json"
 MANIFEST_TMP="$(mktemp "$BUILD_METADATA_DIR/.Chau7-Next-$TARGET-$BUILD_MODE.XXXXXX")"
-trap 'rm -f "$MANIFEST_TMP"' EXIT
+DSYM_STAGE=''
+trap 'rm -f "$MANIFEST_TMP"; if [ -n "$DSYM_STAGE" ] && [ -d "$DSYM_STAGE" ]; then rm -rf "$DSYM_STAGE"; fi' EXIT
 
 json_string() {
   local value="$1"
@@ -265,6 +266,89 @@ artifact_sha256() {
 }
 
 APP_SHA256="$(artifact_sha256 "$APP/Contents/MacOS/Chau7 Next")"
+
+# Diagnostic Rust symbols are emitted as a sidecar for the main app binary.
+# Resolve Apple's tools through the active Xcode toolchain, never PATH.
+RUST_DSYM_JSON='null'
+if [ "$BUILD_MODE" = "diagnostic" ]; then
+  XCRUN="/usr/bin/xcrun"
+  if [ ! -x "$XCRUN" ]; then
+    echo "error: diagnostic symbols require /usr/bin/xcrun" >&2
+    exit 1
+  fi
+  DSYMUTIL="$("$XCRUN" --find dsymutil)"
+  DWARFDUMP="$("$XCRUN" --find dwarfdump)"
+  for apple_tool in "$DSYMUTIL" "$DWARFDUMP"; do
+    case "$apple_tool" in
+      /*) ;;
+      *) echo "error: xcrun returned a non-absolute Apple tool path" >&2; exit 1 ;;
+    esac
+    if [ ! -x "$apple_tool" ]; then
+      echo "error: diagnostic symbols require executable Apple tool: $apple_tool" >&2
+      exit 1
+    fi
+  done
+
+  APP_PARENT="$(cd "$(dirname "$APP")" && pwd -P)"
+  DSYM_ROOT="$APP_PARENT/$(basename "$APP").dSYM"
+  DSYM_STAGE="$(mktemp -d "$APP_PARENT/.Chau7 Next.app.dSYM.XXXXXX")"
+  DSYM_BUNDLE="$DSYM_STAGE/Chau7 Next.app.dSYM"
+  APP_BINARY="$APP/Contents/MacOS/Chau7 Next"
+  "$DSYMUTIL" --out-file "$DSYM_BUNDLE" "$APP_BINARY"
+  DWARF_FILE="$DSYM_BUNDLE/Contents/Resources/DWARF/Chau7 Next"
+  if [ ! -s "$DWARF_FILE" ]; then
+    echo "error: dsymutil did not produce DWARF data for the main app binary" >&2
+    exit 1
+  fi
+
+  APP_UUID_ROWS="$("$DWARFDUMP" --uuid "$APP_BINARY" | sed -nE 's/^UUID: ([[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}) \(([^)]*)\) .*/\1 \2/p')"
+  DWARF_UUID_ROWS="$("$DWARFDUMP" --uuid "$DWARF_FILE" | sed -nE 's/^UUID: ([[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}) \(([^)]*)\) .*/\1 \2/p')"
+  APP_UUID_COUNT="$(printf '%s\n' "$APP_UUID_ROWS" | awk 'NF { count++ } END { print count + 0 }')"
+  DWARF_UUID_COUNT="$(printf '%s\n' "$DWARF_UUID_ROWS" | awk 'NF { count++ } END { print count + 0 }')"
+  case "$TARGET" in
+    aarch64-apple-darwin) EXPECTED_DSYM_ARCH=arm64 ;;
+    x86_64-apple-darwin) EXPECTED_DSYM_ARCH=x86_64 ;;
+    *) echo "error: unsupported diagnostic dSYM architecture for $TARGET" >&2; exit 1 ;;
+  esac
+  APP_UUID="$(printf '%s\n' "$APP_UUID_ROWS" | awk '{ print $1 }')"
+  APP_ARCH="$(printf '%s\n' "$APP_UUID_ROWS" | awk '{ print $2 }')"
+  DWARF_UUID="$(printf '%s\n' "$DWARF_UUID_ROWS" | awk '{ print $1 }')"
+  DWARF_ARCH="$(printf '%s\n' "$DWARF_UUID_ROWS" | awk '{ print $2 }')"
+  if [ "$APP_UUID_COUNT" -ne 1 ] || [ "$DWARF_UUID_COUNT" -ne 1 ] \
+    || [ "$APP_UUID_ROWS" != "$DWARF_UUID_ROWS" ] \
+    || [ "$APP_ARCH" != "$EXPECTED_DSYM_ARCH" ] \
+    || [ "$DWARF_UUID" != "$APP_UUID" ] || [ "$DWARF_ARCH" != "$APP_ARCH" ]; then
+    echo "error: diagnostic dSYM UUID/architecture does not match the signed app binary" >&2
+    exit 1
+  fi
+  DWARF_SIZE_BYTES="$(wc -c < "$DWARF_FILE" | tr -d '[:space:]')"
+  DWARF_SHA256="$(shasum -a 256 "$DWARF_FILE" | awk '{ print $1 }')"
+  case "$DWARF_SHA256" in
+    *[!0123456789abcdefABCDEF]*|'')
+      echo "error: invalid dSYM SHA-256 output for the main app binary" >&2
+      exit 1
+      ;;
+  esac
+  if [ "$(printf '%s' "$DWARF_SHA256" | wc -c | tr -d '[:space:]')" -ne 64 ]; then
+    echo "error: incomplete dSYM SHA-256 output for the main app binary" >&2
+    exit 1
+  fi
+  case "$DWARF_SIZE_BYTES" in
+    *[!0123456789]*|'')
+      echo "error: invalid dSYM DWARF size for the main app binary" >&2
+      exit 1
+      ;;
+  esac
+
+  if [ -e "$DSYM_ROOT" ] || [ -L "$DSYM_ROOT" ]; then
+    rm -rf "$DSYM_ROOT"
+  fi
+  mv "$DSYM_BUNDLE" "$DSYM_ROOT"
+  rmdir "$DSYM_STAGE"
+  DSYM_STAGE=''
+  RUST_DSYM_JSON="{\"path\":$(json_string "$DSYM_ROOT"),\"binary\":$(json_string "$APP_BINARY"),\"uuid\":$(json_string "$APP_UUID"),\"architecture\":$(json_string "$APP_ARCH"),\"dwarfSizeBytes\":$DWARF_SIZE_BYTES,\"dwarfSha256\":$(json_string "$DWARF_SHA256"),\"dsymutilPath\":$(json_string "$DSYMUTIL"),\"dwarfdumpPath\":$(json_string "$DWARFDUMP")}"
+fi
+
 BRIDGE_SHA256="$(artifact_sha256 "$APP/Contents/MacOS/chau7-next-mcp-bridge")"
 CLI_SHA256="$(artifact_sha256 "$APP/Contents/MacOS/chau7-next-cli")"
 OPTIM_SHA256="$(artifact_sha256 "$APP/Contents/MacOS/chau7-optim")"
@@ -349,6 +433,7 @@ cat > "$MANIFEST_TMP" <<JSON
     "go": $(json_string "$GO_VERSION"),
     "clang": $(json_string "$CLANG_VERSION")
   },
+  "rustDsym": $RUST_DSYM_JSON,
   "artifacts": {
     "Chau7 Next": {"path": "Contents/MacOS/Chau7 Next", "sha256": $APP_SHA256},
     "chau7-next-mcp-bridge": {"path": "Contents/MacOS/chau7-next-mcp-bridge", "sha256": $BRIDGE_SHA256},

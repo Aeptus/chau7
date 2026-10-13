@@ -1,5 +1,27 @@
 # Chau7 Next parity with the current Swift app
 
+## Validated application checkpoint (2026-10-13)
+
+Application source `4d8f55b1b3db7c47109426222455c2236a7b70fa` passed
+all nine compiler/package stages, 3,023 Rust tests (two ignored), and a
+separate ten-gate full-quality run. Its normal build took 40.210 seconds
+with a warm cache. All six reported GitHub checks passed.
+
+The exact-source native sequence passed all 21 isolated cases: Software
+4/4, Auto with an unavailable Metal device 4/4, six Settings locale rows,
+two accessibility action cases and five accessibility locale rows. The
+separate keyboard fixture passed. All owned fixture processes retired.
+Normal MCP input, numeric exports (1,769 values and 16 persisted rows),
+five RunData stages and two-process deferred reads also passed. The
+parked-terminal receipt retains `replay_verified=false`.
+
+These passes do not establish a cause or fix for the earlier intermittent
+Editor composition loss. Physical IME, multi-display, full VoiceOver,
+real providers and paired devices remain manual checklist items. The
+subsequent diagnostic packaging change touches scripts and documentation,
+with no Rust or Go application source change. It creates the main app's
+dSYM beside the diagnostic bundle; fast packaging does not run symbol tools.
+
 ## Source baseline and interpretation
 
 Current comparison baseline: official `Aeptus/chau7` main
