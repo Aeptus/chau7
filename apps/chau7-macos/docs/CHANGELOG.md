@@ -21,6 +21,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Validation
 
+- Checkpoint `c8ede4d4662a3b38a25bfe6f4885978769454ab1` passed all nine
+  fast compiler/package stages, ten separate full-quality gates and 3,023
+  Rust tests (two ignored). The normal build took 50.614 seconds with a warm
+  cache. Software native acceptance passed 4/4; Auto with unavailable Metal
+  passed Restore, Settings and Cache but failed Editor composition (3/4).
+  The sequence stopped before locale and accessibility cases. The separate
+  keyboard fixture passed. No cause or production fix is established for the
+  composition loss between frame callbacks. All eight matrix apps retired.
+- On that same checkpoint, two-process deferred-tab MCP acceptance passed:
+  known parked terminals returned blocked read-only readiness and empty buffer
+  and PTY-log snapshots, without starting the target shell or granting control.
+  Saved tab/pane identity and styled scrollback persisted through two graceful
+  quits. Live emulator replay remains unverified. The normal package passed
+  exact 68-byte MCP input, active-child graceful quit, numeric validation of
+  1,868 values and 16 persisted performance rows, and all five synthetic
+  RunData checks. All owned test apps retired; no provider or device was contacted.
+
 - Source `7c7a3e0c9f78d0272f85c2c1ae8fb42edfc9938b` passed separate
   ten-gate full quality and 3,023 Rust workspace tests (two ignored). Normal
   and native-feature strict Clippy rejected two explicit early-return blocks
@@ -86,6 +103,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider or device. These checks do not close the physical Mac checklist.
 
 ### Diagnostics
+
+- Optional native fixtures add bounded elapsed times, numeric AppKit event
+  metadata, an exact text-storage edit observer and a capped first-observation
+  stack. The observer unregisters on drop. These diagnostics capture no source
+  text or key payload and change no acceptance assertion or production behavior.
+  A separate diagnostic build is planned; an observation stack alone cannot
+  identify the operation that cleared composition.
 
 - The follow-up fixture-only code extends the earlier 64-event AppKit trace
   to a 96-event bound. It records input-context identities, native frame

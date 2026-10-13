@@ -31,6 +31,27 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
+- Checkpoint `c8ede4d4662a3b38a25bfe6f4885978769454ab1` passed all nine
+  fast compiler/package stages, ten separate full-quality gates and 3,023
+  Rust tests (two ignored). The normal build took 50.614 seconds with a warm
+  cache. Software native acceptance passed 4/4; Auto with unavailable Metal
+  passed Restore, Settings and Cache but failed Editor composition (3/4).
+  The sequence stopped before locale and accessibility cases. The separate
+  keyboard fixture passed. No cause or production fix is established for the
+  composition loss between frame callbacks. All eight matrix apps retired.
+- On that same checkpoint, two-process deferred-tab MCP acceptance passed:
+  known parked terminals returned blocked read-only readiness and empty buffer
+  and PTY-log snapshots, without starting the target shell or granting control.
+  Saved tab/pane identity and styled scrollback persisted through two graceful
+  quits. Live emulator replay remains unverified. The normal package passed
+  exact 68-byte MCP input, active-child graceful quit, numeric validation of
+  1,868 values and 16 persisted performance rows, and all five synthetic
+  RunData checks. All owned test apps retired; no provider or device was contacted.
+
+The fixture-only follow-up adds bounded timing/event/storage diagnostics.
+Its diagnostic build has not run. Older checkpoint results below retain
+their original scope; they do not validate this follow-up.
+
 
 - Exact source `baf03cb83fdc6925849e82e9345a4c443929339f` passed all nine
   compiler/package stages, separate ten-gate full quality, 3,019 workspace
@@ -45,8 +66,8 @@ Last updated 2026-10-13.
   buffer output required a live terminal session and reported a missing tab.
   The follow-up recognizes those tabs without activating a shell or granting
   control. Status preserves blocked caller readiness; buffer output is empty
-  until a terminal is attached, matching Swift. Fresh validation of this
-  correction is pending. Saved sidecar persistence does not prove second-process
+  until a terminal is attached, matching Swift. The c8 checkpoint above validates this
+  correction with the parked-tab acceptance. Saved sidecar persistence does not prove second-process
   live emulator replay. All owned test app processes have retired.
 - Source `d8a04d4944a36556bf3346390b497d11814bf402` passed five staged
   commit gates, five publication gates, ten separate full-quality gates and
@@ -65,7 +86,7 @@ Last updated 2026-10-13.
   fixture. No fixture app was launched, and the nine-stage compiler sequence
   was not started. The follow-up source correction routes those two unchanged
   liveness assertions through `cx.update`; its exact unit test passed on d8a04d49.
-- Latest compiled checkpoint `ab64761304b0339cdace38413bed241432e7e1a7` (tree
+- Earlier compiled checkpoint `ab64761304b0339cdace38413bed241432e7e1a7` (tree
   `9e6987d719189b415113e0fe1671aa9f52b46a4a`) passed all nine fast compiler
   stages and 3,019 workspace tests (two ignored). The isolated native Software
   matrix passed Restore, Settings and Cache (3/4); the Editor case observed the

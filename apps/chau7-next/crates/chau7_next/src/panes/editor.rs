@@ -1304,7 +1304,11 @@ impl Render for EditorPane {
                 );
             }
             if let Some(native) = &self.native_markdown {
+                #[cfg(feature = "native-parity-fixture")]
+                native.fixture_record("EditorPane::render.before_native_sync");
                 native.sync(&self.content(cx), &self.config);
+                #[cfg(feature = "native-parity-fixture")]
+                native.fixture_record("EditorPane::render.after_native_sync");
             }
             if self.native_markdown.is_some()
                 && self.native_guard_subscriptions.is_empty()

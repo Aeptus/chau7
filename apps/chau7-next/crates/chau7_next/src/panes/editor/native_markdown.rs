@@ -27,9 +27,12 @@ use objc2_app_kit::{
     NSRulerView, NSScrollView, NSStringDrawing, NSTextInputClient, NSTextView, NSView,
 };
 #[cfg(feature = "native-parity-fixture")]
-use objc2_app_kit::{NSSelectionAffinity, NSTextInputContext};
+use objc2_app_kit::{
+    NSSelectionAffinity, NSTextInputContext, NSTextStorage,
+    NSTextStorageDidProcessEditingNotification,
+};
 #[cfg(feature = "native-parity-fixture")]
-use objc2_foundation::{NSArray, NSValue};
+use objc2_foundation::{NSArray, NSNotification, NSNotificationCenter, NSValue};
 use objc2_foundation::{
     NSDictionary, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString, NSUndoManager,
 };
@@ -99,6 +102,9 @@ pub(super) enum MenuCommand {
 struct FixtureTrace {
     enabled: Cell<bool>,
     sequence: Cell<u64>,
+    started_at: Cell<Option<std::time::Instant>>,
+    last_marked: Cell<Option<bool>>,
+    transition_stack: RefCell<Option<String>>,
     events: RefCell<Vec<serde_json::Value>>,
 }
 #[cfg(feature = "native-parity-fixture")]
@@ -108,6 +114,9 @@ impl FixtureTrace {
     fn begin(&self, view: &SourceTextView, site: &'static str) {
         self.events.borrow_mut().clear();
         self.sequence.set(0);
+        self.started_at.set(Some(std::time::Instant::now()));
+        self.last_marked.set(None);
+        *self.transition_stack.borrow_mut() = None;
         self.enabled.set(true);
         self.record(view, site, None);
     }
@@ -118,6 +127,37 @@ impl FixtureTrace {
         }
         let marked = view.markedRange();
         let selected = view.selectedRange();
+        let has_marked_text = view.hasMarkedText();
+        let previous_marked = self.last_marked.replace(Some(has_marked_text));
+        let transition_stack = if previous_marked == Some(true) && !has_marked_text {
+            let mut saved_stack = self.transition_stack.borrow_mut();
+            if saved_stack.is_none() {
+                let stack = std::backtrace::Backtrace::force_capture()
+                    .to_string()
+                    .lines()
+                    .take(16)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .chars()
+                    .take(2048)
+                    .collect::<String>();
+                *saved_stack = Some(stack.clone());
+                Some(stack)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let elapsed_micros = self
+            .started_at
+            .get()
+            .map(|started| u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX));
+        let current_event = MainThreadMarker::new()
+            .and_then(|mtm| NSApplication::sharedApplication(mtm).currentEvent());
+        let appkit_event_type = current_event.as_ref().map(|event| event.r#type().0);
+        let appkit_event_timestamp = current_event.as_ref().map(|event| event.timestamp());
+        let appkit_event_window_number = current_event.as_ref().map(|event| event.windowNumber());
         let window = view.window();
         let window_key = window.as_ref().is_some_and(|window| window.isKeyWindow());
         let source_first_responder = window
@@ -136,12 +176,16 @@ impl FixtureTrace {
         self.sequence.set(sequence);
         let event = serde_json::json!({
             "sequence": sequence,
+            "elapsed_micros": elapsed_micros,
             "site": site,
-            "has_marked_text": view.hasMarkedText(),
+            "has_marked_text": has_marked_text,
             "marked_location": marked.location,
             "marked_length": marked.length,
             "selection_location": selected.location,
             "selection_length": selected.length,
+            "appkit_event_type": appkit_event_type,
+            "appkit_event_timestamp_seconds": appkit_event_timestamp,
+            "appkit_event_window_number": appkit_event_window_number,
             "window_key": window_key,
             "source_first_responder": source_first_responder,
             "application_active": application_active,
@@ -149,6 +193,7 @@ impl FixtureTrace {
             "current_input_context_id": current_context_id,
             "source_context_is_current": source_context_id.is_some() && source_context_id == current_context_id,
             "responder_result": responder_result,
+            "first_observed_marked_to_unmarked_stack": transition_stack,
         });
         let mut events = self.events.borrow_mut();
         if events.len() == Self::CAPACITY {
@@ -177,9 +222,14 @@ impl FixtureTrace {
             return;
         }
         let events = self.events.borrow().clone();
+        let transition_stack = self.transition_stack.borrow().clone();
         eprintln!(
             "native_editor_marked_trace={}",
-            serde_json::json!({"capacity": Self::CAPACITY, "events": events})
+            serde_json::json!({
+                "capacity": Self::CAPACITY,
+                "events": events,
+                "first_observed_marked_to_unmarked_stack": transition_stack,
+            })
         );
     }
 }
@@ -496,6 +546,27 @@ define_class!(
             );
         }
         #[cfg(feature = "native-parity-fixture")]
+        #[unsafe(method(fixtureTextStorageDidProcessEditing:))]
+        fn fixture_text_storage_did_process_editing(&self, notification: &NSNotification) {
+            let Some(storage) = notification
+                .object()
+                .and_then(|object| object.downcast::<NSTextStorage>().ok())
+            else {
+                return;
+            };
+            let range = storage.editedRange();
+            self.ivars().shared.fixture_trace.record_details(
+                self,
+                "NSTextStorage::didProcessEditing",
+                serde_json::json!({
+                    "edited_mask": storage.editedMask().0,
+                    "edited_range_location": range.location,
+                    "edited_range_length": range.length,
+                    "change_in_length": storage.changeInLength(),
+                }),
+            );
+        }
+        #[cfg(feature = "native-parity-fixture")]
         #[unsafe(method(becomeFirstResponder))]
         fn fixture_become_first_responder(&self) -> bool {
             self.ivars().shared.fixture_trace.record(self, "AppKit::becomeFirstResponder.before_super", None);
@@ -561,6 +632,58 @@ define_class!(
         }
     }
 );
+
+#[cfg(feature = "native-parity-fixture")]
+struct FixtureStorageObserver {
+    center: Retained<NSNotificationCenter>,
+    view: Retained<SourceTextView>,
+    storage: Retained<NSTextStorage>,
+}
+
+#[cfg(feature = "native-parity-fixture")]
+impl FixtureStorageObserver {
+    fn register(view: &Retained<SourceTextView>) -> Result<Self, String> {
+        let _mtm = MainThreadMarker::new()
+            .ok_or("text-storage observer registration left the AppKit main thread")?;
+        let storage = unsafe { view.textStorage() }
+            .ok_or("native source view has no text storage for fixture observer")?;
+        let center = NSNotificationCenter::defaultCenter();
+        let observer: &AnyObject = view.as_ref();
+        let observed_storage: &AnyObject = storage.as_ref();
+        // SAFETY: the observer class declares this exact selector/signature,
+        // and the notification object is the live storage owned by this view.
+        unsafe {
+            center.addObserver_selector_name_object(
+                observer,
+                sel!(fixtureTextStorageDidProcessEditing:),
+                Some(NSTextStorageDidProcessEditingNotification),
+                Some(observed_storage),
+            );
+        }
+        Ok(Self {
+            center,
+            view: view.clone(),
+            storage,
+        })
+    }
+}
+
+#[cfg(feature = "native-parity-fixture")]
+impl Drop for FixtureStorageObserver {
+    fn drop(&mut self) {
+        let observer: &AnyObject = self.view.as_ref();
+        let storage: &AnyObject = self.storage.as_ref();
+        // SAFETY: remove only the exact name/object pair registered above.
+        unsafe {
+            self.center.removeObserver_name_object(
+                observer,
+                Some(NSTextStorageDidProcessEditingNotification),
+                Some(storage),
+            );
+        }
+    }
+}
+
 impl SourceTextView {
     fn handle_equivalent(&self, event: &NSEvent) -> bool {
         let flags = event.modifierFlags();
@@ -955,6 +1078,11 @@ impl NativeMarkdown {
         start_delivery(shared.pending.clone(), shared.queued.clone(), receiver, cx);
         Some(result)
     }
+    #[cfg(feature = "native-parity-fixture")]
+    pub(super) fn fixture_record(&self, site: &'static str) {
+        self.shared.fixture_trace.record(&self.text, site, None);
+    }
+
     pub(super) fn has_pending_edits(&self) -> bool {
         self.shared.pending.borrow().text.is_some()
     }

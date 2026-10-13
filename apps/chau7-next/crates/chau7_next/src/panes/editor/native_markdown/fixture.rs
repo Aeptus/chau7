@@ -430,6 +430,9 @@ pub(in crate::panes::editor) async fn verify(
     let previous_mount = stale_attachment.generation;
     // Exercise NSTextInputClient on the production SourceTextView and let an
     // actual GPUI frame/restyle pass while its text is still marked.
+    let _storage_edit_observer = cx
+        .update(|_| FixtureStorageObserver::register(&native.text))
+        .map_err(error)??;
     native
         .shared
         .fixture_trace
@@ -504,6 +507,11 @@ pub(in crate::panes::editor) async fn verify(
     });
     crate::native_parity_fixture::next_frame(handle.into(), cx).await?;
     MainThreadMarker::new().ok_or("owned composition frame left main thread")?;
+    native.shared.fixture_trace.record(
+        &native.text,
+        "fixture.frame_one.next_frame_completed",
+        None,
+    );
     composition_phase("after_frame_one", &application, &native_window, &native);
     native
         .shared
@@ -517,6 +525,11 @@ pub(in crate::panes::editor) async fn verify(
     });
     crate::native_parity_fixture::next_frame(handle.into(), cx).await?;
     MainThreadMarker::new().ok_or("owned composition frame left main thread")?;
+    native.shared.fixture_trace.record(
+        &native.text,
+        "fixture.frame_two.next_frame_completed",
+        None,
+    );
     composition_phase("after_frame_two", &application, &native_window, &native);
     native
         .shared
