@@ -1652,7 +1652,10 @@ async fn verify_surfaces(
         "owned fixture activation policy is not Regular",
     )?;
     native_mutation(|| native.makeKeyAndOrderFront(None))?;
-    activate_owned_application(&application)?;
+    // The owned acceptance fixture needs an explicit foreground request before
+    // testing native restore. NSApplication::activate() is cooperative and may
+    // leave another active app in front; keep the existing active-state gate.
+    cx.update(|cx| cx.activate(true));
     if let Err(error) = wait_until(cx, "owned fixture application activation", |_| {
         application.isActive()
     })

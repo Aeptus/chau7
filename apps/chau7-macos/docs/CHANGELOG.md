@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Request explicit foreground activation for the owned native Restore fixture and add bounded editor focus/window diagnostics; preserve strict native acceptance assertions.
 - Activate the owned AppKit accessibility adapter before native Restore frame measurements.
 
 - Strengthen native Restore acceptance to measure post-reopen frames and require final app/key-window focus; keep existing deadlines.

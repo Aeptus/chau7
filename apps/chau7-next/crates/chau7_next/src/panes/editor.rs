@@ -320,16 +320,54 @@ impl EditorPane {
         cx: &mut Context<Self>,
     ) -> bool {
         let changed = text.is_some();
+        #[cfg(feature = "native-parity-fixture")]
+        if let Some(native) = &self.native_markdown {
+            native.fixture_record_details(
+                "EditorPane::mirror.before_state_update",
+                serde_json::json!({
+                    "incoming_text": text.is_some(),
+                    "incoming_selection": selection.is_some(),
+                    "gpui_focus_handle_focused": self.focus_handle.is_focused(window),
+                }),
+            );
+        }
         if let Some(text) = text {
             self.state
                 .update(cx, |state, cx| state.set_value(text, window, cx));
+            #[cfg(feature = "native-parity-fixture")]
+            if let Some(native) = &self.native_markdown {
+                native.fixture_record_details(
+                    "EditorPane::mirror.after_state_update",
+                    serde_json::json!({
+                        "gpui_focus_handle_focused": self.focus_handle.is_focused(window),
+                    }),
+                );
+            }
             self.refresh_markdown_styles(cx);
+            #[cfg(feature = "native-parity-fixture")]
+            if let Some(native) = &self.native_markdown {
+                native.fixture_record_details(
+                    "EditorPane::mirror.after_style_refresh",
+                    serde_json::json!({
+                        "gpui_focus_handle_focused": self.focus_handle.is_focused(window),
+                    }),
+                );
+            }
             self.dirty = true;
             cx.emit(SidePaneEvent::Changed);
         }
         if let Some(selection) = selection {
             self.state
                 .update(cx, |state, cx| state.set_selected_range(selection, cx));
+            #[cfg(feature = "native-parity-fixture")]
+            if let Some(native) = &self.native_markdown {
+                native.fixture_record_details(
+                    "EditorPane::mirror.after_selection_update",
+                    serde_json::json!({
+                        "gpui_focus_handle_focused": self.focus_handle.is_focused(window),
+                    }),
+                );
+            }
         }
         changed
     }

@@ -31,7 +31,21 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
-- Local checkpoint source `51c9e761` passed all nine compiler/package
+- Current local checkpoint source `07098279` passed all nine compiler/package
+  stages, 3,042 Rust tests (two ignored), seven focused feature tests and ten
+  local quality gates. Swift build and tests passed: 4,586 executed, three
+  skipped, zero failures. The sealed normal runtime read 1,783 finite values
+  and 16 timers; the process CPU sample was available, and both Software
+  windows reported 13 and 5 frames with zero failed frames. The owned app and child quit gracefully.
+  Strict native Software acceptance passed 4/4. The first Auto-device-failure
+  run passed 2/4; the same unchanged binary passed 4/4 on repeat. This makes
+  the marked-text failure intermittent in these runs, without establishing a
+  cause or fix. The full 21-case native sequence and physical Mac checklist
+  remain open. The fixture-only follow-up requests owned GPUI foreground
+  activation and adds capped editor focus/window-context traces. It awaits
+  compilation and native verification; no production IME behavior change
+  is claimed.
+- Previous local checkpoint source `51c9e761` passed all nine compiler/package
   stages, 3,042 Rust tests (two ignored), seven focused feature tests and ten
   full quality gates. The Swift build and 4,586-test suite passed, with three
   skipped and no failures. Its normal optimized warm build took 51.4346

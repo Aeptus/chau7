@@ -159,9 +159,16 @@ impl FixtureTrace {
         let appkit_event_timestamp = current_event.as_ref().map(|event| event.timestamp());
         let appkit_event_window_number = current_event.as_ref().map(|event| event.windowNumber());
         let window = view.window();
+        let source_window_identity = window
+            .as_ref()
+            .map(|window| (&**window as *const NSWindow) as usize);
+        let source_window_number = window.as_ref().map(|window| window.windowNumber());
         let window_key = window.as_ref().is_some_and(|window| window.isKeyWindow());
-        let source_first_responder = window
-            .and_then(|window| window.firstResponder())
+        let first_responder = window.as_ref().and_then(|window| window.firstResponder());
+        let first_responder_identity = first_responder
+            .as_ref()
+            .map(|responder| (&**responder as *const _) as usize);
+        let source_first_responder = first_responder
             .and_then(|responder| responder.downcast::<SourceTextView>().ok())
             .is_some_and(|source| std::ptr::eq(&*source, view));
         let application_active = MainThreadMarker::new()
@@ -186,7 +193,10 @@ impl FixtureTrace {
             "appkit_event_type": appkit_event_type,
             "appkit_event_timestamp_seconds": appkit_event_timestamp,
             "appkit_event_window_number": appkit_event_window_number,
+            "source_window_identity": source_window_identity,
+            "source_window_number": source_window_number,
             "window_key": window_key,
+            "first_responder_identity": first_responder_identity,
             "source_first_responder": source_first_responder,
             "application_active": application_active,
             "source_input_context_id": source_context_id,
@@ -349,12 +359,22 @@ fn start_delivery(
                 if let (Some(trace), Some(native)) =
                     (fixture_trace.as_ref(), this.native_markdown.as_ref())
                 {
-                    trace.record_details(&native.text, "EditorPane::delivery.before_mirror", serde_json::json!({
+                    trace.record_details(&native.text, "EditorPane::delivery.before_take_edits", serde_json::json!({
                         "pending_text": pending_text, "pending_selection": pending_selection,
                         "pending_focused": pending_focused, "pending_action_count": pending_actions,
+                        "gpui_focus_handle_focused": this.focus_handle.is_focused(window),
                     }));
                 }
                 let (text, selection) = pending.take_edits(&this.state.read(cx).value());
+                #[cfg(feature = "native-parity-fixture")]
+                if let (Some(trace), Some(native)) =
+                    (fixture_trace.as_ref(), this.native_markdown.as_ref())
+                {
+                    trace.record_details(&native.text, "EditorPane::delivery.after_take_edits", serde_json::json!({
+                        "taken_text": text.is_some(), "taken_selection": selection.is_some(),
+                        "gpui_focus_handle_focused": this.focus_handle.is_focused(window),
+                    }));
+                }
                 if this.mirror_native_edits(text, selection, window, cx) {
                     this.schedule_autosave(cx);
                 }
@@ -365,6 +385,7 @@ fn start_delivery(
                     trace.record_details(&native.text, "EditorPane::delivery.after_mirror", serde_json::json!({
                         "pending_text": pending_text, "pending_selection": pending_selection,
                         "pending_focused": pending_focused, "pending_action_count": pending_actions,
+                        "gpui_focus_handle_focused": this.focus_handle.is_focused(window),
                     }));
                 }
                 if pending.focused {
@@ -1081,6 +1102,12 @@ impl NativeMarkdown {
     #[cfg(feature = "native-parity-fixture")]
     pub(super) fn fixture_record(&self, site: &'static str) {
         self.shared.fixture_trace.record(&self.text, site, None);
+    }
+    #[cfg(feature = "native-parity-fixture")]
+    pub(super) fn fixture_record_details(&self, site: &'static str, details: serde_json::Value) {
+        self.shared
+            .fixture_trace
+            .record_details(&self.text, site, details);
     }
 
     pub(super) fn has_pending_edits(&self) -> bool {

@@ -1,6 +1,30 @@
 # Chau7 Next parity with the current Swift app
 
-## Local validation checkpoint: `51c9e761` (2026-10-13)
+## Local validation checkpoint: `07098279` (2026-10-13)
+
+Source `07098279263c086a7b639bdc5ba94b8485506991` passed all nine
+compiler/package stages, 3,042 Rust tests (two ignored), seven focused
+feature tests and ten local quality gates. Swift validation passed its build
+and executed 4,586 tests (three skipped, no failures).
+
+The sealed normal package runtime read 1,783 finite values and 16 timers.
+The process CPU sample was available, and both Software windows reported
+13 and 5 submitted frames with zero failures. The owned diagnostics directory was verified, and
+the app and child quit gracefully.
+
+Strict native Software acceptance passed 4/4. The first Auto-device-failure
+run passed 2/4; the unchanged binary passed 4/4 on a fresh repeat. The
+marked-text failure is intermittent in these runs; the repeat does not
+identify its cause or demonstrate a fix. The full 21-case native sequence
+remains open.
+
+The fixture-only follow-up requests owned GPUI foreground activation and
+adds editor focus/window-context diagnostics using the existing 96-entry
+cap. It awaits compilation and native verification and changes no
+production IME behavior. Complete native acceptance and the physical Mac checklist remain
+open.
+
+### Previous local validation checkpoint: `51c9e761` (2026-10-13)
 
 Source `51c9e761e43a51ce3a0558464b30f7973b8ee7f1` passed all nine
 compiler/package stages, 3,042 Rust tests (two ignored), seven focused
