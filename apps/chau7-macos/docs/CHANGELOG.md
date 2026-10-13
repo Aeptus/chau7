@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Regroup both the old and new automatic repository groups when a middle tab
-  changes its repository or leaves it, preserving selection by tab identity.
+  changes its primary repository or leaves it, preserving selection by tab identity.
 - Keep native print snapshot validation compatible with strict Rust 1.99 checks.
 - Print the Next terminal through its shared CPU grid painter, preserving ANSI
   colors, graphemes, images and overlays in an owned PNG without replacing the

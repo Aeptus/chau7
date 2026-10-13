@@ -795,10 +795,15 @@ impl TabsState {
             tab.has_inherited_repo_group = false;
         }
         let group = tab.repo_group_id.clone();
-        if group != previous_group
-            && let Some(group) = group
-        {
-            self.coalesce_group(&group);
+        if group != previous_group {
+            // Changing the middle tab's group can split the remaining old
+            // members. Keep Auto groups contiguous before joining the new one.
+            if automatic && let Some(previous) = previous_group.as_deref() {
+                self.coalesce_group(previous);
+            }
+            if let Some(group) = group {
+                self.coalesce_group(&group);
+            }
         }
     }
 
