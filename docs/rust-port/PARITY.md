@@ -2,7 +2,227 @@
 
 ## Current implementation follow-up (2026-10-13)
 
-### Validated application source: `5d35776c`
+### Current validated application source: `8c2ef35e`
+
+Application source `8c2ef35ec39c5c3a199a9f9b199cc5f85422f847` (tree
+`6c3424440386292c1e286af67d3f27027366d9b3`) was clean for all current-source
+receipts. All 17 core checks passed: 3,059 Rust workspace tests (two ignored),
+150 shared-terminal tests (one ignored), 46 native Python contracts,
+formatting, build-mode and CLI-installer contracts, seven focused Restore
+tests, strict Clippy in both feature modes, terminal HUP, and the actual
+`reader_pool::retry_interrupted_tests::` EINTR filter (seven tests). The six
+cursor-blink tests are included in the workspace total.
+
+Local quality passed all nine selected gates uncached and unattested; the two
+conditional drift checks were skipped as not applicable. The full local CI gate
+reported 4,586 macOS tests (three skipped, zero failures) and 97 iOS tests
+(zero failures). The focused FileMonitor/DirectoryMonitor run passed 13 tests;
+those overlap the full Swift run and are not additional tests. The normal fast
+package passed in 4.212680584 seconds with the existing cache. This is one
+build observation, not a build-time benchmark.
+
+An owned copy of the normal package passed isolated runtime acceptance. It
+restored two fixture tabs, created a third, and observed the exact 68-byte fake
+shell input. Three Software windows reported 234 submitted frames and zero
+failed frames. The performance snapshot exposed 16 active timers out of 17
+records; persistence at the configured five-second cadence produced nine
+history records at 5.005–5.120-second intervals, whose latest entry matched
+the persisted latest snapshot.
+`token_rates_by_tab` was present but empty in this fake-shell run, so no
+provider throughput result is claimed. The graceful quit completed all ten
+shutdown phases; the owned app, MCP socket and three fake-cat children retired,
+with no forced signals and no provider or device contact. Existing acceptance
+data remained unchanged.
+
+A PID-filtered WindowServer capture passed for the three owned windows. Visual
+review found the red synthetic terminal text in both restored terminal windows
+and the Welcome window in the third. This is visual evidence for the isolated
+package run; it is not physical-input evidence.
+
+The cursor change advances blink phase while a terminal view is unfocused but
+skips `cx.notify()` for those phase changes; painting already shows a solid
+cursor when that exact focus handle is unfocused. Focus regain restores the
+visible phase. No CPU A/B measurement was run, so this change has no measured
+CPU-improvement claim.
+
+Four separate source-bound native fixture extensions passed on this source:
+Restore with the Software renderer, Restore with injected Auto-device failure,
+and the supplementary keyboard case with both selectors. The Restore cases
+reconstructed six tabs including two initially selected PTYs and two split
+leaves, delivered two resume inputs without line terminators or duplicates,
+and verified styled scrollback and native reveal/focus. Both activation
+acknowledgements matched the same app PID and bundle; post-ack reveal measured
+three additional Software frames with zero failures. The style proof retains
+`RESTORED_STYLE:é中❤️` across the worker flush/reload, including combining,
+wide-character continuation and emoji cells. The keyboard cases dispatched
+Cmd+C, Ctrl+Tab and Cmd+D through `NSApplication.sendEvent` to isolated fake
+PTYs: with no selection Cmd+C delivered exactly byte 3, Ctrl+Tab changed the
+selected tab ID, and Cmd+D made two horizontal leaves with the new leaf
+focused. Each closed its three owned PTYs. The keyboard supplement is separate
+from the existing 21-row parity matrix; its wrapper sees zero open windows
+because the fixture closes its window before outer diagnostics, while the
+receipts validate actual native CALayer/AppKit images and frames. The
+Auto-device-failure selector injects a renderer startup failure and validates
+the software fallback. These fixtures exercise AppKit event dispatch, not
+physical keys or a system input-source change.
+
+The existing strict 21-row native matrix remains scoped to source `8cae8bdd`;
+it is not relabeled as an `8c2ef35e` matrix run. The 8c2 native fixture binary
+built successfully and has the same SHA-256 as the 8cae fixture binary, while
+four source-current extension cases above passed separately. The earlier 8cae
+keyboard v2 attempt remains a negative wrapper result: its shortcut assertions
+ran, but the outer renderer-counter check failed after teardown with
+`window_count: 0`. The passing 8c2 v3 supplements are distinct receipts and do
+not erase that attempt.
+
+A recursive Git-tree comparison found 2,563 exact path/mode/type/object-ID
+matches out of 2,565 entries between `8cae8bdd` and `8c2ef35e`. The only two
+changed entries are `apps/chau7-next/scripts/native-parity.py` and
+`apps/chau7-next/scripts/test_native_parity.py`; all other paths, including app
+runtime sources, match. This narrows the source delta but does not transfer
+source-bound matrix results between revisions.
+
+The matching CI artifact is not linked yet. Follow draft
+[Aeptus/chau7#229](https://github.com/Aeptus/chau7/pull/229) for publication
+and attribute any CI report to its exact head and merge tree; no CI pass is
+claimed for `8c2ef35e`. Physical Mac hand-testing is deferred until this
+automated validation work is finished; no user hand-test result is claimed.
+Real provider, credential, trust and paired-device acceptance also remain
+open.
+
+Receipts below are relative to
+`/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011/resume-20261013-1433/`:
+
+- `cursor-blink-review/core-8c2ef35e-v1/manifest.json` (SHA-256
+  `13f6abfbe99d0f1c7fd8778f85dac24e362b8d6a8131e9781bd488be1269e374`).
+- `cursor-blink-review/quality-8c2ef35e-v1/manifest.json` (SHA-256
+  `718472d93587713eaf624105031d50d629e52a5bac565180eb1229c3ef193c3d`).
+- `cursor-blink-review/package-8c2ef35e-v1/manifest.json` (SHA-256
+  `c16de5a29b00f87408f3f3aad3f9d3d4c6aab8133e45a10859d45f1872b0a75a`).
+- `cursor-blink-review/source-identity-8cae-to-8c2ef35.json` (SHA-256
+  `1920a5fb318e1fd2e872363a3a1072f0e76fc25dbaef989304c4edbd3f4c7e0c`).
+- `cursor-blink-review/native-build-8c2ef35e-v1/manifest.json` (SHA-256
+  `147a4d7d24778d19a0b77df0ef3c75de3188f6712bc5c31da193d2864429482f`);
+  its build receipt is
+  `cursor-blink-review/native-build-8c2ef35e-v1/build-receipt.json` (SHA-256
+  `7e13e5451180a59a8df74549b55341951e8e9af1b2761c430b450cb616b1c7c6`),
+  artifact SHA-256
+  `5176e0a1ba73cf40d822738910ec98cde8b0ea59337f36a7835e669d0536610a`.
+- `normal-runtime/outputs/normal-8c2ef35e-v1/manifest.json` (SHA-256
+  `7ca707022669906cb875aeb71d004be69de7e71453de7616be3dc6e2171b235b`).
+- `normal-runtime/outputs/normal-8c2ef35e-v1/mcp-acceptance.json` (SHA-256
+  `5e45b4fe066de6c2d22da0ae8d97fdf06f03a2c8e60542f430e53419c4f4f521`).
+- `normal-runtime/outputs/normal-8c2ef35e-v1/quit.json` (SHA-256
+  `a59bfe5dcea14273a2f0327ee1d3f08f91e262c140a76142cbd2ab2a74550ccd`).
+- `normal-runtime/outputs/normal-8c2ef35e-v1/root-readonly-verifier.json`
+  (SHA-256
+  `066cfdceb34ca983651fe0675b3294cba8f8fa22cfafa07a0831a3d200cd78be`).
+- `normal-runtime/outputs/normal-8c2ef35e-v1/windowserver-capture.json`
+  (SHA-256
+  `44bcd389493f0865156dafc97ef4be61d902c59879156ba975cbf4ce4a985d29`).
+- `cursor-blink-review/native-restore-8c2ef35e-software-v1/manifest.json`
+  (SHA-256 `aa23bd650572003686ba86ef786f44c91f79b74cec94a94f4e9e38dfe23a3f59`).
+- `cursor-blink-review/native-restore-8c2ef35e-auto-device-failure-v1/manifest.json`
+  (SHA-256 `44cd9b31f20efe2d4b827215c562145ed5c0679b0654a9049a7633b0f37f376e`).
+- `cursor-blink-review/native-keyboard-8c2ef35e-software-v3/proposal-summary.json`
+  (SHA-256 `f27fa897e4f4d008fba08a109f73eafe81b900812869daf262625336a57db419`).
+- `cursor-blink-review/native-keyboard-8c2ef35e-auto-device-failure-v3/proposal-summary.json`
+  (SHA-256 `12d6343a3f715641d96bc4a01884994b7a03a1601b250229c639e024ef3436b1`).
+
+### Previous validated application source: `8cae8bdd`
+
+Application source `8cae8bdde42aa234ce7301c498e87dae6597aeb9` (tree
+`9f3eeac9448e98fc983e302255cfff5ac2065ddb`) passed all 17 core checks:
+3,059 Rust workspace tests (two ignored), 150 shared-terminal tests (one
+ignored), 35 native Python contracts, formatting, build-mode and CLI-installer
+contracts, seven focused Restore tests, strict Clippy in both feature modes,
+terminal HUP, and the actual `reader_pool::retry_interrupted_tests::` EINTR
+filter (seven tests). The six new cursor-blink tests are included in the
+workspace total.
+
+Local quality passed all nine selected gates uncached and unattested; the two
+conditional drift checks were skipped as not applicable. The full local CI gate
+reported 4,586 macOS tests (three skipped, zero failures) and 97 iOS tests
+(zero failures). The focused FileMonitor/DirectoryMonitor run passed 13 tests;
+those overlap the full Swift run and are not additional tests. The normal fast
+package passed in 41.146 seconds with the existing cache. This is one build
+observation, not a build-time benchmark.
+
+An owned copy of the normal package passed isolated runtime acceptance. It
+restored two fixture tabs, created a third, delivered the exact 68-byte fake
+shell input, and saved the three tabs on graceful quit. Three Software windows
+reported 117 submitted frames and zero failed frames. The performance snapshot
+exposed 16 active timers; persistence at the configured five-second cadence
+produced five history records whose latest entry matched the persisted latest
+snapshot. `token_rates_by_tab` was present but empty in this fake-shell run, so
+no provider throughput result is claimed. The graceful quit completed all ten
+shutdown phases; the owned app, MCP socket and three fake-cat children retired,
+with no forced signals and no provider or device contact. Existing acceptance
+data remained unchanged.
+
+The cursor change advances blink phase while a terminal view is unfocused but
+skips `cx.notify()` for those phase changes; painting already shows a solid
+cursor when that exact focus handle is unfocused. Focus regain restores the
+visible phase. No CPU A/B measurement was run, so this change has no measured
+CPU-improvement claim.
+
+The strict 21-row native matrix passed all 21 cases for this source. The
+Editor case demonstrates that synthetic marked text survives actual native
+frames. Its fixture receipts record
+`os_ime_input_source_automation=false` and `clipboard_access=false`, so this
+is not evidence for the macOS-selected input source, dead-key composition or
+physical IME delivery.
+
+A LaunchServices Software keyboard-fixture attempt executed all three
+shortcut assertions through `NSApplication.sendEvent` to fake PTYs: Cmd+C with
+no selection delivered exactly ETX byte 3 and left selection empty; Ctrl+Tab
+changed the selected tab ID; Cmd+D created two horizontal leaves and focused
+the new leaf. It started and closed three owned PTYs and captured a real native
+surface image. The fixture's assertion outcome passed, but the outer wrapper
+receipt is negative: window sampling happened after the fixture closed its
+window (`window_count: 0`), so it reported `renderer frame samples are
+missing`. Treat this as partial keyboard evidence, not a completed case pass.
+The initial Software attempt failed during fixture-window startup before the
+shortcut assertions. Corrected cases had not run at that checkpoint;
+their separate passing 8c2 results are above. This exercises AppKit event dispatch,
+not physical key input. Physical Mac hand-testing is deferred until this
+validation work is finished; no user hand-test result is claimed. Real
+provider, credential, trust and paired-device acceptance also remain open.
+
+Receipts below are relative to
+`/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011/resume-20261013-1433/`:
+
+- `cursor-blink-review/core-8cae8bdd-v1/manifest.json` (SHA-256
+  `e2a9d0fd6360cd492a9e73d8298654a317522916333593724ee1454bfb6e8fb5`).
+- `cursor-blink-review/package-8cae8bdd-v1/manifest.json` (SHA-256
+  `25d743378edf1555c9ef84dc99de966381a04b669559b060287abf062f4fd631`).
+- `cursor-blink-review/quality-8cae8bdd-v1/manifest.json` (SHA-256
+  `3bd01b4f2158df07c9cd6759918aa55a645d565e50ca69521ad54ad08ff993cc`).
+- `normal-runtime/outputs/normal-8cae8bdd-v1/manifest.json` (SHA-256
+  `6d2eb5979a3c1a9fa8c1d52038af79ce5312d6a4a396be47ad0e45234ea1877e`).
+- `normal-runtime/outputs/normal-8cae8bdd-v1/mcp-acceptance.json` (SHA-256
+  `c554e0eb2c1d43c3709784ccfbd732006202967365c2cb6f9d4d65fdd3667630`).
+- `normal-runtime/outputs/normal-8cae8bdd-v1/quit.json` (SHA-256
+  `0fbf07e6f12a790fd566109acc6504e3f263803ee793f8c74caadfcf2b48628b`).
+- `normal-runtime/outputs/normal-8cae8bdd-v1/root-readonly-verifier.json`
+  (SHA-256
+  `a2f428878e8d2bb0244ab004ef06bfbd9d2bec5dd80f3ef0a302a66e2ce4c392`).
+- `cursor-blink-review/native21-8cae8bdd-v1/native21-manifest.json` (SHA-256
+  `22f222890d47eef542fa1c6d5b8a047527c3446e1c6440c1fee14721e2c1bcaf`).
+- `cursor-blink-review/native-keyboard-ls-8cae-software-v2/retry-record.json`
+  (SHA-256
+  `def05489074f54cb14aca8195376566e57ccb7db9218d3c888aa85ebf424bcef`;
+  shortcut assertions passed, outer renderer-sampling wrapper failed after
+  fixture window teardown).
+
+These application, package and runtime receipts remain scoped to source
+`8cae8bdd`; they do not transfer to a later repository or validation-runner
+revision. Attribute any subsequent CI report to the exact head and merge tree
+reported by CI. The earlier `5d35776c` local validation and the separate
+`fe0af6cc` CI/runtime evidence retain their own source scope; neither is
+described as source-identical to this checkpoint.
+
+### Previous validated application source: `5d35776c`
 
 Application source `5d35776c0c65825f49bc005ee3168fae23285c0e` (tree
 `be6a68ce39446bad269f69ca8d4b470f1b2a4277`) passed all 17 core checks: 3,053 Rust workspace
@@ -53,9 +273,9 @@ Receipts below are relative to
 The native build receipt is `native-build-5d35776c-v1/build-receipt.json`;
 the standard package receipt is bound to source 5d35776c by SHA-256
 `5d22a65fa121262f83aa6e520bba6ed75dfaff6f728ec9b1589717f242411fa1`.
-Subsequent documentation commits require proof that all non-documentation Git
-entries remain identical to this validated application source. Local receipts
-remain scoped to 5d35776c; later CI results apply to their own reported revision.
+All receipts in this block remain scoped to source `5d35776c`; the newer
+`8cae8bdd` results are recorded separately above. Later CI results apply only
+to their own reported source revision.
 Physical keyboard/IME, VoiceOver, multi-display interaction and real provider,
 credential, trust and paired-device acceptance remain open. Inventory counts
 do not certify those checks. Historical results below retain their source scope.

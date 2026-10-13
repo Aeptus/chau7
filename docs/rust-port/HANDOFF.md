@@ -31,25 +31,101 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
-- Validated application source `5d35776c0c65825f49bc005ee3168fae23285c0e`
-  passed 17 core checks (3,053 Rust workspace tests), the normal fast package,
-  local quality, all 21 native cases and isolated fake-shell MCP/input,
-  performance persistence and graceful-quit checks. Diagnostic actions now
-  open native filesystem paths; retained token rates display age and UTC time.
-  Automatic grouping is available under Settings > Tabs > Repo Grouping;
-  Off remains the Swift-compatible default. See the current [PARITY.md](PARITY.md)
-  checkpoint for receipts and scope. Physical Mac and real integration
-  acceptance remain open; later documentation-only commits do not change the
-  application source covered by these receipts.
-
-- Current implementation adds the localized hover-card suspension row, owned
-  helper SIGINT shutdown, token-rate export through Perf JSON/MCP and a
-  FileMonitor test that waits for its watch to arm. The inventory contains
-  1,273 done and 36 n/a rows; these counts do not certify physical acceptance.
-  Restore's native fixture also adds a first ordered-front activation stage
-  with its own strict ACK and five-second deadline before the existing reveal
-  and deminiaturization checks. This changes fixture acceptance only; no
-  production focus fix is claimed.
+- Current application source `8c2ef35ec39c5c3a199a9f9b199cc5f85422f847`
+  (tree `6c3424440386292c1e286af67d3f27027366d9b3`) passed all 17 core
+  checks: 3,059 Rust workspace tests (two ignored), 150 shared-terminal tests
+  (one ignored), 46 native Python contracts, seven focused Restore tests,
+  terminal HUP and the actual seven-test EINTR filter. Six cursor-blink tests
+  are included in the workspace total. All nine selected local quality gates
+  passed; two conditional drift checks were skipped as not applicable. Full
+  local CI reported 4,586 macOS tests (three skipped, zero failures) and 97
+  iOS tests (zero failures); the focused 13 monitor tests overlap that run.
+  The normal fast package passed in 4.212680584 seconds with the existing
+  cache, a single observation rather than a build benchmark. See
+  [PARITY.md](PARITY.md) for source-bound receipts.
+- The owned 8c2 normal package passed isolated runtime acceptance: two tabs
+  restored, a third created, exact 68-byte fake-shell input observed, and three
+  Software windows reported 234 submitted frames with zero failures. Nine
+  performance history records used the configured 5-second cadence at
+  5.005–5.120-second intervals. Graceful
+  quit completed ten phases and retired the owned app, socket and three fake-cat
+  children without forced signals. PID-filtered WindowServer capture passed;
+  visual review showed red synthetic text in both restored terminals and
+  Welcome in the third window. No provider or device was contacted. The empty
+  token-rate map is not a throughput result, and no CPU improvement is claimed
+  for the cursor redraw change.
+- Four separate source-bound native fixture extensions passed on 8c2: Restore
+  with Software, Restore with injected Auto-device failure, and the
+  supplementary keyboard case with both selectors. Restore reconstructed six
+  tabs, including two selected PTYs and two split leaves, delivered two resume
+  inputs without terminators or duplicates, and preserved exact styled
+  scrollback and native reveal/focus. Both activation acknowledgements matched
+  the same app PID/bundle; post-ack reveal measured three Software frames
+  with zero failures. Keyboard fixtures dispatched Cmd+C,
+  Ctrl+Tab and Cmd+D through `NSApplication.sendEvent` to fake PTYs: with no
+  selection Cmd+C delivered byte 3, Ctrl+Tab changed the selected tab ID, and
+  Cmd+D created two horizontal leaves and focused the new leaf. Each closed
+  three owned PTYs. These four receipts are separate from the 21-row native
+  matrix, which remains scoped to 8cae. The 8c2 fixture binary has the same
+  SHA-256 as the 8cae binary; a tree comparison found only the two native
+  validation Python scripts changed between those sources. The prior 8cae
+  keyboard v2 attempt remains recorded as a negative wrapper result after
+  teardown; the passing 8c2 v3 summaries are separate evidence. These fixtures
+  exercise AppKit dispatch, not physical keys or the system input source.
+- The current CI artifact is not linked and no CI pass is claimed for 8c2.
+  Continue draft PR #229 and record the exact CI head and merge tree when
+  available. Physical Mac hand-testing remains deferred until the automated
+  validation is finished; no user hand-test results are claimed. Real provider,
+  credential, trust and paired-device acceptance remain open.
+- Previous validated application source `8cae8bdde42aa234ce7301c498e87dae6597aeb9`
+  (tree `9f3eeac9448e98fc983e302255cfff5ac2065ddb`) passed all 17 core
+  checks: 3,059 Rust workspace tests (two ignored), 150 shared-terminal tests
+  (one ignored), 35 native Python contracts, seven focused Restore tests,
+  terminal HUP and the actual seven-test EINTR filter. Six cursor-blink tests
+  are included in the workspace
+  total. All nine selected local quality gates passed; two conditional drift
+  checks were skipped as not applicable. Full local CI reported 4,586 macOS
+  tests (three skipped, zero failures) and 97 iOS tests (zero failures). The
+  focused FileMonitor/DirectoryMonitor run passed 13 overlapping tests. The
+  normal fast package passed in 41.146 seconds with the existing cache, a
+  single observation rather than a build benchmark. See
+  [PARITY.md](PARITY.md) for source-bound receipts.
+- An owned copy of the 8cae normal package passed fixture runtime acceptance:
+  two tabs restored, a third created, exact 68-byte fake-shell input observed,
+  and three Software windows produced 117 frames with zero failures. Five
+  persisted performance records used the configured 5-second cadence. Graceful
+  quit completed ten phases and retired the owned app, socket and three fake-cat
+  children without forced signals. No provider or device was contacted. This
+  single run makes no CPU improvement claim for the cursor redraw change.
+- The strict 21-row native matrix passed all 21 cases for `8cae8bdd`. The
+  Editor case shows synthetic marked text surviving actual native frames;
+  fixture receipts record OS input-source automation and clipboard access as
+  disabled. This does not establish input from the selected macOS source,
+  dead-key composition or physical IME delivery. One LaunchServices Software
+  keyboard-fixture attempt executed the Cmd+C, Ctrl+Tab and Cmd+D assertions
+  through `NSApplication.sendEvent` to fake PTYs: no-selection Cmd+C delivered
+  ETX byte 3 and preserved the empty selection, Ctrl+Tab changed the selected
+  tab ID, and Cmd+D created two horizontal leaves and focused the new leaf. It
+  closed three owned PTYs and captured a real native surface image. The
+  assertion outcome passed, but the outer wrapper receipt failed because its
+  renderer-window sampling ran after fixture teardown (`window_count: 0`;
+  `renderer frame samples are missing`). This is partial evidence, not a full
+  keyboard case pass. An earlier Software attempt failed during fixture-window
+  startup before assertions. Corrected cases were not run for 8cae;
+  their separate 8c2 results are above. These fixtures exercise AppKit dispatch,
+  not physical keys.
+  Physical Mac hand-testing remains deferred until this validation work is
+  finished; no user hand-test results are claimed. Real provider, credential,
+  trust and paired-device acceptance remain open. See [PARITY.md](PARITY.md)
+  for the source-bound matrix and keyboard receipts.
+- Previous local source `5d35776c0c65825f49bc005ee3168fae23285c0e` (tree
+  `be6a68ce39446bad269f69ca8d4b470f1b2a4277`) passed its own 17 core checks
+  (3,053 Rust workspace tests), normal fast package, local quality, 21 native
+  cases and isolated fake-shell runtime checks. Its diagnostic path, token-rate
+  labeling and grouping results remain scoped to `5d35776c`; they are not
+  reattributed to the current source. See [PARITY.md](PARITY.md) for that
+  checkpoint's receipts. The separate `fe0af6cc` CI/runtime evidence also keeps
+  its original source scope.
 - Previous source checkpoint `69461e60cb6bb65fe1a764510519fff599018b60` (tree
   `859d2497fa1bdfeb0fce634999b915cdf5ec851e`) passed all 17 exact-head core
   checks: 3,051 workspace tests (two ignored), 150 shared-terminal tests (one
