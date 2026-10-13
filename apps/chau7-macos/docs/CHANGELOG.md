@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Coordinate the owned native fixture's first ordered-front reveal through an
+  exact bundle/PID LaunchServices acknowledgement within its existing five-second
+  deadline; require both activation stages while retaining strict frame and focus checks.
+- Reuse a verified native fixture build across acceptance cases and retain
+  validation evidence in a caller-selected directory.
+- Document persistence and retention of captured token-rate performance readings.
+
 - Show localized rendering suspension status in Next hover cards, preserving
   the status before preview prewarming and hiding it for reactivated tabs.
 - Match Unix helper shutdown with SIGTERM, SIGINT and final owned-child kill,

@@ -28,6 +28,13 @@ are capped at 8 MiB each. The latest file is replaced after serialization.
 On Windows replacement removes the previous latest file before renaming.
 History lines use `schema_version`, `timestamp`, `category` and `metrics`;
 `latest.json` retains the full snapshot shape used by MCP and the UI.
+The `metrics` value in each history record is that full snapshot, so
+`telemetry.token_rates_by_tab` readings present at capture time are included
+in both persisted files. The performance files retain these readings under the
+size limits and rotation described above; the in-memory token-rate store prunes
+to 384 readings after exceeding 512. When a reading changes, a separate
+token-rate entry is emitted at debug level and follows the configured
+`CHAU7_NEXT_LOG` level.
 Accepted records drain on the background quit worker. Repeated write failures
 produce one operational warning until a successful write resets it.
 

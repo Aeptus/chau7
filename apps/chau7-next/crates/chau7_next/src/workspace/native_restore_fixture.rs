@@ -173,7 +173,11 @@ fn activate_owned_application(application: &NSApplication) -> Result<(), String>
     native_mutation(|| application.activate())
 }
 
-fn emit_activation_handshake(stage: &str, activation_ack_path: &Path) -> Result<(), String> {
+fn emit_activation_handshake(
+    prefix: &str,
+    stage: &str,
+    activation_ack_path: &Path,
+) -> Result<(), String> {
     let bundle_identifier = NSBundle::mainBundle()
         .bundleIdentifier()
         .map(|value| value.to_string())
@@ -194,7 +198,7 @@ fn emit_activation_handshake(stage: &str, activation_ack_path: &Path) -> Result<
         "activation_ack_path": activation_ack_path,
     });
     let mut stderr = std::io::stderr().lock();
-    writeln!(stderr, "native_activation_handshake={handshake}").map_err(error)?;
+    writeln!(stderr, "{prefix}{handshake}").map_err(error)?;
     stderr.flush().map_err(error)
 }
 
@@ -677,6 +681,27 @@ async fn wait_until(
             return Err(format!("owned native fixture deadline: {stage}"));
         }
         pause(cx, Duration::from_millis(10)).await;
+    }
+}
+async fn wait_until_deadline(
+    cx: &mut AsyncApp,
+    stage: &str,
+    deadline: Instant,
+    mut ready: impl FnMut(&App) -> bool,
+) -> Result<(), String> {
+    loop {
+        if Instant::now() >= deadline {
+            return Err(format!("owned native fixture deadline: {stage}"));
+        }
+        if cx.update(|cx| ready(cx)) && Instant::now() < deadline {
+            return Ok(());
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Err(format!("owned native fixture deadline: {stage}"));
+        }
+        let remaining = deadline.saturating_duration_since(now);
+        pause(cx, remaining.min(Duration::from_millis(10))).await;
     }
 }
 fn select(
@@ -1653,23 +1678,37 @@ async fn verify_surfaces(
     )?;
     native_mutation(|| native.makeKeyAndOrderFront(None))?;
     // The owned acceptance fixture needs an explicit foreground request before
-    // testing native restore. NSApplication::activate() is cooperative and may
-    // leave another active app in front; keep the existing active-state gate.
+    // testing native restore. Ask LaunchServices to activate this exact bundle,
+    // then require both its ACK and AppKit's active state under one deadline.
+    let ordered_front_deadline = Instant::now() + Duration::from_secs(5);
+    let ordered_front_activation_ack_path = profile
+        .home
+        .join("native-parity-ordered-front-activation.ack");
+    emit_activation_handshake(
+        "native_ordered_front_activation=",
+        "ordered_front_surface_reveal",
+        &ordered_front_activation_ack_path,
+    )?;
     cx.update(|cx| cx.activate(true));
-    if let Err(error) = wait_until(cx, "owned fixture application activation", |_| {
-        application.isActive()
-    })
+    if let Err(error) = wait_until_deadline(
+        cx,
+        "owned fixture application activation",
+        ordered_front_deadline,
+        |_| ordered_front_activation_ack_path.exists() && application.isActive(),
+    )
     .await
     {
         // Capture this owned application's actual AppKit state at the failed
         // gate, before cleanup changes it. Keep the original failure and timer.
-        let snapshot = activation_diagnostic(
+        let mut snapshot = activation_diagnostic(
             application.isActive(),
             application.activationPolicy().0,
             native.isVisible(),
             native.isKeyWindow(),
             native.canBecomeKeyWindow(),
         );
+        snapshot["ordered_front_activation_ack_exists"] =
+            serde_json::json!(ordered_front_activation_ack_path.exists());
         eprintln!("native_activation_failure={snapshot}");
         return Err(error);
     }
@@ -1726,7 +1765,11 @@ async fn verify_surfaces(
     // A later rendered accessibility frame and live terminal surfaces prove
     // repaint; software renderer counters add a backend-specific check.
     let activation_ack_path = profile.home.join("native-parity-activation.ack");
-    emit_activation_handshake("deminiaturized_surface_reveal", &activation_ack_path)?;
+    emit_activation_handshake(
+        "native_activation_handshake=",
+        "deminiaturized_surface_reveal",
+        &activation_ack_path,
+    )?;
     let (frame_at_ack, first_live_frame, reveal_deadline) = wait_for_activation_reveal(
         handle,
         &native,
