@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Build
 
+- Locate the unique styled scrollback marker in the retained-history viewport
+  without assuming row zero; preserve exact cell and grapheme replay checks.
 - Refreshed compatible Rust lockfile resolutions, including `proptest` 1.12.0,
   `sha2` 0.11.1, `schemars` 1.2.3 and `smallvec` 1.16.3. Retained the exact
   upstream GPUI constraints on `cocoa`, `generic-array` and

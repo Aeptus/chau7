@@ -43,8 +43,33 @@ fn styled_scrollback_sample(term: &Chau7Terminal) -> Result<serde_json::Value, S
         "styled fixture is not viewing the top of retained scrollback",
     )?;
 
+    let marker = "RESTORED_STYLE:é中❤️";
+    let row_text = |row: usize| {
+        let mut text = String::new();
+        for column in 0..grid.cols as usize {
+            let index = row * grid.cols as usize + column;
+            if !grid.cells[index].continuation {
+                text.push_str(&grid.cell_text(index).unwrap_or_default());
+            }
+        }
+        text
+    };
+    let matching_rows: Vec<_> = (0..grid.rows as usize)
+        .filter(|row| row_text(*row).contains(marker))
+        .collect();
+    ensure(
+        matching_rows.len() == 1,
+        "styled marker is not unique in the top retained-history viewport",
+    )?;
+    let row = matching_rows[0];
+    ensure(
+        row < grid.scrollback_rows as usize,
+        "styled marker is outside retained history at the top scroll position",
+    )?;
+    let row_start = row * grid.cols as usize;
+    let row_end = row_start + grid.cols as usize;
     let find_cell = |text: &str| {
-        (0..grid.cells.len())
+        (row_start..row_end)
             .find(|index| grid.cell_text(*index).as_deref() == Some(text))
             .ok_or_else(|| format!("restored grid is missing styled cell {text:?}"))
     };
@@ -52,11 +77,6 @@ fn styled_scrollback_sample(term: &Chau7Terminal) -> Result<serde_json::Value, S
     let cjk = find_cell("中")?;
     let emoji = find_cell("❤️")?;
     let cjk_continuation = cjk + 1;
-    let row = accent / grid.cols as usize;
-    ensure(
-        row == 0,
-        "styled scrollback row is not at the retained-history top",
-    )?;
     ensure(
         cjk / grid.cols as usize == row && emoji / grid.cols as usize == row,
         "styled graphemes did not remain on one terminal row",
@@ -92,15 +112,9 @@ fn styled_scrollback_sample(term: &Chau7Terminal) -> Result<serde_json::Value, S
         "CJK continuation cell lost its layout",
     )?;
 
-    let mut row_text = String::new();
-    for column in 0..grid.cols as usize {
-        let index = row * grid.cols as usize + column;
-        if !grid.cells[index].continuation {
-            row_text.push_str(&grid.cell_text(index).unwrap_or_default());
-        }
-    }
+    let row_text = row_text(row);
     ensure(
-        row_text.contains("RESTORED_STYLE:é中❤️"),
+        row_text.contains(marker),
         "styled scrollback row lost its full grapheme text",
     )?;
     let cell_sample = |index: usize| {
