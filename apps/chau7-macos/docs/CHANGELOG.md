@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Capture bounded native AppKit call stacks when styled storage edits overlap marked text in the isolated editor acceptance fixture.
 - Await the production cached scrollback grid before native print
   acceptance, retaining exact ANSI color checks and pixel diagnostics.
 - Start the production repository registry in isolated native Restore

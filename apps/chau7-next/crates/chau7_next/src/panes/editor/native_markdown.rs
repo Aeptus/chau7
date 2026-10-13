@@ -579,12 +579,13 @@ define_class!(
             let edited_mask = storage.editedMask().0;
             let has_marked_text = self.hasMarkedText();
             let marked_range = self.markedRange();
-            let attribute_edit_stack = if edited_mask == 1 && has_marked_text {
-                let stack = format!("{:?}", std::backtrace::Backtrace::force_capture());
+            let attribute_edit_stack_symbols = if edited_mask == 1 && has_marked_text {
+                let frames: Retained<NSArray<NSString>> = unsafe {
+                    msg_send![objc2::class!(NSThread), callStackSymbols]
+                };
                 Some(
-                    stack
-                        .lines()
-                        .take(96)
+                    (0..frames.count().min(96))
+                        .map(|index| frames.objectAtIndex(index).to_string())
                         .collect::<Vec<_>>()
                         .join("\n")
                         .chars()
@@ -605,7 +606,7 @@ define_class!(
                     "has_marked_text": has_marked_text,
                     "marked_range_location": marked_range.location,
                     "marked_range_length": marked_range.length,
-                    "attribute_edit_stack": attribute_edit_stack,
+                    "attribute_edit_stack_symbols": attribute_edit_stack_symbols,
                 }),
             );
         }
