@@ -867,9 +867,6 @@ def argument_parser():
 
 
 def validate_arguments(args):
-    fixture_locale = fixture_locale_for(args.case, args.fixture_locale)
-    if args.settings_locale is not None and args.case != "settings":
-        raise ValueError("--settings-locale is only supported with --case settings")
     if args.build_only:
         if not args.evidence_directory:
             raise ValueError("--build-only requires --evidence-directory")
@@ -880,6 +877,9 @@ def validate_arguments(args):
             raise ValueError("--from-build-receipt requires --evidence-directory")
         if args.case == "all":
             raise ValueError("--from-build-receipt requires exactly one --case")
+    fixture_locale = fixture_locale_for(args.case, args.fixture_locale)
+    if args.settings_locale is not None and args.case != "settings":
+        raise ValueError("--settings-locale is only supported with --case settings")
     return fixture_locale
 
 

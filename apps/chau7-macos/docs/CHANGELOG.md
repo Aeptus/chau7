@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Validate native build-only mode before fixture locale selectors so invalid
+  build invocations report their mode error consistently.
+
 - Coordinate the owned native fixture's first ordered-front reveal through an
   exact bundle/PID LaunchServices acknowledgement within its existing five-second
   deadline; require both activation stages while retaining strict frame and focus checks.
