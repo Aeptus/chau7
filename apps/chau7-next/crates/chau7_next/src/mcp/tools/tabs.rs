@@ -806,14 +806,14 @@ fn output(
 /// `source=pty_log`: the cleaned tail of the tab's last AI PTY log.
 #[derive(Debug, PartialEq, Eq)]
 enum PtyLogLookup {
-    MissingTab,
+    MissingTerminal,
     NoLog,
     Path(PathBuf),
 }
 
-fn classify_pty_log_lookup(tab_found: bool, path: Option<PathBuf>) -> PtyLogLookup {
-    if !tab_found {
-        PtyLogLookup::MissingTab
+fn classify_pty_log_lookup(terminal_found: bool, path: Option<PathBuf>) -> PtyLogLookup {
+    if !terminal_found {
+        PtyLogLookup::MissingTerminal
     } else if let Some(path) = path {
         PtyLogLookup::Path(path)
     } else {
@@ -831,19 +831,26 @@ fn pty_log_output(tab_id: &str, lines: usize, ctx: &ToolContext) -> String {
     let id = tab_id.to_string();
     let lookup = ctx.main.call(move |cx| {
         let tab = find_tab(&id, cx);
-        let path = tab.as_ref().and_then(|tab| {
+        let (terminal_found, path) = tab.as_ref().map_or((false, None), |tab| {
             let ws = tab.window.workspace.read(cx);
-            ws.mcp_session(tab.tab, cx)
-                .and_then(|session| session.read(cx).last_ai_log_path().map(|p| p.to_path_buf()))
+            if let Some(session) = ws.mcp_session(tab.tab, cx) {
+                let path = session
+                    .read(cx)
+                    .last_ai_log_path()
+                    .map(|path| path.to_path_buf());
+                (true, path)
+            } else {
+                (ws.mcp_deferred_saved(tab.tab, cx).is_some(), None)
+            }
         });
-        classify_pty_log_lookup(tab.is_some(), path)
+        classify_pty_log_lookup(terminal_found, path)
     });
     let lookup = match lookup {
         None => return no_window(),
         Some(lookup) => lookup,
     };
     let path = match lookup {
-        PtyLogLookup::MissingTab => return not_found(tab_id),
+        PtyLogLookup::MissingTerminal => return not_found(tab_id),
         PtyLogLookup::NoLog => return empty_pty_log_output(tab_id),
         PtyLogLookup::Path(path) => path,
     };
@@ -1026,10 +1033,14 @@ mod deferred_read_tests {
     fn pty_log_lookup_keeps_missing_tabs_distinct_from_tabs_without_a_log() {
         assert_eq!(
             classify_pty_log_lookup(false, None),
-            PtyLogLookup::MissingTab
+            PtyLogLookup::MissingTerminal
+        );
+        let path = PathBuf::from("/tmp/pty.log");
+        assert_eq!(
+            classify_pty_log_lookup(false, Some(path.clone())),
+            PtyLogLookup::MissingTerminal
         );
         assert_eq!(classify_pty_log_lookup(true, None), PtyLogLookup::NoLog);
-        let path = PathBuf::from("/tmp/pty.log");
         assert_eq!(
             classify_pty_log_lookup(true, Some(path.clone())),
             PtyLogLookup::Path(path)

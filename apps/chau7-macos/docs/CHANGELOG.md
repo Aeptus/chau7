@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pre-commit review checks fresh live Codex state before sending or submitting
+  review input, rejecting stale terminal banners after the agent exits.
+- Deferred MCP terminal queries exclude saved layouts containing only editors;
+  unavailable PTY logs return empty snapshots as in current Swift.
+
 - Read-only MCP status and buffer queries now recognize restored tabs whose
   terminal panes remain deferred. These queries report unavailable terminal
   state without activating the pane; mutations still require a live session

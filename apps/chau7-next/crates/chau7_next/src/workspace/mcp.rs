@@ -69,9 +69,14 @@ impl Workspace {
     /// Saved data for a restored tab whose pane tree is still parked. This is
     /// metadata-only; callers must not use it to construct a terminal session.
     pub(crate) fn mcp_deferred_saved(&self, id: TabId, cx: &App) -> Option<SavedTab> {
-        self.entries
-            .get(&id)
-            .and_then(|entry| entry.panes.read(cx).deferred_saved().cloned())
+        self.entries.get(&id).and_then(|entry| {
+            let panes = entry.panes.read(cx);
+            if panes.has_terminal() {
+                panes.deferred_saved().cloned()
+            } else {
+                None
+            }
+        })
     }
 
     /// The session shown for the tab (`displaySession ?? session`): the
