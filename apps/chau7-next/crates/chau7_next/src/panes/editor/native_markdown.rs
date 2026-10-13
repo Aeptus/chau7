@@ -29,7 +29,7 @@ use objc2_app_kit::{
 #[cfg(feature = "native-parity-fixture")]
 use objc2_app_kit::{
     NSSelectionAffinity, NSTextInputContext, NSTextStorage,
-    NSTextStorageDidProcessEditingNotification,
+    NSTextStorageDidProcessEditingNotification, NSWindow,
 };
 #[cfg(feature = "native-parity-fixture")]
 use objc2_foundation::{NSArray, NSNotification, NSNotificationCenter, NSValue};
