@@ -9,10 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Build
 
-- Explicit Chau7 Next diagnostic packaging emits a UUID-matched main-app
-  dSYM beside the signed bundle and records its hash and resolved Xcode tools.
-  Fast packaging performs no symbol-tool work. Source contracts cover absent
-  DWARF and UUID mismatch failures; application Rust/Go source is unchanged.
+- Corrected Chau7 Next diagnostic packaging to use Apple `dsymutil -o`, after
+  a real Xcode attempt on `37c51cc3` rejected `--out-file`. The source contracts
+  passed, including an executable fake that requires exit 2 and the expected
+  error for that rejected option, absent DWARF and UUID mismatch. Diagnostic
+  symbols remain beside the signed bundle; fast packaging performs no symbol
+  work. Real-tool integration evidence is recorded separately in PR #229.
+  Application Rust/Go source is unchanged.
 - Application checkpoint `4d8f55b1` passed all 21 isolated native cases, the
   separate keyboard fixture, 3,023 Rust tests (two ignored), nine compiler
   stages, ten separate quality gates and all six reported CI checks. These
@@ -39,9 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and after). Its optional fixture-feature IME-diagnostic build failed with
   E0277 at `native_markdown/fixture.rs:433`, where `?` was applied to a
   `FixtureStorageObserver`. The build stopped before app launch, so no native
-  diagnostic result exists. The canonical nine-stage compiler sequence has
-  not been rerun; this follow-up removes the extra try operator, with validation
-  pending. At PR read 1970, three parity checks passed and the OS matrix and Quality checks
+  diagnostic result exists for e0cd62d. This is retained as a historical
+  pre-launch failure: on `4d8f55b1`, the corrected fixture compiled with
+  Cargo exit 0 and its focused diagnostic case passed. The original binary-only
+  DWARF failure remains preserved. The separate fast sequence passed all nine
+  compiler stages and all 21 isolated native cases. The later trace does not establish a cause or
+  production fix for the earlier composition failure. At the contemporaneous
+  PR read 1970, three parity checks had passed while the OS matrix and Quality
   were still running.
 - Checkpoint `c8ede4d4662a3b38a25bfe6f4885978769454ab1` passed all nine
   fast compiler/package stages, ten separate full-quality gates and 3,023

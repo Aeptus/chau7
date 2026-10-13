@@ -294,7 +294,7 @@ if [ "$BUILD_MODE" = "diagnostic" ]; then
   DSYM_STAGE="$(mktemp -d "$APP_PARENT/.Chau7 Next.app.dSYM.XXXXXX")"
   DSYM_BUNDLE="$DSYM_STAGE/Chau7 Next.app.dSYM"
   APP_BINARY="$APP/Contents/MacOS/Chau7 Next"
-  "$DSYMUTIL" --out-file "$DSYM_BUNDLE" "$APP_BINARY"
+  "$DSYMUTIL" -o "$DSYM_BUNDLE" "$APP_BINARY"
   DWARF_FILE="$DSYM_BUNDLE/Contents/Resources/DWARF/Chau7 Next"
   if [ ! -s "$DWARF_FILE" ]; then
     echo "error: dsymutil did not produce DWARF data for the main app binary" >&2

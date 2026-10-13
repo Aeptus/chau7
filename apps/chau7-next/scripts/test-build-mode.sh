@@ -202,12 +202,14 @@ FAKE
 cat > "$FAKE_BIN/dsymutil" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
-output=''
-input=''
-while (($#)); do
-  if [[ "$1" == --out-file ]]; then output="$2"; shift 2; else input="$1"; shift; fi
-done
-[[ -n "$output" && -n "$input" ]] || exit 2
+if [[ "$#" -ne 3 || "$1" != -o ]]; then
+  if [[ "${1:-}" == --out-file ]]; then
+    echo 'unsupported dsymutil option: --out-file (use -o output input)' >&2
+  fi
+  exit 2
+fi
+output="$2"
+input="$3"
 [[ ! -e "$FAKE_STATE/dsymutil-empty" ]] || exit 0
 mkdir -p "$output/Contents/Resources/DWARF"
 cp "$input" "$output/Contents/Resources/DWARF/$(basename "$input")"
@@ -280,6 +282,14 @@ assert_fake_tools_selected() (
       || fail "expected fake $tool first in PATH"
   done
 )
+dsymutil_error="$FAKE_STATE/unsupported-dsymutil.log"
+if "$FAKE_BIN/dsymutil" --out-file "$FAKE_STATE/unsupported.dSYM" "$FAKE_STATE/input" >/dev/null 2>"$dsymutil_error"; then
+  fail 'fake dsymutil accepted unsupported --out-file'
+else
+  dsymutil_status=$?
+fi
+[[ "$dsymutil_status" -eq 2 ]] || fail "unsupported dsymutil option exited $dsymutil_status instead of 2"
+assert_file_contains "$dsymutil_error" 'unsupported dsymutil option: --out-file (use -o output input)'
 assert_fake_tools_selected
 
 mkdir -p \

@@ -68,13 +68,15 @@ Last updated 2026-10-13.
   The optional `native-parity-fixture` IME-diagnostic build then failed at
   `native_markdown/fixture.rs:433` with E0277: `?` was applied to the returned
   `FixtureStorageObserver` after `cx.update(...).map_err(error)`. The app was
-  not launched, and there is no native diagnostic result for e0cd62d. The
-  canonical nine-stage fast compiler sequence has not been rerun; this follow-up
-  removes the extra try operator, with validation pending. At PR read 1970,
-  three parity checks passed while the OS matrix and Quality were still running.
+  not launched, and there is no native diagnostic result for e0cd62d. This
+  remains a historical pre-launch failure. On `4d8f55b1`, the corrected fixture compiled with Cargo exit 0, and its
+  focused diagnostic case passed; the original binary-only DWARF check remains
+  a preserved negative. The separate fast sequence passed all nine compiler
+  stages and all 21 isolated native cases. That later trace does not establish a
+  cause or production fix for the earlier composition failure.
 
-Older checkpoint results below retain their original scope; they do not
-validate e0cd62d.
+Older checkpoint results below retain their original scope and do not replace
+or weaken the latest `4d8f55b1` evidence.
 
 
 - Exact source `baf03cb83fdc6925849e82e9345a4c443929339f` passed all nine
@@ -316,7 +318,9 @@ validate e0cd62d.
   [PERFORMANCE.md](PERFORMANCE.md). Independent native hang sampling, bounded
   sampled metrics history, native Instruments intervals and memory retention
   are implemented. Native emoji/style acceptance passes at e8f32e6014b0;
-  current-source parity and the complete Mac checklist remain in progress.
+  At checkpoint `4d8f55b1`, the scoped inventory was complete at 1,309/1,309
+  rows (1,267 done, 42 n/a, zero partial, missing or dropped). The separate
+  physical Mac checklist in section 6 remains open.
 - Historical result against the **April 2026** Swift app: 1,174 of 1,175 inventory rows
   finished (1,129 done, 45 not needed in the Rust design). The one partial
   row was PRF-002. That historical limitation is superseded: Next now has a
@@ -341,18 +345,22 @@ validate e0cd62d.
 
 ## 4. Next work, in order
 
-1. Validate the fixture-only observer-registration correction after
-   the e0cd62d diagnostic failure, rerunning the exact-source compiler sequence
-   and the diagnostic case. The captured E0277 failure stopped before any app
-   launch; no native diagnostic result exists yet. Preserve the assertion and
-   deadlines and retain the compile-failure receipt.
+1. Follow the packaging and CI evidence in PR #229. The real Xcode failure
+   on `37c51cc3` rejected `dsymutil --out-file`; the script now uses supported
+   `-o output input`. Source contracts passed with an executable fake that
+   requires the rejected option to exit 2 with its expected error. Real-symbol
+   integration receipts remain separate from application acceptance evidence.
 2. Complete the separate physical Mac checklist below, especially actual
    keyboard/dead-key/IME input, multi-display interactions, accessibility and
-   real helper/provider integrations. Isolated native fixtures and the fake
-   local CLI run do not cover those physical or production integrations.
-3. Keep the b639 and ab647 marked-composition failures and their diagnostics
-   in recovery history. The later c8 failure likewise does not establish a
-   production cause or fix. Preserve assertions and deadlines in any follow-up.
+   real helper/provider integrations. Also verify live terminal-emulator replay
+   after restart: persisted styled scrollback and read-only deferred-tab
+   responses do not prove that a restored emulator replays it. Isolated native
+   fixtures and the fake local CLI run do not cover those physical or production
+   integrations.
+3. Keep the e0 E0277 and b639/ab647/c8 composition failures and their original
+   diagnostics in recovery history. The later `4d8f55b1` native matrix passed
+   all 21 cases, but no cause or production fix is established for the earlier
+   composition traces. Preserve their receipts, assertions and deadlines.
 4. Continue PR #229 and update this handoff only with evidence from the exact
    revision tested. Preserve prior negative receipts and the distinction
    between scoped fixture acceptance and manual acceptance.
@@ -369,11 +377,11 @@ cause/fix is claimed.
 - New installations default to 30 days. Existing settings/history are preserved,
   including explicit zero. Local factory resets respect installation policy.
 - PRF-002 remains `done` for the scoped implementation and its accepted
-  68294293 evidence; the newer ab647613 native Software rerun is separately
-  incomplete because its Editor case failed (3/4). Do not use the inventory
-  status as a substitute for that current receipt. Ordinary AppKit/WindowServer
-  composition, hot GPU loss and the physical Mac checklist remain separate
-  boundaries.
+  `68294293` evidence. The later `4d8f55b1` native matrix passed all 21 cases,
+  superseding the partial ab647613 Software-only run. This scoped result does
+  not establish ordinary AppKit/WindowServer composition, hot GPU-loss
+  recovery, live post-restart emulator replay or completion of the physical
+  Mac checklist.
 - Explicit Create Per-Repo Config retains Swift behavior. Automatic Next reads
   of repository `.chau7/` remain read only. No additional user decision is needed
   to continue the authorized parity work.
