@@ -169,6 +169,7 @@ impl TerminalView {
             _ => session.selection_clear(),
         }
         self.session.update(cx, |s, cx| s.refresh(cx));
+        self.publish_selection(window, cx);
     }
 
     fn on_other_mouse_down(
@@ -390,12 +391,12 @@ impl TerminalView {
         state.auto_scroll = None;
     }
 
-    fn on_mouse_up(&mut self, event: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_mouse_up(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
         let down = self.input.mouse.down.take();
         let dragged = std::mem::take(&mut self.input.mouse.dragged);
         let was_selecting = std::mem::take(&mut self.selecting);
         self.stop_auto_scroll();
-        self.publish_selection(cx);
+        self.publish_selection(window, cx);
         if let Some(button) = self.reporting_button.take() {
             self.report_mouse(
                 button,

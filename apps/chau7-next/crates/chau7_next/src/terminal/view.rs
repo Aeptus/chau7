@@ -12,8 +12,9 @@ use std::time::Duration;
 
 use chau7_next_core::key_encoding;
 use gpui::{
-    App, Bounds, ClipboardItem, Context, CursorStyle, ElementInputHandler, Entity, EventEmitter,
-    FocusHandle, Focusable, Pixels, Point, Render, Task, Window, canvas, div, prelude::*, px,
+    App, Bounds, ClipboardItem, Context, CursorStyle, ElementInputHandler, Entity, EntityId,
+    EventEmitter, FocusHandle, Focusable, Pixels, Point, Render, Task, Window, canvas, div,
+    prelude::*, px,
 };
 
 use crate::settings::Settings;
@@ -84,6 +85,10 @@ pub struct TerminalView {
     /// Keyboard and mouse state (`input.rs`, `mouse.rs`).
     input: input::InputState,
     refresh_interactive: bool,
+    /// Stable GPUI identity for this view instance in the Services selection cache.
+    selection_view_id: EntityId,
+    /// NSWindow key for the owner-scoped macOS Services selection cache.
+    selection_window: Option<usize>,
     winsize_state: chau7_next_core::session_restore::lifecycle::WinsizeNudgeState,
     /// Dropping/replacing these tasks cancels pending signals on hide/dispose.
     winsize_nudges: Vec<Task<()>>,
@@ -111,9 +116,20 @@ impl TerminalView {
     ) -> Self {
         crate::memory_pressure::register_view(cx.entity().downgrade(), cx);
         let focus_handle = cx.focus_handle();
+        let selection_view_id = cx.entity_id();
+        let selection_window = crate::platform::drop_image::window_key(window);
         let font_size = Settings::get(cx).appearance.zoomed_font_size();
         let mut subscriptions = vec![cx.observe(&session, |_, _, cx| cx.notify())];
-        subscriptions.push(cx.on_release(|this, cx| this.overlays.release_cpu_frame(cx)));
+        subscriptions.push(cx.on_release(|this, cx| {
+            this.overlays.release_cpu_frame(cx);
+            if let Some(window) = this.selection_window {
+                crate::platform::services::clear_selection(
+                    window,
+                    this.session.read(cx).id,
+                    this.selection_view_id,
+                );
+            }
+        }));
         subscriptions.push(cx.subscribe(&session, |this, _, event, cx| {
             if matches!(event, SessionEvent::MetadataChanged) {
                 this.sync_winsize_nudges(None, cx);
@@ -146,7 +162,6 @@ impl TerminalView {
             if session.mouse_mode() & key_encoding::mouse_mode::FOCUS != 0 {
                 session.write(b"\x1b[I");
             }
-            this.publish_selection(cx);
             cx.emit(TerminalViewEvent::Focused);
             cx.notify();
         });
@@ -203,6 +218,8 @@ impl TerminalView {
             danger: danger::DangerState::new(scrollback),
             input: input::InputState::new(scrollback),
             refresh_interactive: false,
+            selection_view_id,
+            selection_window,
             winsize_state: Default::default(),
             winsize_nudges: Vec::new(),
             _blink: blink,
@@ -213,9 +230,24 @@ impl TerminalView {
         this
     }
 
-    /// The selection, for macOS Services (`platform::services`, RBK-042).
-    fn publish_selection(&self, cx: &App) {
-        crate::platform::services::set_selection(self.session.read(cx).selection_text());
+    /// The selection, for Chau7 Next's macOS Services extension.
+    fn publish_selection(&self, window: &Window, cx: &App) {
+        if !window.is_visible()
+            || !window.is_window_active()
+            || !self.focus_handle.is_focused(window)
+        {
+            return;
+        }
+        let Some(window_key) = crate::platform::drop_image::window_key(window) else {
+            return;
+        };
+        let session = self.session.read(cx);
+        crate::platform::services::set_selection(
+            window_key,
+            session.id,
+            self.selection_view_id,
+            session.selection_text(),
+        );
     }
 
     pub(crate) fn memory_session_id(&self, cx: &App) -> u64 {
@@ -239,6 +271,37 @@ impl TerminalView {
         self.refresh_interactive = window.is_visible()
             && window.is_window_active()
             && self.focus_handle.is_focused(window);
+        let window_key = crate::platform::drop_image::window_key(window);
+        let (session_id, selection) = {
+            let session = self.session.read(cx);
+            (
+                session.id,
+                if self.refresh_interactive {
+                    session.selection_text()
+                } else {
+                    None
+                },
+            )
+        };
+        if self.selection_window != window_key {
+            if let Some(old_window) = self.selection_window {
+                crate::platform::services::clear_selection(
+                    old_window,
+                    session_id,
+                    self.selection_view_id,
+                );
+            }
+            self.selection_window = window_key;
+        }
+        if let Some(window_key) = window_key {
+            crate::platform::services::sync_focused_session(
+                window_key,
+                session_id,
+                self.selection_view_id,
+                self.refresh_interactive,
+                selection,
+            );
+        }
         let rendering = &Settings::get(cx).appearance.rendering;
         self.session.read(cx).set_refresh_pacing(
             self.refresh_interactive,
@@ -451,6 +514,7 @@ impl TerminalView {
         let session = self.session.read(cx);
         session.scroll_to_bottom();
         session.selection_clear();
+        crate::platform::services::clear_selection_for_session(session.id);
         session.write_input(bytes);
         self.cursor_on = true;
         self.note_user_input(bytes, cx);

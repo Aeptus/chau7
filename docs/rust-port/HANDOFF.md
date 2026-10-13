@@ -31,17 +31,30 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
-- Latest application checkpoint `4d8f55b1b3db7c47109426222455c2236a7b70fa`
-  passed nine compiler/package stages, 3,023 Rust tests (two ignored), ten
-  separate full-quality gates, all six reported CI checks, all 21 isolated
-  native cases and the separate keyboard fixture. Normal MCP/performance,
-  five RunData stages and two-process deferred reads passed; live terminal
-  replay remains unverified. All owned test apps retired.
-- The subsequent packaging-only batch supplies a UUID-matched main-app dSYM
-  beside diagnostic bundles, with its hash and tool paths in the metadata.
-  Fast mode performs no symbol-tool work. Application Rust/Go source is
-  unchanged from the checkpoint. Manual acceptance in section 6 stays open;
-  the earlier composition failure has no established cause or production fix.
+- Latest validated application source checkpoint is `c842a2412be33b8bda24bd61eeeb4acd79eb5029`
+  (2026-10-13), including the token-rate provider-label correction. Its
+  workspace validation passed 3,024 tests (two ignored); a normal optimized
+  build took 58.159 seconds with a warm cache. This is one warm observation,
+  not a build-speed benchmark. Five checks passed for the PR head: macOS,
+  Linux, Windows, Quality gates and parity.
+- The published `Chau7-Next-macOS-arm64` artifact is [artifact 11787133890
+  from workflow run 38341562278](https://github.com/Aeptus/chau7/actions/runs/38341562278/artifacts/11787133890).
+  It was built from PR merge commit `7ef81c7e4ac83398dfd60ee637f4ea2b37ccc241`
+  (tree `acffc43bdb669379507f91756335a94565d25672`) for PR head `c842a241`
+  and base `7733b1f0`; the merge commit is distinct from the PR head. Local
+  artifact validation confirmed the arm64 bundle, all seven executable hashes
+  and strict bundle signatures. The outer GitHub artifact digest was not
+  independently verified.
+- Scoped runtime checks used an isolated copy of that artifact. Active text
+  replay v16 passed after the fixture selected its target tab in its saved
+  restore bundle: phase two read the marker from the live terminal buffer using
+  read-only MCP. `style_replay_verified=false`; this is not proof of normal UI
+  selection persistence or styled-text replay. Visual grouping v8 passed with
+  repo-A=2, repo-B=1 and one ungrouped seed tab. A read-only performance export
+  contained 1,365 finite values and 17 timers (16 active, one inactive). All
+  owned fixture apps and profiles were retired. Manual acceptance in section 6
+  remains open; the earlier composition failure has no established cause or
+  production fix.
 
 - Preceding validated checkpoint `c8ede4d4662a3b38a25bfe6f4885978769454ab1`
   passed all nine fast compiler/package stages, ten separate full-quality gates
@@ -76,7 +89,7 @@ Last updated 2026-10-13.
   cause or production fix for the earlier composition failure.
 
 Older checkpoint results below retain their original scope and do not replace
-or weaken the latest `4d8f55b1` evidence.
+or weaken the preserved `4d8f55b1` checkpoint evidence.
 
 
 - Exact source `baf03cb83fdc6925849e82e9345a4c443929339f` passed all nine
@@ -352,15 +365,17 @@ or weaken the latest `4d8f55b1` evidence.
    integration receipts remain separate from application acceptance evidence.
 2. Complete the separate physical Mac checklist below, especially actual
    keyboard/dead-key/IME input, multi-display interactions, accessibility and
-   real helper/provider integrations. Also verify live terminal-emulator replay
-   after restart: persisted styled scrollback and read-only deferred-tab
-   responses do not prove that a restored emulator replays it. Isolated native
-   fixtures and the fake local CLI run do not cover those physical or production
-   integrations.
+   real helper/provider integrations. The c842 active-text fixture reads its
+   marker from a restored live terminal buffer only after selecting that tab in
+   the fixture's saved restore bundle. Its `style_replay_verified=false` result
+   does not establish normal UI selection persistence or styled-text replay.
+   Isolated native fixtures and the fake local CLI run do not cover physical
+   input or production integrations.
 3. Keep the e0 E0277 and b639/ab647/c8 composition failures and their original
-   diagnostics in recovery history. The later `4d8f55b1` native matrix passed
-   all 21 cases, but no cause or production fix is established for the earlier
-   composition traces. Preserve their receipts, assertions and deadlines.
+   diagnostics in recovery history. The `4d8f55b1` native matrix passed all 21
+   cases; the c842 scoped runtime results are summarized above. No cause or
+   production fix is established for the earlier composition traces. Preserve
+   their receipts, assertions and deadlines.
 4. Continue PR #229 and update this handoff only with evidence from the exact
    revision tested. Preserve prior negative receipts and the distinction
    between scoped fixture acceptance and manual acceptance.
@@ -377,11 +392,12 @@ cause/fix is claimed.
 - New installations default to 30 days. Existing settings/history are preserved,
   including explicit zero. Local factory resets respect installation policy.
 - PRF-002 remains `done` for the scoped implementation and its accepted
-  `68294293` evidence. The later `4d8f55b1` native matrix passed all 21 cases,
-  superseding the partial ab647613 Software-only run. This scoped result does
-  not establish ordinary AppKit/WindowServer composition, hot GPU-loss
-  recovery, live post-restart emulator replay or completion of the physical
-  Mac checklist.
+  `68294293` evidence. The `4d8f55b1` native matrix passed all 21 cases,
+  superseding the partial ab647613 Software-only run; the c842 scoped runtime
+  checks are listed above. These results do not establish ordinary
+  AppKit/WindowServer composition, hot GPU-loss recovery, normal saved UI
+  selection persistence, styled-text replay or completion of the physical Mac
+  checklist.
 - Explicit Create Per-Repo Config retains Swift behavior. Automatic Next reads
   of repository `.chau7/` remain read only. No additional user decision is needed
   to continue the authorized parity work.

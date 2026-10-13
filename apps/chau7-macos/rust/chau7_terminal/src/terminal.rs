@@ -4736,7 +4736,12 @@ mod tests {
         // restored line inherits the previous line's end column and the whole
         // buffer staircases — including rows that scrolled into history.
         let source = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
-        source.inject_output(b"alpha\r\nbeta\r\n  indented\r\n\x1b[31mred\x1b[0m\r\ntail\r\n");
+        let history = concat!(
+            "\x1b[1;4;38;2;12;34;56;48;2;7;8;9mRESTORED_STYLE:",
+            "e\u{301}中❤️",
+            "\x1b[0m\r\nalpha\r\nbeta\r\n  indented\r\n\x1b[31mred\x1b[0m\r\ntail\r\nlast\r\n",
+        );
+        source.inject_output(history.as_bytes());
         let export = source.full_buffer_ansi_text();
 
         let restored = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
@@ -4747,8 +4752,65 @@ mod tests {
             restored.line_text(0).as_deref(),
             source.line_text(0).as_deref()
         );
-    }
 
+        // Compare actual emulator cells for styled text that has scrolled into
+        // history, not only the ANSI serialization or plain-text projection.
+        source.scroll_to(1.0);
+        restored.scroll_to(1.0);
+        let source_grid = source.grid_copy();
+        let restored_grid = restored.grid_copy();
+        assert!(source_grid.scrollback_rows > 0);
+        assert!(restored_grid.scrollback_rows > 0);
+        assert_eq!(source_grid.cols, restored_grid.cols);
+        assert_eq!(source_grid.rows, restored_grid.rows);
+
+        let find_cell = |grid: &crate::GridCopy, expected: &str| {
+            (0..grid.cells.len())
+                .find(|index| grid.cell_text(*index).as_deref() == Some(expected))
+                .unwrap_or_else(|| panic!("grid is missing styled cell {expected:?}"))
+        };
+        let combining = find_cell(&source_grid, "é");
+        let cjk = find_cell(&source_grid, "中");
+        let emoji = find_cell(&source_grid, "❤️");
+        for (source_index, replay_index, label) in [
+            (combining, find_cell(&restored_grid, "é"), "combining mark"),
+            (cjk, find_cell(&restored_grid, "中"), "CJK grapheme"),
+            (emoji, find_cell(&restored_grid, "❤️"), "emoji grapheme"),
+        ] {
+            assert_eq!(
+                source_index, replay_index,
+                "replay moved the {label} to a different visible cell"
+            );
+            assert_eq!(
+                source_grid.cells[source_index], restored_grid.cells[replay_index],
+                "replay changed the {label} cell attributes or layout"
+            );
+            let cell = source_grid.cells[source_index];
+            assert_eq!(cell.fg, (12, 34, 56), "foreground color on {label}");
+            assert_eq!(cell.bg, (7, 8, 9), "background color on {label}");
+            assert_ne!(cell.flags & CELL_FLAG_BOLD, 0, "bold flag on {label}");
+            assert_ne!(
+                cell.flags & CELL_FLAG_UNDERLINE,
+                0,
+                "underline flag on {label}"
+            );
+            assert_eq!(cell.underline, crate::types::UNDERLINE_SINGLE);
+        }
+        assert_eq!(source_grid.cells[cjk].width, 2);
+        assert!(!source_grid.cells[cjk].continuation);
+        let cjk_continuation = cjk + 1;
+        assert!(cjk % source_grid.cols as usize + 1 < source_grid.cols as usize);
+        assert_eq!(
+            cjk_continuation / source_grid.cols as usize,
+            cjk / source_grid.cols as usize
+        );
+        assert!(source_grid.cells[cjk_continuation].continuation);
+        assert_eq!(source_grid.cells[cjk_continuation].width, 0);
+        assert_eq!(
+            source_grid.cells[cjk_continuation], restored_grid.cells[cjk_continuation],
+            "replay changed the wide CJK continuation cell"
+        );
+    }
     #[test]
     fn test_set_scrollback_size_shrinks_primary_history_while_on_alt_screen() {
         let _ = env_logger::try_init();

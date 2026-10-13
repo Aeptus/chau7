@@ -188,7 +188,9 @@ impl TerminalView {
             .on_action(cx.listener(|this, _: &PasteEscaped, _, cx| this.paste_escaped(cx)))
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(|this, _: &ClearScreen, _, cx| this.clear_screen(cx)))
-            .on_action(cx.listener(|this, _: &ClearScrollback, _, cx| this.clear_scrollback(cx)))
+            .on_action(cx.listener(|this, _: &ClearScrollback, window, cx| {
+                this.clear_scrollback(window, cx)
+            }))
             .on_action(
                 cx.listener(|this, _: &PreviousInputLine, _, cx| this.jump_input_line(false, cx)),
             )
@@ -521,7 +523,7 @@ impl TerminalView {
 
     /// Cmd+A selects the current command line (wrapped rows included); a
     /// second Cmd+A within 0.4 s selects the whole buffer (`AppDelegate.selectAll`).
-    fn select_all(&mut self, _: &SelectAll, _window: &mut Window, cx: &mut Context<Self>) {
+    fn select_all(&mut self, _: &SelectAll, window: &mut Window, cx: &mut Context<Self>) {
         let now = Instant::now();
         let double = self
             .input
@@ -538,23 +540,28 @@ impl TerminalView {
             self.input.last_select_all = Some(now);
         }
         self.session.update(cx, |s, cx| s.refresh(cx));
-        self.publish_selection(cx);
+        self.publish_selection(window, cx);
     }
 
     /// Clear Screen (Cmd+K): Ctrl-L to the shell, scrollback kept.
     fn clear_screen(&mut self, cx: &mut Context<Self>) {
         self.write(&[0x0c], cx);
-        self.session.read(cx).selection_clear();
+        {
+            let session = self.session.read(cx);
+            session.selection_clear();
+            crate::platform::services::clear_selection_for_session(session.id);
+        }
         self.session.update(cx, |s, cx| s.refresh(cx));
     }
 
     /// Clear Scrollback (Cmd+Opt+K): history above the screen is erased.
-    fn clear_scrollback(&mut self, cx: &mut Context<Self>) {
+    fn clear_scrollback(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.overlays.clear();
         self.session.read(cx).clear_scrollback();
         self.input.input_lines.reset();
         self.danger.reset();
         self.session.update(cx, |s, cx| s.refresh(cx));
+        self.publish_selection(window, cx);
     }
 
     /// Bindable terminal signals (Swift `KeyAction.interrupt`, `eof`, ...).
@@ -586,10 +593,11 @@ impl TerminalView {
             TerminalMenuOp::SelectAll => {
                 self.session.read(cx).select_all();
                 self.session.update(cx, |s, cx| s.refresh(cx));
+                self.publish_selection(window, cx);
             }
             TerminalMenuOp::AutoFill => self.autofill(window, cx),
             TerminalMenuOp::ClearScreen => self.clear_screen(cx),
-            TerminalMenuOp::ClearScrollback => self.clear_scrollback(cx),
+            TerminalMenuOp::ClearScrollback => self.clear_scrollback(window, cx),
         }
     }
 

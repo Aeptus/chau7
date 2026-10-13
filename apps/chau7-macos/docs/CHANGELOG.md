@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Build
 
+- Refreshed compatible Rust lockfile resolutions, including `proptest` 1.12.0,
+  `sha2` 0.11.1, `schemars` 1.2.3 and `smallvec` 1.16.3. Retained the exact
+  upstream GPUI constraints on `cocoa`, `generic-array` and
+  `unicode-properties`.
+- Added cell-level ANSI replay and native retention checks for styled
+  scrollback, combining accents, CJK wide cells and VS16 emoji. The native
+  check covers in-process reload; application restart remains a separate check.
 - Corrected Chau7 Next diagnostic packaging to use Apple `dsymutil -o`, after
   a real Xcode attempt on `37c51cc3` rejected `--out-file`. The source contracts
   passed, including an executable fake that requires exit 2 and the expected
@@ -24,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Scoped Chau7 Next's Services selection to the focused terminal and window,
+  refreshed it when selection changes, and cleared it when terminal input or
+  Clear Screen resets the selection. Swift does not advertise an NSServices
+  requestor.
 - Chau7 Next streamed token-rate details use the same provider display names
   and optional model suffix as Swift, including Unknown and future providers.
   Added pure mapping and IPC parser regression coverage.

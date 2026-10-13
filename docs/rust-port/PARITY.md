@@ -2,25 +2,34 @@
 
 ## Validated application checkpoint (2026-10-13)
 
-Application source `4d8f55b1b3db7c47109426222455c2236a7b70fa` passed
-all nine compiler/package stages, 3,023 Rust tests (two ignored), and a
-separate ten-gate full-quality run. Its normal build took 40.210 seconds
-with a warm cache. All six reported GitHub checks passed.
+The latest validated application source is `c842a2412be33b8bda24bd61eeeb4acd79eb5029`,
+including the token-rate provider-label correction. Its workspace validation
+passed 3,024 tests (two ignored). A normal optimized build took 58.159 seconds
+with a warm cache; this is one observation, not a build-speed benchmark. Five
+checks passed for the current PR head: macOS, Linux, Windows, Quality gates
+and parity.
 
-The exact-source native sequence passed all 21 isolated cases: Software
-4/4, Auto with an unavailable Metal device 4/4, six Settings locale rows,
-two accessibility action cases and five accessibility locale rows. The
-separate keyboard fixture passed. All owned fixture processes retired.
-Normal MCP input, numeric exports (1,769 values and 16 persisted rows),
-five RunData stages and two-process deferred reads also passed. The
-parked-terminal receipt retains `replay_verified=false`.
+The published `Chau7-Next-macOS-arm64` artifact is [artifact 11787133890 from
+workflow run 38341562278](https://github.com/Aeptus/chau7/actions/runs/38341562278/artifacts/11787133890).
+Its package revision is PR merge commit `7ef81c7e4ac83398dfd60ee637f4ea2b37ccc241`
+(tree `acffc43bdb669379507f91756335a94565d25672`), built for PR head `c842a241`
+and base `7733b1f0`; the package revision is not the PR head. Local validation
+confirmed the arm64 bundle, hashes for all seven executables and strict bundle
+signatures. The GitHub outer artifact digest was not independently verified.
 
-These passes do not establish a cause or fix for the earlier intermittent
-Editor composition loss. Physical IME, multi-display, full VoiceOver,
-real providers and paired devices remain manual checklist items. The
-subsequent diagnostic packaging change touches scripts and documentation,
-with no Rust or Go application source change. It creates the main app's
-dSYM beside the diagnostic bundle; fast packaging does not run symbol tools.
+Scoped runtime checks used an isolated copy of that artifact. Active text
+replay v16 passed: after a graceful first quit, the fixture selected the target
+tab in its own saved restore bundle, and a second process read the marker from
+the live terminal buffer using read-only MCP. `style_replay_verified=false`;
+this does not verify normal UI selection persistence or styled-text replay.
+Visual grouping v8 passed with repo-A=2, repo-B=1 and one ungrouped seed tab.
+A read-only performance export contained 1,365 finite values and 17 timers
+(16 active, one inactive). All owned fixture processes and profiles were
+retired.
+
+These scoped passes do not establish a cause or fix for the earlier
+intermittent Editor composition loss. Physical IME, multi-display, full
+VoiceOver, real providers and paired devices remain manual checklist items.
 
 ## Source baseline and interpretation
 

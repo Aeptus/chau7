@@ -5,6 +5,7 @@ use crate::terminal::session::TerminalSession;
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::session_restore::models::SavedPane;
 use chau7_next_core::session_restore::{SavedAxis, SavedSplitNode};
+use chau7_terminal::{CELL_FLAG_BOLD, CELL_FLAG_UNDERLINE, Chau7Terminal};
 use gpui::{AppContext, AsyncApp, Focusable, WindowHandle, WindowOptions, size};
 use gpui_kit::base::Root;
 use objc2::{MainThreadMarker, rc::Retained};
@@ -25,6 +26,108 @@ fn ensure(condition: bool, message: &str) -> Result<(), String> {
     } else {
         Err(message.into())
     }
+}
+
+fn styled_scrollback_sample(term: &Chau7Terminal) -> Result<serde_json::Value, String> {
+    // Sample the first retained row, not the recent screen tail, before
+    // persistence and after the production reload.
+    term.scroll_to(1.0);
+    let grid = term.grid_copy();
+    ensure(grid.cols > 0, "styled fixture terminal has no columns")?;
+    ensure(
+        grid.scrollback_rows > 0,
+        "styled fixture output did not enter scrollback",
+    )?;
+    ensure(
+        grid.display_offset == grid.scrollback_rows,
+        "styled fixture is not viewing the top of retained scrollback",
+    )?;
+
+    let find_cell = |text: &str| {
+        (0..grid.cells.len())
+            .find(|index| grid.cell_text(*index).as_deref() == Some(text))
+            .ok_or_else(|| format!("restored grid is missing styled cell {text:?}"))
+    };
+    let accent = find_cell("é")?;
+    let cjk = find_cell("中")?;
+    let emoji = find_cell("❤️")?;
+    let cjk_continuation = cjk + 1;
+    let row = accent / grid.cols as usize;
+    ensure(
+        row == 0,
+        "styled scrollback row is not at the retained-history top",
+    )?;
+    ensure(
+        cjk / grid.cols as usize == row && emoji / grid.cols as usize == row,
+        "styled graphemes did not remain on one terminal row",
+    )?;
+    ensure(
+        cjk_continuation / grid.cols as usize == row,
+        "CJK continuation moved to another terminal row",
+    )?;
+
+    for index in [accent, cjk, emoji] {
+        let cell = grid.cells[index];
+        ensure(
+            cell.fg == (12, 34, 56),
+            "styled scrollback foreground changed",
+        )?;
+        ensure(cell.bg == (7, 8, 9), "styled scrollback background changed")?;
+        ensure(
+            cell.flags & (CELL_FLAG_BOLD | CELL_FLAG_UNDERLINE)
+                == (CELL_FLAG_BOLD | CELL_FLAG_UNDERLINE),
+            "styled scrollback bold or underline flag changed",
+        )?;
+        ensure(
+            cell.underline == chau7_terminal::UNDERLINE_SINGLE,
+            "styled scrollback underline variant changed",
+        )?;
+    }
+    ensure(
+        grid.cells[cjk].width == 2 && !grid.cells[cjk].continuation,
+        "CJK lead cell lost its wide-cell layout",
+    )?;
+    ensure(
+        grid.cells[cjk_continuation].width == 0 && grid.cells[cjk_continuation].continuation,
+        "CJK continuation cell lost its layout",
+    )?;
+
+    let mut row_text = String::new();
+    for column in 0..grid.cols as usize {
+        let index = row * grid.cols as usize + column;
+        if !grid.cells[index].continuation {
+            row_text.push_str(&grid.cell_text(index).unwrap_or_default());
+        }
+    }
+    ensure(
+        row_text.contains("RESTORED_STYLE:é中❤️"),
+        "styled scrollback row lost its full grapheme text",
+    )?;
+    let cell_sample = |index: usize| {
+        let cell = grid.cells[index];
+        serde_json::json!({
+            "index": index,
+            "text": grid.cell_text(index),
+            "fg": cell.fg,
+            "bg": cell.bg,
+            "flags": cell.flags,
+            "underline": cell.underline,
+            "width": cell.width,
+            "continuation": cell.continuation,
+        })
+    };
+    Ok(serde_json::json!({
+        "scrollback_rows": grid.scrollback_rows,
+        "display_offset": grid.display_offset,
+        "cells": {
+            "row": row,
+            "row_text": row_text,
+            "combining_accent": cell_sample(accent),
+            "cjk": cell_sample(cjk),
+            "cjk_continuation": cell_sample(cjk_continuation),
+            "emoji": cell_sample(emoji),
+        },
+    }))
 }
 fn activation_diagnostic(
     app_active: bool,
@@ -216,9 +319,16 @@ impl Profile {
             std::fs::create_dir_all(&folder).map_err(error)?;
             std::fs::write(folder.join(format!("{id}.jsonl")), b"{}\n").map_err(error)?;
         }
-        let ordinary_history = (0..200)
-            .map(|i| format!("OWNED_HISTORY_{i:03}\r\n"))
-            .collect::<String>();
+        let mut ordinary_history = String::from(concat!(
+            "\x1b[1;4;38;2;12;34;56;48;2;7;8;9mRESTORED_STYLE:",
+            "e\u{301}中❤️",
+            "\x1b[0m\r\n",
+        ));
+        ordinary_history.push_str(
+            &(0..200)
+                .map(|i| format!("OWNED_HISTORY_{i:03}\r\n"))
+                .collect::<String>(),
+        );
         std::fs::write(directories[5].join("ordinary-history"), ordinary_history).map_err(error)?;
         let history = directories
             .iter()
@@ -1487,6 +1597,8 @@ async fn verify_retention(
     })
     .await?;
     let before = cx.update(|cx| ordinary.read(cx).buffer_text());
+    let styled_cells_before =
+        cx.update(|cx| ordinary.read(cx).with_terminal(styled_scrollback_sample))?;
     let pty_bytes_before = cx.update(|cx| ordinary.read(cx).with_terminal(|term| term.stats().1));
     let cursor_before = cx.update(|cx| {
         ordinary
@@ -1648,6 +1760,12 @@ async fn verify_retention(
     )
     .await?;
     let restored = cx.update(|cx| ordinary.read(cx).buffer_text());
+    let styled_cells_after =
+        cx.update(|cx| ordinary.read(cx).with_terminal(styled_scrollback_sample))?;
+    ensure(
+        styled_cells_after.get("cells") == styled_cells_before.get("cells"),
+        "retained history reload changed actual terminal cell styles or graphemes",
+    )?;
     let content_evidence = serde_json::json!({
         "before_bytes":before.len(),"after_bytes":restored.len(),
         "before_lines":before.lines().count(),"after_lines":restored.lines().count(),
@@ -1658,7 +1776,8 @@ async fn verify_retention(
         "after_tail_bytes":restored.as_bytes().iter().rev().take(16).copied().collect::<Vec<_>>(),
         "same_except_final_newlines":before.trim_end_matches('\n')==restored.trim_end_matches('\n'),
         "missing_history_rows":(0..200).filter(|i| !restored.contains(&format!("OWNED_HISTORY_{i:03}"))).collect::<Vec<_>>(),
-        "before_cursor":cursor_before,"after_cursor":cx.update(|cx| ordinary.read(cx).with_terminal(|term| term.cursor_position()))
+        "before_cursor":cursor_before,"after_cursor":cx.update(|cx| ordinary.read(cx).with_terminal(|term| term.cursor_position())),
+        "styled_cells_before":styled_cells_before,"styled_cells_after":styled_cells_after
     });
     // The shared Swift/Next replay retains the final content row terminator.
     // A prompt at the viewport bottom can therefore add exactly one final LF.
@@ -1700,7 +1819,7 @@ async fn verify_retention(
         "content_evidence":content_evidence,"synthetic_rows_preserved_once":200,
         "ordinary_pty_bytes_before":pty_bytes_before,"ordinary_pty_bytes_after":pty_bytes_after,
         "ordinary_input_bytes":0,"ordinary_background_warm":true,"selected_history_preserved":true,
-        "worker_failures":reloaded["failures"],"os_pressure_delivery_tested":false}),
+        "worker_failures":reloaded["failures"],"styled_cell_replay_exact":true,"os_pressure_delivery_tested":false}),
     )
 }
 

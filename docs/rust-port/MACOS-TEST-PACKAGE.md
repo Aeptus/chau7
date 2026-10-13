@@ -16,7 +16,37 @@ ancestry. The separate spike spec was retained with its status updated.
 Shared helper and viewer changes were reapplied by intent, as documented in
 [REBASE-ON-AEPTUS.md](REBASE-ON-AEPTUS.md).
 
-## Local package checked on 2026-10-11
+## Current application artifact and scoped runtime checks (2026-10-13)
+
+The validated application PR head is `c842a2412be33b8bda24bd61eeeb4acd79eb5029`,
+which includes the token-rate provider-label correction. Five checks passed
+for that head: macOS, Linux, Windows, Quality gates and parity. Its workspace
+validation passed 3,024 tests (two ignored); one normal optimized build took
+58.159 seconds with a warm cache. That is a single warm-build observation,
+not a benchmark.
+
+Download [`Chau7-Next-macOS-arm64`, artifact 11787133890 from workflow run
+38341562278](https://github.com/Aeptus/chau7/actions/runs/38341562278/artifacts/11787133890).
+The artifact was built from PR merge commit
+`7ef81c7e4ac83398dfd60ee637f4ea2b37ccc241` (tree
+`acffc43bdb669379507f91756335a94565d25672`), with PR head `c842a241` and base
+`7733b1f0`. GitHub's PR build uses a merge commit, so the package's embedded
+source revision is the merge commit rather than the PR head. Local artifact
+validation confirmed the arm64 app bundle, hashes for all seven executables
+and strict bundle signatures. The GitHub outer artifact digest was not
+independently verified.
+
+Separate isolated runtime checks used a copy of this artifact. Active text
+replay v16 passed after the fixture selected its target tab in its saved
+restore bundle; a second process read the marker from the live terminal buffer
+using read-only MCP. `style_replay_verified=false`, so this does not establish
+styled-text replay or normal UI selection persistence. Visual grouping v8
+passed with repo-A=2, repo-B=1 and one ungrouped seed tab. A read-only
+performance export contained 1,365 finite values and 17 timers (16 active,
+one inactive). All owned fixture processes and profiles were retired. These
+checks did not contact a real provider or paired device.
+
+## Historical local package checked on 2026-10-11
 
 Source revision: `edfe67aa649d0a5b00942148f3c279a1cc27643d`.
 Host: macOS 27.2, Xcode 27.0, Rust 1.96.0, Apple Silicon.
@@ -42,7 +72,7 @@ profile. The failing macro release build passed after the correction.
 The first CI run also exposed a new Rust 1.99 Clippy constant-chunk lint;
 its one-line BGRA conversion fix retains the same behavior.
 
-## Final CI package checked
+## Historical CI package checked (f5da7da5)
 
 Code revision `f5da7da54240821222e5613c0886ad4c0130ab29` passed Next's
 format, Clippy and workspace tests on all three platforms and produced the
@@ -76,11 +106,14 @@ The final app, ZIP and SHA-256 file are available locally in
 
 ## Obtain a package
 
-Open the latest successful **Chau7 Next** workflow on `feat/chau7-next`:
+For the validated c842 application checkpoint, download
+[`Chau7-Next-macOS-arm64`, artifact 11787133890 from workflow run
+38341562278](https://github.com/Aeptus/chau7/actions/runs/38341562278/artifacts/11787133890).
+It contains the PR merge build revision `7ef81c7e4ac83398dfd60ee637f4ea2b37ccc241`,
+not the PR head. For a newer application source revision, use the artifact from
+the successful **Chau7 Next** workflow whose metadata matches that PR head:
 [GitHub Actions](https://github.com/Aeptus/chau7/actions/workflows/chau7-next.yml).
-Download `Chau7-Next-macOS-arm64` and follow the
-[macOS installation instructions](../../apps/chau7-next/README.md#install-on-macos).
-The plist records the commit actually built, including for PR builds.
+Follow the [macOS installation instructions](../../apps/chau7-next/README.md#install-on-macos).
 
 Local builds use `apps/chau7-next/scripts/bundle-macos.sh`. No production
 Chau7 install or restart is needed. The local tested app and ZIP were copied
@@ -144,7 +177,7 @@ resize/fallback acceptance or replace the full CI package; the later
 exact-source acceptance below supersedes that status. See recovery validation
 for both chronology and scope.
 
-## Current exact-source acceptance, 2026-10-12
+## Historical exact-source acceptance, 2026-10-12 (68294293)
 
 Frozen clean source `68294293c3cea30a565d9d300781fcac9a6586c8` (tree
 `51588684fcc60f98f74eaa00f2e3e2943c6f094b`) passes all nine compiler stages
