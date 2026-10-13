@@ -177,7 +177,7 @@ impl DebugConsole {
                     cx.notify();
                 })))
                 .child(ui::button("perf-folder", "Open Performance Folder", chrome).on_click(|_, _, cx| {
-                    cx.open_url(&format!("file://{}", crate::performance::directory(cx).display()));
+                    cx.open_with_system(&crate::performance::directory(cx));
                 })))
             .when_some(self.perf_export_status.clone(), |group, status| group.child(ui::caption(status, chrome)))
             .child(ui::caption("Numeric snapshots are saved every 5 seconds. MCP: chau7_performance_snapshot. Commands and terminal content are excluded.", chrome));
@@ -196,5 +196,41 @@ impl DebugConsole {
             .child(header)
             .child(ui::page("perf-page", body).flex_1().min_h_0())
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod diagnostics_path_open_contract_tests {
+    #[test]
+    fn diagnostic_open_actions_pass_native_paths_and_keep_existing_preconditions() {
+        const RAW_FILE_URI_PREFIX: &str = concat!("file:", "/", "/");
+
+        let perf = include_str!("perf.rs");
+        let production = perf.split("#[cfg(test)]").next().unwrap_or(perf);
+        assert!(production.contains("cx.open_with_system(&crate::performance::directory(cx));"));
+        assert!(!production.contains(RAW_FILE_URI_PREFIX));
+
+        let logs = include_str!("logs.rs");
+        assert!(logs.contains("cx.open_with_system(&path);"));
+        assert!(!logs.contains(RAW_FILE_URI_PREFIX));
+        assert!(
+            logs.find("logging::flush();").unwrap()
+                < logs.find("cx.open_with_system(&path);").unwrap()
+        );
+
+        let report = include_str!("report.rs");
+        assert!(report.contains("cx.open_with_system(&dir);"));
+        assert!(!report.contains(RAW_FILE_URI_PREFIX));
+        assert!(
+            report.find("std::fs::create_dir_all(&dir)").unwrap()
+                < report.find("cx.open_with_system(&dir);").unwrap()
+        );
+
+        let memory = include_str!("memory.rs");
+        let memory_production = memory.split("#[cfg(test)]").next().unwrap_or(memory);
+        assert!(
+            memory_production.contains("cx.open_with_system(&crate::performance::directory(cx));")
+        );
+        assert!(!memory_production.contains(RAW_FILE_URI_PREFIX));
     }
 }

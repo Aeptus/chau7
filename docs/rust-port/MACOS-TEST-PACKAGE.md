@@ -16,7 +16,63 @@ ancestry. The separate spike spec was retained with its status updated.
 Shared helper and viewer changes were reapplied by intent, as documented in
 [REBASE-ON-AEPTUS.md](REBASE-ON-AEPTUS.md).
 
-## Current application artifact and scoped runtime checks (2026-10-13)
+## Latest verified package (2026-10-13)
+
+Download [`Chau7-Next-macOS-arm64`, artifact 11834575717 from run
+38436092953](https://github.com/Aeptus/chau7/actions/runs/38436092953/artifacts/11834575717).
+This package is for PR head `fd997ec51ce90519042636e864cf09ec910820dd`.
+Its macOS, Linux, Windows, Quality gates and parity checks passed. GitHub built
+the package from PR merge commit `2398fdfd5a9f74951e5794f17f56d969efa394f6`;
+the merge and PR head have the same tree
+`c51d4cfdf94c77ec7b7a7a18266cf91b567b5bad`.
+
+Local verification confirmed all seven arm64 executable hashes and strict
+signatures, the deep bundle signature, and GPUI license files. The downloaded
+inner ZIP SHA-256 is
+`211745fad124ca738866e09de950478f3f12a055e21c906fa410924d748bd215`.
+The GitHub outer artifact digest was not independently verified. This CI
+package was neither installed nor launched during that verification.
+
+The application code is identical to the locally validated source
+`69461e60cb6bb65fe1a764510519fff599018b60`; the subsequent changes were
+documentation only. That source passed 3,051 Rust workspace tests (two
+ignored), 4,586 macOS Swift tests (three skipped), and all 21 strict native
+fixture cases. A separately built, signed local package passed isolated MCP
+input, restore/save, Software rendering, performance persistence and graceful
+quit with three owned fake-shell tabs. Local and CI binaries are not claimed
+to be identical. See [PARITY.md](PARITY.md) for receipts and exact scope.
+
+### Inspect logs and performance
+
+- Open **Help > Debug Console** or press **Option+Command+L**, then select
+  **Logs** or **Perf**. Perf exposes the snapshot JSON, including token-rate
+  readings when available.
+- The main log is
+  `~/Library/Application Support/Chau7 Next/chau7-next.log`.
+- Persisted numeric reports are in `~/.chau7-next/reports/performance/`.
+  They use Next's configuration root, which differs from the main log's
+  Application Support directory. An isolated profile uses its own root.
+- Through the `chau7-next` MCP connection, use `chau7_runtime_info` to identify
+  the running build, `chau7_performance_snapshot` for measurements, and
+  `chau7_timer_inventory` for active timers.
+
+The isolated runtime check verified real process CPU/RSS, Software frame
+counters and persisted snapshots. `token_rates_by_tab` was empty because the
+fixture used local fake shells. This verifies access to diagnostics, without
+establishing live provider throughput or performance thresholds. Missing token
+rates mean unavailable data. The installed-profile log audited previously was
+dated October 11, so it is not evidence for this package's runtime behavior.
+
+### Acceptance still open
+
+The [Mac hand-test checklist](HANDOFF.md#6-hand-test-checklist-on-a-mac)
+remains open. Start with the reported tab grouping, actual keyboard/IME,
+multi-display dragging and restoration, then accessibility and system
+integration. Test real CLI registration, proxy trust and relay pairing with
+your own integrations. The PR remains a draft until the remaining checks have
+results; inventory completion and fixture passes do not certify them.
+
+## Historical c842 application artifact and scoped runtime checks (2026-10-13)
 
 The validated application PR head is `c842a2412be33b8bda24bd61eeeb4acd79eb5029`,
 which includes the token-rate provider-label correction. Five checks passed
@@ -106,12 +162,9 @@ The final app, ZIP and SHA-256 file are available locally in
 
 ## Obtain a package
 
-For the validated c842 application checkpoint, download
-[`Chau7-Next-macOS-arm64`, artifact 11787133890 from workflow run
-38341562278](https://github.com/Aeptus/chau7/actions/runs/38341562278/artifacts/11787133890).
-It contains the PR merge build revision `7ef81c7e4ac83398dfd60ee637f4ea2b37ccc241`,
-not the PR head. For a newer application source revision, use the artifact from
-the successful **Chau7 Next** workflow whose metadata matches that PR head:
+Use the [latest verified package above](#latest-verified-package-2026-10-13).
+For application changes after that checkpoint, choose an artifact from the
+successful **Chau7 Next** workflow whose metadata matches the PR head:
 [GitHub Actions](https://github.com/Aeptus/chau7/actions/workflows/chau7-next.yml).
 Follow the [macOS installation instructions](../../apps/chau7-next/README.md#install-on-macos).
 

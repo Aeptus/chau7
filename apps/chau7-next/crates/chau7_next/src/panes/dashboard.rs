@@ -1319,24 +1319,21 @@ impl DashboardPane {
                 .and_then(|id| crate::telemetry::token_rate(id, cx))
             {
                 card = card.child(div().text_xs().text_color(chrome.accent).child(format!(
-                        "{}{} · {}",
-                        if chrono::Utc::now()
-                            .signed_duration_since(rate.updated_at)
-                            .num_seconds()
-                            > 15
-                            || !matches!(
-                                agent.state,
-                                chau7_next_core::runtime::session_state::State::Busy
-                                    | chau7_next_core::runtime::session_state::State::Starting
-                            )
-                        {
-                            "Last measured: "
-                        } else {
-                            ""
-                        },
-                        rate.formatted(),
-                        rate.detail()
-                    )));
+                    "{}{} · {}",
+                    if rate.is_stale_at(&chrono::Utc::now())
+                        || !matches!(
+                            agent.state,
+                            chau7_next_core::runtime::session_state::State::Busy
+                                | chau7_next_core::runtime::session_state::State::Starting
+                        )
+                    {
+                        "Last measured: "
+                    } else {
+                        ""
+                    },
+                    rate.formatted(),
+                    rate.detail()
+                )));
             }
             if let Some(parent) = &agent.parent_id {
                 card = card.child(div().text_xs().child(format!(

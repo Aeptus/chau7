@@ -3,6 +3,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
+
+pub const TOKEN_RATE_FRESHNESS_SECONDS: i64 = 15;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TokenRateSource {
@@ -47,6 +49,15 @@ pub struct TokenRateReading {
     pub updated_at: DateTime<Utc>,
 }
 impl TokenRateReading {
+    fn age_seconds_at(&self, now: &DateTime<Utc>) -> i64 {
+        now.signed_duration_since(self.updated_at).num_seconds()
+    }
+    pub fn is_fresh_at(&self, now: &DateTime<Utc>) -> bool {
+        (0..=TOKEN_RATE_FRESHNESS_SECONDS).contains(&self.age_seconds_at(now))
+    }
+    pub fn is_stale_at(&self, now: &DateTime<Utc>) -> bool {
+        self.age_seconds_at(now) > TOKEN_RATE_FRESHNESS_SECONDS
+    }
     pub fn formatted(&self) -> String {
         format!(
             "{}{:.0} t/s",
@@ -264,6 +275,39 @@ impl TranscriptRateState {
 mod tests {
     use super::*;
     use chrono::Duration;
+    #[test]
+    fn freshness_uses_the_shared_fifteen_second_window() {
+        let measured_at = Utc::now();
+        let reading = TokenRateReading {
+            provider: "claude".into(),
+            tokens_per_second: 20.0,
+            output_tokens: 20,
+            duration_ms: 1000,
+            source: TokenRateSource::ProxyUsage,
+            updated_at: measured_at,
+        };
+
+        assert!(reading.is_fresh_at(&measured_at));
+        assert!(!reading.is_stale_at(&measured_at));
+        let before_measurement = measured_at - Duration::seconds(1);
+        assert!(!reading.is_fresh_at(&before_measurement));
+        // Preserve the existing distinction between future and old readings.
+        assert!(!reading.is_stale_at(&before_measurement));
+
+        let fresh_at = measured_at + Duration::seconds(TOKEN_RATE_FRESHNESS_SECONDS);
+        assert!(reading.is_fresh_at(&fresh_at));
+        assert!(!reading.is_stale_at(&fresh_at));
+
+        // Existing UI checks use whole seconds, so the boundary is inclusive.
+        let within_last_second = fresh_at + Duration::milliseconds(999);
+        assert!(reading.is_fresh_at(&within_last_second));
+        assert!(!reading.is_stale_at(&within_last_second));
+
+        let stale_at = measured_at + Duration::seconds(TOKEN_RATE_FRESHNESS_SECONDS + 1);
+        assert!(!reading.is_fresh_at(&stale_at));
+        assert!(reading.is_stale_at(&stale_at));
+    }
+
     #[test]
     fn source_priority_and_invalid_values() {
         let mut s = TokenRateStore::default();

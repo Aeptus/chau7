@@ -140,5 +140,5 @@ impl DebugConsole {
 /// Open a folder in the file manager, creating it first.
 fn open_dir(dir: std::path::PathBuf, cx: &mut gpui::App) {
     let _ = std::fs::create_dir_all(&dir);
-    cx.open_url(&format!("file://{}", dir.display()));
+    cx.open_with_system(&dir);
 }

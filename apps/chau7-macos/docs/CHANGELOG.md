@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Show Analytics generation-rate measurement times and identify retained older
+  readings so historical throughput is not presented as a live measurement.
+
+- Open Next diagnostic files and folders through the native path API, preserving
+  spaces, Unicode and URL-reserved characters in profile paths.
+- Refresh the verified Next test-package download and document grouping settings,
+  performance access and the remaining physical acceptance checks.
+
 - Capture native LaunchServices fixture output in its private local bundle root
   before archiving verified retired runs, avoiding external-volume spawn failures.
 

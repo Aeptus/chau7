@@ -472,20 +472,40 @@ impl DebugConsole {
             }
             AnalyticsMode::Repos => repos_page(&data, chrome),
         };
-        let mut live = ui::group("Live generation speed", chrome);
+        let mut live = ui::group("Generation speed", chrome);
         let mut readings: Vec<_> = crate::telemetry::token_rates(cx).into_iter().collect();
         readings.sort_by(|(a, _), (b, _)| a.cmp(b));
         if readings.is_empty() {
             live = live.child(ui::caption("No observed generation speed yet.", chrome));
         }
+        let now = chrono::Utc::now();
         for (tab, reading) in readings {
+            let age_seconds = now
+                .signed_duration_since(reading.updated_at)
+                .num_seconds()
+                .max(0) as u64;
+            let age_label = chau7_next_core::l10n::relative_age(age_seconds);
+            let age_label = if reading.is_stale_at(&now) {
+                format!("Last measured: {age_label}")
+            } else {
+                age_label
+            };
             live = live
                 .child(detail_row(
                     format!("{} · {}", tab, reading.provider),
                     vec![(reading.formatted(), Some(Tone::Info))],
                     chrome,
                 ))
-                .child(ui::caption(reading.detail(), chrome));
+                .child(ui::caption(
+                    format!(
+                        "{age_label} · {} · {}",
+                        reading
+                            .updated_at
+                            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                        reading.detail()
+                    ),
+                    chrome,
+                ));
         }
         ui::page(
             "analytics-page",

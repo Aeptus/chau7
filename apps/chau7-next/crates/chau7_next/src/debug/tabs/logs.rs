@@ -68,7 +68,7 @@ impl DebugConsole {
                 ui::button("logs-open", "Open File", chrome).on_click(|_, _, cx| {
                     if let Some(path) = logging::file_path() {
                         logging::flush();
-                        cx.open_url(&format!("file://{}", path.display()));
+                        cx.open_with_system(&path);
                     }
                 }),
             );

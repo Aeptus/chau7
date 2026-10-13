@@ -379,12 +379,7 @@ impl Workspace {
                 let session = self.entries.get(&id)?.panes.read(cx).focused_session(cx)?;
                 let reading = crate::telemetry::token_rate(&session.read(cx).tab_identifier, cx)?;
                 // A finished response's old speed must not look like current output.
-                ((0..=15).contains(
-                    &chrono::Utc::now()
-                        .signed_duration_since(reading.updated_at)
-                        .num_seconds(),
-                ))
-                .then_some(reading)
+                reading.is_fresh_at(&chrono::Utc::now()).then_some(reading)
             })
             .flatten();
         let broadcast_included = self.broadcast && !self.broadcast_excluded.contains(&id);

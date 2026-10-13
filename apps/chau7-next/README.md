@@ -94,7 +94,17 @@ folder below; set `CHAU7_NEXT_LOG_STDOUT=1` to also print them).
 | Per-tab shell history | `~/.chau7/history/` | the shell's own default |
 | AI run telemetry | `~/.chau7/telemetry/runs.db` | `~/.chau7-next/telemetry/runs.db` |
 
-Open Help > Debug Console or press ⌥⌘L for runtime Logs and Performance. The separate AI Terminal Logs window is available from the Command Palette.
+Open Help > Debug Console or press ⌥⌘L. In Perf, **Copy Performance JSON**
+copies the current numeric snapshot, **Save Latest Snapshot** queues
+`latest.json`, and **Open Performance Folder** opens the default performance
+folder. The separate AI Terminal Logs window is available from the Command
+Palette.
+
+Numeric snapshots are collected every five seconds and exclude terminal
+output and command text. The default performance folder is
+`~/.chau7-next/reports/performance/`. MCP clients can read the same numeric snapshot
+with `chau7_performance_snapshot`; `chau7_runtime_info` and
+`chau7_state_snapshot` expose build/runtime and app-state diagnostics.
 
 The API analytics proxy is the same Go program as Chau7's
 (`apps/chau7-macos/chau7-proxy`, built into the app bundle; needs Go), run
@@ -103,13 +113,17 @@ self-signed TLS certificate is trusted separately (Settings > API Proxy >
 Trust Certificate).
 
 Remote control pairs separately: Chau7 Next starts the same `chau7-remote`
-agent (built from `services/chau7-remote` into the app bundle; needs Go to
-build) with its own state and credentials files, and shows up on the iPhone as
-"<computer> (Chau7 Next)". The relay now admits only provisioned devices
-(`chau7-remote identity`, then `chau7-remote provision --bundle <file>
---state ~/.chau7-next/remote/state.json`, see
-`services/chau7-remote/docs/CREDENTIALS.md`); Chau7 Next has no UI for that
-yet.
+agent (built from `services/chau7-remote` into the app bundle; Go is required
+to build it) with its own state and credentials files, and shows up on the
+iPhone as "<computer> (Chau7 Next)". Settings > Remote Control shows agent
+status and its latest error; Settings > Start Here also summarizes Remote
+Access status. If startup cannot validate credentials for the Next identity,
+the status error includes the helper-specific `identity --state ...` and
+`provision --bundle <file> --state ...` commands and the credentials-file
+path. The relay admits only provisioned devices. Creating and deploying relay
+credentials and provisioning the Mac remain CLI/operator steps; Settings does
+not create device credential bundles or deploy relay keys. See
+`services/chau7-remote/docs/CREDENTIALS.md` for the full workflow.
 
 On first launch, `~/.chau7/config.toml` and `~/.chau7/snippets.json` are
 **copied** (never modified). After that the two apps are independent. Every
@@ -155,6 +169,16 @@ live here:
 (`[general]`, `[appearance]`, `[terminal]`, `[keybindings]`), plus a `[next]`
 section for options only Chau7 Next reads. Menu: Chau7 Next > Settings opens
 the file (created with every option commented out); Reload Settings applies it.
+
+### Repo grouping
+
+Find this setting under Settings > Tabs > Repo Grouping. The default is Off
+in both Chau7 Next and the current Swift app. Automatic groups tabs by
+detected Git root; Manual is for assigning and clearing groups from a tab
+context menu. Existing groups remain visible in every mode. Changes made in
+Settings save and apply to all open windows immediately. In `config.toml`, set
+`repo_grouping_mode` under `[next]` to `off`, `auto`, or `manual`; after
+editing the file directly, use Chau7 Next > Reload Settings.
 
 ## Shortcuts (macOS)
 

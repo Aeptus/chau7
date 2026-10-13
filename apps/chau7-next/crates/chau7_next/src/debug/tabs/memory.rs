@@ -123,10 +123,7 @@ impl Render for MemoryView {
             .child(
                 ui::button("memory-folder", "Open Performance Folder", chrome).on_click(
                     |_, _, cx| {
-                        cx.open_url(&format!(
-                            "file://{}",
-                            crate::performance::directory(cx).display()
-                        ));
+                        cx.open_with_system(&crate::performance::directory(cx));
                     },
                 ),
             );
