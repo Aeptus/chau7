@@ -1,23 +1,21 @@
 # Chau7 Next: handoff
 
-## Active follow-up (2026-10-14)
+## Validated follow-up (2026-10-14)
 
-Session 6 continues on the existing parity worktree and authorized draft PR229.
-The active source batch follows published `0121b9ab`; it separates focused,
-primary and displayed repository roots, corrects restore inference, adds MCP
-grouping diagnostics and the explicit Refresh Tab Bar action, fixes isolated
-Keychain replacement, retires native window integrations, and ships the opt-in
-CLI installer in the bundle. Printing now uses the shared CPU
-painter and has an isolated native PNG validation path. Build only after this parallel code batch has landed.
+Application source `f79eda39` passes the 17 core checks, 21-case native matrix,
+both native keyboard selectors, normal fast package and isolated normal runtime.
+The ruler-triggered marked-composition loss is fixed by selecting its layout
+manager before editing. Grouping, restore and CPU-painter printing are covered.
+See [PARITY.md](PARITY.md) for exact revisions and evidence.
 
-Validation of this batch is pending. The receipts below are historical to the
-active changes. Preserve the unrelated root files `+`, `-` and `return` using
-the recorded park/restore helper when exact clean-source validation requires
-it. Do not install or relaunch the user's apps, contact real providers, or ask
-for serious hand testing before the autonomous work finishes.
+The implementation inventory is complete. Physical Mac and real-service
+acceptance remain open; the user will test the finished package. Do not interpret
+synthetic AppKit input as physical IME coverage or fake-shell metrics as provider
+throughput. Preserve the user's unrelated files and installed profiles. No app
+installation, production relaunch, real provider or paired-device contact occurred.
 
 Read this first when picking up Chau7 Next (the Rust/GPUI port of Chau7).
-Last updated 2026-10-13.
+Last updated 2026-10-14.
 
 ## 1. Where things are
 
@@ -47,7 +45,11 @@ Last updated 2026-10-13.
 
 ## 3. Status
 
-- Current application source `8c2ef35ec39c5c3a199a9f9b199cc5f85422f847`
+- Current validated application source is `f79eda39`: 17 core checks, 21 native
+  cases, two keyboard selectors and isolated normal-package runtime pass.
+  The implementation inventory has 1,309 finished rows; physical and real-service
+  acceptance remain separate. The following checkpoints retain their own revisions.
+- Previous application source `8c2ef35ec39c5c3a199a9f9b199cc5f85422f847`
   (tree `6c3424440386292c1e286af67d3f27027366d9b3`) passed all 17 core
   checks: 3,059 Rust workspace tests (two ignored), 150 shared-terminal tests
   (one ignored), 46 native Python contracts, seven focused Restore tests,
@@ -88,7 +90,7 @@ Last updated 2026-10-13.
   keyboard v2 attempt remains recorded as a negative wrapper result after
   teardown; the passing 8c2 v3 summaries are separate evidence. These fixtures
   exercise AppKit dispatch, not physical keys or the system input source.
-- The current CI artifact is not linked and no CI pass is claimed for 8c2.
+- For that previous 8c2 checkpoint, no CI artifact or CI pass was claimed.
   Continue draft PR #229 and record the exact CI head and merge tree when
   available. Physical Mac hand-testing remains deferred until the automated
   validation is finished; no user hand-test results are claimed. Real provider,

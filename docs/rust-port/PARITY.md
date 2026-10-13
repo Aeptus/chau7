@@ -1,22 +1,64 @@
 # Chau7 Next parity with the current Swift app
 
-## Active implementation batch (2026-10-14)
+## Validated implementation batch (2026-10-14)
 
-Source changes after `0121b9ab` correct split repository grouping, restored
-primary-directory inference, tab-bar recovery actions, isolated Keychain
-replacement, native Services/image-drop retirement, status-item anchoring and
-bundle-only CLI installation. Read-only MCP summaries now report grouping mode,
-group ID, primary/displayed roots and provisional inheritance.
+The batch after `0121b9ab` corrects automatic grouping across repository changes
+and splits, primary/displayed root inference on restore, read-only MCP grouping
+diagnostics, native window integration retirement, tab-bar recovery, isolated
+Keychain replacement, status-item anchoring, bundle-only CLI installation and
+printing through the shared CPU painter.
 
-Current batch validation is pending. Earlier source, CI artifact and native
-receipts below retain their original revisions. They do not validate this
-batch. Printing now uses an owned PNG from the shared CPU terminal painter;
-its native fixture checks PNG dimensions, styled RGB and frame-cache isolation. Physical input and real system/service acceptance remain
-open; the user will hand-test after autonomous work is finished.
+Application source `f79eda39efb53912fc30d502ee864e92986884c2` (tree
+`3f8594d279748a99a2ad557a963c0f8610548e10`) passed all 17 core checks:
+3,084 Rust workspace tests (two ignored), 151 shared-terminal tests
+(one ignored), formatting, strict Clippy with and without native fixtures,
+Python/build-mode/CLI contracts, focused restore tests, seven EINTR checks and HUP.
+The 21-case native matrix and both supplementary native keyboard selectors pass.
+They use one exact native build and isolated profiles, without real providers or
+paired devices. These are AppKit event and injected-composition checks; physical
+keyboard and system-input-source acceptance remain separate.
 
-## Current implementation follow-up (2026-10-13)
+The normal fast package built in 44.526 seconds with the existing cache.
+This is one warm build observation, not a benchmark. Fast is the default;
+`BUILD_MODE=diagnostic` retains symbols and full compiler diagnostics when needed.
+An owned copy passed restore, contiguous split-repository grouping, exact
+68-byte MCP input, performance persistence and graceful shutdown. It saved three
+tabs, completed all ten shutdown phases, retired its process/socket/fake shells,
+and preserved prior acceptance data. The Software snapshot reported three windows,
+39 submitted frames and zero failed frames;
+16 timers were active. Token-rate data remained empty
+because only fake shells ran. No live throughput or CPU-improvement claim is made.
 
-### Current validated application source: `8c2ef35e`
+The previous `3b4b37c0` matrix remains a 20/21 negative result. A later
+`8b8cf053` diagnostic reproduced it and identified the ruler's first
+`NSTextView.layoutManager` access triggering text-system reconfiguration and
+`fixAttributes` during composition. `SourceTextView::new` now selects the layout
+manager before content or focus. The original strict marked-text assertion passes;
+text-checking defaults and the line-number feature remain intact.
+
+The earlier `eb4baae5` local full-quality receipt passed nine selected
+gates (two conditional checks not applicable), 4,586 macOS tests (three skipped,
+zero failures) and 97 iOS tests. It retains its original revision. CI status for
+the published PR head is available on [PR229](https://github.com/Aeptus/chau7/pull/229/checks);
+that live status must not be inferred from an older local receipt.
+
+Implementation inventory: 1,309 of 1,309 rows finished (1,277 done,
+32 not applicable, zero partial). This measures implementation coverage. Physical
+AZERTY/dead-key/IME input, VoiceOver, multi-display interaction, real OS services,
+Keychain prompts, print dialogs/devices, live providers and paired remote devices
+still need the Mac hand-test. The user has deferred that test until this autonomous
+work is finished. Existing installed applications were not replaced or relaunched.
+
+Current local receipts are under
+`resume-20261014-grouping-native/{core-final-v6,package-final-v6,native-build-final-v6,native21-final-v6,keyboard-final-v6-software,keyboard-final-v6-auto-device-failure}`;
+normal runtime is under
+`resume-20261013-1433/normal-runtime/outputs/normal-grouping-f79eda39-final`.
+All are rooted at
+`/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011`.
+
+## Previous implementation checkpoints (2026-10-13)
+
+### Previous validated application source: `8c2ef35e`
 
 Application source `8c2ef35ec39c5c3a199a9f9b199cc5f85422f847` (tree
 `6c3424440386292c1e286af67d3f27027366d9b3`) was clean for all current-source

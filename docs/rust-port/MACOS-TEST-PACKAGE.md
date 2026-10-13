@@ -1,12 +1,53 @@
 # Chau7 Next macOS test package
 
-## Active package rebuild (2026-10-14)
+## Validated local package (2026-10-14)
 
-A new source batch after `0121b9ab` is in progress for split grouping, native
-integration, terminal printing and the bundle-only CLI installer. Its combined
-build and source-bound runtime validation are pending. Download and runtime
-receipts below belong to their stated earlier source; no new package acceptance
-is claimed yet. The original downloaded bundle remains uninstalled.
+The current local fast package is built from application source `f79eda39`.
+Its standard bundle is `apps/chau7-next/target/bundle/Chau7 Next.app` in the
+parity recovery worktree. It is ad-hoc signed and has not replaced the user's
+installed app. The package receipt records source, mode and all seven helper
+binaries. The final PR publication adds documentation only to this application
+source; CI artifacts retain their own source revision and receipt.
+
+The verified local ZIP is
+`resume-20261014-grouping-native/final-macOS-test-package/Chau7-Next-macOS-arm64-f79eda39.zip`
+under the evidence root documented in [PARITY.md](PARITY.md). Its archive receipt
+checks all seven binary hashes against the standard package receipt.
+
+Application source `f79eda39efb53912fc30d502ee864e92986884c2` (tree
+`3f8594d279748a99a2ad557a963c0f8610548e10`) passed all 17 core checks:
+3,084 Rust workspace tests (two ignored), 151 shared-terminal tests
+(one ignored), formatting, strict Clippy with and without native fixtures,
+Python/build-mode/CLI contracts, focused restore tests, seven EINTR checks and HUP.
+The 21-case native matrix and both supplementary native keyboard selectors pass.
+They use one exact native build and isolated profiles, without real providers or
+paired devices. These are AppKit event and injected-composition checks; physical
+keyboard and system-input-source acceptance remain separate.
+
+The normal fast package built in 44.526 seconds with the existing cache.
+This is one warm build observation, not a benchmark. Fast is the default;
+`BUILD_MODE=diagnostic` retains symbols and full compiler diagnostics when needed.
+An owned copy passed restore, contiguous split-repository grouping, exact
+68-byte MCP input, performance persistence and graceful shutdown. It saved three
+tabs, completed all ten shutdown phases, retired its process/socket/fake shells,
+and preserved prior acceptance data. The Software snapshot reported three windows,
+39 submitted frames and zero failed frames;
+16 timers were active. Token-rate data remained empty
+because only fake shells ran. No live throughput or CPU-improvement claim is made.
+
+The previous `3b4b37c0` matrix remains a 20/21 negative result. A later
+`8b8cf053` diagnostic reproduced it and identified the ruler's first
+`NSTextView.layoutManager` access triggering text-system reconfiguration and
+`fixAttributes` during composition. `SourceTextView::new` now selects the layout
+manager before content or focus. The original strict marked-text assertion passes;
+text-checking defaults and the line-number feature remain intact.
+
+Implementation inventory: 1,309 of 1,309 rows finished (1,277 done,
+32 not applicable, zero partial). This measures implementation coverage. Physical
+AZERTY/dead-key/IME input, VoiceOver, multi-display interaction, real OS services,
+Keychain prompts, print dialogs/devices, live providers and paired remote devices
+still need the Mac hand-test. The user has deferred that test until this autonomous
+work is finished. Existing installed applications were not replaced or relaunched.
 
 Package identity: an Apple Silicon macOS test app called **Chau7 Next**,
 installed beside Chau7. The user has now requested full current Swift parity;
@@ -24,7 +65,7 @@ ancestry. The separate spike spec was retained with its status updated.
 Shared helper and viewer changes were reapplied by intent, as documented in
 [REBASE-ON-AEPTUS.md](REBASE-ON-AEPTUS.md).
 
-## Current local package and runtime validation (2026-10-13)
+## Previous local package and runtime validation (2026-10-13)
 
 Source `8c2ef35ec39c5c3a199a9f9b199cc5f85422f847` (tree
 `6c3424440386292c1e286af67d3f27027366d9b3`) passed the normal fast package
