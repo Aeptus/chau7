@@ -97,35 +97,22 @@ impl ClaudeCodeContentProvider {
         }
     }
 
-    /// The project folder of `cwd` (`resolveProjectDir`): exact or
-    /// suffix match of the dashed path, then the last two path components.
+    /// Resolve only the exact dashed CWD folder written by Claude Code.
+    /// A suffix or last-components match can select a different project when
+    /// multiple checkouts share a name.
     fn resolve_project_dir(&self, cwd: &str) -> Option<PathBuf> {
         let entries = entries(&self.projects_dir);
         if entries.is_empty() {
             return None;
         }
         let normalized = cwd.replace('/', "-");
-        for entry in &entries {
+        let exact = entries.into_iter().filter(|entry| {
             let name = file_name(entry);
-            if normalized.ends_with(&name) || name.ends_with(&normalized) || name == normalized {
-                return Some(entry.clone());
-            }
-            let stripped = name.strip_prefix('-').unwrap_or(&name);
-            let cwd_stripped = normalized.strip_prefix('-').unwrap_or(&normalized);
-            if stripped == cwd_stripped {
-                return Some(entry.clone());
-            }
-        }
-        let cwd_parts: Vec<&str> = cwd.split('/').filter(|s| !s.is_empty()).collect();
-        let cwd_last_two = cwd_parts[cwd_parts.len().saturating_sub(2)..].join("-");
-        for entry in &entries {
-            let name = file_name(entry);
-            let parts: Vec<&str> = name.split('-').filter(|s| !s.is_empty()).collect();
-            if parts.len() >= 2 && parts[parts.len() - 2..].join("-") == cwd_last_two {
-                return Some(entry.clone());
-            }
-        }
-        None
+            name == normalized || name == normalized.trim_start_matches('-')
+        });
+        let mut exact = exact;
+        let candidate = exact.next()?;
+        exact.next().is_none().then_some(candidate)
     }
 
     pub fn transcript_files(&self, cwd: &str, session: &str) -> Vec<PathBuf> {
@@ -147,13 +134,18 @@ impl ClaudeCodeContentProvider {
 
     fn find_session_dir(project: &Path, session_id: &str) -> Option<PathBuf> {
         let candidate = project.join(session_id);
-        if candidate.exists() {
+        if candidate.is_dir() {
             return Some(candidate);
         }
+        if session_id.chars().count() < 8 {
+            return None;
+        }
         let prefix: String = session_id.chars().take(8).collect();
-        entries(project)
+        let mut matches = entries(project)
             .into_iter()
-            .find(|e| file_name(e).starts_with(&prefix))
+            .filter(|entry| entry.is_dir() && file_name(entry).starts_with(&prefix));
+        let candidate = matches.next()?;
+        matches.next().is_none().then_some(candidate)
     }
 }
 
@@ -232,15 +224,16 @@ impl CodexContentProvider {
     /// The rollout of `session_id` on the run's day, else the day before.
     pub fn find_rollout(&self, session_id: &str, started_at: DateTime<Utc>) -> Option<PathBuf> {
         let local = started_at.with_timezone(&Local);
+        let suffix = format!("-{session_id}.jsonl");
+        let mut matches = Vec::new();
         for day in [local, local - Duration::days(1)] {
-            let found = jsonl_files(&self.day_dir(day))
-                .into_iter()
-                .find(|f| file_name(f).contains(session_id));
-            if found.is_some() {
-                return found;
-            }
+            matches.extend(
+                jsonl_files(&self.day_dir(day))
+                    .into_iter()
+                    .filter(|file| file_name(file).ends_with(&suffix)),
+            );
         }
-        None
+        (matches.len() == 1).then(|| matches.remove(0))
     }
 
     fn read_jsonl(
@@ -425,8 +418,18 @@ mod tests {
                 .extract_content("RUN", None, "/Users/me/dev/app", started)
                 .is_none()
         );
-        // Last two components match.
-        assert!(provider.resolve_project_dir("/Volumes/x/dev/app").is_some());
+        // A checkout with the same trailing components is a different project.
+        assert!(provider.resolve_project_dir("/Volumes/x/dev/app").is_none());
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn claude_session_prefix_must_resolve_to_one_directory() {
+        let home = temp_home("claude-prefix");
+        let project = home.join(".claude/projects/-Users-me-dev-app");
+        std::fs::create_dir_all(project.join("abcdef12-0000")).unwrap();
+        std::fs::create_dir_all(project.join("abcdef12-0001")).unwrap();
+        assert!(ClaudeCodeContentProvider::find_session_dir(&project, "abcdef12").is_none());
         let _ = std::fs::remove_dir_all(home);
     }
 
@@ -444,7 +447,13 @@ mod tests {
         let rollout = r#"{"type":"turn_context","timestamp":"2026-10-10T10:00:00Z","payload":{"model":"gpt-5"}}
 {"type":"response_item","timestamp":"2026-10-10T10:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"do it"}]}}
 {"type":"event_msg","timestamp":"2026-10-10T10:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":7,"cached_input_tokens":0,"output_tokens":3,"reasoning_output_tokens":1}}}}"#;
-        std::fs::write(day.join("rollout-2026-10-10T10-00-00-SESS1.jsonl"), rollout).unwrap();
+        let rollout_path = day.join("rollout-2026-10-10T10-00-00-SESS1.jsonl");
+        std::fs::write(&rollout_path, rollout).unwrap();
+        std::fs::write(day.join("rollout-2026-10-10T10-00-01-SESS10.jsonl"), "{}").unwrap();
+        assert_eq!(
+            provider.find_rollout("SESS1", started),
+            Some(rollout_path.clone())
+        );
         let content = provider
             .extract_content("RUN", Some("SESS1"), "/x", started)
             .expect("rollout");

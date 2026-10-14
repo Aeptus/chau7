@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
+use chau7_next_core::work_profiler::{self, Key as WorkKey, Kind as WorkKind, Queue as WorkQueue};
 use chau7_terminal::Chau7Terminal;
 use parking_lot::RwLock;
 
@@ -48,6 +49,10 @@ impl Drop for ClipboardReply {
 
 enum Job {
     Write(Vec<u8>),
+    Input {
+        bytes: Vec<u8>,
+        enqueued_at: Instant,
+    },
     /// OSC 52 clipboard read answer (written by the terminal itself).
     ClipboardResponse(ClipboardReply),
     Close(CloseMode),
@@ -90,6 +95,19 @@ impl PtyWriter {
         }
     }
 
+    /// Queues user input with a timestamp for queue-delay diagnostics.
+    /// Metrics contain only static operation labels and byte counts.
+    pub fn write_input(&self, bytes: Vec<u8>) {
+        if bytes.is_empty() {
+            return;
+        }
+        let size = bytes.len();
+        let enqueued_at = Instant::now();
+        if self.tx.send(Job::Input { bytes, enqueued_at }).is_err() {
+            record_input_metric("pty_input_enqueue_failure", "enqueue", enqueued_at, size);
+        }
+    }
+
     /// Answers a pending OSC 52 clipboard read, in order with the input.
     pub fn has_pending_clipboard_response(&self) -> bool {
         self.clipboard_pending.load(Ordering::Acquire)
@@ -129,7 +147,37 @@ fn run(term: Arc<RwLock<Chau7Terminal>>, rx: Receiver<Job>, closing: Arc<AtomicB
         match rx.recv() {
             Ok(Job::Write(bytes)) => {
                 if !closing.load(Ordering::Acquire) {
-                    write_all(&term, &bytes, &closing);
+                    send_all_chunks(&term, &bytes, &closing);
+                }
+            }
+            Ok(Job::Input { bytes, enqueued_at }) => {
+                let size = bytes.len();
+                record_input_metric("pty_input_queue", "dequeue", enqueued_at, size);
+                if !closing.load(Ordering::Acquire) {
+                    let write_started = Instant::now();
+                    let sent_all_chunks = send_all_chunks(&term, &bytes, &closing);
+                    if sent_all_chunks {
+                        record_input_metric(
+                            "pty_input_send_bytes",
+                            "send_bytes_calls_returned",
+                            write_started,
+                            size,
+                        );
+                    } else {
+                        record_input_metric(
+                            "pty_input_send_aborted",
+                            "closed_before_all_chunks_sent",
+                            write_started,
+                            size,
+                        );
+                    }
+                } else {
+                    record_input_metric(
+                        "pty_input_send_aborted",
+                        "cancelled_before_send",
+                        Instant::now(),
+                        size,
+                    );
                 }
             }
             Ok(Job::ClipboardResponse(reply)) => {
@@ -150,7 +198,9 @@ fn run(term: Arc<RwLock<Chau7Terminal>>, rx: Receiver<Job>, closing: Arc<AtomicB
     drop(term);
 }
 
-fn write_all(term: &RwLock<Chau7Terminal>, bytes: &[u8], closing: &AtomicBool) {
+// The terminal API exposes no PTY write acknowledgement/error result. This
+// reports whether all send_bytes calls returned before close, not delivery.
+fn send_all_chunks(term: &RwLock<Chau7Terminal>, bytes: &[u8], closing: &AtomicBool) -> bool {
     for chunk in bytes.chunks(CHUNK) {
         let started = Instant::now();
         let mut warned = false;
@@ -159,7 +209,7 @@ fn write_all(term: &RwLock<Chau7Terminal>, bytes: &[u8], closing: &AtomicBool) {
                 break;
             }
             if closing.load(Ordering::Acquire) || term.read().is_pty_closed() {
-                return;
+                return false;
             }
             if !warned && started.elapsed() > Duration::from_secs(5) {
                 warned = true;
@@ -168,6 +218,30 @@ fn write_all(term: &RwLock<Chau7Terminal>, bytes: &[u8], closing: &AtomicBool) {
         }
         term.read().send_bytes(chunk);
     }
+    true
+}
+
+fn record_input_metric(
+    operation: &'static str,
+    phase: &'static str,
+    started: Instant,
+    bytes: usize,
+) {
+    let mut key = WorkKey::work(
+        operation,
+        phase,
+        "unobserved",
+        "pty_writer",
+        WorkQueue::Background,
+    );
+    key.kind = WorkKind::Latency;
+    work_profiler::record(
+        key,
+        started.elapsed().as_secs_f64() * 1000.0,
+        bytes,
+        1,
+        false,
+    );
 }
 
 fn close(term: &RwLock<Chau7Terminal>, mode: CloseMode) {
@@ -276,6 +350,19 @@ mod tests {
             rx,
         )
     }
+    #[test]
+    fn user_input_uses_timestamped_queue_job() {
+        let (writer, rx) = isolated_queue();
+        writer.write_input(b"input".to_vec());
+        match rx.recv().unwrap() {
+            Job::Input { bytes, enqueued_at } => {
+                assert_eq!(bytes, b"input");
+                assert!(enqueued_at.elapsed() >= Duration::ZERO);
+            }
+            _ => panic!("user input job was not tagged"),
+        }
+    }
+
     #[test]
     fn clipboard_is_queued_once_and_remains_in_input_order() {
         let (writer, rx) = isolated_queue();

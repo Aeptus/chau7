@@ -11,12 +11,13 @@ mod writer;
 use writer::Writer;
 pub use writer::{AdmissionError, WriterShutdown, WriterStatus};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 
 use super::metrics_sanitizer;
 use super::run::{TelemetryRun, TelemetryRunFilter};
@@ -35,6 +36,71 @@ struct Active {
     by_tab: HashMap<String, String>,
     /// Run id -> run.
     runs: HashMap<String, TelemetryRun>,
+    /// Recently completed identities only; terminal buffers are never kept.
+    recently_ended: VecDeque<TelemetryRun>,
+}
+
+const RECENT_ENDED_LIMIT: usize = 64;
+const RECENT_ENDED_TTL: Duration = Duration::minutes(2);
+const EVENT_AFTER_END_GRACE: Duration = Duration::seconds(30);
+const EVENT_BEFORE_START_GRACE: Duration = Duration::seconds(2);
+
+#[derive(Default)]
+struct ExtractionCounters {
+    attempts: AtomicU64,
+    succeeded: AtomicU64,
+    missing_session: AtomicU64,
+    transcript_missing: AtomicU64,
+    pty_fallback: AtomicU64,
+    terminal_fallback: AtomicU64,
+    identity_associated: AtomicU64,
+    identity_ambiguous: AtomicU64,
+    identity_unmatched: AtomicU64,
+    identity_conflict: AtomicU64,
+    identity_explicit_tab_unresolved: AtomicU64,
+}
+
+/// Aggregate, identifier-free extraction and identity-association counters.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExtractionDiagnostics {
+    pub available_providers: u64,
+    pub attempts: u64,
+    pub succeeded: u64,
+    pub missing_session: u64,
+    pub transcript_missing: u64,
+    pub pty_fallback: u64,
+    pub terminal_fallback: u64,
+    pub identity_associated: u64,
+    pub identity_ambiguous: u64,
+    pub identity_unmatched: u64,
+    pub identity_conflict: u64,
+    pub identity_explicit_tab_unresolved: u64,
+}
+
+/// Result of applying a provider identity event to a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityAssociation {
+    Associated,
+    AlreadyAssociated,
+    NoCandidate,
+    Stale,
+    Ambiguous,
+    ConflictingIdentity,
+    ExplicitTabUnresolved,
+}
+
+impl IdentityAssociation {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Associated => "associated",
+            Self::AlreadyAssociated => "already_associated",
+            Self::NoCandidate => "no_candidate",
+            Self::Stale => "stale",
+            Self::Ambiguous => "ambiguous",
+            Self::ConflictingIdentity => "conflicting_identity",
+            Self::ExplicitTabUnresolved => "explicit_tab_unresolved",
+        }
+    }
 }
 
 type InitializeStore = Box<dyn FnOnce(&TelemetryStore) -> Result<(), String> + Send>;
@@ -43,7 +109,8 @@ pub struct TelemetryRecorder {
     store: Arc<TelemetryStore>,
     providers: Arc<Vec<Box<dyn RunContentProvider>>>,
     writer: Writer,
-    active: Mutex<Active>,
+    active: Arc<Mutex<Active>>,
+    extraction: Arc<ExtractionCounters>,
 }
 
 impl TelemetryRecorder {
@@ -53,7 +120,8 @@ impl TelemetryRecorder {
             store,
             providers: Arc::new(providers),
             writer,
-            active: Mutex::new(Active::default()),
+            active: Arc::new(Mutex::new(Active::default())),
+            extraction: Arc::new(ExtractionCounters::default()),
         }
     }
 
@@ -89,7 +157,8 @@ impl TelemetryRecorder {
             store: store.clone(),
             providers: Arc::new(providers),
             writer,
-            active: Mutex::new(Active::default()),
+            active: Arc::new(Mutex::new(Active::default())),
+            extraction: Arc::new(ExtractionCounters::default()),
         };
         if recorder
             .writer
@@ -121,6 +190,25 @@ impl TelemetryRecorder {
 
     pub fn writer_status(&self) -> WriterStatus {
         self.writer.status()
+    }
+    pub fn extraction_diagnostics(&self) -> ExtractionDiagnostics {
+        let load = |counter: &AtomicU64| counter.load(Ordering::Relaxed);
+        ExtractionDiagnostics {
+            available_providers: self.providers.len() as u64,
+            attempts: load(&self.extraction.attempts),
+            succeeded: load(&self.extraction.succeeded),
+            missing_session: load(&self.extraction.missing_session),
+            transcript_missing: load(&self.extraction.transcript_missing),
+            pty_fallback: load(&self.extraction.pty_fallback),
+            terminal_fallback: load(&self.extraction.terminal_fallback),
+            identity_associated: load(&self.extraction.identity_associated),
+            identity_ambiguous: load(&self.extraction.identity_ambiguous),
+            identity_unmatched: load(&self.extraction.identity_unmatched),
+            identity_conflict: load(&self.extraction.identity_conflict),
+            identity_explicit_tab_unresolved: load(
+                &self.extraction.identity_explicit_tab_unresolved,
+            ),
+        }
     }
     /// Background-only durability barrier, never a UI/render call.
     pub fn flush(&self) -> Result<(), AdmissionError> {
@@ -199,15 +287,23 @@ impl TelemetryRecorder {
     /// list with its end time, duration and exit status; pass it to
     /// [`Self::complete`] to read its content and save it.
     pub fn run_ended(&self, tab_id: &str, exit_status: Option<i64>) -> Option<TelemetryRun> {
-        let mut run = {
-            let mut active = self.lock();
-            let id = active.by_tab.remove(tab_id)?;
-            active.runs.remove(&id)?
-        };
+        let mut active = self.lock();
+        let id = active.by_tab.remove(tab_id)?;
+        let mut run = active.runs.remove(&id)?;
         let ended = Utc::now();
         run.ended_at = Some(ended);
         run.exit_status = exit_status;
         run.duration_ms = Some((ended - run.started_at).num_milliseconds());
+        active.recently_ended.retain(|candidate| {
+            candidate
+                .ended_at
+                .as_ref()
+                .is_some_and(|at| ended - *at <= RECENT_ENDED_TTL)
+        });
+        active.recently_ended.push_back(run.clone());
+        while active.recently_ended.len() > RECENT_ENDED_LIMIT {
+            active.recently_ended.pop_front();
+        }
         Some(run)
     }
 
@@ -219,21 +315,65 @@ impl TelemetryRecorder {
         terminal_buffer: Option<String>,
         pty_log_path: Option<&Path>,
     ) -> Result<TelemetryRun, AdmissionError> {
-        let (run, turns, tools) =
-            extract_content(&self.providers, run, terminal_buffer, pty_log_path);
-        let saved = run.clone();
-        let bytes = serde_json::to_vec(&(&run, &turns, &tools)).map_or(usize::MAX, |v| v.len());
-        self.writer.admit(
-            "finalize",
-            bytes,
-            Box::new(move |store| {
-                store
-                    .try_finalize_run(&saved, &turns, &tools)
-                    .map_err(|e| e.to_string())
-            }),
-        )?;
-        self.flush()?;
-        Ok(run)
+        let run_id = run.id.clone();
+        let mut candidate = self
+            .lock()
+            .recently_ended
+            .iter()
+            .find(|candidate| candidate.id == run_id)
+            .cloned()
+            .unwrap_or(run);
+
+        loop {
+            let (completed, turns, tools) = extract_content(
+                &self.providers,
+                &self.extraction,
+                candidate.clone(),
+                terminal_buffer.clone(),
+                pty_log_path,
+            );
+            // Hold the association lock through queue admission. An identity
+            // event either updates this snapshot before finalization, or is
+            // ordered after it and runs the late repair against the saved row.
+            let mut active = self.lock();
+            let latest = active
+                .recently_ended
+                .iter()
+                .find(|candidate| candidate.id == run_id)
+                .cloned();
+            if let Some(latest) = latest.as_ref()
+                && latest
+                    .session_id
+                    .as_deref()
+                    .is_some_and(|session| completed.session_id.as_deref() != Some(session))
+            {
+                candidate = latest.clone();
+                drop(active);
+                continue;
+            }
+            if let Some(recent) = active
+                .recently_ended
+                .iter_mut()
+                .find(|candidate| candidate.id == completed.id)
+            {
+                *recent = completed.clone();
+            }
+            let saved = completed.clone();
+            let bytes = serde_json::to_vec(&(&completed, &turns, &tools))
+                .map_or(usize::MAX, |value| value.len());
+            self.writer.admit(
+                "finalize",
+                bytes,
+                Box::new(move |store| {
+                    store
+                        .try_finalize_run(&saved, &turns, &tools)
+                        .map_err(|error| error.to_string())
+                }),
+            )?;
+            drop(active);
+            self.flush()?;
+            return Ok(completed);
+        }
     }
     /// Admit completion on the UI exit callback, including extraction, so
     /// no detached delayed producer can outlive quit's admission close.
@@ -247,14 +387,50 @@ impl TelemetryRecorder {
             .saturating_add(terminal_buffer.as_ref().map_or(0, String::len))
             .saturating_add(pty_log_path.as_ref().map_or(0, |p| p.as_os_str().len()));
         let providers = self.providers.clone();
+        let active = self.active.clone();
+        let extraction = self.extraction.clone();
+        let run_id = run.id.clone();
         let ready_at = std::time::Instant::now() + std::time::Duration::from_millis(500);
         self.writer.admit(
             "completion",
             bytes,
             Box::new(move |store| {
                 std::thread::sleep(ready_at.saturating_duration_since(std::time::Instant::now()));
-                let (run, turns, tools) =
-                    extract_content(&providers, run, terminal_buffer, pty_log_path.as_deref());
+                // Use identity events received during the bounded PTY-settle delay.
+                let run = active
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .recently_ended
+                    .iter()
+                    .find(|candidate| candidate.id == run_id)
+                    .cloned()
+                    .unwrap_or(run);
+                let (run, turns, tools) = extract_content(
+                    &providers,
+                    &extraction,
+                    run,
+                    terminal_buffer,
+                    pty_log_path.as_deref(),
+                );
+                if let Some(recent) = active
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .recently_ended
+                    .iter_mut()
+                    .find(|candidate| candidate.id == run.id)
+                {
+                    let latest_session_id = recent.session_id.clone();
+                    *recent = run.clone();
+                    if let Some(latest_session_id) = latest_session_id
+                        && recent.session_id.as_deref() != Some(latest_session_id.as_str())
+                    {
+                        recent.session_id = Some(latest_session_id);
+                        recent.metadata.insert(
+                            "content_extraction_outcome".into(),
+                            "late_identity_recheck_pending".into(),
+                        );
+                    }
+                }
                 store
                     .try_finalize_run(&run, &turns, &tools)
                     .map_err(|e| e.to_string())
@@ -271,7 +447,12 @@ impl TelemetryRecorder {
         let Some(run) = active.runs.get_mut(&id) else {
             return Ok(());
         };
-        if run.session_id.as_deref() == Some(session_id) {
+        if run.session_id.as_deref() == Some(session_id)
+            || run
+                .session_id
+                .as_deref()
+                .is_some_and(|current| !current.is_empty())
+        {
             return Ok(());
         }
         let session = session_id.to_string();
@@ -290,30 +471,199 @@ impl TelemetryRecorder {
         Ok(())
     }
 
-    /// TEL-003: a session id from a monitor that does not know the tab
-    /// (Claude hooks, Codex history), matched by provider and folder (same
-    /// folder, parent or child). Only runs without a session id are taken.
-    pub fn update_session_id_by_cwd(
+    /// Match one exact, time-bounded provider run to an identity event. An
+    /// explicit app tab that could not be resolved to a native terminal tab
+    /// is never allowed to fall back to CWD inference.
+    pub fn associate_session_id_for_event(
         &self,
         provider: &str,
         cwd: &str,
+        terminal_tab_id: Option<&str>,
+        explicit_tab_unresolved: bool,
         session_id: &str,
-    ) -> Result<(), AdmissionError> {
-        let provider = provider.to_lowercase();
-        let tab = self
-            .lock()
-            .runs
-            .values()
-            .find(|run| {
-                run.provider.to_lowercase().contains(&provider)
-                    && run.session_id.as_deref().is_none_or(str::is_empty)
-                    && folders_related(&run.cwd, cwd)
-            })
-            .and_then(|run| run.tab_id.clone());
-        if let Some(tab) = tab {
-            self.update_session_id(&tab, session_id)?;
+        observed_at: DateTime<Utc>,
+    ) -> Result<IdentityAssociation, AdmissionError> {
+        if explicit_tab_unresolved {
+            self.extraction
+                .identity_explicit_tab_unresolved
+                .fetch_add(1, Ordering::Relaxed);
+            return Ok(IdentityAssociation::ExplicitTabUnresolved);
         }
-        Ok(())
+        if session_id.trim().is_empty() {
+            self.extraction
+                .identity_unmatched
+                .fetch_add(1, Ordering::Relaxed);
+            return Ok(IdentityAssociation::NoCandidate);
+        }
+
+        let provider = canonical_provider(provider);
+        let now = Utc::now();
+        let mut active = self.lock();
+        active.recently_ended.retain(|candidate| {
+            candidate
+                .ended_at
+                .is_some_and(|ended| now - ended <= RECENT_ENDED_TTL)
+        });
+
+        let matches_scope = |run: &TelemetryRun| {
+            canonical_provider(&run.provider) == provider
+                && run.cwd == cwd
+                && terminal_tab_id.is_none_or(|tab| run.tab_id.as_deref() == Some(tab))
+        };
+        let matches_time = |run: &TelemetryRun| {
+            let latest = run
+                .ended_at
+                .as_ref()
+                .map(|ended| *ended + EVENT_AFTER_END_GRACE)
+                .unwrap_or(now + EVENT_BEFORE_START_GRACE);
+            run.started_at - EVENT_BEFORE_START_GRACE <= observed_at && observed_at <= latest
+        };
+        let mut scoped = Vec::new();
+        let mut eligible = Vec::new();
+        for run in active.runs.values() {
+            if matches_scope(run) {
+                scoped.push((run.id.clone(), true, run.session_id.clone()));
+                if matches_time(run) {
+                    eligible.push((run.id.clone(), true, run.session_id.clone()));
+                }
+            }
+        }
+        for run in &active.recently_ended {
+            if matches_scope(run) {
+                scoped.push((run.id.clone(), false, run.session_id.clone()));
+                if matches_time(run) {
+                    eligible.push((run.id.clone(), false, run.session_id.clone()));
+                }
+            }
+        }
+        if scoped.is_empty() {
+            self.extraction
+                .identity_unmatched
+                .fetch_add(1, Ordering::Relaxed);
+            return Ok(IdentityAssociation::NoCandidate);
+        }
+        if eligible.is_empty() {
+            self.extraction
+                .identity_unmatched
+                .fetch_add(1, Ordering::Relaxed);
+            return Ok(IdentityAssociation::Stale);
+        }
+        if eligible.len() != 1 {
+            self.extraction
+                .identity_ambiguous
+                .fetch_add(1, Ordering::Relaxed);
+            return Ok(IdentityAssociation::Ambiguous);
+        }
+
+        let (id, is_active, current_session) = eligible.remove(0);
+        if current_session.as_deref() == Some(session_id) {
+            return Ok(IdentityAssociation::AlreadyAssociated);
+        }
+        if current_session
+            .as_deref()
+            .is_some_and(|current| !current.is_empty())
+        {
+            self.extraction
+                .identity_conflict
+                .fetch_add(1, Ordering::Relaxed);
+            return Ok(IdentityAssociation::ConflictingIdentity);
+        }
+
+        let session = session_id.to_string();
+        let bytes = id.len().saturating_add(session.len());
+        let queued_id = id.clone();
+        let queued_session = session.clone();
+        let providers = self.providers.clone();
+        let extraction = self.extraction.clone();
+        self.writer.admit(
+            if is_active { "session" } else { "late_session" },
+            bytes,
+            Box::new(move |store| {
+                store
+                    .try_update_run_session_id(&queued_id, &queued_session)
+                    .map_err(|error| error.to_string())?;
+                if is_active {
+                    return Ok(());
+                }
+                let Some(mut run) = store.get_run(&queued_id) else {
+                    return Ok(());
+                };
+                let Some(provider) = providers.iter().find(|item| item.can_handle(&run.provider))
+                else {
+                    run.metadata.insert(
+                        "content_extraction_outcome".into(),
+                        "provider_unavailable".into(),
+                    );
+                    return rewrite_preserving_content(store, &run);
+                };
+                extraction.attempts.fetch_add(1, Ordering::Relaxed);
+                match provider.extract_content(
+                    &run.id,
+                    run.session_id.as_deref(),
+                    &run.cwd,
+                    run.started_at,
+                ) {
+                    Some(content) if !content.turns.is_empty() => {
+                        extraction.succeeded.fetch_add(1, Ordering::Relaxed);
+                        let (mut run, turns, tool_calls) = apply_provider_content(run, content);
+                        run.metadata.insert(
+                            "content_extraction_outcome".into(),
+                            "provider_content".into(),
+                        );
+                        run.metadata.remove("content_fallback_source");
+                        store
+                            .try_rewrite_completed_run(&run, &turns, &tool_calls)
+                            .map_err(|error| error.to_string())
+                    }
+                    Some(content) => {
+                        extraction.succeeded.fetch_add(1, Ordering::Relaxed);
+                        let preserved_turns = store.get_turns(&run.id);
+                        let mut preserved_tool_calls = store.get_tool_calls(&run.id);
+                        let previous_transcript_ref = run.raw_transcript_ref.clone();
+                        let (mut run, provider_turns, provider_tool_calls) =
+                            apply_provider_content(run, content);
+                        if provider_turns.is_empty() && !preserved_turns.is_empty() {
+                            run.turn_count = preserved_turns.len() as i64;
+                            run.raw_transcript_ref = previous_transcript_ref;
+                        }
+                        preserved_tool_calls.extend(provider_tool_calls);
+                        run.metadata.insert(
+                            "content_extraction_outcome".into(),
+                            "provider_content_empty".into(),
+                        );
+                        store
+                            .try_rewrite_completed_run(
+                                &run,
+                                &preserved_turns,
+                                &preserved_tool_calls,
+                            )
+                            .map_err(|error| error.to_string())
+                    }
+                    None => {
+                        extraction
+                            .transcript_missing
+                            .fetch_add(1, Ordering::Relaxed);
+                        run.metadata.insert(
+                            "content_extraction_outcome".into(),
+                            "transcript_missing".into(),
+                        );
+                        rewrite_preserving_content(store, &run)
+                    }
+                }
+            }),
+        )?;
+
+        if is_active {
+            if let Some(run) = active.runs.get_mut(&id) {
+                run.session_id = Some(session);
+            }
+        } else if let Some(run) = active.recently_ended.iter_mut().find(|run| run.id == id) {
+            run.session_id = Some(session);
+        }
+        self.extraction
+            .identity_associated
+            .fetch_add(1, Ordering::Relaxed);
+        Ok(IdentityAssociation::Associated)
     }
     /// TEL-009: atomically admit the ordered update before changing memory.
     pub fn tag_run(&self, run_id: &str, tags: &[String]) -> Result<(), AdmissionError> {
@@ -369,12 +719,23 @@ impl TelemetryRecorder {
                 report.skipped_runs += 1;
                 continue;
             };
+            if run.session_id.as_deref().is_none_or(str::is_empty) {
+                self.extraction
+                    .missing_session
+                    .fetch_add(1, Ordering::Relaxed);
+                report.skipped_runs += 1;
+                continue;
+            }
+            self.extraction.attempts.fetch_add(1, Ordering::Relaxed);
             let Some(content) = provider.extract_content(
                 &run.id,
                 run.session_id.as_deref(),
                 &run.cwd,
                 run.started_at,
             ) else {
+                self.extraction
+                    .transcript_missing
+                    .fetch_add(1, Ordering::Relaxed);
                 if self
                     .store
                     .try_invalidate_run_metrics(
@@ -389,6 +750,7 @@ impl TelemetryRecorder {
                 }
                 continue;
             };
+            self.extraction.succeeded.fetch_add(1, Ordering::Relaxed);
             let (repaired, warning) = metrics_sanitizer::sanitize(&content, &run.provider);
             if let Some(warning) = warning {
                 log::warn!("TelemetryRepairService: {warning} run={}", run.id);
@@ -460,68 +822,73 @@ pub struct RepairReport {
     pub failed_runs: usize,
 }
 
-/// Same folder, or one inside the other.
 fn extract_content(
     providers: &[Box<dyn RunContentProvider>],
+    counters: &ExtractionCounters,
     mut run: TelemetryRun,
     terminal_buffer: Option<String>,
     pty_log_path: Option<&Path>,
 ) -> (TelemetryRun, Vec<TelemetryTurn>, Vec<TelemetryToolCall>) {
     let mut turns: Vec<TelemetryTurn> = Vec::new();
     let mut tool_calls: Vec<TelemetryToolCall> = Vec::new();
-    if let Some(provider) = providers.iter().find(|p| p.can_handle(&run.provider)) {
-        match provider.extract_content(&run.id, run.session_id.as_deref(), &run.cwd, run.started_at)
-        {
-            Some(content) => {
-                let (content, warning) = metrics_sanitizer::sanitize(&content, &run.provider);
-                if let Some(warning) = warning {
-                    log::warn!("TelemetryRecorder: {warning} run={}", run.id);
-                }
-                run.model = content.model.clone().or(run.model);
-                run.total_input_tokens = content.total_input_tokens;
-                run.total_cached_input_tokens = content.total_cached_input_tokens;
-                run.total_cache_creation_input_tokens = content.total_cache_creation_input_tokens;
-                run.total_cache_read_input_tokens = content.total_cache_read_input_tokens;
-                run.total_output_tokens = content.total_output_tokens;
-                run.total_reasoning_output_tokens = content.total_reasoning_output_tokens;
-                run.cost_usd = content.cost_usd;
-                run.token_usage_source = content.token_usage_source;
-                run.token_usage_state = content.token_usage_state;
-                run.cost_source = content.cost_source;
-                run.cost_state = content.cost_state;
-                if run.cost_source == Some(super::token_metrics::CostSource::Estimated) {
+    match providers
+        .iter()
+        .find(|provider| provider.can_handle(&run.provider))
+    {
+        None => {
+            run.metadata.insert(
+                "content_extraction_outcome".into(),
+                "provider_unavailable".into(),
+            );
+        }
+        Some(_) if run.session_id.as_deref().is_none_or(str::is_empty) => {
+            counters.missing_session.fetch_add(1, Ordering::Relaxed);
+            run.metadata.insert(
+                "content_extraction_outcome".into(),
+                "missing_session".into(),
+            );
+        }
+        Some(provider) => {
+            counters.attempts.fetch_add(1, Ordering::Relaxed);
+            match provider.extract_content(
+                &run.id,
+                run.session_id.as_deref(),
+                &run.cwd,
+                run.started_at,
+            ) {
+                Some(content) => {
+                    counters.succeeded.fetch_add(1, Ordering::Relaxed);
+                    let empty = content.turns.is_empty();
+                    let (updated_run, extracted_turns, extracted_tools) =
+                        apply_provider_content(run, content);
+                    run = updated_run;
+                    turns = extracted_turns;
+                    tool_calls = extracted_tools;
                     run.metadata.insert(
-                        "pricing_catalog_version".into(),
-                        super::pricing::VERSION.into(),
+                        "content_extraction_outcome".into(),
+                        if empty {
+                            "provider_content_empty"
+                        } else {
+                            "provider_content"
+                        }
+                        .into(),
+                    );
+                    log::info!(
+                        "TelemetryRecorder: extracted {} turns, {} tool calls",
+                        turns.len(),
+                        tool_calls.len(),
                     );
                 }
-                run.raw_transcript_ref = content.raw_transcript_ref.clone();
-                run.turn_count = content.turns.len() as i64;
-                if content.token_usage_state == TelemetryMetricState::Invalid {
-                    run.error_message =
-                        Some("invalidated implausible token metrics during extraction".into());
+                None => {
+                    counters.transcript_missing.fetch_add(1, Ordering::Relaxed);
+                    run.metadata.insert(
+                        "content_extraction_outcome".into(),
+                        "transcript_missing".into(),
+                    );
+                    log::debug!("TelemetryRecorder: provider transcript unavailable");
                 }
-                turns = content.turns;
-                tool_calls = content.tool_calls;
-                log::info!(
-                    "TelemetryRecorder: extracted {} turns, {} tool calls, model={}",
-                    turns.len(),
-                    tool_calls.len(),
-                    run.model.as_deref().unwrap_or("?")
-                );
             }
-            None => log::warn!(
-                "TelemetryRecorder: content extraction returned nil for run {} session={} cwd={}",
-                run.id,
-                run.session_id.as_deref().unwrap_or("nil"),
-                run.cwd
-            ),
         }
-    } else {
-        log::trace!(
-            "TelemetryRecorder: no content provider for {}",
-            run.provider
-        );
     }
 
     if turns.is_empty() {
@@ -535,10 +902,18 @@ fn extract_content(
                 .map(|text| (text, "terminal_buffer"));
         }
         if let Some((text, source)) = fallback {
+            match source {
+                "pty_log" => {
+                    counters.pty_fallback.fetch_add(1, Ordering::Relaxed);
+                }
+                "terminal_buffer" => {
+                    counters.terminal_fallback.fetch_add(1, Ordering::Relaxed);
+                }
+                _ => {}
+            }
             log::info!(
-                "TelemetryRecorder: using {source} fallback ({} chars) for run {}",
-                text.chars().count(),
-                run.id
+                "TelemetryRecorder: using {source} fallback ({} chars)",
+                text.chars().count()
             );
             let mut turn = TelemetryTurn::new(&run.id, 0, TurnRole::Assistant);
             turn.id = format!("{}-t0", run.id);
@@ -547,10 +922,62 @@ fn extract_content(
             turns = vec![turn];
             run.turn_count = 1;
             run.raw_transcript_ref = Some(source.to_string());
+            run.metadata
+                .insert("content_fallback_source".into(), source.to_string());
         }
     }
 
     (run, turns, tool_calls)
+}
+
+fn apply_provider_content(
+    mut run: TelemetryRun,
+    content: super::run_content::ExtractedRunContent,
+) -> (TelemetryRun, Vec<TelemetryTurn>, Vec<TelemetryToolCall>) {
+    let (content, warning) = metrics_sanitizer::sanitize(&content, &run.provider);
+    if let Some(warning) = warning {
+        log::warn!("TelemetryRecorder: {warning}");
+    }
+    run.model = content.model.clone().or(run.model);
+    run.total_input_tokens = content.total_input_tokens;
+    run.total_cached_input_tokens = content.total_cached_input_tokens;
+    run.total_cache_creation_input_tokens = content.total_cache_creation_input_tokens;
+    run.total_cache_read_input_tokens = content.total_cache_read_input_tokens;
+    run.total_output_tokens = content.total_output_tokens;
+    run.total_reasoning_output_tokens = content.total_reasoning_output_tokens;
+    run.cost_usd = content.cost_usd;
+    run.token_usage_source = content.token_usage_source;
+    run.token_usage_state = content.token_usage_state;
+    run.cost_source = content.cost_source;
+    run.cost_state = content.cost_state;
+    if run.cost_source == Some(super::token_metrics::CostSource::Estimated) {
+        run.metadata.insert(
+            "pricing_catalog_version".into(),
+            super::pricing::VERSION.into(),
+        );
+    }
+    run.raw_transcript_ref = content.raw_transcript_ref.clone();
+    run.turn_count = content.turns.len() as i64;
+    if content.token_usage_state == TelemetryMetricState::Invalid {
+        run.error_message = Some("invalidated implausible token metrics during extraction".into());
+    }
+    (run, content.turns, content.tool_calls)
+}
+
+fn rewrite_preserving_content(store: &TelemetryStore, run: &TelemetryRun) -> Result<(), String> {
+    let turns = store.get_turns(&run.id);
+    let tool_calls = store.get_tool_calls(&run.id);
+    store
+        .try_rewrite_completed_run(run, &turns, &tool_calls)
+        .map_err(|error| error.to_string())
+}
+
+fn canonical_provider(provider: &str) -> String {
+    match provider.to_lowercase().as_str() {
+        "claude" | "claude code" | "claude_code" | "anthropic" => "claude".into(),
+        "codex" | "openai" => "codex".into(),
+        other => other.into(),
+    }
 }
 
 fn run_bytes(run: &TelemetryRun) -> usize {
@@ -576,10 +1003,6 @@ fn run_bytes(run: &TelemetryRun) -> usize {
         .sum::<usize>()
         .saturating_mul(6),
     )
-}
-
-fn folders_related(a: &str, b: &str) -> bool {
-    a == b || a.starts_with(&format!("{b}/")) || b.starts_with(&format!("{a}/"))
 }
 
 /// The readable tail of a PTY log (`readPTYLogTail`): the last `max_bytes`,
@@ -909,7 +1332,8 @@ mod tests {
             store: store.clone(),
             providers: Arc::new(vec![]),
             writer: Writer::with_limits(store.clone(), 1, 4096),
-            active: Mutex::new(Active::default()),
+            active: Arc::new(Mutex::new(Active::default())),
+            extraction: Arc::new(ExtractionCounters::default()),
         };
         let (started_tx, started_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
@@ -989,6 +1413,96 @@ mod tests {
     }
 
     #[test]
+    fn synchronous_completion_reextracts_when_identity_arrives_during_provider_read() {
+        use std::sync::mpsc;
+
+        struct BlockingProvider {
+            calls: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+            entered: mpsc::Sender<()>,
+            release: std::sync::Mutex<mpsc::Receiver<()>>,
+        }
+        impl RunContentProvider for BlockingProvider {
+            fn provider_name(&self) -> &str {
+                "claude"
+            }
+            fn can_handle(&self, provider: &str) -> bool {
+                provider.contains("claude")
+            }
+            fn extract_content(
+                &self,
+                run_id: &str,
+                session_id: Option<&str>,
+                _: &str,
+                _: DateTime<Utc>,
+            ) -> Option<ExtractedRunContent> {
+                let session = session_id.unwrap_or_default().to_string();
+                let call = {
+                    let mut calls = self.calls.lock().unwrap();
+                    calls.push(session.clone());
+                    calls.len()
+                };
+                if call == 1 {
+                    self.entered.send(()).unwrap();
+                    self.release.lock().unwrap().recv().unwrap();
+                }
+                let mut content = ExtractedRunContent {
+                    model: Some(session.clone()),
+                    ..Default::default()
+                };
+                let mut turn = TelemetryTurn::new(run_id, 0, TurnRole::Assistant);
+                turn.content = Some(session);
+                content.turns.push(turn);
+                Some(content)
+            }
+        }
+
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorder = std::sync::Arc::new(TelemetryRecorder::new(
+            std::sync::Arc::new(TelemetryStore::in_memory()),
+            vec![Box::new(BlockingProvider {
+                calls: calls.clone(),
+                entered: entered_tx,
+                release: std::sync::Mutex::new(release_rx),
+            })],
+        ));
+        let id = recorder
+            .run_started("T", "claude", "/race", None, Some("early-session"))
+            .unwrap();
+        let ended = recorder.run_ended("T", Some(0)).unwrap();
+        let completer = recorder.clone();
+        let completion = std::thread::spawn(move || completer.complete(ended, None, None));
+
+        entered_rx.recv().unwrap();
+        {
+            let mut active = recorder.lock();
+            active
+                .recently_ended
+                .iter_mut()
+                .find(|run| run.id == id)
+                .unwrap()
+                .session_id = Some("late-session".into());
+        }
+        release_tx.send(()).unwrap();
+
+        let completed = completion.join().unwrap().unwrap();
+        assert_eq!(completed.session_id.as_deref(), Some("late-session"));
+        assert_eq!(completed.model.as_deref(), Some("late-session"));
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec!["early-session", "late-session"]
+        );
+        let stored = recorder.store().get_run(&id).unwrap();
+        assert_eq!(stored.session_id.as_deref(), Some("late-session"));
+        assert_eq!(stored.model.as_deref(), Some("late-session"));
+        assert_eq!(
+            recorder.store().get_turns(&id)[0].content.as_deref(),
+            Some("late-session")
+        );
+    }
+
+    #[test]
     fn fallbacks_pty_log_then_buffer() {
         let rec = recorder(None);
         let dir = std::env::temp_dir().join(format!("chau7-next-rec-{}", std::process::id()));
@@ -1002,6 +1516,18 @@ mod tests {
             .complete(run, Some("buffer".into()), Some(&log))
             .unwrap();
         assert_eq!(run.raw_transcript_ref.as_deref(), Some("pty_log"));
+        assert_eq!(
+            run.metadata
+                .get("content_extraction_outcome")
+                .map(String::as_str),
+            Some("missing_session")
+        );
+        assert_eq!(
+            run.metadata
+                .get("content_fallback_source")
+                .map(String::as_str),
+            Some("pty_log")
+        );
         let turns = rec.store().get_turns(&run.id);
         assert_eq!(turns[0].id, format!("{}-t0", run.id));
         assert_eq!(turns[0].content.as_deref(), Some("hello\n\n\nworld"));
@@ -1025,31 +1551,194 @@ mod tests {
         let run = rec.run_ended("T", None).unwrap();
         let run = rec.complete(run, Some("   ".into()), None).unwrap();
         assert_eq!(run.turn_count, 0);
+        let counts = rec.extraction_diagnostics();
+        assert_eq!(counts.available_providers, 1);
+        assert_eq!(counts.attempts, 0);
+        assert_eq!(counts.missing_session, 1);
+        assert_eq!(counts.pty_fallback, 1);
+        assert_eq!(counts.terminal_fallback, 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
-    fn session_id_by_cwd_matches_related_folders_once() {
+    fn identity_association_requires_exact_provider_cwd_and_unique_time_match() {
         let rec = recorder(None);
         let id = rec.run_started("T", "claude", "/a/b", None, None).unwrap();
-        rec.update_session_id_by_cwd("codex", "/a/b", "X").unwrap();
+        let started = rec.active_run_for_tab("T").unwrap().started_at;
+        assert_eq!(
+            rec.associate_session_id_for_event("codex", "/a/b", None, false, "X", started)
+                .unwrap(),
+            IdentityAssociation::NoCandidate
+        );
+        assert_eq!(
+            rec.associate_session_id_for_event(
+                "claude",
+                "/a/b/c",
+                None,
+                false,
+                "wrong-cwd",
+                started,
+            )
+            .unwrap(),
+            IdentityAssociation::NoCandidate
+        );
+        assert_eq!(
+            rec.associate_session_id_for_event(
+                "claude",
+                "/a/b",
+                None,
+                false,
+                "stale",
+                started - Duration::minutes(5),
+            )
+            .unwrap(),
+            IdentityAssociation::Stale
+        );
         assert!(rec.active_run_for_tab("T").unwrap().session_id.is_none());
-        rec.update_session_id_by_cwd("Claude", "/a/b/c", "S")
-            .unwrap();
+        assert_eq!(
+            rec.associate_session_id_for_event("Claude", "/a/b", None, false, "S", started)
+                .unwrap(),
+            IdentityAssociation::Associated
+        );
         assert_eq!(
             rec.active_run_for_tab("T").unwrap().session_id.as_deref(),
             Some("S")
         );
         rec.flush().unwrap();
-        // Already has one: not replaced.
-        rec.update_session_id_by_cwd("claude", "/a", "Z").unwrap();
+        assert_eq!(
+            rec.associate_session_id_for_event("claude", "/a/b", None, false, "Z", started)
+                .unwrap(),
+            IdentityAssociation::ConflictingIdentity
+        );
         rec.flush().unwrap();
         assert_eq!(
             rec.store().get_run(&id).unwrap().session_id.as_deref(),
             Some("S")
         );
-        assert!(folders_related("/a", "/a/b"));
-        assert!(!folders_related("/a", "/ab"));
+        let counts = rec.extraction_diagnostics();
+        assert_eq!(counts.identity_associated, 1);
+        assert_eq!(counts.identity_conflict, 1);
+        assert_eq!(counts.identity_unmatched, 3);
+    }
+
+    #[test]
+    fn identity_association_refuses_ambiguous_and_unresolved_explicit_tab_events() {
+        let rec = recorder(None);
+        let _first = rec
+            .run_started("T1", "claude", "/same", None, None)
+            .unwrap();
+        let _second = rec
+            .run_started("T2", "claude", "/same", None, None)
+            .unwrap();
+        let now = Utc::now();
+        assert_eq!(
+            rec.associate_session_id_for_event("claude", "/same", None, false, "ambiguous", now)
+                .unwrap(),
+            IdentityAssociation::Ambiguous
+        );
+        assert_eq!(
+            rec.associate_session_id_for_event("claude", "/same", None, true, "foreign-tab", now,)
+                .unwrap(),
+            IdentityAssociation::ExplicitTabUnresolved
+        );
+        assert_eq!(
+            rec.associate_session_id_for_event(
+                "claude",
+                "/same",
+                Some("T2"),
+                false,
+                "exact-tab",
+                now,
+            )
+            .unwrap(),
+            IdentityAssociation::Associated
+        );
+        assert!(rec.active_run_for_tab("T1").unwrap().session_id.is_none());
+        assert_eq!(
+            rec.active_run_for_tab("T2").unwrap().session_id.as_deref(),
+            Some("exact-tab")
+        );
+        let counts = rec.extraction_diagnostics();
+        assert_eq!(counts.identity_ambiguous, 1);
+        assert_eq!(counts.identity_explicit_tab_unresolved, 1);
+        assert_eq!(counts.identity_associated, 1);
+    }
+
+    #[test]
+    fn late_identity_is_used_by_queued_completion_and_rechecks_provider_content() {
+        let rec = recorder(Some(ExtractedRunContent::default()));
+        let id = rec.run_started("T", "claude", "/late", None, None).unwrap();
+        let ended = rec.run_ended("T", Some(0)).unwrap();
+        let observed_at = ended.ended_at.unwrap();
+        rec.enqueue_completion(ended, Some("fallback-only".into()), None)
+            .unwrap();
+        assert_eq!(
+            rec.associate_session_id_for_event(
+                "claude",
+                "/late",
+                Some("T"),
+                false,
+                "late-session",
+                observed_at,
+            )
+            .unwrap(),
+            IdentityAssociation::Associated
+        );
+        rec.flush().unwrap();
+        let run = rec.store().get_run(&id).unwrap();
+        assert_eq!(run.session_id.as_deref(), Some("late-session"));
+        assert_eq!(
+            run.metadata
+                .get("content_extraction_outcome")
+                .map(String::as_str),
+            Some("provider_content")
+        );
+        assert_eq!(run.metadata.get("content_fallback_source"), None);
+        assert_eq!(rec.store().get_turns(&id)[0].content.as_deref(), Some("x"));
+        let counts = rec.extraction_diagnostics();
+        assert!(counts.attempts >= 1);
+        assert!(counts.succeeded >= 1);
+    }
+
+    #[test]
+    fn late_identity_keeps_fallback_when_provider_transcript_is_still_missing() {
+        let rec = recorder(None);
+        let id = rec.run_started("T", "claude", "/late", None, None).unwrap();
+        let ended = rec.run_ended("T", Some(0)).unwrap();
+        let observed_at = ended.ended_at.unwrap();
+        rec.enqueue_completion(ended, Some("fallback-only".into()), None)
+            .unwrap();
+        assert_eq!(
+            rec.associate_session_id_for_event(
+                "claude",
+                "/late",
+                Some("T"),
+                false,
+                "late-session",
+                observed_at,
+            )
+            .unwrap(),
+            IdentityAssociation::Associated
+        );
+        rec.flush().unwrap();
+        let run = rec.store().get_run(&id).unwrap();
+        assert_eq!(run.session_id.as_deref(), Some("late-session"));
+        assert_eq!(
+            run.metadata
+                .get("content_extraction_outcome")
+                .map(String::as_str),
+            Some("transcript_missing")
+        );
+        assert_eq!(
+            run.metadata
+                .get("content_fallback_source")
+                .map(String::as_str),
+            Some("terminal_buffer")
+        );
+        assert_eq!(
+            rec.store().get_turns(&id)[0].content.as_deref(),
+            Some("fallback-only")
+        );
     }
 
     #[test]
@@ -1067,6 +1756,7 @@ mod tests {
             ..Default::default()
         }));
         let mut run = TelemetryRun::new("claude", "/owned");
+        run.session_id = Some("repair-session".into());
         run.ended_at = Some(Utc::now());
         rec.store().insert_run(&run);
         let report = rec.rebuild_transcript_derived_runs(1);
@@ -1084,7 +1774,9 @@ mod tests {
             total_input_tokens: Some(200_000_000),
             ..Default::default()
         }));
-        let id = rec.run_started("T", "claude", "/p", None, None).unwrap();
+        let id = rec
+            .run_started("T", "claude", "/p", None, Some("repair-session"))
+            .unwrap();
         rec.tag_run(&id, &["control".into()]).unwrap();
         assert_eq!(rec.active_run_for_tab("T").unwrap().tags, vec!["control"]);
         let run = rec.run_ended("T", Some(1)).unwrap();

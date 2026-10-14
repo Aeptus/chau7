@@ -182,16 +182,18 @@ impl SessionMemory {
         let term = self.terminal.upgrade()?;
         let flushed = self.state.lock().flushed;
         let term = term.read();
-        let tail = chau7_next_core::work_profiler::measure(
-            chau7_next_core::work_profiler::Key::work(
+        let mut capture =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
                 "full_buffer_ansi",
                 "autosave",
                 self.profiling_phase(),
                 "session_restore",
                 chau7_next_core::work_profiler::Queue::Main,
-            ),
-            || term.full_buffer_ansi_text(),
-        );
+            ));
+        let tail = term.full_buffer_ansi_text();
+        capture.bytes(tail.len());
+        capture.items(1);
+        drop(capture);
         let Some(record) = flushed else {
             return Some(tail);
         };

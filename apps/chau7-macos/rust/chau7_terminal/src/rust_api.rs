@@ -553,7 +553,12 @@ mod tests {
             tx.send(PtyMessage::Data(b"later".to_vec())).unwrap();
             tx
         });
+        let waiting_started = std::time::Instant::now();
         assert_eq!(ready.wait(Duration::from_secs(1)), OutputReady::Output);
+        assert!(
+            waiting_started.elapsed() < Duration::from_millis(500),
+            "output readiness should wake before the fallback timeout"
+        );
         let tx = producer.join().unwrap();
         assert!(matches!(rx.try_recv(), Ok(PtyMessage::Data(bytes)) if bytes == b"later"));
         assert_eq!(ready.wait(Duration::ZERO), OutputReady::Timeout);
@@ -580,7 +585,12 @@ mod tests {
             flag.store(true, Ordering::Release);
             wake.wake();
         });
+        let waiting_started = std::time::Instant::now();
         assert_eq!(ready.wait(Duration::from_secs(1)), OutputReady::Interrupted);
+        assert!(
+            waiting_started.elapsed() < Duration::from_millis(500),
+            "interrupt readiness should wake before the fallback timeout"
+        );
         assert!(stopped.load(Ordering::Acquire));
         producer.join().unwrap();
     }

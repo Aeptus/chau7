@@ -108,8 +108,17 @@ impl DebugConsole {
                     chrome,
                 ))
                 .child(ui::state_row("Directory", tab.cwd.clone(), chrome))
-                .child(ui::state_row("Input Lag", tab.input_lag.clone(), chrome))
-                .child(ui::state_row("Output Lag", tab.output_lag.clone(), chrome))
+                .child(ui::state_row("Input→Output", tab.input_lag.clone(), chrome))
+                .child(ui::state_row(
+                    "Input Dispatch",
+                    tab.input_dispatch_lag.clone(),
+                    chrome,
+                ))
+                .child(ui::state_row(
+                    "Output Paint",
+                    tab.output_lag.clone(),
+                    chrome,
+                ))
                 .child(ui::state_row(
                     "Highlight Lag",
                     tab.highlight_lag.clone(),
@@ -133,12 +142,17 @@ impl DebugConsole {
             Some(tab) => {
                 summary = summary
                     .child(ui::state_row(
-                        "Input p50/p95",
+                        "Input→Output p50/p95",
                         tab.input_percentiles.clone(),
                         chrome,
                     ))
                     .child(ui::state_row(
-                        "Output p50/p95",
+                        "Input Dispatch p50/p95",
+                        tab.input_dispatch_percentiles.clone(),
+                        chrome,
+                    ))
+                    .child(ui::state_row(
+                        "Output Paint p50/p95",
                         tab.output_percentiles.clone(),
                         chrome,
                     ))

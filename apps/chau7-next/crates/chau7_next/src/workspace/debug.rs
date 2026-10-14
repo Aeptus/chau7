@@ -111,10 +111,12 @@ pub struct TabDebugInfo {
     pub render_suspended: bool,
     /// `"12ms (avg 9ms)"` per kind, or `"n/a"`.
     pub input_lag: String,
+    pub input_dispatch_lag: String,
     pub output_lag: String,
     pub highlight_lag: String,
     /// `"p50ms / p95ms (n=N)"` per kind.
     pub input_percentiles: String,
+    pub input_dispatch_percentiles: String,
     pub output_percentiles: String,
     pub highlight_percentiles: String,
     pub lag_timeline: Vec<LagEvent>,
@@ -154,9 +156,11 @@ impl Workspace {
                     shell_integration: false,
                     render_suspended: false,
                     input_lag: "n/a".into(),
+                    input_dispatch_lag: "n/a".into(),
                     output_lag: "n/a".into(),
                     highlight_lag: "n/a".into(),
                     input_percentiles: "n/a".into(),
+                    input_dispatch_percentiles: "n/a".into(),
                     output_percentiles: "n/a".into(),
                     highlight_percentiles: "n/a".into(),
                     lag_timeline: Vec::new(),
@@ -178,9 +182,11 @@ impl Workspace {
                     info.render_suspended = session.is_render_suspended();
                     let latency = session.latency();
                     info.input_lag = latency.summary(LagKind::Input);
+                    info.input_dispatch_lag = latency.summary(LagKind::InputDispatch);
                     info.output_lag = latency.summary(LagKind::Output);
                     info.highlight_lag = latency.summary(LagKind::Highlight);
                     info.input_percentiles = latency.percentiles(LagKind::Input);
+                    info.input_dispatch_percentiles = latency.percentiles(LagKind::InputDispatch);
                     info.output_percentiles = latency.percentiles(LagKind::Output);
                     info.highlight_percentiles = latency.percentiles(LagKind::Highlight);
                     info.lag_timeline = latency.timeline().to_vec();
@@ -221,6 +227,7 @@ impl Workspace {
                     "render_suspended": session.is_render_suspended(),
                     "session_id":session.id, "memory":session.allocation_snapshot(),
                     "input": latency.statistics(LagKind::Input),
+                    "input_dispatch": latency.statistics(LagKind::InputDispatch),
                     "output": latency.statistics(LagKind::Output),
                     "highlight": latency.statistics(LagKind::Highlight), "lag_events": lag
                 }));

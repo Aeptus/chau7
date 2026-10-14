@@ -15,7 +15,7 @@
 //! thread, then runs the Claude idle check and publishes the history
 //! monitor's notices.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -36,6 +36,7 @@ use chau7_next_core::monitoring::codex_sessions::{
 use chau7_next_core::monitoring::conflicts::{ConflictDetector, FinishedBlock, conflict_message};
 use chau7_next_core::monitoring::tailer::FileTailer;
 use gpui::{App, Global, Task};
+use uuid::Uuid;
 
 use super::events_out::{self, tab_uuid};
 use crate::history::monitor::{self as history_monitor, HistoryNotice};
@@ -44,12 +45,18 @@ use crate::settings::Settings;
 use crate::tab_bar::TabId;
 use crate::workspace::AppData;
 
+const MAX_PENDING_CLAUDE_STARTS: usize = 64;
+const MAX_CLAUDE_START_RETRIES: u8 = 20;
+const CLAUDE_START_RETRY_TTL: Duration = Duration::from_secs(5);
+
 /// State shared by the monitors.
 #[derive(Default)]
 pub struct AiHub {
     pub claude: ClaudeSessionTracker,
     codex_candidates: Vec<Candidate>,
     claude_fallbacks: HashMap<String, Task<()>>,
+    pending_claude_starts: VecDeque<PendingClaudeStart>,
+    seen_claude_starts: VecDeque<ClaudeStartKey>,
     conflicts: ConflictDetector<TabId>,
     finished_blocks: HashMap<TabId, Vec<FinishedBlock>>,
     /// "Restart Monitor" was clicked: rebuild the event log tailers.
@@ -57,6 +64,61 @@ pub struct AiHub {
 }
 
 impl Global for AiHub {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClaudeStartKey {
+    tab_identifier: Uuid,
+    session_id: String,
+}
+
+struct PendingClaudeStart {
+    key: ClaudeStartKey,
+    cwd: String,
+    timestamp: f64,
+    started_at: Instant,
+    attempts: u8,
+}
+
+impl PendingClaudeStart {
+    fn retryable_at(&self, now: Instant) -> bool {
+        self.attempts < MAX_CLAUDE_START_RETRIES
+            && now.saturating_duration_since(self.started_at) < CLAUDE_START_RETRY_TTL
+    }
+
+    fn identity_event(&self) -> ClaudeCodeEvent {
+        ClaudeCodeEvent {
+            // SessionStart is not part of the event-parsing enum yet. Unknown
+            // is safe here because identity adoption only treats UserPrompt
+            // as permission to replace a prior session identity.
+            event_type: EventType::Unknown,
+            raw_type: "session_start".into(),
+            tool_use_id: String::new(),
+            tool_input_json: None,
+            hook: "SessionStart".into(),
+            session_id: self.key.session_id.clone(),
+            transcript_path: String::new(),
+            tool_name: String::new(),
+            title: None,
+            message: String::new(),
+            notification_type: None,
+            cwd: self.cwd.clone(),
+            timestamp: self.timestamp,
+        }
+    }
+}
+
+impl AiHub {
+    fn remember_claude_start(&mut self, key: ClaudeStartKey) -> bool {
+        if self.seen_claude_starts.contains(&key) {
+            return false;
+        }
+        if self.seen_claude_starts.len() == MAX_PENDING_CLAUDE_STARTS {
+            self.seen_claude_starts.pop_front();
+        }
+        self.seen_claude_starts.push_back(key);
+        true
+    }
+}
 
 /// Event log monitor settings ("Monitor AI Events" and the log path in
 /// Settings > Notifications).
@@ -90,9 +152,22 @@ struct Batch {
 struct ResolvedClaude {
     event: ClaudeCodeEvent,
     transcript_owned: bool,
+    next_tab_identifier: Option<Uuid>,
 }
 impl ResolvedClaude {
-    fn from_line(line: &str, home: &std::path::Path) -> Option<Self> {
+    fn from_line(line: &str, home: &std::path::Path, next_owned: bool) -> Option<Self> {
+        let next_tab_identifier = if next_owned {
+            serde_json::from_str::<serde_json::Value>(line)
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("tabID")
+                        .and_then(serde_json::Value::as_str)
+                        .and_then(|tab| Uuid::parse_str(tab).ok())
+                })
+        } else {
+            None
+        };
         let mut event = parse_event_line(line, now_secs())?;
         let transcript = (!event.transcript_path.trim().is_empty())
             .then(|| std::path::Path::new(event.transcript_path.trim()));
@@ -116,6 +191,7 @@ impl ResolvedClaude {
         Some(Self {
             event,
             transcript_owned,
+            next_tab_identifier,
         })
     }
 }
@@ -198,9 +274,10 @@ impl MonitorIo {
             codex_candidates: self.codex_candidates.clone(),
             ..Batch::default()
         };
-        for claude in &mut self.claude {
+        for (index, claude) in self.claude.iter_mut().enumerate() {
+            let next_owned = index == 1;
             for line in claude.poll() {
-                if let Some(event) = ResolvedClaude::from_line(&line, home) {
+                if let Some(event) = ResolvedClaude::from_line(&line, home, next_owned) {
                     batch.claude.push(event);
                 } else {
                     log::debug!("Ignoring malformed Claude hook record");
@@ -285,10 +362,16 @@ pub fn init(cx: &mut App) {
 }
 
 fn apply(batch: Batch, cx: &mut App) {
+    retry_pending_claude_starts(cx);
     let now = now_secs();
     cx.global_mut::<AiHub>().codex_candidates = batch.codex_candidates;
     for record in batch.claude {
-        handle_claude_event(record.event, record.transcript_owned, cx);
+        handle_claude_event(
+            record.event,
+            record.transcript_owned,
+            record.next_tab_identifier,
+            cx,
+        );
     }
     for line in batch.events {
         match parse_line(&line) {
@@ -339,7 +422,12 @@ fn provider_key(tool: &str) -> String {
 
 // ----- Claude Code hooks -----------------------------------------------------
 
-fn handle_claude_event(event: ClaudeCodeEvent, transcript_owned: bool, cx: &mut App) {
+fn handle_claude_event(
+    event: ClaudeCodeEvent,
+    transcript_owned: bool,
+    next_tab_identifier: Option<Uuid>,
+    cx: &mut App,
+) {
     log::trace!(
         "Claude event: type={} session={} tool={}",
         event.event_type.as_str(),
@@ -348,8 +436,51 @@ fn handle_claude_event(event: ClaudeCodeEvent, transcript_owned: bool, cx: &mut 
     );
     cancel_claude_fallback(&event.session_id, cx);
     cx.global_mut::<AiHub>().claude.handle_event(&event);
-    let owned_tab =
-        crate::terminal::session::adopt_claude_hook_identity(&event, transcript_owned, cx);
+    let retry_target = next_tab_identifier.filter(|_| {
+        transcript_owned
+            && event.raw_type == "session_start"
+            && event.hook == "SessionStart"
+            && chau7_next_core::ai::resume::is_valid_session_id(&event.session_id)
+    });
+    let seen_start = retry_target.map(|tab_identifier| {
+        cx.global_mut::<AiHub>()
+            .remember_claude_start(ClaudeStartKey {
+                tab_identifier,
+                session_id: event.session_id.trim().to_string(),
+            })
+    });
+    let owned_tab = if let Some(tab_identifier) = retry_target {
+        if claude_start_target_is_unique(&event, transcript_owned, tab_identifier, cx) {
+            crate::terminal::session::adopt_claude_hook_identity(&event, transcript_owned, cx)
+        } else {
+            None
+        }
+    } else {
+        crate::terminal::session::adopt_claude_hook_identity(&event, transcript_owned, cx)
+    };
+    if seen_start == Some(true) && owned_tab.is_none() {
+        if let Some(tab_identifier) = retry_target {
+            let key = ClaudeStartKey {
+                tab_identifier,
+                session_id: event.session_id.trim().to_string(),
+            };
+            let hub = cx.global_mut::<AiHub>();
+            if hub.pending_claude_starts.len() < MAX_PENDING_CLAUDE_STARTS
+                && !hub
+                    .pending_claude_starts
+                    .iter()
+                    .any(|pending| pending.key == key)
+            {
+                hub.pending_claude_starts.push_back(PendingClaudeStart {
+                    key,
+                    cwd: event.cwd.clone(),
+                    timestamp: event.timestamp,
+                    started_at: Instant::now(),
+                    attempts: 0,
+                });
+            }
+        }
+    }
     // The agent runtime first, so a runtime session binds this Claude
     // session before the event is routed (RUN-013, RUN-023).
     let known_runtime_tab =
@@ -382,6 +513,94 @@ fn handle_claude_event(event: ClaudeCodeEvent, transcript_owned: bool, cx: &mut 
         log::info!("Claude Code response complete: {}", event.project_name());
         schedule_claude_fallback(event, cx);
     }
+}
+
+/// The standard adopter scans every pane. Before calling it for a deferred
+/// Next SessionStart, prove its unique-owner selection would be this explicit
+/// shell tab; otherwise a same-directory Claude pane could claim the event.
+fn claude_start_target_is_unique(
+    event: &ClaudeCodeEvent,
+    transcript_owned: bool,
+    target_tab_identifier: Uuid,
+    cx: &App,
+) -> bool {
+    let Some(home) = cx
+        .try_global::<AppData>()
+        .map(|data| data.root.home().to_path_buf())
+    else {
+        return false;
+    };
+    let replace = event.event_type == EventType::UserPrompt;
+    let mut exact_count = 0;
+    let mut exact_is_target = false;
+    let mut eligible_count = 0;
+    let mut eligible_is_target = false;
+    for window in crate::mcp::windows::windows(cx) {
+        let workspace = window.workspace.read(cx);
+        for uuid in workspace.mcp_tab_uuids() {
+            let Some(tab) = workspace.mcp_find(uuid) else {
+                continue;
+            };
+            let Some(panes) = workspace.mcp_panes(tab) else {
+                continue;
+            };
+            for (_, entity) in panes.read(cx).pane_sessions(cx) {
+                let session = entity.read(cx);
+                let shell = session.shell();
+                if !session.is_ai_running()
+                    || session.exited.is_some()
+                    || !shell.can_adopt_observed_ai_identity(
+                        "claude",
+                        &event.session_id,
+                        event.timestamp,
+                        replace,
+                    )
+                {
+                    continue;
+                }
+                let cwd = shell.current_directory();
+                let related = chau7_next_core::monitoring::claude_resolver::related_directory(
+                    &home, &event.cwd, cwd,
+                );
+                if !related {
+                    continue;
+                }
+                let is_target =
+                    Uuid::parse_str(&session.tab_identifier).ok() == Some(target_tab_identifier);
+                if shell.ai_session_id() == Some(event.session_id.trim()) {
+                    exact_count += 1;
+                    exact_is_target |= is_target;
+                } else if transcript_owned {
+                    eligible_count += 1;
+                    eligible_is_target |= is_target;
+                }
+            }
+        }
+    }
+    (exact_count == 1 && exact_is_target)
+        || (exact_count == 0 && eligible_count == 1 && eligible_is_target)
+}
+
+fn retry_pending_claude_starts(cx: &mut App) {
+    let pending = {
+        let hub = cx.global_mut::<AiHub>();
+        std::mem::take(&mut hub.pending_claude_starts)
+    };
+    let now = Instant::now();
+    let mut remaining = VecDeque::new();
+    for mut candidate in pending {
+        if !candidate.retryable_at(now) {
+            continue;
+        }
+        candidate.attempts += 1;
+        let event = candidate.identity_event();
+        let adopted = claude_start_target_is_unique(&event, true, candidate.key.tab_identifier, cx)
+            && crate::terminal::session::adopt_claude_hook_identity(&event, true, cx).is_some();
+        if !adopted && candidate.retryable_at(now) {
+            remaining.push_back(candidate);
+        }
+    }
+    cx.global_mut::<AiHub>().pending_claude_starts = remaining;
 }
 
 /// `scheduleClaudeWaitingInputFallback`: "waiting for input" 0.75 s after a
@@ -591,6 +810,61 @@ mod tests {
         assert_eq!(event_source("Claude").raw_value(), "claude_code");
         assert_eq!(event_source("Unknown Tool").raw_value(), "history_monitor");
     }
+
+    #[test]
+    fn claude_start_seen_keys_dedupe_by_tab_and_remain_bounded() {
+        let mut hub = AiHub::default();
+        let first = ClaudeStartKey {
+            tab_identifier: Uuid::from_u128(1),
+            session_id: "session-1".into(),
+        };
+        assert!(hub.remember_claude_start(first.clone()));
+        assert!(!hub.remember_claude_start(first.clone()));
+        assert!(hub.remember_claude_start(ClaudeStartKey {
+            tab_identifier: Uuid::from_u128(2),
+            session_id: "session-1".into(),
+        }));
+
+        let mut newest = first.clone();
+        for tab in 3..=(MAX_PENDING_CLAUDE_STARTS as u128 + 2) {
+            newest = ClaudeStartKey {
+                tab_identifier: Uuid::from_u128(tab),
+                session_id: format!("session-{tab}"),
+            };
+            assert!(hub.remember_claude_start(newest.clone()));
+        }
+        assert_eq!(hub.seen_claude_starts.len(), MAX_PENDING_CLAUDE_STARTS);
+        assert!(!hub.remember_claude_start(newest));
+        // The bounded FIFO forgets the oldest key rather than growing without limit.
+        assert!(hub.remember_claude_start(first));
+        assert_eq!(hub.seen_claude_starts.len(), MAX_PENDING_CLAUDE_STARTS);
+    }
+
+    #[test]
+    fn pending_claude_start_retry_stops_at_ttl_or_attempt_limit() {
+        let started_at = Instant::now();
+        let mut pending = PendingClaudeStart {
+            key: ClaudeStartKey {
+                tab_identifier: Uuid::from_u128(1),
+                session_id: "session-1".into(),
+            },
+            cwd: "/owned-repo".into(),
+            timestamp: 1.0,
+            started_at,
+            attempts: 0,
+        };
+        assert!(pending.retryable_at(started_at));
+        assert!(
+            pending.retryable_at(started_at + CLAUDE_START_RETRY_TTL - Duration::from_millis(1))
+        );
+        assert!(!pending.retryable_at(started_at + CLAUDE_START_RETRY_TTL));
+
+        pending.attempts = MAX_CLAUDE_START_RETRIES - 1;
+        assert!(pending.retryable_at(started_at));
+        pending.attempts = MAX_CLAUDE_START_RETRIES;
+        assert!(!pending.retryable_at(started_at));
+    }
+
     #[test]
     fn hook_resolution_runs_readonly_against_isolated_stores_and_rejects_foreign_root() {
         let home =
@@ -604,16 +878,16 @@ mod tests {
         )
         .unwrap();
         let line = serde_json::json!({"type":"user_prompt","sessionId":"s1","cwd":"", "transcriptPath":transcript,"timestamp":1}).to_string();
-        let resolved = ResolvedClaude::from_line(&line, &home).unwrap();
+        let resolved = ResolvedClaude::from_line(&line, &home, false).unwrap();
         assert_eq!(resolved.event.cwd, "/owned-repo");
         assert!(resolved.transcript_owned);
         let foreign = serde_json::json!({"type":"permission_request","sessionId":"s1","cwd":"/other-repo", "transcriptPath":transcript,"timestamp":2}).to_string();
         assert!(
-            !ResolvedClaude::from_line(&foreign, &home)
+            !ResolvedClaude::from_line(&foreign, &home, false)
                 .unwrap()
                 .transcript_owned
         );
-        assert!(ResolvedClaude::from_line("invalid-json", &home).is_none());
+        assert!(ResolvedClaude::from_line("invalid-json", &home, false).is_none());
         std::fs::remove_dir_all(home).unwrap();
     }
     #[test]

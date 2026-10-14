@@ -2,12 +2,12 @@
 //! (`TerminalSessionModel+Telemetry.swift` and the latency parts of
 //! `TerminalSessionModel+ShellIntegration.swift`).
 //!
-//! Input latency runs from a keystroke to the next PTY output; output
-//! latency from PTY output to the frame that shows it. The last 120 samples
-//! of each give an average and p50/p95. A sample over the spike threshold
-//! (60 ms input, 120 ms output and highlight) is logged at most every 15 s
-//! per kind and added to a lag timeline (120 events) for the debug console.
-//! Times are seconds as `f64` (any monotonic clock).
+//! Input-to-output latency runs from the terminal input method to the next
+//! PTY output and includes shell/CLI/model response time. Input dispatch is
+//! the synchronous terminal handler path to writer queue submission. Output
+//! latency ends when grid painting completes on a visible surface; it does
+//! not establish GPU or physical display presentation. Hidden output batches
+//! are counted separately. Times are seconds as `f64` (any monotonic clock).
 
 /// Samples kept per kind (`latencySampleCapacity`).
 pub const SAMPLE_CAPACITY: usize = 120;
@@ -17,12 +17,10 @@ pub const LAG_TIMELINE_CAPACITY: usize = 120;
 pub const MAX_ACCEPTED_MS: f64 = 10_000.0;
 /// Minimum time between two logged spikes of one kind.
 pub const SPIKE_COOLDOWN_SECS: f64 = 15.0;
-/// A pending output measure is dropped after this long without a frame.
-pub const OUTPUT_FALLBACK_SECS: f64 = 0.2;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LagKind {
     Input,
+    InputDispatch,
     Output,
     Highlight,
 }
@@ -31,6 +29,7 @@ impl LagKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Input => "input",
+            Self::InputDispatch => "input_dispatch",
             Self::Output => "output",
             Self::Highlight => "highlight",
         }
@@ -39,7 +38,7 @@ impl LagKind {
     /// Spike threshold in ms.
     pub fn threshold_ms(self) -> f64 {
         match self {
-            Self::Input => 60.0,
+            Self::Input | Self::InputDispatch => 60.0,
             Self::Output | Self::Highlight => 120.0,
         }
     }
@@ -151,10 +150,12 @@ impl KindState {
 #[derive(Debug, Clone)]
 pub struct LatencyTracker {
     input: KindState,
+    input_dispatch: KindState,
     output: KindState,
     highlight: KindState,
     pending_input_at: Option<f64>,
     pending_output_at: Option<f64>,
+    hidden_output_dropped_count: u64,
     timeline: Vec<LagEvent>,
 }
 
@@ -168,10 +169,12 @@ impl LatencyTracker {
     pub fn new() -> Self {
         Self {
             input: KindState::new(),
+            input_dispatch: KindState::new(),
             output: KindState::new(),
             highlight: KindState::new(),
             pending_input_at: None,
             pending_output_at: None,
+            hidden_output_dropped_count: 0,
             timeline: Vec::new(),
         }
     }
@@ -179,6 +182,7 @@ impl LatencyTracker {
     fn state(&self, kind: LagKind) -> &KindState {
         match kind {
             LagKind::Input => &self.input,
+            LagKind::InputDispatch => &self.input_dispatch,
             LagKind::Output => &self.output,
             LagKind::Highlight => &self.highlight,
         }
@@ -187,6 +191,7 @@ impl LatencyTracker {
     fn state_mut(&mut self, kind: LagKind) -> &mut KindState {
         match kind {
             LagKind::Input => &mut self.input,
+            LagKind::InputDispatch => &mut self.input_dispatch,
             LagKind::Output => &mut self.output,
             LagKind::Highlight => &mut self.highlight,
         }
@@ -197,34 +202,63 @@ impl LatencyTracker {
         self.pending_input_at = Some(now);
     }
 
-    /// PTY output arrived: ends a pending input measure and starts an
-    /// output measure (`recordInputLatencyIfNeeded`, `markOutputLatencyStart`).
-    /// Returns a spike to log, if any.
+    /// Records the synchronous terminal handler duration through PTY writer
+    /// queue submission. This is separate from input-to-output response time.
+    pub fn record_input_dispatch(&mut self, elapsed_ms: f64, now: f64) -> Option<LagEvent> {
+        self.record(LagKind::InputDispatch, elapsed_ms, now)
+    }
+
+    /// PTY output arrived and can be shown on a visible surface.
+    /// Preserves the original API and visible-output behavior.
     pub fn mark_output(&mut self, now: f64) -> Option<LagEvent> {
-        let spike = self
-            .pending_input_at
-            .take()
-            .and_then(|start| self.record(LagKind::Input, (now - start) * 1000.0, now));
-        if self.pending_output_at.is_none() {
-            self.pending_output_at = Some(now);
+        self.mark_output_for_surface(now, true)
+    }
+
+    /// PTY output arrived. Input-to-output closes for every received batch,
+    /// including hidden output; only visible output starts a paint-latency
+    /// measure. A clock-order mismatch keeps input pending rather than
+    /// converting it into a false zero-duration sample.
+    pub fn mark_output_for_surface(&mut self, now: f64, visible: bool) -> Option<LagEvent> {
+        let spike = match self.pending_input_at {
+            Some(start) if start.is_finite() && now.is_finite() && now >= start => {
+                self.pending_input_at = None;
+                self.record(LagKind::Input, (now - start) * 1000.0, now)
+            }
+            _ => None,
+        };
+        if visible {
+            if self.pending_output_at.is_none() && now.is_finite() {
+                self.pending_output_at = Some(now);
+            }
+        } else {
+            self.discard_output_as_hidden();
         }
         spike
     }
 
-    /// A frame showing the output was drawn (`recordOutputLatencyIfNeeded`).
+    /// A terminal grid paint completed for the visible surface.
     pub fn mark_rendered(&mut self, now: f64) -> Option<LagEvent> {
-        let start = self.pending_output_at.take()?;
+        let start = self.pending_output_at?;
+        if !start.is_finite() || !now.is_finite() || now < start {
+            return None;
+        }
+        self.pending_output_at = None;
         self.record(LagKind::Output, (now - start) * 1000.0, now)
     }
 
-    /// Drops an output measure no frame closed in time.
-    pub fn expire_output(&mut self, now: f64) {
-        if self
-            .pending_output_at
-            .is_some_and(|start| now - start >= OUTPUT_FALLBACK_SECS)
-        {
-            self.pending_output_at = None;
+    /// Cancels one pending visible-output measure when the surface becomes
+    /// hidden or rendering is suspended. The cancellation remains observable.
+    pub fn cancel_pending_output_as_hidden(&mut self) {
+        if self.pending_output_at.take().is_some() {
+            self.hidden_output_dropped_count = self.hidden_output_dropped_count.saturating_add(1);
         }
+    }
+
+    /// Excludes one newly received output batch that cannot be shown because
+    /// its surface is hidden, also cancelling any earlier pending visible batch.
+    pub fn discard_output_as_hidden(&mut self) {
+        self.cancel_pending_output_as_hidden();
+        self.hidden_output_dropped_count = self.hidden_output_dropped_count.saturating_add(1);
     }
 
     /// A dangerous-command highlight pass took `elapsed_ms`.
@@ -296,11 +330,27 @@ impl LatencyTracker {
     pub fn statistics(&self, kind: LagKind) -> serde_json::Value {
         let state = self.state(kind);
         let values = state.samples.values();
+        let measurement_basis = match kind {
+            LagKind::Input => {
+                "write_input entry to first subsequent PTY output batch; includes shell, CLI, and model response time"
+            }
+            LagKind::InputDispatch => {
+                "terminal view write_admitted entry to PTY writer queue submission; synchronous UI handler work only"
+            }
+            LagKind::Output => {
+                "application poller capture of a PTY output batch to terminal grid paint completion while the surface is visible; no GPU or physical presentation guarantee"
+            }
+            LagKind::Highlight => {
+                "dangerous-output highlight congestion duration supplied by its scheduler"
+            }
+        };
         serde_json::json!({
             "last_ms": state.last_ms, "average_ms": state.samples.recent_average(),
             "p50_ms": percentile(&values, 0.5), "p95_ms": percentile(&values, 0.95),
             "max_ms": values.iter().max(), "sample_count": values.len(),
-            "spike_threshold_ms": kind.threshold_ms()
+            "spike_threshold_ms": kind.threshold_ms(),
+            "measurement_basis": measurement_basis,
+            "hidden_output_dropped_count": if kind == LagKind::Output { self.hidden_output_dropped_count } else { 0 }
         })
     }
 
@@ -373,8 +423,86 @@ mod tests {
         // No pending output: nothing recorded.
         assert!(t.mark_rendered(1.0).is_none());
         t.mark_output(2.0);
-        t.expire_output(2.3);
+        t.cancel_pending_output_as_hidden();
         assert!(t.mark_rendered(2.4).is_none());
+        assert_eq!(
+            t.statistics(LagKind::Output)["hidden_output_dropped_count"],
+            1
+        );
+    }
+
+    #[test]
+    fn dispatch_is_separate_from_input_to_output_and_has_fixed_basis() {
+        let mut t = LatencyTracker::new();
+        t.record_input_dispatch(3.0, 0.003);
+        t.mark_input(0.010);
+        t.mark_output(0.510);
+        assert_eq!(t.summary(LagKind::InputDispatch), "3ms (avg 3ms)");
+        assert_eq!(t.summary(LagKind::Input), "500ms (avg 500ms)");
+        assert_eq!(
+            t.statistics(LagKind::InputDispatch)["measurement_basis"],
+            "terminal view write_admitted entry to PTY writer queue submission; synchronous UI handler work only"
+        );
+        assert_eq!(
+            t.statistics(LagKind::Input)["measurement_basis"],
+            "write_input entry to first subsequent PTY output batch; includes shell, CLI, and model response time"
+        );
+    }
+
+    #[test]
+    fn out_of_order_output_keeps_pending_input_and_visible_spikes_are_not_dropped() {
+        let mut t = LatencyTracker::new();
+        t.mark_input(2.0);
+        t.mark_output(1.0);
+        assert_eq!(t.statistics(LagKind::Input)["sample_count"], 0);
+        t.mark_output(2.01);
+        assert_eq!(t.summary(LagKind::Input), "10ms (avg 10ms)");
+
+        let mut visible = LatencyTracker::new();
+        visible.mark_output(10.0);
+        let spike = visible.mark_rendered(10.502).unwrap();
+        assert_eq!(spike.kind, LagKind::Output);
+        assert_eq!(spike.elapsed_ms, 502);
+        assert_eq!(
+            visible.statistics(LagKind::Output)["hidden_output_dropped_count"],
+            0
+        );
+    }
+
+    #[test]
+    fn hidden_output_closes_input_response_without_starting_visible_paint_latency() {
+        let mut t = LatencyTracker::new();
+        t.mark_input(1.0);
+        let spike = t.mark_output_for_surface(1.502, false).unwrap();
+        assert_eq!(spike.kind, LagKind::Input);
+        assert_eq!(spike.elapsed_ms, 502);
+        assert_eq!(t.summary(LagKind::Input), "502ms (avg 502ms)");
+        assert_eq!(t.statistics(LagKind::Input)["sample_count"], 1);
+        assert_eq!(t.statistics(LagKind::Output)["sample_count"], 0);
+        assert_eq!(
+            t.statistics(LagKind::Output)["hidden_output_dropped_count"],
+            1
+        );
+
+        // Later visible output starts its own paint measure and cannot replace
+        // the input response already closed by hidden output.
+        t.mark_output_for_surface(1.700, true);
+        assert_eq!(t.statistics(LagKind::Input)["sample_count"], 1);
+        assert_eq!(t.summary(LagKind::Input), "502ms (avg 502ms)");
+        assert!(t.mark_rendered(1.750).is_none());
+        assert_eq!(t.summary(LagKind::Output), "50ms (avg 50ms)");
+    }
+
+    #[test]
+    fn hidden_batches_cancel_pending_visible_measure_and_increment_count() {
+        let mut t = LatencyTracker::new();
+        t.mark_output(1.0);
+        t.discard_output_as_hidden();
+        assert_eq!(
+            t.statistics(LagKind::Output)["hidden_output_dropped_count"],
+            2
+        );
+        assert!(t.mark_rendered(2.0).is_none());
     }
 
     #[test]

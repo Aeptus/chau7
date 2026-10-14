@@ -15,7 +15,7 @@ use crate::workspace::TabDebugInfo;
 
 fn kind_tone(kind: LagKind) -> Tone {
     match kind {
-        LagKind::Input => Tone::Info,
+        LagKind::Input | LagKind::InputDispatch => Tone::Info,
         LagKind::Output => Tone::Accent,
         LagKind::Highlight => Tone::Warn,
     }
@@ -80,6 +80,12 @@ impl DebugConsole {
         }
         for (tab, event) in events {
             let color = ui::tone_color(kind_tone(event.kind), chrome);
+            let kind_label = match event.kind {
+                LagKind::Input => "INPUT→OUTPUT",
+                LagKind::InputDispatch => "INPUT DISPATCH",
+                LagKind::Output => "OUTPUT PAINT",
+                LagKind::Highlight => "HIGHLIGHT",
+            };
             let percentiles = match (event.p50, event.p95) {
                 (Some(p50), Some(p95)) => Some(format!("p50/p95 {p50}/{p95}ms")),
                 _ => None,
@@ -110,7 +116,7 @@ impl DebugConsole {
                                             .font_family("Menlo")
                                             .font_weight(gpui::FontWeight::SEMIBOLD)
                                             .text_color(color)
-                                            .child(event.kind.as_str().to_uppercase()),
+                                            .child(kind_label),
                                     )
                                     .child(ui::mono_line(
                                         clock_text(wall_time(event)),

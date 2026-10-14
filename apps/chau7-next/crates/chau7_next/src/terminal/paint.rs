@@ -625,9 +625,14 @@ fn underline_for(cell: &OwnedCell, color: Hsla, link_color: Hsla) -> (Option<Und
     (None, 0)
 }
 
-pub fn paint_grid(bounds: Bounds<Pixels>, state: PaintState, window: &mut Window, cx: &mut App) {
+pub fn paint_grid(
+    bounds: Bounds<Pixels>,
+    state: PaintState,
+    window: &mut Window,
+    cx: &mut App,
+) -> bool {
     if crate::hang_watchdog::render_blocked() {
-        return;
+        return false;
     }
     let mut stage =
         chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
@@ -640,7 +645,8 @@ pub fn paint_grid(bounds: Bounds<Pixels>, state: PaintState, window: &mut Window
     stage.items(state.cells.len());
     feature_profiler::measure(Feature::TerminalRender, 0, || {
         paint_grid_inner(bounds, state, window, cx)
-    })
+    });
+    true
 }
 
 fn paint_grid_inner(bounds: Bounds<Pixels>, state: PaintState, window: &mut Window, cx: &mut App) {

@@ -37,7 +37,9 @@ use chau7_next_core::shell_session::{
 };
 use chau7_next_core::work_profiler::{self, Key as WorkKey, Kind as WorkKind, Queue as WorkQueue};
 use chau7_next_core::{shell_env, shell_integration, shell_tips};
-use chau7_terminal::{Chau7Terminal, GridCopy, OutputInterrupt, graphics::ShellIntegrationEvent};
+use chau7_terminal::{
+    Chau7Terminal, GridCopy, OutputInterrupt, OutputReady, graphics::ShellIntegrationEvent,
+};
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
 use gpui::{AppContext, Context, EventEmitter, Global, Task};
@@ -48,7 +50,7 @@ use crate::monitoring::session::{SessionMonitor, shell_ai_event};
 use crate::platform::process as procinfo;
 use crate::settings::{ActivePollingRateCap, BellSound, Settings};
 
-const PTY_READINESS_MAX_WAIT_MS: u64 = 200;
+const PTY_READINESS_MAX_WAIT_MS: u64 = 1_000;
 
 /// App-scoped fixture policy: production shell construction and the real PTY
 /// writer remain intact, while native output is driven by the test scheduler.
@@ -620,11 +622,17 @@ impl TerminalSession {
                             "pty_poll",
                             WorkQueue::Background,
                         );
-                        let _ready = work_profiler::measure(wait_key, || {
+                        let ready = work_profiler::measure(wait_key, || {
                             readiness.wait(Duration::from_millis(PTY_READINESS_MAX_WAIT_MS))
                         });
                         if stop.load(Ordering::Acquire) {
                             break;
+                        }
+                        // Readiness wakes for output, close and explicit
+                        // interrupts. A timeout needs no native poll or output
+                        // extraction, eliminating idle parser-lock work.
+                        if ready == OutputReady::Timeout {
+                            continue;
                         }
                         let visibility = profile_memory
                             .get()
@@ -969,12 +977,11 @@ impl TerminalSession {
                 1,
                 false,
             );
-            // Output latency runs from the bytes' arrival to the frame that
-            // shows them (`mark_frame_drawn`); a measure no frame closed
-            // within 0.2 s (hidden tab) is dropped first.
+            // Start visible-render latency only when this output can appear
+            // on the surface. Hidden batches remain explicitly counted.
+            let visible = self.restore_surface_visible() && !self.is_render_suspended();
             let mut latency = self.latency.borrow_mut();
-            latency.expire_output(clock(Instant::now()));
-            let spike = latency.mark_output(clock(at));
+            let spike = latency.mark_output_for_surface(clock(at), visible);
             drop(latency);
             if let Some(spike) = spike {
                 self.log_lag(&spike);
@@ -1776,8 +1783,11 @@ impl TerminalSession {
     fn sync_surface_clock(&self) {
         if self.restore_surface_visible() {
             self.restore_hidden_since.set(None);
-        } else if self.restore_hidden_since.get().is_none() {
-            self.restore_hidden_since.set(Some(Instant::now()));
+        } else {
+            if self.restore_hidden_since.get().is_none() {
+                self.restore_hidden_since.set(Some(Instant::now()));
+            }
+            self.latency.borrow_mut().cancel_pending_output_as_hidden();
         }
     }
     pub(crate) fn prewarm_surface(&mut self, hovered: bool, cx: &mut Context<Self>) {
@@ -2018,9 +2028,9 @@ impl TerminalSession {
         cx.emit(SessionEvent::Bell);
     }
 
-    /// A frame of this session was drawn: closes the output latency measure
-    /// (`recordOutputLatencyIfNeeded`, TRM-062).
-    pub fn mark_frame_drawn(&self) {
+    /// Terminal grid painting completed: closes visible output latency.
+    /// This does not claim GPU completion or physical display presentation.
+    pub fn mark_frame_paint_completed(&self) {
         let spike = self
             .latency
             .borrow_mut()
@@ -2042,13 +2052,25 @@ impl TerminalSession {
         }
     }
 
-    /// Input and output lag (average, else last) for `isCpuSaturated`.
+    /// Input dispatch and visible output paint lag for UI saturation checks.
+    /// Input-to-output includes CLI/model wait and is intentionally excluded.
     pub fn ui_lag_ms(&self) -> (Option<i64>, Option<i64>) {
         let latency = self.latency.borrow();
         (
-            latency.lag_ms(chau7_next_core::shell_latency::LagKind::Input),
+            latency.lag_ms(chau7_next_core::shell_latency::LagKind::InputDispatch),
             latency.lag_ms(chau7_next_core::shell_latency::LagKind::Output),
         )
+    }
+
+    /// Records the synchronous terminal view dispatch path through PTY enqueue.
+    pub fn record_input_dispatch(&self, started_at: Instant) {
+        let spike = self.latency.borrow_mut().record_input_dispatch(
+            started_at.elapsed().as_secs_f64() * 1000.0,
+            clock(Instant::now()),
+        );
+        if let Some(spike) = spike {
+            self.log_lag(&spike);
+        }
     }
 
     fn log_lag(&self, spike: &LagEvent) {
@@ -2197,7 +2219,8 @@ impl TerminalSession {
         self.pending_input
             .borrow_mut()
             .push((bytes.to_vec(), echo_disabled));
-        self.write(bytes);
+        self.poll_interrupt.wake();
+        self.writer.write_input(bytes.to_vec());
     }
 
     /// Text shown in the terminal without going through the PTY
@@ -2383,6 +2406,9 @@ impl TerminalSession {
         if self.render_suspended.swap(suspended, Ordering::Relaxed) != suspended {
             self.poll_interrupt.wake();
             let _ = self.refresh_wake.unbounded_send(RefreshWake::Cadence);
+        }
+        if suspended {
+            self.latency.borrow_mut().cancel_pending_output_as_hidden();
         }
         self.memory.set_tui(self.is_ai_running());
     }

@@ -8,7 +8,7 @@ mod input;
 mod mouse;
 
 use std::ops::Range;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chau7_next_core::key_encoding;
 use gpui::{
@@ -590,11 +590,13 @@ impl TerminalView {
     }
 
     fn write_admitted(&mut self, bytes: &[u8], broadcast: bool, cx: &mut Context<Self>) {
+        let dispatch_started = Instant::now();
         let session = self.session.read(cx);
         session.scroll_to_bottom();
         session.selection_clear();
         crate::platform::services::clear_selection_for_session(session.id);
         session.write_input(bytes);
+        session.record_input_dispatch(dispatch_started);
         self.cursor_on = true;
         self.note_user_input(bytes, cx);
         if broadcast {
@@ -789,8 +791,6 @@ impl Render for TerminalView {
                                 v.bounds = Some(bounds);
                                 let mut inputs = inputs;
                                 let s = session.read(cx);
-                                // This frame shows the output (output latency).
-                                s.mark_frame_drawn();
                                 inputs.danger_rows = v.danger_rows_for_frame(s, Settings::get(cx));
                                 paint::prepaint(s, inputs, &mut v.overlays)
                             })
@@ -802,8 +802,11 @@ impl Render for TerminalView {
                             ElementInputHandler::new(bounds, view.clone()),
                             cx,
                         );
-                        paint::paint_grid(bounds, state, window, cx);
-                        view.read(cx).session.read(cx).mark_restore_presented();
+                        if paint::paint_grid(bounds, state, window, cx) {
+                            let session = view.read(cx).session.read(cx);
+                            session.mark_frame_paint_completed();
+                            session.mark_restore_presented();
+                        }
                     },
                 )
                 .size_full(),

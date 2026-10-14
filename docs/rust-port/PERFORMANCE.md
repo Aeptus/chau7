@@ -280,3 +280,50 @@ the existing bounded in-memory token-rate store and is available through
 and Save Latest Snapshot controls. It preserves each reading's source and
 update timestamp; retained readings may be stale. Capture performs no transcript,
 SQLite or provider query.
+
+
+## Latency diagnosis and session correlation (2026-10-14)
+
+Read the terminal measurements separately:
+
+- Input response runs from input submission to the next PTY output. It includes
+  the CLI's own processing and does not prove that those bytes echo the input.
+  It is neither model time to first token nor a pure UI responsiveness measure.
+- Input dispatch measures the app's input handling and enqueue work. Background
+  PTY queue wait (`pty_input_queue`) and native send calls
+  (`pty_input_send_bytes`) are separate numeric work-profile entries. Send-call
+  completion is not an OS acknowledgement; aborted and rejected sends have
+  separate `pty_input_send_aborted` and `pty_input_enqueue_failure` entries.
+- Output latency ends after GPUI terminal paint work. This is a CPU-side boundary;
+  GPU completion, compositor completion and physical display presentation remain
+  unmeasured. Hidden time must not become a visible-render latency sample.
+
+The PTY reader waits on output readiness, disconnection and explicit interrupts.
+Its fallback deadline bounds health checks; it is not a delay before reading
+new output. Idle timeout wakeups do not require an empty parser drain. Closing,
+focus and input retain their explicit wakeups.
+
+The `full_buffer_ansi` / `autosave` main-thread work entry reports exported byte
+and call counts. Compare these with background `save_restore_transaction` work
+to identify repeated captures without changed persisted contexts. No terminal
+text is included. No restore cache is keyed only to PTY bytes: resize, clear,
+replay and retention compaction can also change the saved buffer.
+
+Provider session association must use the owning tab when available. A folder
+match alone cannot distinguish simultaneous runs in the same repository, and
+an old history record must not attach to a newer run. Missing provider identity
+or transcript data remains missing; PTY fallback preserves readable content but
+does not manufacture detailed turns, tokens, cost or generation speed.
+
+The performance export includes aggregate `telemetry.extraction` counters for
+provider availability, extraction attempts/successes, missing session identity,
+missing transcripts, PTY/terminal fallbacks, and associated/ambiguous/unmatched/
+conflicting/unresolved-tab identity events. These counters contain no provider
+identifiers, paths or terminal text. Each stored run records its extraction
+outcome and fallback source independently of the token-metric provenance.
+
+Recent ended-run identity matching is bounded to 64 records for two minutes.
+Events must match the provider and exact CWD, and their timestamp must fit the
+run window. Explicit unresolved tabs cannot fall back to CWD matching. Owned
+Claude SessionStart identity retries are bounded to five seconds and 20 attempts;
+they do not replay notifications, install hooks or alter monitoring preferences.

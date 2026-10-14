@@ -29,6 +29,7 @@ use chau7_next_core::telemetry::recorder::TelemetryRecorder;
 use chau7_next_core::telemetry::run::{TelemetryRun, TelemetryRunFilter};
 use chau7_next_core::telemetry::store::{StoreReadiness, TelemetryStore};
 use chau7_next_core::telemetry::turn::{TelemetryToolCall, TelemetryTurn};
+use chrono::{DateTime, Utc};
 use gpui::{App, Global};
 use parking_lot::Mutex;
 use serde_json::{Map, Value};
@@ -374,9 +375,25 @@ pub fn diagnostics(cx: &App) -> Value {
     let Some(recorder) = recorder(cx) else {
         return serde_json::json!({"store_state":"unavailable", "writer":null, "store_failures":null,
             "snapshots":null, "token_rates_by_tab":token_rates_by_tab,
+            "extraction":null,
             "maintenance":usage::maintenance_diagnostics(cx)});
     };
     let writer = recorder.writer_status();
+    let extraction = recorder.extraction_diagnostics();
+    let extraction = serde_json::json!({
+        "available_providers":extraction.available_providers,
+        "attempts":extraction.attempts,
+        "succeeded":extraction.succeeded,
+        "missing_session":extraction.missing_session,
+        "transcript_missing":extraction.transcript_missing,
+        "pty_fallback":extraction.pty_fallback,
+        "terminal_fallback":extraction.terminal_fallback,
+        "identity_associated":extraction.identity_associated,
+        "identity_ambiguous":extraction.identity_ambiguous,
+        "identity_unmatched":extraction.identity_unmatched,
+        "identity_conflict":extraction.identity_conflict,
+        "identity_explicit_tab_unresolved":extraction.identity_explicit_tab_unresolved,
+    });
     let snapshots = cx.try_global::<ReadSnapshots>().map(|s| {
         serde_json::json!({
             "hover":s.hover.diagnostics(), "analytics":s.analytics.diagnostics(),
@@ -391,7 +408,51 @@ pub fn diagnostics(cx: &App) -> Value {
             "accepting":writer.accepting,"last_error":writer.last_error,
             "acknowledgement":"admission is queued; completed includes failed jobs; failed is separate"},
         "snapshots":snapshots,"token_rates_by_tab":token_rates_by_tab,
+        "extraction":extraction,
         "maintenance":usage::maintenance_diagnostics(cx)})
+}
+
+fn terminal_tab_for_identity_event(
+    public_tab: uuid::Uuid,
+    provider: &str,
+    directory: &str,
+    session_id: &str,
+    cx: &mut App,
+) -> Option<String> {
+    let mut candidates = Vec::new();
+    for window in crate::mcp::windows::windows(cx) {
+        let workspace = window.workspace.read(cx);
+        let Some(tab) = workspace.mcp_find(public_tab) else {
+            continue;
+        };
+        let Some(panes) = workspace.mcp_panes(tab) else {
+            continue;
+        };
+        for (_, entity) in panes.read(cx).pane_sessions(cx) {
+            let session = entity.read(cx);
+            let shell = session.shell();
+            let observed_provider = shell.effective_provider();
+            let provider_matches = observed_provider.as_deref().is_some_and(|observed| {
+                identity_provider_key(observed) == identity_provider_key(provider)
+            });
+            let observed_session = shell.ai_session_id();
+            if provider_matches
+                && shell.current_directory() == directory
+                && observed_session.is_none_or(|observed| observed == session_id)
+            {
+                candidates.push(session.tab_identifier.clone());
+            }
+        }
+    }
+    (candidates.len() == 1).then(|| candidates.remove(0))
+}
+
+fn identity_provider_key(provider: &str) -> String {
+    match provider.trim().to_ascii_lowercase().as_str() {
+        "claude" | "claude code" | "claude_code" | "anthropic" => "claude".into(),
+        "codex" | "openai" => "codex".into(),
+        _ => String::new(),
+    }
 }
 
 #[cfg(test)]
@@ -477,6 +538,51 @@ mod performance_diagnostics_tests {
                 "updatedAt",
             ]
         );
+    }
+
+    #[gpui::test]
+    fn performance_diagnostics_exports_only_bounded_extraction_counts(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let snapshot = cx.update(|app| {
+            install_recorder(app);
+            diagnostics(app)
+        });
+        let extraction = &snapshot["extraction"];
+        let mut keys = extraction
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec![
+                "attempts",
+                "available_providers",
+                "identity_ambiguous",
+                "identity_associated",
+                "identity_conflict",
+                "identity_explicit_tab_unresolved",
+                "identity_unmatched",
+                "missing_session",
+                "pty_fallback",
+                "succeeded",
+                "terminal_fallback",
+                "transcript_missing",
+            ]
+        );
+        assert_eq!(extraction["available_providers"], 0);
+        assert_eq!(extraction["attempts"], 0);
+        assert_eq!(extraction["missing_session"], 0);
+        assert_eq!(extraction["transcript_missing"], 0);
+        assert_eq!(extraction["pty_fallback"], 0);
+        assert_eq!(extraction["terminal_fallback"], 0);
+        let encoded = extraction.to_string();
+        assert!(!encoded.contains('/'));
+        assert!(!encoded.contains("command"));
+        assert!(!encoded.contains("path"));
     }
 }
 
@@ -730,7 +836,7 @@ pub fn connect(cx: &mut App) {
     );
 
     // TEL-003: session ids from Claude Code hooks and the Codex history.
-    crate::ai::events_out::subscribe(cx, move |event, _notify, _cx| {
+    crate::ai::events_out::subscribe(cx, move |event, _notify, cx| {
         let (Some(session), Some(directory)) = (&event.session_id, &event.directory) else {
             return;
         };
@@ -742,8 +848,28 @@ pub fn connect(cx: &mut App) {
             AiEventSource::CODEX => "codex",
             _ => return,
         };
-        if let Err(error) = recorder.update_session_id_by_cwd(provider, directory, session) {
-            log::warn!("Telemetry hook identity update rejected: {error}");
+        let Ok(observed_at) = DateTime::parse_from_rfc3339(&event.ts) else {
+            return;
+        };
+        let observed_at = observed_at.with_timezone(&Utc);
+        let explicit_tab = event.tab_id.is_some();
+        let terminal_tab = event
+            .tab_id
+            .and_then(|tab| terminal_tab_for_identity_event(tab, provider, directory, session, cx));
+        let unresolved_explicit_tab = explicit_tab && terminal_tab.is_none();
+        match recorder.associate_session_id_for_event(
+            provider,
+            directory,
+            terminal_tab.as_deref(),
+            unresolved_explicit_tab,
+            session,
+            observed_at,
+        ) {
+            Ok(outcome) if outcome != chau7_next_core::telemetry::recorder::IdentityAssociation::AlreadyAssociated => {
+                log::debug!("Telemetry identity association: {}", outcome.as_str());
+            }
+            Ok(_) => {}
+            Err(error) => log::warn!("Telemetry identity update rejected: {error}"),
         }
     });
 }

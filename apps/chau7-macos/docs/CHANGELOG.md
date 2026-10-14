@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Separate terminal input dispatch from CLI response time, measure output through
+  CPU paint completion, and prevent hidden output from inflating render latency.
+- Reduce empty PTY parser polling while retaining immediate output and shutdown
+  wakeups, and report PTY queue/send-call and autosave capture costs numerically.
+- Correlate AI telemetry with its owning tab and provider session, reject stale
+  or ambiguous folder matches, and retain explicit fallback provenance.
 - Refresh AppKit Workspace state between isolated native focus observations so
   companion-to-fullscreen activation checks do not poll a stale foreground PID.
 - Anchor native fullscreen traffic lights in a small top-left host so AppKit
