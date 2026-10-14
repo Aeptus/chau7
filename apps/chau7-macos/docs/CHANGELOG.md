@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Preserve user directory names when localizing Full Disk Access alerts.
+- Preserve user directory names when localizing Full Disk Access alerts,
+  using translated string slices for native prompt buttons.
 
 - Use the compiled app identity in production menus, windows, permission guidance,
   notification warnings and localized resources while retaining Next beta labels.

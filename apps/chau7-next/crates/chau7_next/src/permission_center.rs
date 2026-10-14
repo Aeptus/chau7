@@ -211,7 +211,7 @@ fn present_alert(status: FullDiskAccess, child_root: Option<&str>, now: f64, cx:
             PromptLevel::Warning,
             &title,
             Some(&detail),
-            &[&open, &later],
+            &[open.as_str(), later.as_str()],
             cx,
         )
     });
