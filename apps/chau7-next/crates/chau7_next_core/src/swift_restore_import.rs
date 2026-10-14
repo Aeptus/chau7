@@ -265,10 +265,9 @@ pub fn prepare_swift_import(
     } else if let Some(dictionary) = preferences.as_ref() {
         let windows = read_index_windows(dictionary)?;
         (windows, false)
-    } else if bundle.is_some() {
+    } else if let Some(envelope) = bundle.as_ref() {
         // With no published index token, the bundle is the only restorable
         // source. This also handles older bundles without transaction tokens.
-        let envelope = bundle.as_ref().expect("bundle exists");
         (envelope.windows.clone(), true)
     } else {
         return Ok(None);
@@ -852,7 +851,7 @@ impl Converter {
                     .as_ref()
                     .and_then(|_| metadata.as_ref().map(|meta| meta.session_id.clone())),
                 ai_resume_command: safe_resume,
-                ai_session_id_source: metadata.as_ref().and_then(|_| source),
+                ai_session_id_source: metadata.as_ref().and(source),
                 agent_launch_command: identity
                     .and_then(|item| item.agent_launch_command.clone())
                     .or_else(|| state.and_then(|item| item.agent_launch_command.clone()))

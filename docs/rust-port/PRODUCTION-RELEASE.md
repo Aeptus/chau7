@@ -90,9 +90,11 @@ notarization, stapling, package checksums and provenance. Ad-hoc local signing i
 insufficient for a public stable release.
 
 Prepare `0.6.0-rc.1` as a candidate once these checks pass. Keep existing stable
-tag behavior until migration and the candidate have release acceptance. Publish
-the stable tag and update the website's download availability together only
-after the candidate is accepted. Never advertise an unreleased artifact as the
+tag behavior until migration and the candidate have release acceptance. The
+current `v*` tag workflow still builds Swift. Before creating the Rust stable
+tag, land and verify the explicit stable-pipeline switch; creating a new tag
+alone does not select the Rust app. Publish the stable tag and update the
+website's download availability together only after the candidate is accepted. Never advertise an unreleased artifact as the
 stable download. Keep Linux and Windows support claims tied to actual platform
 acceptance rather than compilation alone.
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the Swift restore converter clean under strict Rust 1.99 Clippy checks.
+
 - Decode Swift restoration identifier and preview fields using their exact
   persisted JSON names, and isolate URL handling by production or Next channel.
 
