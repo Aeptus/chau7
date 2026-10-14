@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Borrow retained AppKit application handles in native focus timeout diagnostics.
 - Switch between two uniquely owned native fixture apps when checking inactive
   fullscreen controls, and retain bounded focus diagnostics on timeout.
 - Preserve live cursor columns and meaningful blank cursor rows during restore,

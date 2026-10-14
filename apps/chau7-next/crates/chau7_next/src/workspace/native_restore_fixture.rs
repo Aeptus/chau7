@@ -2312,7 +2312,7 @@ async fn verify_traffic_lights_in_real_fullscreen(
         let inactive_result = match inactive_wait {
             Err(error) => {
                 let mut diagnostic = fullscreen_focus_diagnostic(
-                    application,
+                    &application,
                     native,
                     resigned.completed(),
                     focus_yield_ack_path.exists(),
@@ -2329,7 +2329,7 @@ async fn verify_traffic_lights_in_real_fullscreen(
                 let composition =
                     traffic_light_composition(native, "fullscreen after app deactivation");
                 let mut diagnostic = fullscreen_focus_diagnostic(
-                    application,
+                    &application,
                     native,
                     resigned.completed(),
                     focus_yield_ack_path.exists(),
@@ -2391,7 +2391,7 @@ async fn verify_traffic_lights_in_real_fullscreen(
         .await;
         if let Err(reactivation_error) = reactivation_result {
             let mut diagnostic = fullscreen_focus_diagnostic(
-                application,
+                &application,
                 native,
                 resigned.completed(),
                 focus_yield_ack_path.exists(),
