@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Guard fullscreen control installation against missing content views and use
+  the pinned objc2 retained-object APIs.
 - Keep real AppKit traffic lights visible in Next fullscreen content and restore
   their native titlebar placement on exit; exercise an actual fullscreen Space
   and capture native control composition in isolated acceptance.

@@ -904,9 +904,10 @@ impl MacWindowState {
             .as_ref()
             .zip(live_buttons.as_ref())
             .is_some_and(|(overlay, buttons)| {
-                overlay.buttons.close.as_ptr() != buttons.close.as_ptr()
-                    || overlay.buttons.minimize.as_ptr() != buttons.minimize.as_ptr()
-                    || overlay.buttons.zoom.as_ptr() != buttons.zoom.as_ptr()
+                Retained::as_ptr(&overlay.buttons.close) != Retained::as_ptr(&buttons.close)
+                    || Retained::as_ptr(&overlay.buttons.minimize)
+                        != Retained::as_ptr(&buttons.minimize)
+                    || Retained::as_ptr(&overlay.buttons.zoom) != Retained::as_ptr(&buttons.zoom)
             });
 
         if replace_overlay {
@@ -955,6 +956,10 @@ impl MacWindowState {
             return;
         }
 
+        let Some(content_view) = (unsafe { self.native_window().contentView() }) else {
+            return;
+        };
+
         self.fullscreen_traffic_light_overlay = Some(FullscreenTrafficLightOverlay {
             button_container,
             titlebar_container,
@@ -966,14 +971,13 @@ impl MacWindowState {
         });
 
         let overlay = self.fullscreen_traffic_light_overlay.as_ref().unwrap();
-        let content_view = self.native_window().contentView();
-        let host = content_view.as_ptr() as id;
+        let host = Retained::as_ptr(&content_view) as id;
         let native_view = self.native_view.as_ptr() as id;
         unsafe {
             for button in [
-                overlay.buttons.close.as_ptr() as id,
-                overlay.buttons.minimize.as_ptr() as id,
-                overlay.buttons.zoom.as_ptr() as id,
+                Retained::as_ptr(&overlay.buttons.close) as id,
+                Retained::as_ptr(&overlay.buttons.minimize) as id,
+                Retained::as_ptr(&overlay.buttons.zoom) as id,
             ] {
                 let _: () = msg_send![button, removeFromSuperview];
                 let _: () = msg_send![
@@ -996,18 +1000,21 @@ impl MacWindowState {
             return;
         };
 
-        let content_view = self.native_window().contentView();
-        let host = content_view.as_ptr() as id;
+        let Some(content_view) = (unsafe { self.native_window().contentView() }) else {
+            return;
+        };
+        let host = Retained::as_ptr(&content_view) as id;
         let native_view = self.native_view.as_ptr() as id;
         for button in [
             &overlay.buttons.close,
             &overlay.buttons.minimize,
             &overlay.buttons.zoom,
         ] {
-            let already_in_content_view = unsafe { button.superview() }
-                .is_some_and(|superview| superview.as_ptr() == content_view.as_ptr());
+            let already_in_content_view = unsafe { button.superview() }.is_some_and(|superview| {
+                Retained::as_ptr(&superview) == Retained::as_ptr(&content_view)
+            });
             if !already_in_content_view {
-                let button = button.as_ptr() as id;
+                let button = Retained::as_ptr(button) as id;
                 unsafe {
                     let _: () = msg_send![button, removeFromSuperview];
                     let _: () = msg_send![
@@ -1046,9 +1053,9 @@ impl MacWindowState {
 
         unsafe {
             for button in [
-                overlay.buttons.close.as_ptr() as id,
-                overlay.buttons.minimize.as_ptr() as id,
-                overlay.buttons.zoom.as_ptr() as id,
+                Retained::as_ptr(&overlay.buttons.close) as id,
+                Retained::as_ptr(&overlay.buttons.minimize) as id,
+                Retained::as_ptr(&overlay.buttons.zoom) as id,
             ] {
                 let _: () = msg_send![button, setHidden: NO];
                 let _: () = msg_send![button, setAlphaValue: 1.0f64];
@@ -1066,9 +1073,9 @@ impl MacWindowState {
         };
         unsafe {
             for button in [
-                overlay.buttons.close.as_ptr() as id,
-                overlay.buttons.minimize.as_ptr() as id,
-                overlay.buttons.zoom.as_ptr() as id,
+                Retained::as_ptr(&overlay.buttons.close) as id,
+                Retained::as_ptr(&overlay.buttons.minimize) as id,
+                Retained::as_ptr(&overlay.buttons.zoom) as id,
             ] {
                 let _: () = msg_send![button, removeFromSuperview];
             }
@@ -1080,12 +1087,12 @@ impl MacWindowState {
             return;
         };
 
-        let button_container = overlay.button_container.as_ptr() as id;
+        let button_container = Retained::as_ptr(&overlay.button_container) as id;
         unsafe {
             for button in [
-                overlay.buttons.close.as_ptr() as id,
-                overlay.buttons.minimize.as_ptr() as id,
-                overlay.buttons.zoom.as_ptr() as id,
+                Retained::as_ptr(&overlay.buttons.close) as id,
+                Retained::as_ptr(&overlay.buttons.minimize) as id,
+                Retained::as_ptr(&overlay.buttons.zoom) as id,
             ] {
                 let _: () = msg_send![button, removeFromSuperview];
                 let _: () = msg_send![

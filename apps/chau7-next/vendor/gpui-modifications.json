@@ -374,12 +374,12 @@
         },
         {
           "kind": "semantic",
-          "description": "Keep AppKit traffic lights visible during native fullscreen by moving the original buttons into the content view before AppKit removes the titlebar, restoring their original hierarchy on exit or failed entry, repositioning them through fullscreen resize and activation, and retaining native layout for windows without custom titlebars or valid initial button geometry",
+          "description": "Keep AppKit traffic lights visible during native fullscreen by moving the original buttons into the content view before AppKit removes the titlebar, restoring their original hierarchy on exit or failed entry, repositioning them through fullscreen resize and activation, and retaining native layout for windows without custom titlebars or valid initial button geometry; adapt retained pointer access and optional content-view handling to objc2 0.6",
           "before_sha256": "6765797cb93be62533dbd06faa005ed5ad4e518542410f8e5ed906a775d293f8",
-          "after_sha256": "5a87c5c1085749b4e155b9d6c7f569f0033414693ee2218f9dda46ee2356fc89"
+          "after_sha256": "e3d94cdcb53091c52efdf3ce60a730d0bddecdd679f1071ee60db7b3a1050346"
         }
       ],
-      "current_sha256": "5a87c5c1085749b4e155b9d6c7f569f0033414693ee2218f9dda46ee2356fc89",
+      "current_sha256": "e3d94cdcb53091c52efdf3ce60a730d0bddecdd679f1071ee60db7b3a1050346",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"
