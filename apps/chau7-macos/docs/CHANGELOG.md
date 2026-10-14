@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduce empty PTY parser polling while retaining immediate output and shutdown
   wakeups, and report PTY queue/send-call and autosave capture costs numerically.
 - Correlate AI telemetry with its owning tab and provider session, reject stale
-  or ambiguous folder matches, and retain explicit fallback provenance.
+  or ambiguous folder matches, retain explicit fallback provenance, and retry
+  owned Claude start identities with bounded process-detection retries.
 - Refresh AppKit Workspace state between isolated native focus observations so
   companion-to-fullscreen activation checks do not poll a stale foreground PID.
 - Anchor native fullscreen traffic lights in a small top-left host so AppKit

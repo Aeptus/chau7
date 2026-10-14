@@ -458,27 +458,28 @@ fn handle_claude_event(
     } else {
         crate::terminal::session::adopt_claude_hook_identity(&event, transcript_owned, cx)
     };
-    if seen_start == Some(true) && owned_tab.is_none() {
-        if let Some(tab_identifier) = retry_target {
-            let key = ClaudeStartKey {
-                tab_identifier,
-                session_id: event.session_id.trim().to_string(),
-            };
-            let hub = cx.global_mut::<AiHub>();
-            if hub.pending_claude_starts.len() < MAX_PENDING_CLAUDE_STARTS
-                && !hub
-                    .pending_claude_starts
-                    .iter()
-                    .any(|pending| pending.key == key)
-            {
-                hub.pending_claude_starts.push_back(PendingClaudeStart {
-                    key,
-                    cwd: event.cwd.clone(),
-                    timestamp: event.timestamp,
-                    started_at: Instant::now(),
-                    attempts: 0,
-                });
-            }
+    if seen_start == Some(true)
+        && owned_tab.is_none()
+        && let Some(tab_identifier) = retry_target
+    {
+        let key = ClaudeStartKey {
+            tab_identifier,
+            session_id: event.session_id.trim().to_string(),
+        };
+        let hub = cx.global_mut::<AiHub>();
+        if hub.pending_claude_starts.len() < MAX_PENDING_CLAUDE_STARTS
+            && !hub
+                .pending_claude_starts
+                .iter()
+                .any(|pending| pending.key == key)
+        {
+            hub.pending_claude_starts.push_back(PendingClaudeStart {
+                key,
+                cwd: event.cwd.clone(),
+                timestamp: event.timestamp,
+                started_at: Instant::now(),
+                attempts: 0,
+            });
         }
     }
     // The agent runtime first, so a runtime session binds this Claude
@@ -522,7 +523,7 @@ fn claude_start_target_is_unique(
     event: &ClaudeCodeEvent,
     transcript_owned: bool,
     target_tab_identifier: Uuid,
-    cx: &App,
+    cx: &mut App,
 ) -> bool {
     let Some(home) = cx
         .try_global::<AppData>()
