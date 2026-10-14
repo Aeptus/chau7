@@ -112,6 +112,36 @@ session format. Keep the Rust profile for diagnosis; do not merge it into the
 Swift store. Rollback does not reverse external AI-provider activity performed
 after migration.
 
+## Local preparation checkpoint (2026-10-14)
+
+Application/package source: `350d851b457e31a021474a8c174fc9b923449838`. The
+candidate receipt records this exact clean source, not later documentation-only
+commits. Both Next and production workspace configurations pass 3,157 tests with
+two ignored each, strict Clippy and the static/release packaging contracts.
+
+One fast optimized `0.6.0-rc.1` production package completed in 138 seconds.
+All seven executable hashes/signatures, arm64 architecture, bundle metadata,
+notices and the deep app signature verify. Signing is ad-hoc only; Developer ID
+signing, notarization, installation and public release have not occurred.
+
+The read-only Swift inspection found two windows, 25 tabs and 25 panes with no
+terminal context truncation. One invalid AI resume identity and five tab preview
+contexts are explicitly reported as omitted. No real import was applied. Swift
+and Next profiles remain readable, and the original Swift process remained open.
+All Swift application build inputs are byte-identical to previously validated
+source `778010757101fe75c5bb23e080e08e4be92a969d`; only its docs changed. The
+broad local Python quality gate has an unrelated missing `mcp` dependency and is
+not claimed as passing. New-head GitHub CI is tracked separately in
+[PR #229](https://github.com/Aeptus/chau7/pull/229/checks).
+
+Cleanup removed 28 named unused generated directories, totaling 22.68 GiB of
+allocated blocks. The original profiles, current and rollback apps, private
+receipts, unknown files and warm fast cache were preserved. The official website
+copy is prepared in [website PR #2](https://github.com/Aeptus/chau7-website/pull/2),
+not deployed. Runtime restoration, graphical source selection, stable CLI
+installation, preference/Keychain acceptance and the stable-pipeline switch
+remain release gates.
+
 ## Required release evidence
 
 - Exact source SHA and clean-tree receipt for all artifacts.

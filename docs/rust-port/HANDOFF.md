@@ -4,14 +4,30 @@
 
 The Rust/GPUI production transition is in preparation. The published stable
 Chau7 app remains the SwiftUI/AppKit build; PR #229 is still a draft and no Rust
-production release is claimed. The documentation baseline is feature source
-`21a57d003f2a85897430f7139d8c60f15e11aaf5`. Historical checks below are tied
-to their own source revisions and do not validate this baseline or authorize a
-release.
+production release is claimed. The validated application and package source is
+`350d851b457e31a021474a8c174fc9b923449838`. Later documentation-only commits do
+not change the identity of that artifact. Historical checks below remain tied
+to their own revisions and cannot authorize a release.
+
+Both default Next and production workspace configurations pass 3,157 tests
+with two ignored in each, strict Clippy, formatting and the relevant static and
+packaging contracts. The fast production candidate `0.6.0-rc.1` packages in
+138 seconds; all seven executable hashes, arm64 architecture, individual and
+deep bundle signatures, production metadata and license notices verify. It is
+ad-hoc signed, not notarized or publicly distributed.
+
+A pure core inspector read the current Swift snapshot without importing it:
+two windows, 25 tabs and 25 panes, with no terminal context truncation. One
+invalid AI identity and five unsupported tab preview contexts are reported and
+omitted; the source remains intact. No app was installed or launched, and the
+original Swift process remained running. Named generated artifacts totaling
+22.68 GiB of allocated blocks were removed; source profiles, rollback apps,
+private evidence, unknown original files and the warm fast cache were retained.
 
 The parity inventory records implementation coverage, not complete release
-acceptance. Exact-source release-candidate evidence, physical Mac acceptance,
-real-service integration, and migration acceptance remain open. See
+acceptance. Physical Mac acceptance, real-service integration, actual migration
+acceptance, graphical source selection, stable CLI installation, Developer ID
+signing/notarization and the stable release-pipeline switch remain open. See
 [DUAL-SHIP.md](DUAL-SHIP.md), [PARITY.md](PARITY.md), and the
 [production release guide](PRODUCTION-RELEASE.md).
 
@@ -63,13 +79,13 @@ Last updated 2026-10-14.
 
 ## 3. Status
 
-- This handoff's source baseline is `21a57d003f2a85897430f7139d8c60f15e11aaf5`;
-  no test, build, package, or release result is claimed here for that exact head.
-  Validation entries below are historical and remain scoped to their named source
-  revisions. The `f79eda39` report above is unverified in this worktree because
-  its raw receipts are unavailable. Inventory rows marked done describe
-  implementation evidence, not release readiness; physical Mac and real-service
-  acceptance remain separate.
+- The current validated application source is `350d851b457e31a021474a8c174fc9b923449838`.
+  The headless test and build-only production evidence is summarized above and
+  in [PRODUCTION-RELEASE.md](PRODUCTION-RELEASE.md). It does not satisfy runtime
+  migration, real-service or public-release acceptance. Validation entries below
+  remain historical and scoped to their named revisions; the `f79eda39` report
+  is unverified in this worktree because its raw receipts are unavailable.
+  Inventory completion continues to describe implementation, not release readiness.
 - Previous application source `8c2ef35ec39c5c3a199a9f9b199cc5f85422f847`
   (tree `6c3424440386292c1e286af67d3f27027366d9b3`) passed all 17 core
   checks: 3,059 Rust workspace tests (two ignored), 150 shared-terminal tests

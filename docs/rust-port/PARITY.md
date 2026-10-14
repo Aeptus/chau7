@@ -6,12 +6,23 @@ The Rust/GPUI production release is upcoming, not published. The current stable
 install and download paths remain on the SwiftUI/AppKit app until an exact-source
 release candidate and migration are accepted.
 
-The documentation baseline is feature source
-`21a57d003f2a85897430f7139d8c60f15e11aaf5`; this page contains no validation
-result for that exact head. All historical checks below remain bound to their
-recorded revisions and must not be transferred to the baseline. The generated
-inventory records implementation evidence only: a row marked done does not mean
-manual Mac acceptance, production migration, or release readiness has passed.
+The current validated application and package source is
+`350d851b457e31a021474a8c174fc9b923449838`. Both Next and production workspace
+configurations pass 3,157 tests each with two ignored, strict Clippy, formatting
+and the release/static packaging contracts. The fast `0.6.0-rc.1` production
+bundle packages in 138 seconds and verifies seven executable hashes/signatures,
+arm64 architecture, production metadata, notices and its deep bundle signature.
+This is an ad-hoc signed build-only candidate, not a notarized release.
+
+The real saved Swift snapshot was inspected read-only: two windows, 25 tabs and
+25 panes, no terminal context truncation, with one invalid AI resume identity and
+five unsupported tab preview contexts reported as omitted. No actual import or
+app launch was performed. Source profiles and the running Swift app were retained.
+
+Later documentation-only commits do not reidentify this artifact. Historical
+checks below remain bound to their recorded revisions. The generated inventory
+records implementation evidence only: a row marked done does not mean manual
+Mac acceptance, production migration, or release readiness has passed.
 
 Physical Mac input/accessibility, real-service integration, production-state
 migration, and release-candidate acceptance remain open. See
