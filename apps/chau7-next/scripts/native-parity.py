@@ -214,9 +214,15 @@ def fixture_outcome(path, case):
 ACTIVATION_HANDSHAKE_PREFIX = "native_activation_handshake="
 ORDERED_FRONT_ACTIVATION_HANDSHAKE_PREFIX = "native_ordered_front_activation="
 FULLSCREEN_REACTIVATION_HANDSHAKE_PREFIX = "native_fullscreen_reactivation="
+FULLSCREEN_FOCUS_YIELD_HANDSHAKE_PREFIX = "native_fullscreen_focus_yield="
 ACTIVATION_ACK_FILENAME = "native-parity-activation.ack"
 ORDERED_FRONT_ACTIVATION_ACK_FILENAME = "native-parity-ordered-front-activation.ack"
 FULLSCREEN_REACTIVATION_ACK_FILENAME = "native-parity-fullscreen-reactivation.ack"
+FULLSCREEN_FOCUS_YIELD_ACK_FILENAME = "native-parity-fullscreen-focus-yield.ack"
+FOCUS_COMPANION_READY_FILENAME = "native-parity-focus-companion.ready"
+FOCUS_COMPANION_STOP_FILENAME = "native-parity-focus-companion.stop"
+FOCUS_COMPANION_BUNDLE_IDENTIFIER_PREFIX = "com.chau7.next.native-parity-focus-companion."
+FOCUS_COMPANION_BUNDLE_NAME = "Chau7 Next Native Focus Companion.app"
 ACTIVATION_ACK_FILENAME_BY_STAGE = {
     "ordered_front_surface_reveal": ORDERED_FRONT_ACTIVATION_ACK_FILENAME,
     "deminiaturized_surface_reveal": ACTIVATION_ACK_FILENAME,
@@ -234,6 +240,9 @@ ACTIVATION_GUARD_ENV = (
     "HISTFILE",
 )
 ACTIVATION_DEADLINE_SECONDS = 3
+FULLSCREEN_REACTIVATION_DEADLINE_SECONDS = 8
+FOCUS_COMPANION_READY_DEADLINE_SECONDS = 10
+FOCUS_COMPANION_STOP_DEADLINE_SECONDS = 5
 
 
 def _parse_activation_handshake(stderr_text, prefix, expected_stage, label):
@@ -298,11 +307,356 @@ def parse_fullscreen_reactivation_handshake(stderr_text):
     )
 
 
-def _activation_remaining(deadline):
+def parse_fullscreen_focus_yield_handshake(stderr_text):
+    return _parse_activation_handshake(
+        stderr_text,
+        FULLSCREEN_FOCUS_YIELD_HANDSHAKE_PREFIX,
+        "fullscreen_application_focus_yield",
+        "fullscreen focus-yield",
+    )
+
+
+def _activation_remaining(deadline, deadline_seconds=ACTIVATION_DEADLINE_SECONDS):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        raise TimeoutError("owned fixture activation exceeded its 3-second total deadline")
+        raise TimeoutError(f"owned fixture activation exceeded its {deadline_seconds:g}-second total deadline")
     return remaining
+
+
+def _owned_handshake_executable(bundle, bundle_identifier, handshake):
+    bundle = Path(bundle).resolve(strict=True)
+    expected_executable = (bundle / "Contents" / "MacOS" / "chau7-next").resolve(strict=True)
+    if handshake["bundle_path"] != str(bundle):
+        raise ValueError("activation handshake names a different bundle path")
+    if handshake["bundle_identifier"] != bundle_identifier:
+        raise ValueError("activation handshake names a different bundle identifier")
+    try:
+        with (bundle / "Contents" / "Info.plist").open("rb") as info_file:
+            bundle_info = plistlib.load(info_file)
+    except (OSError, plistlib.InvalidFileException) as error:
+        raise ValueError("owned bundle path has no readable identifier") from error
+    if not isinstance(bundle_info, dict) or bundle_info.get("CFBundleIdentifier") != bundle_identifier:
+        raise ValueError("owned bundle path does not have the exact handshake identifier")
+    return bundle, expected_executable, handshake["pid"]
+
+
+def frontmost_application_pid():
+    """Read the frontmost PID through NSWorkspace without System Events automation."""
+    ctypes.CDLL("/System/Library/Frameworks/AppKit.framework/AppKit")
+    runtime = ctypes.CDLL("/usr/lib/libobjc.A.dylib")
+    get_class = runtime.objc_getClass
+    get_class.argtypes = [ctypes.c_char_p]
+    get_class.restype = ctypes.c_void_p
+    register_selector = runtime.sel_registerName
+    register_selector.argtypes = [ctypes.c_char_p]
+    register_selector.restype = ctypes.c_void_p
+    send_address = ctypes.cast(runtime.objc_msgSend, ctypes.c_void_p).value
+    send_object = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(send_address)
+    send_int = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_void_p, ctypes.c_void_p)(send_address)
+    workspace = send_object(get_class(b"NSWorkspace"), register_selector(b"sharedWorkspace"))
+    application = send_object(workspace, register_selector(b"frontmostApplication"))
+    if not application:
+        return None
+    pid = send_int(application, register_selector(b"processIdentifier"))
+    return pid if pid > 0 else None
+
+
+def wait_for_frontmost_application(pid, deadline):
+    while time.monotonic() < deadline:
+        if frontmost_application_pid() == pid:
+            return pid
+        time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+    raise TimeoutError(f"owned fixture PID {pid} did not become the frontmost application")
+
+
+def prepare_focus_companion_bundle(binary, evidence):
+    root = Path(tempfile.mkdtemp(prefix="chau7-native-focus-companion-")).resolve()
+    bundle = root / FOCUS_COMPANION_BUNDLE_NAME
+    executable = bundle / "Contents" / "MacOS" / "chau7-next"
+    executable.parent.mkdir(parents=True)
+    shutil.copy2(binary, executable)
+    bundle_identifier = FOCUS_COMPANION_BUNDLE_IDENTIFIER_PREFIX + uuid.uuid4().hex
+    with (bundle / "Contents" / "Info.plist").open("xb") as plist:
+        plistlib.dump(
+            {
+                "CFBundleExecutable": "chau7-next",
+                "CFBundleIdentifier": bundle_identifier,
+                "CFBundleName": "Chau7 Next Native Focus Companion",
+                "CFBundleDisplayName": "Chau7 Next Native Focus Companion",
+                "CFBundlePackageType": "APPL",
+                "CFBundleVersion": "1",
+                "CFBundleShortVersionString": "1",
+                "NSPrincipalClass": "NSApplication",
+                "LSUIElement": False,
+                "LSBackgroundOnly": False,
+                "NSHighResolutionCapable": True,
+            },
+            plist,
+        )
+    with (evidence / "restore.focus_companion.codesign.log").open("x") as log:
+        subprocess.run(
+            ["/usr/bin/codesign", "--force", "--sign", "-", str(bundle)],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            check=True,
+        )
+        subprocess.run(
+            ["/usr/bin/codesign", "--verify", "--deep", "--strict", str(bundle)],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            check=True,
+        )
+    return root, bundle, executable.resolve(strict=True), bundle_identifier
+
+
+def focus_companion_command(bundle, stdout_path, stderr_path, environment):
+    command = ["/usr/bin/open", "-n", "-W", "--stdout", str(stdout_path), "--stderr", str(stderr_path)]
+    for name in ("HOME", "ZDOTDIR") + ACTIVATION_GUARD_ENV:
+        command.extend(["--env", name + "=" + environment[name]])
+    command.extend(
+        [
+            str(bundle),
+            "--args",
+            "--native-parity-fixture",
+            "focus-companion",
+            "--window-renderer",
+            "software",
+        ]
+    )
+    return command
+
+
+def _focus_companion_summary(state):
+    fields = (
+        "bundle_root",
+        "bundle_path",
+        "bundle_identifier",
+        "executable_path",
+        "home",
+        "ready_path",
+        "stop_path",
+        "launch_command",
+        "launcher_process_id",
+        "application_process_id",
+        "ready",
+        "stop_requested",
+        "process_exit_code",
+        "process_gone",
+        "bundle_removed",
+        "home_removed",
+        "outcome",
+    )
+    return {name: state[name] for name in fields if name in state}
+
+
+def launch_focus_companion(binary, evidence, parent_environment, state):
+    root, bundle, executable, bundle_identifier = prepare_focus_companion_bundle(binary, evidence)
+    home = Path(tempfile.gettempdir()).resolve() / f"chau7-native-fixture-{uuid.uuid4()}"
+    environment = dict(parent_environment)
+    environment.update(
+        {
+            "HOME": str(home),
+            "ZDOTDIR": str(home),
+            "CHAU7_NEXT_HOME_ROOT": str(home),
+            "CHAU7_NEXT_ISOLATED_TEST_MODE": "1",
+            "CHAU7_NEXT_NATIVE_PARITY_FIXTURE": "1",
+            "HISTFILE": "",
+        }
+    )
+    stdout_path = root / "focus-companion.stdout"
+    stderr_path = root / "focus-companion.stderr"
+    command = focus_companion_command(bundle, stdout_path, stderr_path, environment)
+    state.update(
+        {
+            "bundle_root": str(root),
+            "bundle_path": str(bundle.resolve(strict=True)),
+            "bundle_identifier": bundle_identifier,
+            "executable_path": str(executable),
+            "home": str(home),
+            "ready_path": str(home / FOCUS_COMPANION_READY_FILENAME),
+            "stop_path": str(home / FOCUS_COMPANION_STOP_FILENAME),
+            "launch_command": command,
+            "launcher_process_id": None,
+            "application_process_id": None,
+            "stop_requested": False,
+            "process_exit_code": None,
+            "process_gone": False,
+            "bundle_removed": False,
+            "home_removed": False,
+            "stdout_path": str(stdout_path),
+            "stderr_path": str(stderr_path),
+            "stdout_archive_path": str(evidence / "restore.focus_companion.stdout"),
+            "stderr_archive_path": str(evidence / "restore.focus_companion.stderr"),
+        }
+    )
+    with stdout_path.open("x") as stdout, stderr_path.open("x") as stderr:
+        process = subprocess.Popen(
+            command,
+            cwd=Path(tempfile.gettempdir()).resolve(),
+            env=environment,
+            stdout=stdout,
+            stderr=stderr,
+        )
+    state["process"] = process
+    state["launcher_process_id"] = process.pid
+    deadline = time.monotonic() + FOCUS_COMPANION_READY_DEADLINE_SECONDS
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            state["process_exit_code"] = process.returncode
+            raise RuntimeError("focus companion launcher exited before its ready marker")
+        ready_path = Path(state["ready_path"])
+        if ready_path.exists() or ready_path.is_symlink():
+            if ready_path.is_symlink():
+                raise ValueError("focus companion ready marker must not be a symlink")
+            ready = json.loads(ready_path.read_text())
+            if not isinstance(ready, dict):
+                raise ValueError("focus companion ready marker must contain an object")
+            expected = {
+                "bundle_identifier": state["bundle_identifier"],
+                "bundle_path": state["bundle_path"],
+                "executable_path": state["executable_path"],
+                "renderer": "software",
+            }
+            for name, value in expected.items():
+                if ready.get(name) != value:
+                    raise ValueError(f"focus companion ready marker has an unexpected {name}")
+            if any(ready.get(name) is not True for name in ("app_active", "window_visible", "window_key")):
+                raise ValueError("focus companion is not active, visible, and key")
+            pid = ready.get("pid")
+            if not valid_pid(pid):
+                raise ValueError("focus companion ready marker has an invalid PID")
+            actual = Path(os.fsdecode(_pid_executable_path(pid))).resolve(strict=True)
+            if actual != executable:
+                raise ValueError("focus companion PID is not the exact owned executable")
+            if owned_executable_pids(executable, deadline) != [pid]:
+                raise ValueError("expected exactly the ready focus companion PID")
+            if frontmost_application_pid() == pid:
+                state["application_process_id"] = pid
+                state["ready"] = ready
+                return
+        time.sleep(0.05)
+    raise TimeoutError("focus companion did not become the exact foreground application before timeout")
+
+
+def stop_focus_companion(state, deadline=None):
+    process = state.get("process")
+    if process is None:
+        return _focus_companion_summary(state)
+    if state.get("process_gone") is not True:
+        home = Path(state["home"])
+        expected_home_parent = Path(tempfile.gettempdir()).resolve()
+        if (
+            home.parent != expected_home_parent
+            or not home.name.startswith("chau7-native-fixture-")
+            or (home.exists() and home.is_symlink())
+        ):
+            raise ValueError("focus companion home is outside its owned temporary profile")
+        pid = state.get("application_process_id")
+        if not valid_pid(pid):
+            executable = Path(state["executable_path"]).resolve(strict=True)
+            pids = owned_executable_pids(
+                executable,
+                time.monotonic() + FOCUS_COMPANION_STOP_DEADLINE_SECONDS,
+            )
+            if len(pids) > 1:
+                raise RuntimeError("focus companion bundle resolved to multiple application PIDs")
+            if pids:
+                pid = pids[0]
+                state["application_process_id"] = pid
+        if not state.get("stop_requested") and (
+            (valid_pid(pid) and not application_gone(pid)) or process.poll() is None
+        ):
+            stop_path = Path(state["stop_path"])
+            if stop_path != home / FOCUS_COMPANION_STOP_FILENAME:
+                raise ValueError("focus companion stop path does not match its owned profile")
+            if not home.is_dir():
+                raise ValueError("focus companion profile disappeared before its stop request")
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(stop_path, flags, 0o600)
+            try:
+                with os.fdopen(descriptor, "wb") as stop_file:
+                    descriptor = -1
+                    stop_file.write(b"stop owned fullscreen focus companion\n")
+            finally:
+                if descriptor >= 0:
+                    os.close(descriptor)
+            state["stop_requested"] = True
+        limit = time.monotonic() + FOCUS_COMPANION_STOP_DEADLINE_SECONDS
+        if deadline is not None:
+            limit = min(limit, deadline)
+        try:
+            state["process_exit_code"] = process.wait(timeout=max(0.01, limit - time.monotonic()))
+        except subprocess.TimeoutExpired as error:
+            raise TimeoutError("focus companion did not exit after its owned stop request") from error
+        if state["process_exit_code"] != 0:
+            raise RuntimeError(f"focus companion launcher exited {state['process_exit_code']}")
+        if valid_pid(pid) and not application_gone(pid):
+            raise TimeoutError("focus companion PID remained after its launcher exited")
+        executable = Path(state["executable_path"]).resolve(strict=True)
+        if owned_executable_pids(executable, limit):
+            raise RuntimeError("focus companion executable still has a running application PID")
+        state["process_gone"] = True
+    for source_name, archive_name in (
+        ("stdout_path", "stdout_archive_path"),
+        ("stderr_path", "stderr_archive_path"),
+    ):
+        source = Path(state[source_name])
+        archive = Path(state[archive_name])
+        if source.exists() and not archive.exists():
+            shutil.copy2(source, archive)
+    if state.get("outcome") is None:
+        outcome = fixture_outcome(Path(state["stdout_path"]), "focus-companion")
+        state["outcome"] = outcome
+        details = (outcome or {}).get("details") or {}
+        if not isinstance(details, dict):
+            details = {}
+        if (
+            outcome is None
+            or outcome.get("passed") is not True
+            or outcome.get("pid") != state.get("application_process_id")
+            or outcome.get("owned_resources_closed") is not True
+            or outcome.get("owned_profile_removed") is not True
+            or details.get("stopped_by") != "owned_stop_file"
+        ):
+            raise RuntimeError("focus companion did not report a clean owned stop-file exit")
+    bundle_root = Path(state["bundle_root"])
+    if bundle_root.parent != Path(tempfile.gettempdir()).resolve() or not bundle_root.name.startswith(
+        "chau7-native-focus-companion-"
+    ):
+        raise ValueError("focus companion bundle is outside its owned temporary directory")
+    if bundle_root.exists():
+        if bundle_root.is_symlink():
+            raise ValueError("focus companion bundle root became a symlink")
+        shutil.rmtree(bundle_root)
+    state["bundle_removed"] = not bundle_root.exists()
+    home = Path(state["home"])
+    if home.parent != Path(tempfile.gettempdir()).resolve() or not home.name.startswith("chau7-native-fixture-"):
+        raise ValueError("focus companion home is outside its owned temporary profile")
+    if home.exists():
+        if home.is_symlink():
+            raise ValueError("focus companion home became a symlink")
+        shutil.rmtree(home)
+    state["home_removed"] = not home.exists()
+    return _focus_companion_summary(state)
+
+
+def request_owned_focus_yield(bundle, bundle_identifier, handshake, evidence, environment, primary_pid, state):
+    bundle, executable, pid = _owned_handshake_executable(bundle, bundle_identifier, handshake)
+    if pid != primary_pid or Path(os.fsdecode(_pid_executable_path(pid))).resolve(strict=True) != executable:
+        raise ValueError("focus-yield handshake PID is not the exact owned primary application")
+    home = Path(environment["CHAU7_NEXT_HOME_ROOT"]).resolve(strict=True)
+    acknowledgement_path = home / FULLSCREEN_FOCUS_YIELD_ACK_FILENAME
+    if handshake["activation_ack_path"] != str(acknowledgement_path):
+        raise ValueError("focus-yield handshake names a different acknowledgement path")
+    launch_focus_companion(executable, evidence, environment, state)
+    with acknowledgement_path.open("xb") as acknowledgement:
+        acknowledgement.write(b"owned fullscreen focus companion is foreground and key\n")
+    return {
+        "primary_pid": pid,
+        "companion_pid": state["application_process_id"],
+        "frontmost_pid": state["application_process_id"],
+        "activation_ack_path": str(acknowledgement_path),
+    }
 
 
 def owned_executable_pids(expected_executable, deadline):
@@ -365,23 +719,12 @@ def request_owned_activation(
     evidence,
     environment,
     window_renderer,
+    before_acknowledgement=None,
+    deadline_seconds=ACTIVATION_DEADLINE_SECONDS,
 ):
-    deadline = time.monotonic() + ACTIVATION_DEADLINE_SECONDS
-    bundle = Path(bundle).resolve(strict=True)
-    executable = bundle / "Contents" / "MacOS" / "chau7-next"
-    expected_executable = executable.resolve(strict=True)
-    if handshake["bundle_path"] != str(bundle):
-        raise ValueError("activation handshake names a different bundle path")
-    if handshake["bundle_identifier"] != bundle_identifier:
-        raise ValueError("activation handshake names a different bundle identifier")
-    try:
-        with (bundle / "Contents" / "Info.plist").open("rb") as info_file:
-            bundle_info = plistlib.load(info_file)
-    except (OSError, plistlib.InvalidFileException) as error:
-        raise ValueError("owned bundle path has no readable identifier") from error
-    if not isinstance(bundle_info, dict) or bundle_info.get("CFBundleIdentifier") != bundle_identifier:
-        raise ValueError("owned bundle path does not have the exact handshake identifier")
-    _activation_remaining(deadline)
+    deadline = time.monotonic() + deadline_seconds
+    bundle, expected_executable, pid = _owned_handshake_executable(bundle, bundle_identifier, handshake)
+    _activation_remaining(deadline, deadline_seconds)
     stage = handshake.get("stage")
     if not isinstance(stage, str) or stage not in ACTIVATION_ACK_FILENAME_BY_STAGE:
         raise ValueError("activation handshake has an unsupported stage")
@@ -389,17 +732,16 @@ def request_owned_activation(
     activation_ack_path = home / ACTIVATION_ACK_FILENAME_BY_STAGE[stage]
     if handshake["activation_ack_path"] != str(activation_ack_path):
         raise ValueError("activation handshake names a different acknowledgement path")
-    _activation_remaining(deadline)
-    pid = handshake["pid"]
+    _activation_remaining(deadline, deadline_seconds)
     actual_executable = Path(os.fsdecode(_pid_executable_path(pid))).resolve(strict=True)
-    _activation_remaining(deadline)
+    _activation_remaining(deadline, deadline_seconds)
     if actual_executable != expected_executable:
         raise ValueError("activation handshake PID is not the exact owned executable")
     before = owned_executable_pids(expected_executable, deadline)
     if before != [pid]:
         raise ValueError("expected exactly the handshake PID before LaunchServices reopen")
     command = activation_request_command(bundle, environment, window_renderer)
-    _activation_remaining(deadline)
+    _activation_remaining(deadline, deadline_seconds)
     evidence_prefix = ACTIVATION_EVIDENCE_PREFIX_BY_STAGE[stage]
     with (
         (evidence / f"{evidence_prefix}.stdout").open("x") as stdout,
@@ -412,19 +754,23 @@ def request_owned_activation(
             stdout=stdout,
             stderr=stderr,
             check=False,
-            timeout=_activation_remaining(deadline),
+            timeout=_activation_remaining(deadline, deadline_seconds),
         )
-    _activation_remaining(deadline)
+    _activation_remaining(deadline, deadline_seconds)
     if result.returncode != 0:
         raise RuntimeError(f"targeted LaunchServices reopen exited {result.returncode}")
     after = owned_executable_pids(expected_executable, deadline)
     if after != [pid]:
         raise RuntimeError("LaunchServices reopen changed the exact owned application PID set")
-    _activation_remaining(deadline)
+    _activation_remaining(deadline, deadline_seconds)
+    before_ack_result = None
+    if before_acknowledgement is not None:
+        before_ack_result = before_acknowledgement(deadline)
+    _activation_remaining(deadline, deadline_seconds)
     acknowledgement_payload = b"owned activation request completed\n"
     with activation_ack_path.open("xb") as acknowledgement:
         acknowledgement.write(acknowledgement_payload)
-    _activation_remaining(deadline)
+    _activation_remaining(deadline, deadline_seconds)
     return {
         "command": command,
         "pid_before": before,
@@ -433,6 +779,7 @@ def request_owned_activation(
         "activation_ack_path": str(activation_ack_path),
         "activation_ack_bytes": len(acknowledgement_payload),
         "activation_ack_sha256": hashlib.sha256(acknowledgement_payload).hexdigest(),
+        "before_acknowledgement": before_ack_result,
     }
 
 
@@ -449,10 +796,13 @@ def wait_owned_fixture(
     deadline = time.monotonic() + 75
     record.setdefault("ordered_front_activation_request_attempted", False)
     record.setdefault("ordered_front_activation_request_passed", False)
+    record.setdefault("fullscreen_focus_yield_request_attempted", False)
+    record.setdefault("fullscreen_focus_yield_request_passed", False)
     record.setdefault("fullscreen_reactivation_request_attempted", False)
     record.setdefault("fullscreen_reactivation_request_passed", False)
     record.setdefault("activation_request_attempted", False)
     record.setdefault("activation_request_passed", False)
+    focus_companion = {}
     while True:
         try:
             stderr_text = stderr_path.read_text(errors="replace")
@@ -461,6 +811,9 @@ def wait_owned_fixture(
             if not record["ordered_front_activation_request_attempted"]:
                 record["ordered_front_activation_request_attempted"] = True
                 record["ordered_front_activation_request_error"] = str(error)
+            if not record["fullscreen_focus_yield_request_attempted"]:
+                record["fullscreen_focus_yield_request_attempted"] = True
+                record["fullscreen_focus_yield_request_error"] = str(error)
             if not record["fullscreen_reactivation_request_attempted"]:
                 record["fullscreen_reactivation_request_attempted"] = True
                 record["fullscreen_reactivation_request_error"] = str(error)
@@ -501,9 +854,53 @@ def wait_owned_fixture(
                         ) as error:
                             record["ordered_front_activation_request_error"] = str(error)
 
+        if not record["fullscreen_focus_yield_request_attempted"]:
+            try:
+                handshake = parse_fullscreen_focus_yield_handshake(stderr_text)
+            except ValueError as error:
+                record["fullscreen_focus_yield_request_attempted"] = True
+                record["fullscreen_focus_yield_request_error"] = str(error)
+            else:
+                if handshake is not None:
+                    record["fullscreen_focus_yield_request_attempted"] = True
+                    record["fullscreen_focus_yield_handshake"] = handshake
+                    if not record["ordered_front_activation_request_passed"]:
+                        record["fullscreen_focus_yield_request_error"] = (
+                            "fullscreen focus-yield handshake appeared before the ordered-front activation request passed"
+                        )
+                    elif process.poll() is not None:
+                        record["fullscreen_focus_yield_request_error"] = (
+                            "owned fixture exited before its fullscreen focus-yield request"
+                        )
+                    elif handshake["pid"] != (record.get("ordered_front_activation_handshake") or {}).get("pid"):
+                        record["fullscreen_focus_yield_request_error"] = (
+                            "fullscreen focus-yield handshake names a different primary application PID"
+                        )
+                    else:
+                        try:
+                            record["fullscreen_focus_yield_request"] = request_owned_focus_yield(
+                                bundle,
+                                record["bundle_identifier"],
+                                handshake,
+                                evidence,
+                                child_environment,
+                                record["ordered_front_activation_handshake"]["pid"],
+                                focus_companion,
+                            )
+                            record["fullscreen_focus_yield_request_passed"] = True
+                        except (
+                            OSError,
+                            RuntimeError,
+                            ValueError,
+                            subprocess.SubprocessError,
+                        ) as error:
+                            record["fullscreen_focus_yield_request_error"] = str(error)
+                        finally:
+                            record["focus_companion"] = _focus_companion_summary(focus_companion)
+
         # The fullscreen fixture runs before it minimizes the window and emits
-        # the later deminiaturized-surface handshake. Process this stage first
-        # even if both lines arrived between reads.
+        # the later deminiaturized-surface handshake. It follows an actual
+        # application focus loss driven by the owned companion process.
         if not record["fullscreen_reactivation_request_attempted"]:
             try:
                 handshake = parse_fullscreen_reactivation_handshake(stderr_text)
@@ -518,12 +915,31 @@ def wait_owned_fixture(
                         record["fullscreen_reactivation_request_error"] = (
                             "fullscreen reactivation handshake appeared before the ordered-front activation request passed"
                         )
+                    elif not record["fullscreen_focus_yield_request_passed"]:
+                        record["fullscreen_reactivation_request_error"] = (
+                            "fullscreen reactivation handshake appeared before the fullscreen focus-yield request passed"
+                        )
+                    elif handshake["pid"] != (record.get("ordered_front_activation_handshake") or {}).get("pid"):
+                        record["fullscreen_reactivation_request_error"] = (
+                            "fullscreen reactivation handshake names a different primary application PID"
+                        )
                     elif process.poll() is not None:
                         record["fullscreen_reactivation_request_error"] = (
                             "owned fixture exited before its fullscreen reactivation request"
                         )
                     else:
                         try:
+
+                            def prepare_reactivation_ack(deadline, primary_pid=handshake["pid"]):
+                                wait_for_frontmost_application(primary_pid, deadline)
+                                companion = stop_focus_companion(focus_companion, deadline)
+                                wait_for_frontmost_application(primary_pid, deadline)
+                                record["focus_companion"] = companion
+                                return {
+                                    "primary_frontmost_pid": primary_pid,
+                                    "companion": companion,
+                                }
+
                             record["fullscreen_reactivation_request"] = request_owned_activation(
                                 bundle,
                                 record["bundle_identifier"],
@@ -531,6 +947,8 @@ def wait_owned_fixture(
                                 evidence,
                                 child_environment,
                                 window_renderer,
+                                before_acknowledgement=prepare_reactivation_ack,
+                                deadline_seconds=FULLSCREEN_REACTIVATION_DEADLINE_SECONDS,
                             )
                             record["fullscreen_reactivation_request_passed"] = True
                         except (
@@ -540,6 +958,8 @@ def wait_owned_fixture(
                             subprocess.SubprocessError,
                         ) as error:
                             record["fullscreen_reactivation_request_error"] = str(error)
+                        finally:
+                            record["focus_companion"] = _focus_companion_summary(focus_companion)
 
         if not record["activation_request_attempted"]:
             try:
@@ -582,6 +1002,12 @@ def wait_owned_fixture(
 
         exit_code = process.poll()
         if exit_code is not None:
+            if focus_companion.get("process") is not None:
+                try:
+                    stop_focus_companion(focus_companion)
+                except (OSError, RuntimeError, TimeoutError, ValueError, subprocess.SubprocessError) as error:
+                    record["focus_companion_cleanup_error"] = str(error)
+                record["focus_companion"] = _focus_companion_summary(focus_companion)
             record["exit_code"] = exit_code
             if not record["ordered_front_activation_request_attempted"]:
                 record["ordered_front_activation_request_attempted"] = True
@@ -593,6 +1019,11 @@ def wait_owned_fixture(
                 record["fullscreen_reactivation_request_error"] = (
                     "owned fixture exited before emitting a fullscreen reactivation handshake"
                 )
+            if not record["fullscreen_focus_yield_request_attempted"]:
+                record["fullscreen_focus_yield_request_attempted"] = True
+                record["fullscreen_focus_yield_request_error"] = (
+                    "owned fixture exited before emitting a fullscreen focus-yield handshake"
+                )
             if not record["activation_request_attempted"]:
                 record["activation_request_attempted"] = True
                 record["activation_request_error"] = "owned fixture exited before emitting an activation handshake"
@@ -602,6 +1033,12 @@ def wait_owned_fixture(
             # Never send termination signals on an acceptance timeout.
             record["timed_out"] = True
             record["exit_code"] = None
+            if focus_companion.get("process") is not None:
+                try:
+                    stop_focus_companion(focus_companion)
+                except (OSError, RuntimeError, TimeoutError, ValueError, subprocess.SubprocessError) as error:
+                    record["focus_companion_cleanup_error"] = str(error)
+                record["focus_companion"] = _focus_companion_summary(focus_companion)
             if not record["ordered_front_activation_request_attempted"]:
                 record["ordered_front_activation_request_attempted"] = True
                 record["ordered_front_activation_request_error"] = (
@@ -611,6 +1048,11 @@ def wait_owned_fixture(
                 record["fullscreen_reactivation_request_attempted"] = True
                 record["fullscreen_reactivation_request_error"] = (
                     "owned fixture did not emit a fullscreen reactivation handshake before timeout"
+                )
+            if not record["fullscreen_focus_yield_request_attempted"]:
+                record["fullscreen_focus_yield_request_attempted"] = True
+                record["fullscreen_focus_yield_request_error"] = (
+                    "owned fixture did not emit a fullscreen focus-yield handshake before timeout"
                 )
             if not record["activation_request_attempted"]:
                 record["activation_request_attempted"] = True
@@ -717,10 +1159,22 @@ def case_passed(record):
     ):
         return False
     if record.get("case") == "restore":
+        companion = record.get("focus_companion") or {}
+        companion_outcome = companion.get("outcome") or {}
+        companion_details = companion_outcome.get("details") or {}
         return (
             record.get("ordered_front_activation_request_passed") is True
+            and record.get("fullscreen_focus_yield_request_passed") is True
             and record.get("activation_request_passed") is True
             and record.get("fullscreen_reactivation_request_passed") is True
+            and companion.get("process_gone") is True
+            and companion.get("bundle_removed") is True
+            and companion.get("home_removed") is True
+            and companion_outcome.get("passed") is True
+            and companion_outcome.get("pid") == companion.get("application_process_id")
+            and companion_outcome.get("owned_resources_closed") is True
+            and companion_outcome.get("owned_profile_removed") is True
+            and companion_details.get("stopped_by") == "owned_stop_file"
         )
     if record.get("case") == "keyboard":
         return record.get("launch_services_initial_open_passed") is True
@@ -1368,6 +1822,10 @@ def main():
             "original_binary_sha256": manifest["binary_sha256"],
             "ordered_front_activation_request_attempted": False if launch_services else None,
             "ordered_front_activation_request_passed": False if launch_services else None,
+            "fullscreen_focus_yield_request_attempted": False if launch_services else None,
+            "fullscreen_focus_yield_request_passed": False if launch_services else None,
+            "fullscreen_reactivation_request_attempted": False if launch_services else None,
+            "fullscreen_reactivation_request_passed": False if launch_services else None,
             "activation_request_attempted": False if launch_services else None,
             "activation_request_passed": False if launch_services else None,
         }
@@ -1482,14 +1940,21 @@ def main():
                 )
             elif case == "restore" and launch_services:
                 ordered = record.get("ordered_front_activation_handshake") or {}
+                focus_yield = record.get("fullscreen_focus_yield_handshake") or {}
+                fullscreen = record.get("fullscreen_reactivation_handshake") or {}
                 activation = record.get("activation_handshake") or {}
                 record["application_pid_verified"] = (
                     valid_pid(outcome_pid)
                     and ordered.get("pid") == outcome_pid
+                    and focus_yield.get("pid") == outcome_pid
+                    and fullscreen.get("pid") == outcome_pid
                     and activation.get("pid") == outcome_pid
                     and ordered.get("bundle_path") == record.get("owned_bundle")
+                    and focus_yield.get("bundle_path") == record.get("owned_bundle")
+                    and fullscreen.get("bundle_path") == record.get("owned_bundle")
                     and activation.get("bundle_path") == record.get("owned_bundle")
                     and record.get("ordered_front_activation_request_passed") is True
+                    and record.get("fullscreen_focus_yield_request_passed") is True
                     and record.get("activation_request_passed") is True
                 )
                 record["application_executable_path"] = str(expected_executable)

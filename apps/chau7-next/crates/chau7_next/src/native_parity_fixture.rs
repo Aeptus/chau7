@@ -1,7 +1,11 @@
 //! Opt-in native acceptance; dispatched before every ordinary integration.
 use chau7_next_core::data_root::DataRoot;
 use futures::{FutureExt, channel::oneshot, future::Either};
-use gpui::{AnyWindowHandle, App, AppContext, AsyncApp};
+use gpui::{AnyWindowHandle, App, AppContext, AsyncApp, ParentElement, Styled};
+use objc2::{MainThreadMarker, rc::Retained};
+use objc2_app_kit::{NSApplication, NSView, NSWindow};
+use objc2_foundation::NSBundle;
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use serde_json::{Value, json};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -9,7 +13,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicI32, Ordering},
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// A real platform frame, never GPUI's deterministic test-frame helpers.
 pub(crate) async fn next_frame(window: AnyWindowHandle, cx: &mut AsyncApp) -> Result<(), String> {
@@ -66,8 +70,136 @@ fn fresh_home(path: &Path) -> Result<PathBuf, String> {
 fn supported_native_case(requested: &str) -> bool {
     matches!(
         requested,
-        "restore" | "settings" | "editor" | "cache" | "accessibility" | "keyboard"
+        "restore"
+            | "settings"
+            | "editor"
+            | "cache"
+            | "accessibility"
+            | "keyboard"
+            | "focus-companion"
     )
+}
+
+struct FocusCompanionView;
+
+impl gpui::Render for FocusCompanionView {
+    fn render(
+        &mut self,
+        _window: &mut gpui::Window,
+        _cx: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+        gpui::div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child("Owned fullscreen focus companion")
+    }
+}
+
+fn focus_companion_native_window(
+    handle: AnyWindowHandle,
+    cx: &mut AsyncApp,
+) -> Result<Retained<NSWindow>, String> {
+    cx.update_window(handle, |_, window, _| {
+        let raw = HasWindowHandle::window_handle(window).map_err(|error| error.to_string())?;
+        let RawWindowHandle::AppKit(raw) = raw.as_raw() else {
+            return Err("owned focus companion does not use AppKit".to_owned());
+        };
+        // SAFETY: GPUI owns the window view for the lifetime of this fixture.
+        let view = unsafe { Retained::retain(raw.ns_view.cast::<NSView>().as_ptr()) }
+            .ok_or_else(|| "owned focus companion view disappeared".to_owned())?;
+        view.window()
+            .ok_or_else(|| "owned focus companion view has no NSWindow".to_owned())
+    })
+    .map_err(|error| error.to_string())?
+}
+
+async fn run_focus_companion(
+    handle: AnyWindowHandle,
+    home: &Path,
+    renderer: &str,
+    cx: &mut AsyncApp,
+) -> Result<Value, String> {
+    let native = focus_companion_native_window(handle, cx)?;
+    let application = NSApplication::sharedApplication(
+        MainThreadMarker::new().ok_or("focus companion is not on the main thread")?,
+    );
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let bundle_path = executable
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .ok_or("focus companion executable is outside an app bundle")?
+        .to_string_lossy()
+        .into_owned();
+    let bundle_identifier = NSBundle::mainBundle()
+        .bundleIdentifier()
+        .map(|value| value.to_string())
+        .ok_or("focus companion has no bundle identifier")?;
+    let executable_path = executable.to_string_lossy().into_owned();
+    let ready_path = home.join("native-parity-focus-companion.ready");
+    let stop_path = home.join("native-parity-focus-companion.stop");
+    let ready_temporary_path = home.join("native-parity-focus-companion.ready.tmp");
+    let deadline = Instant::now() + Duration::from_secs(40);
+    let mut ready = false;
+
+    loop {
+        let app_active = application.isActive();
+        let window_visible = native.isVisible();
+        let window_key = native.isKeyWindow();
+        if !ready && app_active && window_visible && window_key {
+            let receipt = serde_json::json!({
+                "pid": std::process::id(),
+                "bundle_identifier": bundle_identifier,
+                "bundle_path": bundle_path,
+                "executable_path": executable_path,
+                "app_active": app_active,
+                "window_visible": window_visible,
+                "window_key": window_key,
+                "renderer": renderer,
+            });
+            let bytes = serde_json::to_vec(&receipt).map_err(|error| error.to_string())?;
+            std::fs::write(&ready_temporary_path, bytes).map_err(|error| error.to_string())?;
+            std::fs::rename(&ready_temporary_path, &ready_path)
+                .map_err(|error| error.to_string())?;
+            println!("native_focus_companion_ready={receipt}");
+            std::io::stdout()
+                .flush()
+                .map_err(|error| error.to_string())?;
+            ready = true;
+        }
+
+        if stop_path.exists() {
+            if !ready {
+                return Err(
+                    "focus companion was stopped before it became foreground and key".into(),
+                );
+            }
+            return Ok(serde_json::json!({
+                "ready": true,
+                "stopped_by": "owned_stop_file",
+                "app_active_at_stop": application.isActive(),
+                "window_visible_at_stop": native.isVisible(),
+                "window_key_at_stop": native.isKeyWindow(),
+            }));
+        }
+        if Instant::now() >= deadline {
+            if !ready {
+                return Err("focus companion did not become foreground and key before its 40 second deadline".into());
+            }
+            return Ok(serde_json::json!({
+                "ready": true,
+                "stopped_by": "40_second_deadline",
+                "app_active_at_stop": application.isActive(),
+                "window_visible_at_stop": native.isVisible(),
+                "window_key_at_stop": native.isKeyWindow(),
+            }));
+        }
+        cx.background_executor()
+            .timer(Duration::from_millis(100))
+            .await;
+    }
 }
 
 pub(crate) fn run_if_requested() -> Option<i32> {
@@ -163,10 +295,17 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         crate::window_backend::init(backend, cx);
         crate::terminal::paint::init_cpu_text_system(terminal_text_system, cx);
         gpui_kit::init(cx);
-        cx.set_app_identity(
-            "com.chau7.next.native-parity-fixture",
-            "Chau7 Next Native Fixture",
-        );
+        if case == "focus-companion" {
+            cx.set_app_identity(
+                "com.chau7.next.native-parity-focus-companion",
+                "Chau7 Next Native Focus Companion",
+            );
+        } else {
+            cx.set_app_identity(
+                "com.chau7.next.native-parity-fixture",
+                "Chau7 Next Native Fixture",
+            );
+        }
         let mut settings = crate::settings::Settings::default();
         settings.proxy.enabled = false;
         // Workspace activation otherwise lazily creates this service and its
@@ -190,6 +329,29 @@ pub(crate) fn run_if_requested() -> Option<i32> {
             // Its DataRoot is the fixture's private temporary profile.
             crate::repository::init(cx);
         }
+        let focus_companion_window = if case == "focus-companion" {
+            let bounds =
+                gpui::Bounds::centered(None, gpui::size(gpui::px(360.0), gpui::px(220.0)), cx);
+            let options = gpui::WindowOptions {
+                window_bounds: Some(gpui::WindowBounds::Windowed(bounds)),
+                show: true,
+                focus: true,
+                is_resizable: false,
+                ..Default::default()
+            };
+            match cx.open_window(options, |window, cx| {
+                window.set_window_title("Chau7 Native Fullscreen Focus Companion");
+                cx.new(|_| FocusCompanionView)
+            }) {
+                Ok(handle) => {
+                    cx.activate(true);
+                    Some(Ok(handle))
+                }
+                Err(error) => Some(Err(error.to_string())),
+            }
+        } else {
+            None
+        };
         if case == "keyboard" {
             // Install the production keymap and native menu route only in this
             // focused case; the original fixture cases keep their old setup.
@@ -211,6 +373,8 @@ pub(crate) fn run_if_requested() -> Option<i32> {
             let deadline_secs = if matches!(case.as_str(), "settings" | "accessibility" | "restore")
             {
                 70
+            } else if case == "focus-companion" {
+                45
             } else {
                 35
             };
@@ -218,6 +382,20 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                 .background_executor()
                 .timer(Duration::from_secs(deadline_secs));
             let verification = async {
+                if case == "focus-companion" {
+                    let handle = focus_companion_window
+                        .ok_or_else(|| "focus companion window was not created".to_owned())??;
+                    cx.update(|cx| {
+                        crate::window_backend::verify_fixture_selection(&requested_renderer, cx)
+                    })?;
+                    return run_focus_companion(
+                        handle.into(),
+                        &owned_home,
+                        &requested_renderer,
+                        cx,
+                    )
+                    .await;
+                }
                 let surface = if requested_renderer != "auto" {
                     Some(crate::window_backend::verify_native_surface(cx).await?)
                 } else {
@@ -353,6 +531,7 @@ mod native_case_tests {
     #[test]
     fn keyboard_is_explicit_and_unknown_cases_are_rejected() {
         assert!(supported_native_case("keyboard"));
+        assert!(supported_native_case("focus-companion"));
         assert!(supported_native_case("restore"));
         assert!(!supported_native_case("all"));
         assert!(!supported_native_case("unknown"));

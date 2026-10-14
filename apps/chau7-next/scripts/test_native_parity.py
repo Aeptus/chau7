@@ -347,6 +347,14 @@ class NativeActivationHandshakeTests(unittest.TestCase):
         self.fullscreen_reactivation_line = NATIVE_PARITY.FULLSCREEN_REACTIVATION_HANDSHAKE_PREFIX + json.dumps(
             self.fullscreen_reactivation_handshake
         )
+        self.fullscreen_focus_yield_handshake = {
+            **self.handshake,
+            "stage": "fullscreen_application_focus_yield",
+            "activation_ack_path": "/private/tmp/fixture-home/native-parity-fullscreen-focus-yield.ack",
+        }
+        self.fullscreen_focus_yield_line = NATIVE_PARITY.FULLSCREEN_FOCUS_YIELD_HANDSHAKE_PREFIX + json.dumps(
+            self.fullscreen_focus_yield_handshake
+        )
 
     def test_parses_one_exact_restore_handshake(self):
         self.assertEqual(
@@ -413,11 +421,44 @@ class NativeActivationHandshakeTests(unittest.TestCase):
                 self.fullscreen_reactivation_line + "\n" + self.fullscreen_reactivation_line + "\n"
             )
 
+    def test_parses_one_fullscreen_focus_yield_handshake(self):
+        self.assertEqual(
+            NATIVE_PARITY.parse_fullscreen_focus_yield_handshake(
+                "other log\n" + self.fullscreen_focus_yield_line + "\n"
+            ),
+            self.fullscreen_focus_yield_handshake,
+        )
+
+    def test_fullscreen_focus_yield_handshake_requires_newline_and_rejects_duplicates(self):
+        self.assertIsNone(NATIVE_PARITY.parse_fullscreen_focus_yield_handshake(self.fullscreen_focus_yield_line))
+        with self.assertRaises(ValueError):
+            NATIVE_PARITY.parse_fullscreen_focus_yield_handshake(
+                self.fullscreen_focus_yield_line + "\n" + self.fullscreen_focus_yield_line + "\n"
+            )
+
+    def test_rejects_malformed_or_wrong_stage_focus_yield_handshake(self):
+        with self.assertRaises(ValueError):
+            NATIVE_PARITY.parse_fullscreen_focus_yield_handshake(
+                NATIVE_PARITY.FULLSCREEN_FOCUS_YIELD_HANDSHAKE_PREFIX + "not-json\n"
+            )
+        wrong_stage = {
+            **self.fullscreen_focus_yield_handshake,
+            "stage": "fullscreen_application_reactivation",
+        }
+        line = NATIVE_PARITY.FULLSCREEN_FOCUS_YIELD_HANDSHAKE_PREFIX + json.dumps(wrong_stage)
+        with self.assertRaises(ValueError):
+            NATIVE_PARITY.parse_fullscreen_focus_yield_handshake(line + "\n")
+
     def test_handshake_parsers_are_separated_by_prefix(self):
         self.assertIsNone(NATIVE_PARITY.parse_activation_handshake(self.ordered_front_line + "\n"))
         self.assertIsNone(NATIVE_PARITY.parse_ordered_front_activation_handshake(self.line + "\n"))
         self.assertIsNone(NATIVE_PARITY.parse_fullscreen_reactivation_handshake(self.line + "\n"))
         self.assertIsNone(NATIVE_PARITY.parse_fullscreen_reactivation_handshake(self.ordered_front_line + "\n"))
+        self.assertIsNone(NATIVE_PARITY.parse_fullscreen_focus_yield_handshake(self.line + "\n"))
+        self.assertIsNone(NATIVE_PARITY.parse_fullscreen_focus_yield_handshake(self.ordered_front_line + "\n"))
+        self.assertIsNone(
+            NATIVE_PARITY.parse_fullscreen_focus_yield_handshake(self.fullscreen_reactivation_line + "\n")
+        )
 
     def test_reopen_targets_exact_bundle_with_all_fixture_guards(self):
         bundle = Path("/private/tmp/Owned Fixture.app")
@@ -480,59 +521,124 @@ class NativeActivationHandshakeTests(unittest.TestCase):
         self.assertTrue(record["fullscreen_reactivation_request_attempted"])
         self.assertFalse(record["fullscreen_reactivation_request_passed"])
         self.assertIn("before emitting", record["fullscreen_reactivation_request_error"])
+        self.assertTrue(record["fullscreen_focus_yield_request_attempted"])
+        self.assertFalse(record["fullscreen_focus_yield_request_passed"])
+        self.assertIn("before emitting", record["fullscreen_focus_yield_request_error"])
 
-    def test_wait_owned_fixture_accepts_fullscreen_reactivation_before_demini_reveal(self):
+    def test_wait_owned_fixture_orders_focus_yield_and_reactivation_before_demini(self):
         class StagedStderr:
-            def __init__(self, before_demini, after_demini):
-                self.before_demini = before_demini
-                self.after_demini = after_demini
+            def __init__(self, stages):
+                self.stages = stages
                 self.reads = 0
 
             def read_text(self, errors="replace"):
+                index = min(self.reads, len(self.stages) - 1)
                 self.reads += 1
-                return self.before_demini if self.reads == 1 else self.after_demini
+                return self.stages[index]
 
         class Process:
             def __init__(self):
-                self.polls = iter((None, None, None, None, 0))
+                self.poll_count = 0
 
             def poll(self):
-                return next(self.polls)
+                self.poll_count += 1
+                return 0 if self.poll_count >= 8 else None
 
         ordered_front = self.ordered_front_line + "\n"
+        focus_yield = self.fullscreen_focus_yield_line + "\n"
         fullscreen_reactivation = self.fullscreen_reactivation_line + "\n"
-        before_demini = ordered_front + fullscreen_reactivation
-        after_demini = before_demini + self.line + "\n"
+        demini = self.line + "\n"
+        stages = (
+            ordered_front,
+            ordered_front + focus_yield,
+            ordered_front + focus_yield + fullscreen_reactivation,
+            ordered_front + focus_yield + fullscreen_reactivation + demini,
+        )
+        events = []
+
+        def request_activation(
+            bundle,
+            bundle_identifier,
+            handshake,
+            evidence,
+            environment,
+            window_renderer,
+            before_acknowledgement=None,
+            deadline_seconds=3,
+        ):
+            stage = handshake["stage"]
+            events.append(f"request:{stage}")
+            if before_acknowledgement is not None:
+                self.assertEqual(stage, "fullscreen_application_reactivation")
+                self.assertEqual(deadline_seconds, 8)
+                events.append(f"before-ack:{stage}")
+                callback_result = before_acknowledgement(NATIVE_PARITY.time.monotonic() + deadline_seconds)
+                events.append(f"callback-returned:{stage}")
+            else:
+                callback_result = None
+            events.append(f"ack:{stage}")
+            return {"exit_code": 0, "before_acknowledgement": callback_result}
+
+        def request_focus_yield(bundle, bundle_identifier, handshake, evidence, environment, primary_pid, state):
+            self.assertEqual(handshake["stage"], "fullscreen_application_focus_yield")
+            self.assertEqual(primary_pid, self.handshake["pid"])
+            events.append("request:fullscreen_application_focus_yield")
+            return {"acknowledged": True}
+
+        def wait_frontmost(pid, deadline):
+            self.assertEqual(pid, self.handshake["pid"])
+            self.assertGreater(deadline, NATIVE_PARITY.time.monotonic())
+            events.append("primary-frontmost")
+
+        def stop_companion(state, deadline):
+            self.assertGreater(deadline, NATIVE_PARITY.time.monotonic())
+            events.append("stop-companion")
+            return {
+                "process_gone": True,
+                "bundle_removed": True,
+                "home_removed": True,
+            }
+
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             record = {"bundle_identifier": self.handshake["bundle_identifier"], "timed_out": False}
             with (
-                mock.patch.object(
-                    NATIVE_PARITY,
-                    "request_owned_activation",
-                    return_value={"exit_code": 0},
-                ) as request_activation,
+                mock.patch.object(NATIVE_PARITY, "request_owned_activation", side_effect=request_activation),
+                mock.patch.object(NATIVE_PARITY, "request_owned_focus_yield", side_effect=request_focus_yield),
+                mock.patch.object(NATIVE_PARITY, "wait_for_frontmost_application", side_effect=wait_frontmost),
+                mock.patch.object(NATIVE_PARITY, "stop_focus_companion", side_effect=stop_companion),
                 mock.patch.object(NATIVE_PARITY.time, "sleep"),
             ):
                 exit_code = NATIVE_PARITY.wait_owned_fixture(
                     Process(),
                     record,
                     Path("/private/tmp/Owned Fixture.app"),
-                    StagedStderr(before_demini, after_demini),
+                    StagedStderr(stages),
                     root,
                     {},
                     "software",
                 )
+
         self.assertEqual(exit_code, 0)
         self.assertEqual(
-            [call.args[2]["stage"] for call in request_activation.call_args_list],
+            events,
             [
-                "ordered_front_surface_reveal",
-                "fullscreen_application_reactivation",
-                "deminiaturized_surface_reveal",
+                "request:ordered_front_surface_reveal",
+                "ack:ordered_front_surface_reveal",
+                "request:fullscreen_application_focus_yield",
+                "request:fullscreen_application_reactivation",
+                "before-ack:fullscreen_application_reactivation",
+                "primary-frontmost",
+                "stop-companion",
+                "primary-frontmost",
+                "callback-returned:fullscreen_application_reactivation",
+                "ack:fullscreen_application_reactivation",
+                "request:deminiaturized_surface_reveal",
+                "ack:deminiaturized_surface_reveal",
             ],
         )
         self.assertTrue(record["ordered_front_activation_request_passed"])
+        self.assertTrue(record["fullscreen_focus_yield_request_passed"])
         self.assertTrue(record["fullscreen_reactivation_request_passed"])
         self.assertTrue(record["activation_request_passed"])
 
@@ -755,6 +861,48 @@ class NativeOwnedActivationRequestTests(unittest.TestCase):
                 open_bundle.assert_not_called()
 
 
+class NativeFocusCompanionCommandTests(unittest.TestCase):
+    def test_command_uses_owned_bundle_guarded_environment_and_software_case(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle = root / "Chau7 Next Native Focus Companion.app"
+            stdout_path = root / "companion.stdout"
+            stderr_path = root / "companion.stderr"
+            environment = {
+                "HOME": str(root / "home"),
+                "ZDOTDIR": str(root / "home"),
+                "CHAU7_NEXT_NATIVE_PARITY_FIXTURE": "1",
+                "CHAU7_NEXT_ISOLATED_TEST_MODE": "1",
+                "CHAU7_NEXT_HOME_ROOT": str(root / "home"),
+                "HISTFILE": "",
+            }
+            command = NATIVE_PARITY.focus_companion_command(bundle, stdout_path, stderr_path, environment)
+        expected = [
+            "/usr/bin/open",
+            "-n",
+            "-W",
+            "--stdout",
+            str(stdout_path),
+            "--stderr",
+            str(stderr_path),
+        ]
+        for name in ("HOME", "ZDOTDIR") + NATIVE_PARITY.ACTIVATION_GUARD_ENV:
+            expected.extend(["--env", name + "=" + environment[name]])
+        expected.extend(
+            [
+                str(bundle),
+                "--args",
+                "--native-parity-fixture",
+                "focus-companion",
+                "--window-renderer",
+                "software",
+            ]
+        )
+        self.assertEqual(command, expected)
+        self.assertIn("-n", command)
+        self.assertIn("-W", command)
+
+
 class NativeKeyboardInitialOpenTests(unittest.TestCase):
     def test_initial_open_observes_the_exact_staged_executable_without_ack_handshakes(self):
         class PollingProcess:
@@ -935,27 +1083,79 @@ class NativeParityResultTests(unittest.TestCase):
             "owned_bundle_removed": True if launch_services else None,
             "launch_services_initial_open_passed": False,
             "ordered_front_activation_request_passed": False,
+            "fullscreen_focus_yield_request_passed": False,
             "activation_request_passed": False,
             "fullscreen_reactivation_request_passed": False,
+            "focus_companion": {
+                "application_process_id": 70,
+                "process_gone": True,
+                "bundle_removed": True,
+                "home_removed": True,
+                "outcome": {
+                    "pid": 70,
+                    "passed": True,
+                    "owned_resources_closed": True,
+                    "owned_profile_removed": True,
+                    "details": {"stopped_by": "owned_stop_file"},
+                },
+            },
         }
 
-    def test_launchservices_result_requires_all_three_activation_stages(self):
+    def test_launchservices_result_requires_all_four_activation_stages(self):
         for ordered_front_passed in (False, True):
-            for deminiaturized_passed in (False, True):
-                for fullscreen_reactivation_passed in (False, True):
-                    with self.subTest(
-                        ordered_front_passed=ordered_front_passed,
-                        deminiaturized_passed=deminiaturized_passed,
-                        fullscreen_reactivation_passed=fullscreen_reactivation_passed,
-                    ):
-                        record = self.passing_record(launch_services=True)
-                        record["ordered_front_activation_request_passed"] = ordered_front_passed
-                        record["activation_request_passed"] = deminiaturized_passed
-                        record["fullscreen_reactivation_request_passed"] = fullscreen_reactivation_passed
-                        self.assertEqual(
-                            NATIVE_PARITY.case_passed(record),
-                            ordered_front_passed and deminiaturized_passed and fullscreen_reactivation_passed,
-                        )
+            for focus_yield_passed in (False, True):
+                for deminiaturized_passed in (False, True):
+                    for fullscreen_reactivation_passed in (False, True):
+                        with self.subTest(
+                            ordered_front_passed=ordered_front_passed,
+                            focus_yield_passed=focus_yield_passed,
+                            deminiaturized_passed=deminiaturized_passed,
+                            fullscreen_reactivation_passed=fullscreen_reactivation_passed,
+                        ):
+                            record = self.passing_record(launch_services=True)
+                            record["ordered_front_activation_request_passed"] = ordered_front_passed
+                            record["fullscreen_focus_yield_request_passed"] = focus_yield_passed
+                            record["activation_request_passed"] = deminiaturized_passed
+                            record["fullscreen_reactivation_request_passed"] = fullscreen_reactivation_passed
+                            self.assertEqual(
+                                NATIVE_PARITY.case_passed(record),
+                                ordered_front_passed
+                                and focus_yield_passed
+                                and deminiaturized_passed
+                                and fullscreen_reactivation_passed,
+                            )
+
+    def test_restore_result_requires_focus_companion_acknowledged_and_retired(self):
+        invalidations = (
+            ("fullscreen_focus_yield_request_passed", False),
+            ("process_gone", False),
+            ("bundle_removed", False),
+            ("home_removed", False),
+            ("outcome.passed", False),
+            ("outcome.owned_resources_closed", False),
+            ("outcome.owned_profile_removed", False),
+            ("outcome.details.stopped_by", "deadline"),
+            ("outcome.pid", 71),
+        )
+        for field, invalid in invalidations:
+            with self.subTest(field=field):
+                record = self.passing_record(launch_services=True)
+                record.update(
+                    ordered_front_activation_request_passed=True,
+                    fullscreen_focus_yield_request_passed=True,
+                    fullscreen_reactivation_request_passed=True,
+                    activation_request_passed=True,
+                )
+                companion = record["focus_companion"]
+                if field == "fullscreen_focus_yield_request_passed":
+                    record[field] = invalid
+                elif field.startswith("outcome.details."):
+                    companion["outcome"]["details"][field.rsplit(".", 1)[1]] = invalid
+                elif field.startswith("outcome."):
+                    companion["outcome"][field.split(".", 1)[1]] = invalid
+                else:
+                    companion[field] = invalid
+                self.assertFalse(NATIVE_PARITY.case_passed(record))
 
     def test_keyboard_initial_open_passes_without_restore_acknowledgements(self):
         record = self.passing_record(launch_services=True)

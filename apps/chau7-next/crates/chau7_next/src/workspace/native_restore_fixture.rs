@@ -1919,6 +1919,23 @@ fn native_window(
         .map_err(error)?
 }
 
+fn fullscreen_focus_diagnostic(
+    application: &NSApplication,
+    native: &NSWindow,
+    did_resign_key: bool,
+    focus_yield_ack_exists: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "app_active": application.isActive(),
+        "window_key": native.isKeyWindow(),
+        "window_visible": native.isVisible(),
+        "window_on_active_space": native.isOnActiveSpace(),
+        "window_fullscreen": native.styleMask().contains(NSWindowStyleMask::FullScreen),
+        "did_resign_key_notification": did_resign_key,
+        "focus_yield_ack_exists": focus_yield_ack_exists,
+    })
+}
+
 fn verify_custom_titlebar_fullscreen_options(
     native: &NSWindow,
 ) -> Result<serde_json::Value, String> {
@@ -2233,6 +2250,7 @@ async fn verify_traffic_lights_in_real_fullscreen(
     handle: WindowHandle<Root>,
     native: &NSWindow,
     cx: &mut AsyncApp,
+    focus_yield_ack_path: &Path,
     activation_ack_path: &Path,
 ) -> Result<serde_json::Value, String> {
     ensure(
@@ -2271,70 +2289,126 @@ async fn verify_traffic_lights_in_real_fullscreen(
         let resigned = FullscreenCompletion::new(native, unsafe {
             objc2_app_kit::NSWindowDidResignKeyNotification
         });
-        native_mutation(|| application.deactivate())?;
-        let inactive_result = async {
-            wait_until_deadline(
-                cx, "owned fullscreen application actually deactivated",
-                Instant::now() + Duration::from_secs(5),
-                |_| !application.isActive() && !native.isKeyWindow() && resigned.completed(),
-            ).await?;
-            // Let AppKit deliver its inactive control appearance and layout.
-            pause(cx, Duration::from_millis(300)).await;
-            let geometry = traffic_light_geometry(native, "fullscreen after app deactivation");
-            let composition = traffic_light_composition(native, "fullscreen after app deactivation");
-            // Retain bounded geometry/composition evidence even if the app cannot
-            // be reactivated. Keep the encoded crop in the final success receipt.
-            let geometry_diagnostic = match &geometry {
-                Ok(value) => value.clone(),
-                Err(error) => serde_json::json!({"error": error}),
-            };
-            let mut composition_diagnostic = match &composition {
-                Ok(value) => value.clone(),
-                Err(error) => serde_json::json!({"error": error}),
-            };
-            if let Some(fields) = composition_diagnostic.as_object_mut() {
-                fields.remove("png_base64");
-            }
-            eprintln!("native_fullscreen_inactive_diagnostic={}", serde_json::json!({
-                "app_inactive": !application.isActive(),
-                "window_not_key": !native.isKeyWindow(),
-                "did_resign_key_notification": resigned.completed(),
-                "geometry": geometry_diagnostic,
-                "composition": composition_diagnostic,
-            }));
-            match (geometry, composition) {
-                (Ok(geometry), Ok(composition)) => Ok(serde_json::json!({
-                    "app_inactive": !application.isActive(),
-                    "window_not_key": !native.isKeyWindow(),
-                    "did_resign_key_notification": resigned.completed(),
-                    "geometry": geometry,
-                    "composition": composition,
-                })),
-                (Err(error), _) => Err(error),
-                (_, Err(error)) => Err(error),
-            }
-        }.await;
-        // Reactivate this exact owned process through LaunchServices; activate()
-        // alone did not reliably restore an app from its fullscreen Space.
-        let reactivation_deadline = Instant::now() + Duration::from_secs(5);
+        // A second owned application must take foreground so AppKit performs a
+        // real resign-key transition while this window remains in its fullscreen Space.
+        let focus_yield_deadline = Instant::now() + Duration::from_secs(12);
         emit_activation_handshake(
-            "native_fullscreen_reactivation=",
-            "fullscreen_application_reactivation",
-            activation_ack_path,
+            "native_fullscreen_focus_yield=",
+            "fullscreen_application_focus_yield",
+            focus_yield_ack_path,
         )?;
-        wait_until_deadline(
+        let inactive_wait = wait_until_deadline(
             cx,
-            "owned fullscreen LaunchServices reactivation",
-            reactivation_deadline,
-            |_| activation_ack_path.exists() && application.isActive(),
-        ).await?;
-        native_mutation(|| native.makeKeyAndOrderFront(None))?;
-        wait_until_deadline(
-            cx, "owned fullscreen application reactivated",
-            reactivation_deadline,
-            |_| application.isActive() && native.isKeyWindow(),
-        ).await?;
-        settle(handle, cx).await?;
+            "owned fullscreen application actually deactivated",
+            focus_yield_deadline,
+            |_| {
+                focus_yield_ack_path.exists()
+                    && !application.isActive()
+                    && !native.isKeyWindow()
+                    && resigned.completed()
+            },
+        )
+        .await;
+        let inactive_result = match inactive_wait {
+            Err(error) => {
+                let mut diagnostic = fullscreen_focus_diagnostic(
+                    application,
+                    native,
+                    resigned.completed(),
+                    focus_yield_ack_path.exists(),
+                );
+                diagnostic["wait_error"] = serde_json::json!(error);
+                eprintln!("native_fullscreen_focus_yield_failure={diagnostic}");
+                Err(error)
+            }
+            Ok(()) => {
+                // Let AppKit deliver its inactive control appearance and layout.
+                pause(cx, Duration::from_millis(300)).await;
+                let geometry =
+                    traffic_light_geometry(native, "fullscreen after app deactivation");
+                let composition =
+                    traffic_light_composition(native, "fullscreen after app deactivation");
+                let mut diagnostic = fullscreen_focus_diagnostic(
+                    application,
+                    native,
+                    resigned.completed(),
+                    focus_yield_ack_path.exists(),
+                );
+                diagnostic["geometry"] = match &geometry {
+                    Ok(value) => value.clone(),
+                    Err(error) => serde_json::json!({"error": error}),
+                };
+                let mut composition_diagnostic = match &composition {
+                    Ok(value) => value.clone(),
+                    Err(error) => serde_json::json!({"error": error}),
+                };
+                if let Some(fields) = composition_diagnostic.as_object_mut() {
+                    fields.remove("png_base64");
+                }
+                diagnostic["composition"] = composition_diagnostic;
+                eprintln!("native_fullscreen_inactive_diagnostic={diagnostic}");
+                match (geometry, composition) {
+                    (Ok(geometry), Ok(composition)) => Ok(serde_json::json!({
+                        "app_inactive": !application.isActive(),
+                        "window_not_key": !native.isKeyWindow(),
+                        "window_on_active_space": native.isOnActiveSpace(),
+                        "did_resign_key_notification": resigned.completed(),
+                        "geometry": geometry,
+                        "composition": composition,
+                    })),
+                    (Err(error), _) => Err(error),
+                    (_, Err(error)) => Err(error),
+                }
+            }
+        };
+        // Reactivate this exact owned process through LaunchServices after the
+        // companion has released foreground and exited.
+        let reactivation_deadline = Instant::now() + Duration::from_secs(8);
+        let reactivation_result = async {
+            emit_activation_handshake(
+                "native_fullscreen_reactivation=",
+                "fullscreen_application_reactivation",
+                activation_ack_path,
+            )?;
+            wait_until_deadline(
+                cx,
+                "owned fullscreen LaunchServices reactivation",
+                reactivation_deadline,
+                |_| activation_ack_path.exists() && application.isActive(),
+            )
+            .await?;
+            native_mutation(|| native.makeKeyAndOrderFront(None))?;
+            wait_until_deadline(
+                cx,
+                "owned fullscreen application reactivated",
+                reactivation_deadline,
+                |_| application.isActive() && native.isKeyWindow(),
+            )
+            .await?;
+            settle(handle, cx).await?;
+            Ok::<_, String>(())
+        }
+        .await;
+        if let Err(reactivation_error) = reactivation_result {
+            let mut diagnostic = fullscreen_focus_diagnostic(
+                application,
+                native,
+                resigned.completed(),
+                focus_yield_ack_path.exists(),
+            );
+            diagnostic["reactivation_ack_exists"] =
+                serde_json::json!(activation_ack_path.exists());
+            diagnostic["reactivation_error"] = serde_json::json!(reactivation_error.clone());
+            let failure = match inactive_result {
+                Err(inactive_error) => {
+                    diagnostic["inactive_error"] = serde_json::json!(inactive_error.clone());
+                    inactive_error
+                }
+                Ok(_) => reactivation_error,
+            };
+            eprintln!("native_fullscreen_reactivation_failure={diagnostic}");
+            return Err(failure);
+        }
         let inactive = inactive_result?;
         Ok::<_, String>(serde_json::json!({
             "actual_fullscreen": true,
@@ -2422,6 +2496,7 @@ async fn verify_traffic_lights_after_window_zoom(
     handle: WindowHandle<Root>,
     native: &NSWindow,
     cx: &mut AsyncApp,
+    fullscreen_focus_yield_ack_path: &Path,
     fullscreen_reactivation_ack_path: &Path,
 ) -> Result<serde_json::Value, String> {
     let fullscreen_options = verify_custom_titlebar_fullscreen_options(native)?;
@@ -2452,6 +2527,7 @@ async fn verify_traffic_lights_after_window_zoom(
         handle,
         native,
         cx,
+        fullscreen_focus_yield_ack_path,
         fullscreen_reactivation_ack_path,
     )
     .await?;
@@ -2630,6 +2706,9 @@ async fn verify_surfaces(
             .all(|(_, _, prompts)| *prompts > 0),
         "native resize fixture has no live shell prompt marker",
     )?;
+    let fullscreen_focus_yield_ack_path = profile
+        .home
+        .join("native-parity-fullscreen-focus-yield.ack");
     let fullscreen_reactivation_ack_path = profile
         .home
         .join("native-parity-fullscreen-reactivation.ack");
@@ -2637,6 +2716,7 @@ async fn verify_surfaces(
         handle,
         &native,
         cx,
+        &fullscreen_focus_yield_ack_path,
         &fullscreen_reactivation_ack_path,
     )
     .await?;

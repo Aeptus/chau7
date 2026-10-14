@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Switch between two uniquely owned native fixture apps when checking inactive
+  fullscreen controls, and retain bounded focus diagnostics on timeout.
 - Preserve live cursor columns and meaningful blank cursor rows during restore,
   and verify fullscreen reactivation through a separate owned LaunchServices stage.
 - Match native prompt markers after terminal row padding is stripped by text export.
