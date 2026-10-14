@@ -198,6 +198,7 @@ for product in "${products[@]}"; do
   chmod 755 "$out_dir/$product"
 done
 printf 'fake cargo build cwd=%s target=%s targetdir=%s\n' "$PWD" "$target" "$cache_dir"
+printf 'fake cargo args: %s\n' "$*"
 FAKE
 
 cat > "$FAKE_BIN/go" <<'FAKE'
@@ -602,5 +603,29 @@ validate_bundle "$production_bundle" "$production_manifest" fast \
   "$FIXTURE_APP/target" "$FIXTURE_APP/target" 0 '' production
 assert_file_contains "$FAKE_STATE/production-rc-package.log" 'chau7_next_core/production'
 assert_file_contains "$production_bundle/Contents/Info.plist" 'com.chau7.app'
+
+# Refuse installed paths and external existing bundles before invoking Cargo.
+assert_unsafe_output_refused() {
+  local output="$1"
+  local message="$2"
+  local marker="$FAKE_STATE/no-compile.log"
+  if env -i "PATH=$FAKE_BIN:$PATH" "FAKE_STATE=$FAKE_STATE" "FAKE_BIN=$FAKE_BIN" \
+    CHANNEL=production RELEASE_VERSION=0.6.0-rc.1 BUILD_NUMBER=123 \
+    "OUT_DIR=$output" "$FIXTURE_APP/scripts/bundle-macos.sh" > "$marker" 2>&1; then
+    fail 'unsafe output unexpectedly passed'
+  fi
+  assert_file_contains "$marker" "$message"
+  if grep -Fq 'fake cargo build' "$marker"; then fail 'unsafe output reached Cargo'; fi
+}
+assert_unsafe_output_refused "$TMP_ROOT/Applications" 'must not be inside Applications'
+mkdir -p "$TMP_ROOT/existing/Chau7.app"
+printf 'preserve-me' > "$TMP_ROOT/existing/Chau7.app/sentinel"
+assert_unsafe_output_refused "$TMP_ROOT/existing" 'refuses to replace an existing app'
+assert_file_contains "$TMP_ROOT/existing/Chau7.app/sentinel" 'preserve-me'
+mkdir -p "$TMP_ROOT/symlink-output"
+ln -s "$TMP_ROOT/existing/Chau7.app" "$TMP_ROOT/symlink-output/Chau7.app"
+assert_unsafe_output_refused "$TMP_ROOT/symlink-output" 'refuses an app bundle symlink'
+ln -s "$TMP_ROOT/Applications" "$TMP_ROOT/indirect-output"
+assert_unsafe_output_refused "$TMP_ROOT/indirect-output" 'must not be inside Applications'
 
 printf 'BUILD_MODE source tests passed\n'

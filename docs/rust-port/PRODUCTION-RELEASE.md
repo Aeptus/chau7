@@ -69,7 +69,10 @@ record these separately in acceptance results.
 
 `CHANNEL=production RELEASE_VERSION=0.6.0-rc.1 BUILD_MODE=fast ./scripts/bundle-macos.sh` from
 `apps/chau7-next` prepares a production bundle without installing or opening it.
-The default `CHANNEL=next` path retains the isolated beta identity.
+The default `CHANNEL=next` path retains the isolated beta identity. Packaging
+refuses Applications directories, bundle symlinks and existing bundles outside
+the generated build cache. Choose a fresh artifact directory for local candidates.
+A generated bundle with open files is also refused. Installation is a separate step.
 
 Integrate all code before the final build. Use the fast profile normally and
 restart with `BUILD_MODE=diagnostic` only when symbols are needed. Keep one warm

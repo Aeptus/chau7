@@ -6,7 +6,7 @@
 #   BUILD_MODE=diagnostic ./scripts/bundle-macos.sh # explicit symbol-rich rebuild
 #   CHANNEL=production RELEASE_VERSION=0.6.0-rc.1 BUILD_NUMBER=123 ./scripts/bundle-macos.sh
 #   CARGO_BUILD_VERBOSE=1 BUILD_LOG=target/logs/fast.log ./scripts/bundle-macos.sh
-#   OUT_DIR=~/Applications ./scripts/bundle-macos.sh
+#   OUT_DIR=/path/to/new-artifacts ./scripts/bundle-macos.sh
 #   TARGET=x86_64-apple-darwin ./scripts/bundle-macos.sh   # another Mac arch
 set -euo pipefail
 
@@ -56,7 +56,46 @@ else
   exit 1
 fi
 OUT_DIR="${OUT_DIR:-$ROOT/target/bundle}"
+assert_safe_output() {
+# Packaging must never double as installation. Resolve symlinked parents before
+# deciding whether an old bundle can be replaced, and reject installed trees.
+mkdir -p "$OUT_DIR"
+OUT_DIR="$(cd "$OUT_DIR" && pwd -P)"
+case "$OUT_DIR" in
+  */Applications|*/Applications/*|*.app|*.app/*)
+    echo "error: packaging output must not be inside Applications or an app bundle" >&2
+    exit 1
+    ;;
+esac
 APP="$OUT_DIR/$APP_NAME.app"
+if [ -L "$APP" ]; then
+  echo "error: packaging refuses an app bundle symlink" >&2
+  exit 1
+fi
+if [ -e "$APP" ]; then
+  case "$OUT_DIR" in
+    "$ROOT"/target/*) ;;
+    *) echo "error: packaging refuses to replace an existing app outside the build cache" >&2; exit 1 ;;
+  esac
+  if ! command -v lsof >/dev/null 2>&1; then
+    echo "error: cannot verify whether the existing generated bundle is in use" >&2
+    exit 1
+  fi
+  # lsof returns 1 when it finds no open files; all other errors fail closed.
+  if OPEN_BUNDLE_PIDS="$(lsof -t +D "$APP" 2>&1)"; then
+    echo "error: the generated app bundle is in use; choose a fresh OUT_DIR" >&2
+    exit 1
+  else
+    LSOF_STATUS=$?
+    if [ "$LSOF_STATUS" -ne 1 ] || [ -n "$OPEN_BUNDLE_PIDS" ]; then
+      echo "error: cannot verify whether the existing generated bundle is in use" >&2
+      exit 1
+    fi
+  fi
+fi
+}
+assert_safe_output
+
 BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 if [ "$CHANNEL" = "production" ] && [[ ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
   echo "error: production CFBundleVersion must be numeric (got '$BUILD_NUMBER')" >&2
@@ -92,6 +131,8 @@ BIN="$RELEASE_DIR/chau7-next"
 # MCP bridge: the app copies it to ~/.chau7-next/bin on launch.
 BRIDGE="$RELEASE_DIR/chau7-next-mcp-bridge"
 
+# Recheck after compilation in case an app opened while the build was running.
+assert_safe_output
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"

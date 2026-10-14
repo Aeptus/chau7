@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Refuse packaging into Applications, app-bundle symlinks, external existing
+  apps, or generated bundles with open files before invoking the compiler.
+
 - Keep the beta packaging receipt valid when the Cargo feature list is empty
   under the system Bash shipped with macOS.
 
