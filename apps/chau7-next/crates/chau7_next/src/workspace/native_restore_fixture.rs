@@ -2210,7 +2210,8 @@ impl FullscreenCompletion {
 impl Drop for FullscreenCompletion {
     fn drop(&mut self) {
         unsafe {
-            objc2_foundation::NSNotificationCenter::defaultCenter().removeObserver(&self.observer);
+            objc2_foundation::NSNotificationCenter::defaultCenter()
+                .removeObserver(self.observer.as_ref().as_ref());
         }
     }
 }

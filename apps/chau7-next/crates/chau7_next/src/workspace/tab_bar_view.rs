@@ -16,7 +16,6 @@ use gpui::{
     MouseButton, MouseDownEvent, PathBuilder, Pixels, Role, ScrollHandle, SharedString, Window,
     anchored, bounce, canvas, deferred, div, ease_in_out, img, point, prelude::*, px,
 };
-use gpui_kit::component::Sizable as _;
 
 use super::{AppData, Workspace};
 use crate::platform::process as procinfo;
@@ -114,9 +113,7 @@ pub(super) fn ai_logo(app_name: &str) -> Option<Arc<Image>> {
             // Official OpenCode Mark, rasterized from its UI logo component.
             (
                 "opencode",
-                png(include_bytes!(
-                    "../../../../../chau7-macos/Sources/Chau7/Resources/opencode-logo.png"
-                )),
+                png(include_bytes!("../../assets/opencode-logo.png")),
             ),
             (
                 "chatgpt",

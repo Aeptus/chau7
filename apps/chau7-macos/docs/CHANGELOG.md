@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the new OpenCode logo inside the Rust app assets to avoid rebuilding the
+  Swift app when its icon changes, and finish native fullscreen observer cleanup.
 - Guard fullscreen control installation against missing content views and use
   the pinned objc2 retained-object APIs.
 - Keep real AppKit traffic lights visible in Next fullscreen content and restore

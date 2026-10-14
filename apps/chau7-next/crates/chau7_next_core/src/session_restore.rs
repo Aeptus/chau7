@@ -922,9 +922,7 @@ mod tests {
             Some("codex resume abc")
         );
         assert_eq!(
-            normalized_resume_command(Some(
-                "  opencode --session opencode-restore-fixture-1 \n",
-            ))
+            normalized_resume_command(Some("  opencode --session opencode-restore-fixture-1 \n",))
                 .as_deref(),
             Some("opencode --session opencode-restore-fixture-1")
         );
