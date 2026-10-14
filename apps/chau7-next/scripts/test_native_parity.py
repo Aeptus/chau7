@@ -339,6 +339,14 @@ class NativeActivationHandshakeTests(unittest.TestCase):
         self.ordered_front_line = NATIVE_PARITY.ORDERED_FRONT_ACTIVATION_HANDSHAKE_PREFIX + json.dumps(
             self.ordered_front_handshake
         )
+        self.fullscreen_reactivation_handshake = {
+            **self.handshake,
+            "stage": "fullscreen_application_reactivation",
+            "activation_ack_path": "/private/tmp/fixture-home/native-parity-fullscreen-reactivation.ack",
+        }
+        self.fullscreen_reactivation_line = NATIVE_PARITY.FULLSCREEN_REACTIVATION_HANDSHAKE_PREFIX + json.dumps(
+            self.fullscreen_reactivation_handshake
+        )
 
     def test_parses_one_exact_restore_handshake(self):
         self.assertEqual(
@@ -381,10 +389,6 @@ class NativeActivationHandshakeTests(unittest.TestCase):
                 NATIVE_PARITY.ORDERED_FRONT_ACTIVATION_HANDSHAKE_PREFIX + "not-json\n"
             )
 
-    def test_handshake_parsers_are_separated_by_prefix(self):
-        self.assertIsNone(NATIVE_PARITY.parse_activation_handshake(self.ordered_front_line + "\n"))
-        self.assertIsNone(NATIVE_PARITY.parse_ordered_front_activation_handshake(self.line + "\n"))
-
     def test_rejects_an_unexpected_stage_for_the_ordered_front_prefix(self):
         wrong_stage = {
             **self.ordered_front_handshake,
@@ -393,6 +397,27 @@ class NativeActivationHandshakeTests(unittest.TestCase):
         line = NATIVE_PARITY.ORDERED_FRONT_ACTIVATION_HANDSHAKE_PREFIX + json.dumps(wrong_stage)
         with self.assertRaises(ValueError):
             NATIVE_PARITY.parse_ordered_front_activation_handshake(line + "\n")
+
+    def test_parses_one_fullscreen_reactivation_handshake(self):
+        self.assertEqual(
+            NATIVE_PARITY.parse_fullscreen_reactivation_handshake(
+                "other log\n" + self.fullscreen_reactivation_line + "\n"
+            ),
+            self.fullscreen_reactivation_handshake,
+        )
+
+    def test_fullscreen_reactivation_handshake_requires_newline_and_rejects_duplicates(self):
+        self.assertIsNone(NATIVE_PARITY.parse_fullscreen_reactivation_handshake(self.fullscreen_reactivation_line))
+        with self.assertRaises(ValueError):
+            NATIVE_PARITY.parse_fullscreen_reactivation_handshake(
+                self.fullscreen_reactivation_line + "\n" + self.fullscreen_reactivation_line + "\n"
+            )
+
+    def test_handshake_parsers_are_separated_by_prefix(self):
+        self.assertIsNone(NATIVE_PARITY.parse_activation_handshake(self.ordered_front_line + "\n"))
+        self.assertIsNone(NATIVE_PARITY.parse_ordered_front_activation_handshake(self.line + "\n"))
+        self.assertIsNone(NATIVE_PARITY.parse_fullscreen_reactivation_handshake(self.line + "\n"))
+        self.assertIsNone(NATIVE_PARITY.parse_fullscreen_reactivation_handshake(self.ordered_front_line + "\n"))
 
     def test_reopen_targets_exact_bundle_with_all_fixture_guards(self):
         bundle = Path("/private/tmp/Owned Fixture.app")
@@ -426,7 +451,7 @@ class NativeActivationHandshakeTests(unittest.TestCase):
         )
         self.assertNotIn("-n", command)
 
-    def test_wait_owned_fixture_marks_both_missing_handshakes_on_exit(self):
+    def test_wait_owned_fixture_marks_all_missing_handshakes_on_exit(self):
         class ExitedProcess:
             def poll(self):
                 return 2
@@ -452,6 +477,64 @@ class NativeActivationHandshakeTests(unittest.TestCase):
         self.assertTrue(record["activation_request_attempted"])
         self.assertFalse(record["activation_request_passed"])
         self.assertIn("before emitting", record["activation_request_error"])
+        self.assertTrue(record["fullscreen_reactivation_request_attempted"])
+        self.assertFalse(record["fullscreen_reactivation_request_passed"])
+        self.assertIn("before emitting", record["fullscreen_reactivation_request_error"])
+
+    def test_wait_owned_fixture_accepts_fullscreen_reactivation_before_demini_reveal(self):
+        class StagedStderr:
+            def __init__(self, before_demini, after_demini):
+                self.before_demini = before_demini
+                self.after_demini = after_demini
+                self.reads = 0
+
+            def read_text(self, errors="replace"):
+                self.reads += 1
+                return self.before_demini if self.reads == 1 else self.after_demini
+
+        class Process:
+            def __init__(self):
+                self.polls = iter((None, None, None, None, 0))
+
+            def poll(self):
+                return next(self.polls)
+
+        ordered_front = self.ordered_front_line + "\n"
+        fullscreen_reactivation = self.fullscreen_reactivation_line + "\n"
+        before_demini = ordered_front + fullscreen_reactivation
+        after_demini = before_demini + self.line + "\n"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = {"bundle_identifier": self.handshake["bundle_identifier"], "timed_out": False}
+            with (
+                mock.patch.object(
+                    NATIVE_PARITY,
+                    "request_owned_activation",
+                    return_value={"exit_code": 0},
+                ) as request_activation,
+                mock.patch.object(NATIVE_PARITY.time, "sleep"),
+            ):
+                exit_code = NATIVE_PARITY.wait_owned_fixture(
+                    Process(),
+                    record,
+                    Path("/private/tmp/Owned Fixture.app"),
+                    StagedStderr(before_demini, after_demini),
+                    root,
+                    {},
+                    "software",
+                )
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            [call.args[2]["stage"] for call in request_activation.call_args_list],
+            [
+                "ordered_front_surface_reveal",
+                "fullscreen_application_reactivation",
+                "deminiaturized_surface_reveal",
+            ],
+        )
+        self.assertTrue(record["ordered_front_activation_request_passed"])
+        self.assertTrue(record["fullscreen_reactivation_request_passed"])
+        self.assertTrue(record["activation_request_passed"])
 
     def test_wait_owned_fixture_rejects_late_handshake_before_ordered_front_pass(self):
         class ExitedProcess:
@@ -592,6 +675,7 @@ class NativeOwnedActivationRequestTests(unittest.TestCase):
         stages = {
             "ordered_front_surface_reveal": "restore.ordered_front_activation",
             "deminiaturized_surface_reveal": "restore.activation",
+            "fullscreen_application_reactivation": "restore.fullscreen_reactivation",
         }
         for stage, evidence_prefix in stages.items():
             with self.subTest(stage=stage), tempfile.TemporaryDirectory() as directory:
@@ -852,22 +936,26 @@ class NativeParityResultTests(unittest.TestCase):
             "launch_services_initial_open_passed": False,
             "ordered_front_activation_request_passed": False,
             "activation_request_passed": False,
+            "fullscreen_reactivation_request_passed": False,
         }
 
-    def test_launchservices_result_requires_both_activation_stages(self):
+    def test_launchservices_result_requires_all_three_activation_stages(self):
         for ordered_front_passed in (False, True):
             for deminiaturized_passed in (False, True):
-                with self.subTest(
-                    ordered_front_passed=ordered_front_passed,
-                    deminiaturized_passed=deminiaturized_passed,
-                ):
-                    record = self.passing_record(launch_services=True)
-                    record["ordered_front_activation_request_passed"] = ordered_front_passed
-                    record["activation_request_passed"] = deminiaturized_passed
-                    self.assertEqual(
-                        NATIVE_PARITY.case_passed(record),
-                        ordered_front_passed and deminiaturized_passed,
-                    )
+                for fullscreen_reactivation_passed in (False, True):
+                    with self.subTest(
+                        ordered_front_passed=ordered_front_passed,
+                        deminiaturized_passed=deminiaturized_passed,
+                        fullscreen_reactivation_passed=fullscreen_reactivation_passed,
+                    ):
+                        record = self.passing_record(launch_services=True)
+                        record["ordered_front_activation_request_passed"] = ordered_front_passed
+                        record["activation_request_passed"] = deminiaturized_passed
+                        record["fullscreen_reactivation_request_passed"] = fullscreen_reactivation_passed
+                        self.assertEqual(
+                            NATIVE_PARITY.case_passed(record),
+                            ordered_front_passed and deminiaturized_passed and fullscreen_reactivation_passed,
+                        )
 
     def test_keyboard_initial_open_passes_without_restore_acknowledgements(self):
         record = self.passing_record(launch_services=True)

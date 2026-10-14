@@ -2233,6 +2233,7 @@ async fn verify_traffic_lights_in_real_fullscreen(
     handle: WindowHandle<Root>,
     native: &NSWindow,
     cx: &mut AsyncApp,
+    activation_ack_path: &Path,
 ) -> Result<serde_json::Value, String> {
     ensure(
         !native.styleMask().contains(NSWindowStyleMask::FullScreen),
@@ -2279,20 +2280,58 @@ async fn verify_traffic_lights_in_real_fullscreen(
             ).await?;
             // Let AppKit deliver its inactive control appearance and layout.
             pause(cx, Duration::from_millis(300)).await;
-            Ok::<_, String>(serde_json::json!({
+            let geometry = traffic_light_geometry(native, "fullscreen after app deactivation");
+            let composition = traffic_light_composition(native, "fullscreen after app deactivation");
+            // Retain bounded geometry/composition evidence even if the app cannot
+            // be reactivated. Keep the encoded crop in the final success receipt.
+            let geometry_diagnostic = match &geometry {
+                Ok(value) => value.clone(),
+                Err(error) => serde_json::json!({"error": error}),
+            };
+            let mut composition_diagnostic = match &composition {
+                Ok(value) => value.clone(),
+                Err(error) => serde_json::json!({"error": error}),
+            };
+            if let Some(fields) = composition_diagnostic.as_object_mut() {
+                fields.remove("png_base64");
+            }
+            eprintln!("native_fullscreen_inactive_diagnostic={}", serde_json::json!({
                 "app_inactive": !application.isActive(),
                 "window_not_key": !native.isKeyWindow(),
                 "did_resign_key_notification": resigned.completed(),
-                "geometry": traffic_light_geometry(native, "fullscreen after app deactivation")?,
-                "composition": traffic_light_composition(native, "fullscreen after app deactivation")?,
-            }))
+                "geometry": geometry_diagnostic,
+                "composition": composition_diagnostic,
+            }));
+            match (geometry, composition) {
+                (Ok(geometry), Ok(composition)) => Ok(serde_json::json!({
+                    "app_inactive": !application.isActive(),
+                    "window_not_key": !native.isKeyWindow(),
+                    "did_resign_key_notification": resigned.completed(),
+                    "geometry": geometry,
+                    "composition": composition,
+                })),
+                (Err(error), _) => Err(error),
+                (_, Err(error)) => Err(error),
+            }
         }.await;
-        // Regain focus even if inactive geometry failed, before leaving our Space.
-        activate_owned_application(&application)?;
+        // Reactivate this exact owned process through LaunchServices; activate()
+        // alone did not reliably restore an app from its fullscreen Space.
+        let reactivation_deadline = Instant::now() + Duration::from_secs(5);
+        emit_activation_handshake(
+            "native_fullscreen_reactivation=",
+            "fullscreen_application_reactivation",
+            activation_ack_path,
+        )?;
+        wait_until_deadline(
+            cx,
+            "owned fullscreen LaunchServices reactivation",
+            reactivation_deadline,
+            |_| activation_ack_path.exists() && application.isActive(),
+        ).await?;
         native_mutation(|| native.makeKeyAndOrderFront(None))?;
         wait_until_deadline(
             cx, "owned fullscreen application reactivated",
-            Instant::now() + Duration::from_secs(5),
+            reactivation_deadline,
             |_| application.isActive() && native.isKeyWindow(),
         ).await?;
         settle(handle, cx).await?;
@@ -2383,6 +2422,7 @@ async fn verify_traffic_lights_after_window_zoom(
     handle: WindowHandle<Root>,
     native: &NSWindow,
     cx: &mut AsyncApp,
+    fullscreen_reactivation_ack_path: &Path,
 ) -> Result<serde_json::Value, String> {
     let fullscreen_options = verify_custom_titlebar_fullscreen_options(native)?;
     let initial_frame = native.frame();
@@ -2408,7 +2448,13 @@ async fn verify_traffic_lights_after_window_zoom(
     .await?;
     let restored_frame = native.frame();
     let restored_controls = traffic_light_geometry(native, "after restoring windowed geometry")?;
-    let actual_fullscreen = verify_traffic_lights_in_real_fullscreen(handle, native, cx).await?;
+    let actual_fullscreen = verify_traffic_lights_in_real_fullscreen(
+        handle,
+        native,
+        cx,
+        fullscreen_reactivation_ack_path,
+    )
+    .await?;
     Ok(serde_json::json!({
         "windowed_frame_before": native_rect_values(initial_frame),
         "zoomed_frame": native_rect_values(zoomed_frame),
@@ -2584,8 +2630,16 @@ async fn verify_surfaces(
             .all(|(_, _, prompts)| *prompts > 0),
         "native resize fixture has no live shell prompt marker",
     )?;
-    let traffic_light_zoom_geometry =
-        verify_traffic_lights_after_window_zoom(handle, &native, cx).await?;
+    let fullscreen_reactivation_ack_path = profile
+        .home
+        .join("native-parity-fullscreen-reactivation.ack");
+    let traffic_light_zoom_geometry = verify_traffic_lights_after_window_zoom(
+        handle,
+        &native,
+        cx,
+        &fullscreen_reactivation_ack_path,
+    )
+    .await?;
     let resize_markers_after = cx.update(|cx| {
         sessions
             .iter()

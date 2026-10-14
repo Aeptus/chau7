@@ -213,15 +213,19 @@ def fixture_outcome(path, case):
 
 ACTIVATION_HANDSHAKE_PREFIX = "native_activation_handshake="
 ORDERED_FRONT_ACTIVATION_HANDSHAKE_PREFIX = "native_ordered_front_activation="
+FULLSCREEN_REACTIVATION_HANDSHAKE_PREFIX = "native_fullscreen_reactivation="
 ACTIVATION_ACK_FILENAME = "native-parity-activation.ack"
 ORDERED_FRONT_ACTIVATION_ACK_FILENAME = "native-parity-ordered-front-activation.ack"
+FULLSCREEN_REACTIVATION_ACK_FILENAME = "native-parity-fullscreen-reactivation.ack"
 ACTIVATION_ACK_FILENAME_BY_STAGE = {
     "ordered_front_surface_reveal": ORDERED_FRONT_ACTIVATION_ACK_FILENAME,
     "deminiaturized_surface_reveal": ACTIVATION_ACK_FILENAME,
+    "fullscreen_application_reactivation": FULLSCREEN_REACTIVATION_ACK_FILENAME,
 }
 ACTIVATION_EVIDENCE_PREFIX_BY_STAGE = {
     "ordered_front_surface_reveal": "restore.ordered_front_activation",
     "deminiaturized_surface_reveal": "restore.activation",
+    "fullscreen_application_reactivation": "restore.fullscreen_reactivation",
 }
 ACTIVATION_GUARD_ENV = (
     "CHAU7_NEXT_NATIVE_PARITY_FIXTURE",
@@ -282,6 +286,15 @@ def parse_ordered_front_activation_handshake(stderr_text):
         ORDERED_FRONT_ACTIVATION_HANDSHAKE_PREFIX,
         "ordered_front_surface_reveal",
         "ordered-front activation",
+    )
+
+
+def parse_fullscreen_reactivation_handshake(stderr_text):
+    return _parse_activation_handshake(
+        stderr_text,
+        FULLSCREEN_REACTIVATION_HANDSHAKE_PREFIX,
+        "fullscreen_application_reactivation",
+        "fullscreen reactivation",
     )
 
 
@@ -436,6 +449,8 @@ def wait_owned_fixture(
     deadline = time.monotonic() + 75
     record.setdefault("ordered_front_activation_request_attempted", False)
     record.setdefault("ordered_front_activation_request_passed", False)
+    record.setdefault("fullscreen_reactivation_request_attempted", False)
+    record.setdefault("fullscreen_reactivation_request_passed", False)
     record.setdefault("activation_request_attempted", False)
     record.setdefault("activation_request_passed", False)
     while True:
@@ -446,6 +461,9 @@ def wait_owned_fixture(
             if not record["ordered_front_activation_request_attempted"]:
                 record["ordered_front_activation_request_attempted"] = True
                 record["ordered_front_activation_request_error"] = str(error)
+            if not record["fullscreen_reactivation_request_attempted"]:
+                record["fullscreen_reactivation_request_attempted"] = True
+                record["fullscreen_reactivation_request_error"] = str(error)
             if not record["activation_request_attempted"]:
                 record["activation_request_attempted"] = True
                 record["activation_request_error"] = str(error)
@@ -483,6 +501,46 @@ def wait_owned_fixture(
                         ) as error:
                             record["ordered_front_activation_request_error"] = str(error)
 
+        # The fullscreen fixture runs before it minimizes the window and emits
+        # the later deminiaturized-surface handshake. Process this stage first
+        # even if both lines arrived between reads.
+        if not record["fullscreen_reactivation_request_attempted"]:
+            try:
+                handshake = parse_fullscreen_reactivation_handshake(stderr_text)
+            except ValueError as error:
+                record["fullscreen_reactivation_request_attempted"] = True
+                record["fullscreen_reactivation_request_error"] = str(error)
+            else:
+                if handshake is not None:
+                    record["fullscreen_reactivation_request_attempted"] = True
+                    record["fullscreen_reactivation_handshake"] = handshake
+                    if not record["ordered_front_activation_request_passed"]:
+                        record["fullscreen_reactivation_request_error"] = (
+                            "fullscreen reactivation handshake appeared before the ordered-front activation request passed"
+                        )
+                    elif process.poll() is not None:
+                        record["fullscreen_reactivation_request_error"] = (
+                            "owned fixture exited before its fullscreen reactivation request"
+                        )
+                    else:
+                        try:
+                            record["fullscreen_reactivation_request"] = request_owned_activation(
+                                bundle,
+                                record["bundle_identifier"],
+                                handshake,
+                                evidence,
+                                child_environment,
+                                window_renderer,
+                            )
+                            record["fullscreen_reactivation_request_passed"] = True
+                        except (
+                            OSError,
+                            RuntimeError,
+                            ValueError,
+                            subprocess.SubprocessError,
+                        ) as error:
+                            record["fullscreen_reactivation_request_error"] = str(error)
+
         if not record["activation_request_attempted"]:
             try:
                 handshake = parse_activation_handshake(stderr_text)
@@ -496,6 +554,10 @@ def wait_owned_fixture(
                     if not record["ordered_front_activation_request_passed"]:
                         record["activation_request_error"] = (
                             "late activation handshake appeared before the ordered-front activation request passed"
+                        )
+                    elif not record["fullscreen_reactivation_request_passed"]:
+                        record["activation_request_error"] = (
+                            "activation handshake appeared before fullscreen reactivation passed"
                         )
                     elif process.poll() is not None:
                         record["activation_request_error"] = "owned fixture exited before its activation request"
@@ -517,6 +579,7 @@ def wait_owned_fixture(
                             subprocess.SubprocessError,
                         ) as error:
                             record["activation_request_error"] = str(error)
+
         exit_code = process.poll()
         if exit_code is not None:
             record["exit_code"] = exit_code
@@ -524,6 +587,11 @@ def wait_owned_fixture(
                 record["ordered_front_activation_request_attempted"] = True
                 record["ordered_front_activation_request_error"] = (
                     "owned fixture exited before emitting an ordered-front activation handshake"
+                )
+            if not record["fullscreen_reactivation_request_attempted"]:
+                record["fullscreen_reactivation_request_attempted"] = True
+                record["fullscreen_reactivation_request_error"] = (
+                    "owned fixture exited before emitting a fullscreen reactivation handshake"
                 )
             if not record["activation_request_attempted"]:
                 record["activation_request_attempted"] = True
@@ -538,6 +606,11 @@ def wait_owned_fixture(
                 record["ordered_front_activation_request_attempted"] = True
                 record["ordered_front_activation_request_error"] = (
                     "owned fixture did not emit an ordered-front activation handshake before timeout"
+                )
+            if not record["fullscreen_reactivation_request_attempted"]:
+                record["fullscreen_reactivation_request_attempted"] = True
+                record["fullscreen_reactivation_request_error"] = (
+                    "owned fixture did not emit a fullscreen reactivation handshake before timeout"
                 )
             if not record["activation_request_attempted"]:
                 record["activation_request_attempted"] = True
@@ -647,6 +720,7 @@ def case_passed(record):
         return (
             record.get("ordered_front_activation_request_passed") is True
             and record.get("activation_request_passed") is True
+            and record.get("fullscreen_reactivation_request_passed") is True
         )
     if record.get("case") == "keyboard":
         return record.get("launch_services_initial_open_passed") is True

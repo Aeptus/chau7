@@ -260,24 +260,6 @@ pub const MAX_RESTORED_SCROLLBACK_LINES: usize = 10_000;
 /// Default of the "Restored Scrollback" setting (`restoredScrollbackLines`).
 pub const DEFAULT_RESTORED_SCROLLBACK_LINES: usize = 500;
 
-/// Remove the terminal's trailing viewport padding while keeping its content
-/// rows and ANSI styling. The final CR from a CRLF-terminated export is removed
-/// so callers can append a separator without advancing the cursor an extra row.
-pub fn trim_trailing_terminal_padding(text: &str) -> String {
-    let mut lines: Vec<&str> = text.split('\n').collect();
-    while lines
-        .last()
-        .is_some_and(|line| terminal_line_is_blank(line))
-    {
-        lines.pop();
-    }
-    let mut trimmed = lines.join("\n");
-    if trimmed.ends_with('\r') {
-        trimmed.pop();
-    }
-    trimmed
-}
-
 /// Normalize saved terminal context before it is persisted or replayed.
 ///
 /// Old ANSI exports included every viewport row, so blank rows can sit between

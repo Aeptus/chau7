@@ -59,15 +59,41 @@ impl Global for ManuallyDrivenRestoreFixture {}
 
 fn replay_restored_terminal(term: &Chau7Terminal, context: &str) {
     let context = chau7_next_core::session_restore::normalize_scrollback_for_restore(context);
-    let live = chau7_next_core::session_restore::trim_trailing_terminal_padding(
-        &term.full_buffer_ansi_text(),
-    );
+    let mut live = term.full_buffer_ansi_text();
+    // Keep the full viewport, including cursor blanks and any output below the
+    // cursor. Remove the final row delimiter before the optional SGR reset so
+    // replay does not scroll once or move visible rows under the restored CUP.
+    let has_final_reset = live.ends_with("\x1b[0m");
+    if has_final_reset {
+        live.truncate(live.len() - "\x1b[0m".len());
+    }
+    if live.ends_with("\r\n") {
+        live.truncate(live.len() - 2);
+    }
+    if has_final_reset {
+        live.push_str("\x1b[0m");
+    }
+
+    // ANSI cell export omits trailing blank cells from prompt rows. Restore the
+    // active-screen cursor explicitly after replaying the entire live viewport.
+    let grid = term.grid_copy();
+    let (cursor_column, viewport_cursor_row) = term.cursor_position();
+    let cursor_row = usize::from(viewport_cursor_row)
+        .saturating_sub(grid.display_offset as usize)
+        .min(usize::from(grid.rows.saturating_sub(1)));
+    let cursor_column = usize::from(cursor_column).min(usize::from(grid.cols.saturating_sub(1)));
+
     let mut bytes = Vec::with_capacity(context.len() + live.len() + 8);
     bytes.extend_from_slice(context.as_bytes());
     if !context.is_empty() {
         bytes.extend_from_slice(b"\r\n\x1b[0m");
     }
     bytes.extend_from_slice(live.as_bytes());
+    if grid.rows > 0 && grid.cols > 0 {
+        bytes.extend_from_slice(
+            format!("\x1b[{};{}H", cursor_row + 1, cursor_column + 1).as_bytes(),
+        );
+    }
     term.replay_buffer(&bytes);
 }
 
@@ -3165,6 +3191,7 @@ mod restored_context_tests {
     fn direct_restore_replay_preserves_live_prompt_without_a_pty() {
         let term = Chau7Terminal::new_headless(80, 24).unwrap();
         term.replay_buffer(b"fresh shell\r\nlive-prompt> ");
+        let expected_cursor = term.cursor_position();
         replay_restored_terminal(&term, "\x1b[31msaved history\x1b[0m");
         let text = term.full_buffer_text();
         assert!(text.contains("saved history"), "{text:?}");
@@ -3172,15 +3199,78 @@ mod restored_context_tests {
         assert!(text.contains("live-prompt>"), "{text:?}");
         assert!(text.find("saved history").unwrap() < text.find("fresh shell").unwrap());
         assert!(!text.contains("cat "));
-        let (prompt_column, prompt_row) = term.cursor_position();
+        assert_eq!(term.cursor_position(), expected_cursor);
         assert!(
-            prompt_column > 0,
-            "prompt cursor was reset: {prompt_column},{prompt_row}"
+            term.line_text(i32::from(expected_cursor.1))
+                .unwrap()
+                .contains("live-prompt>"),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn live_replay_preserves_cursor_blanks_trailing_spaces_and_content_below() {
+        let tip = shell_tips::header_box(80, &shell_tips::formatted_tip(18)).unwrap();
+        let tip_only = Chau7Terminal::new_headless(80, 24).unwrap();
+        tip_only.inject_output(tip.as_bytes());
+        let expected_tip_cursor = tip_only.cursor_position();
+        replay_restored_terminal(&tip_only, "");
+        assert_eq!(tip_only.cursor_position(), expected_tip_cursor);
+        assert!(
+            tip_only
+                .line_text(i32::from(expected_tip_cursor.1 - 1))
+                .unwrap()
+                .contains('+')
         );
         assert!(
-            prompt_row <= 3,
-            "prompt cursor drifted below live output: {prompt_row}"
+            tip_only
+                .line_text(i32::from(expected_tip_cursor.1))
+                .unwrap()
+                .trim()
+                .is_empty()
         );
+        assert!(
+            tip_only
+                .full_buffer_text()
+                .contains("Adjust font size on the fly")
+        );
+
+        let prompt = Chau7Terminal::new_headless(80, 24).unwrap();
+        prompt.inject_output(b"prompt>   ");
+        let expected_prompt_cursor = prompt.cursor_position();
+        replay_restored_terminal(&prompt, "");
+        assert_eq!(prompt.cursor_position(), expected_prompt_cursor);
+
+        let blank_rows = Chau7Terminal::new_headless(80, 24).unwrap();
+        blank_rows.inject_output(b"output\r\n\r\n\r\n");
+        let expected_blank_cursor = blank_rows.cursor_position();
+        replay_restored_terminal(&blank_rows, "");
+        assert_eq!(blank_rows.cursor_position(), expected_blank_cursor);
+
+        // The cursor sits inside a soft-wrapped line while later output remains
+        // below it. Replay preserves both the cursor and the lower content.
+        let below_cursor = Chau7Terminal::new_headless(80, 24).unwrap();
+        let wrapped = "w".repeat(90);
+        below_cursor.inject_output(format!("{wrapped}\r\nbelow\x1b[1A").as_bytes());
+        let expected_content_cursor = below_cursor.cursor_position();
+        replay_restored_terminal(&below_cursor, "");
+        assert_eq!(below_cursor.cursor_position(), expected_content_cursor);
+        assert!(below_cursor.full_buffer_text().contains(&wrapped));
+        assert!(below_cursor.full_buffer_text().contains("below"));
+        assert!(
+            below_cursor
+                .line_text(i32::from(expected_content_cursor.1))
+                .unwrap()
+                .contains('w')
+        );
+
+        for (cols, rows) in [(100, 30), (40, 12), (80, 24)] {
+            below_cursor.resize(cols, rows);
+            let (column, row) = below_cursor.cursor_position();
+            assert!(column < cols, "cursor column {column} outside {cols}");
+            assert!(row < rows, "cursor row {row} outside {rows}");
+            assert!(below_cursor.full_buffer_text().contains("below"));
+        }
     }
 
     #[test]
@@ -3226,6 +3316,7 @@ mod restored_context_tests {
 
         let restored = Chau7Terminal::new_headless(80, 24).unwrap();
         restored.inject_output(format!("{}current output\r\ncurrent-prompt% ", tip(29)).as_bytes());
+        let expected_live_cursor = restored.cursor_position();
         replay_restored_terminal(&restored, &captured);
 
         let text = restored.full_buffer_text();
@@ -3233,6 +3324,14 @@ mod restored_context_tests {
         assert!(text.contains("new-prompt%"), "{text:?}");
         assert!(text.contains("current-prompt%"), "{text:?}");
         assert_eq!(text.matches("TIP ").count(), 1, "{text:?}");
+        assert_eq!(restored.cursor_position(), expected_live_cursor);
+        assert!(
+            restored
+                .line_text(i32::from(expected_live_cursor.1))
+                .unwrap()
+                .contains("current-prompt%"),
+            "{text:?}"
+        );
         assert!(restored.cursor_position().1 < 12, "{text:?}");
 
         // Replay the raw legacy context too, so existing profiles receive the
@@ -3240,8 +3339,10 @@ mod restored_context_tests {
         let legacy_restore = Chau7Terminal::new_headless(80, 24).unwrap();
         legacy_restore
             .inject_output(format!("{}current output\r\ncurrent-prompt% ", tip(29)).as_bytes());
+        let expected_legacy_cursor = legacy_restore.cursor_position();
         replay_restored_terminal(&legacy_restore, &legacy_context);
         assert_eq!(legacy_restore.full_buffer_text().matches("TIP ").count(), 1);
+        assert_eq!(legacy_restore.cursor_position(), expected_legacy_cursor);
         assert!(legacy_restore.cursor_position().1 < 12);
 
         for (cols, rows) in [(120, 40), (64, 18), (100, 30)] {
