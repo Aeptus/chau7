@@ -13,6 +13,9 @@ pub use help_window::open_help;
 
 /// Set up the Help menu actions.
 pub fn register(cx: &mut App) {
+    if cx.try_global::<ViewsState>().is_some() {
+        return;
+    }
     cx.set_global(ViewsState::default());
     cx.on_action(|_: &ShowWelcome, cx| launch::show_welcome(cx));
     cx.on_action(|_: &ShowHelp, cx| open_help(None, cx));
@@ -33,8 +36,12 @@ impl Global for ViewsState {}
 /// its own task.
 pub fn poll(_cx: &mut App) {}
 
-/// The first-launch welcome screen, or the splash on later launches. The
-/// terminal windows are already open when this runs, so the app is ready.
-pub fn launch(cx: &mut App) {
-    launch::launch(cx);
+/// Display the returning user's splash before initializing the workspaces.
+pub fn prepare_launch(cx: &mut App, start: impl FnOnce(&mut App) + 'static) {
+    launch::prepare_launch(cx, start);
+}
+
+/// Keep the first-launch welcome screen after workspace initialization.
+pub fn finish_launch(cx: &mut App) {
+    launch::finish_launch(cx);
 }

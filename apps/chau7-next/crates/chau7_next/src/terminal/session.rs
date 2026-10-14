@@ -211,6 +211,10 @@ impl ShellContext for EnvContext {
     }
 }
 
+fn startup_frame_ready(exited: bool, first_output: bool, loading: bool) -> bool {
+    exited || (first_output && !loading)
+}
+
 pub struct TerminalSession {
     pub id: u64,
     /// This terminal's identity for the analytics proxy and AI run
@@ -2445,6 +2449,12 @@ impl TerminalSession {
         self.tracker.status()
     }
 
+    /// A live startup frame may dismiss the splash only after actual PTY
+    /// output, not a saved-scrollback placeholder. Exit/error frames also count.
+    pub(crate) fn startup_content_ready(&self) -> bool {
+        startup_frame_ready(self.exited.is_some(), self.first_output, self.is_loading())
+    }
+
     /// "Loading" until the first prompt (`isShellLoading`).
     pub fn is_loading(&self) -> bool {
         if self.exited.is_some() || !self.term.read().has_pty() {
@@ -3420,5 +3430,24 @@ mod cwd_probe_tests {
         ));
         assert!(!accepts_cwd_probe(10, 10, before, before, true, false));
         assert!(!accepts_cwd_probe(10, 10, before, before, false, true));
+    }
+}
+
+#[cfg(test)]
+mod startup_presentation_tests {
+    use super::startup_frame_ready;
+
+    #[test]
+    fn saved_grid_does_not_count_as_a_live_startup_frame() {
+        assert!(!startup_frame_ready(false, false, false));
+        assert!(!startup_frame_ready(false, false, true));
+        assert!(!startup_frame_ready(false, true, true));
+        assert!(startup_frame_ready(false, true, false));
+    }
+
+    #[test]
+    fn exit_frame_releases_the_splash() {
+        assert!(startup_frame_ready(true, false, true));
+        assert!(startup_frame_ready(true, false, false));
     }
 }

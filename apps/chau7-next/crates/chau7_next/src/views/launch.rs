@@ -1,6 +1,8 @@
 //! The launch splash and the welcome screen (`SplashView`, `WelcomeView`,
 //! `SplashWindowController`).
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -10,7 +12,7 @@ use chau7_next_core::welcome::{
 };
 use gpui::{
     AnyWindowHandle, App, Bounds, Context, FontWeight, Image, ImageFormat, IntoElement, Render,
-    Task, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div,
+    Task, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, canvas, div,
     prelude::*, px, size,
 };
 use gpui_kit::component::TitleBar;
@@ -60,16 +62,60 @@ fn mark_welcome_shown(cx: &App) {
     }
 }
 
-/// At launch, after the terminal windows opened: the welcome screen the
-/// first time, the splash after that.
-pub fn launch(cx: &mut App) {
-    match welcome::launch_screen(has_shown_welcome(cx)) {
-        LaunchScreen::Welcome => {
-            let mut gate = WelcomeGate::default();
-            gate.mark_ready();
-            open_welcome(gate, cx);
-        }
-        LaunchScreen::Splash => open_splash(cx),
+type Start = Rc<RefCell<Option<Box<dyn FnOnce(&mut App)>>>>;
+
+fn resume_startup(start: &Start, cx: &mut App) {
+    let start = start.borrow_mut().take();
+    if let Some(start) = start {
+        start(cx);
+    }
+}
+
+/// GPUI next-frame callbacks run before that frame's presentation. Wait for
+/// the following frame so the initial splash can be submitted first. This
+/// follows frame demand, with no minimum splash duration added to startup.
+pub fn prepare_launch(cx: &mut App, start: impl FnOnce(&mut App) + 'static) {
+    if welcome::launch_screen(has_shown_welcome(cx)) != LaunchScreen::Splash {
+        start(cx);
+        return;
+    }
+    let Some(handle) = open_splash(cx) else {
+        start(cx);
+        return;
+    };
+    let start: Start = Rc::new(RefCell::new(Some(Box::new(start))));
+    let on_frame = start.clone();
+    if handle
+        .update(cx, |_, window, _| {
+            window.on_next_frame(move |window, _| {
+                window.on_next_frame(move |_, cx| resume_startup(&on_frame, cx));
+            });
+        })
+        .is_err()
+    {
+        resume_startup(&start, cx);
+        return;
+    }
+    // Occluded/headless windows may receive no frame callback. A bounded
+    // fallback starts work exactly once rather than leaving the app stuck.
+    cx.spawn(async move |cx| {
+        cx.background_executor()
+            .timer(Duration::from_millis(250))
+            .await;
+        cx.update(|cx| resume_startup(&start, cx));
+    })
+    .detach();
+}
+
+/// First launch keeps the existing welcome experience. Returning users have
+/// already seen the splash and must not get a second post-load splash.
+pub fn finish_launch(cx: &mut App) {
+    if welcome::launch_screen(has_shown_welcome(cx)) == LaunchScreen::Welcome {
+        let mut gate = WelcomeGate::default();
+        gate.mark_ready();
+        open_welcome(gate, cx);
+    } else if crate::workspace::AppData::live(cx).is_empty() {
+        close_previous(cx);
     }
 }
 
@@ -84,7 +130,7 @@ fn close_previous(cx: &mut App) {
     }
 }
 
-fn open_splash(cx: &mut App) {
+fn open_splash(cx: &mut App) -> Option<AnyWindowHandle> {
     close_previous(cx);
     let bounds = Bounds::centered(None, size(px(SPLASH_SIZE.0), px(SPLASH_SIZE.1)), cx);
     let options = WindowOptions {
@@ -100,75 +146,105 @@ fn open_splash(cx: &mut App) {
         ..Default::default()
     };
     match gpui_kit::open_window(options, cx, |_, cx| cx.new(SplashView::new)) {
-        Ok((handle, _)) => cx.global_mut::<ViewsState>().launch = Some(LaunchHandle(handle)),
-        Err(err) => log::error!("splash: {err}"),
+        Ok((handle, _)) => {
+            cx.global_mut::<ViewsState>().launch = Some(LaunchHandle(handle));
+            Some(handle)
+        }
+        Err(err) => {
+            log::error!("splash: {err}");
+            None
+        }
     }
 }
 
+const SPLASH_TIMEOUT: Duration = Duration::from_secs(15);
+
+fn splash_finished(terminal_ready: bool, elapsed: Duration) -> bool {
+    terminal_ready || elapsed >= SPLASH_TIMEOUT
+}
+
 struct SplashView {
-    alpha: f32,
-    _fade: Task<()>,
+    _wait: Task<()>,
 }
 
 impl SplashView {
     fn new(cx: &mut Context<Self>) -> Self {
         let started = Instant::now();
-        let fade = cx.spawn(async move |this, cx| {
+        let wait = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor()
-                    .timer(Duration::from_millis(33))
+                    .timer(Duration::from_millis(16))
                     .await;
-                let elapsed = started.elapsed().as_secs_f32();
-                let Some(alpha) = welcome::splash_alpha(elapsed) else {
-                    let _ = this.update(cx, |_, cx| cx.defer(close_previous));
+                if splash_finished(
+                    crate::startup::reached(crate::startup::Stage::TerminalReady),
+                    started.elapsed(),
+                ) {
+                    // Remove only this splash. Help > Welcome may have replaced
+                    // it while the task was waiting for a terminal.
+                    let _ = this.update_in(cx, |_, window, cx| {
+                        let handle = window.window_handle();
+                        if cx
+                            .global::<ViewsState>()
+                            .launch
+                            .as_ref()
+                            .is_some_and(|LaunchHandle(current)| *current == handle)
+                        {
+                            cx.global_mut::<ViewsState>().launch = None;
+                        }
+                        window.remove_window();
+                        crate::startup::mark(crate::startup::Stage::SplashDismissed);
+                    });
                     return;
-                };
-                let _ = this.update(cx, |this, cx| {
-                    if (this.alpha - alpha).abs() > f32::EPSILON {
-                        this.alpha = alpha;
-                        cx.notify();
-                    }
-                });
+                }
             }
         });
-        Self {
-            alpha: 1.0,
-            _fade: fade,
-        }
+        Self { _wait: wait }
     }
 }
 
 impl Render for SplashView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let chrome = Chrome::panels(cx);
-        div().size_full().child(
-            div()
-                .size_full()
-                .opacity(self.alpha)
-                .rounded_xl()
-                .bg(chrome.panel_bg)
-                .border_1()
-                .border_color(chrome.border)
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .gap_3()
-                .child(gpui::img(app_icon()).size(px(96.0)).rounded_xl())
-                .child(
-                    div()
-                        .text_2xl()
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(chrome.text)
-                        .child(SPLASH_TITLE),
+        div()
+            .relative()
+            .size_full()
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    |_, _, _, _| {
+                        crate::startup::mark(crate::startup::Stage::SplashPainted);
+                    },
                 )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(chrome.text_muted)
-                        .child(crate::l10n::tr("Loading...")),
-                ),
-        )
+                .absolute()
+                .size_full(),
+            )
+            .child(
+                div()
+                    .size_full()
+                    .rounded_xl()
+                    .bg(chrome.panel_bg)
+                    .border_1()
+                    .border_color(chrome.border)
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .gap_3()
+                    .child(gpui::img(app_icon()).size(px(96.0)).rounded_xl())
+                    .child(
+                        div()
+                            .text_2xl()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(chrome.text)
+                            .child(SPLASH_TITLE),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(chrome.text_muted)
+                            .child(crate::l10n::tr("Loading...")),
+                    ),
+            )
     }
 }
 
@@ -290,5 +366,48 @@ impl Render for WelcomeView {
                             })),
                     ),
             )
+    }
+}
+
+#[cfg(test)]
+mod startup_splash_tests {
+    use super::{SPLASH_TIMEOUT, splash_finished};
+    use std::time::Duration;
+
+    #[test]
+    fn ready_terminal_dismisses_without_minimum_hold() {
+        assert!(splash_finished(true, Duration::ZERO));
+        assert!(!splash_finished(false, Duration::from_millis(1800)));
+    }
+
+    #[test]
+    fn unavailable_terminal_has_a_bounded_splash() {
+        assert!(!splash_finished(
+            false,
+            SPLASH_TIMEOUT - Duration::from_millis(1)
+        ));
+        assert!(splash_finished(false, SPLASH_TIMEOUT));
+    }
+
+    #[test]
+    fn frame_handoff_and_timeout_share_one_continuation() {
+        let source = include_str!("launch.rs")
+            .split_once("pub fn prepare_launch(")
+            .unwrap()
+            .1
+            .split_once("pub fn finish_launch(")
+            .unwrap()
+            .0;
+        assert_eq!(source.matches("window.on_next_frame(").count(), 2);
+        assert!(source.contains("resume_startup(&on_frame, cx)"));
+        assert!(source.contains("resume_startup(&start, cx)"));
+        let resume = include_str!("launch.rs")
+            .split_once("fn resume_startup(")
+            .unwrap()
+            .1
+            .split_once("pub fn prepare_launch(")
+            .unwrap()
+            .0;
+        assert!(resume.contains("borrow_mut().take()"));
     }
 }

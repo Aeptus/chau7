@@ -718,7 +718,10 @@ impl PaneTree {
                     headless.inject_output(
                         format!("Chau7 Next could not start a shell: {err}\r\n").as_bytes(),
                     );
-                    TerminalSession::from_terminal(headless, cwd, cx)
+                    let mut session = TerminalSession::from_terminal(headless, cwd, cx);
+                    // This error surface is final, unlike a restore placeholder.
+                    session.exited = Some(None);
+                    session
                 }
             }
         });
@@ -2339,8 +2342,9 @@ mod tests {
             .find("let mut restored = session_store::load")
             .unwrap();
         let hints = startup.find("register_saved_identity_hints(").unwrap();
-        let app = startup.find("Application::with_platform").unwrap();
-        assert!(load < hints && hints < app);
+        let splash = startup.find("views::prepare_launch(cx,").unwrap();
+        let monitors = startup.find("ai::init(cx);").unwrap();
+        assert!(splash < load && load < hints && hints < monitors);
         let scheduler = include_str!("workspace/restore_lifecycle.rs");
         assert!(scheduler.contains("prepared.await"));
     }

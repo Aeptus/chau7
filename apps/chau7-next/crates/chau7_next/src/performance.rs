@@ -53,6 +53,11 @@ impl CpuSampler {
     }
 }
 
+/// Initialize the process identity at Rust main entry.
+pub fn begin_launch() {
+    let _ = identity();
+}
+
 /// Same public identity keys as Swift, populated from this app's own bundle.
 pub fn runtime_info() -> Value {
     let version = system::bundle_string("CFBundleShortVersionString")
@@ -86,7 +91,7 @@ fn process_snapshot() -> Value {
 pub fn unresponsive_snapshot() -> Value {
     json!({"schema_version":1,"captured_at":chrono::Utc::now().to_rfc3339(),
         "runtime":runtime_info(),"uptime_seconds":identity().started.elapsed().as_secs_f64(),
-        "process":process_snapshot(),"partial":true,
+        "process":process_snapshot(),"startup":crate::startup::snapshot(),"partial":true,
         "hang_watchdog":{"status":"main_thread_unresponsive","render_circuit_breaker_open":crate::hang_watchdog::render_blocked()},
         "error":"main_thread_unresponsive","retryable":true,"timeout_ms":1000,
         "main_thread":{"status":"unresponsive","timer_delay_ms":null,"sample_count":null},
@@ -111,7 +116,7 @@ pub fn capture(cx: &App) -> Value {
     let heartbeat = cx.try_global::<Heartbeat>();
     json!({"schema_version": 1, "captured_at": chrono::Utc::now().to_rfc3339(),
         "runtime": runtime_info(), "uptime_seconds": identity().started.elapsed().as_secs_f64(),
-        "process": process, "hang_watchdog":crate::hang_watchdog::snapshot(cx),
+        "process": process, "startup":crate::startup::snapshot(), "hang_watchdog":crate::hang_watchdog::snapshot(cx),
         "memory_retention": crate::memory_pressure::diagnostics(cx),
         "window_renderer": crate::window_backend::diagnostics(cx),
         "incidents": crate::incidents::diagnostics(),
