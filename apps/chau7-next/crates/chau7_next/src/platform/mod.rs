@@ -115,7 +115,11 @@ impl fmt::Display for PlatformError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unsupported(what) => write!(f, "{what} is not supported on this platform"),
-            Self::NotBundled => write!(f, "this needs Chau7 Next to run from its app bundle"),
+            Self::NotBundled => write!(
+                f,
+                "this needs {} to run from its app bundle",
+                chau7_next_core::data_root::APP_NAME
+            ),
             Self::NotMainThread => write!(f, "this must be called on the main thread"),
             Self::Failed(message) => write!(f, "{message}"),
         }

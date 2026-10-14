@@ -2,6 +2,7 @@
 //! (`AppDelegate.showAbout`, the standard About panel in Swift).
 
 use chau7_next_core::app_shell::{architecture_label, version_label};
+use chau7_next_core::data_root::APP_NAME;
 use gpui::{
     AnyWindowHandle, App, Bounds, Context, Global, Render, SharedString, Window, WindowBounds,
     WindowOptions, div, prelude::*, px, size,
@@ -77,8 +78,8 @@ fn link(
 
 fn support_info(root: &chau7_next_core::data_root::DataRoot) -> String {
     [
-        format!("Chau7 Next {}", version_text()),
-        "Application: Chau7 Next".to_string(),
+        format!("{APP_NAME} {}", version_text()),
+        format!("Application: {APP_NAME}"),
         format!(
             "Bundle ID: {}",
             system::bundle_string("CFBundleIdentifier").unwrap_or_else(|| "Not bundled".into())
@@ -109,7 +110,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             div()
                 .text_xl()
                 .font_weight(gpui::FontWeight::BOLD)
-                .child(crate::l10n::tr("Chau7 Next")),
+                .child(crate::l10n::tr(APP_NAME)),
         )
         .child(description(
             "A terminal for AI-assisted development",
@@ -118,7 +119,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         .child(description(version_text(), chrome));
 
     let version = titled("Version Information", chrome)
-        .child(info_row("Application", "Chau7 Next", chrome))
+        .child(info_row("Application", APP_NAME, chrome))
         .child(info_row("Bundle ID", bundle_id, chrome))
         .child(info_row("Version", version_text(), chrome))
         .child(info_row("Built", build_date(), chrome));
@@ -189,7 +190,7 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
 
     let thanks = titled("Acknowledgments", chrome)
         .child(description(
-            "Chau7 Next is written in Rust on GPUI. Open-source acknowledgments and third-party notices are listed in Help > Technology, Licenses & Acknowledgments.",
+            format!("{APP_NAME} is written in Rust on GPUI. Open-source acknowledgments and third-party notices are listed in Help > Technology, Licenses & Acknowledgments."),
             chrome,
         ))
         .child(
@@ -249,7 +250,8 @@ Built with Rust and GPUI.\n\nCopyright © 2024-2026";
 
 impl Render for AboutView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        window.set_window_title(&crate::l10n::tr("About Chau7 Next"));
+        let title = format!("About {APP_NAME}");
+        window.set_window_title(&crate::l10n::tr(&title));
         let chrome = Chrome::get(cx);
         let log = crate::log_file_path(&cx.global::<AppData>().root);
         div()
@@ -271,7 +273,7 @@ impl Render for AboutView {
                         div()
                             .text_2xl()
                             .font_weight(gpui::FontWeight::BOLD)
-                            .child(crate::l10n::tr("Chau7 Next")),
+                            .child(crate::l10n::tr(APP_NAME)),
                     )
                     .child(description(format!("Version {}", version_text()), chrome))
                     .child(

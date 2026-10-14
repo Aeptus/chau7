@@ -39,7 +39,7 @@ pub const ICON_OFF: &str = "bell";
 /// SF Symbol of the item when monitoring is on, and while an alert flashes.
 pub const ICON_ON: &str = "bell.badge.fill";
 /// Tooltip and VoiceOver name of the item.
-pub const ITEM_NAME: &str = "Chau7 Next";
+pub const ITEM_NAME: &str = crate::data_root::APP_NAME;
 
 // ----- sessions ---------------------------------------------------------------
 
@@ -1092,7 +1092,7 @@ pub fn menu_entries(panel: &PanelModel) -> Vec<MenuLine> {
     lines.push(MenuLine::Separator);
     lines.push(MenuLine::Info(format!("v{}", panel.version)));
     lines.push(MenuLine::Command {
-        title: "Quit Chau7".into(),
+        title: format!("Quit {}", crate::data_root::APP_NAME),
         command: PanelCommand::Quit,
         checked: false,
     });
@@ -1661,7 +1661,7 @@ mod tests {
         assert_eq!(
             lines.last(),
             Some(&MenuLine::Command {
-                title: "Quit Chau7".into(),
+                title: format!("Quit {}", crate::data_root::APP_NAME),
                 command: PanelCommand::Quit,
                 checked: false
             })

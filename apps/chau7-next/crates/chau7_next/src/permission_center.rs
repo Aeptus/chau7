@@ -6,6 +6,7 @@ use crate::{
     },
     workspace::AppData,
 };
+use chau7_next_core::data_root::APP_NAME;
 use chau7_next_core::permission_center::{
     FullDiskAccess, FullDiskAccessGuard, ProtectedSnapshot, denial_root, probe_full_disk_access,
 };
@@ -177,22 +178,24 @@ fn present_alert(status: FullDiskAccess, child_root: Option<&str>, now: f64, cx:
         return;
     };
     let title = if status == FullDiskAccess::Indeterminate {
-        "Check Full Disk Access for Chau7 Next"
+        format!("Check Full Disk Access for {APP_NAME}")
     } else {
-        "Chau7 Next has lost Full Disk Access"
+        format!("{APP_NAME} has lost Full Disk Access")
     };
     let detail = if let Some(root) = child_root {
         format!(
-            "A command failed with Operation not permitted in {root}. Full Disk Access could not be confirmed. Re-enable Full Disk Access for Chau7 Next in System Settings."
+            "A command failed with Operation not permitted in {root}. Full Disk Access could not be confirmed. Re-enable Full Disk Access for {APP_NAME} in System Settings."
         )
     } else {
-        "Terminal commands and AI agents in protected folders like ~/Downloads will fail with Operation not permitted. This can follow a rebuild or re-sign. Re-enable Full Disk Access for Chau7 Next in System Settings.".into()
+        format!(
+            "Terminal commands and AI agents in protected folders like ~/Downloads will fail with Operation not permitted. This can follow a rebuild or re-sign. Re-enable Full Disk Access for {APP_NAME} in System Settings."
+        )
     };
     let answer = handle.update(cx, |_, window, cx| {
         crate::l10n::prompt(
             window,
             PromptLevel::Warning,
-            title,
+            &title,
             Some(&detail),
             &["Open Full Disk Access...", "Later"],
             cx,

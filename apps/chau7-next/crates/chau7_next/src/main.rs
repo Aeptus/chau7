@@ -138,19 +138,26 @@ fn main() {
     }
     let installation = settings::installation::FreshInstallation::capture(&root);
     if let Err(err) = root.ensure_dirs() {
-        eprintln!("Chau7 Next: cannot create data folders: {err}");
+        eprintln!(
+            "{}: cannot create data folders: {err}",
+            chau7_next_core::data_root::APP_NAME
+        );
     }
     let instance = match instance::acquire(&root) {
         Ok(Some(instance)) => std::sync::Arc::new(instance),
         Ok(None) => return,
         Err(error) => {
-            eprintln!("Chau7 Next: cannot acquire application instance lock: {error}");
+            eprintln!(
+                "{}: cannot acquire application instance lock: {error}",
+                chau7_next_core::data_root::APP_NAME
+            );
             std::process::exit(1);
         }
     };
     if installation.initialize().is_err() {
         eprintln!(
-            "Chau7 Next: installation policy unavailable; preserving legacy retention default"
+            "{}: installation policy unavailable; preserving legacy retention default",
+            chau7_next_core::data_root::APP_NAME
         );
     }
     platform::defaults::disable_press_and_hold();

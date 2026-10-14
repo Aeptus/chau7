@@ -435,11 +435,8 @@ mod tests {
         assert!(get("CHAU7_REMOTE_CREDENTIALS").contains(".chau7-next"));
         assert_eq!(get("CHAU7_PARENT_PID"), std::process::id().to_string());
         assert_eq!(get("CHAU7_RELAY_URL"), "wss://relay.test/connect");
-        assert_eq!(
-            get("CHAU7_MAC_NAME"),
-            format!("Studio ({})", DataRoot::APP_NAME)
-        );
-        assert_eq!(mac_name(None), format!("Mac ({})", DataRoot::APP_NAME));
+        assert_eq!(get("CHAU7_MAC_NAME"), format!("Studio ({})", APP_NAME));
+        assert_eq!(mac_name(None), format!("Mac ({})", APP_NAME));
         let _ = std::fs::remove_dir_all(home);
     }
 

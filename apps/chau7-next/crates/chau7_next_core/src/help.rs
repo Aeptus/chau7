@@ -12,6 +12,9 @@
 pub const TECHNOLOGY_LICENSES: &str = "technology-licenses";
 
 /// Title of the Help window (`help.window.title`).
+#[cfg(feature = "production")]
+pub const WINDOW_TITLE: &str = "Chau7 Help";
+#[cfg(not(feature = "production"))]
 pub const WINDOW_TITLE: &str = "Chau7 Next Help";
 
 /// One entry of the topic list.
@@ -316,6 +319,12 @@ pub fn parse_inline(text: &str) -> Vec<Span> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_title_matches_app_channel() {
+        let expected = format!("{} Help", crate::data_root::APP_NAME);
+        assert_eq!(WINDOW_TITLE, expected.as_str());
+    }
 
     #[test]
     fn eleven_topics_in_swift_order() {

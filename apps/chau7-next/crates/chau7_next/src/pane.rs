@@ -716,7 +716,11 @@ impl PaneTree {
                     let headless = chau7_terminal::Chau7Terminal::new_headless(80, 24)
                         .expect("headless terminal");
                     headless.inject_output(
-                        format!("Chau7 Next could not start a shell: {err}\r\n").as_bytes(),
+                        format!(
+                            "{} could not start a shell: {err}\r\n",
+                            chau7_next_core::data_root::APP_NAME
+                        )
+                        .as_bytes(),
                     );
                     let mut session = TerminalSession::from_terminal(headless, cwd, cx);
                     // This error surface is final, unlike a restore placeholder.

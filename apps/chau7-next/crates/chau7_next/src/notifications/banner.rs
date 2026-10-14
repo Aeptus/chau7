@@ -6,6 +6,7 @@
 
 use std::time::{Duration, Instant};
 
+use chau7_next_core::data_root::PRODUCTION_CHANNEL;
 use gpui::App;
 use uuid::Uuid;
 
@@ -77,24 +78,32 @@ impl Default for BannerState {
     }
 }
 
+fn channel_warning(beta: &'static str, production: &'static str) -> &'static str {
+    if PRODUCTION_CHANNEL { production } else { beta }
+}
+
 impl BannerState {
     /// The warning Settings shows under the status (`notificationWarning`).
     pub fn warning(&self) -> Option<&'static str> {
         match self.permission {
-            PermissionState::UnavailableNotBundled => {
-                Some("Notifications require the app bundle. Build and launch Chau7 Next.app.")
-            }
+            PermissionState::UnavailableNotBundled => Some(channel_warning(
+                "Notifications require the app bundle. Build and launch Chau7 Next.app.",
+                "Notifications require the app bundle. Build and launch Chau7.app.",
+            )),
             PermissionState::NotDetermined => Some("Permission has not been requested."),
-            PermissionState::Unknown => Some(
+            PermissionState::Unknown => Some(channel_warning(
                 "Notification status unknown. Check System Settings > Notifications > Chau7 Next.",
-            ),
-            PermissionState::Denied => Some(
+                "Notification status unknown. Check System Settings > Notifications > Chau7.",
+            )),
+            PermissionState::Denied => Some(channel_warning(
                 "Notifications are denied. Open System Settings and allow alerts for Chau7 Next.",
-            ),
+                "Notifications are denied. Open System Settings and allow alerts for Chau7.",
+            )),
             PermissionState::Authorized | PermissionState::Provisional if !self.alerts_enabled => {
-                Some(
+                Some(channel_warning(
                     "Alerts are disabled for Chau7 Next. Enable banners or alerts in System Settings.",
-                )
+                    "Alerts are disabled for Chau7. Enable banners or alerts in System Settings.",
+                ))
             }
             _ => None,
         }
@@ -259,6 +268,8 @@ pub fn fallback(title: &str, body: &str, cx: &mut App) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use chau7_next_core::data_root::APP_NAME;
+
     use super::*;
 
     #[test]
@@ -269,6 +280,35 @@ mod tests {
         assert_eq!(s.next_cooldown(), Duration::from_secs(30));
         s.failures = 9;
         assert_eq!(s.next_cooldown(), Duration::from_secs(300));
+    }
+
+    #[test]
+    fn warnings_use_the_compiled_product_name() {
+        let mut state = BannerState::default();
+
+        state.permission = PermissionState::UnavailableNotBundled;
+        let warning = state.warning().unwrap();
+        assert!(warning.contains(format!("{APP_NAME}.app").as_str()));
+
+        state.permission = PermissionState::Unknown;
+        assert!(
+            state
+                .warning()
+                .unwrap()
+                .ends_with(format!("{APP_NAME}.").as_str())
+        );
+
+        state.permission = PermissionState::Denied;
+        assert!(
+            state
+                .warning()
+                .unwrap()
+                .ends_with(format!("{APP_NAME}.").as_str())
+        );
+
+        state.permission = PermissionState::Authorized;
+        state.alerts_enabled = false;
+        assert!(state.warning().unwrap().contains(APP_NAME));
     }
 
     #[test]

@@ -19,6 +19,9 @@ pub const SPLASH_SECS: f32 = 1.5;
 pub const FADE_SECS: f32 = 0.3;
 
 pub const SPLASH_TITLE: &str = "Chau7";
+#[cfg(feature = "production")]
+pub const WELCOME_TITLE: &str = "Welcome to Chau7";
+#[cfg(not(feature = "production"))]
 pub const WELCOME_TITLE: &str = "Welcome to Chau7 Next";
 pub const GET_STARTED: &str = "Get Started";
 
@@ -116,6 +119,12 @@ pub fn splash_alpha(elapsed: f32) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn welcome_title_matches_app_channel() {
+        let expected = format!("Welcome to {}", crate::data_root::APP_NAME);
+        assert_eq!(WELCOME_TITLE, expected.as_str());
+    }
 
     #[test]
     fn three_tips() {

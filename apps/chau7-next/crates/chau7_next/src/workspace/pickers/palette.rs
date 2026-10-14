@@ -69,6 +69,12 @@ fn entry(title: &'static str, category: &'static str, icon: IconName, spec: Spec
     }
 }
 
+const ABOUT_TITLE: &str = if chau7_next_core::data_root::PRODUCTION_CHANNEL {
+    "About Chau7"
+} else {
+    "About Chau7 Next"
+};
+
 /// All commands in Swift's order: File, Edit, View, Terminal, Tabs, Window,
 /// Help; then the Chau7 Next extras. Icons follow Swift's SF Symbols.
 fn catalog() -> Vec<Entry> {
@@ -272,7 +278,7 @@ fn catalog() -> Vec<Entry> {
             I::Keyboard,
             typed(ShowKeyboardShortcuts),
         ),
-        entry("About Chau7 Next", "Help", I::Info, typed(ShowAbout)),
+        entry(ABOUT_TITLE, "Help", I::Info, typed(ShowAbout)),
         entry("Documentation", "Help", I::Book, typed(ShowHelp)),
         entry(
             "Import Terminal Profiles...",

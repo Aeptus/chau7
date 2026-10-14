@@ -75,6 +75,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use chau7_next_core::data_root::APP_NAME;
 use chau7_next_core::tabs_state::{
     CloseOutcome, TabColor, TabMeta, TabsState, auto_color_for_command,
 };
@@ -1609,7 +1610,7 @@ impl Render for Workspace {
         let chrome = Chrome::get(cx);
         if let Some(id) = self.state.selected() {
             let title = self.tab_title(id, cx);
-            let title = format!("{title} - Chau7 Next");
+            let title = format!("{title} - {APP_NAME}");
             if title != self.window_title {
                 window.set_window_title(&title);
                 self.window_title = title;

@@ -73,8 +73,9 @@ fn english_menus(tab_titles: &[String]) -> Vec<Menu> {
 }
 
 fn app_menu() -> Menu {
+    let app_name = chau7_next_core::data_root::APP_NAME;
     let mut items = vec![
-        MenuItem::action("About Chau7 Next", ShowAbout),
+        MenuItem::action(format!("About {app_name}"), ShowAbout),
         MenuItem::separator(),
         MenuItem::action("Settings…", OpenSettings),
         MenuItem::action("Open config.toml", OpenConfigFile),
@@ -86,14 +87,14 @@ fn app_menu() -> Menu {
         items.push(MenuItem::separator());
     }
     items.extend([
-        MenuItem::action("Hide Chau7 Next", HideApp),
+        MenuItem::action(format!("Hide {app_name}"), HideApp),
         MenuItem::action("Hide Others", HideOtherApps),
         MenuItem::action("Show All", ShowAllApps),
         MenuItem::separator(),
-        MenuItem::action("Quit Chau7 Next", Quit),
+        MenuItem::action(format!("Quit {app_name}"), Quit),
     ]);
     Menu {
-        name: "Chau7 Next".into(),
+        name: app_name.into(),
         items,
         disabled: false,
     }
@@ -251,12 +252,13 @@ fn window_menu(tab_titles: &[String]) -> Menu {
 }
 
 fn help_menu() -> Menu {
+    let app_name = chau7_next_core::data_root::APP_NAME;
     Menu {
         name: "Help".into(),
         items: vec![
-            MenuItem::action("Welcome to Chau7 Next", ShowWelcome),
+            MenuItem::action(format!("Welcome to {app_name}"), ShowWelcome),
             MenuItem::separator(),
-            MenuItem::action("Chau7 Next Help", ShowHelp),
+            MenuItem::action(format!("{app_name} Help"), ShowHelp),
             MenuItem::action(
                 "Technology, Licenses & Acknowledgments",
                 ShowTechnologyLicenses,
@@ -291,8 +293,25 @@ mod tests {
         let titles: Vec<_> = menus.iter().map(|m| m.name.to_string()).collect();
         assert_eq!(
             titles,
-            ["Chau7 Next", "File", "Edit", "View", "Window", "Help"]
+            [
+                chau7_next_core::data_root::APP_NAME,
+                "File",
+                "Edit",
+                "View",
+                "Window",
+                "Help",
+            ]
         );
+        let app_items = names(&menus[0]);
+        assert!(app_items.contains(&format!("About {}", chau7_next_core::data_root::APP_NAME)));
+        assert!(app_items.contains(&format!("Hide {}", chau7_next_core::data_root::APP_NAME)));
+        assert!(app_items.contains(&format!("Quit {}", chau7_next_core::data_root::APP_NAME)));
+        let help_items = names(&menus[5]);
+        assert!(help_items.contains(&format!(
+            "Welcome to {}",
+            chau7_next_core::data_root::APP_NAME
+        )));
+        assert!(help_items.contains(&format!("{} Help", chau7_next_core::data_root::APP_NAME)));
         let file = names(&menus[1]);
         for item in [
             "New Window",

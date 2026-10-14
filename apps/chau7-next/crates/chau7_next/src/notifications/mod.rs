@@ -324,8 +324,11 @@ pub fn send_test(cx: &mut App) {
     let mut event = AiEvent::new(
         AiEventSource::app(),
         "update_available",
-        "Chau7 Next",
-        "This is a test notification from Chau7 Next.",
+        chau7_next_core::data_root::APP_NAME,
+        format!(
+            "This is a test notification from {}.",
+            chau7_next_core::data_root::APP_NAME
+        ),
         now_iso8601(),
     );
     event.producer = Some("app_model_test".into());

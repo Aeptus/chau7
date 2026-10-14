@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Use the compiled app identity in production menus, windows, permission guidance,
+  notification warnings and localized resources while retaining Next beta labels.
+
 - Verify remote host labels against the compiled beta or production app identity.
 
 - Keep the Swift restore converter clean under strict Rust 1.99 Clippy checks.

@@ -293,7 +293,7 @@ fn l10n_fr(key: &str, default: &str) -> String {
 #[test]
 fn product_name_is_kept() {
     let out = translate(Lang::Fr, "About Chau7 Next");
-    assert!(out.contains("Chau7 Next"), "{out}");
+    assert!(out.contains(crate::data_root::APP_NAME), "{out}");
     assert!(!out.contains("About"), "{out}");
     assert!(!out.contains("Chau7 Next Next"));
 }
@@ -457,4 +457,37 @@ fn current_summary_defaults_preserve_declared_swift_fallback_values() {
         );
     }
     assert_eq!(NEXT_SUMMARY_DEFAULTS.len(), 56);
+}
+
+#[test]
+fn product_identity_matches_channel_for_literal_and_keyed_resources() {
+    for lang in Lang::ALL {
+        let literal = translate(lang, "About Chau7 Next");
+        let keyed = localized(
+            lang,
+            "settings.productivity.permissions.fda.denied.detail",
+            "",
+        );
+        for text in [literal, keyed] {
+            assert!(
+                text.contains(crate::data_root::APP_NAME),
+                "{lang:?}: {text}"
+            );
+            if crate::data_root::PRODUCTION_CHANNEL {
+                assert!(!text.contains("Chau7 Next"), "{lang:?}: {text}");
+            }
+        }
+    }
+}
+
+#[test]
+fn production_branding_does_not_rewrite_user_format_arguments() {
+    let user_text = "Chau7 Next project";
+    let text = localized_format(
+        Lang::En,
+        "test.missing.format",
+        "%@",
+        &[Arg::from(user_text)],
+    );
+    assert_eq!(text, user_text);
 }

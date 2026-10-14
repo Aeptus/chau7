@@ -8,7 +8,10 @@ pub fn acquire(root: &DataRoot) -> std::io::Result<Option<InstanceGuard>> {
         Acquisition::Acquired(guard) => Ok(Some(guard)),
         Acquisition::AlreadyRunning(owner) => {
             activate_existing(owner.as_ref());
-            eprintln!("Chau7 Next: this profile already has a running application");
+            eprintln!(
+                "{}: this profile already has a running application",
+                chau7_next_core::data_root::APP_NAME
+            );
             Ok(None)
         }
     }

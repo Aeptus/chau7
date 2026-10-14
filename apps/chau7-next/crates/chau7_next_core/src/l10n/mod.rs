@@ -219,16 +219,25 @@ pub fn table(lang: Lang) -> &'static Table {
 /// `L(key, default)` in a given language: the translation, else the English
 /// default from the code, else (no default) the English table, else the key.
 pub fn localized(lang: Lang, key: &str, default: &str) -> String {
-    if let Some(value) = table(lang).get(key) {
-        return value.clone();
+    let value = if let Some(value) = table(lang).get(key) {
+        value.clone()
+    } else if !default.is_empty() {
+        default.to_string()
+    } else {
+        table(Lang::En)
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| key.to_string())
+    };
+    product_identity(value)
+}
+
+fn product_identity(text: String) -> String {
+    if crate::data_root::PRODUCTION_CHANNEL && text.contains("Chau7 Next") {
+        text.replace("Chau7 Next", crate::data_root::APP_NAME)
+    } else {
+        text
     }
-    if !default.is_empty() {
-        return default.to_string();
-    }
-    table(Lang::En)
-        .get(key)
-        .cloned()
-        .unwrap_or_else(|| key.to_string())
 }
 
 /// `L(key, default)` in the current language.
@@ -328,10 +337,12 @@ fn aliases() -> &'static HashMap<&'static str, &'static str> {
 /// text (not localized in Swift, or no translation) stays as written.
 pub fn translate(lang: Lang, text: &str) -> String {
     let out = translate_inner(lang, text);
-    if text.contains("Chau7 Next") && !out.contains("Chau7 Next") {
-        return out.replace("Chau7", "Chau7 Next");
-    }
-    out
+    let out = if text.contains("Chau7 Next") && !out.contains("Chau7 Next") {
+        out.replace("Chau7", "Chau7 Next")
+    } else {
+        out
+    };
+    product_identity(out)
 }
 
 fn translate_inner(lang: Lang, text: &str) -> String {
