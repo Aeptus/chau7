@@ -109,11 +109,31 @@ fn main() {
     }
     clean_inherited_environment();
     let root = DataRoot::from_env();
+    if let Some(code) = migration::swift_restore::run_cli_if_requested(&root) {
+        std::process::exit(code);
+    }
+    if chau7_next_core::data_root::PRODUCTION_CHANNEL {
+        match migration::swift_restore::requires_source_choice(&root) {
+            Ok(false) => {}
+            Ok(true) => {
+                eprintln!(
+                    "Saved Chau7 data is available. Before the first production launch, select --import-chau7-restoration swift or next with --source-home and --dry-run. See docs/rust-port/PRODUCTION-RELEASE.md. No saved data was changed."
+                );
+                std::process::exit(2);
+            }
+            Err(error) => {
+                eprintln!("Cannot inspect saved restoration data: {error}. No profile was opened.");
+                std::process::exit(2);
+            }
+        }
+    }
     if chau7_next_core::data_root::PRODUCTION_CHANNEL
         && !chau7_next_core::data_root::is_isolated_test_mode()
         && platform::workspace::another_instance_is_running(chau7_next_core::data_root::BUNDLE_ID)
     {
-        eprintln!("Chau7 is already running. Close the existing app yourself before opening the Rust release; it has not been stopped or modified.");
+        eprintln!(
+            "Chau7 is already running. Close the existing app yourself before opening the Rust release; it has not been stopped or modified."
+        );
         std::process::exit(1);
     }
     let installation = settings::installation::FreshInstallation::capture(&root);

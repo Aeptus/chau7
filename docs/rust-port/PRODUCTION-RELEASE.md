@@ -44,6 +44,21 @@ final migration. No script should force a quit to obtain that snapshot.
    counts, selected panes, working directories, scrollback and AI resume prefill.
    Confirm the source profiles remain usable for rollback.
 
+The production executable supports an explicit import before it starts any GUI:
+
+```sh
+"/path/to/Chau7.app/Contents/MacOS/Chau7" \
+  --import-chau7-restoration swift --source-home "$HOME" --dry-run
+```
+
+Use `next` to select the Next source. Review the numeric summary, then omit
+`--dry-run` to apply. An existing Rust destination is refused. A second import
+never replaces it. The complete restore bundle is published atomically before
+its lightweight index, so interruption after bundle publication is recoverable
+by the normal loader. The original source is kept intact. A production first
+launch with saved source data refuses to start empty and prints these import
+instructions. A graphical source chooser remains a release acceptance item.
+
 Use only synthetic data or private copies for headless converter validation.
 Never commit restore files, terminal transcripts, history, credentials or private
 paths as test fixtures or public release assets. Importing a session is not a

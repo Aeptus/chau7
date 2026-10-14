@@ -121,9 +121,7 @@ impl DataRoot {
 
     /// Read-only source root for an explicitly requested Swift restore import.
     pub fn swift_restore_bundle_root(&self) -> PathBuf {
-        swift_support_dir(&self.home)
-            .join("TabRestoreBundles")
-            .join("current")
+        swift_support_dir(&self.home).join("TabRestoreBundles")
     }
 
     /// Read-only on-disk Swift UserDefaults source. Never written by Rust.

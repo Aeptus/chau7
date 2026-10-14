@@ -4,6 +4,7 @@
 //! preference files and creates settings profiles; the current settings
 //! and the active profile stay as they are.
 
+pub mod swift_restore;
 mod window;
 
 use chau7_next_core::terminal_import::ImportableProfile;

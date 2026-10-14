@@ -120,3 +120,5 @@ pub mod token_optimization;
 pub mod welcome;
 
 pub mod work_profiler;
+
+pub mod swift_restore_import;

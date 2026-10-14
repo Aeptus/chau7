@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add explicit, read-only Swift and Next restore imports with dry-run counts,
+  source-integrity checks, instance locking and atomic complete-bundle publication.
+
 - Prepare an explicit Rust production build channel with the stable app identity
   and versioned writable storage, preserving Swift and Next data for rollback.
 
