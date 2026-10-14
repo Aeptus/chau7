@@ -4,10 +4,12 @@ Picking this up? Start with [`docs/rust-port/HANDOFF.md`](../../docs/rust-port/H
 
 The Rust/GPUI port of Chau7. It runs **next to** the Swift app (bundle id
 `com.chau7.next`, its own data folders), so both can be installed and used at
-the same time while the port reaches parity. See
-[`docs/rust-port/DUAL-SHIP.md`](../../docs/rust-port/DUAL-SHIP.md) for the plan
-and [`docs/rust-port/PARITY.md`](../../docs/rust-port/PARITY.md) for what is
-ported so far.
+the same time while the port reaches parity. This remains a development/preview
+build: it is not the current stable download or a production release. The
+production transition is still gated on release-candidate and migration
+acceptance. See the [production release guide](../../docs/rust-port/PRODUCTION-RELEASE.md),
+[dual-ship plan](../../docs/rust-port/DUAL-SHIP.md), and
+[parity status](../../docs/rust-port/PARITY.md).
 
 ## Install on macOS
 

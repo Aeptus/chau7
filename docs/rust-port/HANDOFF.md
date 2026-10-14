@@ -1,18 +1,36 @@
 # Chau7 Next: handoff
 
-## Validated follow-up (2026-10-14)
+## Current release status (2026-10-14)
 
-Application source `f79eda39` passes the 17 core checks, 21-case native matrix,
-both native keyboard selectors, normal fast package and isolated normal runtime.
-The ruler-triggered marked-composition loss is fixed by selecting its layout
-manager before editing. Grouping, restore and CPU-painter printing are covered.
-See [PARITY.md](PARITY.md) for exact revisions and evidence.
+The Rust/GPUI production transition is in preparation. The published stable
+Chau7 app remains the SwiftUI/AppKit build; PR #229 is still a draft and no Rust
+production release is claimed. The documentation baseline is feature source
+`21a57d003f2a85897430f7139d8c60f15e11aaf5`. Historical checks below are tied
+to their own source revisions and do not validate this baseline or authorize a
+release.
 
-The implementation inventory is complete. Physical Mac and real-service
-acceptance remain open; the user will test the finished package. Do not interpret
-synthetic AppKit input as physical IME coverage or fake-shell metrics as provider
-throughput. Preserve the user's unrelated files and installed profiles. No app
-installation, production relaunch, real provider or paired-device contact occurred.
+The parity inventory records implementation coverage, not complete release
+acceptance. Exact-source release-candidate evidence, physical Mac acceptance,
+real-service integration, and migration acceptance remain open. See
+[DUAL-SHIP.md](DUAL-SHIP.md), [PARITY.md](PARITY.md), and the
+[production release guide](PRODUCTION-RELEASE.md).
+
+## Historical checkpoint reported 2026-10-14 (unverified here)
+
+A previous handoff reported that application source `f79eda39` passed the 17
+core checks, 21-case native matrix, both native keyboard selectors, normal fast
+package, and isolated normal runtime. It also reported the ruler-triggered
+marked-composition fix, grouping, restore, and CPU-painter printing coverage.
+The referenced raw receipts are not available in this worktree, so this
+historical checkpoint is not independently verified here and does not validate
+the documentation baseline above. See [PARITY.md](PARITY.md) for the preserved
+historical report and its caveats.
+
+The historical report also recorded 1,309 inventory rows complete, with
+physical Mac and real-service acceptance still open. Synthetic AppKit input was
+not physical IME coverage, fake-shell metrics were not provider throughput, and
+no app installation, production relaunch, real provider, or paired-device
+contact occurred during that work.
 
 Read this first when picking up Chau7 Next (the Rust/GPUI port of Chau7).
 Last updated 2026-10-14.
@@ -31,11 +49,11 @@ Last updated 2026-10-14.
 
 ## 2. First steps
 
-1. The branch is now in the official repository: check out
-   `Aeptus/chau7:feat/chau7-next`. The current goal is **full parity with
-   current Chau7**, retaining the isolated macOS test app named **Chau7 Next**.
-   The user expanded the packaging milestone on 2026-10-11. See
-   [PARITY.md](PARITY.md) and [MACOS-TEST-PACKAGE.md](MACOS-TEST-PACKAGE.md).
+1. Continue work on `Aeptus/chau7:feat/chau7-next` and draft PR #229. Keep
+   the preview app isolated while the production transition is prepared. The
+   current published stable app remains SwiftUI/AppKit until the exact-source
+   release candidate and migration pass their gates. See [DUAL-SHIP.md](DUAL-SHIP.md),
+   [PARITY.md](PARITY.md), and [PRODUCTION-RELEASE.md](PRODUCTION-RELEASE.md).
 2. The push starts `.github/workflows/chau7-next.yml` (macOS, Linux,
    Windows). The macOS job uploads `Chau7-Next-macOS-arm64`. To run it:
    unzip, `xattr -dr com.apple.quarantine "Chau7 Next.app"`, open.
@@ -45,10 +63,13 @@ Last updated 2026-10-14.
 
 ## 3. Status
 
-- Current validated application source is `f79eda39`: 17 core checks, 21 native
-  cases, two keyboard selectors and isolated normal-package runtime pass.
-  The implementation inventory has 1,309 finished rows; physical and real-service
-  acceptance remain separate. The following checkpoints retain their own revisions.
+- This handoff's source baseline is `21a57d003f2a85897430f7139d8c60f15e11aaf5`;
+  no test, build, package, or release result is claimed here for that exact head.
+  Validation entries below are historical and remain scoped to their named source
+  revisions. The `f79eda39` report above is unverified in this worktree because
+  its raw receipts are unavailable. Inventory rows marked done describe
+  implementation evidence, not release readiness; physical Mac and real-service
+  acceptance remain separate.
 - Previous application source `8c2ef35ec39c5c3a199a9f9b199cc5f85422f847`
   (tree `6c3424440386292c1e286af67d3f27027366d9b3`) passed all 17 core
   checks: 3,059 Rust workspace tests (two ignored), 150 shared-terminal tests

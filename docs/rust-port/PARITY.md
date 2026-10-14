@@ -1,60 +1,75 @@
 # Chau7 Next parity with the current Swift app
 
-## Validated implementation batch (2026-10-14)
+## Current transition status (2026-10-14)
 
-The batch after `0121b9ab` corrects automatic grouping across repository changes
-and splits, primary/displayed root inference on restore, read-only MCP grouping
-diagnostics, native window integration retirement, tab-bar recovery, isolated
-Keychain replacement, status-item anchoring, bundle-only CLI installation and
-printing through the shared CPU painter.
+The Rust/GPUI production release is upcoming, not published. The current stable
+install and download paths remain on the SwiftUI/AppKit app until an exact-source
+release candidate and migration are accepted.
 
-Application source `f79eda39efb53912fc30d502ee864e92986884c2` (tree
-`3f8594d279748a99a2ad557a963c0f8610548e10`) passed all 17 core checks:
-3,084 Rust workspace tests (two ignored), 151 shared-terminal tests
-(one ignored), formatting, strict Clippy with and without native fixtures,
-Python/build-mode/CLI contracts, focused restore tests, seven EINTR checks and HUP.
-The 21-case native matrix and both supplementary native keyboard selectors pass.
-They use one exact native build and isolated profiles, without real providers or
-paired devices. These are AppKit event and injected-composition checks; physical
-keyboard and system-input-source acceptance remain separate.
+The documentation baseline is feature source
+`21a57d003f2a85897430f7139d8c60f15e11aaf5`; this page contains no validation
+result for that exact head. All historical checks below remain bound to their
+recorded revisions and must not be transferred to the baseline. The generated
+inventory records implementation evidence only: a row marked done does not mean
+manual Mac acceptance, production migration, or release readiness has passed.
 
-The normal fast package built in 44.526 seconds with the existing cache.
-This is one warm build observation, not a benchmark. Fast is the default;
-`BUILD_MODE=diagnostic` retains symbols and full compiler diagnostics when needed.
-An owned copy passed restore, contiguous split-repository grouping, exact
-68-byte MCP input, performance persistence and graceful shutdown. It saved three
-tabs, completed all ten shutdown phases, retired its process/socket/fake shells,
-and preserved prior acceptance data. The Software snapshot reported three windows,
-39 submitted frames and zero failed frames;
-16 timers were active. Token-rate data remained empty
-because only fake shells ran. No live throughput or CPU-improvement claim is made.
+Physical Mac input/accessibility, real-service integration, production-state
+migration, and release-candidate acceptance remain open. See
+[DUAL-SHIP.md](DUAL-SHIP.md) for the transition model and
+[PRODUCTION-RELEASE.md](PRODUCTION-RELEASE.md) for the release gate.
 
-The previous `3b4b37c0` matrix remains a 20/21 negative result. A later
-`8b8cf053` diagnostic reproduced it and identified the ruler's first
-`NSTextView.layoutManager` access triggering text-system reconfiguration and
-`fixAttributes` during composition. `SourceTextView::new` now selects the layout
-manager before content or focus. The original strict marked-text assertion passes;
-text-checking defaults and the line-number feature remain intact.
+## Historical validation report (2026-10-14; unverified here)
 
-The earlier `eb4baae5` local full-quality receipt passed nine selected
-gates (two conditional checks not applicable), 4,586 macOS tests (three skipped,
-zero failures) and 97 iOS tests. It retains its original revision. CI status for
-the published PR head is available on [PR229](https://github.com/Aeptus/chau7/pull/229/checks);
-that live status must not be inferred from an older local receipt.
+The earlier handoff reported that the batch after `0121b9ab` corrected automatic
+grouping across repository changes and splits, primary/displayed root inference
+on restore, read-only MCP grouping diagnostics, native window integration
+retirement, tab-bar recovery, isolated Keychain replacement, status-item
+anchoring, bundle-only CLI installation, and printing through the shared CPU
+painter.
 
-Implementation inventory: 1,309 of 1,309 rows finished (1,277 done,
-32 not applicable, zero partial). This measures implementation coverage. Physical
-AZERTY/dead-key/IME input, VoiceOver, multi-display interaction, real OS services,
-Keychain prompts, print dialogs/devices, live providers and paired remote devices
-still need the Mac hand-test. The user has deferred that test until this autonomous
-work is finished. Existing installed applications were not replaced or relaunched.
+It reported application source
+`f79eda39efb53912fc30d502ee864e92986884c2` (tree
+`3f8594d279748a99a2ad557a963c0f8610548e10`) passing 17 core checks: 3,084 Rust
+workspace tests (two ignored), 151 shared-terminal tests (one ignored),
+formatting, strict Clippy with and without native fixtures, Python/build-mode/CLI
+contracts, focused restore tests, seven EINTR checks, and HUP. It also reported
+the 21-case native matrix and both supplementary native keyboard selectors
+passing on one exact native build with isolated profiles and no real providers
+or paired devices. Those were described as AppKit event and injected-composition
+checks; physical keyboard and system-input-source acceptance remained separate.
 
-Current local receipts are under
-`resume-20261014-grouping-native/{core-final-v6,package-final-v6,native-build-final-v6,native21-final-v6,keyboard-final-v6-software,keyboard-final-v6-auto-device-failure}`;
-normal runtime is under
-`resume-20261013-1433/normal-runtime/outputs/normal-grouping-f79eda39-final`.
-All are rooted at
-`/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011`.
+The report recorded a 44.526-second warm normal fast package build, explicitly
+not a benchmark. An owned copy reportedly passed restore, contiguous
+split-repository grouping, exact 68-byte MCP input, performance persistence,
+and graceful shutdown. It saved three tabs, completed ten shutdown phases,
+retired its process/socket/fake shells, and preserved prior acceptance data. The
+Software snapshot reported three windows, 39 submitted frames, zero failed
+frames, and 16 active timers. Token-rate data was empty because only fake shells
+ran; the report made no live-throughput or CPU-improvement claim.
+
+The report also retained a prior `3b4b37c0` matrix as a 20/21 negative result.
+A later `8b8cf053` diagnostic reportedly reproduced it and traced the issue to
+the ruler's first `NSTextView.layoutManager` access during composition; the
+described fix selected the layout manager before content or focus. An earlier
+`eb4baae5` local quality receipt reportedly passed nine selected gates (two
+conditional checks not applicable), 4,586 macOS tests (three skipped, zero
+failures), and 97 iOS tests. These reports retain their named revisions; a live
+PR check status must not be inferred from them.
+
+The inventory report recorded 1,309 of 1,309 rows finished (1,277 done, 32 not
+applicable, zero partial). It listed physical AZERTY/dead-key/IME input,
+VoiceOver, multi-display interaction, real OS services, Keychain prompts, print
+dialogs/devices, live providers, and paired remote devices as still needing Mac
+hand checks. It also recorded that installed applications were not replaced or
+relaunched.
+
+The notes named receipts under
+`resume-20261014-grouping-native/{core-final-v6,package-final-v6,native-build-final-v6,native21-final-v6,keyboard-final-v6-software,keyboard-final-v6-auto-device-failure}`
+and `resume-20261013-1433/normal-runtime/outputs/normal-grouping-f79eda39-final`,
+rooted at `/Volumes/T7-repositories/chau7-next-parity-recovery-evidence-20261011`.
+Those raw receipts are unavailable in this worktree, so this historical report
+is preserved but unverified here. It does not validate the current baseline or
+establish release readiness.
 
 ## Previous implementation checkpoints (2026-10-13)
 
@@ -682,7 +697,7 @@ frames after deminiaturization; its compiled and native validation is pending.
 Complete native and physical acceptance remain open. The previous published
 checkpoint is retained below.
 
-## Published checkpoint and open acceptance (2026-10-13)
+## Feature-branch checkpoint and open acceptance (2026-10-13)
 
 Published source `84f82eb302e45b84f7c7eb0ca55eabccaf946767` preserves settings
 scroll deadlines for subpixel layout changes. Local validation passed 3,037

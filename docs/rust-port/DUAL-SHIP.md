@@ -1,18 +1,20 @@
 # Shipping the Swift and Rust apps side by side on macOS
 
-Status: phase 1 implemented (`apps/chau7-next`). Parity is tracked in
-[`PARITY.md`](PARITY.md).
+Status: phase 1 is implemented. The Rust/GPUI production transition is still
+in preparation; the published stable download remains the SwiftUI/AppKit app.
+Parity inventory and revision-scoped evidence are tracked in [`PARITY.md`](PARITY.md).
 
 ## 1. Goal
 
 Ship two macOS apps at the same time until the Rust (GPUI) app is complete:
 
-| | Current app | Rust app |
-|---|---|---|
-| Name | Chau7 | Chau7 Next |
-| Bundle id | `com.chau7.app` | `com.chau7.next` |
-| UI | SwiftUI + AppKit | GPUI |
-| Role | default, stable | opt-in beta |
+| | Published stable app | Parallel port | Planned production package |
+|---|---|---|---|
+| Name | Chau7 | Chau7 Next | Chau7 |
+| Bundle id | `com.chau7.app` | `com.chau7.next` | `com.chau7.app` |
+| UI | SwiftUI + AppKit | GPUI | GPUI |
+| Role | current public release | isolated development/preview app | upcoming release, not yet published |
+| Writable state | existing Swift paths | isolated Next paths | versioned Rust v1 paths; legacy Swift and Next data remain intact |
 
 Both apps must be installable and running at the same time on one Mac without
 breaking each other. The Swift app needs no changes for this; all isolation is
@@ -84,11 +86,12 @@ by the Swift app and can be read by both.
 | 0. Spike | Nothing; tab bar spike only | Spike verdict Go |
 | 1. Side by side | Chau7 (default) and Chau7 Next (beta), fully isolated as in section 3 | Both run together for a week of daily use with no interference |
 | 2. Parity | Chau7 Next gains features module by module | Every row of the parity table (section 6) is done |
-| 3. Shared data | Chau7 Next switches to the shared `~/.chau7` layout with a versioned schema, and owns `mcp.sock` and the `chau7` MCP entry; Swift app becomes read-only or is retired | Migration tested on a copy of a real `~/.chau7` |
-| 4. Swap | The Rust app ships as "Chau7" | See section 7 |
+| 3. Migration | The production Rust build uses a versioned Rust-owned state root and copies supported data from the Swift app without modifying the source. The isolated Next profile remains separate. | Exact-source migration checks pass on a copy; originals are verified unchanged |
+| 4. Swap | The Rust app is released as "Chau7" with the production bundle identity | Release-candidate, signing, migration, and manual acceptance gates pass before distribution changes |
 
-Phase 3 is the risky one: two apps writing the same config is where corruption
-happens. Until then, isolation is strict.
+Migration remains a release gate: test the one-time copy on a disposable profile
+and verify the Swift source and isolated Next profile are unchanged. The production
+Rust v1 root remains separate from both.
 
 ## 6. Parity tracking
 
@@ -99,18 +102,20 @@ Profiles, Keyboard, TokenOptimization, Monitoring, Editor, DataExplorer, and the
 rest), plus `Chau7Core`. Columns: status, owner agent, Rust location, tests
 ported, manual check done. Agents update it in the same PR as the code.
 
-## 7. Swap (phase 4)
+## 7. Production cutover (phase 4)
 
-macOS ties several things to the bundle id and signing identity, so the final
-swap needs care:
+The planned production Rust package uses the production Cargo feature, bundle id
+`com.chau7.app`, and display name `Chau7`. It writes to versioned Rust-owned
+state roots (`~/.chau7/rust-v1` and
+`~/Library/Application Support/Chau7/RustV1`). The existing Swift data and
+the isolated `com.chau7.next` profile remain intact; migration copies supported
+Swift data into the Rust v1 root without repurposing either source.
 
-- Shipping the Rust app under `com.chau7.app` keeps the user's UserDefaults domain
-  and any permissions granted to that bundle id, as long as it is signed with the
-  same team identity.
-- The app currently requests notification authorization; check that it carries
-  over after the swap on a test machine.
-- `com.chau7.next` users get a one-time migration of their data root into the
-  shared layout, then the Next bundle is retired.
+This package has not been published. Keep the current stable release workflow,
+Homebrew cask, and website download link on the existing Swift release until the
+exact-source release candidate passes packaging, migration, CI, and manual
+acceptance. The [production release guide](PRODUCTION-RELEASE.md) owns the
+release sequence and detailed migration behavior.
 
 ## 8. Testing with a Mac only
 
