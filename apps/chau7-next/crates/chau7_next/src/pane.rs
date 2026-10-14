@@ -2077,7 +2077,7 @@ mod terminal_font_settings_tests {
             gpui_kit::init(cx);
             cx.set_global(Settings::default());
             cx.set_global(AppData::new(root));
-            crate::command_guard::init(cx);
+            crate::terminal::command_guard::init(cx);
         });
 
         let (window, tree) = harness.update(|cx| {

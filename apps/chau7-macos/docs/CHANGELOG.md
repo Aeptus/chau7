@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Initialize the production terminal command guard in the isolated tab-zoom regression.
 - Delay Next shell loading indicators until 500 ms and avoid animation redraws
   while the indicator is hidden.
 - Keep Next native window controls in their parent coordinate space after zoom
