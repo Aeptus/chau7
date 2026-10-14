@@ -190,10 +190,8 @@ fn main() {
             cx.background_spawn(async move {
                 if early {
                     let closed = incidents::shutdown().is_ok();
-                    if closed {
-                        if let Err(error) = instance.mark_clean() {
-                            log::warn!("Cannot mark early launch termination clean: {error}");
-                        }
+                    if closed && let Err(error) = instance.mark_clean() {
+                        log::warn!("Cannot mark early launch termination clean: {error}");
                     }
                     logging::flush();
                 }

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Present the returning-user splash before initializing services and terminal
   windows, dismiss it on the first ready terminal paint, preserve restore data
   when quitting during startup, and expose numeric launch milestones.
+  Painted shell-start errors also release the splash immediately.
 
 - Persist telemetry extraction provenance without overwriting live metadata,
   and resolve Claude transcripts in project paths with spaces or punctuation.
