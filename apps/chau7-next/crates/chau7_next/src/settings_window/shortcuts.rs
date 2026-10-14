@@ -15,7 +15,7 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 
 use super::update;
 use crate::settings::Settings;
-use crate::theme::Chrome;
+use crate::theme::{Chrome, panel_titlebar};
 
 #[derive(Default)]
 struct ShortcutsWindowHandle(Option<AnyWindowHandle>);
@@ -233,7 +233,8 @@ impl Render for ShortcutsView {
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
             .child(
-                TitleBar::new().child(div().text_sm().child(crate::l10n::tr("Keyboard Shortcuts"))),
+                panel_titlebar(chrome)
+                    .child(div().text_sm().child(crate::l10n::tr("Keyboard Shortcuts"))),
             )
             .child(
                 div()

@@ -77,7 +77,7 @@ use crate::platform::login_item::{self, LoginItemStatus};
 use crate::settings::Settings;
 use crate::settings::config_files::{self, ConfigFiles};
 use crate::settings::sync::SyncState;
-use crate::theme::Chrome;
+use crate::theme::{Chrome, panel_titlebar};
 use crate::workspace::AppData;
 
 pub use shortcuts::open as open_shortcuts;
@@ -939,7 +939,7 @@ impl Render for SettingsView {
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
             .when(crate::l10n::is_rtl(), |d| d.text_right())
-            .child(TitleBar::new().child(div().text_sm().child(crate::l10n::tr("Settings"))))
+            .child(panel_titlebar(chrome).child(div().text_sm().child(crate::l10n::tr("Settings"))))
             .child(
                 crate::l10n::row_direction(div().flex_1().min_h_0().flex())
                     .child(sidebar)

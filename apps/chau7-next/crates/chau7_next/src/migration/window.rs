@@ -129,7 +129,7 @@ impl Render for WizardView {
             .flex_col()
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
-            .child(TitleBar::new().child(div().text_sm().child(TITLE)))
+            .child(crate::theme::panel_titlebar(chrome).child(div().text_sm().child(TITLE)))
             .child(header)
             .child(div().flex_1().min_h_0().p_4().child(body))
     }

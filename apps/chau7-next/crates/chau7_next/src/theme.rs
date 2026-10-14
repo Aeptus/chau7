@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 
 use chau7_next_core::color_schemes::ColorScheme;
 use chau7_next_core::tabs_state::TabColor;
-use gpui::{App, Hsla, Rgba};
+use gpui::{App, Hsla, Rgba, Styled};
+use gpui_kit::component::TitleBar;
 
 use crate::platform::{system, window_style};
 use crate::settings::{AppTheme, Settings};
@@ -122,6 +123,18 @@ impl Chrome {
     }
 }
 
+/// Title bar for a themed panel window.
+///
+/// `TitleBar` otherwise paints itself from gpui-component's theme colors,
+/// which can diverge from the app's panel palette. Keep the bar, its title,
+/// and separator on the same palette as the window content.
+pub fn panel_titlebar(chrome: Chrome) -> TitleBar {
+    TitleBar::new()
+        .bg(chrome.panel_bg)
+        .text_color(chrome.text)
+        .border_color(chrome.border)
+}
+
 /// Gray of the HUD material (`NSVisualEffectView.Material.hudWindow`).
 const HUD_GRAY: Hsla = Hsla {
     h: 0.0,
@@ -206,6 +219,37 @@ mod tests {
             assert!(hud.text.l > 0.9, "tab titles must read on the HUD");
             assert!(hud.text_muted.l > 0.9 && hud.text_muted.a >= 0.6);
             assert!(hud.tab_selected_bg.l > hud.tab_bg.l);
+        }
+    }
+
+    #[test]
+    fn panel_titlebar_uses_panel_palette_in_light_dark_and_high_contrast() {
+        for (lightness, high_contrast) in [(0.95, false), (0.13, false), (0.95, true), (0.13, true)]
+        {
+            let background = gpui::hsla(0.0, 0.0, lightness, 1.0);
+            let chrome = Chrome::from_background(background, 1.0, high_contrast);
+            let mut titlebar = panel_titlebar(chrome);
+            let style = titlebar.style();
+
+            assert_eq!(
+                style
+                    .background
+                    .as_ref()
+                    .and_then(|fill| fill.color())
+                    .and_then(|background| background.as_solid()),
+                Some(chrome.panel_bg),
+                "titlebar background for lightness={lightness}, high_contrast={high_contrast}"
+            );
+            assert_eq!(
+                style.text.color,
+                Some(chrome.text),
+                "titlebar foreground for lightness={lightness}, high_contrast={high_contrast}"
+            );
+            assert_eq!(
+                style.border_color,
+                Some(chrome.border),
+                "titlebar separator for lightness={lightness}, high_contrast={high_contrast}"
+            );
         }
     }
 }

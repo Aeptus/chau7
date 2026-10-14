@@ -209,7 +209,8 @@ impl Render for AiLogView {
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
             .child(
-                TitleBar::new().child(div().text_sm().child(crate::l10n::tr("AI Terminal Logs"))),
+                crate::theme::panel_titlebar(chrome)
+                    .child(div().text_sm().child(crate::l10n::tr("AI Terminal Logs"))),
             )
             .child(div().flex().gap_1().p_2().children(tabs))
             .child(body)

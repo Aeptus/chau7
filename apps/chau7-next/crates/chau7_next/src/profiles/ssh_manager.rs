@@ -860,7 +860,10 @@ impl Render for SshManager {
             .on_action(cx.listener(Self::on_row_menu))
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
-            .child(TitleBar::new().child(div().text_sm().child(crate::l10n::tr("SSH Connections"))))
+            .child(
+                crate::theme::panel_titlebar(chrome)
+                    .child(div().text_sm().child(crate::l10n::tr("SSH Connections"))),
+            )
             .child(div().flex_1().min_h_0().flex().child(sidebar).child(main))
             .children(confirm)
     }

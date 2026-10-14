@@ -236,7 +236,8 @@ impl Render for ChangedFilesView {
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
             .child(
-                TitleBar::new().child(div().text_sm().child(changed_files_title(self.files.len()))),
+                crate::theme::panel_titlebar(chrome)
+                    .child(div().text_sm().child(changed_files_title(self.files.len()))),
             )
             .child(div().p_2().child(Input::new(&self.filter)))
             .child(

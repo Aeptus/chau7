@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Match Settings and secondary-window titlebars to their content palette,
+  including title text and separators in light, dark and high-contrast modes.
+- Keep package installation and unrelated runner argument paths from being
+  mistaken for live AI tools while retaining supported launcher detection.
 - Reuse production window options in Next native restore and keyboard fixtures
   so zoom and fullscreen control checks exercise the real custom titlebar.
 - Initialize the production terminal command guard in the isolated tab-zoom regression.

@@ -339,7 +339,10 @@ impl Render for DebugConsole {
             .flex_col()
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
-            .child(TitleBar::new().child(div().text_sm().child(crate::l10n::tr("Debug Console"))))
+            .child(
+                crate::theme::panel_titlebar(chrome)
+                    .child(div().text_sm().child(crate::l10n::tr("Debug Console"))),
+            )
             .child(self.header(chrome, cx))
             .child(self.tab_bar(chrome, cx))
             // Each tab scrolls its own list (`ui::page`).

@@ -167,7 +167,8 @@ impl Render for AnalyticsView {
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
             .child(
-                TitleBar::new().child(div().text_sm().child(crate::l10n::tr("Terminal Analytics"))),
+                crate::theme::panel_titlebar(chrome)
+                    .child(div().text_sm().child(crate::l10n::tr("Terminal Analytics"))),
             )
             .child(
                 div()

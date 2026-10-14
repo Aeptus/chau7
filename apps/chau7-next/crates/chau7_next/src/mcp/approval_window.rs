@@ -162,7 +162,7 @@ impl Render for ApprovalDialog {
                     this.answer(0, window);
                 }
             }))
-            .child(TitleBar::new())
+            .child(crate::theme::panel_titlebar(chrome))
             .child(
                 div()
                     .flex_1()

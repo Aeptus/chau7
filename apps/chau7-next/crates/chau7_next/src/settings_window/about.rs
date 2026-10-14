@@ -11,7 +11,7 @@ use gpui_kit::component::TitleBar;
 use super::SectionContext;
 use super::widgets::{button, description, info_row, section as titled};
 use crate::platform::system;
-use crate::theme::Chrome;
+use crate::theme::{Chrome, panel_titlebar};
 use crate::workspace::AppData;
 
 const GITHUB: &str = "https://github.com/Aeptus/chau7";
@@ -258,7 +258,7 @@ impl Render for AboutView {
             .flex_col()
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
-            .child(TitleBar::new().child(div().text_sm().child(crate::l10n::tr("About"))))
+            .child(panel_titlebar(chrome).child(div().text_sm().child(crate::l10n::tr("About"))))
             .child(
                 div()
                     .flex_1()

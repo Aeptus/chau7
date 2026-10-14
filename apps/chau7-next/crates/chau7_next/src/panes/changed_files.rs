@@ -272,7 +272,7 @@ impl Render for ChangedFilesView {
             .text_color(chrome.text)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_menu))
-            .child(TitleBar::new())
+            .child(crate::theme::panel_titlebar(chrome))
             .child(div().p_2().child(Input::new(&self.filter)))
             .child(div().h(px(1.0)).bg(chrome.border))
             .child(list)

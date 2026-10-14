@@ -652,7 +652,10 @@ impl Render for ApiAnalyticsView {
             .flex_col()
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
-            .child(TitleBar::new().child(div().text_sm().child(crate::l10n::tr("API Analytics"))))
+            .child(
+                crate::theme::panel_titlebar(chrome)
+                    .child(div().text_sm().child(crate::l10n::tr("API Analytics"))),
+            )
             .child(
                 div()
                     .id("api-analytics-scroll")

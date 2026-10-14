@@ -518,7 +518,8 @@ impl Render for ReportView {
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
             .child(
-                TitleBar::new().child(div().text_sm().child(crate::l10n::tr("Report an Issue"))),
+                crate::theme::panel_titlebar(chrome)
+                    .child(div().text_sm().child(crate::l10n::tr("Report an Issue"))),
             );
         if self.show_privacy {
             return frame.child(

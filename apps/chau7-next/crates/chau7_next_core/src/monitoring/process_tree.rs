@@ -17,9 +17,14 @@ pub struct Snapshot {
     pub rows: HashMap<u32, ProcessRow>,
     children: HashMap<u32, Vec<u32>>,
 }
+/// Process names whose argv is collected by the native process monitor.
 pub const INTERPRETERS: &[&str] = &[
     "node", "python", "python3", "ruby", "npx", "bun", "bunx", "pnpm",
 ];
+/// Runtimes whose argv path may identify an AI CLI script. Package-manager
+/// argv is still inspected above for explicit launcher commands, but arbitrary
+/// paths passed to install/run operations must not be treated as running tools.
+const SCRIPT_RUNTIME_PATHS: &[&str] = &["node", "python", "python3", "ruby"];
 const SKIPPED: &[&str] = &[
     "zsh",
     "bash",
@@ -161,10 +166,10 @@ pub fn match_process(command: &str, argv: &[String]) -> Option<&'static str> {
     {
         return Some(provider);
     }
-    // The native monitor retrieves argv only for known interpreters. Apply the
-    // same restriction to the broader `ps` fallback so arbitrary commands such
-    // as `cat /tmp/opencode` cannot be mistaken for a running AI process.
-    if !INTERPRETERS.contains(&base.as_str()) {
+    // Wrapper argv has already been checked by detect_app. Restrict basename
+    // matching of later path arguments to script runtimes, so commands such as
+    // `pnpm install /tmp/opencode` or `npx unrelated /tmp/opencode` stay negative.
+    if !SCRIPT_RUNTIME_PATHS.contains(&base.as_str()) {
         return None;
     }
     for (index, token) in argv.iter().enumerate() {
@@ -299,6 +304,15 @@ mod tests {
             match_process("vim", &["vim".into(), "/tmp/claude".into()]),
             None
         );
+        for (command, args) in [
+            ("pnpm", vec!["pnpm", "install", "/tmp/opencode"]),
+            ("bun", vec!["bun", "install", "/tmp/opencode"]),
+            ("npx", vec!["npx", "unrelated", "/tmp/opencode"]),
+            ("bunx", vec!["bunx", "unrelated", "/tmp/opencode"]),
+        ] {
+            let args: Vec<_> = args.into_iter().map(str::to_string).collect();
+            assert_eq!(match_process(command, &args), None, "{command}");
+        }
         assert_eq!(
             match_process("node", &["node".into(), "/opt/tools/opencode".into()]),
             Some("OpenCode")

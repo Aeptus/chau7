@@ -751,7 +751,7 @@ impl Render for DataExplorerView {
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
             .text_size(px(13.0))
-            .child(TitleBar::new())
+            .child(crate::theme::panel_titlebar(chrome))
             .child(div().flex().justify_center().p_3().child(picker))
             .child(div().h(px(1.0)).bg(chrome.border))
             .child(div().flex_1().min_h_0().child(content))

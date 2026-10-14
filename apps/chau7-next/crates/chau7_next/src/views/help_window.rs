@@ -255,7 +255,10 @@ impl Render for HelpView {
             .flex_col()
             .bg(chrome.panel_bg)
             .text_color(chrome.text)
-            .child(TitleBar::new().child(div().text_sm().child(crate::l10n::tr(WINDOW_TITLE))))
+            .child(
+                crate::theme::panel_titlebar(chrome)
+                    .child(div().text_sm().child(crate::l10n::tr(WINDOW_TITLE))),
+            )
             .child(
                 div()
                     .flex_1()
