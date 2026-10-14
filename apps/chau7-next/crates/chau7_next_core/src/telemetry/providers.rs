@@ -97,7 +97,7 @@ impl ClaudeCodeContentProvider {
         }
     }
 
-    /// Resolve only the exact dashed CWD folder written by Claude Code.
+    /// Resolve only the exact encoded CWD folder written by Claude Code.
     /// A suffix or last-components match can select a different project when
     /// multiple checkouts share a name.
     fn resolve_project_dir(&self, cwd: &str) -> Option<PathBuf> {
@@ -105,7 +105,7 @@ impl ClaudeCodeContentProvider {
         if entries.is_empty() {
             return None;
         }
-        let normalized = cwd.replace('/', "-");
+        let normalized = crate::session_restore::claude_project_dir_name(cwd);
         let exact = entries.into_iter().filter(|entry| {
             let name = file_name(entry);
             name == normalized || name == normalized.trim_start_matches('-')
@@ -420,6 +420,24 @@ mod tests {
         );
         // A checkout with the same trailing components is a different project.
         assert!(provider.resolve_project_dir("/Volumes/x/dev/app").is_none());
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn claude_project_resolution_encodes_spaces_and_punctuation_exactly() {
+        let home = temp_home("claude-project-encoding");
+        let cwd = "/Volumes/T7 repositories/Application Support/Chau7_3.0";
+        let encoded = crate::session_restore::claude_project_dir_name(cwd);
+        let project = home.join(".claude/projects").join(encoded);
+        std::fs::create_dir_all(&project).unwrap();
+        let provider = ClaudeCodeContentProvider::new(&home);
+
+        assert_eq!(provider.resolve_project_dir(cwd), Some(project));
+        assert!(
+            provider
+                .resolve_project_dir("/Volumes/other/Application Support/Chau7_3.0")
+                .is_none()
+        );
         let _ = std::fs::remove_dir_all(home);
     }
 

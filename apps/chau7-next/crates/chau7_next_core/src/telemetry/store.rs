@@ -958,13 +958,34 @@ impl TelemetryStore {
     ) -> rusqlite::Result<()> {
         self.with_result( |c| {
             let tx = c.unchecked_transaction()?;
+            let persisted_metadata: Option<String> = tx
+                .query_row(
+                    "SELECT metadata FROM runs WHERE run_id = ?1",
+                    [&run.id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .flatten();
+            let mut metadata: HashMap<String, String> =
+                decode_json(persisted_metadata).unwrap_or_default();
+            for (key, value) in &run.metadata {
+                if matches!(
+                    key.as_str(),
+                    "content_extraction_outcome"
+                        | "content_fallback_source"
+                        | "pricing_catalog_version"
+                ) || !metadata.contains_key(key)
+                {
+                    metadata.insert(key.clone(), value.clone());
+                }
+            }
             tx.execute(
                 "UPDATE runs SET
                     session_id = ?, model = ?, ended_at = ?, duration_ms = ?, exit_status = ?,
                     total_input_tokens = ?, total_cached_input_tokens = ?, total_cache_creation_input_tokens = ?, total_cache_read_input_tokens = ?, total_output_tokens = ?,
                     total_reasoning_output_tokens = ?, cost_usd = ?, token_usage_source = ?,
                     token_usage_state = ?, cost_source = ?, cost_state = ?,
-                    turn_count = ?, raw_transcript_ref = ?, error_message = ?
+                    turn_count = ?, metadata = ?, raw_transcript_ref = ?, error_message = ?
                 WHERE run_id = ?",
                 params![
                     run.session_id,
@@ -984,6 +1005,7 @@ impl TelemetryStore {
                     run.cost_source.as_ref().and_then(raw),
                     raw(&run.cost_state),
                     run.turn_count,
+                    encode_json(&metadata),
                     run.raw_transcript_ref,
                     run.error_message,
                     run.id,
@@ -1876,6 +1898,112 @@ mod tests {
         assert_eq!(sessions[0]["provider"], "claude");
         assert_eq!(sessions[0]["run_count"], 1);
         assert!(store.list_sessions(Some("/other")).is_empty());
+    }
+
+    #[test]
+    fn finalize_merges_completion_metadata_with_current_run_metadata() {
+        let store = TelemetryStore::in_memory();
+        let mut started = run("claude", Some("/repo"), Some("TAB"));
+        started.tags = vec!["startup-tag".into()];
+        started
+            .metadata
+            .insert("startup_marker".into(), "kept".into());
+        started
+            .metadata
+            .insert("control_state".into(), "initial".into());
+        store.insert_run(&started);
+
+        // Simulate metadata written after the completion snapshot was cloned.
+        let mut persisted = started.metadata.clone();
+        persisted.insert("control_state".into(), "current".into());
+        persisted.insert("custom_live_key".into(), "preserved".into());
+        assert!(store.with(false, |connection| {
+            connection
+                .execute(
+                    "UPDATE runs SET metadata = ?1 WHERE run_id = ?2",
+                    params![encode_json(&persisted), &started.id],
+                )
+                .map(|_| true)
+        }));
+        store.update_run_tags(&started.id, &["current-tag".into()]);
+
+        let mut completed = started.clone();
+        completed.ended_at = Some(completed.started_at + Duration::seconds(1));
+        completed.duration_ms = Some(1_000);
+        completed.turn_count = 1;
+        completed.metadata.insert(
+            "content_extraction_outcome".into(),
+            "transcript_missing".into(),
+        );
+        completed
+            .metadata
+            .insert("content_fallback_source".into(), "terminal_buffer".into());
+        let mut turn = TelemetryTurn::new(&completed.id, 0, TurnRole::Assistant);
+        turn.content = Some("fallback".into());
+        store.try_finalize_run(&completed, &[turn], &[]).unwrap();
+
+        let persisted = store.get_run(&started.id).unwrap();
+        assert_eq!(persisted.tags, vec!["current-tag"]);
+        assert_eq!(
+            persisted.metadata.get("startup_marker").map(String::as_str),
+            Some("kept")
+        );
+        assert_eq!(
+            persisted.metadata.get("control_state").map(String::as_str),
+            Some("current")
+        );
+        assert_eq!(
+            persisted
+                .metadata
+                .get("custom_live_key")
+                .map(String::as_str),
+            Some("preserved")
+        );
+        assert_eq!(
+            persisted
+                .metadata
+                .get("content_extraction_outcome")
+                .map(String::as_str),
+            Some("transcript_missing")
+        );
+        assert_eq!(
+            persisted
+                .metadata
+                .get("content_fallback_source")
+                .map(String::as_str),
+            Some("terminal_buffer")
+        );
+    }
+
+    #[test]
+    fn finalize_recovers_malformed_persisted_metadata_like_run_reads() {
+        let store = TelemetryStore::in_memory();
+        let mut completed = run("claude", Some("/repo"), Some("TAB"));
+        store.insert_run(&completed);
+        assert!(store.with(false, |connection| {
+            connection
+                .execute(
+                    "UPDATE runs SET metadata = 'malformed' WHERE run_id = ?1",
+                    [&completed.id],
+                )
+                .map(|_| true)
+        }));
+        completed.ended_at = Some(completed.started_at + Duration::seconds(1));
+        completed.metadata.insert(
+            "content_extraction_outcome".into(),
+            "missing_session".into(),
+        );
+        store.try_finalize_run(&completed, &[], &[]).unwrap();
+
+        let persisted = store.get_run(&completed.id).unwrap();
+        assert_eq!(
+            persisted
+                .metadata
+                .get("content_extraction_outcome")
+                .map(String::as_str),
+            Some("missing_session")
+        );
+        assert_eq!(persisted.metadata.len(), 1);
     }
 
     #[test]
