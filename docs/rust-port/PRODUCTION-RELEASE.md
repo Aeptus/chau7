@@ -137,10 +137,17 @@ not claimed as passing. New-head GitHub CI is tracked separately in
 Cleanup removed 28 named unused generated directories, totaling 22.68 GiB of
 allocated blocks. The original profiles, current and rollback apps, private
 receipts, unknown files and warm fast cache were preserved. The official website
-copy is prepared in [website PR #2](https://github.com/Aeptus/chau7-website/pull/2),
-not deployed. Runtime restoration, graphical source selection, stable CLI
-installation, preference/Keychain acceptance and the stable-pipeline switch
-remain release gates.
+updates were merged in [website PR #2](https://github.com/Aeptus/chau7-website/pull/2)
+and deployed to [chau7.sh](https://chau7.sh/) on October 14, 2026, from website
+commit `6dc6540b4ba0e3dc8e20a8fd710b67a194df942b`. The new
+[Rust transition guide](https://chau7.sh/rust-transition), nine feature guides,
+home/catalog links, knowledge pages and sitemaps distinguish stable v0.5.1 from
+the unreleased candidate. Production verification checked 14 routes/assets
+against the reviewed public files; internal repository files were excluded.
+The stable download remains unchanged. Runtime restoration, graphical source
+selection, stable CLI installation, preference/Keychain acceptance and the
+stable-pipeline switch remain release gates. No local app was launched or stopped
+for the website deployment.
 
 ## Required release evidence
 
