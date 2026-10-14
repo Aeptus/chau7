@@ -564,7 +564,7 @@ class NativeActivationHandshakeTests(unittest.TestCase):
             environment,
             window_renderer,
             before_acknowledgement=None,
-            deadline_seconds=3,
+            deadline_seconds=6,
         ):
             stage = handshake["stage"]
             events.append(f"request:{stage}")

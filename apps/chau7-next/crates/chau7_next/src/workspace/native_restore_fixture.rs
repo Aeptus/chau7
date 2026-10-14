@@ -523,7 +523,7 @@ async fn wait_for_activation_reveal(
     activation_ack_path: &Path,
 ) -> Result<(WindowFrameEvidence, WindowFrameEvidence, Instant), String> {
     let stage = "actual deminiaturized surface reveal";
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(8);
     let mut frame_at_ack = None;
 
     loop {
@@ -2008,6 +2008,12 @@ fn native_rects_match(left: objc2_foundation::NSRect, right: objc2_foundation::N
 /// conversions identify a container whose bounds would clip a light.
 fn traffic_light_geometry(native: &NSWindow, stage: &str) -> Result<serde_json::Value, String> {
     let mut controls = serde_json::Map::new();
+    let window_frame = native.frame();
+    let content_view = native
+        .contentView()
+        .ok_or_else(|| format!("{stage}: native window has no content view"))?;
+    let content_bounds = content_view.bounds();
+    let content_flipped = content_view.isFlipped();
     for (button_kind, name) in [
         (NSWindowButton::CloseButton, "close"),
         (NSWindowButton::MiniaturizeButton, "minimize"),
@@ -2027,7 +2033,12 @@ fn traffic_light_geometry(native: &NSWindow, stage: &str) -> Result<serde_json::
             &format!("{stage}: native {name} traffic light is clipped by an ancestor"),
         )?;
 
-        let mut ancestor = unsafe { button.superview() };
+        let button_parent = unsafe { button.superview() };
+        let button_parent_bounds = button_parent
+            .as_ref()
+            .map(|view| native_rect_values(view.bounds()));
+        let button_parent_flipped = button_parent.as_ref().map(|view| view.isFlipped());
+        let mut ancestor = button_parent;
         let mut ancestor_count = 0;
         while let Some(view) = ancestor {
             let button_in_ancestor = button.convertRect_toView(bounds, Some(&view));
@@ -2049,14 +2060,24 @@ fn traffic_light_geometry(native: &NSWindow, stage: &str) -> Result<serde_json::
             ancestor_count > 0,
             &format!("{stage}: native {name} traffic light has no native ancestors"),
         )?;
-        // Window base coordinates use a bottom-left origin, independent of
-        // whether AppKit swapped in a flipped content view during fullscreen.
         let in_window = button.convertRect_toView(bounds, None);
-        let top_inset = native.frame().size.height - in_window.origin.y - in_window.size.height;
+        let in_screen = native.convertRectToScreen(in_window);
+        let window_top = window_frame.origin.y + window_frame.size.height;
+        let button_screen_top = in_screen.origin.y + in_screen.size.height;
+        let top_inset = window_top - button_screen_top;
+        let geometry = serde_json::json!({
+            "window_frame": native_rect_values(window_frame),
+            "window_rect": native_rect_values(in_window),
+            "screen_rect": native_rect_values(in_screen),
+            "content_bounds": native_rect_values(content_bounds),
+            "content_flipped": content_flipped,
+            "button_parent_bounds": button_parent_bounds,
+            "button_parent_flipped": button_parent_flipped,
+        });
         ensure(
             top_inset.is_finite() && (-1.0..=64.0).contains(&top_inset),
             &format!(
-                "{stage}: native {name} traffic light moved away from the top edge: inset={top_inset}"
+                "{stage}: native {name} traffic light moved away from the top edge: inset={top_inset}; geometry={geometry}"
             ),
         )?;
         controls.insert(
@@ -2064,6 +2085,12 @@ fn traffic_light_geometry(native: &NSWindow, stage: &str) -> Result<serde_json::
             serde_json::json!({
                 "visible_rect": native_rect_values(visible),
                 "window_rect": native_rect_values(in_window),
+                "screen_rect": native_rect_values(in_screen),
+                "window_frame": native_rect_values(window_frame),
+                "content_bounds": native_rect_values(content_bounds),
+                "content_flipped": content_flipped,
+                "button_parent_bounds": button_parent_bounds,
+                "button_parent_flipped": button_parent_flipped,
                 "top_inset_points": top_inset,
                 "ancestor_count": ancestor_count,
             }),
@@ -2635,7 +2662,7 @@ async fn verify_surfaces(
     // The owned acceptance fixture needs an explicit foreground request before
     // testing native restore. Ask LaunchServices to activate this exact bundle,
     // then require both its ACK and AppKit's active state under one deadline.
-    let ordered_front_deadline = Instant::now() + Duration::from_secs(5);
+    let ordered_front_deadline = Instant::now() + Duration::from_secs(8);
     let ordered_front_activation_ack_path = profile
         .home
         .join("native-parity-ordered-front-activation.ack");

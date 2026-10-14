@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Anchor native fullscreen traffic lights in a small top-left host so AppKit
+  titlebar layout cannot move them to the bottom after resizing or focus loss.
+- Measure native control placement in screen coordinates and allow bounded
+  LaunchServices activation time through actual fullscreen Space transitions.
 - Borrow retained AppKit application handles in native focus timeout diagnostics.
 - Switch between two uniquely owned native fixture apps when checking inactive
   fullscreen controls, and retain bounded focus diagnostics on timeout.

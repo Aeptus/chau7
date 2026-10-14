@@ -51,19 +51,22 @@ use objc::{
     sel, sel_impl,
 };
 use objc2::{
-    AnyThread, MainThreadMarker,
+    AnyThread, MainThreadMarker, MainThreadOnly,
     rc::Retained,
     runtime::{AnyObject as Objc2Object, ProtocolObject},
 };
 use objc2_app_kit::{
     NSAlert, NSAlertStyle,
-    NSApplicationPresentationOptions as Objc2NSApplicationPresentationOptions, NSBeep,
+    NSApplicationPresentationOptions as Objc2NSApplicationPresentationOptions,
+    NSAutoresizingMaskOptions, NSBeep,
     NSButton as Objc2NSButton, NSDraggingImageComponent, NSDraggingImageComponentIconKey,
     NSDraggingItem, NSPasteboardWriting, NSTrackingArea, NSTrackingAreaOptions,
     NSView as Objc2NSView, NSWindow as Objc2NSWindow, NSWindowButton as Objc2NSWindowButton,
     NSWorkspace,
 };
-use objc2_foundation::{NSPoint as Objc2NSPoint, NSRect as Objc2NSRect, NSURL};
+use objc2_foundation::{
+    NSPoint as Objc2NSPoint, NSRect as Objc2NSRect, NSSize as Objc2NSSize, NSURL,
+};
 use parking_lot::Mutex;
 use raw_window_handle as rwh;
 use smallvec::SmallVec;
@@ -585,29 +588,108 @@ struct TrafficLightButtons {
 struct FullscreenTrafficLightOverlay {
     button_container: Retained<Objc2NSView>,
     titlebar_container: Retained<Objc2NSView>,
+    host_view: Retained<Objc2NSView>,
     buttons: TrafficLightButtons,
     frames: TrafficLightFrames,
-    button_width: f64,
-    button_height: f64,
     button_padding: f64,
 }
 
-fn fullscreen_traffic_light_origin_x(bounds_origin_x: f64, padding_x: f64) -> f64 {
-    bounds_origin_x + padding_x
+#[derive(Clone, Copy)]
+struct FullscreenTrafficLightLayout {
+    host_frame: Objc2NSRect,
+    close_origin: Objc2NSPoint,
+    minimize_origin: Objc2NSPoint,
+    zoom_origin: Objc2NSPoint,
 }
 
-fn fullscreen_traffic_light_origin_y(
-    bounds_origin_y: f64,
-    bounds_height: f64,
-    button_height: f64,
+fn fullscreen_traffic_light_layout(
+    bounds: Objc2NSRect,
+    bounds_is_flipped: bool,
+    host_is_flipped: bool,
+    frames: TrafficLightFrames,
+    button_padding: f64,
+    padding_x: f64,
     padding_y: f64,
-    is_flipped: bool,
-) -> f64 {
-    if is_flipped {
-        bounds_origin_y + padding_y
-    } else {
-        bounds_origin_y + bounds_height - button_height - padding_y
+) -> Option<FullscreenTrafficLightLayout> {
+    let button_frames = [frames.close, frames.minimize, frames.zoom];
+    let button_width = frames.close.size.width;
+    let button_height = frames.close.size.height;
+    if !button_width.is_finite()
+        || button_width <= 0.0
+        || !button_height.is_finite()
+        || button_height <= 0.0
+        || !button_padding.is_finite()
+        || button_padding <= 0.0
+        || !padding_x.is_finite()
+        || padding_x < 0.0
+        || !padding_y.is_finite()
+        || padding_y < 0.0
+        || button_frames.iter().any(|frame| {
+            !frame.origin.x.is_finite()
+                || !frame.origin.y.is_finite()
+                || !frame.size.width.is_finite()
+                || frame.size.width <= 0.0
+                || !frame.size.height.is_finite()
+                || frame.size.height <= 0.0
+        })
+    {
+        return None;
     }
+
+    let close_x = padding_x;
+    let minimize_x = close_x + button_width + button_padding;
+    let zoom_x = minimize_x + button_width + button_padding;
+    let row_width = zoom_x + button_width + padding_x;
+    let original_right = button_frames
+        .iter()
+        .map(|frame| frame.origin.x + frame.size.width)
+        .fold(0.0_f64, f64::max);
+    let host_width = row_width.max(original_right + padding_x);
+
+    // AppKit may restore a standard button's original titlebar-local frame after
+    // reparenting. Give that small native row enough room to stay near the top
+    // when the content view resizes, rather than parenting the buttons directly
+    // to the full-height content view.
+    let original_bottom = button_frames
+        .iter()
+        .map(|frame| frame.origin.y + frame.size.height)
+        .fold(0.0_f64, f64::max);
+    let host_height = (button_height + padding_y * 2.0).max(original_bottom + padding_y);
+
+    let host_origin_y = if bounds_is_flipped {
+        bounds.origin.y
+    } else {
+        bounds.origin.y + bounds.size.height - host_height
+    };
+    let button_y = if host_is_flipped {
+        padding_y
+    } else {
+        host_height - button_height - padding_y
+    };
+
+    let values = [
+        bounds.origin.x,
+        host_origin_y,
+        host_width,
+        host_height,
+        close_x,
+        minimize_x,
+        zoom_x,
+        button_y,
+    ];
+    if values.iter().any(|value| !value.is_finite()) || host_width <= 0.0 || host_height <= 0.0 {
+        return None;
+    }
+
+    Some(FullscreenTrafficLightLayout {
+        host_frame: Objc2NSRect::new(
+            Objc2NSPoint::new(bounds.origin.x, host_origin_y),
+            Objc2NSSize::new(host_width, host_height),
+        ),
+        close_origin: Objc2NSPoint::new(close_x, button_y),
+        minimize_origin: Objc2NSPoint::new(minimize_x, button_y),
+        zoom_origin: Objc2NSPoint::new(zoom_x, button_y),
+    })
 }
 
 // `NSApplicationPresentationOptions` bits (see `NSApplication.PresentationOptions`).
@@ -963,21 +1045,64 @@ impl MacWindowState {
         let Some(content_view) = (unsafe { self.native_window().contentView() }) else {
             return;
         };
+        let Some(position) = self.traffic_light_position else {
+            return;
+        };
+        let bounds = content_view.bounds();
+        // A plain AppKit NSView uses an unflipped local coordinate system.
+        let initial_layout = fullscreen_traffic_light_layout(
+            bounds,
+            content_view.isFlipped(),
+            false,
+            frames,
+            button_padding,
+            position.x.to_f64(),
+            position.y.to_f64(),
+        );
+        let Some(initial_layout) = initial_layout else {
+            return;
+        };
+
+        // The host is deliberately only a small traffic-light row. AppKit may
+        // restore the buttons' titlebar-local y coordinates after a focus or
+        // fullscreen layout pass; within this row those coordinates remain at
+        // the top edge instead of becoming bottom-edge coordinates in the
+        // full-height content view.
+        // SAFETY: fullscreen overlay installation is only called from AppKit's
+        // main-thread window callbacks.
+        let main_thread = unsafe { MainThreadMarker::new_unchecked() };
+        let host_view = Objc2NSView::initWithFrame(
+            Objc2NSView::alloc(main_thread),
+            initial_layout.host_frame,
+        );
+        let flexible_bottom_margin = if content_view.isFlipped() {
+            NSAutoresizingMaskOptions::ViewMaxYMargin
+        } else {
+            NSAutoresizingMaskOptions::ViewMinYMargin
+        };
+        host_view.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewMaxXMargin | flexible_bottom_margin,
+        );
 
         self.fullscreen_traffic_light_overlay = Some(FullscreenTrafficLightOverlay {
             button_container,
             titlebar_container,
+            host_view,
             buttons,
             frames,
-            button_width,
-            button_height,
             button_padding,
         });
 
         let overlay = self.fullscreen_traffic_light_overlay.as_ref().unwrap();
-        let host = Retained::as_ptr(&content_view) as id;
+        let host = Retained::as_ptr(&overlay.host_view) as id;
         let native_view = self.native_view.as_ptr() as id;
         unsafe {
+            let _: () = msg_send![
+                Retained::as_ptr(&content_view) as id,
+                addSubview: host
+                positioned: NSWindowOrderingMode::NSWindowAbove
+                relativeTo: native_view
+            ];
             for button in [
                 Retained::as_ptr(&overlay.buttons.close) as id,
                 Retained::as_ptr(&overlay.buttons.minimize) as id,
@@ -988,7 +1113,7 @@ impl MacWindowState {
                     host,
                     addSubview: button
                     positioned: NSWindowOrderingMode::NSWindowAbove
-                    relativeTo: native_view
+                    relativeTo: nil
                 ];
                 let _: () = msg_send![button, setHidden: NO];
                 let _: () = msg_send![button, setAlphaValue: 1.0f64];
@@ -1007,17 +1132,31 @@ impl MacWindowState {
         let Some(content_view) = (unsafe { self.native_window().contentView() }) else {
             return;
         };
-        let host = Retained::as_ptr(&content_view) as id;
-        let native_view = self.native_view.as_ptr() as id;
+        let host = Retained::as_ptr(&overlay.host_view) as id;
+        let host_is_in_content_view = unsafe { overlay.host_view.superview() }.is_some_and(
+            |superview| Retained::as_ptr(&superview) == Retained::as_ptr(&content_view),
+        );
+        if !host_is_in_content_view {
+            unsafe {
+                let _: () = msg_send![host, removeFromSuperview];
+                let _: () = msg_send![
+                    Retained::as_ptr(&content_view) as id,
+                    addSubview: host
+                    positioned: NSWindowOrderingMode::NSWindowAbove
+                    relativeTo: self.native_view.as_ptr() as id
+                ];
+            }
+        }
+
         for button in [
             &overlay.buttons.close,
             &overlay.buttons.minimize,
             &overlay.buttons.zoom,
         ] {
-            let already_in_content_view = unsafe { button.superview() }.is_some_and(|superview| {
-                Retained::as_ptr(&superview) == Retained::as_ptr(&content_view)
+            let already_in_host = unsafe { button.superview() }.is_some_and(|superview| {
+                Retained::as_ptr(&superview) == Retained::as_ptr(&overlay.host_view)
             });
-            if !already_in_content_view {
+            if !already_in_host {
                 let button = Retained::as_ptr(button) as id;
                 unsafe {
                     let _: () = msg_send![button, removeFromSuperview];
@@ -1025,35 +1164,38 @@ impl MacWindowState {
                         host,
                         addSubview: button
                         positioned: NSWindowOrderingMode::NSWindowAbove
-                        relativeTo: native_view
+                        relativeTo: nil
                     ];
                 }
             }
         }
-        let bounds = content_view.bounds();
-        let y = fullscreen_traffic_light_origin_y(
-            bounds.origin.y,
-            bounds.size.height,
-            overlay.button_height,
-            position.y.to_f64(),
+        let Some(layout) = fullscreen_traffic_light_layout(
+            content_view.bounds(),
             content_view.isFlipped(),
+            overlay.host_view.isFlipped(),
+            overlay.frames,
+            overlay.button_padding,
+            position.x.to_f64(),
+            position.y.to_f64(),
+        ) else {
+            return;
+        };
+        overlay.host_view.setFrame(layout.host_frame);
+        overlay.host_view.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewMaxXMargin
+                | if content_view.isFlipped() {
+                    NSAutoresizingMaskOptions::ViewMaxYMargin
+                } else {
+                    NSAutoresizingMaskOptions::ViewMinYMargin
+                },
         );
-        let close_x = fullscreen_traffic_light_origin_x(bounds.origin.x, position.x.to_f64());
-        let minimize_x = close_x + overlay.button_width + overlay.button_padding;
-        let zoom_x = minimize_x + overlay.button_width + overlay.button_padding;
 
-        overlay
-            .buttons
-            .close
-            .setFrameOrigin(Objc2NSPoint::new(close_x, y));
+        overlay.buttons.close.setFrameOrigin(layout.close_origin);
         overlay
             .buttons
             .minimize
-            .setFrameOrigin(Objc2NSPoint::new(minimize_x, y));
-        overlay
-            .buttons
-            .zoom
-            .setFrameOrigin(Objc2NSPoint::new(zoom_x, y));
+            .setFrameOrigin(layout.minimize_origin);
+        overlay.buttons.zoom.setFrameOrigin(layout.zoom_origin);
 
         unsafe {
             for button in [
@@ -1065,7 +1207,7 @@ impl MacWindowState {
                 let _: () = msg_send![button, setAlphaValue: 1.0f64];
             }
         }
-        content_view.updateTrackingAreas();
+        overlay.host_view.updateTrackingAreas();
         overlay.buttons.close.updateTrackingAreas();
         overlay.buttons.minimize.updateTrackingAreas();
         overlay.buttons.zoom.updateTrackingAreas();
@@ -1083,6 +1225,7 @@ impl MacWindowState {
             ] {
                 let _: () = msg_send![button, removeFromSuperview];
             }
+            let _: () = msg_send![Retained::as_ptr(&overlay.host_view) as id, removeFromSuperview];
         }
     }
 
@@ -1108,6 +1251,7 @@ impl MacWindowState {
                 let _: () = msg_send![button, setHidden: NO];
                 let _: () = msg_send![button, setAlphaValue: 1.0f64];
             }
+            let _: () = msg_send![Retained::as_ptr(&overlay.host_view) as id, removeFromSuperview];
         }
 
         overlay.buttons.close.setFrame(overlay.frames.close);
@@ -4377,30 +4521,78 @@ extern "C" fn toggle_tab_bar(this: &Object, _sel: Sel, _id: id) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn fullscreen_traffic_light_x_respects_nonzero_bounds_origin() {
-        assert_eq!(fullscreen_traffic_light_origin_x(5.0, 9.0), 14.0);
-        assert_eq!(fullscreen_traffic_light_origin_x(-4.0, 9.0), 5.0);
+    fn traffic_light_frames() -> TrafficLightFrames {
+        TrafficLightFrames {
+            titlebar: Objc2NSRect::new(
+                Objc2NSPoint::new(0.0, 0.0),
+                Objc2NSSize::new(300.0, 38.0),
+            ),
+            close: Objc2NSRect::new(
+                Objc2NSPoint::new(7.0, 16.0),
+                Objc2NSSize::new(14.0, 14.0),
+            ),
+            minimize: Objc2NSRect::new(
+                Objc2NSPoint::new(27.0, 16.0),
+                Objc2NSSize::new(14.0, 14.0),
+            ),
+            zoom: Objc2NSRect::new(
+                Objc2NSPoint::new(47.0, 16.0),
+                Objc2NSSize::new(14.0, 14.0),
+            ),
+        }
     }
 
     #[test]
-    fn fullscreen_traffic_light_row_stays_inset_from_the_top() {
-        assert_eq!(
-            fullscreen_traffic_light_origin_y(0.0, 600.0, 14.0, 9.0, false),
-            577.0
+    fn fullscreen_traffic_light_host_keeps_original_button_y_near_top() {
+        let bounds = Objc2NSRect::new(
+            Objc2NSPoint::new(5.0, 7.0),
+            Objc2NSSize::new(900.0, 600.0),
         );
-        assert_eq!(
-            fullscreen_traffic_light_origin_y(0.0, 600.0, 14.0, 9.0, true),
-            9.0
+        let layout = fullscreen_traffic_light_layout(
+            bounds,
+            false,
+            false,
+            traffic_light_frames(),
+            6.0,
+            9.0,
+            9.0,
+        )
+        .unwrap();
+
+        assert_eq!(layout.host_frame.origin, Objc2NSPoint::new(5.0, 568.0));
+        assert_eq!(layout.host_frame.size, Objc2NSSize::new(72.0, 39.0));
+        assert_eq!(layout.close_origin, Objc2NSPoint::new(9.0, 16.0));
+        assert_eq!(layout.minimize_origin, Objc2NSPoint::new(29.0, 16.0));
+        assert_eq!(layout.zoom_origin, Objc2NSPoint::new(49.0, 16.0));
+
+        // If AppKit restores the source titlebar-local y=16 after reparenting,
+        // the small host still keeps the control within the configured top inset.
+        let restored_y = traffic_light_frames().close.origin.y;
+        let top_inset = layout.host_frame.size.height - restored_y - 14.0;
+        assert_eq!(top_inset, 9.0);
+    }
+
+    #[test]
+    fn fullscreen_traffic_light_host_anchors_at_top_for_both_content_orientations() {
+        let bounds = Objc2NSRect::new(
+            Objc2NSPoint::new(-4.0, 5.0),
+            Objc2NSSize::new(900.0, 600.0),
         );
-        assert_eq!(
-            fullscreen_traffic_light_origin_y(5.0, 600.0, 14.0, 9.0, false),
-            582.0
-        );
-        assert_eq!(
-            fullscreen_traffic_light_origin_y(5.0, 600.0, 14.0, 9.0, true),
-            14.0
-        );
+        let frames = traffic_light_frames();
+
+        let unflipped =
+            fullscreen_traffic_light_layout(bounds, false, false, frames, 6.0, 9.0, 9.0)
+                .unwrap();
+        let flipped =
+            fullscreen_traffic_light_layout(bounds, true, false, frames, 6.0, 9.0, 9.0).unwrap();
+        let flipped_host =
+            fullscreen_traffic_light_layout(bounds, false, true, frames, 6.0, 9.0, 9.0).unwrap();
+
+        assert_eq!(unflipped.host_frame.origin.y, 566.0);
+        assert_eq!(flipped.host_frame.origin.y, 5.0);
+        assert_eq!(unflipped.host_frame.origin.x, -4.0);
+        assert_eq!(flipped.host_frame.origin.x, -4.0);
+        assert_eq!(flipped_host.close_origin.y, 9.0);
     }
 
     #[test]
