@@ -239,8 +239,9 @@ fn run(shared: Arc<Shared>, main: MainThread) {
                     continue;
                 }
                 let provider = snapshot.resolve(subscriber.pid);
+                let ssh_host = snapshot.ssh_host(subscriber.pid);
                 let _ = subscriber.session.update(cx, |session, cx| {
-                    session.apply_live_process_snapshot(provider, cx);
+                    session.apply_live_process_snapshot(provider, ssh_host.as_deref(), cx);
                 });
             }
         }) {
@@ -274,7 +275,7 @@ fn capture(shared: &Shared) -> Option<Snapshot> {
     None
 }
 fn row(pid: u32, parent_pid: u32, command: String) -> ProcessRow {
-    let argv = if INTERPRETERS.contains(&command.to_ascii_lowercase().as_str()) {
+    let argv = if should_collect_argv(&command) {
         crate::platform::process::process_args_env(pid)
             .map(|(args, _)| args)
             .unwrap_or_default()
@@ -287,6 +288,14 @@ fn row(pid: u32, parent_pid: u32, command: String) -> ProcessRow {
         command,
         argv,
     }
+}
+
+fn should_collect_argv(command: &str) -> bool {
+    let command = command.rsplit(['/', '\\']).next().unwrap_or(command);
+    command.eq_ignore_ascii_case("ssh")
+        || INTERPRETERS
+            .iter()
+            .any(|interpreter| command.eq_ignore_ascii_case(interpreter))
 }
 #[cfg(target_os = "macos")]
 fn native_rows() -> Option<Vec<ProcessRow>> {
@@ -412,6 +421,14 @@ fn native_rows() -> Option<Vec<ProcessRow>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn process_arguments_are_collected_for_ssh_and_existing_runtimes_only() {
+        assert!(should_collect_argv("ssh"));
+        assert!(should_collect_argv("/usr/bin/ssh"));
+        assert!(should_collect_argv("node"));
+        assert!(!should_collect_argv("zsh"));
+    }
+
     #[test]
     fn launches_coalesce_and_keep_only_two_settle_deadlines() {
         let now = Instant::now();

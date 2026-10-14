@@ -16,6 +16,7 @@ use gpui::{
     MouseButton, MouseDownEvent, PathBuilder, Pixels, Role, ScrollHandle, SharedString, Window,
     anchored, bounce, canvas, deferred, div, ease_in_out, img, point, prelude::*, px,
 };
+use gpui_kit::component::Sizable as _;
 
 use super::{AppData, Workspace};
 use crate::platform::process as procinfo;
@@ -78,6 +79,8 @@ impl Default for TabScroll {
 pub(super) struct TabSessionInfo {
     pub(super) ai_app: Option<String>,
     pub(super) ai_running: bool,
+    /// A live SSH destination below the tab's shell.
+    pub(super) ssh_host: Option<String>,
     pub(super) in_git_repo: bool,
     pub(super) git_branch: Option<String>,
     /// The tab runs a Vite dev server (yellow bolt icon).
@@ -106,6 +109,13 @@ pub(super) fn ai_logo(app_name: &str) -> Option<Arc<Image>> {
                 "codex",
                 png(include_bytes!(
                     "../../../../../chau7-macos/Sources/Chau7/Resources/codex-logo.png"
+                )),
+            ),
+            // Official OpenCode Mark, rasterized from its UI logo component.
+            (
+                "opencode",
+                png(include_bytes!(
+                    "../../../../../chau7-macos/Sources/Chau7/Resources/opencode-logo.png"
                 )),
             ),
             (
@@ -186,6 +196,7 @@ impl Workspace {
                     )
                 }),
                 ai_running: false,
+                ssh_host: None,
                 in_git_repo: self
                     .state
                     .get(id)
@@ -201,6 +212,7 @@ impl Workspace {
             ai_app: session.ai_display_app_name(),
             // Live process observation is separate from persisted resume identity.
             ai_running: session.is_ai_running(),
+            ssh_host: session.ssh_host().map(str::to_owned),
             in_git_repo: session.git_root.is_some(),
             git_branch: session.git_branch.clone(),
             vite: session
@@ -498,6 +510,12 @@ impl Workspace {
         let accessibility_language = l10n::current();
         let accessibility_label =
             tab_accessibility_label(accessibility_language, title.as_ref(), raw_path.as_deref());
+        let accessibility_label = if let Some(host) = info.ssh_host.as_deref() {
+            let host = truncate_middle(host, 128);
+            format!("{accessibility_label}, SSH connection to {host}")
+        } else {
+            accessibility_label
+        };
         let accessibility_description =
             tab_accessibility_description(accessibility_language, selected);
 
@@ -523,6 +541,33 @@ impl Workspace {
             .bg(background)
             .when_some(icon, |d, icon| d.child(icon))
             .child(title_el)
+            .when_some(info.ssh_host.clone(), |d, host| {
+                let accessible_host = truncate_middle(&host, 128);
+                let tooltip = format!("SSH connection to {accessible_host}");
+                d.child(
+                    div()
+                        .id(("ssh-host", id as usize))
+                        .role(Role::Label)
+                        .aria_label(format!("SSH host {accessible_host}"))
+                        .flex_shrink_0()
+                        .flex()
+                        .items_center()
+                        .gap(px(3.0))
+                        .px_1()
+                        .rounded_full()
+                        .bg(chrome.accent.opacity(0.16))
+                        .text_color(chrome.accent)
+                        .child(
+                            gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Server)
+                                .size(px(12.0)),
+                        )
+                        .child(format!("SSH {}", truncate_middle(&host, 18)))
+                        .tooltip(move |window, cx| {
+                            gpui_kit::component::tooltip::Tooltip::new(tooltip.clone())
+                                .build(window, cx)
+                        }),
+                )
+            })
             .when_some(path, |d, path| {
                 d.child(
                     div()

@@ -438,7 +438,7 @@ pub fn restore_input(replay_file: Option<&Path>, directory: Option<&str>) -> Opt
 
 // ----- AI session resume -----------------------------------------------
 
-/// `claude --resume <id>` or `codex resume <id>` (`buildAIResumeCommand`).
+/// Builds the registered CLI resume command with a validated session id (`buildAIResumeCommand`).
 pub fn build_ai_resume_command(provider: Option<&str>, session_id: Option<&str>) -> Option<String> {
     let provider = normalize_provider_name(provider?)?;
     let session_id = session_id?.trim();
@@ -451,15 +451,15 @@ pub fn build_ai_resume_command(provider: Option<&str>, session_id: Option<&str>)
     Some(tool.resume_format?.build_command(session_id))
 }
 
-/// A resume command that is exactly one of the known forms with a valid id
+/// A resume command that exactly matches a registered form with a valid id
 /// (`isSafeResumeCommand`).
 pub fn is_safe_resume_command(command: &str) -> bool {
-    for prefix in ["claude --resume ", "codex resume "] {
-        if let Some(rest) = command.strip_prefix(prefix) {
-            return !rest.trim().is_empty() && is_valid_session_id(rest);
-        }
-    }
-    false
+    let trimmed = command.trim();
+    let Some(metadata) = extract_metadata(trimmed) else {
+        return false;
+    };
+    build_ai_resume_command(Some(&metadata.provider), Some(&metadata.session_id)).as_deref()
+        == Some(trimmed)
 }
 
 /// The trimmed command when it is a safe resume command
@@ -894,6 +894,11 @@ mod tests {
             build_ai_resume_command(Some("Codex"), Some("xyz")).as_deref(),
             Some("codex resume xyz")
         );
+        assert_eq!(
+            build_ai_resume_command(Some("OpenCode"), Some("opencode-restore-fixture-1"))
+                .as_deref(),
+            Some("opencode --session opencode-restore-fixture-1")
+        );
         assert_eq!(build_ai_resume_command(Some("claude"), Some("a b")), None);
         assert_eq!(build_ai_resume_command(Some("gemini"), Some("abc")), None);
         assert_eq!(build_ai_resume_command(None, Some("abc")), None);
@@ -903,12 +908,25 @@ mod tests {
     fn safe_resume_commands() {
         assert!(is_safe_resume_command("claude --resume abc-123"));
         assert!(is_safe_resume_command("codex resume abc_1"));
+        assert!(is_safe_resume_command(
+            "opencode --session opencode-restore-fixture-1"
+        ));
         assert!(!is_safe_resume_command("claude --resume abc; rm -rf /"));
+        assert!(!is_safe_resume_command("opencode --session abc; rm -rf /"));
+        assert!(!is_safe_resume_command("opencode --session abc trailing"));
+        assert!(!is_safe_resume_command("opencode --session $(whoami)"));
         assert!(!is_safe_resume_command("claude --resume "));
         assert!(!is_safe_resume_command("echo claude --resume abc"));
         assert_eq!(
             normalized_resume_command(Some("  codex resume abc \n")).as_deref(),
             Some("codex resume abc")
+        );
+        assert_eq!(
+            normalized_resume_command(Some(
+                "  opencode --session opencode-restore-fixture-1 \n",
+            ))
+                .as_deref(),
+            Some("opencode --session opencode-restore-fixture-1")
         );
         assert_eq!(normalized_resume_command(Some("rm -rf /")), None);
         assert_eq!(normalized_resume_command(None), None);

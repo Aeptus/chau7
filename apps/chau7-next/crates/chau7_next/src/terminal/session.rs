@@ -222,6 +222,8 @@ pub struct TerminalSession {
     pub git_root: Option<PathBuf>,
     pub git_branch: Option<String>,
     pub ai_app: Option<String>,
+    /// Live destination of an OpenSSH process below this tab's shell.
+    ssh_host: Option<String>,
     /// Id the token optimizer knows this shell by (`CHAU7_CTO_SESSION`, the
     /// flag file name).
     cto_id: String,
@@ -775,6 +777,7 @@ impl TerminalSession {
             git_root,
             git_branch,
             ai_app: None,
+            ssh_host: None,
             cto_id: uuid::Uuid::new_v4().to_string().to_uppercase(),
             exited: None,
             last_activity: now,
@@ -1044,6 +1047,7 @@ impl TerminalSession {
             let code = self.term.read().try_child_exit_code();
             self.exited = Some(code);
             self.process_subscription.take();
+            self.ssh_host = None;
             self.tracker.update_live_agent(None);
             self.tracker.mark_exited();
             self.tracker.take_events();
@@ -2446,20 +2450,34 @@ impl TerminalSession {
     pub(crate) fn ai_display_app_name(&self) -> Option<String> {
         self.tracker.ai_display_app_name()
     }
+
+    pub(crate) fn ssh_host(&self) -> Option<&str> {
+        self.ssh_host.as_deref()
+    }
+
     pub(crate) fn is_ai_running(&self) -> bool {
         self.exited.is_none() && self.tracker.is_ai_running()
     }
     pub(crate) fn apply_live_process_snapshot(
         &mut self,
         provider: Option<&str>,
+        ssh_host: Option<&str>,
         cx: &mut Context<Self>,
     ) {
         if self.close_requested || self.exited.is_some() {
             return;
         }
-        if self.tracker.update_live_agent(provider) {
+        let ssh_host = ssh_host.filter(|host| !host.is_empty());
+        let ssh_changed = self.ssh_host.as_deref() != ssh_host;
+        if ssh_changed {
+            self.ssh_host = ssh_host.map(str::to_owned);
+        }
+        let provider_changed = self.tracker.update_live_agent(provider);
+        if provider_changed {
             self.memory.set_tui(self.is_ai_running());
             self.sync_cto_state();
+        }
+        if provider_changed || ssh_changed {
             cx.emit(SessionEvent::MetadataChanged);
             cx.notify();
         }

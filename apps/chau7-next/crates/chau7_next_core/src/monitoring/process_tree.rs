@@ -111,6 +111,42 @@ impl Snapshot {
         None
     }
 
+    /// Host of an OpenSSH client running beneath `shell_pid`, if any.
+    /// Only the parsed destination host is returned; the command and its
+    /// other arguments remain private to the process snapshot.
+    pub fn ssh_host(&self, shell_pid: u32) -> Option<String> {
+        if shell_pid == 0 {
+            return None;
+        }
+        if let Some(host) = self
+            .rows
+            .get(&shell_pid)
+            .and_then(|row| crate::procargs::ssh_host_from_args(&row.argv))
+        {
+            return Some(host);
+        }
+        let mut queue: VecDeque<_> = self
+            .children
+            .get(&shell_pid)
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect();
+        let mut visited = HashSet::from([shell_pid]);
+        while let Some(pid) = queue.pop_front() {
+            if !visited.insert(pid) {
+                continue;
+            }
+            if let Some(row) = self.rows.get(&pid)
+                && let Some(host) = crate::procargs::ssh_host_from_args(&row.argv)
+            {
+                return Some(host);
+            }
+            queue.extend(self.children.get(&pid).into_iter().flatten().copied());
+        }
+        None
+    }
+
     /// Cached self-protection context is built off the UI thread from this
     /// same native snapshot. Cycles cannot add duplicate or unrelated names.
     pub fn descendant_names(&self, shell_pid: u32) -> Vec<String> {
@@ -235,6 +271,47 @@ mod tests {
         assert_eq!(s.resolve(0), None);
         let s = Snapshot::from_rows([row(2, 1, "bash", &[]), row(1, 2, "zsh", &[])]);
         assert_eq!(s.resolve(1), None);
+    }
+
+    #[test]
+    fn live_ssh_host_comes_from_descendant_argv_and_disappears_after_exit() {
+        let connected = Snapshot::from_rows([
+            row(2, 1, "zsh", &[]),
+            row(
+                3,
+                2,
+                "ssh",
+                &[
+                    "/usr/bin/ssh",
+                    "-J",
+                    "bastion",
+                    "-p",
+                    "2222",
+                    "deploy@prod.example.com",
+                    "private remote command",
+                ],
+            ),
+        ]);
+        assert_eq!(connected.ssh_host(1).as_deref(), Some("prod.example.com"));
+
+        let disconnected = Snapshot::from_rows([row(2, 1, "zsh", &[])]);
+        assert_eq!(disconnected.ssh_host(1), None);
+
+        let shell_replaced =
+            Snapshot::from_rows([row(1, 0, "ssh", &["/usr/bin/ssh", "prod.example.com"])]);
+        assert_eq!(
+            shell_replaced.ssh_host(1).as_deref(),
+            Some("prod.example.com")
+        );
+    }
+
+    #[test]
+    fn ssh_host_detection_ignores_shell_text_and_ssh_without_destination() {
+        let snapshot = Snapshot::from_rows([
+            row(2, 1, "zsh", &["zsh", "-c", "ssh prod.example.com"]),
+            row(3, 2, "ssh", &["ssh", "-v"]),
+        ]);
+        assert_eq!(snapshot.ssh_host(1), None);
     }
     #[test]
     fn interpreter_scripts_match_but_literal_payload_does_not() {

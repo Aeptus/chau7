@@ -10,8 +10,9 @@ use gpui::{AppContext, AsyncApp, Focusable, WindowHandle, WindowOptions, size};
 use gpui_kit::base::Root;
 use objc2::{MainThreadMarker, rc::Retained};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSApplicationPresentationOptions, NSEvent,
-    NSEventModifierFlags, NSEventType, NSView, NSWindow, NSWindowButton,
+    NSApplication, NSApplicationActivationPolicy, NSApplicationPresentationOptions, NSColorSpace,
+    NSEvent, NSEventModifierFlags, NSEventType, NSView, NSWindow, NSWindowButton,
+    NSWindowStyleMask,
 };
 use objc2_foundation::{NSArray, NSBundle, NSObject, NSPoint, NSString};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -704,13 +705,20 @@ impl Profile {
             ids,
         })
     }
+    fn resume_command(&self, index: usize) -> String {
+        if index == 2 {
+            format!("opencode --session {}", self.ids[index])
+        } else {
+            format!("claude --resume {}", self.ids[index])
+        }
+    }
     fn pane(&self, index: usize) -> SavedPane {
         SavedPane {
             id: 100 + index as u64,
             directory: Some(self.directories[index].to_string_lossy().into_owned()),
-            ai_provider: Some("claude".into()),
+            ai_provider: Some(if index == 2 { "opencode" } else { "claude" }.into()),
             ai_session_id: Some(self.ids[index].clone()),
-            ai_resume_command: Some(format!("claude --resume {}", self.ids[index])),
+            ai_resume_command: Some(self.resume_command(index)),
             known_repo_root: matches!(index, 1 | 2)
                 .then(|| self.directories[index].to_string_lossy().into_owned()),
             ..Default::default()
@@ -1665,14 +1673,14 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
     .await?;
     for i in [1, 2] {
         ensure(
-            profile.received(i) == format!("claude --resume {}", profile.ids[i]).as_bytes(),
+            profile.received(i) == profile.resume_command(i).as_bytes(),
             "native recorder saw changed, duplicate or submitted resume bytes",
         )?;
     }
     pause(cx, Duration::from_millis(1100)).await;
     for i in [1, 2] {
         ensure(
-            profile.received(i) == format!("claude --resume {}", profile.ids[i]).as_bytes(),
+            profile.received(i) == profile.resume_command(i).as_bytes(),
             "resume prefill repeated after next production tick",
         )?;
     }
@@ -1705,7 +1713,7 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
         "cleanup did not close all five actual owned PTYs",
     )?;
     Ok(
-        serde_json::json!({"restored_tabs":6,"selected_initial_ptys":2,"preserved_split_leaves":2,"native_identities":2,"quiet_period_ms":450,"observed_identity_admission_ms":admission_ms,"transient_selection_ptys":0,"parked_metadata_ptys":0,"resume_deliveries":2,"resume_line_terminators":0,"duplicate_deliveries":0,"closed_owned_ptys":closed,"surfaces":surface,"loading_clock":loading_clock,"split_repository_grouping":split_repository_grouping,"manual_polling":false,"simulated_frames":false}),
+        serde_json::json!({"restored_tabs":6,"selected_initial_ptys":2,"preserved_split_leaves":2,"native_identities":2,"quiet_period_ms":450,"observed_identity_admission_ms":admission_ms,"transient_selection_ptys":0,"parked_metadata_ptys":0,"resume_deliveries":2,"resume_providers":["claude","opencode"],"resume_line_terminators":0,"duplicate_deliveries":0,"closed_owned_ptys":closed,"surfaces":surface,"loading_clock":loading_clock,"split_repository_grouping":split_repository_grouping,"manual_polling":false,"simulated_frames":false}),
     )
 }
 
@@ -1992,8 +2000,8 @@ fn traffic_light_geometry(native: &NSWindow, stage: &str) -> Result<serde_json::
             .standardWindowButton(button_kind)
             .ok_or_else(|| format!("{stage}: native {name} traffic light is missing"))?;
         ensure(
-            !button.isHidden(),
-            &format!("{stage}: native {name} traffic light is hidden"),
+            !button.isHiddenOrHasHiddenAncestor() && button.alphaValue() > 0.01,
+            &format!("{stage}: native {name} traffic light or an ancestor is hidden"),
         )?;
         let bounds = button.bounds();
         let visible = button.visibleRect();
@@ -2006,6 +2014,10 @@ fn traffic_light_geometry(native: &NSWindow, stage: &str) -> Result<serde_json::
         let mut ancestor_count = 0;
         while let Some(view) = ancestor {
             let button_in_ancestor = button.convertRect_toView(bounds, Some(&view));
+            ensure(
+                !view.isHidden() && view.alphaValue() > 0.01,
+                &format!("{stage}: native {name} traffic light has an invisible ancestor"),
+            )?;
             ensure(
                 rect_contains_with_tolerance(view.bounds(), button_in_ancestor),
                 &format!(
@@ -2029,6 +2041,239 @@ fn traffic_light_geometry(native: &NSWindow, stage: &str) -> Result<serde_json::
         );
     }
     Ok(serde_json::Value::Object(controls))
+}
+
+/// Capture the owned AppKit frame composition, including the native controls.
+/// Geometry alone cannot detect a content layer painted over the titlebar.
+/// The crop never reads another application or requires screen capture access.
+fn traffic_light_composition(native: &NSWindow, stage: &str) -> Result<serde_json::Value, String> {
+    use base64::Engine as _;
+    let content = native
+        .contentView()
+        .ok_or("owned window has no content view")?;
+    let frame = unsafe { content.superview() }.ok_or("owned window has no frame view")?;
+    let mut rects = Vec::new();
+    for (kind, name) in [
+        (NSWindowButton::CloseButton, "close"),
+        (NSWindowButton::MiniaturizeButton, "minimize"),
+        (NSWindowButton::ZoomButton, "zoom"),
+    ] {
+        let button = native
+            .standardWindowButton(kind)
+            .ok_or("native control missing")?;
+        let rect = button.convertRect_toView(button.bounds(), Some(&frame));
+        ensure(
+            rect_contains_with_tolerance(frame.bounds(), rect),
+            &format!("{stage}: {name} is outside the visible window frame"),
+        )?;
+        rects.push((name, rect));
+    }
+    let left = rects
+        .iter()
+        .map(|(_, r)| r.origin.x)
+        .fold(f64::INFINITY, f64::min)
+        - 3.0;
+    let bottom = rects
+        .iter()
+        .map(|(_, r)| r.origin.y)
+        .fold(f64::INFINITY, f64::min)
+        - 3.0;
+    let right = rects
+        .iter()
+        .map(|(_, r)| r.origin.x + r.size.width)
+        .fold(f64::NEG_INFINITY, f64::max)
+        + 3.0;
+    let top = rects
+        .iter()
+        .map(|(_, r)| r.origin.y + r.size.height)
+        .fold(f64::NEG_INFINITY, f64::max)
+        + 3.0;
+    let crop = objc2_foundation::NSRect::new(
+        NSPoint::new(left, bottom),
+        objc2_foundation::NSSize::new(right - left, top - bottom),
+    );
+    let bitmap = frame
+        .bitmapImageRepForCachingDisplayInRect(crop)
+        .and_then(|b| b.bitmapImageRepByRetaggingWithColorSpace(&NSColorSpace::sRGBColorSpace()))
+        .ok_or("owned titlebar bitmap allocation failed")?;
+    let width = u32::try_from(bitmap.pixelsWide()).map_err(error)?;
+    let height = u32::try_from(bitmap.pixelsHigh()).map_err(error)?;
+    ensure(
+        width > 0 && height > 0 && width <= 1024 && height <= 256,
+        "owned titlebar crop has invalid dimensions",
+    )?;
+    let length = usize::try_from(bitmap.bytesPerPlane()).map_err(error)?;
+    ensure(
+        bitmap.numberOfPlanes() == 1
+            && !bitmap.bitmapData().is_null()
+            && length > 0
+            && length <= 4 * 1024 * 1024,
+        "owned titlebar bitmap has invalid storage",
+    )?;
+    unsafe { std::ptr::write_bytes(bitmap.bitmapData(), 0, length) };
+    frame.cacheDisplayInRect_toBitmapImageRep(crop, &bitmap);
+    let mut rgba = image::RgbaImage::new(width, height);
+    for y in 0..height {
+        for x in 0..width {
+            let color = bitmap
+                .colorAtX_y(x as isize, y as isize)
+                .and_then(|c| c.colorUsingColorSpace(&NSColorSpace::sRGBColorSpace()))
+                .ok_or("owned titlebar pixel missing")?;
+            let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+            rgba.put_pixel(
+                x,
+                y,
+                image::Rgba([
+                    byte(color.redComponent()),
+                    byte(color.greenComponent()),
+                    byte(color.blueComponent()),
+                    byte(color.alphaComponent()),
+                ]),
+            );
+        }
+    }
+    let corners = [
+        rgba.get_pixel(0, 0),
+        rgba.get_pixel(width - 1, 0),
+        rgba.get_pixel(0, height - 1),
+        rgba.get_pixel(width - 1, height - 1),
+    ];
+    let background: [f64; 3] =
+        std::array::from_fn(|c| corners.iter().map(|p| p[c] as f64).sum::<f64>() / 4.0);
+    let mut visible_pixels = serde_json::Map::new();
+    for (name, rect) in rects {
+        let x0 = ((rect.origin.x - left) / crop.size.width * width as f64)
+            .floor()
+            .max(0.0) as u32;
+        let x1 =
+            (((rect.origin.x + rect.size.width - left) / crop.size.width * width as f64).ceil()
+                as u32)
+                .min(width);
+        // All three AppKit controls share a row. Include its entire crop height
+        // so the check is independent of NSView/bitmap vertical orientation.
+        let contrast = (x0..x1)
+            .flat_map(|x| (0..height).map(move |y| (x, y)))
+            .filter(|&(x, y)| {
+                let p = rgba.get_pixel(x, y);
+                p[3] > 200 && (0..3).any(|c| (p[c] as f64 - background[c]).abs() >= 20.0)
+            })
+            .count();
+        ensure(
+            contrast >= 8,
+            &format!(
+                "{stage}: {name} traffic light is absent from the native composition ({contrast} visible pixels)"
+            ),
+        )?;
+        visible_pixels.insert(name.into(), serde_json::json!(contrast));
+    }
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(rgba)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .map_err(error)?;
+    Ok(serde_json::json!({
+        "pixel_size": [width, height], "crop_rect": native_rect_values(crop),
+        "visible_control_pixels": visible_pixels,
+        "png_base64": base64::engine::general_purpose::STANDARD.encode(png.into_inner()),
+    }))
+}
+
+/// Observe only this fixture window. Completion notifications avoid racing
+/// AppKit's Space animation or treating an early style-mask change as settled.
+struct FullscreenCompletion {
+    observer: Retained<objc2::runtime::ProtocolObject<dyn objc2_foundation::NSObjectProtocol>>,
+    completed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+impl FullscreenCompletion {
+    fn new(native: &NSWindow, name: &NSString) -> Self {
+        let completed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = completed.clone();
+        let block = block2::RcBlock::new(
+            move |_: std::ptr::NonNull<objc2_foundation::NSNotification>| {
+                flag.store(true, std::sync::atomic::Ordering::Release);
+            },
+        );
+        // The block captures only a sendable atomic; no global observer or
+        // application/window outside this owned fixture is inspected.
+        let observer = unsafe {
+            objc2_foundation::NSNotificationCenter::defaultCenter()
+                .addObserverForName_object_queue_usingBlock(Some(name), Some(native), None, &block)
+        };
+        Self {
+            observer,
+            completed,
+        }
+    }
+    fn completed(&self) -> bool {
+        self.completed.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+impl Drop for FullscreenCompletion {
+    fn drop(&mut self) {
+        unsafe {
+            objc2_foundation::NSNotificationCenter::defaultCenter().removeObserver(&self.observer);
+        }
+    }
+}
+
+async fn verify_traffic_lights_in_real_fullscreen(
+    handle: WindowHandle<Root>,
+    native: &NSWindow,
+    cx: &mut AsyncApp,
+) -> Result<serde_json::Value, String> {
+    ensure(
+        !native.styleMask().contains(NSWindowStyleMask::FullScreen),
+        "owned fullscreen fixture must start windowed",
+    )?;
+    let entered = FullscreenCompletion::new(native, unsafe {
+        objc2_app_kit::NSWindowDidEnterFullScreenNotification
+    });
+    let exited = FullscreenCompletion::new(native, unsafe {
+        objc2_app_kit::NSWindowDidExitFullScreenNotification
+    });
+    native_mutation(|| native.toggleFullScreen(None))?;
+    // Attempt to exit the owned Space even when a visibility assertion fails;
+    // retain a failed receipt if AppKit itself cannot complete the transition.
+    let fullscreen_result = async {
+        wait_until_deadline(
+            cx,
+            "enter actual fullscreen Space",
+            Instant::now() + Duration::from_secs(12),
+            |_| entered.completed() && native.styleMask().contains(NSWindowStyleMask::FullScreen),
+        )
+        .await?;
+        wait_for_native_window_geometry(native, cx, "fullscreen controls after animation", |_| {
+            true
+        })
+        .await?;
+        settle(handle, cx).await?;
+        Ok::<_, String>(serde_json::json!({
+            "actual_fullscreen": true,
+            "did_enter_notification": entered.completed(),
+            "geometry": traffic_light_geometry(native, "actual fullscreen")?,
+            "composition": traffic_light_composition(native, "actual fullscreen")?,
+        }))
+    }
+    .await;
+    if native.styleMask().contains(NSWindowStyleMask::FullScreen) {
+        native_mutation(|| native.toggleFullScreen(None))?;
+        wait_until_deadline(
+            cx,
+            "exit owned fullscreen Space",
+            Instant::now() + Duration::from_secs(12),
+            |_| exited.completed() && !native.styleMask().contains(NSWindowStyleMask::FullScreen),
+        )
+        .await?;
+        wait_for_native_window_geometry(native, cx, "controls after fullscreen exit", |_| true)
+            .await?;
+        settle(handle, cx).await?;
+    }
+    let fullscreen = fullscreen_result?;
+    Ok(serde_json::json!({
+        "fullscreen": fullscreen,
+        "did_exit_notification": exited.completed(),
+        "windowed_after_fullscreen": traffic_light_geometry(native, "after actual fullscreen exit")?,
+        "composition_after_fullscreen": traffic_light_composition(native, "after actual fullscreen exit")?,
+    }))
 }
 
 async fn wait_for_native_window_geometry(
@@ -2062,6 +2307,7 @@ async fn verify_traffic_lights_after_window_zoom(
     let fullscreen_options = verify_custom_titlebar_fullscreen_options(native)?;
     let initial_frame = native.frame();
     let initial_controls = traffic_light_geometry(native, "before ordinary zoom")?;
+    let initial_composition = traffic_light_composition(native, "before ordinary zoom")?;
     handle
         .update(cx, |_, window, _| window.zoom_window())
         .map_err(error)?;
@@ -2071,6 +2317,7 @@ async fn verify_traffic_lights_after_window_zoom(
     .await?;
     let zoomed_frame = native.frame();
     let zoomed_controls = traffic_light_geometry(native, "after ordinary zoom")?;
+    let zoomed_composition = traffic_light_composition(native, "after ordinary zoom")?;
 
     handle
         .update(cx, |_, window, _| window.zoom_window())
@@ -2081,12 +2328,16 @@ async fn verify_traffic_lights_after_window_zoom(
     .await?;
     let restored_frame = native.frame();
     let restored_controls = traffic_light_geometry(native, "after restoring windowed geometry")?;
+    let actual_fullscreen = verify_traffic_lights_in_real_fullscreen(handle, native, cx).await?;
     Ok(serde_json::json!({
         "windowed_frame_before": native_rect_values(initial_frame),
         "zoomed_frame": native_rect_values(zoomed_frame),
         "windowed_frame_after": native_rect_values(restored_frame),
         "fullscreen_presentation_options": fullscreen_options,
         "controls_before_zoom": initial_controls,
+        "composition_before_zoom": initial_composition,
+        "composition_after_zoom": zoomed_composition,
+        "actual_fullscreen_cycle": actual_fullscreen,
         "controls_after_zoom": zoomed_controls,
         "controls_after_restore": restored_controls,
         "ordinary_zoom_restored_original_frame": native_rects_match(initial_frame, restored_frame),

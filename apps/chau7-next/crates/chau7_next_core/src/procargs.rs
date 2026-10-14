@@ -56,7 +56,7 @@ fn split_env(entry: &str) -> Option<(String, String)> {
 }
 
 /// ssh options that take a value (`ssh(1)`).
-const SSH_VALUE_OPTIONS: &str = "BbcDEeFIiJLlmOopQRSWw";
+const SSH_VALUE_OPTIONS: &str = "BbcDEeFIiJLlmOopPQRSWw";
 
 /// The host an `ssh` command line connects to: the destination with its
 /// `ssh://` scheme, `user@` and `:port` removed. `None` when `args` is not an
@@ -78,6 +78,12 @@ pub fn ssh_host_from_args(args: &[String]) -> Option<String> {
             // Combined flags such as `-tt` or `-p22`: a value option takes the
             // rest of the word, or the next word.
             for (i, flag) in flags.char_indices() {
+                // These modes print/query and exit instead of connecting. Check
+                // the parsed option itself before consuming its value so a `-G`
+                // or `-Q` inside an `-o` value is not mistaken for a mode.
+                if matches!(flag, 'G' | 'Q' | 'V') {
+                    return None;
+                }
                 if SSH_VALUE_OPTIONS.contains(flag) {
                     if i + flag.len_utf8() == flags.len() {
                         iter.next();
@@ -103,7 +109,8 @@ fn destination_host(destination: &str) -> Option<String> {
         rest
     };
     let host = host.trim_end_matches('/');
-    (!host.is_empty()).then(|| host.to_string())
+    (!host.is_empty() && !host.chars().any(|character| character.is_ascii_control()))
+        .then(|| host.to_string())
 }
 
 #[cfg(test)]
@@ -156,6 +163,10 @@ mod tests {
             host(&["ssh", "-p", "2222", "-i", "~/.ssh/k", "me@h"]).as_deref(),
             Some("h")
         );
+        assert_eq!(
+            host(&["ssh", "-P", "work", "user@actualhost"]).as_deref(),
+            Some("actualhost")
+        );
         assert_eq!(host(&["ssh", "-p2222", "-tt", "h2"]).as_deref(), Some("h2"));
         assert_eq!(
             host(&["ssh", "-o", "StrictHostKeyChecking=no", "h3", "ls"]).as_deref(),
@@ -164,7 +175,17 @@ mod tests {
         assert_eq!(host(&["ssh", "ssh://me@h4:2200"]).as_deref(), Some("h4"));
         assert_eq!(host(&["ssh", "me@[::1]"]).as_deref(), Some("::1"));
         assert_eq!(host(&["ssh", "--", "h5"]).as_deref(), Some("h5"));
+        assert_eq!(host(&["ssh", "--", "-G"]).as_deref(), Some("-G"));
         assert_eq!(host(&["ssh", "-v"]), None);
+        assert_eq!(host(&["ssh", "-G", "prod"]), None);
+        assert_eq!(host(&["ssh", "-Q", "cipher", "prod"]), None);
+        assert_eq!(host(&["ssh", "-V"]), None);
+        assert_eq!(host(&["ssh", "prod\nmalicious"]), None);
+        assert_eq!(
+            host(&["ssh", "-o", "ProxyCommand=ssh -G", "prod"]).as_deref(),
+            Some("prod")
+        );
+        assert_eq!(host(&["ssh", "-N", "prod"]).as_deref(), Some("prod"));
         assert_eq!(host(&["scp", "a", "h:b"]), None);
     }
 }

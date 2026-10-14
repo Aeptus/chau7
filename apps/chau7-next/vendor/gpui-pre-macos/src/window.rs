@@ -455,6 +455,14 @@ unsafe fn build_window_class(name: &'static str, superclass: &Class) -> *const C
             window_will_enter_fullscreen as extern "C" fn(&Object, Sel, id),
         );
         decl.add_method(
+            sel!(windowDidEnterFullScreen:),
+            window_did_enter_fullscreen as extern "C" fn(&Object, Sel, id),
+        );
+        decl.add_method(
+            sel!(windowDidFailToEnterFullScreen:),
+            window_did_fail_to_enter_fullscreen as extern "C" fn(&Object, Sel, id),
+        );
+        decl.add_method(
             sel!(windowWillExitFullScreen:),
             window_will_exit_fullscreen as extern "C" fn(&Object, Sel, id),
         );
@@ -572,6 +580,30 @@ struct TrafficLightButtons {
     close: Retained<Objc2NSButton>,
     minimize: Retained<Objc2NSButton>,
     zoom: Retained<Objc2NSButton>,
+}
+
+struct FullscreenTrafficLightOverlay {
+    button_container: Retained<Objc2NSView>,
+    titlebar_container: Retained<Objc2NSView>,
+    buttons: TrafficLightButtons,
+    frames: TrafficLightFrames,
+    button_width: f64,
+    button_height: f64,
+    button_padding: f64,
+}
+
+fn fullscreen_traffic_light_origin_y(
+    bounds_origin_y: f64,
+    bounds_height: f64,
+    button_height: f64,
+    padding_y: f64,
+    is_flipped: bool,
+) -> f64 {
+    if is_flipped {
+        bounds_origin_y + padding_y
+    } else {
+        bounds_origin_y + bounds_height - button_height - padding_y
+    }
 }
 
 // `NSApplicationPresentationOptions` bits (see `NSApplication.PresentationOptions`).
@@ -696,6 +728,8 @@ struct MacWindowState {
     traffic_light_position: Option<Point<Pixels>>,
     traffic_light_frames: Option<TrafficLightFrames>,
     pre_fullscreen_traffic_light_frames: Option<TrafficLightFrames>,
+    fullscreen_traffic_light_overlay: Option<FullscreenTrafficLightOverlay>,
+    fullscreen_controls_active: bool,
     transparent_titlebar: bool,
     previous_modifiers_changed_event: Option<PlatformInput>,
     keystroke_for_do_command: Option<Keystroke>,
@@ -726,6 +760,11 @@ struct MacWindowState {
 impl MacWindowState {
     fn move_traffic_light(&mut self) {
         if let Some(traffic_light_position) = self.traffic_light_position {
+            if self.fullscreen_controls_active {
+                self.update_fullscreen_traffic_lights();
+                return;
+            }
+
             if self.is_fullscreen() && !self.is_exiting_fullscreen {
                 self.restore_traffic_light();
                 return;
@@ -851,6 +890,225 @@ impl MacWindowState {
             buttons.minimize.updateTrackingAreas();
             buttons.zoom.updateTrackingAreas();
         }
+    }
+
+    fn update_fullscreen_traffic_lights(&mut self) {
+        // Windows without the custom titlebar keep AppKit's native hierarchy and layout.
+        if self.traffic_light_position.is_none() {
+            return;
+        }
+
+        let live_buttons = self.traffic_light_buttons();
+        let replace_overlay = self
+            .fullscreen_traffic_light_overlay
+            .as_ref()
+            .zip(live_buttons.as_ref())
+            .is_some_and(|(overlay, buttons)| {
+                overlay.buttons.close.as_ptr() != buttons.close.as_ptr()
+                    || overlay.buttons.minimize.as_ptr() != buttons.minimize.as_ptr()
+                    || overlay.buttons.zoom.as_ptr() != buttons.zoom.as_ptr()
+            });
+
+        if replace_overlay {
+            self.discard_fullscreen_traffic_light_overlay();
+        }
+
+        if self.fullscreen_traffic_light_overlay.is_none() {
+            let Some(buttons) = live_buttons else {
+                return;
+            };
+            self.install_fullscreen_traffic_light_overlay(buttons);
+        }
+
+        self.position_fullscreen_traffic_lights();
+    }
+
+    fn install_fullscreen_traffic_light_overlay(&mut self, buttons: TrafficLightButtons) {
+        let Some(button_container) = (unsafe { buttons.close.superview() }) else {
+            return;
+        };
+        let Some(titlebar_container) = (unsafe { button_container.superview() }) else {
+            return;
+        };
+
+        let frames = TrafficLightFrames {
+            titlebar: titlebar_container.frame(),
+            close: buttons.close.frame(),
+            minimize: buttons.minimize.frame(),
+            zoom: buttons.zoom.frame(),
+        };
+        let button_width = frames.close.size.width;
+        let button_height = frames.close.size.height;
+        let button_padding = frames.minimize.origin.x - frames.close.origin.x - button_width;
+        let button_frames_are_valid = [&frames.close, &frames.minimize, &frames.zoom]
+            .into_iter()
+            .all(|frame| {
+                frame.origin.x.is_finite()
+                    && frame.origin.y.is_finite()
+                    && frame.size.width.is_finite()
+                    && frame.size.width > 0.0
+                    && frame.size.height.is_finite()
+                    && frame.size.height > 0.0
+            });
+        if !button_frames_are_valid || !button_padding.is_finite() || button_padding <= 0.0 {
+            // AppKit can report zero-sized controls before the first native layout pass.
+            return;
+        }
+
+        self.fullscreen_traffic_light_overlay = Some(FullscreenTrafficLightOverlay {
+            button_container,
+            titlebar_container,
+            buttons,
+            frames,
+            button_width,
+            button_height,
+            button_padding,
+        });
+
+        let overlay = self.fullscreen_traffic_light_overlay.as_ref().unwrap();
+        let content_view = self.native_window().contentView();
+        let host = content_view.as_ptr() as id;
+        let native_view = self.native_view.as_ptr() as id;
+        unsafe {
+            for button in [
+                overlay.buttons.close.as_ptr() as id,
+                overlay.buttons.minimize.as_ptr() as id,
+                overlay.buttons.zoom.as_ptr() as id,
+            ] {
+                let _: () = msg_send![button, removeFromSuperview];
+                let _: () = msg_send![
+                    host,
+                    addSubview: button
+                    positioned: NSWindowOrderingMode::NSWindowAbove
+                    relativeTo: native_view
+                ];
+                let _: () = msg_send![button, setHidden: NO];
+                let _: () = msg_send![button, setAlphaValue: 1.0f64];
+            }
+        }
+    }
+
+    fn position_fullscreen_traffic_lights(&self) {
+        let Some(position) = self.traffic_light_position else {
+            return;
+        };
+        let Some(overlay) = self.fullscreen_traffic_light_overlay.as_ref() else {
+            return;
+        };
+
+        let content_view = self.native_window().contentView();
+        let host = content_view.as_ptr() as id;
+        let native_view = self.native_view.as_ptr() as id;
+        for button in [
+            &overlay.buttons.close,
+            &overlay.buttons.minimize,
+            &overlay.buttons.zoom,
+        ] {
+            let already_in_content_view = unsafe { button.superview() }
+                .is_some_and(|superview| superview.as_ptr() == content_view.as_ptr());
+            if !already_in_content_view {
+                let button = button.as_ptr() as id;
+                unsafe {
+                    let _: () = msg_send![button, removeFromSuperview];
+                    let _: () = msg_send![
+                        host,
+                        addSubview: button
+                        positioned: NSWindowOrderingMode::NSWindowAbove
+                        relativeTo: native_view
+                    ];
+                }
+            }
+        }
+        let bounds = content_view.bounds();
+        let y = fullscreen_traffic_light_origin_y(
+            bounds.origin.y,
+            bounds.size.height,
+            overlay.button_height,
+            position.y.to_f64(),
+            content_view.isFlipped(),
+        );
+        let close_x = position.x.to_f64();
+        let minimize_x = close_x + overlay.button_width + overlay.button_padding;
+        let zoom_x = minimize_x + overlay.button_width + overlay.button_padding;
+
+        overlay
+            .buttons
+            .close
+            .setFrameOrigin(Objc2NSPoint::new(close_x, y));
+        overlay
+            .buttons
+            .minimize
+            .setFrameOrigin(Objc2NSPoint::new(minimize_x, y));
+        overlay
+            .buttons
+            .zoom
+            .setFrameOrigin(Objc2NSPoint::new(zoom_x, y));
+
+        unsafe {
+            for button in [
+                overlay.buttons.close.as_ptr() as id,
+                overlay.buttons.minimize.as_ptr() as id,
+                overlay.buttons.zoom.as_ptr() as id,
+            ] {
+                let _: () = msg_send![button, setHidden: NO];
+                let _: () = msg_send![button, setAlphaValue: 1.0f64];
+            }
+        }
+        content_view.updateTrackingAreas();
+        overlay.buttons.close.updateTrackingAreas();
+        overlay.buttons.minimize.updateTrackingAreas();
+        overlay.buttons.zoom.updateTrackingAreas();
+    }
+
+    fn discard_fullscreen_traffic_light_overlay(&mut self) {
+        let Some(overlay) = self.fullscreen_traffic_light_overlay.take() else {
+            return;
+        };
+        unsafe {
+            for button in [
+                overlay.buttons.close.as_ptr() as id,
+                overlay.buttons.minimize.as_ptr() as id,
+                overlay.buttons.zoom.as_ptr() as id,
+            ] {
+                let _: () = msg_send![button, removeFromSuperview];
+            }
+        }
+    }
+
+    fn restore_fullscreen_traffic_lights(&mut self) {
+        let Some(overlay) = self.fullscreen_traffic_light_overlay.take() else {
+            return;
+        };
+
+        let button_container = overlay.button_container.as_ptr() as id;
+        unsafe {
+            for button in [
+                overlay.buttons.close.as_ptr() as id,
+                overlay.buttons.minimize.as_ptr() as id,
+                overlay.buttons.zoom.as_ptr() as id,
+            ] {
+                let _: () = msg_send![button, removeFromSuperview];
+                let _: () = msg_send![
+                    button_container,
+                    addSubview: button
+                    positioned: NSWindowOrderingMode::NSWindowAbove
+                    relativeTo: nil
+                ];
+                let _: () = msg_send![button, setHidden: NO];
+                let _: () = msg_send![button, setAlphaValue: 1.0f64];
+            }
+        }
+
+        overlay.buttons.close.setFrame(overlay.frames.close);
+        overlay.buttons.minimize.setFrame(overlay.frames.minimize);
+        overlay.buttons.zoom.setFrame(overlay.frames.zoom);
+        overlay.titlebar_container.setFrame(overlay.frames.titlebar);
+
+        overlay.titlebar_container.updateTrackingAreas();
+        overlay.button_container.updateTrackingAreas();
+        overlay.buttons.close.updateTrackingAreas();
+        overlay.buttons.minimize.updateTrackingAreas();
+        overlay.buttons.zoom.updateTrackingAreas();
     }
 
     fn start_display_link(&mut self) {
@@ -1146,6 +1404,8 @@ impl MacWindow {
                     .and_then(|titlebar| titlebar.traffic_light_position),
                 traffic_light_frames: None,
                 pre_fullscreen_traffic_light_frames: None,
+                fullscreen_traffic_light_overlay: None,
+                fullscreen_controls_active: false,
                 transparent_titlebar: titlebar
                     .as_ref()
                     .is_none_or(|titlebar| titlebar.appears_transparent),
@@ -3127,6 +3387,8 @@ extern "C" fn window_did_resize(this: &Object, _: Sel, _: id) {
 extern "C" fn window_will_enter_fullscreen(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.as_ref().lock();
+    lock.restore_fullscreen_traffic_lights();
+    lock.fullscreen_controls_active = true;
     lock.fullscreen_restore_bounds = lock.bounds();
     lock.is_exiting_fullscreen = false;
     lock.pre_fullscreen_traffic_light_frames = lock.traffic_light_frames;
@@ -3139,12 +3401,33 @@ extern "C" fn window_will_enter_fullscreen(this: &Object, _: Sel, _: id) {
             lock.native_window.setTitlebarAppearsTransparent_(NO);
         }
     }
+
+    // Move the real AppKit buttons into the content hierarchy before AppKit
+    // removes the titlebar while entering fullscreen.
+    lock.update_fullscreen_traffic_lights();
+}
+
+extern "C" fn window_did_fail_to_enter_fullscreen(this: &Object, _: Sel, _: id) {
+    let window_state = unsafe { get_window_state(this) };
+    let mut lock = window_state.as_ref().lock();
+    lock.fullscreen_controls_active = false;
+    lock.restore_fullscreen_traffic_lights();
+    lock.traffic_light_frames = lock.pre_fullscreen_traffic_light_frames.take();
+    lock.move_traffic_light();
+}
+
+extern "C" fn window_did_enter_fullscreen(this: &Object, _: Sel, _: id) {
+    let window_state = unsafe { get_window_state(this) };
+    let mut lock = window_state.as_ref().lock();
+    lock.fullscreen_controls_active = true;
+    lock.update_fullscreen_traffic_lights();
 }
 
 extern "C" fn window_will_exit_fullscreen(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.as_ref().lock();
     lock.is_exiting_fullscreen = true;
+    lock.fullscreen_controls_active = false;
 
     let min_version = NSOperatingSystemVersion::new(15, 3, 0);
 
@@ -3154,6 +3437,7 @@ extern "C" fn window_will_exit_fullscreen(this: &Object, _: Sel, _: id) {
         }
     }
 
+    lock.restore_fullscreen_traffic_lights();
     lock.move_traffic_light();
 }
 
@@ -3162,6 +3446,8 @@ extern "C" fn window_did_fail_to_exit_fullscreen(this: &Object, _: Sel, _: id) {
     let mut lock = window_state.as_ref().lock();
     lock.is_exiting_fullscreen = false;
     lock.restore_traffic_light();
+    lock.fullscreen_controls_active = true;
+    lock.update_fullscreen_traffic_lights();
 }
 
 extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: id) {
@@ -3170,6 +3456,8 @@ extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.as_ref().lock();
     lock.is_exiting_fullscreen = false;
+    lock.fullscreen_controls_active = false;
+    lock.restore_fullscreen_traffic_lights();
     // Moving the buttons during the transition captures their fullscreen frames.
     // Keep using the native windowed frames when restoring them on the next entry.
     lock.traffic_light_frames = lock.pre_fullscreen_traffic_light_frames.take();
@@ -4075,6 +4363,26 @@ extern "C" fn toggle_tab_bar(this: &Object, _sel: Sel, _id: id) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fullscreen_traffic_light_row_stays_inset_from_the_top() {
+        assert_eq!(
+            fullscreen_traffic_light_origin_y(0.0, 600.0, 14.0, 9.0, false),
+            577.0
+        );
+        assert_eq!(
+            fullscreen_traffic_light_origin_y(0.0, 600.0, 14.0, 9.0, true),
+            9.0
+        );
+        assert_eq!(
+            fullscreen_traffic_light_origin_y(5.0, 600.0, 14.0, 9.0, false),
+            582.0
+        );
+        assert_eq!(
+            fullscreen_traffic_light_origin_y(5.0, 600.0, 14.0, 9.0, true),
+            14.0
+        );
+    }
 
     #[test]
     fn display_id_for_screen_returns_none_for_null_screen() {

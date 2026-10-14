@@ -208,7 +208,8 @@ pub(crate) fn run_if_requested() -> Option<i32> {
             crate::register_app_actions(cx);
         }
         cx.spawn(async move |cx| {
-            let deadline_secs = if matches!(case.as_str(), "settings" | "accessibility") {
+            let deadline_secs = if matches!(case.as_str(), "settings" | "accessibility" | "restore")
+            {
                 70
             } else {
                 35

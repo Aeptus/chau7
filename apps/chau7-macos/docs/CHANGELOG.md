@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep real AppKit traffic lights visible in Next fullscreen content and restore
+  their native titlebar placement on exit; exercise an actual fullscreen Space
+  and capture native control composition in isolated acceptance.
+- Show the OpenCode logo on Next tabs and validate canonical OpenCode resume
+  commands, including once-only restoration prefill through owned fake shells.
+- Detect live SSH descendants and show a host badge alongside the active tool
+  logo, clearing it when the SSH process exits and excluding query-only modes.
+
 - Match Settings and secondary-window titlebars to their content palette,
   including title text and separators in light, dark and high-contrast modes.
 - Keep package installation and unrelated runner argument paths from being
