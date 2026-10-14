@@ -53,6 +53,7 @@ pub struct ImportSummary {
     pub dropped_unsupported_ai_identities: usize,
     pub dropped_tab_preview_contexts: usize,
     pub dropped_dashboard_group_ids: usize,
+    pub dropped_resume_directories: usize,
 }
 
 /// Fully validated, in-memory import. `snapshot` is private so callers must
@@ -195,10 +196,15 @@ pub fn prepare_swift_import(
         let plist =
             PlistValue::from_reader(Cursor::new(bytes)).map_err(|_| ImportError::InvalidPlist)?;
         let dictionary = plist.as_dictionary().ok_or(ImportError::InvalidPlist)?;
-        index_token = dictionary
-            .get(INDEX_TOKEN_KEY)
-            .and_then(PlistValue::as_string)
-            .map(str::to_owned);
+        index_token = match dictionary.get(INDEX_TOKEN_KEY) {
+            None => None,
+            Some(PlistValue::String(token)) if !token.trim().is_empty() => Some(token.clone()),
+            Some(_) => {
+                return Err(ImportError::Malformed(
+                    "the Swift restore index save token is malformed",
+                ));
+            }
+        };
         preferences = Some(dictionary.clone());
     } else {
         snapshots.push(FileSnapshot::missing(source.preferences_file.clone()));
@@ -213,6 +219,19 @@ pub fn prepare_swift_import(
         if envelope.schema_version != 1 {
             return Err(ImportError::Unsupported(
                 "the Swift restore manifest version is unsupported",
+            ));
+        }
+        if envelope
+            .save_token
+            .as_ref()
+            .is_some_and(|token| token.trim().is_empty())
+            || envelope
+                .previous_index_save_token
+                .as_ref()
+                .is_some_and(|token| token.trim().is_empty())
+        {
+            return Err(ImportError::Malformed(
+                "the Swift restore manifest save token is malformed",
             ));
         }
         parse_iso8601_unix(&envelope.saved_at).map_err(|_| {
@@ -259,7 +278,7 @@ pub fn prepare_swift_import(
         return Ok(None);
     }
 
-    let bundle_root = canonical_existing(&source.bundle_root).ok();
+    let bundle_root = canonical_existing(&source.bundle_root.join("current")).ok();
     let mut converter = Converter {
         bundle_root,
         bundle_contexts,
@@ -442,6 +461,8 @@ struct PaneState {
     pane_id: String,
     directory: String,
     #[serde(default)]
+    ai_resume_directory: Option<String>,
+    #[serde(default)]
     scrollback_content: Option<String>,
     #[serde(default)]
     ai_resume_command: Option<String>,
@@ -476,6 +497,8 @@ struct PaneState {
 struct PaneIdentity {
     pane_id: String,
     directory: String,
+    #[serde(default)]
+    ai_resume_directory: Option<String>,
     #[serde(default)]
     ai_resume_command: Option<String>,
     #[serde(default)]
@@ -719,6 +742,17 @@ impl Converter {
                 .or_else(|| state.map(|item| item.directory.clone()))
                 .or_else(|| layout_directory.clone())
                 .or_else(|| Some(tab.directory.clone()));
+            let identity_resume_directory =
+                identity.and_then(|item| item.ai_resume_directory.as_deref());
+            let state_resume_directory = state.and_then(|item| item.ai_resume_directory.as_deref());
+            let preferred_resume_directory = existing_absolute_directory(identity_resume_directory)
+                .or_else(|| existing_absolute_directory(state_resume_directory));
+            if preferred_resume_directory.is_none()
+                && (identity_resume_directory.is_some() || state_resume_directory.is_some())
+            {
+                self.summary.dropped_resume_directories += 1;
+            }
+            let directory = preferred_resume_directory.or(directory);
 
             let pane_context = if self.bundle_contexts {
                 identity
@@ -1073,17 +1107,14 @@ fn convert_layout(
             directory: optional_string("repoDirectory")?,
         },
         "dashboard" => {
-            if object
+            let repo_group_id = object
                 .get("dashboardRepoGroupID")
-                .and_then(JsonValue::as_str)
-                .is_some()
-            {
+                .and_then(JsonValue::as_str);
+            let directory = existing_absolute_directory(repo_group_id);
+            if repo_group_id.is_some() && directory.is_none() {
                 summary.dropped_dashboard_group_ids += 1;
             }
-            SavedSplitNode::Dashboard {
-                id,
-                directory: None,
-            }
+            SavedSplitNode::Dashboard { id, directory }
         }
         "split" => {
             let direction = match object.get("direction").and_then(JsonValue::as_str) {
@@ -1239,6 +1270,18 @@ fn canonical_existing(path: &Path) -> Result<PathBuf, std::io::Error> {
     fs::canonicalize(path)
 }
 
+fn existing_absolute_directory(value: Option<&str>) -> Option<String> {
+    let value = value?.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let path = Path::new(value);
+    if !path.is_absolute() || !path.is_dir() {
+        return None;
+    }
+    Some(value.to_owned())
+}
+
 fn fallback_uuid(window_index: usize, tab_index: usize) -> Uuid {
     // Reserve a deterministic synthetic range for legacy states that never
     // persisted a pane UUID. The stable window/tab position makes dry-runs
@@ -1267,12 +1310,12 @@ mod tests {
             .as_nanos();
         let path = std::env::temp_dir().join(format!("swift-restore-import-{nonce}"));
         fs::create_dir_all(path.join("bundle/current")).unwrap();
-        fs::create_dir_all(path.join("bundle/contexts/windows/0/tabs/a/panes")).unwrap();
+        fs::create_dir_all(path.join("bundle/current/contexts/windows/0/tabs/a/panes")).unwrap();
         path
     }
 
     fn ref_for(path: &Path, relative: &str) -> JsonValue {
-        let bytes = fs::read(path.join("bundle").join(relative)).unwrap();
+        let bytes = fs::read(path.join("bundle/current").join(relative)).unwrap();
         serde_json::json!({
             "path": relative,
             "sha256": sha256_hex(&bytes),
@@ -1284,6 +1327,8 @@ mod tests {
         let tab_id = "00000000-0000-0000-0000-000000000001";
         let pane_a = "00000000-0000-0000-0000-00000000000a";
         let pane_b = "00000000-0000-0000-0000-00000000000b";
+        let resume_directory = root.join("resume-directory");
+        fs::create_dir_all(&resume_directory).unwrap();
         let tab_context = serde_json::json!({
             "schemaVersion": 1,
             "tabID": tab_id,
@@ -1297,13 +1342,13 @@ mod tests {
             "scrollbackContent": "pane history",
         });
         fs::write(
-            root.join("bundle/contexts/windows/0/tabs/a/context.json"),
+            root.join("bundle/current/contexts/windows/0/tabs/a/context.json"),
             serde_json::to_vec(&tab_context).unwrap(),
         )
         .unwrap();
         fs::write(
             root.join(format!(
-                "bundle/contexts/windows/0/tabs/a/panes/{pane_a}.json"
+                "bundle/current/contexts/windows/0/tabs/a/panes/{pane_a}.json"
             )),
             serde_json::to_vec(&pane_context).unwrap(),
         )
@@ -1340,7 +1385,7 @@ mod tests {
                     },
                     "focusedPaneID": pane_b,
                     "paneIdentities": [
-                        {"paneID": pane_a, "directory": "/tmp/a", "aiProvider": "claude", "aiSessionId": "abc-123", "aiSessionIdSource": "observed", "contextRef": pane_ref},
+                        {"paneID": pane_a, "directory": "/tmp/a", "aiResumeDirectory": resume_directory, "aiProvider": "claude", "aiSessionId": "abc-123", "aiSessionIdSource": "observed", "contextRef": pane_ref},
                         {"paneID": pane_b, "directory": "/tmp/b", "contextRef": null}
                     ],
                     "createdAt": "2026-10-14T09:00:00Z",
@@ -1377,6 +1422,7 @@ mod tests {
     fn imports_nested_bundle_windows_context_split_identity_selection_and_ai() {
         let root = fixture();
         let source = write_fixture(&root);
+        let resume_directory = root.join("resume-directory");
         let plan = prepare_swift_import(&source).unwrap().unwrap();
         assert_eq!(plan.summary.windows, 2);
         assert_eq!(plan.summary.tabs, 2);
@@ -1404,6 +1450,12 @@ mod tests {
                 .ai_provider
                 .as_deref(),
             Some("claude")
+        );
+        assert_eq!(
+            plan.session.windows[0].tabs[0].panes[0]
+                .directory
+                .as_deref(),
+            Some(resume_directory.to_str().unwrap())
         );
         assert!(
             plan.session.windows[0].tabs[0].panes[0]
@@ -1458,7 +1510,7 @@ mod tests {
             let root = fixture();
             let source = write_fixture(&root);
             fs::write(
-                source.bundle_root.join(relative),
+                source.bundle_root.join("current").join(relative),
                 b"tampered fixture context",
             )
             .unwrap();
@@ -1478,6 +1530,8 @@ mod tests {
         };
         let tab_id = "00000000-0000-0000-0000-000000000021";
         let pane_id = "00000000-0000-0000-0000-000000000022";
+        let resume_directory = root.join("legacy-resume-directory");
+        fs::create_dir_all(&resume_directory).unwrap();
         let tab = serde_json::json!({
             "tabID": tab_id,
             "selectedTabID": tab_id,
@@ -1489,6 +1543,7 @@ mod tests {
             "paneStates": [{
                 "paneID": pane_id,
                 "directory": "/tmp/index",
+                "aiResumeDirectory": resume_directory,
                 "scrollbackContent": "pane index context",
                 "aiProvider": "claude",
                 "aiSessionId": "abc-123",
@@ -1520,6 +1575,12 @@ mod tests {
             b"pane index context"
         );
         assert_eq!(
+            plan.session.windows[0].tabs[0].panes[0]
+                .directory
+                .as_deref(),
+            Some(resume_directory.to_str().unwrap())
+        );
+        assert_eq!(
             plan.session.windows[0].tabs[0].panes[0].last_input_at,
             Some(SWIFT_REFERENCE_UNIX_SECONDS)
         );
@@ -1534,6 +1595,66 @@ mod tests {
             validate_source_snapshot(&plan),
             Err(ImportError::SnapshotChanged)
         );
+    }
+
+    #[test]
+    fn rejects_malformed_present_save_token_instead_of_selecting_bundle() {
+        let root = fixture();
+        let source = write_fixture(&root);
+        let mut dictionary = plist::Dictionary::new();
+        dictionary.insert(INDEX_TOKEN_KEY.into(), PlistValue::Data(vec![1, 2, 3]));
+        PlistValue::Dictionary(dictionary)
+            .to_file_xml(&source.preferences_file)
+            .unwrap();
+
+        assert!(matches!(
+            prepare_swift_import(&source),
+            Err(ImportError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn preserves_existing_dashboard_repo_root_in_saved_layout() {
+        let root = fixture();
+        let source = write_fixture(&root);
+        let repo_root = root.join("dashboard-repository");
+        fs::create_dir_all(&repo_root).unwrap();
+        let manifest_path = source.bundle_root.join("current/manifest.json");
+        let mut manifest: JsonValue =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        manifest["windows"][1][0]["splitLayout"] = serde_json::json!({
+            "version": 1,
+            "kind": "split",
+            "id": "00000000-0000-0000-0000-000000000101",
+            "direction": "horizontal",
+            "ratio": 0.5,
+            "first": {
+                "version": 1,
+                "kind": "dashboard",
+                "id": "00000000-0000-0000-0000-000000000102",
+                "dashboardRepoGroupID": repo_root,
+            },
+            "second": {
+                "version": 1,
+                "kind": "terminal",
+                "id": "00000000-0000-0000-0000-000000000103",
+                "directory": "/tmp/other"
+            }
+        });
+        fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+        let plan = prepare_swift_import(&source).unwrap().unwrap();
+        let Some(SavedSplitNode::Split { children, .. }) =
+            plan.session.windows[1].tabs[0].layout.as_ref()
+        else {
+            panic!("expected the saved split layout");
+        };
+        assert!(matches!(
+            &children[0],
+            SavedSplitNode::Dashboard { directory: Some(directory), .. }
+                if directory == repo_root.to_str().unwrap()
+        ));
+        assert_eq!(plan.summary.dropped_dashboard_group_ids, 0);
     }
 
     #[test]

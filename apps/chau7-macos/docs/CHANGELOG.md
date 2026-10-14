@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Add read-only Swift restore conversion with verified context imports and safe AI resume metadata.
+- Convert Swift restore manifests from their current bundle roots, verifying sidecar contexts and retaining valid resume and dashboard paths.
 
 - Start terminal windows immediately and show a splash only when no terminal
   frame is painted after 200 ms. Dismiss it on the first terminal paint, suppress
