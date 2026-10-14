@@ -284,9 +284,10 @@ mod tests {
 
     #[test]
     fn warnings_use_the_compiled_product_name() {
-        let mut state = BannerState::default();
-
-        state.permission = PermissionState::UnavailableNotBundled;
+        let mut state = BannerState {
+            permission: PermissionState::UnavailableNotBundled,
+            ..BannerState::default()
+        };
         let warning = state.warning().unwrap();
         assert!(warning.contains(format!("{APP_NAME}.app").as_str()));
 
