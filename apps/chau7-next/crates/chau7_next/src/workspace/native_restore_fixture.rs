@@ -2572,7 +2572,7 @@ async fn verify_surfaces(
                     (
                         *id,
                         text.matches("TIP ").count(),
-                        text.matches("fixture$ ").count(),
+                        text.matches("fixture$").count(),
                     )
                 })
             })
@@ -2595,7 +2595,7 @@ async fn verify_surfaces(
                     (
                         *id,
                         text.matches("TIP ").count(),
-                        text.matches("fixture$ ").count(),
+                        text.matches("fixture$").count(),
                     )
                 })
             })

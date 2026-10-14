@@ -349,8 +349,8 @@ fn terminal_line_is_blank(line: &str) -> bool {
 /// each row. header_box uses the message width cols - (hint reserve + 6):
 /// the reserved hint plus fixed side margins and border padding.
 fn known_startup_tip_box_line_count(lines: &[&str], start: usize) -> Option<usize> {
-    let first = visible_for_restore(*lines.get(start)?);
-    let border = first.trim_end_matches(|ch| ch == '\r' || ch == ' ');
+    let first = visible_for_restore(lines.get(start)?);
+    let border = first.trim_end_matches(['\r', ' ']);
     let dashes = border.strip_prefix("  +")?.strip_suffix('+')?;
     if dashes.is_empty() || !dashes.chars().all(|ch| ch == '-') {
         return None;

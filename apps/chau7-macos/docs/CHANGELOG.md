@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Match native prompt markers after terminal row padding is stripped by text export.
 - Trim saved terminal viewport padding before replay, remove exact legacy startup
   tip duplicates, and keep the live prompt after useful content across resizing.
 - Bound retries for transient Linux ETXTBSY failures when spawning isolated CTO
