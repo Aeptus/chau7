@@ -170,6 +170,24 @@ fn refresh_internal(cx: &mut App, guard_pending: bool, child_root: Option<String
     .detach();
     cx.refresh_windows();
 }
+fn alert_detail(child_root: Option<&str>) -> String {
+    if let Some(root) = child_root {
+        chau7_next_core::l10n::format_printf(
+            &crate::l10n::tr(
+                "A command failed with Operation not permitted in %@. Full Disk Access could not be confirmed. Re-enable Full Disk Access for %@ in System Settings.",
+            ),
+            &[root.into(), APP_NAME.into()],
+        )
+    } else {
+        chau7_next_core::l10n::format_printf(
+            &crate::l10n::tr(
+                "Terminal commands and AI agents in protected folders like ~/Downloads will fail with Operation not permitted. This can follow a rebuild or re-sign. Re-enable Full Disk Access for %@ in System Settings.",
+            ),
+            &[APP_NAME.into()],
+        )
+    }
+}
+
 fn present_alert(status: FullDiskAccess, child_root: Option<&str>, now: f64, cx: &mut App) {
     let Some(handle) = cx
         .active_window()
@@ -182,22 +200,18 @@ fn present_alert(status: FullDiskAccess, child_root: Option<&str>, now: f64, cx:
     } else {
         format!("{APP_NAME} has lost Full Disk Access")
     };
-    let detail = if let Some(root) = child_root {
-        format!(
-            "A command failed with Operation not permitted in {root}. Full Disk Access could not be confirmed. Re-enable Full Disk Access for {APP_NAME} in System Settings."
-        )
-    } else {
-        format!(
-            "Terminal commands and AI agents in protected folders like ~/Downloads will fail with Operation not permitted. This can follow a rebuild or re-sign. Re-enable Full Disk Access for {APP_NAME} in System Settings."
-        )
-    };
+    let detail = alert_detail(child_root);
     let answer = handle.update(cx, |_, window, cx| {
-        crate::l10n::prompt(
-            window,
+        // The detail is already localized. Translating it again could rewrite
+        // a user directory whose name includes the beta product name.
+        let title = crate::l10n::tr(&title);
+        let open = crate::l10n::tr("Open Full Disk Access...");
+        let later = crate::l10n::tr("Later");
+        window.prompt(
             PromptLevel::Warning,
             &title,
             Some(&detail),
-            &["Open Full Disk Access...", "Later"],
+            &[&open, &later],
             cx,
         )
     });
@@ -215,4 +229,22 @@ fn present_alert(status: FullDiskAccess, child_root: Option<&str>, now: f64, cx:
         }
     })
     .detach();
+}
+
+#[cfg(test)]
+mod alert_detail_tests {
+    use super::*;
+
+    #[test]
+    fn permission_details_preserve_user_paths_containing_beta_name() {
+        let root = "/Users/test/Downloads/Chau7 Next project";
+        let detail = alert_detail(Some(root));
+        assert!(detail.contains(root), "{detail}");
+        assert!(detail.contains(&format!("for {APP_NAME} in System Settings.")));
+    }
+
+    #[test]
+    fn permission_details_without_child_use_compiled_product() {
+        assert!(alert_detail(None).contains(&format!("for {APP_NAME} in System Settings.")));
+    }
 }
