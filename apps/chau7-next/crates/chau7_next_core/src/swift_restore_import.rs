@@ -397,9 +397,9 @@ struct MultiWindowIndex {
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SwiftTab {
-    #[serde(default)]
+    #[serde(default, rename = "tabID")]
     tab_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, rename = "selectedTabID")]
     selected_tab_id: Option<String>,
     #[serde(default)]
     custom_title: Option<String>,
@@ -421,7 +421,7 @@ struct SwiftTab {
     ai_session_id_source: Option<String>,
     #[serde(default)]
     split_layout: Option<JsonValue>,
-    #[serde(default)]
+    #[serde(default, rename = "focusedPaneID")]
     focused_pane_id: Option<String>,
     #[serde(default)]
     pane_states: Option<Vec<PaneState>>,
@@ -429,7 +429,7 @@ struct SwiftTab {
     pane_identities: Option<Vec<PaneIdentity>>,
     #[serde(default)]
     created_at: Option<String>,
-    #[serde(default)]
+    #[serde(default, rename = "repoGroupID")]
     repo_group_id: Option<String>,
     #[serde(default)]
     known_repo_root: Option<String>,
@@ -451,13 +451,14 @@ struct SwiftTab {
     context_ref: Option<ContextRef>,
     #[serde(default)]
     command_blocks: Option<Vec<JsonValue>>,
-    #[serde(default)]
+    #[serde(default, rename = "previewSnapshotPNGData")]
     preview_snapshot_png_data: Option<String>,
 }
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PaneState {
+    #[serde(rename = "paneID")]
     pane_id: String,
     directory: String,
     #[serde(default)]
@@ -495,6 +496,7 @@ struct PaneState {
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PaneIdentity {
+    #[serde(rename = "paneID")]
     pane_id: String,
     directory: String,
     #[serde(default)]
@@ -541,13 +543,13 @@ struct ContextRef {
 #[serde(rename_all = "camelCase")]
 struct TabContext {
     schema_version: u32,
-    #[serde(default)]
+    #[serde(default, rename = "tabID")]
     tab_id: Option<String>,
     #[serde(default)]
     scrollback_content: Option<String>,
     #[serde(default)]
     command_blocks: Option<Vec<JsonValue>>,
-    #[serde(default)]
+    #[serde(default, rename = "previewSnapshotPNGData")]
     preview_snapshot_png_data: Option<String>,
 }
 
@@ -555,6 +557,7 @@ struct TabContext {
 #[serde(rename_all = "camelCase")]
 struct PaneContext {
     schema_version: u32,
+    #[serde(rename = "paneID")]
     pane_id: String,
     #[serde(default)]
     scrollback_content: Option<String>,
@@ -664,7 +667,7 @@ impl Converter {
                 .copied()
                 .or_else(|| state_map.keys().next().copied())
                 .or(tab.tab_id.as_deref())
-                .unwrap_or_else(|| "");
+                .unwrap_or("");
             let fallback_id;
             let raw_id = if raw_id.is_empty() {
                 fallback_id = fallback_uuid(window_index, tab_index).to_string();
@@ -716,16 +719,15 @@ impl Converter {
         {
             self.summary.dropped_tab_preview_contexts += 1;
         }
-        if let Some(context) = &tab_context {
-            if context
+        if tab_context.as_ref().is_some_and(|context| {
+            context
                 .tab_id
                 .as_deref()
                 .is_some_and(|id| tab.tab_id.as_deref() != Some(id))
-            {
-                return Err(ImportError::Malformed(
-                    "the Swift tab context belongs to a different tab",
-                ));
-            }
+        }) {
+            return Err(ImportError::Malformed(
+                "the Swift tab context belongs to a different tab",
+            ));
         }
 
         let mut panes = Vec::new();
@@ -1162,21 +1164,22 @@ fn selected_tab_index(tabs: &[SwiftTab]) -> Result<usize, ImportError> {
     }
     let mut index_selection = None;
     for (position, tab) in tabs.iter().enumerate() {
-        if let Some(index) = tab.selected_index {
-            if index >= tabs.len() {
-                return Err(ImportError::Malformed(
-                    "the Swift selected tab index is out of range",
-                ));
-            }
-            let selected = if index == position { position } else { index };
-            if index_selection
-                .replace(selected)
-                .is_some_and(|previous| previous != selected)
-            {
-                return Err(ImportError::Malformed(
-                    "the Swift window has conflicting selected tab indexes",
-                ));
-            }
+        let Some(index) = tab.selected_index else {
+            continue;
+        };
+        if index >= tabs.len() {
+            return Err(ImportError::Malformed(
+                "the Swift selected tab index is out of range",
+            ));
+        }
+        let selected = if index == position { position } else { index };
+        if index_selection
+            .replace(selected)
+            .is_some_and(|previous| previous != selected)
+        {
+            return Err(ImportError::Malformed(
+                "the Swift window has conflicting selected tab indexes",
+            ));
         }
     }
     let mut id_selection = None;
@@ -1655,6 +1658,71 @@ mod tests {
                 if directory == repo_root.to_str().unwrap()
         ));
         assert_eq!(plan.summary.dropped_dashboard_group_ids, 0);
+    }
+
+    #[test]
+    fn decodes_swift_restore_acronym_keys_exactly() {
+        let tab: SwiftTab = serde_json::from_value(serde_json::json!({
+            "tabID": "00000000-0000-0000-0000-000000000001",
+            "selectedTabID": "00000000-0000-0000-0000-000000000001",
+            "color": "blue",
+            "directory": "/tmp",
+            "focusedPaneID": "00000000-0000-0000-0000-000000000002",
+            "repoGroupID": "repo-group",
+            "aiSessionId": "session-id",
+            "aiSessionIdSource": "observed",
+            "previewSnapshotPNGData": "cG5n",
+        }))
+        .unwrap();
+        assert_eq!(
+            tab.tab_id.as_deref(),
+            Some("00000000-0000-0000-0000-000000000001")
+        );
+        assert_eq!(
+            tab.selected_tab_id.as_deref(),
+            Some("00000000-0000-0000-0000-000000000001")
+        );
+        assert_eq!(
+            tab.focused_pane_id.as_deref(),
+            Some("00000000-0000-0000-0000-000000000002")
+        );
+        assert_eq!(tab.repo_group_id.as_deref(), Some("repo-group"));
+        assert_eq!(tab.ai_session_id.as_deref(), Some("session-id"));
+        assert_eq!(tab.ai_session_id_source.as_deref(), Some("observed"));
+        assert_eq!(tab.preview_snapshot_png_data.as_deref(), Some("cG5n"));
+
+        let pane_identity: PaneIdentity = serde_json::from_value(serde_json::json!({
+            "paneID": "00000000-0000-0000-0000-000000000002",
+            "directory": "/tmp",
+            "aiSessionId": "pane-session",
+            "aiSessionIdSource": "observed",
+        }))
+        .unwrap();
+        let pane_state: PaneState = serde_json::from_value(serde_json::json!({
+            "paneID": "00000000-0000-0000-0000-000000000002",
+            "directory": "/tmp",
+        }))
+        .unwrap();
+        assert_eq!(pane_identity.pane_id, pane_state.pane_id);
+        assert_eq!(pane_identity.ai_session_id.as_deref(), Some("pane-session"));
+
+        let tab_context: TabContext = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 1,
+            "tabID": "00000000-0000-0000-0000-000000000001",
+            "previewSnapshotPNGData": "cG5n",
+        }))
+        .unwrap();
+        let pane_context: PaneContext = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 1,
+            "paneID": "00000000-0000-0000-0000-000000000002",
+        }))
+        .unwrap();
+        assert_eq!(tab_context.tab_id.as_deref(), tab.tab_id.as_deref());
+        assert_eq!(
+            tab_context.preview_snapshot_png_data.as_deref(),
+            Some("cG5n")
+        );
+        assert_eq!(pane_context.pane_id, pane_state.pane_id);
     }
 
     #[test]
