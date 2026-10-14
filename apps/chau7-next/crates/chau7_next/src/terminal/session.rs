@@ -58,9 +58,15 @@ pub(crate) struct ManuallyDrivenRestoreFixture;
 impl Global for ManuallyDrivenRestoreFixture {}
 
 fn replay_restored_terminal(term: &Chau7Terminal, context: &str) {
-    let live = term.full_buffer_ansi_text();
-    let mut bytes = context.as_bytes().to_vec();
-    bytes.extend_from_slice(b"\r\n\x1b[0m");
+    let context = chau7_next_core::session_restore::normalize_scrollback_for_restore(context);
+    let live = chau7_next_core::session_restore::trim_trailing_terminal_padding(
+        &term.full_buffer_ansi_text(),
+    );
+    let mut bytes = Vec::with_capacity(context.len() + live.len() + 8);
+    bytes.extend_from_slice(context.as_bytes());
+    if !context.is_empty() {
+        bytes.extend_from_slice(b"\r\n\x1b[0m");
+    }
     bytes.extend_from_slice(live.as_bytes());
     term.replay_buffer(&bytes);
 }
@@ -3166,6 +3172,89 @@ mod restored_context_tests {
         assert!(text.contains("live-prompt>"), "{text:?}");
         assert!(text.find("saved history").unwrap() < text.find("fresh shell").unwrap());
         assert!(!text.contains("cat "));
+        let (prompt_column, prompt_row) = term.cursor_position();
+        assert!(
+            prompt_column > 0,
+            "prompt cursor was reset: {prompt_column},{prompt_row}"
+        );
+        assert!(
+            prompt_row <= 3,
+            "prompt cursor drifted below live output: {prompt_row}"
+        );
+    }
+
+    #[test]
+    fn ansi_viewport_export_capture_and_replay_keep_prompt_at_logical_tail() {
+        let tip = |index| {
+            shell_tips::header_box(80, &shell_tips::formatted_tip(index)).expect("startup tip fits")
+        };
+
+        // Simulate the two-cycle legacy profile: the first full viewport export
+        // contributes blank rows before a later generated tip and prompt.
+        let older = Chau7Terminal::new_headless(80, 64).unwrap();
+        older.inject_output(format!("{}old output\r\n\r\nold-prompt% ", tip(18)).as_bytes());
+        let later = Chau7Terminal::new_headless(80, 64).unwrap();
+        later.inject_output(format!("{}new output\r\nnew-prompt% ", tip(24)).as_bytes());
+        let legacy_context = format!(
+            "{}{}",
+            older.full_buffer_ansi_text(),
+            later.full_buffer_ansi_text()
+        );
+
+        let captured = chau7_next_core::session_restore::capture_scrollback(&legacy_context, 500)
+            .expect("legacy output remains restorable");
+        let captured_visible = chau7_next_core::session_restore::visible_for_restore(&captured);
+        assert!(
+            captured_visible.contains("old output"),
+            "{captured_visible:?}"
+        );
+        assert!(
+            captured_visible.contains("old-prompt%"),
+            "{captured_visible:?}"
+        );
+        assert!(
+            captured_visible.contains("new output"),
+            "{captured_visible:?}"
+        );
+        assert!(
+            captured_visible.contains("new-prompt%"),
+            "{captured_visible:?}"
+        );
+        assert!(!captured_visible.contains("TIP "), "{captured_visible:?}");
+        assert!(captured_visible.contains("old output\r\n\r\nold-prompt%"));
+        assert!(!captured.ends_with(['\r', '\n']));
+
+        let restored = Chau7Terminal::new_headless(80, 24).unwrap();
+        restored.inject_output(format!("{}current output\r\ncurrent-prompt% ", tip(29)).as_bytes());
+        replay_restored_terminal(&restored, &captured);
+
+        let text = restored.full_buffer_text();
+        assert!(text.contains("old-prompt%"), "{text:?}");
+        assert!(text.contains("new-prompt%"), "{text:?}");
+        assert!(text.contains("current-prompt%"), "{text:?}");
+        assert_eq!(text.matches("TIP ").count(), 1, "{text:?}");
+        assert!(restored.cursor_position().1 < 12, "{text:?}");
+
+        // Replay the raw legacy context too, so existing profiles receive the
+        // same one-tip and cursor repair before they are saved again.
+        let legacy_restore = Chau7Terminal::new_headless(80, 24).unwrap();
+        legacy_restore
+            .inject_output(format!("{}current output\r\ncurrent-prompt% ", tip(29)).as_bytes());
+        replay_restored_terminal(&legacy_restore, &legacy_context);
+        assert_eq!(legacy_restore.full_buffer_text().matches("TIP ").count(), 1);
+        assert!(legacy_restore.cursor_position().1 < 12);
+
+        for (cols, rows) in [(120, 40), (64, 18), (100, 30)] {
+            restored.resize(cols, rows);
+            let grid = restored.grid_copy();
+            assert_eq!((grid.cols, grid.rows), (cols, rows));
+            assert!(
+                restored.cursor_position().1 < rows - 4,
+                "cursor fell below the logical prompt after resize to {cols}x{rows}: {:?}",
+                restored.cursor_position()
+            );
+            assert_eq!(restored.full_buffer_text().matches("TIP ").count(), 1);
+        }
     }
 }
 

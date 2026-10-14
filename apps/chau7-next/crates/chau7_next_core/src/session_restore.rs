@@ -260,6 +260,137 @@ pub const MAX_RESTORED_SCROLLBACK_LINES: usize = 10_000;
 /// Default of the "Restored Scrollback" setting (`restoredScrollbackLines`).
 pub const DEFAULT_RESTORED_SCROLLBACK_LINES: usize = 500;
 
+/// Remove the terminal's trailing viewport padding while keeping its content
+/// rows and ANSI styling. The final CR from a CRLF-terminated export is removed
+/// so callers can append a separator without advancing the cursor an extra row.
+pub fn trim_trailing_terminal_padding(text: &str) -> String {
+    let mut lines: Vec<&str> = text.split('\n').collect();
+    while lines
+        .last()
+        .is_some_and(|line| terminal_line_is_blank(line))
+    {
+        lines.pop();
+    }
+    let mut trimmed = lines.join("\n");
+    if trimmed.ends_with('\r') {
+        trimmed.pop();
+    }
+    trimmed
+}
+
+/// Normalize saved terminal context before it is persisted or replayed.
+///
+/// Old ANSI exports included every viewport row, so blank rows can sit between
+/// earlier output and a later startup tip. Remove only complete boxes generated
+/// from the built-in tip list: a box at the beginning, or one preceded by at
+/// least eight contiguous blank rows. This repairs known restore artifacts
+/// while preserving ordinary interior blank lines and other boxed user output.
+pub fn normalize_scrollback_for_restore(text: &str) -> String {
+    const MIN_INTERIOR_TIP_PADDING_ROWS: usize = 8;
+
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut removed = vec![false; lines.len()];
+    let mut index = 0;
+    while index < lines.len() {
+        if removed[index] {
+            index += 1;
+            continue;
+        }
+        let Some(box_lines) = known_startup_tip_box_line_count(&lines, index) else {
+            index += 1;
+            continue;
+        };
+
+        let mut blank_start = index;
+        while blank_start > 0
+            && !removed[blank_start - 1]
+            && terminal_line_is_blank(lines[blank_start - 1])
+        {
+            blank_start -= 1;
+        }
+        let padding_rows = index - blank_start;
+        if index == 0 || padding_rows >= MIN_INTERIOR_TIP_PADDING_ROWS {
+            if padding_rows >= MIN_INTERIOR_TIP_PADDING_ROWS {
+                removed[blank_start..index].fill(true);
+            }
+            let end = (index + box_lines).min(lines.len());
+            removed[index..end].fill(true);
+            index = end;
+        } else {
+            index += 1;
+        }
+    }
+
+    let mut retained: Vec<&str> = lines
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, line)| (!removed[index]).then_some(line))
+        .collect();
+    while retained
+        .last()
+        .is_some_and(|line| terminal_line_is_blank(line))
+    {
+        retained.pop();
+    }
+    let mut normalized = retained.join("\n");
+    if normalized.ends_with('\r') {
+        normalized.pop();
+    }
+    normalized
+}
+
+fn terminal_line_is_blank(line: &str) -> bool {
+    visible_for_restore(line).trim().is_empty()
+}
+
+/// Return the physical line count only for a complete built-in startup tip
+/// box. The leading border bounds candidate widths; visible row text then has
+/// to match a generated tip exactly, allowing only terminal cell padding after
+/// each row. header_box uses the message width cols - (hint reserve + 6):
+/// the reserved hint plus fixed side margins and border padding.
+fn known_startup_tip_box_line_count(lines: &[&str], start: usize) -> Option<usize> {
+    let first = visible_for_restore(*lines.get(start)?);
+    let border = first.trim_end_matches(|ch| ch == '\r' || ch == ' ');
+    let dashes = border.strip_prefix("  +")?.strip_suffix('+')?;
+    if dashes.is_empty() || !dashes.chars().all(|ch| ch == '-') {
+        return None;
+    }
+    let minimum_width = dashes.chars().count().checked_sub(2)?;
+
+    for tip_index in 0..crate::shell_tips::TIPS.len() {
+        let tip = crate::shell_tips::formatted_tip(tip_index);
+        let maximum_width = crate::shell_tips::sanitize_box_message(&tip)
+            .chars()
+            .count();
+        if minimum_width > maximum_width {
+            continue;
+        }
+        for width in minimum_width..=maximum_width {
+            let cols = width + crate::shell_tips::HINT_RESERVE_COLS + 6;
+            let Some(generated) = crate::shell_tips::header_box(cols, &tip) else {
+                continue;
+            };
+            let visible = visible_for_restore(&generated);
+            let expected: Vec<&str> = visible.split_terminator('\n').collect();
+            if expected.is_empty() || start + expected.len() > lines.len() {
+                continue;
+            }
+            let matches = expected.iter().enumerate().all(|(offset, expected_line)| {
+                let actual = visible_for_restore(lines[start + offset]);
+                let actual = actual.strip_suffix('\r').unwrap_or(actual.as_str());
+                let expected_line = expected_line.strip_suffix('\r').unwrap_or(*expected_line);
+                actual
+                    .strip_prefix(expected_line)
+                    .is_some_and(|padding| padding.chars().all(|ch| ch == ' '))
+            });
+            if matches {
+                return Some(expected.len());
+            }
+        }
+    }
+    None
+}
+
 /// The last `max_lines` lines of a terminal buffer, ready to be replayed
 /// (`captureScrollback`). ANSI exports keep their styles and column spacing.
 /// Plain fallback rows drop padding; restore artifacts and trailing empty rows
@@ -274,17 +405,12 @@ pub fn capture_scrollback(text: &str, max_lines: usize) -> Option<String> {
     } else {
         text.replace('\t', " ")
     };
+    let text = normalize_scrollback_for_restore(&text);
     let mut lines: Vec<&str> = text
         .split('\n')
         .map(|line| if styled { line } else { line.trim_end() })
         .filter(|line| !is_restore_artifact(&visible_for_restore(line)))
         .collect();
-    while lines
-        .last()
-        .is_some_and(|line| visible_for_restore(line).is_empty())
-    {
-        lines.pop();
-    }
     if lines.is_empty() {
         return None;
     }
@@ -809,6 +935,71 @@ mod tests {
     fn capture_strips_padding_and_trailing_blank_lines() {
         let text = "one   \ntwo\t \n\n   \n";
         assert_eq!(capture_scrollback(text, 10).as_deref(), Some("one\ntwo"));
+    }
+
+    #[test]
+    fn legacy_restore_normalization_removes_owned_tips_and_their_viewport_gap() {
+        let old_tip =
+            crate::shell_tips::header_box(80, &crate::shell_tips::formatted_tip(18)).unwrap();
+        let later_tip =
+            crate::shell_tips::header_box(80, &crate::shell_tips::formatted_tip(24)).unwrap();
+        let user_box = crate::shell_tips::header_box(80, "TIP user-generated notice").unwrap();
+        let legacy = format!(
+            "{old_tip}first output\r\n\r\nold-prompt% {}\r\n{later_tip}second output\r\nsecond-prompt% \r\n{}\r\n{user_box}user output",
+            "\r\n".repeat(12),
+            "\r\n".repeat(2),
+        );
+
+        let normalized = normalize_scrollback_for_restore(&legacy);
+        let visible = visible_for_restore(&normalized);
+        assert!(visible.contains("first output\r\n\r\nold-prompt%"));
+        assert!(visible.contains("old-prompt% \r\nsecond output"));
+        assert!(visible.contains("second output\r\nsecond-prompt%"));
+        assert!(!visible.contains("TIP Adjust font size on the fly"));
+        assert!(!visible.contains("TIP Cmd+click to open file paths"));
+        assert!(visible.contains("TIP user-generated notice"));
+        assert!(visible.ends_with("user output"));
+        assert!(!normalized.ends_with(['\r', '\n']));
+
+        // A known tip without the legacy viewport gap is left in place when it
+        // appears in interior user output; the matcher does not filter TIP text.
+        let short_gap = format!("earlier output\r\n\r\n{later_tip}user output");
+        assert!(
+            visible_for_restore(&normalize_scrollback_for_restore(&short_gap))
+                .contains("TIP Cmd+click to open file paths")
+        );
+    }
+
+    #[test]
+    fn every_builtin_startup_tip_matches_at_representative_terminal_widths() {
+        for cols in [48, 64, 80, 120, 200] {
+            for tip_index in 0..crate::shell_tips::TIPS.len() {
+                let generated = crate::shell_tips::header_box(
+                    cols,
+                    &crate::shell_tips::formatted_tip(tip_index),
+                )
+                .unwrap();
+                let padded = generated.replace("\r\n", "   \r\n");
+                let lines: Vec<&str> = padded.split('\n').collect();
+                let expected_lines = visible_for_restore(&generated)
+                    .split_terminator('\n')
+                    .count();
+                assert_eq!(
+                    known_startup_tip_box_line_count(&lines, 0),
+                    Some(expected_lines),
+                    "tip {tip_index} at {cols} columns"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ansi_scrollback_capture_normalizes_legacy_crlf_viewport_padding() {
+        let text = "\x1b[31mkept output\x1b[0m\r\n\r\n \r\n";
+        assert_eq!(
+            capture_scrollback(text, 10).as_deref(),
+            Some("\x1b[31mkept output\x1b[0m")
+        );
     }
 
     #[test]

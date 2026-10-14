@@ -2032,10 +2032,22 @@ fn traffic_light_geometry(native: &NSWindow, stage: &str) -> Result<serde_json::
             ancestor_count > 0,
             &format!("{stage}: native {name} traffic light has no native ancestors"),
         )?;
+        // Window base coordinates use a bottom-left origin, independent of
+        // whether AppKit swapped in a flipped content view during fullscreen.
+        let in_window = button.convertRect_toView(bounds, None);
+        let top_inset = native.frame().size.height - in_window.origin.y - in_window.size.height;
+        ensure(
+            top_inset.is_finite() && (-1.0..=64.0).contains(&top_inset),
+            &format!(
+                "{stage}: native {name} traffic light moved away from the top edge: inset={top_inset}"
+            ),
+        )?;
         controls.insert(
             name.to_owned(),
             serde_json::json!({
                 "visible_rect": native_rect_values(visible),
+                "window_rect": native_rect_values(in_window),
+                "top_inset_points": top_inset,
                 "ancestor_count": ancestor_count,
             }),
         );
@@ -2248,11 +2260,55 @@ async fn verify_traffic_lights_in_real_fullscreen(
         })
         .await?;
         settle(handle, cx).await?;
+        let initial_geometry = traffic_light_geometry(native, "actual fullscreen")?;
+        let initial_composition = traffic_light_composition(native, "actual fullscreen")?;
+        let application = NSApplication::sharedApplication(
+            MainThreadMarker::new().ok_or("fullscreen focus fixture is not on main thread")?,
+        );
+        ensure(application.isActive() && native.isKeyWindow(),
+            "fullscreen focus fixture must start with an active key window")?;
+        let resigned = FullscreenCompletion::new(native, unsafe {
+            objc2_app_kit::NSWindowDidResignKeyNotification
+        });
+        native_mutation(|| application.deactivate())?;
+        let inactive_result = async {
+            wait_until_deadline(
+                cx, "owned fullscreen application actually deactivated",
+                Instant::now() + Duration::from_secs(5),
+                |_| !application.isActive() && !native.isKeyWindow() && resigned.completed(),
+            ).await?;
+            // Let AppKit deliver its inactive control appearance and layout.
+            pause(cx, Duration::from_millis(300)).await;
+            Ok::<_, String>(serde_json::json!({
+                "app_inactive": !application.isActive(),
+                "window_not_key": !native.isKeyWindow(),
+                "did_resign_key_notification": resigned.completed(),
+                "geometry": traffic_light_geometry(native, "fullscreen after app deactivation")?,
+                "composition": traffic_light_composition(native, "fullscreen after app deactivation")?,
+            }))
+        }.await;
+        // Regain focus even if inactive geometry failed, before leaving our Space.
+        activate_owned_application(&application)?;
+        native_mutation(|| native.makeKeyAndOrderFront(None))?;
+        wait_until_deadline(
+            cx, "owned fullscreen application reactivated",
+            Instant::now() + Duration::from_secs(5),
+            |_| application.isActive() && native.isKeyWindow(),
+        ).await?;
+        settle(handle, cx).await?;
+        let inactive = inactive_result?;
         Ok::<_, String>(serde_json::json!({
             "actual_fullscreen": true,
             "did_enter_notification": entered.completed(),
-            "geometry": traffic_light_geometry(native, "actual fullscreen")?,
-            "composition": traffic_light_composition(native, "actual fullscreen")?,
+            "geometry": initial_geometry,
+            "composition": initial_composition,
+            "after_deactivation": inactive,
+            "after_reactivation": {
+                "app_active": application.isActive(),
+                "window_key": native.isKeyWindow(),
+                "geometry": traffic_light_geometry(native, "fullscreen after app reactivation")?,
+                "composition": traffic_light_composition(native, "fullscreen after app reactivation")?,
+            },
         }))
     }
     .await;
@@ -2507,8 +2563,48 @@ async fn verify_surfaces(
     )
     .await?;
     settle(handle, cx).await?;
+    let resize_markers_before = cx.update(|cx| {
+        sessions
+            .iter()
+            .map(|(id, session)| {
+                session.read(cx).with_terminal(|term| {
+                    let text = term.full_buffer_text();
+                    (
+                        *id,
+                        text.matches("TIP ").count(),
+                        text.matches("fixture$ ").count(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>()
+    });
+    ensure(
+        resize_markers_before
+            .iter()
+            .all(|(_, _, prompts)| *prompts > 0),
+        "native resize fixture has no live shell prompt marker",
+    )?;
     let traffic_light_zoom_geometry =
         verify_traffic_lights_after_window_zoom(handle, &native, cx).await?;
+    let resize_markers_after = cx.update(|cx| {
+        sessions
+            .iter()
+            .map(|(id, session)| {
+                session.read(cx).with_terminal(|term| {
+                    let text = term.full_buffer_text();
+                    (
+                        *id,
+                        text.matches("TIP ").count(),
+                        text.matches("fixture$ ").count(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>()
+    });
+    ensure(
+        resize_markers_before == resize_markers_after,
+        "native zoom/fullscreen/focus transition duplicated terminal tips or prompts",
+    )?;
     cx.update(|cx| -> Result<(), String> {
         ensure(
             sessions.iter().all(|(_, s)| {
@@ -2730,6 +2826,8 @@ async fn verify_surfaces(
     }
     Ok(
         serde_json::json!({"traffic_light_zoom_geometry":traffic_light_zoom_geometry,
+        "terminal_markers_preserved_through_window_transitions":true,
+        "terminal_marker_counts":resize_markers_after,
         "hover_live_budget_ms":2000,"hover_exit_budget_ms":500,
         "hover_parked_ptys":0,"hidden_raw_grid_updated":true,"hidden_remote_grid_updated":true,
         "ordered_out_front":true,"native_mini_demini":true,

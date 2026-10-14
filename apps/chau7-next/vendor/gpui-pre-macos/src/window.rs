@@ -592,6 +592,10 @@ struct FullscreenTrafficLightOverlay {
     button_padding: f64,
 }
 
+fn fullscreen_traffic_light_origin_x(bounds_origin_x: f64, padding_x: f64) -> f64 {
+    bounds_origin_x + padding_x
+}
+
 fn fullscreen_traffic_light_origin_y(
     bounds_origin_y: f64,
     bounds_height: f64,
@@ -1034,7 +1038,7 @@ impl MacWindowState {
             position.y.to_f64(),
             content_view.isFlipped(),
         );
-        let close_x = position.x.to_f64();
+        let close_x = fullscreen_traffic_light_origin_x(bounds.origin.x, position.x.to_f64());
         let minimize_x = close_x + overlay.button_width + overlay.button_padding;
         let zoom_x = minimize_x + overlay.button_width + overlay.button_padding;
 
@@ -3615,7 +3619,9 @@ extern "C" fn window_did_change_key_status(this: &Object, selector: Sel, _: id) 
     executor
         .spawn(async move {
             let mut lock = window_state.as_ref().lock();
-            if is_active {
+            // AppKit can reposition or reparent standard controls when a fullscreen
+            // window resigns key as well as when it becomes active again.
+            if is_active || lock.fullscreen_controls_active {
                 lock.move_traffic_light();
             }
 
@@ -4370,6 +4376,12 @@ extern "C" fn toggle_tab_bar(this: &Object, _sel: Sel, _id: id) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fullscreen_traffic_light_x_respects_nonzero_bounds_origin() {
+        assert_eq!(fullscreen_traffic_light_origin_x(5.0, 9.0), 14.0);
+        assert_eq!(fullscreen_traffic_light_origin_x(-4.0, 9.0), 5.0);
+    }
 
     #[test]
     fn fullscreen_traffic_light_row_stays_inset_from_the_top() {

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Trim saved terminal viewport padding before replay, remove exact legacy startup
+  tip duplicates, and keep the live prompt after useful content across resizing.
+- Bound retries for transient Linux ETXTBSY failures when spawning isolated CTO
+  test wrappers and give each test fixture a unique temporary directory.
+- Reposition native fullscreen controls on focus loss as well as focus regain;
+  assert their top-edge placement and visible pixels across real app deactivation
+  and reactivation in the isolated fullscreen fixture.
 - Exercise the real main-thread AppKit green button to leave fullscreen in isolated acceptance,
   and let SSH and text indicators shrink inside crowded tab chips.
 - Keep the new OpenCode logo inside the Rust app assets to avoid rebuilding the

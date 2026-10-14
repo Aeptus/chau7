@@ -761,10 +761,20 @@ mod tests {
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("chau7-next-cto-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+            std::env::temp_dir().join(format!("chau7-next-cto-{name}-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn temporary_test_directories_are_unique() {
+        let first = temp_dir("parallel");
+        let second = temp_dir("parallel");
+        assert_ne!(first, second);
+        assert!(first.is_dir());
+        assert!(second.is_dir());
+        let _ = fs::remove_dir_all(first);
+        let _ = fs::remove_dir_all(second);
     }
 
     fn paths_in(dir: &Path) -> CtoPaths {
@@ -1100,7 +1110,48 @@ mod tests {
     #[cfg(unix)]
     mod run {
         use super::*;
-        use std::process::Command;
+        use std::io;
+        use std::process::{Command, Output};
+        use std::thread;
+        use std::time::Duration;
+
+        fn is_executable_file_busy(error: &io::Error) -> bool {
+            if error.kind() == io::ErrorKind::ExecutableFileBusy {
+                return true;
+            }
+            #[cfg(target_os = "linux")]
+            {
+                error.raw_os_error() == Some(26)
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                false
+            }
+        }
+
+        fn output_with_etxtbsy_retry(command: &mut Command) -> io::Result<Output> {
+            const MAX_ATTEMPTS: usize = 5;
+            for attempt in 1..=MAX_ATTEMPTS {
+                match command.output() {
+                    Err(error) if attempt < MAX_ATTEMPTS && is_executable_file_busy(&error) => {
+                        thread::sleep(Duration::from_millis(15));
+                    }
+                    result => return result,
+                }
+            }
+            unreachable!("the final spawn attempt returns its result")
+        }
+
+        #[test]
+        fn retry_classifier_only_matches_executable_file_busy() {
+            assert!(is_executable_file_busy(&io::Error::new(
+                io::ErrorKind::ExecutableFileBusy,
+                "busy"
+            )));
+            assert!(!is_executable_file_busy(&io::Error::other("other")));
+            #[cfg(target_os = "linux")]
+            assert!(is_executable_file_busy(&io::Error::from_raw_os_error(26)));
+        }
 
         /// A fake optimizer prints its arguments and exits with `$FAKE_RC`.
         fn setup(name: &str) -> (PathBuf, CtoPaths, PathBuf) {
@@ -1132,7 +1183,7 @@ mod tests {
             if let Some(session) = session {
                 cmd.env("CHAU7_CTO_SESSION", session);
             }
-            let out = cmd.output().unwrap();
+            let out = output_with_etxtbsy_retry(&mut cmd).unwrap();
             (
                 String::from_utf8_lossy(&out.stdout).trim().to_string(),
                 fs::read_to_string(&log).unwrap_or_default(),
@@ -1228,14 +1279,13 @@ mod tests {
         fn excluded_commands_skip_the_optimizer() {
             let (dir, paths, _) = setup("run-exclude");
             create_flag(&paths, "S1");
-            let out = Command::new(paths.wrapper_dir.join("git"))
-                .arg("status")
+            let mut cmd = Command::new(paths.wrapper_dir.join("git"));
+            cmd.arg("status")
                 .env_clear()
                 .env("PATH", "/usr/bin:/bin")
                 .env("CHAU7_CTO_SESSION", "S1")
-                .env("CHAU7_CTO_EXCLUDE", "ls git")
-                .output()
-                .unwrap();
+                .env("CHAU7_CTO_EXCLUDE", "ls git");
+            let out = output_with_etxtbsy_retry(&mut cmd).unwrap();
             assert_eq!(
                 String::from_utf8_lossy(&out.stdout).trim(),
                 "real-git status"
@@ -1256,14 +1306,13 @@ mod tests {
             let sed = |args: &[&str]| {
                 // stdin must be a terminal for the optimizer path, which a
                 // test cannot provide: only the bypass is checked here.
-                let out = Command::new(paths.wrapper_dir.join("sed"))
-                    .args(args)
+                let mut cmd = Command::new(paths.wrapper_dir.join("sed"));
+                cmd.args(args)
                     .env_clear()
                     .env("PATH", "/usr/bin:/bin")
                     .env("CHAU7_CTO_SESSION", "S1")
-                    .stdin(std::process::Stdio::null())
-                    .output()
-                    .unwrap();
+                    .stdin(std::process::Stdio::null());
+                let out = output_with_etxtbsy_retry(&mut cmd).unwrap();
                 String::from_utf8_lossy(&out.stdout).to_string()
             };
             let file = file.to_string_lossy().to_string();
