@@ -321,6 +321,32 @@ class NativeArtifactModeTests(unittest.TestCase):
                         NATIVE_PARITY.cargo_binary_artifact(log, binary, "aarch64-apple-darwin")
 
 
+class FrontmostApplicationReaderTests(unittest.TestCase):
+    def test_frontmost_reader_pumps_run_loop_before_each_fresh_workspace_read(self):
+        events = []
+        workspace_pids = iter((14525, 3355))
+
+        def pump_run_loop():
+            events.append("pump")
+
+        def read_workspace_pid():
+            events.append("workspace-read")
+            return next(workspace_pids)
+
+        with (
+            mock.patch.object(NATIVE_PARITY, "_pump_appkit_run_loop", side_effect=pump_run_loop),
+            mock.patch.object(
+                NATIVE_PARITY,
+                "_read_frontmost_application_pid",
+                side_effect=read_workspace_pid,
+            ),
+        ):
+            self.assertEqual(NATIVE_PARITY.frontmost_application_pid(), 14525)
+            self.assertEqual(NATIVE_PARITY.frontmost_application_pid(), 3355)
+
+        self.assertEqual(events, ["pump", "workspace-read", "pump", "workspace-read"])
+
+
 class NativeActivationHandshakeTests(unittest.TestCase):
     def setUp(self):
         self.handshake = {

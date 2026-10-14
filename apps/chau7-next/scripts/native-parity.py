@@ -340,9 +340,20 @@ def _owned_handshake_executable(bundle, bundle_identifier, handshake):
     return bundle, expected_executable, handshake["pid"]
 
 
-def frontmost_application_pid():
-    """Read the frontmost PID through NSWorkspace without System Events automation."""
+def _pump_appkit_run_loop():
+    """Deliver queued AppKit/Workspace notifications on this process's main run loop."""
     ctypes.CDLL("/System/Library/Frameworks/AppKit.framework/AppKit")
+    core_foundation = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+    run_in_mode = core_foundation.CFRunLoopRunInMode
+    run_in_mode.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_ubyte]
+    run_in_mode.restype = ctypes.c_int32
+    default_mode = ctypes.c_void_p.in_dll(core_foundation, "kCFRunLoopDefaultMode").value
+    if not default_mode:
+        raise RuntimeError("Core Foundation default run-loop mode is unavailable")
+    run_in_mode(default_mode, 0.01, True)
+
+
+def _read_frontmost_application_pid():
     runtime = ctypes.CDLL("/usr/lib/libobjc.A.dylib")
     get_class = runtime.objc_getClass
     get_class.argtypes = [ctypes.c_char_p]
@@ -359,6 +370,12 @@ def frontmost_application_pid():
         return None
     pid = send_int(application, register_selector(b"processIdentifier"))
     return pid if pid > 0 else None
+
+
+def frontmost_application_pid():
+    """Read a fresh frontmost PID after dispatching pending Workspace updates."""
+    _pump_appkit_run_loop()
+    return _read_frontmost_application_pid()
 
 
 def wait_for_frontmost_application(pid, deadline):

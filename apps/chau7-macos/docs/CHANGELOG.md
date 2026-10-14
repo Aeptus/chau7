@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Refresh AppKit Workspace state between isolated native focus observations so
+  companion-to-fullscreen activation checks do not poll a stale foreground PID.
 - Anchor native fullscreen traffic lights in a small top-left host so AppKit
   titlebar layout cannot move them to the bottom after resizing or focus loss.
 - Measure native control placement in screen coordinates and allow bounded
