@@ -29,6 +29,7 @@ pub fn register(cx: &mut App) {
 pub(crate) struct ViewsState {
     pub help: Option<help_window::HelpHandle>,
     pub launch: Option<launch::LaunchHandle>,
+    pub splash_pending: bool,
 }
 impl Global for ViewsState {}
 
@@ -36,7 +37,7 @@ impl Global for ViewsState {}
 /// its own task.
 pub fn poll(_cx: &mut App) {}
 
-/// Display the returning user's splash before initializing the workspaces.
+/// Initialize immediately, with a delayed splash only if no terminal is painted.
 pub fn prepare_launch(cx: &mut App, start: impl FnOnce(&mut App) + 'static) {
     launch::prepare_launch(cx, start);
 }
@@ -44,4 +45,9 @@ pub fn prepare_launch(cx: &mut App, start: impl FnOnce(&mut App) + 'static) {
 /// Keep the first-launch welcome screen after workspace initialization.
 pub fn finish_launch(cx: &mut App) {
     launch::finish_launch(cx);
+}
+
+/// Dismiss the conditional splash on the first displayed terminal frame.
+pub fn terminal_displayed(cx: &mut App) {
+    launch::terminal_displayed(cx);
 }

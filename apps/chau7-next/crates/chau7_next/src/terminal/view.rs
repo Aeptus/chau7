@@ -806,10 +806,14 @@ impl Render for TerminalView {
                             let session = view.read(cx).session.read(cx);
                             session.mark_frame_paint_completed();
                             session.mark_restore_presented();
-                            crate::startup::mark(crate::startup::Stage::TerminalPainted);
-                            if !crate::startup::reached(crate::startup::Stage::TerminalReady)
-                                && session.startup_content_ready()
-                            {
+                            let terminal_ready =
+                                !crate::startup::reached(crate::startup::Stage::TerminalReady)
+                                    && session.startup_content_ready();
+                            if !crate::startup::reached(crate::startup::Stage::TerminalPainted) {
+                                crate::startup::mark(crate::startup::Stage::TerminalPainted);
+                                crate::views::terminal_displayed(cx);
+                            }
+                            if terminal_ready {
                                 crate::startup::mark(crate::startup::Stage::TerminalReady);
                             }
                         }

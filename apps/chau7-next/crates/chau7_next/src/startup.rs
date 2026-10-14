@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
 
@@ -113,6 +113,11 @@ fn launch() -> &'static Launch {
 /// Start the monotonic launch clock. Repeated calls preserve the first origin.
 pub fn begin() {
     let _ = launch();
+}
+
+/// Time since Rust main() entry, shared with the conditional splash deadline.
+pub fn elapsed() -> Duration {
+    launch().started.elapsed()
 }
 
 /// Record the first observed time for a startup stage.

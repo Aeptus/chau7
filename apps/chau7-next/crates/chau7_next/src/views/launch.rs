@@ -1,9 +1,7 @@
 //! The launch splash and the welcome screen (`SplashView`, `WelcomeView`,
 //! `SplashWindowController`).
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use chau7_next_core::welcome::{
@@ -11,8 +9,8 @@ use chau7_next_core::welcome::{
     WELCOME_SIZE, WELCOME_TITLE, WelcomeGate,
 };
 use gpui::{
-    AnyWindowHandle, App, Bounds, Context, FontWeight, Image, ImageFormat, IntoElement, Render,
-    Task, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, canvas, div,
+    AnyWindowHandle, App, Bounds, Context, FontWeight, IntoElement, Render, RenderImage, Task,
+    Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, canvas, div,
     prelude::*, px, size,
 };
 use gpui_kit::component::TitleBar;
@@ -22,14 +20,37 @@ use crate::platform;
 use crate::theme::Chrome;
 use crate::workspace::AppData;
 
-pub(crate) struct LaunchHandle(AnyWindowHandle);
+pub(crate) enum LaunchHandle {
+    Splash(AnyWindowHandle),
+    Welcome(AnyWindowHandle),
+}
 
-/// The app icon (a 256 px copy of the Swift app's).
-fn app_icon() -> Arc<Image> {
-    Arc::new(Image::from_bytes(
-        ImageFormat::Png,
-        include_bytes!("../../assets/app-icon.png").to_vec(),
-    ))
+impl LaunchHandle {
+    fn window(&self) -> AnyWindowHandle {
+        match self {
+            Self::Splash(handle) | Self::Welcome(handle) => *handle,
+        }
+    }
+}
+
+/// Decode the embedded logo once before opening the window. Passing a ready
+/// frame to GPUI prevents asynchronous image loading from showing a late logo.
+fn app_icon() -> Arc<RenderImage> {
+    static ICON: OnceLock<Arc<RenderImage>> = OnceLock::new();
+    ICON.get_or_init(|| {
+        let mut pixels = image::load_from_memory_with_format(
+            include_bytes!("../../assets/app-icon.png"),
+            image::ImageFormat::Png,
+        )
+        .expect("valid embedded app icon")
+        .into_rgba8();
+        // GPUI's image atlas expects BGRA pixels.
+        for pixel in pixels.pixels_mut() {
+            pixel.0.swap(0, 2);
+        }
+        Arc::new(RenderImage::new(vec![image::Frame::new(pixels)]))
+    })
+    .clone()
 }
 
 /// A plain character for the SF Symbol of a tip.
@@ -62,53 +83,64 @@ fn mark_welcome_shown(cx: &App) {
     }
 }
 
-type Start = Rc<RefCell<Option<Box<dyn FnOnce(&mut App)>>>>;
+const SPLASH_DELAY: Duration = Duration::from_millis(200);
 
-fn resume_startup(start: &Start, cx: &mut App) {
-    let start = start.borrow_mut().take();
-    if let Some(start) = start {
-        start(cx);
-    }
+fn splash_due(elapsed: Duration, terminal_painted: bool, pending: bool, launch_open: bool) -> bool {
+    elapsed >= SPLASH_DELAY && !terminal_painted && pending && !launch_open
 }
 
-/// GPUI next-frame callbacks run before that frame's presentation. Wait for
-/// the following frame so the initial splash can be submitted first. This
-/// follows frame demand, with no minimum splash duration added to startup.
+/// Start immediately. A returning user's splash is only a fallback when no
+/// terminal frame has been painted after 200 ms from Rust main() entry.
 pub fn prepare_launch(cx: &mut App, start: impl FnOnce(&mut App) + 'static) {
-    if welcome::launch_screen(has_shown_welcome(cx)) != LaunchScreen::Splash {
-        start(cx);
-        return;
-    }
-    let Some(handle) = open_splash(cx) else {
-        start(cx);
-        return;
-    };
-    let start: Start = Rc::new(RefCell::new(Some(Box::new(start))));
-    let on_frame = start.clone();
-    if handle
-        .update(cx, |_, window, _| {
-            window.on_next_frame(move |window, _| {
-                window.on_next_frame(move |_, cx| resume_startup(&on_frame, cx));
+    if welcome::launch_screen(has_shown_welcome(cx)) == LaunchScreen::Splash {
+        cx.global_mut::<ViewsState>().splash_pending = true;
+        cx.on_app_quit(|cx| {
+            cx.global_mut::<ViewsState>().splash_pending = false;
+            std::future::ready(())
+        })
+        .detach();
+        let delay = SPLASH_DELAY.saturating_sub(crate::startup::elapsed());
+        cx.spawn(async move |cx| {
+            cx.background_executor().timer(delay).await;
+            cx.update(|cx| {
+                let state = cx.global::<ViewsState>();
+                let show = splash_due(
+                    crate::startup::elapsed(),
+                    crate::startup::reached(crate::startup::Stage::TerminalPainted),
+                    state.splash_pending,
+                    state.launch.is_some(),
+                );
+                cx.global_mut::<ViewsState>().splash_pending = false;
+                if show {
+                    open_splash(cx);
+                }
             });
         })
-        .is_err()
-    {
-        resume_startup(&start, cx);
-        return;
+        .detach();
     }
-    // Occluded/headless windows may receive no frame callback. A bounded
-    // fallback starts work exactly once rather than leaving the app stuck.
-    cx.spawn(async move |cx| {
-        cx.background_executor()
-            .timer(Duration::from_millis(250))
-            .await;
-        cx.update(|cx| resume_startup(&start, cx));
-    })
-    .detach();
+    start(cx);
 }
 
-/// First launch keeps the existing welcome experience. Returning users have
-/// already seen the splash and must not get a second post-load splash.
+/// Called once from the first terminal paint. Defer window removal until the
+/// current paint completes; a Help/Welcome window must survive this handoff.
+pub fn terminal_displayed(cx: &mut App) {
+    cx.defer(|cx| {
+        if cx.try_global::<ViewsState>().is_none() {
+            return;
+        }
+        cx.global_mut::<ViewsState>().splash_pending = false;
+        if matches!(
+            cx.global::<ViewsState>().launch,
+            Some(LaunchHandle::Splash(_))
+        ) {
+            close_previous(cx);
+            crate::startup::mark(crate::startup::Stage::SplashDismissed);
+        }
+    });
+}
+
+/// First launch keeps the existing welcome experience. Returning users
+/// receive no post-load splash; the pending fallback owns that decision.
 pub fn finish_launch(cx: &mut App) {
     if welcome::launch_screen(has_shown_welcome(cx)) == LaunchScreen::Welcome {
         let mut gate = WelcomeGate::default();
@@ -125,12 +157,16 @@ pub fn show_welcome(cx: &mut App) {
 }
 
 fn close_previous(cx: &mut App) {
-    if let Some(LaunchHandle(handle)) = cx.global_mut::<ViewsState>().launch.take() {
-        let _ = handle.update(cx, |_, window, _| window.remove_window());
+    cx.global_mut::<ViewsState>().splash_pending = false;
+    if let Some(handle) = cx.global_mut::<ViewsState>().launch.take() {
+        let _ = handle
+            .window()
+            .update(cx, |_, window, _| window.remove_window());
     }
 }
 
 fn open_splash(cx: &mut App) -> Option<AnyWindowHandle> {
+    let _ = app_icon();
     close_previous(cx);
     let bounds = Bounds::centered(None, size(px(SPLASH_SIZE.0), px(SPLASH_SIZE.1)), cx);
     let options = WindowOptions {
@@ -147,7 +183,7 @@ fn open_splash(cx: &mut App) -> Option<AnyWindowHandle> {
     };
     match gpui_kit::open_window(options, cx, |_, cx| cx.new(SplashView::new)) {
         Ok((handle, _)) => {
-            cx.global_mut::<ViewsState>().launch = Some(LaunchHandle(handle));
+            cx.global_mut::<ViewsState>().launch = Some(LaunchHandle::Splash(handle));
             Some(handle)
         }
         Err(err) => {
@@ -159,8 +195,8 @@ fn open_splash(cx: &mut App) -> Option<AnyWindowHandle> {
 
 const SPLASH_TIMEOUT: Duration = Duration::from_secs(15);
 
-fn splash_finished(terminal_ready: bool, elapsed: Duration) -> bool {
-    terminal_ready || elapsed >= SPLASH_TIMEOUT
+fn splash_finished(terminal_painted: bool, elapsed: Duration) -> bool {
+    terminal_painted || elapsed >= SPLASH_TIMEOUT
 }
 
 struct SplashView {
@@ -176,7 +212,7 @@ impl SplashView {
                     .timer(Duration::from_millis(16))
                     .await;
                 if splash_finished(
-                    crate::startup::reached(crate::startup::Stage::TerminalReady),
+                    crate::startup::reached(crate::startup::Stage::TerminalPainted),
                     started.elapsed(),
                 ) {
                     // Remove only this splash. Help > Welcome may have replaced
@@ -187,7 +223,7 @@ impl SplashView {
                             .global::<ViewsState>()
                             .launch
                             .as_ref()
-                            .is_some_and(|LaunchHandle(current)| *current == handle)
+                            .is_some_and(|current| current.window() == handle)
                         {
                             cx.global_mut::<ViewsState>().launch = None;
                         }
@@ -204,6 +240,9 @@ impl SplashView {
 
 impl Render for SplashView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if crate::startup::reached(crate::startup::Stage::TerminalPainted) {
+            return div();
+        }
         let chrome = Chrome::panels(cx);
         div()
             .relative()
@@ -265,7 +304,7 @@ fn open_welcome(gate: WelcomeGate, cx: &mut App) {
     };
     match gpui_kit::open_window(options, cx, move |_, cx| cx.new(|_| WelcomeView { gate })) {
         Ok((handle, _)) => {
-            cx.global_mut::<ViewsState>().launch = Some(LaunchHandle(handle));
+            cx.global_mut::<ViewsState>().launch = Some(LaunchHandle::Welcome(handle));
             let _ = handle.update(cx, |_, window, _| window.activate_window());
         }
         Err(err) => log::error!("welcome: {err}"),
@@ -371,11 +410,36 @@ impl Render for WelcomeView {
 
 #[cfg(test)]
 mod startup_splash_tests {
-    use super::{SPLASH_TIMEOUT, splash_finished};
+    use super::{SPLASH_DELAY, SPLASH_TIMEOUT, app_icon, splash_due, splash_finished};
+    use std::sync::Arc;
     use std::time::Duration;
 
     #[test]
-    fn ready_terminal_dismisses_without_minimum_hold() {
+    fn fast_terminal_suppresses_splash_even_after_deadline() {
+        for elapsed in [Duration::ZERO, SPLASH_DELAY, Duration::from_secs(10)] {
+            assert!(!splash_due(elapsed, true, true, false));
+        }
+    }
+
+    #[test]
+    fn missing_terminal_shows_splash_at_200ms_only() {
+        assert!(!splash_due(
+            SPLASH_DELAY - Duration::from_millis(1),
+            false,
+            true,
+            false
+        ));
+        assert!(splash_due(SPLASH_DELAY, false, true, false));
+    }
+
+    #[test]
+    fn cancelled_startup_and_replacement_welcome_suppress_pending_splash() {
+        assert!(!splash_due(SPLASH_DELAY, false, false, false));
+        assert!(!splash_due(SPLASH_DELAY, false, true, true));
+    }
+
+    #[test]
+    fn first_terminal_paint_dismisses_without_waiting_for_prompt_or_minimum_hold() {
         assert!(splash_finished(true, Duration::ZERO));
         assert!(!splash_finished(false, Duration::from_millis(1800)));
     }
@@ -390,24 +454,7 @@ mod startup_splash_tests {
     }
 
     #[test]
-    fn frame_handoff_and_timeout_share_one_continuation() {
-        let source = include_str!("launch.rs")
-            .split_once("pub fn prepare_launch(")
-            .unwrap()
-            .1
-            .split_once("pub fn finish_launch(")
-            .unwrap()
-            .0;
-        assert_eq!(source.matches("window.on_next_frame(").count(), 2);
-        assert!(source.contains("resume_startup(&on_frame, cx)"));
-        assert!(source.contains("resume_startup(&start, cx)"));
-        let resume = include_str!("launch.rs")
-            .split_once("fn resume_startup(")
-            .unwrap()
-            .1
-            .split_once("pub fn prepare_launch(")
-            .unwrap()
-            .0;
-        assert!(resume.contains("borrow_mut().take()"));
+    fn logo_is_decoded_once_and_ready_for_the_first_frame() {
+        assert!(Arc::ptr_eq(&app_icon(), &app_icon()));
     }
 }
