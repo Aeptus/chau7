@@ -2261,7 +2261,8 @@ async fn verify_traffic_lights_in_real_fullscreen(
         let green = native
             .standardWindowButton(NSWindowButton::ZoomButton)
             .ok_or("owned fullscreen window has no green button")?;
-        native_mutation(|| green.performClick(None))?;
+        // This is the real button from the owned main-thread fixture window.
+        native_mutation(|| unsafe { green.performClick(None) })?;
         let exit_result = wait_until_deadline(
             cx,
             "exit owned fullscreen Space through native green button",
