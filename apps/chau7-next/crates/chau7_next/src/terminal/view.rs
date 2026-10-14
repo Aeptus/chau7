@@ -37,6 +37,23 @@ pub enum TerminalViewEvent {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TerminalInsets {
+    top: f32,
+    left: f32,
+    right: f32,
+    bottom: f32,
+}
+
+fn terminal_content_insets(padding: f32) -> TerminalInsets {
+    TerminalInsets {
+        top: padding,
+        left: padding,
+        right: padding,
+        bottom: 0.0,
+    }
+}
+
 #[derive(Clone, PartialEq)]
 struct MetricSettings {
     family: String,
@@ -257,7 +274,7 @@ impl TerminalView {
     }
 
     pub fn set_font_size(&mut self, size: f32, cx: &mut Context<Self>) {
-        self.font_size = size.clamp(6.0, 72.0);
+        self.font_size = size.clamp(8.0, 72.0);
         self.metrics = None;
         cx.notify();
     }
@@ -698,7 +715,7 @@ impl Render for TerminalView {
         let view = cx.entity();
         let session = self.session.clone();
         let focus_handle = self.focus_handle.clone();
-        let padding = px(settings.appearance.padding);
+        let insets = terminal_content_insets(settings.appearance.padding);
         let inputs = FrameInputs::new(
             settings,
             metrics.clone(),
@@ -738,7 +755,10 @@ impl Render for TerminalView {
             .map(|d| Self::input_listeners(d, cx))
             .map(|d| Self::mouse_listeners(d, cx))
             .on_action(cx.listener(Self::on_image_menu))
-            .p(padding)
+            .pt(px(insets.top))
+            .pl(px(insets.left))
+            .pr(px(insets.right))
+            .pb(px(insets.bottom))
             .child(
                 canvas(
                     {
@@ -828,6 +848,32 @@ fn cursor_on_after_focus_change(cursor_on: bool, was_focused: bool, focused: boo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn terminal_content_insets_remove_bottom_gap_without_clipping_a_grid_row() {
+        let insets = super::terminal_content_insets(4.0);
+        assert_eq!(
+            insets,
+            super::TerminalInsets {
+                top: 4.0,
+                left: 4.0,
+                right: 4.0,
+                bottom: 0.0,
+            }
+        );
+
+        let content_height = 500.0 - insets.top - insets.bottom;
+        let (_, rows) = chau7_next_core::session_restore::lifecycle::surface_dimensions(
+            800.0 - insets.left - insets.right,
+            content_height,
+            8.0,
+            17.0,
+        )
+        .unwrap();
+        let used_height = f32::from(rows) * 17.0;
+        assert!(used_height <= content_height);
+        assert!(content_height - used_height < 17.0);
+    }
+
     #[test]
     fn focused_cursor_blink_changes_paint_and_requests_redraw() {
         let transition = super::cursor_blink_transition(true, true, true, false);

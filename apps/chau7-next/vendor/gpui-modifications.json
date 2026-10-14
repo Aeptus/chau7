@@ -365,9 +365,15 @@
           "before_sha256": "8938b6d58a0c33b5806906142c62043039c2bc9628f3c03b2df8915288667448",
           "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
           "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Anchor native traffic lights to the actual titlebar superview bounds across zoom and resize; preserve fullscreen controls for custom-titlebar windows by removing only AutoHideToolbar from the proposed presentation options",
+          "before_sha256": "df53f95c5ae50e5a0a787786348de3e36e8682c81e5841ea778619e7b18c98dd",
+          "after_sha256": "6765797cb93be62533dbd06faa005ed5ad4e518542410f8e5ed906a775d293f8"
         }
       ],
-      "current_sha256": "df53f95c5ae50e5a0a787786348de3e36e8682c81e5841ea778619e7b18c98dd",
+      "current_sha256": "6765797cb93be62533dbd06faa005ed5ad4e518542410f8e5ed906a775d293f8",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"

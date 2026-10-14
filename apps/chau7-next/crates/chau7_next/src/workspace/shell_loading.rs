@@ -1,5 +1,5 @@
 //! Shell startup indicator (`ShellLoadingBar`), driven by the session's
-//! authoritative prompt/output readiness. An ASCII bar appears after 0.2s;
+//! authoritative prompt/output readiness. An ASCII bar appears after 0.5s;
 //! the session's no-output slow-start signal selects the centered spinner.
 //! Clearing an already ready terminal must never restart this indicator.
 
@@ -8,6 +8,7 @@ use std::time::Duration;
 use gpui::{App, Context, Window, div, prelude::*, px};
 
 use super::Workspace;
+use crate::terminal::loading_overlay::{APPEAR_AFTER, appearance_delay};
 use crate::theme::Chrome;
 
 const BAR_WIDTH: usize = 28;
@@ -41,20 +42,25 @@ impl Workspace {
             .then(|| (session.started_at.elapsed(), session.shell_slow))
     }
 
-    /// One cancellable clock per visible loading workspace. The visual bar
-    /// changes every 80ms; it must not drive a full refresh at display rate.
+    /// One cancellable clock per visible loading workspace. It waits until
+    /// the appearance threshold, then changes the visual bar every 80ms.
     pub(super) fn update_shell_loading_timer(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !window.is_visible() || self.shell_loading_state(cx).is_none() {
+        if !window.is_visible() {
             self.shell_loading_tick = None;
             return;
         }
+        let Some((elapsed, _)) = self.shell_loading_state(cx) else {
+            self.shell_loading_tick = None;
+            return;
+        };
         if self.shell_loading_tick.is_some() {
             return;
         }
+        let mut wait = appearance_delay(elapsed);
         let timer = crate::observability::timer_registry(cx).map(|registry| {
             registry.register(
                 &format!("shell.loading.{}", cx.entity_id()),
@@ -68,8 +74,10 @@ impl Workspace {
         self.shell_loading_tick = Some(cx.spawn_in(window, async move |this, cx| {
             let _timer = timer;
             loop {
-                cx.background_executor().timer(STEP).await;
-                let active = this
+                if !wait.is_zero() {
+                    cx.background_executor().timer(wait).await;
+                }
+                let next_wait = this
                     .update_in(cx, |this, window, cx| {
                         use chau7_next_core::work_profiler::{self, Queue};
                         let mut cost = work_profiler::timer_callback(
@@ -77,20 +85,32 @@ impl Workspace {
                             "refresh",
                             Queue::Main,
                         );
-                        let active = window.is_visible() && this.shell_loading_state(cx).is_some();
-                        cost.idle(!active);
-                        if active {
+                        let Some((elapsed, _)) = this.shell_loading_state(cx) else {
+                            this.shell_loading_tick = None;
+                            cost.idle(true);
+                            return None;
+                        };
+                        if !window.is_visible() {
+                            this.shell_loading_tick = None;
+                            cost.idle(true);
+                            return None;
+                        }
+                        let remaining = appearance_delay(elapsed);
+                        if remaining.is_zero() {
+                            cost.idle(false);
                             cost.items(1);
                             cx.notify();
+                            Some(STEP)
                         } else {
-                            this.shell_loading_tick = None;
+                            // A tab switch while waiting can select a newer
+                            // session; recheck its own startup deadline here.
+                            cost.idle(true);
+                            Some(remaining)
                         }
-                        active
                     })
-                    .unwrap_or(false);
-                if !active {
-                    break;
-                }
+                    .unwrap_or(None);
+                let Some(next_wait) = next_wait else { break };
+                wait = next_wait;
             }
         }));
     }
@@ -102,7 +122,7 @@ impl Workspace {
         cx: &App,
     ) -> Option<gpui::AnyElement> {
         let (elapsed, slow) = self.shell_loading_state(cx)?;
-        if elapsed < Duration::from_millis(200) {
+        if elapsed < APPEAR_AFTER {
             return None;
         }
         if slow {

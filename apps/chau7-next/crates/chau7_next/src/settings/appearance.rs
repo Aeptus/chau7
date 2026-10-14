@@ -259,11 +259,17 @@ impl AppearanceSettings {
     }
 
     /// Font size for new tabs and Actual Size: the font size scaled by the
-    /// default zoom (`applyDefaultFontSize`), within 6 to 72 pt.
+    /// default zoom (`applyDefaultFontSize`), within 8 to 72 pt.
     pub fn zoomed_font_size(&self) -> f32 {
         (self.font_size * self.default_zoom_percent as f32 / 100.0)
             .round()
-            .clamp(6.0, 72.0)
+            .clamp(8.0, 72.0)
+    }
+
+    /// The configured inputs whose changes reset each terminal tab to the
+    /// default font size. Other appearance settings leave per-tab zoom alone.
+    pub fn default_font_settings(&self) -> (f32, u32) {
+        (self.font_size, self.default_zoom_percent)
     }
 
     /// Cursor blink phase length.
@@ -660,7 +666,27 @@ mod tests {
         };
         assert_eq!(a.zoomed_font_size(), 18.0);
         a.default_zoom_percent = 50;
-        assert_eq!(a.zoomed_font_size(), 6.0);
+        assert_eq!(a.zoomed_font_size(), 8.0);
+    }
+
+    #[test]
+    fn default_font_settings_only_track_size_and_zoom() {
+        let original = AppearanceSettings::default();
+        let configured = original.default_font_settings();
+
+        let mut unrelated = original.clone();
+        unrelated.font_family = "Menlo".into();
+        unrelated.font_weight += 1;
+        unrelated.padding += 2.0;
+        assert_eq!(unrelated.default_font_settings(), configured);
+
+        let mut base_size_changed = original.clone();
+        base_size_changed.font_size += 1.0;
+        assert_ne!(base_size_changed.default_font_settings(), configured);
+
+        let mut zoom_changed = original;
+        zoom_changed.default_zoom_percent += 5;
+        assert_ne!(zoom_changed.default_font_settings(), configured);
     }
 
     #[test]

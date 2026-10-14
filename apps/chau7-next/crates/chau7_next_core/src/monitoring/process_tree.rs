@@ -17,7 +17,9 @@ pub struct Snapshot {
     pub rows: HashMap<u32, ProcessRow>,
     children: HashMap<u32, Vec<u32>>,
 }
-pub const INTERPRETERS: &[&str] = &["node", "python", "python3", "ruby", "npx"];
+pub const INTERPRETERS: &[&str] = &[
+    "node", "python", "python3", "ruby", "npx", "bun", "bunx", "pnpm",
+];
 const SKIPPED: &[&str] = &[
     "zsh",
     "bash",
@@ -38,6 +40,9 @@ const SKIPPED: &[&str] = &[
     "python3",
     "ruby",
     "npx",
+    "bun",
+    "bunx",
+    "pnpm",
     "ps",
 ];
 impl Snapshot {
@@ -156,6 +161,12 @@ pub fn match_process(command: &str, argv: &[String]) -> Option<&'static str> {
     {
         return Some(provider);
     }
+    // The native monitor retrieves argv only for known interpreters. Apply the
+    // same restriction to the broader `ps` fallback so arbitrary commands such
+    // as `cat /tmp/opencode` cannot be mistaken for a running AI process.
+    if !INTERPRETERS.contains(&base.as_str()) {
+        return None;
+    }
     for (index, token) in argv.iter().enumerate() {
         let normalized = process_token(token);
         if index == 0 {
@@ -251,6 +262,49 @@ mod tests {
         );
         assert_eq!(match_process("claude-helper", &[]), None);
     }
+    #[test]
+    fn opencode_process_tree_resolves_binary_and_supported_package_runners() {
+        assert!(INTERPRETERS.contains(&"bun"));
+        assert!(INTERPRETERS.contains(&"bunx"));
+        assert!(INTERPRETERS.contains(&"pnpm"));
+
+        for (command, args) in [
+            ("opencode", vec!["opencode", "--session", "ses_123"]),
+            ("npx", vec!["npx", "opencode-ai"]),
+            ("bunx", vec!["bunx", "opencode-ai"]),
+            ("bun", vec!["bun", "x", "opencode-ai"]),
+            ("pnpm", vec!["pnpm", "dlx", "opencode-ai"]),
+        ] {
+            let args: Vec<_> = args.into_iter().map(str::to_string).collect();
+            let snapshot = Snapshot::from_rows([
+                row(2, 1, "zsh", &[]),
+                ProcessRow {
+                    pid: 3,
+                    parent_pid: 2,
+                    command: command.to_string(),
+                    argv: args,
+                },
+            ]);
+            assert_eq!(snapshot.resolve(1), Some("OpenCode"), "{command}");
+        }
+    }
+
+    #[test]
+    fn process_path_fallback_is_limited_to_known_interpreters() {
+        assert_eq!(
+            match_process("cat", &["cat".into(), "/tmp/opencode".into()]),
+            None
+        );
+        assert_eq!(
+            match_process("vim", &["vim".into(), "/tmp/claude".into()]),
+            None
+        );
+        assert_eq!(
+            match_process("node", &["node".into(), "/opt/tools/opencode".into()]),
+            Some("OpenCode")
+        );
+    }
+
     #[test]
     fn fallback_parse_preserves_paths_and_deterministic_sibling_order() {
         let s = Snapshot::parse(

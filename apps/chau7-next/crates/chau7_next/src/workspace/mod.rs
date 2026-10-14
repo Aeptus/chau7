@@ -159,6 +159,9 @@ pub struct Workspace {
     rename: Option<RenameState>,
     search: Option<SearchState>,
     picker: Option<PickerState>,
+    /// Last configured font inputs. `font_size` separately tracks the current
+    /// per-tab zoom and must not be used to detect settings changes.
+    configured_font_settings: (f32, u32),
     font_size: f32,
     focus_handle: FocusHandle,
     _ticker: Option<Task<()>>,
@@ -267,6 +270,7 @@ impl Workspace {
             rename: None,
             search: None,
             picker: None,
+            configured_font_settings: settings.appearance.default_font_settings(),
             font_size: settings.appearance.zoomed_font_size(),
             focus_handle: cx.focus_handle(),
             _ticker: Some(ticker),
@@ -1501,9 +1505,16 @@ impl Workspace {
             &directories,
             &self.known_repo_roots,
         );
-        self.font_size = settings.appearance.zoomed_font_size();
+        let configured_font_settings = settings.appearance.default_font_settings();
+        let reset_terminal_font_size = self.configured_font_settings != configured_font_settings;
+        self.configured_font_settings = configured_font_settings;
+        if reset_terminal_font_size {
+            self.font_size = settings.appearance.zoomed_font_size();
+        }
         for entry in self.entries.values() {
-            entry.panes.update(cx, |p, cx| p.reload_settings(cx));
+            entry
+                .panes
+                .update(cx, |p, cx| p.reload_settings(reset_terminal_font_size, cx));
         }
         cx.notify();
     }

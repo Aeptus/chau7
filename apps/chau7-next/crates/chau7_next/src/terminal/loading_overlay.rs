@@ -12,10 +12,17 @@ use crate::theme::Chrome;
 
 const BAR_WIDTH: usize = 28;
 const LIT_WIDTH: usize = 10;
+/// Suppress transient shell startup before showing the loading indicator.
+pub(crate) const APPEAR_AFTER: Duration = Duration::from_millis(500);
 /// The bar sweeps right then left.
 const POSITIONS: usize = (BAR_WIDTH - LIT_WIDTH) * 2;
 /// One step every 0.08 s.
 const STEP: Duration = Duration::from_millis(80);
+
+/// Time remaining before the loading indicator should become visible.
+pub(crate) fn appearance_delay(elapsed: Duration) -> Duration {
+    APPEAR_AFTER.saturating_sub(elapsed)
+}
 
 /// The bar at animation step `offset` (`barString`).
 pub fn bar_string(offset: usize) -> String {
@@ -40,7 +47,10 @@ pub fn bar_string(offset: usize) -> String {
 
 /// The overlay for `session`, if it is starting.
 pub fn overlay(session: &TerminalSession, key: u64, chrome: Chrome) -> Option<AnyElement> {
-    if session.exited.is_some() {
+    if session.exited.is_some()
+        || !session.is_loading()
+        || session.started_at.elapsed() < APPEAR_AFTER
+    {
         return None;
     }
     if session.shell_slow {
@@ -67,9 +77,6 @@ pub fn overlay(session: &TerminalSession, key: u64, chrome: Chrome) -> Option<An
                 )
                 .into_any_element(),
         );
-    }
-    if !session.is_loading() {
-        return None;
     }
     let total = STEP * POSITIONS as u32;
     Some(
@@ -109,5 +116,16 @@ mod tests {
         assert!(end.trim_end().ends_with('\u{25B8}'));
         assert_eq!(bar_string(1), bar_string(POSITIONS - 1));
         assert_eq!(bar_string(POSITIONS), start);
+    }
+
+    #[test]
+    fn appearance_delay_suppresses_transient_startup() {
+        assert_eq!(appearance_delay(Duration::ZERO), APPEAR_AFTER);
+        assert_eq!(
+            appearance_delay(Duration::from_millis(499)),
+            Duration::from_millis(1)
+        );
+        assert_eq!(appearance_delay(APPEAR_AFTER), Duration::ZERO);
+        assert_eq!(appearance_delay(Duration::from_secs(1)), Duration::ZERO);
     }
 }

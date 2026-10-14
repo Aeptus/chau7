@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Delay Next shell loading indicators until 500 ms and avoid animation redraws
+  while the indicator is hidden.
+- Keep Next native window controls in their parent coordinate space after zoom
+  and retain custom titlebar controls in fullscreen presentation policy.
+- Preserve terminal top and side padding while removing the explicit bottom inset.
+- Detect OpenCode commands, live processes and supported package runners; compare
+  the Rust tool names and aliases with the current Swift registry in regression tests.
+- Avoid interpreting ordinary file arguments as running AI tools.
+- Preserve each Next tab's zoom when unrelated settings change, repaint updated
+  appearance, and use the same 8 pt minimum for default and interactive zoom.
+
 - Initialize the native editor layout system before editing so the line-number ruler cannot clear marked composition during its first repaint.
 - Capture bounded native AppKit call stacks when styled storage edits overlap marked text in the isolated editor acceptance fixture.
 - Await the production cached scrollback grid before native print

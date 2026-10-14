@@ -268,6 +268,19 @@ pub const AI_TOOLS: &[AiToolEntry] = &[
         tab_color_name: None,
         event_source_raw_value: None,
     },
+    AiToolEntry {
+        display_name: "OpenCode",
+        command_names: &["opencode"],
+        output_patterns: &["opencode.ai"],
+        resume_format: Some(ResumeFormat::DashFlag {
+            command: "opencode",
+            flag: "--session",
+        }),
+        resume_provider_key: Some("opencode"),
+        logo_asset_name: None,
+        tab_color_name: None,
+        event_source_raw_value: None,
+    },
 ];
 
 /// Command name to AI tool display name (`CommandDetection.appNameMap`).
@@ -280,6 +293,12 @@ pub static APP_NAME_MAP: LazyLock<HashMap<&'static str, &'static str>> = LazyLoc
     }
     map
 });
+
+/// Official package name to tool name for package-manager launchers. This is
+/// intentionally separate from executable names: the npm package is
+/// "opencode-ai", while its installed CLI binary is "opencode".
+pub static PACKAGE_NAME_MAP: LazyLock<HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| HashMap::from([("opencode-ai", "OpenCode")]));
 
 /// Lowercased output patterns for AI tool detection, in registry order
 /// (`CommandDetection.outputDetectionPatterns`).
@@ -425,9 +444,6 @@ pub const WRAPPER_COMMANDS: &[&str] = &["command", "builtin", "exec", "noglob", 
 /// Sudo options that take a value argument (`sudoOptionsWithValue`).
 pub const SUDO_OPTIONS_WITH_VALUE: &[&str] = &["-u", "-g", "-h", "-p", "-a", "-c", "-t", "-r"];
 
-static APP_NAME_KEYS: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| APP_NAME_MAP.keys().copied().collect());
-
 static DEV_SERVER_KEYS: LazyLock<HashSet<&'static str>> =
     LazyLock::new(|| DEV_SERVER_MAP.keys().copied().collect());
 
@@ -448,11 +464,17 @@ fn detect_ai_app_from_tokens(tokens: &[String], token: &str) -> Option<String> {
         return Some("Copilot".to_string());
     }
 
-    // Special case: npx/bunx/pnpm with AI packages
-    if (normalized == "npx" || normalized == "bunx" || normalized == "pnpm")
-        && let Some(ai_app) = find_subcommand(tokens, &normalized, &APP_NAME_KEYS)
+    // Package managers resolve executable names and known package aliases;
+    // pnpm also permits a bare executable (`pnpm opencode`).
+    let wrapper_subcommands: &[&str] = match normalized.as_str() {
+        "pnpm" => &["dlx", "exec"],
+        "bun" => &["x"],
+        _ => &[],
+    };
+    if matches!(normalized.as_str(), "npx" | "bunx" | "pnpm" | "bun")
+        && let Some(app_name) = find_wrapped_ai_app(tokens, &normalized, wrapper_subcommands)
     {
-        return APP_NAME_MAP.get(ai_app.as_str()).map(|s| (*s).to_string());
+        return Some(app_name.to_string());
     }
 
     None
@@ -835,6 +857,81 @@ fn find_subcommand(tokens: &[String], command: &str, targets: &[&str]) -> Option
             return Some(normalized);
         }
         break;
+    }
+    None
+}
+
+/// Resolves a known executable or supported package alias after a package
+/// runner. Skips launcher options and consumes exact subcommands such as pnpm
+/// dlx/exec or bun x when present.
+fn find_wrapped_ai_app(
+    tokens: &[String],
+    command: &str,
+    wrapper_subcommands: &[&str],
+) -> Option<&'static str> {
+    let command_index = tokens
+        .iter()
+        .position(|token| normalize_token(token) == command)?;
+    let mut index = command_index + 1;
+    let mut consumed_wrapper_subcommand: Option<String> = None;
+    let mut package_option_seen = false;
+    while let Some(token) = tokens.get(index) {
+        if token == "--" {
+            index += 1;
+            continue;
+        }
+        if matches!(token.as_str(), "-p" | "--package") {
+            package_option_seen = true;
+            index = (index + 2).min(tokens.len());
+            continue;
+        }
+        if token.starts_with("--package=") {
+            package_option_seen = true;
+            index += 1;
+            continue;
+        }
+        if token.starts_with('-') {
+            index += 1;
+            continue;
+        }
+
+        let normalized = normalize_token(token);
+        if consumed_wrapper_subcommand.is_none()
+            && wrapper_subcommands.contains(&normalized.as_str())
+        {
+            consumed_wrapper_subcommand = Some(normalized);
+            index += 1;
+            continue;
+        }
+
+        // Bun's package launcher requires its explicit `x` subcommand. pnpm
+        // also accepts bare executable names (`pnpm opencode`), which must keep
+        // mapping through APP_NAME_MAP without treating package names as bins.
+        if command == "bun" && consumed_wrapper_subcommand.is_none() {
+            return None;
+        }
+        let package_name = normalized
+            .rsplit_once('@')
+            .and_then(|(name, version)| (!name.is_empty() && !version.is_empty()).then_some(name))
+            .unwrap_or(normalized.as_str());
+        let package_alias_is_launcher = !package_option_seen
+            && match command {
+                "pnpm" => consumed_wrapper_subcommand.as_deref() == Some("dlx"),
+                "bun" => consumed_wrapper_subcommand.as_deref() == Some("x"),
+                _ => true,
+            };
+        let package_app = package_alias_is_launcher
+            .then(|| {
+                PACKAGE_NAME_MAP
+                    .get(normalized.as_str())
+                    .or_else(|| PACKAGE_NAME_MAP.get(package_name))
+                    .copied()
+            })
+            .flatten();
+        return APP_NAME_MAP
+            .get(normalized.as_str())
+            .copied()
+            .or(package_app);
     }
     None
 }
@@ -1560,6 +1657,74 @@ mod tests {
     }
 
     #[test]
+    fn detect_opencode_commands_and_package_manager_wrappers() {
+        for command in [
+            "opencode",
+            "/opt/homebrew/bin/opencode /tmp/project",
+            "sudo opencode --session ses_abc123",
+            "npx -y opencode-ai",
+            "npx --package opencode-ai -- opencode",
+            "bunx opencode-ai",
+            "bunx --package opencode-ai -- opencode",
+            "bun x opencode-ai",
+            "bun x opencode-ai@latest",
+            "pnpm dlx opencode-ai",
+            "pnpm dlx opencode-ai@latest",
+            "pnpm exec opencode",
+        ] {
+            assert_eq!(d(command), some("OpenCode"), "{command}");
+        }
+
+        // The package name is a launcher alias, not a second executable name.
+        assert_eq!(d("opencode-ai"), None);
+        assert_eq!(d("pnpm install opencode-ai"), None);
+        assert_eq!(d("bun install opencode-ai"), None);
+        assert_eq!(d("npx --package opencode-ai unrelated"), None);
+        assert_eq!(d("npx --package opencode-ai opencode-ai"), None);
+        assert_eq!(d("bunx --package opencode-ai -- opencode-ai"), None);
+        assert_eq!(d("npx opencode-ai@latest"), some("OpenCode"));
+        assert_eq!(d("bunx opencode-ai@latest"), some("OpenCode"));
+        assert_eq!(d("pnpm opencode"), some("OpenCode"));
+        assert_eq!(d("bun opencode-ai"), None);
+        assert_eq!(d("bun opencode"), None);
+        assert_eq!(d("pnpm opencode-ai"), None);
+        assert_eq!(d("pnpm exec opencode-ai"), None);
+    }
+
+    #[test]
+    fn opencode_registry_exposes_command_and_resume_identity() {
+        assert_eq!(APP_NAME_MAP.get("opencode").copied(), Some("OpenCode"));
+        assert_eq!(
+            crate::ai::tool_registry::COMMAND_NAME_MAP
+                .get("opencode")
+                .copied(),
+            Some("OpenCode")
+        );
+
+        let tool = crate::ai::tool_registry::tool_named("OpenCode").unwrap();
+        assert_eq!(tool.resume_provider_key, Some("opencode"));
+        assert_eq!(
+            tool.resume_format,
+            Some(ResumeFormat::DashFlag {
+                command: "opencode",
+                flag: "--session",
+            })
+        );
+        assert_eq!(
+            crate::ai::tool_registry::resume_provider_key_for("OpenCode"),
+            Some("opencode")
+        );
+        assert_eq!(
+            tool.resume_format.unwrap().build_command("ses_abc123"),
+            "opencode --session ses_abc123"
+        );
+        let metadata =
+            crate::ai::resume::extract_metadata("opencode --session ses_abc123").unwrap();
+        assert_eq!(metadata.provider, "opencode");
+        assert_eq!(metadata.session_id, "ses_abc123");
+    }
+
+    #[test]
     fn unknown_command() {
         assert_eq!(d("vim"), None);
         assert_eq!(d("ls -la"), None);
@@ -1755,6 +1920,12 @@ mod tests {
     fn detect_cursor_from_output() {
         assert_eq!(out("Cursor CLI ready"), some("Cursor"));
         assert_eq!(out("cursor.sh"), some("Cursor"));
+    }
+
+    #[test]
+    fn detect_opencode_from_output_without_matching_generic_mentions() {
+        assert_eq!(out("Visit https://opencode.ai/docs"), some("OpenCode"));
+        assert_eq!(out("OpenCode assistant is ready"), None);
     }
 
     #[test]
@@ -2089,6 +2260,73 @@ mod tests {
             std::fs::set_permissions(exe, std::fs::Permissions::from_mode(0o644)).unwrap();
             assert!(!command_appears_executable("plain", "/", Some(dir)));
         });
+    }
+
+    fn swift_registry_commands() -> HashMap<String, Vec<String>> {
+        const SWIFT_REGISTRY: &str =
+            include_str!("../../../../chau7-macos/Sources/Chau7Core/AIToolRegistry.swift");
+        let registry = SWIFT_REGISTRY
+            .split_once("public static let allTools")
+            .unwrap_or_else(|| panic!("Swift AIToolRegistry.allTools is missing"))
+            .1
+            .split_once("// MARK: - Derived Lookup Tables")
+            .unwrap_or_else(|| panic!("Swift AIToolRegistry.allTools boundary is missing"))
+            .0;
+        let starts: Vec<_> = registry
+            .match_indices("AIToolDefinition(")
+            .map(|(index, _)| index)
+            .collect();
+        assert!(
+            !starts.is_empty(),
+            "Swift AIToolRegistry has no tool entries"
+        );
+
+        let mut tools = HashMap::new();
+        for (index, start) in starts.iter().copied().enumerate() {
+            let end = starts.get(index + 1).copied().unwrap_or(registry.len());
+            let block = &registry[start..end];
+            let name = block
+                .split_once("displayName:")
+                .and_then(|(_, rest)| rest.trim_start().strip_prefix('"'))
+                .and_then(|rest| rest.split_once('"').map(|(name, _)| name.to_string()))
+                .unwrap_or_else(|| panic!("Swift tool is missing displayName"));
+            let commands = block
+                .split_once("commandNames:")
+                .and_then(|(_, rest)| rest.split_once('[').map(|(_, rest)| rest))
+                .and_then(|rest| rest.split_once(']').map(|(commands, _)| commands))
+                .unwrap_or_else(|| panic!("Swift tool is missing commandNames"))
+                .split('"')
+                .skip(1)
+                .step_by(2)
+                .map(str::to_string)
+                .collect();
+            assert!(
+                tools.insert(name.clone(), commands).is_none(),
+                "duplicate Swift tool entry: {name}"
+            );
+        }
+        tools
+    }
+
+    #[test]
+    fn rust_registry_matches_swift_tool_names_and_command_aliases() {
+        let swift = swift_registry_commands();
+        let rust: HashMap<_, _> = AI_TOOLS
+            .iter()
+            .map(|tool| {
+                (
+                    tool.display_name.to_string(),
+                    tool.command_names
+                        .iter()
+                        .map(|name| (*name).to_string())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            swift, rust,
+            "Rust AI_TOOLS must mirror Swift AIToolRegistry names and command aliases"
+        );
     }
 
     #[test]

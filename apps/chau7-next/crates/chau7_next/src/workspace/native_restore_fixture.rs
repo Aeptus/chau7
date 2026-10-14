@@ -10,8 +10,8 @@ use gpui::{AppContext, AsyncApp, Focusable, WindowHandle, WindowOptions, size};
 use gpui_kit::base::Root;
 use objc2::{MainThreadMarker, rc::Retained};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSEvent, NSEventModifierFlags, NSEventType,
-    NSView, NSWindow,
+    NSApplication, NSApplicationActivationPolicy, NSApplicationPresentationOptions, NSEvent,
+    NSEventModifierFlags, NSEventType, NSView, NSWindow, NSWindowButton,
 };
 use objc2_foundation::{NSArray, NSBundle, NSObject, NSPoint, NSString};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -1905,6 +1905,188 @@ fn native_window(
         .map_err(error)?
 }
 
+fn verify_custom_titlebar_fullscreen_options(
+    native: &NSWindow,
+) -> Result<serde_json::Value, String> {
+    let delegate = native
+        .delegate()
+        .ok_or("native fixture window has no fullscreen delegate")?;
+    let proposed = NSApplicationPresentationOptions::AutoHideToolbar
+        | NSApplicationPresentationOptions::AutoHideMenuBar
+        | NSApplicationPresentationOptions::AutoHideDock
+        | NSApplicationPresentationOptions::FullScreen
+        | NSApplicationPresentationOptions::DisableMenuBarTransparency;
+    let actual: NSApplicationPresentationOptions = unsafe {
+        objc2::msg_send![
+            &*delegate,
+            window: native,
+            willUseFullScreenPresentationOptions: proposed
+        ]
+    };
+    let expected = NSApplicationPresentationOptions(
+        proposed.0 & !NSApplicationPresentationOptions::AutoHideToolbar.0,
+    );
+    ensure(
+        actual == expected,
+        "custom-titlebar fullscreen policy did not preserve options while keeping toolbar controls visible",
+    )?;
+    Ok(serde_json::json!({
+        "proposed_options": proposed.0,
+        "returned_options": actual.0,
+        "auto_hide_toolbar_removed": !actual.contains(NSApplicationPresentationOptions::AutoHideToolbar),
+        "auto_hide_menu_bar_preserved": actual.contains(NSApplicationPresentationOptions::AutoHideMenuBar),
+        "fullscreen_preserved": actual.contains(NSApplicationPresentationOptions::FullScreen),
+        "other_options_preserved": actual.0 == expected.0,
+    }))
+}
+
+fn rect_contains_with_tolerance(
+    outer: objc2_foundation::NSRect,
+    inner: objc2_foundation::NSRect,
+) -> bool {
+    const EPSILON: f64 = 0.5;
+    inner.origin.x >= outer.origin.x - EPSILON
+        && inner.origin.y >= outer.origin.y - EPSILON
+        && inner.origin.x + inner.size.width <= outer.origin.x + outer.size.width + EPSILON
+        && inner.origin.y + inner.size.height <= outer.origin.y + outer.size.height + EPSILON
+}
+
+fn native_rect_values(rect: objc2_foundation::NSRect) -> [f64; 4] {
+    [
+        rect.origin.x,
+        rect.origin.y,
+        rect.size.width,
+        rect.size.height,
+    ]
+}
+
+fn native_rects_match(left: objc2_foundation::NSRect, right: objc2_foundation::NSRect) -> bool {
+    const EPSILON: f64 = 1.0;
+    [
+        (left.origin.x, right.origin.x),
+        (left.origin.y, right.origin.y),
+        (left.size.width, right.size.width),
+        (left.size.height, right.size.height),
+    ]
+    .into_iter()
+    .all(|(left, right)| (left - right).abs() <= EPSILON)
+}
+
+/// Check the actual AppKit controls and every native ancestor after a window
+/// geometry transition. visibleRect accounts for ancestor clipping; explicit
+/// conversions identify a container whose bounds would clip a light.
+fn traffic_light_geometry(native: &NSWindow, stage: &str) -> Result<serde_json::Value, String> {
+    let mut controls = serde_json::Map::new();
+    for (button_kind, name) in [
+        (NSWindowButton::CloseButton, "close"),
+        (NSWindowButton::MiniaturizeButton, "minimize"),
+        (NSWindowButton::ZoomButton, "zoom"),
+    ] {
+        let button = native
+            .standardWindowButton(button_kind)
+            .ok_or_else(|| format!("{stage}: native {name} traffic light is missing"))?;
+        ensure(
+            !button.isHidden(),
+            &format!("{stage}: native {name} traffic light is hidden"),
+        )?;
+        let bounds = button.bounds();
+        let visible = button.visibleRect();
+        ensure(
+            rect_contains_with_tolerance(visible, bounds),
+            &format!("{stage}: native {name} traffic light is clipped by an ancestor"),
+        )?;
+
+        let mut ancestor = unsafe { button.superview() };
+        let mut ancestor_count = 0;
+        while let Some(view) = ancestor {
+            let button_in_ancestor = button.convertRect_toView(bounds, Some(&view));
+            ensure(
+                rect_contains_with_tolerance(view.bounds(), button_in_ancestor),
+                &format!(
+                    "{stage}: native {name} traffic light extends outside ancestor {} bounds",
+                    ancestor_count + 1
+                ),
+            )?;
+            ancestor_count += 1;
+            ancestor = unsafe { view.superview() };
+        }
+        ensure(
+            ancestor_count > 0,
+            &format!("{stage}: native {name} traffic light has no native ancestors"),
+        )?;
+        controls.insert(
+            name.to_owned(),
+            serde_json::json!({
+                "visible_rect": native_rect_values(visible),
+                "ancestor_count": ancestor_count,
+            }),
+        );
+    }
+    Ok(serde_json::Value::Object(controls))
+}
+
+async fn wait_for_native_window_geometry(
+    native: &NSWindow,
+    cx: &mut AsyncApp,
+    stage: &'static str,
+    mut frame_matches: impl FnMut(objc2_foundation::NSRect) -> bool,
+) -> Result<(), String> {
+    let mut previous = native.frame();
+    let mut stable_samples = 0_u8;
+    wait_until(cx, stage, |_| {
+        let current = native.frame();
+        if native_rects_match(previous, current) {
+            stable_samples = stable_samples.saturating_add(1);
+        } else {
+            previous = current;
+            stable_samples = 0;
+        }
+        stable_samples >= 3
+            && frame_matches(current)
+            && traffic_light_geometry(native, stage).is_ok()
+    })
+    .await
+}
+
+async fn verify_traffic_lights_after_window_zoom(
+    handle: WindowHandle<Root>,
+    native: &NSWindow,
+    cx: &mut AsyncApp,
+) -> Result<serde_json::Value, String> {
+    let fullscreen_options = verify_custom_titlebar_fullscreen_options(native)?;
+    let initial_frame = native.frame();
+    let initial_controls = traffic_light_geometry(native, "before ordinary zoom")?;
+    handle
+        .update(cx, |_, window, _| window.zoom_window())
+        .map_err(error)?;
+    wait_for_native_window_geometry(native, cx, "ordinary window zoom", |frame| {
+        !native_rects_match(frame, initial_frame)
+    })
+    .await?;
+    let zoomed_frame = native.frame();
+    let zoomed_controls = traffic_light_geometry(native, "after ordinary zoom")?;
+
+    handle
+        .update(cx, |_, window, _| window.zoom_window())
+        .map_err(error)?;
+    wait_for_native_window_geometry(native, cx, "restore windowed geometry", |frame| {
+        native_rects_match(frame, initial_frame)
+    })
+    .await?;
+    let restored_frame = native.frame();
+    let restored_controls = traffic_light_geometry(native, "after restoring windowed geometry")?;
+    Ok(serde_json::json!({
+        "windowed_frame_before": native_rect_values(initial_frame),
+        "zoomed_frame": native_rect_values(zoomed_frame),
+        "windowed_frame_after": native_rect_values(restored_frame),
+        "fullscreen_presentation_options": fullscreen_options,
+        "controls_before_zoom": initial_controls,
+        "controls_after_zoom": zoomed_controls,
+        "controls_after_restore": restored_controls,
+        "ordinary_zoom_restored_original_frame": native_rects_match(initial_frame, restored_frame),
+    }))
+}
+
 async fn verify_surfaces(
     handle: WindowHandle<Root>,
     ws: &Entity<Workspace>,
@@ -2044,6 +2226,8 @@ async fn verify_surfaces(
     )
     .await?;
     settle(handle, cx).await?;
+    let traffic_light_zoom_geometry =
+        verify_traffic_lights_after_window_zoom(handle, &native, cx).await?;
     cx.update(|cx| -> Result<(), String> {
         ensure(
             sessions.iter().all(|(_, s)| {
@@ -2264,7 +2448,8 @@ async fn verify_surfaces(
         ));
     }
     Ok(
-        serde_json::json!({"hover_live_budget_ms":2000,"hover_exit_budget_ms":500,
+        serde_json::json!({"traffic_light_zoom_geometry":traffic_light_zoom_geometry,
+        "hover_live_budget_ms":2000,"hover_exit_budget_ms":500,
         "hover_parked_ptys":0,"hidden_raw_grid_updated":true,"hidden_remote_grid_updated":true,
         "ordered_out_front":true,"native_mini_demini":true,
         "native_key_window":final_native_key_window,"native_app_active":final_native_app_active,

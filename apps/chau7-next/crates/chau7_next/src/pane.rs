@@ -1706,14 +1706,19 @@ impl PaneTree {
         }
     }
 
-    pub fn reload_settings(&mut self, cx: &mut Context<Self>) {
+    pub fn reload_settings(&mut self, reset_terminal_font_size: bool, cx: &mut Context<Self>) {
         let settings = Settings::get(cx).clone();
         for item in self.leaves() {
             match item {
                 PaneItem::Terminal(view) => view.update(cx, |v, cx| {
                     v.session
                         .update(cx, |session, _| session.apply_settings(&settings));
-                    v.set_font_size(settings.appearance.zoomed_font_size(), cx);
+                    if reset_terminal_font_size {
+                        v.set_font_size(settings.appearance.zoomed_font_size(), cx);
+                    }
+                    // Settings such as family and line height still affect the
+                    // terminal's cached metrics even when its per-tab zoom stays.
+                    cx.notify();
                 }),
                 PaneItem::Editor(editor) => editor.update(cx, |e, cx| e.settings_changed(cx)),
                 PaneItem::Preview(preview) => preview.update(cx, |p, cx| p.apply_settings(cx)),
@@ -2044,6 +2049,82 @@ impl Focusable for PaneTree {
         self.focused_item()
             .map(|item| item.focus_handle(cx))
             .unwrap_or_else(|| cx.focus_handle())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod terminal_font_settings_tests {
+    use super::*;
+    use crate::settings::Settings;
+    use crate::terminal::session::TerminalSession;
+    use crate::workspace::AppData;
+    use chau7_next_core::data_root::DataRoot;
+    use chau7_terminal::Chau7Terminal;
+    use gpui::{AppContext, TestAppContext};
+    use gpui_kit::test::TestWindowExt;
+
+    /// A real TerminalView and PaneTree verify that unrelated appearance
+    /// changes retain the tab's zoom while changed defaults reset it.
+    #[gpui::test]
+    fn terminal_settings_reload_preserves_or_resets_tab_zoom(harness: &mut TestAppContext) {
+        let home = std::env::temp_dir().join(format!(
+            "chau7-terminal-font-settings-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        let root = DataRoot::with_home(home.clone(), true);
+        harness.update(|cx| {
+            gpui_kit::init(cx);
+            cx.set_global(Settings::default());
+            cx.set_global(AppData::new(root));
+            crate::command_guard::init(cx);
+        });
+
+        let (window, tree) = harness.update(|cx| {
+            gpui_kit::open_window(gpui::WindowOptions::default(), cx, |window, cx| {
+                let terminal = Chau7Terminal::new_headless(80, 24).unwrap();
+                let session =
+                    cx.new(|cx| TerminalSession::from_terminal_manually_driven(terminal, None, cx));
+                let view = cx.new(|cx| TerminalView::new(session, window, cx));
+                let id = view.entity_id();
+                let mut tree = PaneTree::empty();
+                tree.root = Some(Node::Leaf(PaneItem::Terminal(view)));
+                tree.focused = Some(id);
+                tree.presentation_terminal = Some(id);
+                cx.new(|_| tree)
+            })
+            .unwrap()
+        });
+        let view = harness.update(|cx| tree.read(cx).focused_view().unwrap());
+
+        harness.update(|cx| view.update(cx, |view, cx| view.set_font_size(17.0, cx)));
+        harness
+            .update_window(window, |_, window, cx| window.render_frame(cx))
+            .unwrap();
+        assert_eq!(harness.update(|cx| view.read(cx).font_size()), 17.0);
+
+        harness.update(|cx| {
+            let mut settings = cx.global::<Settings>().clone();
+            settings.appearance.font_family = "Menlo".into();
+            cx.set_global(settings);
+            tree.update(cx, |tree, cx| tree.reload_settings(false, cx));
+        });
+        harness
+            .update_window(window, |_, window, cx| window.render_frame(cx))
+            .unwrap();
+        assert_eq!(harness.update(|cx| view.read(cx).font_size()), 17.0);
+
+        harness.update(|cx| {
+            let mut settings = cx.global::<Settings>().clone();
+            settings.appearance.font_size = 14.0;
+            cx.set_global(settings);
+            tree.update(cx, |tree, cx| tree.reload_settings(true, cx));
+        });
+        harness
+            .update_window(window, |_, window, cx| window.render_frame(cx))
+            .unwrap();
+        assert_eq!(harness.update(|cx| view.read(cx).font_size()), 14.0);
+        let _ = std::fs::remove_dir_all(home);
     }
 }
 

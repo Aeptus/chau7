@@ -56,10 +56,12 @@ use objc2::{
     runtime::{AnyObject as Objc2Object, ProtocolObject},
 };
 use objc2_app_kit::{
-    NSAlert, NSAlertStyle, NSBeep, NSButton as Objc2NSButton, NSDraggingImageComponent,
-    NSDraggingImageComponentIconKey, NSDraggingItem, NSPasteboardWriting, NSTrackingArea,
-    NSTrackingAreaOptions, NSView as Objc2NSView, NSWindow as Objc2NSWindow,
-    NSWindowButton as Objc2NSWindowButton, NSWorkspace,
+    NSAlert, NSAlertStyle,
+    NSApplicationPresentationOptions as Objc2NSApplicationPresentationOptions, NSBeep,
+    NSButton as Objc2NSButton, NSDraggingImageComponent, NSDraggingImageComponentIconKey,
+    NSDraggingItem, NSPasteboardWriting, NSTrackingArea, NSTrackingAreaOptions,
+    NSView as Objc2NSView, NSWindow as Objc2NSWindow, NSWindowButton as Objc2NSWindowButton,
+    NSWorkspace,
 };
 use objc2_foundation::{NSPoint as Objc2NSPoint, NSRect as Objc2NSRect, NSURL};
 use parking_lot::Mutex;
@@ -484,6 +486,11 @@ unsafe fn build_window_class(name: &'static str, superclass: &Class) -> *const C
             sel!(windowShouldClose:),
             window_should_close as extern "C" fn(&Object, Sel, id) -> BOOL,
         );
+        decl.add_method(
+            sel!(window:willUseFullScreenPresentationOptions:),
+            window_will_use_full_screen_presentation_options
+                as extern "C" fn(&Object, Sel, id, NSUInteger) -> NSUInteger,
+        );
 
         decl.add_method(sel!(close), close_window as extern "C" fn(&Object, Sel));
 
@@ -728,13 +735,18 @@ impl MacWindowState {
                 self.traffic_light_frames = self.capture_traffic_light_frames();
             }
 
-            let window_height = Pixels::from(self.native_window().frame().size.height);
             if self.traffic_light_frames.is_some() {
                 // AppKit can recreate standard buttons, so fetch the live views for each layout pass.
                 let Some(buttons) = self.traffic_light_buttons() else {
                     return;
                 };
                 let Some(titlebar_container) = Self::titlebar_container(&buttons.close) else {
+                    return;
+                };
+                // The titlebar container is positioned in its superview's
+                // coordinate space, which can have a different height from
+                // the outer NSWindow frame after zooming or display changes.
+                let Some(titlebar_superview) = (unsafe { titlebar_container.superview() }) else {
                     return;
                 };
 
@@ -750,7 +762,13 @@ impl MacWindowState {
 
                 let mut titlebar_frame = titlebar_container.frame();
                 titlebar_frame.size.height = container_height.to_f64();
-                titlebar_frame.origin.y = (window_height - container_height).to_f64();
+                let superview_bounds = titlebar_superview.bounds();
+                titlebar_frame.origin.y = if titlebar_superview.isFlipped() {
+                    superview_bounds.origin.y
+                } else {
+                    superview_bounds.origin.y + superview_bounds.size.height
+                        - container_height.to_f64()
+                };
 
                 let minimize_x = traffic_light_position.x + button_width + button_padding;
                 let zoom_x = minimize_x + button_width + button_padding;
@@ -3325,6 +3343,21 @@ extern "C" fn window_should_close(this: &Object, _: Sel, _: id) -> BOOL {
         should_close as BOOL
     } else {
         YES
+    }
+}
+
+extern "C" fn window_will_use_full_screen_presentation_options(
+    this: &Object,
+    _: Sel,
+    _: id,
+    proposed_options: NSUInteger,
+) -> NSUInteger {
+    let window_state = unsafe { get_window_state(this) };
+    let window_state = window_state.as_ref().lock();
+    if window_state.traffic_light_position.is_some() {
+        proposed_options & !(Objc2NSApplicationPresentationOptions::AutoHideToolbar.0 as NSUInteger)
+    } else {
+        proposed_options
     }
 }
 
