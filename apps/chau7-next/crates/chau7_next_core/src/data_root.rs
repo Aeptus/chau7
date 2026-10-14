@@ -24,14 +24,26 @@ use std::path::{Path, PathBuf};
 pub const HOME_ROOT_ENV: &str = "CHAU7_NEXT_HOME_ROOT";
 
 /// Bundle identifier of the macOS app bundle.
+#[cfg(not(feature = "production"))]
 pub const BUNDLE_ID: &str = "com.chau7.next";
+#[cfg(feature = "production")]
+pub const BUNDLE_ID: &str = "com.chau7.app";
 
 /// Name shown to users and used for the per-OS application data folder.
+#[cfg(not(feature = "production"))]
 pub const APP_NAME: &str = "Chau7 Next";
+#[cfg(feature = "production")]
+pub const APP_NAME: &str = "Chau7";
 
 /// Server name Chau7 Next uses when it registers itself with AI CLIs.
 /// The Swift app registers `chau7`; Chau7 Next must never touch that entry.
+#[cfg(not(feature = "production"))]
 pub const MCP_SERVER_NAME: &str = "chau7-next";
+#[cfg(feature = "production")]
+pub const MCP_SERVER_NAME: &str = "chau7";
+
+/// Selected at compile time, never by an inherited environment variable.
+pub const PRODUCTION_CHANNEL: bool = cfg!(feature = "production");
 
 /// Read-only Swift hook identity for coexistence checks and exact ownership fixtures.
 pub const SWIFT_CLAUDE_HOOK_HELPER: &str = "chau7-claude-hook";
@@ -71,16 +83,32 @@ impl DataRoot {
             .or_else(home_dir)
             .unwrap_or_else(std::env::temp_dir);
         let overridden = std::env::var_os(HOME_ROOT_ENV).is_some_and(|v| !v.is_empty());
-        Self::with_home(home, overridden)
+        Self::with_channel(home, overridden, PRODUCTION_CHANNEL)
     }
 
     /// Resolve paths for a given home directory. When `isolated` is true the
     /// per-OS state folder is also placed under `home`, so a test never
     /// touches the real user profile.
     pub fn with_home(home: PathBuf, isolated: bool) -> Self {
-        let config_dir = home.join(".chau7-next");
+        Self::with_channel(home, isolated, false)
+    }
+
+    /// Resolve an explicit channel. Production keeps a versioned Rust namespace
+    /// inside the stable app folders; Swift and Next data stay read-only sources.
+    pub fn with_channel(home: PathBuf, isolated: bool, production: bool) -> Self {
+        let config_dir = if production {
+            home.join(".chau7").join("rust-v1")
+        } else {
+            home.join(".chau7-next")
+        };
         let state_dir = if isolated {
-            home.join(".chau7-next-state")
+            home.join(if production {
+                ".chau7-rust-v1-state"
+            } else {
+                ".chau7-next-state"
+            })
+        } else if production {
+            platform_production_state_dir(&home)
         } else {
             platform_state_dir(&home)
         };
@@ -89,6 +117,21 @@ impl DataRoot {
             config_dir,
             state_dir,
         }
+    }
+
+    /// Read-only source root for an explicitly requested Swift restore import.
+    pub fn swift_restore_bundle_root(&self) -> PathBuf {
+        swift_support_dir(&self.home)
+            .join("TabRestoreBundles")
+            .join("current")
+    }
+
+    /// Read-only on-disk Swift UserDefaults source. Never written by Rust.
+    pub fn swift_preferences_file(&self) -> PathBuf {
+        self.home
+            .join("Library")
+            .join("Preferences")
+            .join("com.chau7.app.plist")
     }
 
     /// The home directory every other path is derived from.
@@ -640,18 +683,31 @@ fn platform_state_dir(home: &Path) -> PathBuf {
     if cfg!(target_os = "macos") {
         home.join("Library")
             .join("Application Support")
-            .join(APP_NAME)
+            .join("Chau7 Next")
     } else if cfg!(windows) {
         std::env::var_os("APPDATA")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("AppData").join("Roaming"))
-            .join(APP_NAME)
+            .join("Chau7 Next")
     } else {
         std::env::var_os("XDG_DATA_HOME")
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".local").join("share"))
             .join("chau7-next")
+    }
+}
+
+/// Versioned storage keeps the Swift bundle and UserDefaults index untouched.
+fn platform_production_state_dir(home: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        swift_support_dir(home).join("RustV1")
+    } else {
+        platform_state_dir(home)
+            .parent()
+            .expect("state folder has a parent")
+            .join("Chau7")
+            .join("RustV1")
     }
 }
 
@@ -698,6 +754,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn production_storage_preserves_legacy_and_next_sources() {
+        let home = PathBuf::from("/tmp/production-home");
+        let stable = DataRoot::with_channel(home.clone(), true, true);
+        let next = DataRoot::with_home(home.clone(), true);
+        assert_eq!(stable.config_dir(), home.join(".chau7/rust-v1"));
+        assert_eq!(stable.state_dir(), home.join(".chau7-rust-v1-state"));
+        assert_ne!(stable.config_dir(), next.config_dir());
+        assert_ne!(stable.state_dir(), next.state_dir());
+        assert_ne!(
+            stable.session_file(),
+            swift_support_dir(&home).join("TabRestoreBundles/current/manifest.json")
+        );
+        assert!(stable.bin_dir().starts_with(stable.config_dir()));
+        assert!(stable.instance_lock_file().starts_with(stable.state_dir()));
     }
 
     // Ports of `RuntimeIsolationTests`.

@@ -109,6 +109,13 @@ fn main() {
     }
     clean_inherited_environment();
     let root = DataRoot::from_env();
+    if chau7_next_core::data_root::PRODUCTION_CHANNEL
+        && !chau7_next_core::data_root::is_isolated_test_mode()
+        && platform::workspace::another_instance_is_running(chau7_next_core::data_root::BUNDLE_ID)
+    {
+        eprintln!("Chau7 is already running. Close the existing app yourself before opening the Rust release; it has not been stopped or modified.");
+        std::process::exit(1);
+    }
     let installation = settings::installation::FreshInstallation::capture(&root);
     if let Err(err) = root.ensure_dirs() {
         eprintln!("Chau7 Next: cannot create data folders: {err}");
@@ -167,7 +174,10 @@ fn main() {
         window_backend::init(window_backend_state, cx);
         terminal::paint::init_cpu_text_system(terminal_text_system, cx);
         gpui_kit::init(cx);
-        cx.set_app_identity("com.chau7.next", "Chau7 Next");
+        cx.set_app_identity(
+            chau7_next_core::data_root::BUNDLE_ID,
+            chau7_next_core::data_root::APP_NAME,
+        );
         app_icon::apply();
         settings::config_files::init(cx, root.config_file(), settings.clone());
         cx.set_global(settings);

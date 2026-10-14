@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Prepare an explicit Rust production build channel with the stable app identity
+  and versioned writable storage, preserving Swift and Next data for rollback.
+
 - Start terminal windows immediately and show a splash only when no terminal
   frame is painted after 200 ms. Dismiss it on the first terminal paint, suppress
   late splash frames, and decode the logo before opening its window.

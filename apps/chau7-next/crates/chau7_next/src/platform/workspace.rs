@@ -10,6 +10,26 @@ use std::path::{Path, PathBuf};
 
 use super::Result;
 
+/// Read-only process check. The production replacement must not register its
+/// helpers or URL handlers while a previous stable app still owns them.
+pub fn another_instance_is_running(bundle_id: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSRunningApplication;
+        use objc2_foundation::NSString;
+        NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str(
+            bundle_id,
+        ))
+        .iter()
+        .any(|app| app.processIdentifier() as u32 != std::process::id())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = bundle_id;
+        false
+    }
+}
+
 /// Opens `url` with the app whose bundle id is `bundle_id`
 /// (`com.google.Chrome`). Fails when that app is not installed.
 pub fn open_url_with(url: &str, bundle_id: &str) -> Result<()> {
