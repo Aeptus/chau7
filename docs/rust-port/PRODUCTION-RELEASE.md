@@ -67,7 +67,7 @@ record these separately in acceptance results.
 
 ## Build, sign and release
 
-`CHANNEL=production BUILD_MODE=fast ./scripts/bundle-macos.sh` from
+`CHANNEL=production RELEASE_VERSION=0.6.0-rc.1 BUILD_MODE=fast ./scripts/bundle-macos.sh` from
 `apps/chau7-next` prepares a production bundle without installing or opening it.
 The default `CHANNEL=next` path retains the isolated beta identity.
 
@@ -75,6 +75,10 @@ Integrate all code before the final build. Use the fast profile normally and
 restart with `BUILD_MODE=diagnostic` only when symbols are needed. Keep one warm
 fast cache. Build once from the exact clean source commit; signing and notarizing
 must consume those artifacts rather than recompiling another source tree.
+
+The candidate includes its CLI executable, but deliberately omits the beta
+`chau7-next` installer. Stable public-command installation must be accepted
+separately before public distribution; production must not repoint a beta CLI.
 
 A candidate must include every helper and license notice. Verify its receipt,
 source revision, channel, bundle identity, minimum macOS version and executable

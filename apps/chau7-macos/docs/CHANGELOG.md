@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Convert Swift restore bundles and UserDefaults indexes without modifying the
+  source, retaining valid AI resume directories and dashboard repository roots.
+
+- Add a separately gated Rust production candidate workflow, explicit release
+  version metadata, and artifact reuse for Developer ID signing and notarization.
+
 - Add explicit, read-only Swift and Next restore imports with dry-run counts,
   source-integrity checks, instance locking and atomic complete-bundle publication.
 

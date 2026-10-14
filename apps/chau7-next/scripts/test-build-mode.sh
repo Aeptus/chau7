@@ -279,6 +279,8 @@ target=''
 for argument in "$@"; do target="$argument"; done
 if [[ -f "$target" ]]; then
   printf '\nfake-codesigned\n' >> "$target"
+elif [[ -d "$target" && -f "$target/Contents/MacOS/Chau7" ]]; then
+  printf '\nfake-codesigned\n' >> "$target/Contents/MacOS/Chau7"
 elif [[ -d "$target" && -f "$target/Contents/MacOS/Chau7 Next" ]]; then
   printf '\nfake-codesigned\n' >> "$target/Contents/MacOS/Chau7 Next"
 fi
@@ -347,15 +349,28 @@ run_fake_bundle() {
   local helper_cache="$4"
   local verbose="$5"
   local jobs="$6"
+  local channel="${7:-next}"
   local output_dir="$TMP_ROOT/out-$label"
+  local app_name='Chau7 Next'
+  local metadata_stem='Chau7-Next'
+  local build_number="fixture-$label"
+  if [[ "$channel" == production ]]; then
+    app_name='Chau7'
+    metadata_stem='Chau7-Production'
+    build_number=123
+  fi
   local -a env_args=(
     "PATH=$FAKE_BIN:$PATH"
     "FAKE_STATE=$FAKE_STATE"
     "FAKE_BIN=$FAKE_BIN"
     TARGET=aarch64-apple-darwin
-    "BUILD_NUMBER=fixture-$label"
+    "BUILD_NUMBER=$build_number"
     "OUT_DIR=$output_dir"
+    "CHANNEL=$channel"
   )
+  if [[ "$channel" == production ]]; then
+    env_args+=(RELEASE_VERSION=0.6.0-rc.1)
+  fi
   if [[ "$mode" != default ]]; then env_args+=("BUILD_MODE=$mode"); fi
   if [[ -n "$target_cache" ]]; then env_args+=("CARGO_TARGET_DIR=$target_cache"); fi
   if [[ -n "$helper_cache" ]]; then env_args+=("OPTIM_TARGET_DIR=$helper_cache"); fi
@@ -371,7 +386,7 @@ run_fake_bundle() {
       return 1
     fi
   ) || return $?
-  printf '%s\n' "$output_dir/Chau7 Next.app" "$output_dir/Chau7-Next-aarch64-apple-darwin-${mode/default/fast}.json"
+  printf '%s\n' "$output_dir/$app_name.app" "$output_dir/$metadata_stem-aarch64-apple-darwin-${mode/default/fast}.json"
 }
 
 validate_bundle() {
@@ -382,7 +397,8 @@ validate_bundle() {
   local app_target_dir="$5"
   local verbose="$6"
   local jobs="$7"
-  python3 - "$bundle" "$manifest" "$mode" "$helper_target_dir" "$app_target_dir" "$verbose" "$jobs" "$FAKE_STATE/codesign.log" <<'PY'
+  local channel="${8:-next}"
+  python3 - "$bundle" "$manifest" "$mode" "$helper_target_dir" "$app_target_dir" "$verbose" "$jobs" "$FAKE_STATE/codesign.log" "$channel" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -391,15 +407,16 @@ import sys
 
 bundle = pathlib.Path(sys.argv[1]).resolve()
 manifest_path = pathlib.Path(sys.argv[2]).resolve()
-mode, helper_target_dir, app_target_dir, verbose, jobs, codesign_log = sys.argv[3:]
+mode, helper_target_dir, app_target_dir, verbose, jobs, codesign_log, channel = sys.argv[3:]
 verified_paths = set()
 for line in pathlib.Path(codesign_log).read_text().splitlines():
     arguments = shlex.split(line)
     if len(arguments) == 4 and arguments[:3] == ["--verify", "--strict", "--verbose=2"]:
         verified_paths.add(pathlib.Path(arguments[3]).resolve())
 manifest = json.loads(manifest_path.read_text())
+app_name = "Chau7" if channel == "production" else "Chau7 Next"
 expected = {
-    "Chau7 Next": "Contents/MacOS/Chau7 Next",
+    app_name: f"Contents/MacOS/{app_name}",
     "chau7-next-mcp-bridge": "Contents/MacOS/chau7-next-mcp-bridge",
     "chau7-next-cli": "Contents/MacOS/chau7-next-cli",
     "chau7-optim": "Contents/MacOS/chau7-optim",
@@ -408,17 +425,36 @@ expected = {
     "chau7-proxy": "Contents/MacOS/chau7-proxy",
 }
 assert manifest["buildMode"] == mode
+assert manifest["channel"] == channel
+assert manifest["bundleIdentifier"] == ("com.chau7.app" if channel == "production" else "com.chau7.next")
+assert manifest["bundlePath"] == f"{app_name}.app"
+assert manifest["appExecutable"] == app_name
+assert manifest["releaseVersion"] == ("0.6.0-rc.1" if channel == "production" else "0.1.0")
+assert manifest["cargoPackageVersion"] == "0.1.0"
+assert manifest["version"] == ("0.6.0" if channel == "production" else "0.1.0")
+assert manifest["cargoFeatures"] == (["chau7_next_core/production"] if channel == "production" else [])
 assert manifest["sourceDirty"] is False
 assert manifest["sourceRevision"] == "0123456789abcdef0123456789abcdef01234567"
+assert manifest["buildNumber"] == ("123" if channel == "production" else manifest["buildNumber"])
 assert manifest["appSignatureVerified"] is True
+import plistlib
+with (bundle / "Contents/Info.plist").open("rb") as stream:
+    info = plistlib.load(stream)
+assert info["CFBundleIdentifier"] == manifest["bundleIdentifier"]
+assert info["CFBundleExecutable"] == app_name
+assert info["Chau7BuildChannel"] == channel
+assert info["CFBundleShortVersionString"] == manifest["version"]
+assert info["CFBundleVersion"] == manifest["buildNumber"]
+installer = bundle / "Contents/Resources/install-chau7-next-cli.sh"
+assert installer.exists() == (channel == "next")
 if mode == "fast":
     assert manifest["rustDsym"] is None
 else:
     dsym = manifest["rustDsym"]
     dsym_bundle = pathlib.Path(dsym["path"]).resolve()
-    dwarf_file = dsym_bundle / "Contents/Resources/DWARF/Chau7 Next"
+    dwarf_file = dsym_bundle / f"Contents/Resources/DWARF/{app_name}"
     assert dsym_bundle.parent == bundle.parent
-    assert dsym_bundle.name == "Chau7 Next.app.dSYM"
+    assert dsym_bundle.name == f"{app_name}.app.dSYM"
     assert bundle not in dsym_bundle.parents
     assert dwarf_file.is_file() and dwarf_file.stat().st_size > 0
     assert int(dsym["dwarfSizeBytes"]) == dwarf_file.stat().st_size
@@ -431,11 +467,14 @@ else:
 assert manifest["target"] == "aarch64-apple-darwin"
 assert manifest["minimumMacOS"] == "13.0"
 verbosity_args = ["-vv"] if verbose == "1" else []
-assert manifest["cargoCommands"]["app"] == [
+expected_command = [
     "cargo", "build", "--locked", "--release", *verbosity_args,
     "--target", "aarch64-apple-darwin", "--bin", "chau7-next",
     "--bin", "chau7-next-mcp-bridge", "--bin", "chau7-next-cli",
 ]
+if channel == "production":
+    expected_command.extend(["--features", "chau7_next_core/production"])
+assert manifest["cargoCommands"]["app"] == expected_command
 assert manifest["cargoCommands"]["sharedHelpers"] == [
     "cargo", "build", "--locked", "--release", *verbosity_args,
     "--target", "aarch64-apple-darwin", "-p", "chau7_optim", "-p", "chau7_md",
@@ -471,11 +510,11 @@ for name, relative_path in expected.items():
     actual_hash = hashlib.sha256(artifact.read_bytes()).hexdigest()
     assert entry["sha256"] == actual_hash, name
     assert b"fake-codesigned" in artifact.read_bytes(), f"{name} was not signed before hashing"
-    if name == "Chau7 Next":
+    if name == app_name:
         app_text = artifact.read_text()
         actual_app_target = app_text.split("targetdir=", 1)[1].splitlines()[0]
         assert pathlib.Path(actual_app_target).resolve() == pathlib.Path(app_target_dir).resolve(), app_text
-    if name != "Chau7 Next":
+    if name != app_name:
         assert (bundle / relative_path).resolve() in verified_paths, name
 assert bundle in verified_paths
 helper = (bundle / expected["chau7-optim"]).read_text()
@@ -552,5 +591,16 @@ assert_file_contains "$FIXTURE_APP/target/logs/diagnostic.log" 'fake cargo build
 if grep -Fq -- '-s -w' "$FAKE_STATE/go-args.log"; then
   fail 'diagnostic Go build unexpectedly stripped symbols'
 fi
+
+# The production candidate opts into the shared core feature, gets the
+# production bundle identity, and records its prerelease label separately from
+# the numeric macOS short version and current workspace package version.
+production_paths="$(run_fake_bundle default production-rc '' '' 0 '' production)"
+production_bundle="$(printf '%s\n' "$production_paths" | sed -n '1p')"
+production_manifest="$(printf '%s\n' "$production_paths" | sed -n '2p')"
+validate_bundle "$production_bundle" "$production_manifest" fast \
+  "$FIXTURE_APP/target" "$FIXTURE_APP/target" 0 '' production
+assert_file_contains "$FAKE_STATE/production-rc-package.log" 'chau7_next_core/production'
+assert_file_contains "$production_bundle/Contents/Info.plist" 'com.chau7.app'
 
 printf 'BUILD_MODE source tests passed\n'

@@ -119,6 +119,22 @@ impl DataRoot {
         }
     }
 
+    /// Resolve an explicitly supplied Next source home without inheriting the
+    /// caller's APPDATA/XDG_DATA_HOME. This also keeps converter fixtures private.
+    pub fn next_restore_source(home: PathBuf) -> Self {
+        let mut root = Self::with_home(home.clone(), true);
+        root.state_dir = if cfg!(target_os = "macos") {
+            home.join("Library")
+                .join("Application Support")
+                .join("Chau7 Next")
+        } else if cfg!(windows) {
+            home.join("AppData").join("Roaming").join("Chau7 Next")
+        } else {
+            home.join(".local").join("share").join("chau7-next")
+        };
+        root
+    }
+
     /// Read-only source root for an explicitly requested Swift restore import.
     pub fn swift_restore_bundle_root(&self) -> PathBuf {
         swift_support_dir(&self.home).join("TabRestoreBundles")
@@ -771,6 +787,18 @@ mod tests {
         assert!(stable.instance_lock_file().starts_with(stable.state_dir()));
     }
 
+    #[test]
+    fn explicit_import_source_never_escapes_its_supplied_home() {
+        let home = PathBuf::from("/tmp/private-import-home");
+        let source = DataRoot::next_restore_source(home.clone());
+        assert!(source.state_dir().starts_with(&home));
+        assert!(source.config_dir().starts_with(&home));
+        assert_ne!(
+            source.state_dir(),
+            DataRoot::with_channel(home, true, true).state_dir()
+        );
+    }
+
     // Ports of `RuntimeIsolationTests`.
 
     #[test]
@@ -974,7 +1002,22 @@ mod tests {
                 let line = line
                     .replace("<repo>/.chau7/", "")
                     .replace("<git root>/.chau7/", "");
+                // Production packaging deliberately takes the stable bundle identity.
+                // This exact metadata assignment grants no Swift data-path access.
+                if path.ends_with("scripts/bundle-macos.sh")
+                    && line.trim() == "BUNDLE_IDENTIFIER=\"com.chau7.app\""
+                {
+                    continue;
+                }
                 for needle in forbidden {
+                    // The packaging fixture asserts metadata for both channels.
+                    if needle == "com.chau7.app"
+                        && path.ends_with("scripts/test-build-mode.sh")
+                        && (line.trim().starts_with("assert ")
+                            || line.trim().starts_with("assert_file_contains "))
+                    {
+                        continue;
+                    }
                     if line.contains(needle) {
                         offenders.push(format!(
                             "{}:{} contains {needle}",

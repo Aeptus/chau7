@@ -114,7 +114,7 @@ impl Prepared {
         let windows = &self.session().windows;
         let warnings = match self {
             Self::Swift(p) => {
-                serde_json::json!({"truncated_contexts":p.summary.truncated_contexts,"dropped_unsupported_ai_identities":p.summary.dropped_unsupported_ai_identities,"dropped_tab_preview_contexts":p.summary.dropped_tab_preview_contexts,"dropped_dashboard_group_ids":p.summary.dropped_dashboard_group_ids})
+                serde_json::json!({"truncated_contexts":p.summary.truncated_contexts,"dropped_unsupported_ai_identities":p.summary.dropped_unsupported_ai_identities,"dropped_tab_preview_contexts":p.summary.dropped_tab_preview_contexts,"dropped_dashboard_group_ids":p.summary.dropped_dashboard_group_ids,"dropped_resume_directories":p.summary.dropped_resume_directories})
             }
             Self::Next(_) => serde_json::json!({}),
         };
@@ -149,7 +149,8 @@ fn validate_session(session: &SavedSession) -> Result<()> {
             }
             if let Some(layout) = &tab.layout {
                 let visual = layout.terminal_ids();
-                if visual.len() != tab.panes.len()
+                if visual.iter().copied().collect::<HashSet<_>>().len() != visual.len()
+                    || visual.len() != tab.panes.len()
                     || visual
                         .iter()
                         .any(|id| !tab.panes.iter().any(|p| p.id == *id))
@@ -286,7 +287,7 @@ pub fn requires_source_choice(root: &DataRoot) -> Result<bool> {
             Ok(None) => {}
         }
     }
-    let next = DataRoot::with_home(root.home().into(), false);
+    let next = DataRoot::next_restore_source(root.home().into());
     if root.state_dir() == next.state_dir() {
         return Ok(false);
     }
@@ -449,7 +450,7 @@ fn execute(root: &DataRoot, options: Options) -> Result<serde_json::Value> {
                 .ok_or("Swift source contains no saved windows")?,
         )
     } else {
-        let source = DataRoot::with_home(options.home, false);
+        let source = DataRoot::next_restore_source(options.home);
         if source.state_dir() == root.state_dir() {
             return Err("Source and destination profiles must differ".into());
         }
@@ -487,7 +488,7 @@ mod tests {
             std::env::temp_dir().join(format!("chau7-import-test-{}", uuid::Uuid::new_v4())),
         );
         let target = DataRoot::with_channel(dir.0.join("target"), true, true);
-        let source = DataRoot::with_home(dir.0.join("source"), false);
+        let source = DataRoot::next_restore_source(dir.0.join("source"));
         (dir, target, source)
     }
     fn write_source(source: &DataRoot) {
@@ -572,6 +573,47 @@ mod tests {
         assert!(publish(&target, &plan).is_err());
         assert!(!target.session_file().exists());
     }
+    #[test]
+    fn split_layout_rejects_duplicate_visual_ids() {
+        use chau7_next_core::session_restore::models::{SavedPane, SavedTab, SavedWindow};
+        use chau7_next_core::session_restore::{SavedAxis, SavedSplitNode};
+        let session = SavedSession {
+            version: 1,
+            windows: vec![SavedWindow {
+                tabs: vec![SavedTab {
+                    panes: vec![
+                        SavedPane {
+                            id: 1,
+                            ..Default::default()
+                        },
+                        SavedPane {
+                            id: 2,
+                            ..Default::default()
+                        },
+                    ],
+                    layout: Some(SavedSplitNode::Split {
+                        id: 3,
+                        axis: SavedAxis::Horizontal,
+                        ratios: vec![0.5, 0.5],
+                        children: vec![
+                            SavedSplitNode::Terminal {
+                                id: 1,
+                                directory: None,
+                            },
+                            SavedSplitNode::Terminal {
+                                id: 1,
+                                directory: None,
+                            },
+                        ],
+                    }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+        assert!(validate_session(&session).is_err());
+    }
+
     #[test]
     fn destination_lock_blocks_import_without_activation_or_overwrite() {
         let (_dir, target, source) = fixture();

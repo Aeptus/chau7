@@ -3,7 +3,26 @@ name: Release
 on:
   push:
     tags: ['v*']
-  workflow_dispatch: # Nonpublishing build/test; signing jobs cannot run here.
+  workflow_dispatch:
+    inputs:
+      release_channel:
+        description: Build the existing Swift dry run or prepare a gated Rust production RC artifact.
+        type: choice
+        required: true
+        default: swift-dry-run
+        options:
+          - swift-dry-run
+          - rust-production-rc
+      release_version:
+        description: SemVer candidate version for the production RC (for example 0.6.0-rc.1).
+        type: string
+        required: true
+        default: 0.6.0-rc.1
+      migration_validation_acknowledgement:
+        description: Type RUST_PRODUCTION_MIGRATION_VALIDATED only after the migration validation is complete.
+        type: string
+        required: true
+        default: not-validated
 
 permissions:
   contents: read
@@ -15,6 +34,7 @@ concurrency:
 jobs:
   build:
     name: Build release artifacts once
+    if: github.event_name != 'workflow_dispatch' || inputs.release_channel != 'rust-production-rc'
     runs-on: macos-26
     timeout-minutes: 60
     outputs:
@@ -211,3 +231,157 @@ jobs:
           git commit -m "Update chau7 to $VERSION"
           # shellcheck disable=SC2016 # Expand the token only inside Git's credential helper.
           git -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$HOMEBREW_TAP_TOKEN"; }; f' push
+
+  rust-production-rc-preflight:
+    name: Gate Rust production RC preparation
+    if: github.event_name == 'workflow_dispatch' && inputs.release_channel == 'rust-production-rc'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require validated migration acknowledgement on main
+        env:
+          REF: ${{ github.ref }}
+          ACKNOWLEDGEMENT: ${{ inputs.migration_validation_acknowledgement }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo '::error::Rust production RC preparation is allowed only from main.'
+            exit 1
+          fi
+          if [ "$ACKNOWLEDGEMENT" != 'RUST_PRODUCTION_MIGRATION_VALIDATED' ]; then
+            echo '::error::Confirm migration validation before preparing a Rust production RC.'
+            exit 1
+          fi
+          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo '::error::Release version must be a valid semantic candidate version.'
+            exit 1
+          fi
+
+  rust-production-rc-build:
+    name: Build Rust production candidate once
+    needs: rust-production-rc-preflight
+    if: github.event_name == 'workflow_dispatch' && inputs.release_channel == 'rust-production-rc' && needs.rust-production-rc-preflight.result == 'success'
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Select Xcode 26.6
+        run: sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: services/chau7-remote/go.mod
+          cache-dependency-path: |
+            services/chau7-remote/go.sum
+            apps/chau7-macos/chau7-proxy/go.sum
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - name: Add the production target
+        run: rustup target add aarch64-apple-darwin
+      - name: Build production bundle and receipt once
+        working-directory: apps/chau7-next
+        env:
+          CHANNEL: production
+          TARGET: aarch64-apple-darwin
+          BUILD_MODE: fast
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          OUT_DIR: ${{ runner.temp }}/rust-production-candidate
+          BUILD_METADATA_DIR: ${{ runner.temp }}/rust-production-candidate
+          REQUIRE_REMOTE_AGENT: '1'
+          REQUIRE_PROXY: '1'
+        run: ./scripts/bundle-macos.sh
+      - name: Preserve unsigned candidate for the signing job
+        run: tar -cf "$RUNNER_TEMP/rust-production-candidate.tar" -C "$RUNNER_TEMP" rust-production-candidate
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-production-candidate-unsigned
+          path: ${{ runner.temp }}/rust-production-candidate.tar
+          retention-days: 7
+          if-no-files-found: error
+
+  rust-production-rc-sign:
+    name: Sign, notarize, attest, and store RC artifact
+    needs: rust-production-rc-build
+    if: needs.rust-production-rc-build.result == 'success'
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rust-production-candidate-unsigned
+          path: ${{ runner.temp }}
+      - name: Restore the exact built candidate
+        run: tar -xf "$RUNNER_TEMP/rust-production-candidate.tar" -C "$RUNNER_TEMP"
+      - name: Require complete production signing configuration
+        env:
+          IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in IDENTITY CERTIFICATE CERTIFICATE_PASSWORD APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Rust production RC signing requires the $name GitHub secret."
+              exit 1
+            fi
+          done
+          case "$IDENTITY" in
+            'Developer ID Application:'*) ;;
+            *) echo '::error::Rust production RC requires a Developer ID Application identity.'; exit 1 ;;
+          esac
+          if [[ "$IDENTITY" != *" ($APPLE_TEAM_ID)" ]]; then
+            echo '::error::Signing identity team does not match APPLE_TEAM_ID.'
+            exit 1
+          fi
+      - name: Prepare isolated signing keychain
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: ./scripts/release/signing-keychain.sh setup
+      - name: Sign and notarize the reused Rust candidate
+        env:
+          APP_PATH: ${{ runner.temp }}/rust-production-candidate/Chau7.app
+          MANIFEST_PATH: ${{ runner.temp }}/rust-production-candidate/Chau7-Production-aarch64-apple-darwin-fast.json
+          DIST_DIR: ${{ runner.temp }}/rust-production-rc
+          BUILD_NUMBER: ${{ github.run_number }}
+          IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: ./scripts/release/sign-rust-production-rc.sh
+      - name: Always remove signing material
+        if: always()
+        run: ./scripts/release/signing-keychain.sh cleanup
+      - name: Verify candidate checksums
+        working-directory: ${{ runner.temp }}/rust-production-rc
+        run: shasum -a 256 -c SHA256SUMS.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: |
+            ${{ runner.temp }}/rust-production-rc/*.dmg
+            ${{ runner.temp }}/rust-production-rc/*.zip
+            ${{ runner.temp }}/rust-production-rc/*-build-manifest.json
+            ${{ runner.temp }}/rust-production-rc/SHA256SUMS.txt
+      - name: Explain artifact visibility
+        run: echo 'This is a gated CI RC artifact only; it does not create a tag, GitHub Release, or Homebrew update.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-production-rc-${{ github.run_number }}
+          path: ${{ runner.temp }}/rust-production-rc
+          retention-days: 14
+          if-no-files-found: error

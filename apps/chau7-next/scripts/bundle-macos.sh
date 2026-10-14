@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Build "Chau7 Next.app" (bundle id com.chau7.next) next to the Swift app's
-# bundle, without touching it. Usage:
+# Build the isolated Rust app bundle. The default Next channel remains
+# Chau7 Next.app / com.chau7.next; production is opt-in via CHANNEL.
+# Usage:
 #   ./scripts/bundle-macos.sh            # fast optimized build for this Mac's arch
 #   BUILD_MODE=diagnostic ./scripts/bundle-macos.sh # explicit symbol-rich rebuild
+#   CHANNEL=production RELEASE_VERSION=0.6.0-rc.1 BUILD_NUMBER=123 ./scripts/bundle-macos.sh
 #   CARGO_BUILD_VERBOSE=1 BUILD_LOG=target/logs/fast.log ./scripts/bundle-macos.sh
 #   OUT_DIR=~/Applications ./scripts/bundle-macos.sh
 #   TARGET=x86_64-apple-darwin ./scripts/bundle-macos.sh   # another Mac arch
@@ -20,10 +22,46 @@ esac
 export GOOS="darwin" GOARCH
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CARGO_PACKAGE_VERSION="$(grep -m1 '^version' "$ROOT/Cargo.toml" | sed -E 's/.*"(.*)"/\1/')"
+CHANNEL="${CHANNEL:-next}"
+case "$CHANNEL" in
+  next)
+    APP_NAME="Chau7 Next"
+    BUNDLE_IDENTIFIER="com.chau7.next"
+    URL_SCHEME="chau7-next"
+    INFO_REVISION_KEY="Chau7NextSourceRevision"
+    METADATA_STEM="Chau7-Next"
+    APP_CARGO_FEATURES=()
+    RELEASE_VERSION="${RELEASE_VERSION:-$CARGO_PACKAGE_VERSION}"
+    ;;
+  production)
+    APP_NAME="Chau7"
+    BUNDLE_IDENTIFIER="com.chau7.app"
+    URL_SCHEME="chau7"
+    INFO_REVISION_KEY="Chau7SourceRevision"
+    METADATA_STEM="Chau7-Production"
+    APP_CARGO_FEATURES=("chau7_next_core/production")
+    : "${RELEASE_VERSION:?production packaging requires RELEASE_VERSION (for example 0.6.0-rc.1)}"
+    ;;
+  *)
+    echo "error: CHANNEL must be 'next' or 'production' (got '$CHANNEL')" >&2
+    exit 1
+    ;;
+esac
+SEMVER_PATTERN='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
+if [[ "$RELEASE_VERSION" =~ $SEMVER_PATTERN ]]; then
+  VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+else
+  echo "error: RELEASE_VERSION must be a valid semantic version (got '$RELEASE_VERSION')" >&2
+  exit 1
+fi
 OUT_DIR="${OUT_DIR:-$ROOT/target/bundle}"
-APP="$OUT_DIR/Chau7 Next.app"
-VERSION="$(grep -m1 '^version' "$ROOT/Cargo.toml" | sed -E 's/.*"(.*)"/\1/')"
+APP="$OUT_DIR/$APP_NAME.app"
 BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
+if [ "$CHANNEL" = "production" ] && [[ ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+  echo "error: production CFBundleVersion must be numeric (got '$BUILD_NUMBER')" >&2
+  exit 1
+fi
 SOURCE_REVISION="$(git -C "$ROOT" rev-parse HEAD)"
 if [ -z "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]; then
   SOURCE_DIRTY_BEFORE_JSON=false
@@ -45,6 +83,9 @@ fi
 source "$ROOT/scripts/build-mode.sh"
 APP_CARGO_COMMAND=(cargo build "${CARGO_BUILD_ARGS[@]}" --target "$TARGET" \
   --bin chau7-next --bin chau7-next-mcp-bridge --bin chau7-next-cli)
+if [ "${#APP_CARGO_FEATURES[@]}" -gt 0 ]; then
+  APP_CARGO_COMMAND+=(--features "${APP_CARGO_FEATURES[*]}")
+fi
 run_cargo "${APP_CARGO_COMMAND[@]}"
 RELEASE_DIR="${CARGO_TARGET_DIR:-$ROOT/target}/$TARGET/release"
 BIN="$RELEASE_DIR/chau7-next"
@@ -53,13 +94,16 @@ BRIDGE="$RELEASE_DIR/chau7-next-mcp-bridge"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Chau7 Next"
+cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 cp "$BRIDGE" "$APP/Contents/MacOS/chau7-next-mcp-bridge"
 cp "$RELEASE_DIR/chau7-next-cli" "$APP/Contents/MacOS/chau7-next-cli"
 cp -R "$ROOT/resources/skills" "$APP/Contents/Resources/Skills"
-# The installer is opt-in; launching Chau7 Next never installs shell commands.
-cp "$ROOT/scripts/install-chau7-next-cli.sh" "$APP/Contents/Resources/install-chau7-next-cli.sh"
-chmod 755 "$APP/Contents/Resources/install-chau7-next-cli.sh"
+# The Next installer is opt-in and must not redirect the production CLI to the
+# beta binary. Production CLI installation remains unavailable until migrated.
+if [ "$CHANNEL" = "next" ]; then
+  cp "$ROOT/scripts/install-chau7-next-cli.sh" "$APP/Contents/Resources/install-chau7-next-cli.sh"
+  chmod 755 "$APP/Contents/Resources/install-chau7-next-cli.sh"
+fi
 cp "$ROOT/../chau7-macos/Resources/AppDockIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Ship attribution and the source audit trail for the three modified, locked
@@ -103,6 +147,9 @@ if [ -d "$OPTIM_DIR" ]; then
     fi
     cp "$OPTIM_OUT/$tool" "$APP/Contents/MacOS/$tool"
   done
+elif [ "$CHANNEL" = "production" ]; then
+  echo "error: the production bundle requires the shared Rust helper workspace" >&2
+  exit 1
 fi
 
 # Remote control agent (services/chau7-remote), next to the app binary. The
@@ -149,28 +196,29 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleExecutable</key><string>Chau7 Next</string>
-  <key>CFBundleIdentifier</key><string>com.chau7.next</string>
+  <key>CFBundleExecutable</key><string>${APP_NAME}</string>
+  <key>CFBundleIdentifier</key><string>${BUNDLE_IDENTIFIER}</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>Chau7 Next</string>
-  <key>CFBundleDisplayName</key><string>Chau7 Next</string>
+  <key>CFBundleName</key><string>${APP_NAME}</string>
+  <key>CFBundleDisplayName</key><string>${APP_NAME}</string>
+  <key>Chau7BuildChannel</key><string>${CHANNEL}</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
-  <key>Chau7NextSourceRevision</key><string>${SOURCE_REVISION}</string>
+  <key>${INFO_REVISION_KEY}</key><string>${SOURCE_REVISION}</string>
   <key>LSMinimumSystemVersion</key><string>${MIN_MACOS}</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>LSMultipleInstancesProhibited</key><true/>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
-      <key>CFBundleURLName</key><string>com.chau7.next</string>
+      <key>CFBundleURLName</key><string>${BUNDLE_IDENTIFIER}</string>
       <key>CFBundleURLSchemes</key>
-      <array><string>chau7-next</string></array>
+      <array><string>${URL_SCHEME}</string></array>
     </dict>
   </array>
-  <key>NSUserNotificationUsageDescription</key><string>Chau7 Next notifies you when a command finishes or an AI agent needs your attention.</string>
+  <key>NSUserNotificationUsageDescription</key><string>${APP_NAME} notifies you when a command finishes or an AI agent needs your attention.</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
 </dict>
@@ -182,7 +230,7 @@ PLIST
 # binary are signed one by one first (--deep does not cover Contents/MacOS),
 # then the app, which seals them.
 for helper in "$APP/Contents/MacOS/"*; do
-  [ "$(basename "$helper")" = "Chau7 Next" ] && continue
+  [ "$(basename "$helper")" = "$APP_NAME" ] && continue
   codesign --force --sign - --timestamp=none "$helper"
   codesign --verify --strict --verbose=2 "$helper"
 done
@@ -205,8 +253,8 @@ case "$BUILD_METADATA_DIR" in
     exit 1
     ;;
 esac
-BUILD_METADATA="$BUILD_METADATA_DIR/Chau7-Next-$TARGET-$BUILD_MODE.json"
-MANIFEST_TMP="$(mktemp "$BUILD_METADATA_DIR/.Chau7-Next-$TARGET-$BUILD_MODE.XXXXXX")"
+BUILD_METADATA="$BUILD_METADATA_DIR/$METADATA_STEM-$TARGET-$BUILD_MODE.json"
+MANIFEST_TMP="$(mktemp "$BUILD_METADATA_DIR/.$METADATA_STEM-$TARGET-$BUILD_MODE.XXXXXX")"
 DSYM_STAGE=''
 trap 'rm -f "$MANIFEST_TMP"; if [ -n "$DSYM_STAGE" ] && [ -d "$DSYM_STAGE" ]; then rm -rf "$DSYM_STAGE"; fi' EXIT
 
@@ -268,7 +316,8 @@ artifact_sha256() {
   fi
 }
 
-APP_SHA256="$(artifact_sha256 "$APP/Contents/MacOS/Chau7 Next")"
+APP_BINARY="$APP/Contents/MacOS/$APP_NAME"
+APP_SHA256="$(artifact_sha256 "$APP_BINARY")"
 
 # Diagnostic Rust symbols are emitted as a sidecar for the main app binary.
 # Resolve Apple's tools through the active Xcode toolchain, never PATH.
@@ -294,11 +343,10 @@ if [ "$BUILD_MODE" = "diagnostic" ]; then
 
   APP_PARENT="$(cd "$(dirname "$APP")" && pwd -P)"
   DSYM_ROOT="$APP_PARENT/$(basename "$APP").dSYM"
-  DSYM_STAGE="$(mktemp -d "$APP_PARENT/.Chau7 Next.app.dSYM.XXXXXX")"
-  DSYM_BUNDLE="$DSYM_STAGE/Chau7 Next.app.dSYM"
-  APP_BINARY="$APP/Contents/MacOS/Chau7 Next"
+  DSYM_STAGE="$(mktemp -d "$APP_PARENT/.$(basename "$APP").dSYM.XXXXXX")"
+  DSYM_BUNDLE="$DSYM_STAGE/$(basename "$APP").dSYM"
   "$DSYMUTIL" -o "$DSYM_BUNDLE" "$APP_BINARY"
-  DWARF_FILE="$DSYM_BUNDLE/Contents/Resources/DWARF/Chau7 Next"
+  DWARF_FILE="$DSYM_BUNDLE/Contents/Resources/DWARF/$APP_NAME"
   if [ ! -s "$DWARF_FILE" ]; then
     echo "error: dsymutil did not produce DWARF data for the main app binary" >&2
     exit 1
@@ -399,14 +447,19 @@ cat > "$MANIFEST_TMP" <<JSON
 {
   "schemaVersion": 1,
   "buildMode": $(json_string "$BUILD_MODE"),
+  "channel": $(json_string "$CHANNEL"),
   "target": $(json_string "$TARGET"),
   "minimumMacOS": $(json_string "$MIN_MACOS"),
   "version": $(json_string "$VERSION"),
+  "releaseVersion": $(json_string "$RELEASE_VERSION"),
+  "cargoPackageVersion": $(json_string "$CARGO_PACKAGE_VERSION"),
   "buildNumber": $(json_string "$BUILD_NUMBER"),
   "sourceRevision": $(json_string "$SOURCE_REVISION"),
   "sourceDirty": $SOURCE_DIRTY_JSON,
-  "bundleIdentifier": "com.chau7.next",
-  "bundlePath": "Chau7 Next.app",
+  "bundleIdentifier": $(json_string "$BUNDLE_IDENTIFIER"),
+  "bundlePath": $(json_string "$(basename "$APP")"),
+  "appExecutable": $(json_string "$APP_NAME"),
+  "cargoFeatures": $(json_array "${APP_CARGO_FEATURES[@]}"),
   "appSignatureVerified": true,
   "cargoCommands": {
     "app": $(json_array "${APP_CARGO_COMMAND[@]}"),
@@ -438,7 +491,7 @@ cat > "$MANIFEST_TMP" <<JSON
   },
   "rustDsym": $RUST_DSYM_JSON,
   "artifacts": {
-    "Chau7 Next": {"path": "Contents/MacOS/Chau7 Next", "sha256": $APP_SHA256},
+    $(json_string "$APP_NAME"): {"path": $(json_string "Contents/MacOS/$APP_NAME"), "sha256": $APP_SHA256},
     "chau7-next-mcp-bridge": {"path": "Contents/MacOS/chau7-next-mcp-bridge", "sha256": $BRIDGE_SHA256},
     "chau7-next-cli": {"path": "Contents/MacOS/chau7-next-cli", "sha256": $CLI_SHA256},
     "chau7-optim": {"path": "Contents/MacOS/chau7-optim", "sha256": $OPTIM_SHA256},
