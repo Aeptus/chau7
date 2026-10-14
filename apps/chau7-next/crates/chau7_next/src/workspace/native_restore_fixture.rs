@@ -893,11 +893,14 @@ async fn verify_keyboard_workspace(
                 WindowOptions {
                     show: true,
                     focus: false,
-                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                        gpui::point(px(0.), px(0.)),
-                        size(px(1000.), px(600.)),
-                    ))),
-                    ..Default::default()
+                    // Use the same native titlebar and window policy as production.
+                    ..super::window::window_options(
+                        Some(Bounds::new(
+                            gpui::point(px(0.), px(0.)),
+                            size(px(1000.), px(600.)),
+                        )),
+                        cx,
+                    )
                 },
                 cx,
                 |window, cx| {
@@ -1194,11 +1197,14 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
             WindowOptions {
                 show: true,
                 focus: false,
-                window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                    gpui::point(px(0.), px(0.)),
-                    size(px(1000.), px(600.)),
-                ))),
-                ..Default::default()
+                // Use the same native titlebar and window policy as production.
+                ..super::window::window_options(
+                    Some(Bounds::new(
+                        gpui::point(px(0.), px(0.)),
+                        size(px(1000.), px(600.)),
+                    )),
+                    cx,
+                )
             },
             cx,
             |window, cx| {

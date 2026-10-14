@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reuse production window options in Next native restore and keyboard fixtures
+  so zoom and fullscreen control checks exercise the real custom titlebar.
 - Initialize the production terminal command guard in the isolated tab-zoom regression.
 - Delay Next shell loading indicators until 500 ms and avoid animation redraws
   while the indicator is hidden.
