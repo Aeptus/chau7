@@ -532,6 +532,7 @@ impl Workspace {
             .gap(px(8.0))
             .h(px(TAB_CHIP_HEIGHT))
             .max_w(px(280.0))
+            .overflow_hidden()
             .px(px(10.0))
             .rounded(px(8.0))
             .text_xs()
@@ -546,7 +547,9 @@ impl Workspace {
                         .id(("ssh-host", id as usize))
                         .role(Role::Label)
                         .aria_label(format!("SSH host {accessible_host}"))
-                        .flex_shrink_0()
+                        .flex_shrink(1.0)
+                        .min_w(px(42.0))
+                        .overflow_hidden()
                         .flex()
                         .items_center()
                         .gap(px(3.0))
@@ -556,9 +559,17 @@ impl Workspace {
                         .text_color(chrome.accent)
                         .child(
                             gpui_kit::component::Icon::new(gpui_kit::assets::IconName::Server)
-                                .size(px(12.0)),
+                                .size(px(12.0))
+                                .flex_shrink_0(),
                         )
-                        .child(format!("SSH {}", truncate_middle(&host, 18)))
+                        .child(
+                            div()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_ellipsis()
+                                .child(format!("SSH {}", truncate_middle(&host, 18))),
+                        )
                         .tooltip(move |window, cx| {
                             gpui_kit::component::tooltip::Tooltip::new(tooltip.clone())
                                 .build(window, cx)
@@ -598,7 +609,11 @@ impl Workspace {
             .when_some(badge, |d, (badge, ok)| {
                 d.child(
                     div()
-                        .flex_shrink_0()
+                        .flex_shrink(1.0)
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
                         .px_1()
                         .rounded_full()
                         .bg(gpui::hsla(0.0, 0.0, 0.0, 0.2))
@@ -617,7 +632,11 @@ impl Workspace {
                         .id(("token-rate", id as usize))
                         .role(Role::Label)
                         .aria_label(detail.clone())
-                        .flex_shrink_0()
+                        .flex_shrink(1.0)
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
                         .px_1()
                         .rounded_full()
                         .text_color(style_color(

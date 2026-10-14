@@ -2209,9 +2209,10 @@ impl FullscreenCompletion {
 }
 impl Drop for FullscreenCompletion {
     fn drop(&mut self) {
+        let observer: &objc2::runtime::AnyObject =
+            AsRef::<objc2::runtime::AnyObject>::as_ref(&*self.observer);
         unsafe {
-            objc2_foundation::NSNotificationCenter::defaultCenter()
-                .removeObserver(self.observer.as_ref().as_ref());
+            objc2_foundation::NSNotificationCenter::defaultCenter().removeObserver(observer);
         }
     }
 }
@@ -2255,15 +2256,35 @@ async fn verify_traffic_lights_in_real_fullscreen(
         }))
     }
     .await;
+    let mut exit_via_green_button = false;
     if native.styleMask().contains(NSWindowStyleMask::FullScreen) {
-        native_mutation(|| native.toggleFullScreen(None))?;
-        wait_until_deadline(
+        let green = native
+            .standardWindowButton(NSWindowButton::ZoomButton)
+            .ok_or("owned fullscreen window has no green button")?;
+        native_mutation(|| green.performClick(None))?;
+        let exit_result = wait_until_deadline(
             cx,
-            "exit owned fullscreen Space",
+            "exit owned fullscreen Space through native green button",
             Instant::now() + Duration::from_secs(12),
             |_| exited.completed() && !native.styleMask().contains(NSWindowStyleMask::FullScreen),
         )
-        .await?;
+        .await;
+        exit_via_green_button = exit_result.is_ok();
+        if exit_result.is_err() && native.styleMask().contains(NSWindowStyleMask::FullScreen) {
+            // Clean up only this fixture's Space if the actual button failed.
+            native_mutation(|| native.toggleFullScreen(None))?;
+            wait_until_deadline(
+                cx,
+                "cleanup owned fullscreen Space",
+                Instant::now() + Duration::from_secs(12),
+                |_| {
+                    exited.completed()
+                        && !native.styleMask().contains(NSWindowStyleMask::FullScreen)
+                },
+            )
+            .await?;
+        }
+        exit_result?;
         wait_for_native_window_geometry(native, cx, "controls after fullscreen exit", |_| true)
             .await?;
         settle(handle, cx).await?;
@@ -2272,6 +2293,7 @@ async fn verify_traffic_lights_in_real_fullscreen(
     Ok(serde_json::json!({
         "fullscreen": fullscreen,
         "did_exit_notification": exited.completed(),
+        "exit_via_green_button": exit_via_green_button,
         "windowed_after_fullscreen": traffic_light_geometry(native, "after actual fullscreen exit")?,
         "composition_after_fullscreen": traffic_light_composition(native, "after actual fullscreen exit")?,
     }))

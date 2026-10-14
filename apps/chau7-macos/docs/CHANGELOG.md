@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Exercise the real green button to leave fullscreen in isolated acceptance,
+  and let SSH and text indicators shrink inside crowded tab chips.
 - Keep the new OpenCode logo inside the Rust app assets to avoid rebuilding the
   Swift app when its icon changes, and finish native fullscreen observer cleanup.
 - Guard fullscreen control installation against missing content views and use
