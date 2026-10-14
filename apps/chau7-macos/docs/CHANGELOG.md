@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Decode Swift restoration identifier and preview fields using their exact
+  persisted JSON names, and isolate URL handling by production or Next channel.
+
 - Refuse packaging into Applications, app-bundle symlinks, external existing
   apps, or generated bundles with open files before invoking the compiler.
 

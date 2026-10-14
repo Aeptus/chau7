@@ -1,14 +1,18 @@
 //! Pure logic of the app shell: quit and close confirmations, paste escaping
-//! and the `chau7-next://` URL scheme.
+//! and the app's channel-specific URL scheme.
 //!
 //! Mirrors `AppDelegate.swift` (`applicationShouldTerminate`, `pasteEscaped`,
-//! `handleChau7URL`) and `PasteEscaper.swift`. Swift registers `chau7://`;
-//! Chau7 Next registers `chau7-next://` so both apps can be installed
-//! (`docs/rust-port/DUAL-SHIP.md`) and handles only its own scheme. Hosts and
-//! paths are the same. `ssh` targets are validated (a target such as
-//! `-oProxyCommand=...` would run a command) and confirmed before running.
+//! `handleChau7URL`) and `PasteEscaper.swift`. The production app registers
+//! `chau7://`; Chau7 Next registers `chau7-next://` so both apps can be
+//! installed (`docs/rust-port/DUAL-SHIP.md`) and each handles only its own
+//! scheme. Hosts and paths are the same. `ssh` targets are validated (a target
+//! such as `-oProxyCommand=...` would run a command) and confirmed before running.
 
-/// URL scheme Chau7 Next registers.
+/// URL scheme registered by this build's app channel.
+#[cfg(feature = "production")]
+pub const URL_SCHEME: &str = "chau7";
+/// URL scheme registered by this build's app channel.
+#[cfg(not(feature = "production"))]
 pub const URL_SCHEME: &str = "chau7-next";
 
 /// Title and detail of the "Quit" confirmation, or `None` when nothing runs.
@@ -36,7 +40,7 @@ pub fn quit_confirmation_localized(
     let count = unique.len();
     Some((
         crate::l10n::localized(lang, "alert.quit.title", "Quit Chau7?")
-            .replace("Chau7", "Chau7 Next"),
+            .replace("Chau7", crate::data_root::APP_NAME),
         crate::l10n::localized_format(
             lang,
             "alert.quit.message",
@@ -158,8 +162,8 @@ pub fn run_confirmation_detail(command: &str, source: &str) -> String {
     format!("A URL is requesting to run:\n\n{shown}\n\nSource: {source}")
 }
 
-/// Parse `chau7-next://<host>/<path>`. `chau7://` belongs to the Swift app and
-/// is rejected.
+/// Parse `<active-scheme>://<host>/<path>`. The other app channel's scheme is
+/// rejected.
 pub fn parse_url(url: &str) -> Result<AppUrl, UrlError> {
     let (scheme, rest) = url.split_once("://").ok_or(UrlError::WrongScheme)?;
     if !scheme.eq_ignore_ascii_case(URL_SCHEME) {
@@ -313,6 +317,20 @@ pub fn version_label(short: Option<&str>, build: Option<&str>) -> String {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "production")]
+    const EXPECTED_URL_SCHEME: &str = "chau7";
+    #[cfg(not(feature = "production"))]
+    const EXPECTED_URL_SCHEME: &str = "chau7-next";
+
+    #[cfg(feature = "production")]
+    const OTHER_URL_SCHEME: &str = "chau7-next";
+    #[cfg(not(feature = "production"))]
+    const OTHER_URL_SCHEME: &str = "chau7";
+
+    fn active_url(route: &str) -> String {
+        format!("{URL_SCHEME}://{route}")
+    }
+
     #[test]
     fn reads_plist_strings() {
         let xml = "<dict>\n<key>CFBundleVersion</key>\n<string>45</string>\n<key>Flag</key>\n<true/>\n<key>Other</key><string>x</string></dict>";
@@ -343,7 +361,7 @@ mod tests {
         assert_eq!(quit_confirmation(&[String::new()]), None);
         let (title, detail) =
             quit_confirmation(&["vim".into(), "sleep".into(), "vim".into()]).unwrap();
-        assert_eq!(title, "Quit Chau7 Next?");
+        assert_eq!(title, format!("Quit {}?", crate::data_root::APP_NAME));
         assert_eq!(detail, "2 running processes will be terminated: sleep, vim");
         let (_, one) = quit_confirmation(&["top".into()]).unwrap();
         assert_eq!(one, "1 running process will be terminated: top");
@@ -372,7 +390,7 @@ mod tests {
                 );
                 assert_eq!(detail, expected);
                 assert!(detail.contains("job-0%@"));
-                assert!(title.contains("Chau7 Next"));
+                assert!(title.contains(crate::data_root::APP_NAME));
             }
         }
     }
@@ -380,37 +398,50 @@ mod tests {
     #[test]
     fn parses_urls() {
         assert_eq!(
-            parse_url("chau7-next://ssh/me@host:2200"),
+            parse_url(&active_url("ssh/me@host:2200")),
             Ok(AppUrl::Ssh {
                 target: "me@host:2200".into()
             })
         );
         assert_eq!(
-            parse_url("chau7-next://cd/Users/me/My%20Code"),
+            parse_url(&active_url("cd/Users/me/My%20Code")),
             Ok(AppUrl::Cd {
                 path: "/Users/me/My Code".into()
             })
         );
         assert_eq!(
-            parse_url("chau7-next://open/tmp/a.md"),
+            parse_url(&active_url("open/tmp/a.md")),
             Ok(AppUrl::Open {
                 path: "/tmp/a.md".into()
             })
         );
         // "ls -la" in base64.
-        let run = parse_url("chau7-next://run/bHMgLWxh").unwrap();
+        let run = parse_url(&active_url("run/bHMgLWxh")).unwrap();
         assert_eq!(run.tab_command().as_deref(), Some("ls -la"));
         assert_eq!(parse_url("http://x"), Err(UrlError::WrongScheme));
-        // The Swift app's scheme is not handled by Chau7 Next.
-        assert_eq!(parse_url("chau7://cd/tmp"), Err(UrlError::WrongScheme));
-        assert_eq!(parse_url("chau7-next://ssh/"), Err(UrlError::MissingTarget));
+        assert_eq!(parse_url(&active_url("ssh/")), Err(UrlError::MissingTarget));
         assert_eq!(
-            parse_url("chau7-next://run/!!"),
+            parse_url(&active_url("run/!!")),
             Err(UrlError::InvalidCommand)
         );
         assert_eq!(
-            parse_url("chau7-next://nope/x"),
+            parse_url(&active_url("nope/x")),
             Err(UrlError::UnknownHost("nope".into()))
+        );
+    }
+
+    #[test]
+    fn accepts_only_the_active_channel_scheme() {
+        assert_eq!(URL_SCHEME, EXPECTED_URL_SCHEME);
+        assert_eq!(
+            parse_url(&format!("{URL_SCHEME}://cd/tmp")),
+            Ok(AppUrl::Cd {
+                path: "/tmp".into()
+            })
+        );
+        assert_eq!(
+            parse_url(&format!("{OTHER_URL_SCHEME}://cd/tmp")),
+            Err(UrlError::WrongScheme)
         );
     }
 
@@ -437,17 +468,18 @@ mod tests {
     #[test]
     fn rejects_ssh_option_injection() {
         for bad in [
-            "chau7-next://ssh/-oProxyCommand=touch%20%2Ftmp%2Fpwned",
-            "chau7-next://ssh/-p",
-            "chau7-next://ssh/me@-oProxyCommand=x",
-            "chau7-next://ssh/host;rm",
-            "chau7-next://ssh/host%20-oX",
-            "chau7-next://ssh/host:abc",
-            "chau7-next://ssh/host:99999",
-            "chau7-next://ssh/@host",
-            "chau7-next://ssh/a$(id)@host",
+            "ssh/-oProxyCommand=touch%20%2Ftmp%2Fpwned",
+            "ssh/-p",
+            "ssh/me@-oProxyCommand=x",
+            "ssh/host;rm",
+            "ssh/host%20-oX",
+            "ssh/host:abc",
+            "ssh/host:99999",
+            "ssh/@host",
+            "ssh/a$(id)@host",
         ] {
-            assert_eq!(parse_url(bad), Err(UrlError::InvalidTarget), "{bad}");
+            let url = active_url(bad);
+            assert_eq!(parse_url(&url), Err(UrlError::InvalidTarget), "{url}");
         }
         for good in [
             "host",
