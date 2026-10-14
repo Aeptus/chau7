@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the beta packaging receipt valid when the Cargo feature list is empty
+  under the system Bash shipped with macOS.
+
 - Convert Swift restore bundles and UserDefaults indexes without modifying the
   source, retaining valid AI resume directories and dashboard repository roots.
 

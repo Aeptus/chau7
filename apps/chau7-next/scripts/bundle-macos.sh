@@ -459,7 +459,7 @@ cat > "$MANIFEST_TMP" <<JSON
   "bundleIdentifier": $(json_string "$BUNDLE_IDENTIFIER"),
   "bundlePath": $(json_string "$(basename "$APP")"),
   "appExecutable": $(json_string "$APP_NAME"),
-  "cargoFeatures": $(json_array "${APP_CARGO_FEATURES[@]}"),
+  "cargoFeatures": $(if [ "${#APP_CARGO_FEATURES[@]}" -gt 0 ]; then json_array "${APP_CARGO_FEATURES[@]}"; else printf '[]'; fi),
   "appSignatureVerified": true,
   "cargoCommands": {
     "app": $(json_array "${APP_CARGO_COMMAND[@]}"),
