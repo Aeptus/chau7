@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   protected inputs together with their pending approval cards.
 - Honor Xcode's selected simulator architectures in the iOS Rust build and
   recheck nested Rust sources through Cargo on every build invocation.
+- Prevent CTO wrappers from recursively resolving themselves when HOME changes
+  or PATH contains symlink aliases; honor CARGO_HOME in the iOS Rust build.
 - Keep home-derived stores isolated in XCTest even when a test clears its
   explicit override, and make test fixtures respect isolated homes and services.
 

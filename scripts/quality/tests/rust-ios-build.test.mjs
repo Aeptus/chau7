@@ -14,6 +14,7 @@ const cases = [
   { name: "native Apple Silicon simulator", platform: "iphonesimulator", archs: "arm64", targets: ["aarch64-apple-ios-sim"] },
   { name: "Intel simulator", platform: "iphonesimulator", archs: "x86_64", targets: ["x86_64-apple-ios"] },
   { name: "explicit universal simulator", platform: "iphonesimulator", archs: "arm64 x86_64", targets: ["aarch64-apple-ios-sim", "x86_64-apple-ios"] },
+  { name: "explicit Cargo home with shadowed PATH", platform: "iphonesimulator", archs: "arm64", cargoHome: true, targets: ["aarch64-apple-ios-sim"] },
   { name: "unsupported simulator architecture", platform: "iphonesimulator", archs: "riscv64", targets: [], error: "Unsupported iOS simulator architecture: riscv64" },
 ];
 
@@ -24,12 +25,14 @@ for (const fixture of cases) {
     const rust = path.join(root, "apps/chau7-macos/rust");
     const scripts = path.join(ios, "Scripts");
     const fixtureHome = path.join(root, "fake-home");
-    const bin = path.join(fixtureHome, ".cargo/bin");
+    const cargoHome = fixture.cargoHome ? path.join(root, "custom cargo home") : path.join(fixtureHome, ".cargo");
+    const bin = path.join(cargoHome, "bin");
+    const shadowBin = path.join(root, "shadow-bin");
     const log = path.join(root, "commands.log");
     const targetLog = path.join(root, "targets.log");
     const lipoLog = path.join(root, "lipo.log");
     const stamp = path.join(root, "build.stamp");
-    for (const dir of [scripts, rust, bin]) fs.mkdirSync(dir, { recursive: true });
+    for (const dir of [scripts, rust, bin, shadowBin]) fs.mkdirSync(dir, { recursive: true });
     const script = path.join(scripts, "build-rust-terminal-ios.sh");
     fs.copyFileSync(buildScript, script);
     fs.writeFileSync(path.join(rust, "rust-toolchain.toml"), '[toolchain]\nchannel = "1.96.0"\n');
@@ -39,11 +42,15 @@ for (const fixture of cases) {
     writeTool("rustup", `#!/bin/bash\nprintf 'rustup:%s\\n' "$PWD" >> "$TEST_COMMAND_LOG"\nprintf '%s\\n' "$TEST_INSTALLED_TARGETS"\nsleep 0.02\nprintf '%s\\n' fixture-unrelated-target\n`);
     writeTool("cargo", `#!/bin/bash\nprintf 'cargo:%s\\n' "$PWD" >> "$TEST_COMMAND_LOG"\nwhile [[ "$1" != --target ]]; do shift; done\nprintf '%s\\n' "$2" >> "$TEST_TARGET_LOG"\nmkdir -p "$CARGO_TARGET_DIR/$2/debug"\ntouch "$CARGO_TARGET_DIR/$2/debug/libchau7_terminal.a"\n`);
     writeTool("lipo", `#!/bin/bash\nprintf '%s\\n' "$@" > "$TEST_LIPO_LOG"\nwhile [[ "$1" != -output ]]; do shift; done\ntouch "$2"\n`);
+    for (const name of ["cargo", "rustup"]) {
+      fs.writeFileSync(path.join(shadowBin, name), "#!/bin/bash\necho unexpected PATH wrapper >&2\nexit 97\n", { mode: 0o755 });
+    }
     const readLines = (file) => fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim().split("\n") : [];
     try {
       const env = {
         ...process.env,
         HOME: fixtureHome,
+        PATH: `${shadowBin}:/usr/bin:/bin:/usr/sbin:/sbin`,
         PLATFORM_NAME: fixture.platform,
         CONFIGURATION: "Debug",
         IPHONEOS_DEPLOYMENT_TARGET: "20.0",
@@ -55,9 +62,11 @@ for (const fixture of cases) {
       };
       // An inherited Xcode ARCHS must not turn the standalone default case into
       // an accidental native-only build.
+      delete env.CARGO_HOME;
+      if (fixture.cargoHome) env.CARGO_HOME = cargoHome;
       delete env.ARCHS;
       if (fixture.archs !== undefined) env.ARCHS = fixture.archs;
-      const result = spawnSync("/bin/bash", [script], { cwd: root, encoding: "utf8", env });
+      const result = spawnSync("/bin/bash", [script], { cwd: root, encoding: "utf8", env, timeout: 10_000 });
       const library = path.join(ios, "BuildArtifacts/rust/lib", fixture.platform, "libchau7_terminal.a");
       if (fixture.error) {
         assert.equal(result.status, 1, result.stderr);

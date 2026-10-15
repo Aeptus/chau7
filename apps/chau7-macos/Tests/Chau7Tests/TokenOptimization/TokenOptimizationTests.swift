@@ -781,7 +781,8 @@ final class TokenOptimizationCoreTests: XCTestCase {
         XCTAssertTrue(wrapper.contains("-X|--request"), "must detect explicit method")
         XCTAssertTrue(wrapper.contains("-d|--data"), "must detect body data")
         XCTAssertTrue(wrapper.contains("_cto_safe"), "must gate on request safety")
-        XCTAssertTrue(wrapper.contains("for _dir in $PATH"), "must resolve curl at runtime")
+        XCTAssertTrue(wrapper.contains("_CTO_SCRIPT_PATH=\"${BASH_SOURCE[0]:-$0}\""), "must identify the invoked wrapper")
+        XCTAssertTrue(wrapper.contains("[[ \"$_candidate\" -ef \"$_CTO_SCRIPT_PATH\" ]]"), "must skip self aliases")
     }
 
     /// Executable wrappers and read-only rewrites are disjoint surfaces, and
@@ -1663,7 +1664,9 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
     /// The generated executable wrapper embeds each hardening guarantee.
     func testExecutableWrapperContract() {
         let w = gitWrapperScript
-        XCTAssertTrue(w.contains("for _dir in $PATH"), "must resolve the real binary at runtime")
+        XCTAssertTrue(w.contains("_CTO_SCRIPT_PATH=\"${BASH_SOURCE[0]:-$0}\""), "must identify the invoked wrapper independently of HOME")
+        XCTAssertTrue(w.contains("_CTO_PATH_SCAN=\"${PATH-}:\""), "must preserve empty PATH components")
+        XCTAssertTrue(w.contains("[[ \"$_candidate\" -ef \"$_CTO_SCRIPT_PATH\" ]]"), "must skip symlink aliases of itself")
         XCTAssertFalse(w.contains("/usr/bin/git"), "must NOT bake an absolute path")
         XCTAssertTrue(w.contains("CHAU7_CTO_OPTIM_ACTIVE"), "must check the recursion sentinel")
         XCTAssertTrue(w.contains("[ -t 0 ]"), "must bypass the optimizer for interactive callers")
@@ -1742,6 +1745,87 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         try run(["status"], active: false)
         XCTAssertEqual(count(gitCounter), 1)
         XCTAssertEqual(count(optimCounter), 0)
+    }
+
+    /// Xcode can isolate HOME while retaining the installed wrapper in PATH.
+    /// The resolver must skip its own file through a symlink alias, reject an
+    /// executable directory, and continue across relative and empty PATH parts.
+    func testCargoWrapperResolvesPastSelfWithIsolatedHomeAndPathAliases() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("ctoidentity-\(UUID().uuidString)")
+        let wrapperDir = root.appendingPathComponent("real-home/.chau7/cto_bin")
+        let isolatedHome = root.appendingPathComponent("isolated-home")
+        let aliasDir = root.appendingPathComponent("alias-bin")
+        let workDir = root.appendingPathComponent("work")
+        let relativeDir = workDir.appendingPathComponent("relative-bin")
+        let realDir = root.appendingPathComponent("real-bin")
+        for dir in [wrapperDir, isolatedHome, aliasDir, relativeDir, realDir] {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        defer { try? fm.removeItem(at: root) }
+
+        func writeExecutable(_ url: URL, _ body: String) throws {
+            try body.write(to: url, atomically: true, encoding: .utf8)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
+
+        let wrapper = wrapperDir.appendingPathComponent("cargo")
+        let cargoScript = CTOManager.shared.generateExecutableWrapperScript(
+            for: "cargo",
+            policy: CTOExecPolicy(gate: .subcommandAllowlist(["build"]))
+        )
+        try writeExecutable(wrapper, cargoScript)
+        try fm.createSymbolicLink(
+            atPath: aliasDir.appendingPathComponent("cargo").path,
+            withDestinationPath: wrapper.path
+        )
+        try fm.createDirectory(
+            at: relativeDir.appendingPathComponent("cargo"),
+            withIntermediateDirectories: false
+        )
+        try writeExecutable(realDir.appendingPathComponent("cargo"), "#!/bin/bash\nprintf 'real-cargo\\n'\n")
+
+        let path = [
+            aliasDir.path,
+            "relative-bin",
+            "",
+            wrapperDir.path,
+            realDir.path,
+            "/usr/bin",
+            "/bin"
+        ].joined(separator: ":")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [wrapper.path, "build"]
+        process.currentDirectoryURL = workDir
+        process.environment = [
+            "HOME": isolatedHome.path,
+            "PATH": path,
+            "CHAU7_CTO_OPTIM_ACTIVE": "1"
+        ]
+        process.standardInput = FileHandle.nullDevice
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+
+        let deadline = Date().addingTimeInterval(3)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        if process.isRunning {
+            process.terminate()
+            process.waitUntilExit()
+            XCTFail("wrapper did not resolve past its own PATH alias")
+            return
+        }
+
+        let bytes = output.fileHandleForReading.readDataToEndOfFile()
+        XCTAssertEqual(
+            String(data: bytes, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            "real-cargo"
+        )
+        XCTAssertEqual(process.terminationStatus, 0)
     }
 
     /// Machine-readable git output must bypass CTO entirely. The optimizer's

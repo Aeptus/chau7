@@ -22,6 +22,7 @@ app, and the corresponding Swift macOS paths. It is not a production release.
 | Next command changes | Late Git scans could attach changes to a newer command and reorder conflict state. | Carry command UUIDs and separate baseline receivers; order results by a monotonic finish sequence, including equal timestamps. |
 | Both macOS apps | MCP approval context used the selected tab instead of the command target. | Carry the captured native target through forwarding, enrich the first payload, and never redirect a missing explicit target to the selection. |
 | Both macOS apps | Capping protected inputs left approval contexts for discarded inputs. | Evict both records together so reconnects do not restore dead approval cards. |
+| Both macOS CTO wrappers | An isolated subprocess home could make runtime lookup select the wrapper itself indefinitely; PATH aliases also bypassed string exclusions. | Identify the invoked script independently of HOME, skip file aliases, preserve PATH component semantics, and reject executable directories. Next also excludes aliases of Swift wrappers. |
 | Swift test isolation | Tests removing a home override could fall back to the user's `.chau7` and CLI transcript directories. | Use the existing process-specific XCTest temporary root for all home-derived paths. Explicit overrides still take priority. |
 
 ## Build changes
@@ -31,8 +32,11 @@ app, and the corresponding Swift macOS paths. It is not a production release.
   both simulator slices.
 - The Rust Xcode phase always asks Cargo to check its inputs. The previous
   directory timestamp dependency could miss a nested Rust source change.
-- Six mocked build-script cases cover device, arm64, Intel, universal, and
-  unsupported architecture behavior without invoking a real compiler.
+- Seven mocked build-script cases cover device, arm64, Intel, universal,
+  unsupported architecture, and an explicit Cargo home with a shadowed PATH.
+  The iOS build resolves Cargo and Rustup from `CARGO_HOME` when set, preserving
+  the installed toolchain when Xcode isolates HOME. No compiler is invoked by
+  these fixtures.
 - Validation reuses copies of existing build caches on the T7. Compiler jobs
   are bounded to fit this Mac's 16 GB of RAM.
 
@@ -44,18 +48,30 @@ not change the Mac/iOS network protocol or stored restoration formats.
 
 | Check | Result |
 | --- | --- |
-| Swift macOS full XCTest suite | 4,593 executed, 3 skipped, 0 failures; 87.1 seconds. |
-| Swift macOS build | Passed; 2.22 seconds using the populated cache. |
+| Initial Swift macOS full XCTest suite | 4,593 executed, 3 skipped, 0 failures; 87.1 seconds. |
+| Initial Swift macOS build | Passed; 2.22 seconds using the populated cache. |
 | SwiftFormat / strict SwiftLint | Passed across Sources and Tests; no formatting changes required in 1,123 checked files. |
-| iOS hostless simulator suite and app compilation | 112 passed, 0 failures; final capture compiled the last callback fix. |
+| Swift CTO follow-up integration suite | 33 passed, 0 failures, including the bounded wrapper recursion regression. |
+| Native Periphery analysis | Passed after rebuilding the copied index; no unused code detected. |
+| iOS hostless simulator suite and app compilation | 112 passed, 0 failures, including the rerun with the corrected Cargo resolution. |
 | Shared Rust terminal suite | 160 passed, 0 failures. |
-| Next workspace suite | 3,165 passed, 2 ignored, 0 failures after the final Clippy corrections. |
+| Next workspace suite | 3,166 passed, 2 ignored, 0 failures after the final Clippy corrections. |
 | Strict Next Clippy, all targets; workspace formatting | Passed. |
-| Next production feature suite | 3,165 passed, 2 ignored, 0 failures. |
-| Quality tooling tests | 124 Node and 24 Python tests passed. |
-| iOS Rust architecture script | Six mocked architecture cases passed; shellcheck and project plist validation passed. |
+| Next production feature suite | 3,166 passed, 2 ignored, 0 failures. |
+| Quality tooling tests | 125 Node and 24 Python tests passed. |
+| iOS Rust build script | Seven mocked build-script cases passed; shellcheck and project plist validation passed. |
 | Terminal FFI | Generated C header matches the checked-in header byte for byte; Rust and Swift ABI layout tests pass. |
 | Staged checks | Eight gates passed, including secret scanning, shared dependency pins, shellcheck and tooling tests. |
+
+The initial full Swift suite and warm build timing precede the CTO follow-up;
+that change passes its 33 focused integration tests. The publication hook also
+runs the full local CI against the committed tree. The new Cargo-home fixture
+fails against the earlier iOS script and passes after the fix.
+
+Copying the native Swift ModuleCache and index store from another worktree
+caused absolute-path failures and 560 erroneous unused-code findings. Those
+owned generated caches were preserved separately and regenerated in this
+checkout; the clean Periphery scan passes.
 
 The optional pre-commit AI review that opens live Chau7 tabs was disabled for
 this invocation to respect the running-app constraint. Independent parallel

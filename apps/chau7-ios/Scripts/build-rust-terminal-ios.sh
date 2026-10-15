@@ -15,7 +15,10 @@ RUST_TARGET_DIR="$IOS_APP_DIR/BuildArtifacts/rust/target/ios-${deployment_target
 PLATFORM_LIB_DIR="$IOS_APP_DIR/BuildArtifacts/rust/lib/${PLATFORM_NAME:-iphonesimulator}"
 
 platform="${PLATFORM_NAME:-iphonesimulator}"
-export PATH="$HOME/.cargo/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+# CFFIXED_USER_HOME can make Xcode change HOME while the installed Rust
+# toolchain remains in CARGO_HOME. Resolve that toolchain before PATH wrappers.
+cargo_tool_home="${CARGO_HOME:-$HOME/.cargo}"
+export PATH="$cargo_tool_home/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
 export IPHONEOS_DEPLOYMENT_TARGET="$deployment_target"
 
 find_tool() {
@@ -32,15 +35,15 @@ find_tool() {
     return 1
 }
 
-CARGO_BIN="$(find_tool cargo "$HOME/.cargo/bin/cargo")" || {
+CARGO_BIN="$(find_tool cargo "$cargo_tool_home/bin/cargo")" || {
     echo "cargo not found. Install Rust and ensure cargo is available to Xcode build scripts." >&2
-    echo "Expected locations checked: \$HOME/.cargo/bin/cargo, PATH=$PATH" >&2
+    echo "Expected locations checked: $cargo_tool_home/bin/cargo, PATH=$PATH" >&2
     exit 1
 }
 
-RUSTUP_BIN="$(find_tool rustup "$HOME/.cargo/bin/rustup")" || {
+RUSTUP_BIN="$(find_tool rustup "$cargo_tool_home/bin/rustup")" || {
     echo "rustup not found. Install Rustup so the build script can verify iOS targets." >&2
-    echo "Expected locations checked: \$HOME/.cargo/bin/rustup, PATH=$PATH" >&2
+    echo "Expected locations checked: $cargo_tool_home/bin/rustup, PATH=$PATH" >&2
     exit 1
 }
 

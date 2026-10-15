@@ -192,13 +192,28 @@ fn log_block(command: &str) -> String {
 fn runtime_scan(command: &str, paths: &CtoPaths) -> String {
     format!(
         r#"_CTO_REAL_BIN=""
-_OLD_IFS="$IFS"; IFS=':'
-for _dir in $PATH; do
+_CTO_SCRIPT_PATH="${{BASH_SOURCE[0]:-$0}}"
+case "$_CTO_SCRIPT_PATH" in
+    */*) ;;
+    *) _CTO_SCRIPT_PATH="$(command -v "$_CTO_SCRIPT_PATH" 2>/dev/null || printf '%s' "$_CTO_SCRIPT_PATH")" ;;
+esac
+_CTO_INVOKED_WRAPPER_DIR="${{_CTO_SCRIPT_PATH%/*}}"
+[ "$_CTO_INVOKED_WRAPPER_DIR" = "$_CTO_SCRIPT_PATH" ] && _CTO_INVOKED_WRAPPER_DIR=.
+[ -z "$_CTO_INVOKED_WRAPPER_DIR" ] && _CTO_INVOKED_WRAPPER_DIR=/
+
+_CTO_PATH_SCAN="${{PATH-}}:"
+while [ -n "$_CTO_PATH_SCAN" ]; do
+    _dir="${{_CTO_PATH_SCAN%%:*}}"
+    _CTO_PATH_SCAN="${{_CTO_PATH_SCAN#*:}}"
     [ "$_dir" = {own} ] && continue
+    [ "$_dir" = "$_CTO_INVOKED_WRAPPER_DIR" ] && continue
     [ "$_dir" = {swift} ] && continue
-    if [ -x "$_dir/{command}" ]; then _CTO_REAL_BIN="$_dir/{command}"; break; fi
+    [ -z "$_dir" ] && _dir=.
+    _candidate="$_dir/{command}"
+    [[ "$_candidate" -ef "$_CTO_SCRIPT_PATH" ]] && continue
+    [[ "$_candidate" -ef {swift_file} ]] && continue
+    if [ -f "$_candidate" ] && [ -x "$_candidate" ]; then _CTO_REAL_BIN="$_candidate"; break; fi
 done
-IFS="$_OLD_IFS"
 
 if [ -z "$_CTO_REAL_BIN" ]; then
     echo "chau7: could not find real {command} binary" >&2
@@ -207,6 +222,7 @@ fi
 "#,
         own = dq(&paths.wrapper_dir.to_string_lossy()),
         swift = dq(&paths.swift_wrapper_dir.to_string_lossy()),
+        swift_file = dq(&paths.swift_wrapper_dir.join(command).to_string_lossy()),
     )
 }
 
@@ -896,6 +912,14 @@ mod tests {
             paths.swift_wrapper_dir.display()
         );
         assert!(script.contains(&swift));
+        assert!(script.contains("[ \"$_dir\" = \"$_CTO_INVOKED_WRAPPER_DIR\" ] && continue"));
+        assert!(script.contains("[[ \"$_candidate\" -ef \"$_CTO_SCRIPT_PATH\" ]] && continue"));
+        let swift_file = format!(
+            "[[ \"$_candidate\" -ef {} ]] && continue",
+            dq(&paths.swift_wrapper_dir.join("git").to_string_lossy())
+        );
+        assert!(script.contains(&swift_file));
+        assert!(script.contains("_CTO_PATH_SCAN=\"${PATH-}:\""));
         assert!(script.contains("could not find real git binary"));
         assert!(script.contains("exit 127"));
     }
@@ -1111,9 +1135,9 @@ mod tests {
     mod run {
         use super::*;
         use std::io;
-        use std::process::{Command, Output};
+        use std::process::{Command, Output, Stdio};
         use std::thread;
-        use std::time::Duration;
+        use std::time::{Duration, Instant};
 
         fn is_executable_file_busy(error: &io::Error) -> bool {
             if error.kind() == io::ErrorKind::ExecutableFileBusy {
@@ -1140,6 +1164,28 @@ mod tests {
                 }
             }
             unreachable!("the final spawn attempt returns its result")
+        }
+
+        fn output_with_timeout(command: &mut Command, timeout: Duration) -> io::Result<Output> {
+            let mut child = command
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?;
+            let deadline = Instant::now() + timeout;
+            loop {
+                if child.try_wait()?.is_some() {
+                    return child.wait_with_output();
+                }
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "generated wrapper did not exit",
+                    ));
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
         }
 
         #[test]
@@ -1231,6 +1277,76 @@ mod tests {
                 );
             }
             assert!(!paths.command_log().exists());
+            let _ = fs::remove_dir_all(dir);
+        }
+
+        #[test]
+        fn runtime_scan_skips_invoked_wrapper_aliases_and_mixed_profile_paths() {
+            let (dir, paths, real_dir) = setup("run-runtime-identity");
+            let alias_dir = dir.join("alias-bin");
+            let swift_alias_dir = dir.join("swift-alias-bin");
+            let work_dir = dir.join("work");
+            let relative_dir = work_dir.join("relative-bin");
+            fs::create_dir_all(&alias_dir).unwrap();
+            fs::create_dir_all(&swift_alias_dir).unwrap();
+            fs::create_dir_all(relative_dir.join("cargo")).unwrap();
+            write_executable(
+                &real_dir.join("cargo"),
+                b"#!/bin/sh\necho real-cargo \"$@\"\n",
+            )
+            .unwrap();
+
+            // Force a runtime-generated wrapper; setup normally finds and
+            // embeds the fake binary's path for its other execution tests.
+            let generation_path = format!(
+                "{}:{}",
+                paths.wrapper_dir.display(),
+                paths.swift_wrapper_dir.display()
+            );
+            install_wrapper("cargo", &paths, &generation_path).unwrap();
+            let wrapper = paths.wrapper_dir.join("cargo");
+            std::os::unix::fs::symlink(&wrapper, alias_dir.join("cargo")).unwrap();
+
+            // A Swift-profile command earlier in PATH must not be selected by
+            // this Next wrapper, even when the two profiles are mixed.
+            fs::create_dir_all(&paths.swift_wrapper_dir).unwrap();
+            let swift_wrapper = paths.swift_wrapper_dir.join("cargo");
+            write_executable(&swift_wrapper, b"#!/bin/sh\necho swift-wrapper\n").unwrap();
+            std::os::unix::fs::symlink(&swift_wrapper, swift_alias_dir.join("cargo")).unwrap();
+
+            let path = format!(
+                "{}:{}:relative-bin::{}:{}:{}:/usr/bin:/bin",
+                alias_dir.display(),
+                swift_alias_dir.display(),
+                paths.wrapper_dir.display(),
+                paths.swift_wrapper_dir.display(),
+                real_dir.display()
+            );
+            let isolated_home = dir.join("isolated-home");
+            fs::create_dir_all(&isolated_home).unwrap();
+
+            let mut command = Command::new("/bin/bash");
+            command
+                .arg(&wrapper)
+                .arg("build")
+                .env_clear()
+                .env("HOME", isolated_home)
+                .env("PATH", path)
+                .env("CHAU7_CTO_OPTIM_ACTIVE", "1")
+                .current_dir(&work_dir);
+            let out = output_with_timeout(&mut command, Duration::from_secs(3))
+                .unwrap_or_else(|error| panic!("runtime wrapper lookup failed: {error}"));
+            assert!(
+                out.status.success(),
+                "status={} stdout={:?} stderr={:?}",
+                out.status,
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert_eq!(
+                String::from_utf8_lossy(&out.stdout).trim(),
+                "real-cargo build"
+            );
             let _ = fs::remove_dir_all(dir);
         }
 

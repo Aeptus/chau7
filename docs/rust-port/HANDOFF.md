@@ -4,7 +4,7 @@
 
 The iOS and macOS review adds fixes for reconnect races, terminal rendering,
 SSH URL actions, restoration recovery, asynchronous Git results, and remote
-approval targeting. See [APP-REVIEW-2026-10-15.md](APP-REVIEW-2026-10-15.md)
+approval targeting, and CTO wrapper recursion under isolated build homes. See [APP-REVIEW-2026-10-15.md](APP-REVIEW-2026-10-15.md)
 for confirmed findings, validation results, and remaining acceptance work.
 These source changes require a new candidate build. They do not update the
 previously packaged artifact or authorize a production release. The running
