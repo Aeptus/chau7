@@ -35,7 +35,8 @@ app, and the corresponding Swift macOS paths. It is not a production release.
 - Seven mocked build-script cases cover device, arm64, Intel, universal,
   unsupported architecture, and an explicit Cargo home with a shadowed PATH.
   The iOS build resolves Cargo and Rustup from `CARGO_HOME` when set, preserving
-  the installed toolchain when Xcode isolates HOME. No compiler is invoked by
+  executable lookup when Xcode isolates HOME. Validation also sets `RUSTUP_HOME`
+  to reuse the installed toolchains and targets. No compiler is invoked by
   these fixtures.
 - Validation reuses copies of existing build caches on the T7. Compiler jobs
   are bounded to fit this Mac's 16 GB of RAM.
@@ -50,9 +51,9 @@ not change the Mac/iOS network protocol or stored restoration formats.
 | --- | --- |
 | Initial Swift macOS full XCTest suite | 4,593 executed, 3 skipped, 0 failures; 87.1 seconds. |
 | Initial Swift macOS build | Passed; 2.22 seconds using the populated cache. |
-| SwiftFormat / strict SwiftLint | Passed across Sources and Tests; no formatting changes required in 1,123 checked files. |
+| SwiftFormat / strict SwiftLint | Passed across Sources and Tests (1,123 checked files); the touched CTO test file was formatted before its final lint. |
 | Swift CTO follow-up integration suite | 33 passed, 0 failures, including the bounded wrapper recursion regression. |
-| Native Periphery analysis | Passed after rebuilding the copied index; no unused code detected. |
+| Native Periphery analysis | Passed with a fresh native index in this worktree; no unused code detected. |
 | iOS hostless simulator suite and app compilation | 112 passed, 0 failures, including the rerun with the corrected Cargo resolution. |
 | Shared Rust terminal suite | 160 passed, 0 failures. |
 | Next workspace suite | 3,166 passed, 2 ignored, 0 failures after the final Clippy corrections. |
