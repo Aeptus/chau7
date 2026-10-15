@@ -44,6 +44,20 @@ struct Command {
 struct State {
     sender: Option<mpsc::SyncSender<Command>>,
     status: WriterStatus,
+    caught_job_panic: bool,
+}
+
+/// Once the receiver is gone, every accepted but unprocessed command has been
+/// dropped or interrupted. Account for those commands before publishing the
+/// closed state so accepted = processed + pending remains meaningful.
+fn mark_worker_unavailable(state: &mut State) {
+    state.sender.take();
+    state.status.accepting = false;
+    let pending = state.status.accepted.saturating_sub(state.status.processed);
+    state.status.processed = state.status.processed.saturating_add(pending);
+    state.status.failed = state.status.failed.saturating_add(pending);
+    state.status.pending_bytes = 0;
+    state.status.last_error = Some("telemetry writer unavailable".into());
 }
 
 pub(super) struct Writer {
@@ -87,6 +101,7 @@ impl Writer {
                 accepting: true,
                 ..Default::default()
             },
+            caught_job_panic: false,
         }));
         let shared = state.clone();
         let worker = spawn(Box::new(move || {
@@ -100,18 +115,35 @@ impl Writer {
                 ));
                 span.bytes(command.bytes);
                 span.items(1);
-                let outcome = (command.job)(&store);
+                // Isolate a bad admitted closure to that command. A panic is
+                // a failed, processed attempt; later commands still drain.
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    (command.job)(&store)
+                }));
                 let mut state = shared.lock().unwrap_or_else(|e| e.into_inner());
                 state.status.pending_bytes =
                     state.status.pending_bytes.saturating_sub(command.bytes);
                 state.status.processed = state.status.processed.saturating_add(1);
-                if let Err(error) = outcome {
-                    state.status.failed = state.status.failed.saturating_add(1);
-                    // SQL failure details remain diagnostic only; status has no
-                    // transcript, command line, or database/profile path.
-                    state.status.last_error = Some("telemetry persistence failed".into());
-                    drop(state);
-                    log::warn!("Telemetry writer {} failed: {error}", command.label);
+                match outcome {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        state.status.failed = state.status.failed.saturating_add(1);
+                        // SQL failure details remain diagnostic only; status has no
+                        // transcript, command line, or database/profile path.
+                        state.status.last_error = Some("telemetry persistence failed".into());
+                        drop(state);
+                        log::warn!("Telemetry writer {} failed: {error}", command.label);
+                    }
+                    Err(_) => {
+                        state.status.failed = state.status.failed.saturating_add(1);
+                        state.status.last_error = Some("telemetry writer job panicked".into());
+                        state.caught_job_panic = true;
+                        drop(state);
+                        log::error!(
+                            "Telemetry writer {} panicked; continuing with later jobs",
+                            command.label
+                        );
+                    }
                 }
             }
             shared
@@ -143,7 +175,19 @@ impl Writer {
         job: Job,
     ) -> Result<(), AdmissionError> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        let error = if !state.status.accepting {
+        let worker_exited = state.status.accepting
+            && self
+                .worker
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .is_some_and(|worker| worker.is_finished());
+        if worker_exited {
+            mark_worker_unavailable(&mut state);
+        }
+        let error = if worker_exited {
+            Some(AdmissionError::WorkerUnavailable)
+        } else if !state.status.accepting {
             Some(AdmissionError::Closed)
         } else if bytes > self.max_bytes {
             Some(AdmissionError::Oversize)
@@ -155,16 +199,21 @@ impl Writer {
         let result = if let Some(error) = error {
             Err(error)
         } else {
-            match state
-                .sender
-                .as_ref()
-                .expect("accepting writer owns its sender")
-                .try_send(Command { job, bytes, label })
-            {
-                Ok(()) => Ok(()),
-                Err(mpsc::TrySendError::Full(_)) => Err(AdmissionError::Full),
-                Err(mpsc::TrySendError::Disconnected(_)) => Err(AdmissionError::WorkerUnavailable),
+            let result = match state.sender.as_ref() {
+                Some(sender) => match sender.try_send(Command { job, bytes, label }) {
+                    Ok(()) => Ok(()),
+                    Err(mpsc::TrySendError::Full(_)) => Err(AdmissionError::Full),
+                    Err(mpsc::TrySendError::Disconnected(command)) => {
+                        drop(command);
+                        Err(AdmissionError::WorkerUnavailable)
+                    }
+                },
+                None => Err(AdmissionError::WorkerUnavailable),
+            };
+            if result == Err(AdmissionError::WorkerUnavailable) {
+                mark_worker_unavailable(&mut state);
             }
+            result
         };
         match result {
             Ok(()) => {
@@ -173,17 +222,28 @@ impl Writer {
             }
             Err(error) => {
                 state.status.rejected = state.status.rejected.saturating_add(1);
-                state.status.last_error = Some(format!("telemetry write rejected: {error}"));
+                state.status.last_error = Some(if error == AdmissionError::WorkerUnavailable {
+                    "telemetry writer unavailable".into()
+                } else {
+                    format!("telemetry write rejected: {error}")
+                });
             }
         }
         result
     }
     pub(super) fn status(&self) -> WriterStatus {
-        self.state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .status
-            .clone()
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let worker_exited = state.status.accepting
+            && self
+                .worker
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .is_some_and(|worker| worker.is_finished());
+        if worker_exited {
+            mark_worker_unavailable(&mut state);
+        }
+        state.status.clone()
     }
     /// A background-only barrier, useful to readers requiring newly committed
     /// rows. Never called from UI callbacks, paint, or admission methods.
@@ -206,16 +266,17 @@ impl Writer {
         Ok(())
     }
     pub(super) fn shutdown(&self) -> Option<WriterShutdown> {
-        {
-            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-            state.status.accepting = false;
-            state.sender.take();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut worker = self.worker.lock().unwrap_or_else(|e| e.into_inner());
+        if state.status.accepting && worker.as_ref().is_some_and(|worker| worker.is_finished()) {
+            mark_worker_unavailable(&mut state);
         }
-        self.worker
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-            .map(|worker| WriterShutdown { worker })
+        state.status.accepting = false;
+        state.sender.take();
+        worker.take().map(|worker| WriterShutdown {
+            worker,
+            state: self.state.clone(),
+        })
     }
 }
 impl Drop for Writer {
@@ -230,13 +291,27 @@ impl Drop for Writer {
 
 pub struct WriterShutdown {
     worker: JoinHandle<WriterStatus>,
+    state: Arc<Mutex<State>>,
 }
 impl WriterShutdown {
     /// Off-UI only; waits for every accepted job and returns truthful failures.
     pub fn finish(self) -> Result<WriterStatus, String> {
-        self.worker
-            .join()
-            .map_err(|_| "telemetry writer panicked".into())
+        let WriterShutdown { worker, state } = self;
+        match worker.join() {
+            Ok(status) => {
+                let state = state.lock().unwrap_or_else(|e| e.into_inner());
+                if state.caught_job_panic {
+                    Err("telemetry writer job panicked".into())
+                } else {
+                    Ok(status)
+                }
+            }
+            Err(_) => {
+                let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
+                mark_worker_unavailable(&mut state);
+                Err("telemetry writer panicked".into())
+            }
+        }
     }
 }
 
@@ -324,5 +399,80 @@ mod tests {
         assert_eq!(status.accepted, 2);
         assert_eq!(status.processed, 2);
         assert_eq!(status.failed, 1);
+    }
+
+    #[test]
+    fn panicking_job_is_failed_and_later_jobs_still_drain() {
+        let store = Arc::new(TelemetryStore::in_memory());
+        let writer = Writer::with_limits(store.clone(), 4, 16);
+        writer
+            .admit("panic_test", 3, Box::new(|_| panic!("owned test panic")))
+            .unwrap();
+        writer
+            .admit(
+                "after_panic",
+                4,
+                Box::new(|store| {
+                    store.execute_raw(
+                        "INSERT INTO maintenance_state(name,cursor) VALUES ('after_panic','yes')",
+                    );
+                    Ok(())
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(writer.flush(), Err(AdmissionError::PersistenceFailed));
+        assert_eq!(
+            writer.shutdown().unwrap().finish().unwrap_err(),
+            "telemetry writer job panicked"
+        );
+        let status = writer.status();
+        assert_eq!(status.accepted, 3);
+        assert_eq!(status.processed, 3);
+        assert_eq!(status.failed, 1);
+        assert_eq!(status.pending_bytes, 0);
+        assert!(!status.accepting);
+        assert_eq!(
+            store.query_values("SELECT cursor FROM maintenance_state WHERE name='after_panic'")[0]
+                [0],
+            rusqlite::types::Value::Text("yes".into())
+        );
+    }
+
+    #[test]
+    fn disconnected_worker_closes_admission_and_accounts_for_pending_jobs() {
+        let (release_tx, release_rx) = mpsc::channel();
+        let (receiver_dropped_tx, receiver_dropped_rx) = mpsc::channel();
+        let writer =
+            Writer::with_spawner(Arc::new(TelemetryStore::in_memory()), 2, 16, move |task| {
+                Ok(std::thread::spawn(move || {
+                    let _ = release_rx.recv();
+                    drop(task);
+                    let _ = receiver_dropped_tx.send(());
+                    WriterStatus::default()
+                }))
+            });
+        writer
+            .admit("will_be_abandoned", 7, Box::new(|_| Ok(())))
+            .unwrap();
+
+        release_tx.send(()).unwrap();
+        receiver_dropped_rx.recv().unwrap();
+        assert_eq!(
+            writer.admit("after_disconnect", 0, Box::new(|_| Ok(()))),
+            Err(AdmissionError::WorkerUnavailable)
+        );
+        let status = writer.status();
+        assert_eq!(status.accepted, 1);
+        assert_eq!(status.rejected, 1);
+        assert_eq!(status.processed, 1);
+        assert_eq!(status.failed, 1);
+        assert_eq!(status.pending_bytes, 0);
+        assert!(!status.accepting);
+        assert_eq!(
+            writer.admit("closed", 0, Box::new(|_| Ok(()))),
+            Err(AdmissionError::Closed)
+        );
+        writer.shutdown().unwrap().finish().unwrap();
     }
 }

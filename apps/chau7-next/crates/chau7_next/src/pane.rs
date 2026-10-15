@@ -7,12 +7,13 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use chau7_next_core::editor::diff::DiffMode;
 use chau7_next_core::session_restore::{SavedAxis, SavedSplitNode};
 use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Entity, EntityId, EventEmitter, FocusHandle,
-    Focusable, Render, Subscription, Window, div, prelude::*, px, relative,
+    Focusable, Render, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::actions::{ScrollToBottom, ScrollToTop};
@@ -97,6 +98,8 @@ fn new_pane_id() -> PaneId {
 /// Pane events for the workspace.
 /// Size a terminal starts at before the layout gives it its own.
 const DEFAULT_SIZE: (u16, u16) = (80, 24);
+const SPLIT_DIVIDER_HITBOX: f32 = 7.0;
+const SPLIT_DIVIDER_RULE: f32 = 1.0;
 
 #[derive(Debug, Clone)]
 pub enum PaneEvent {
@@ -211,6 +214,35 @@ enum Node<L> {
 struct DividerDrag {
     split_id: u64,
     index: usize,
+    grab_offset: Rc<Cell<f32>>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct HiddenPaneEdges {
+    top: bool,
+    right: bool,
+    bottom: bool,
+    left: bool,
+}
+
+impl HiddenPaneEdges {
+    fn child(self, axis: Axis, index: usize, count: usize) -> Self {
+        let last = index + 1 == count;
+        match axis {
+            Axis::Horizontal => Self {
+                top: self.top,
+                right: (self.right && last) || !last,
+                bottom: self.bottom,
+                left: (self.left && index == 0) || index > 0,
+            },
+            Axis::Vertical => Self {
+                top: (self.top && index == 0) || index > 0,
+                right: self.right,
+                bottom: (self.bottom && last) || !last,
+                left: self.left,
+            },
+        }
+    }
 }
 
 struct DividerGhost;
@@ -863,7 +895,15 @@ impl PaneTree {
                 // A click on a header or the runbook also takes the keyboard.
                 if self.focused != Some(id) {
                     self.set_focused(id, cx);
-                    self.focus_own(window, cx);
+                    // GPUI has already focused a clicked child input before
+                    // this bubbled pane event arrives. Keep that deeper
+                    // target when it belongs to the pane we just selected.
+                    let focus_is_within_selected_pane = self
+                        .focused_item()
+                        .is_some_and(|item| item.focus_handle(cx).contains_focused(window, cx));
+                    if !focus_is_within_selected_pane {
+                        self.focus_own(window, cx);
+                    }
                 }
             }
             // `closePane(id:)`: the last pane of a tab stays.
@@ -966,12 +1006,28 @@ impl PaneTree {
         let dashboard = cx.new(|cx| DashboardPane::new(root, true, window, cx));
         let id = dashboard.entity_id();
         self.pane_ids.insert(id, pane_id);
-        let sub = cx.subscribe_in(&dashboard, window, move |this, _, event, window, cx| {
-            this.on_side_event(id, event, window, cx)
-        });
-        self.subscriptions.push((id, vec![sub]));
+        let subs = vec![
+            cx.subscribe_in(&dashboard, window, move |this, _, event, window, cx| {
+                this.on_side_event(id, event, window, cx)
+            }),
+            self.side_pane_focus_subscription(id, dashboard.read(cx).focus_handle(cx), window, cx),
+        ];
+        self.subscriptions.push((id, subs));
         dashboard
     }
+
+    fn side_pane_focus_subscription(
+        &mut self,
+        id: EntityId,
+        handle: FocusHandle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Subscription {
+        cx.on_focus_in(&handle, window, move |this, window, cx| {
+            this.on_side_event(id, &SidePaneEvent::Focused, window, cx)
+        })
+    }
+
     /// Reuse the actual repository dashboard when already present in this split tree.
     pub fn open_dashboard(&mut self, root: String, window: &mut Window, cx: &mut Context<Self>) {
         let existing = self.leaves().into_iter().find_map(|item| {
@@ -1025,10 +1081,13 @@ impl PaneTree {
         });
         let id = repository.entity_id();
         self.pane_ids.insert(id, pane_id);
-        let sub = cx.subscribe_in(&repository, window, move |this, _, event, window, cx| {
-            this.on_side_event(id, event, window, cx)
-        });
-        self.subscriptions.push((id, vec![sub]));
+        let subs = vec![
+            cx.subscribe_in(&repository, window, move |this, _, event, window, cx| {
+                this.on_side_event(id, event, window, cx)
+            }),
+            self.side_pane_focus_subscription(id, repository.read(cx).focus_handle(cx), window, cx),
+        ];
+        self.subscriptions.push((id, subs));
         repository
     }
     pub fn open_repository(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1781,6 +1840,7 @@ impl PaneTree {
         node: &Node<PaneItem>,
         show_focus: bool,
         chrome: Chrome,
+        hidden_edges: HiddenPaneEdges,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         match node {
@@ -1796,17 +1856,27 @@ impl PaneTree {
                     }
                     _ => (None, 0.0),
                 };
-                div()
-                    .size_full()
-                    .relative()
-                    .when(show_focus, |d| {
-                        d.border_1().border_color(if focused {
-                            chrome.accent.opacity(0.6)
-                        } else {
-                            chrome.border.opacity(0.0)
-                        })
-                    })
-                    .child(item.element())
+                let mut pane = div().size_full().relative();
+                if show_focus {
+                    pane = pane.border_1().border_color(if focused {
+                        chrome.accent.opacity(0.6)
+                    } else {
+                        chrome.border.opacity(0.0)
+                    });
+                    if hidden_edges.top {
+                        pane = pane.border_t_0();
+                    }
+                    if hidden_edges.right {
+                        pane = pane.border_r_0();
+                    }
+                    if hidden_edges.bottom {
+                        pane = pane.border_b_0();
+                    }
+                    if hidden_edges.left {
+                        pane = pane.border_l_0();
+                    }
+                }
+                pane.child(item.element())
                     .children(loading)
                     // Visual bell (`flashBell`: white at 15%).
                     .when(flash > 0.0, |d| {
@@ -1839,39 +1909,82 @@ impl PaneTree {
                             return;
                         }
                         let bounds = event.bounds;
-                        let fraction = match axis {
-                            Axis::Horizontal => {
-                                (event.event.position.x - bounds.left()) / bounds.size.width
-                            }
-                            Axis::Vertical => {
-                                (event.event.position.y - bounds.top()) / bounds.size.height
-                            }
+                        let divider_count = this
+                            .root
+                            .as_ref()
+                            .and_then(|root| split_child_count(root, split_id))
+                            .unwrap_or(drag.index + 2);
+                        let (position, origin, extent) = match axis {
+                            Axis::Horizontal => (
+                                f32::from(event.event.position.x),
+                                f32::from(bounds.left()),
+                                f32::from(bounds.size.width),
+                            ),
+                            Axis::Vertical => (
+                                f32::from(event.event.position.y),
+                                f32::from(bounds.top()),
+                                f32::from(bounds.size.height),
+                            ),
                         };
+                        let fraction = split_resize_fraction(
+                            position,
+                            origin,
+                            extent,
+                            divider_count,
+                            drag.index,
+                            drag.grab_offset.get(),
+                        )
+                        .unwrap_or(0.5);
                         this.set_ratio(split_id, drag.index, fraction);
                         cx.notify();
                     },
                 ));
                 for (index, child) in children.iter().enumerate() {
                     let ratio = ratios.get(index).copied().unwrap_or(1.0);
-                    let element = self.render_node(child, show_focus, chrome, cx);
-                    let mut cell = div().flex_shrink_0().overflow_hidden();
+                    let child_edges = hidden_edges.child(axis, index, children.len());
+                    let element = self.render_node(child, show_focus, chrome, child_edges, cx);
+                    let mut cell = div()
+                        .flex_shrink_0()
+                        .flex_basis(px(0.))
+                        .flex_grow(ratio)
+                        .overflow_hidden();
                     cell = match axis {
-                        Axis::Horizontal => cell.h_full().w(relative(ratio)),
-                        Axis::Vertical => cell.w_full().h(relative(ratio)),
+                        Axis::Horizontal => cell.h_full().min_w_0(),
+                        Axis::Vertical => cell.w_full().min_h_0(),
                     };
                     container = container.child(cell.child(element));
                     if index + 1 < children.len() {
+                        let drag = DividerDrag {
+                            split_id,
+                            index,
+                            grab_offset: Rc::new(Cell::new(0.0)),
+                        };
                         let divider = div()
                             .id(("divider", (split_id as usize) << 8 | index))
+                            .relative()
                             .flex_shrink_0()
-                            .bg(chrome.border)
-                            .hover(|d| d.bg(chrome.accent.opacity(0.7)))
-                            .on_drag(DividerDrag { split_id, index }, |_, _, _, cx| {
+                            .on_drag(drag, move |drag, offset, _, cx| {
+                                drag.grab_offset.set(match axis {
+                                    Axis::Horizontal => f32::from(offset.x),
+                                    Axis::Vertical => f32::from(offset.y),
+                                });
                                 cx.new(|_| DividerGhost)
                             });
                         let divider = match axis {
-                            Axis::Horizontal => divider.w(px(3.0)).h_full().cursor_col_resize(),
-                            Axis::Vertical => divider.h(px(3.0)).w_full().cursor_row_resize(),
+                            Axis::Horizontal => divider
+                                .w(px(SPLIT_DIVIDER_HITBOX))
+                                .h_full()
+                                .cursor_col_resize()
+                                .child(div().absolute().inset_0().flex().justify_center().child(
+                                    div().w(px(SPLIT_DIVIDER_RULE)).h_full().bg(chrome.border),
+                                )),
+                            Axis::Vertical => divider
+                                .h(px(SPLIT_DIVIDER_HITBOX))
+                                .w_full()
+                                .cursor_row_resize()
+                                .child(div().absolute().inset_0().flex().items_center().child(
+                                    div().h(px(SPLIT_DIVIDER_RULE)).w_full().bg(chrome.border),
+                                )),
                         };
                         container = container.child(divider);
                     }
@@ -1914,6 +2027,41 @@ fn set_ratio<L>(node: &mut Node<L>, split_id: u64, index: usize, fraction: f32) 
                 .any(|c| set_ratio(c, split_id, index, fraction))
         }
     }
+}
+
+fn split_child_count<L>(node: &Node<L>, split_id: u64) -> Option<usize> {
+    match node {
+        Node::Leaf(_) => None,
+        Node::Split { id, children, .. } => {
+            if *id == split_id {
+                Some(children.len())
+            } else {
+                children
+                    .iter()
+                    .find_map(|child| split_child_count(child, split_id))
+            }
+        }
+    }
+}
+
+fn split_resize_fraction(
+    position: f32,
+    origin: f32,
+    extent: f32,
+    child_count: usize,
+    divider_index: usize,
+    grab_offset: f32,
+) -> Option<f32> {
+    if child_count < 2 || divider_index + 1 >= child_count {
+        return None;
+    }
+    let divider_count = (child_count - 1) as f32;
+    let available = extent - divider_count * SPLIT_DIVIDER_HITBOX;
+    if available <= 0.0 {
+        return None;
+    }
+    let preceding_track_width = divider_index as f32 * SPLIT_DIVIDER_HITBOX;
+    Some((position - origin - preceding_track_width - grab_offset) / available)
 }
 
 fn first_leaf<L: LeafKey>(node: &Node<L>) -> EntityId {
@@ -2054,7 +2202,13 @@ impl Render for PaneTree {
             Some(_) => {
                 // Render needs &self while the listener needs cx; take the tree briefly.
                 let root = self.root.take();
-                let element = self.render_node(root.as_ref().unwrap(), show_focus, chrome, cx);
+                let element = self.render_node(
+                    root.as_ref().unwrap(),
+                    show_focus,
+                    chrome,
+                    HiddenPaneEdges::default(),
+                    cx,
+                );
                 self.root = root;
                 element
             }
@@ -2166,6 +2320,183 @@ mod terminal_font_settings_tests {
             .update_window(window, |_, window, cx| window.render_frame(cx))
             .unwrap();
         assert_eq!(harness.update(|cx| view.read(cx).font_size()), 14.0);
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[gpui::test]
+    fn repository_input_focus_returns_to_terminal_on_click(harness: &mut TestAppContext) {
+        let home =
+            std::env::temp_dir().join(format!("chau7-repository-focus-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).unwrap();
+        let root = DataRoot::with_home(home.clone(), true);
+        harness.update(|cx| {
+            gpui_kit::init(cx);
+            cx.set_global(Settings::default());
+            cx.set_global(AppData::new(root));
+            crate::terminal::command_guard::init(cx);
+            crate::observability::init_for_test(cx);
+        });
+
+        let (window, tree, terminal, session, search, repository_id) = harness.update(|cx| {
+            let mut captured = None;
+            let (window, _) =
+                gpui_kit::open_window(gpui::WindowOptions::default(), cx, |window, cx| {
+                    // Keep input admission enabled with an isolated process.
+                    // A headless terminal has PID 0, which production correctly
+                    // rejects at the shared input-admission boundary.
+                    let terminal_model = Chau7Terminal::new_with_args_env_in_dir(
+                        80,
+                        24,
+                        "/bin/cat",
+                        &[],
+                        &[("TERM", "xterm-256color")],
+                        None,
+                    )
+                    .unwrap();
+                    let session = cx.new(|cx| {
+                        TerminalSession::from_terminal_manually_driven(terminal_model, None, cx)
+                    });
+                    let terminal = cx.new(|cx| TerminalView::new(session.clone(), window, cx));
+                    let terminal_id = terminal.entity_id();
+                    let tree = cx.new(|_| {
+                        let mut tree = PaneTree::empty();
+                        tree.root = Some(Node::Leaf(PaneItem::Terminal(terminal.clone())));
+                        tree.focused = Some(terminal_id);
+                        tree.presentation_terminal = Some(terminal_id);
+                        tree
+                    });
+                    let repository = tree.update(cx, |tree, cx| {
+                        let repository = tree.create_repository(new_pane_id(), window, cx);
+                        tree.root = Some(Node::Split {
+                            axis: Axis::Horizontal,
+                            children: vec![
+                                Node::Leaf(PaneItem::Terminal(terminal.clone())),
+                                Node::Leaf(PaneItem::Repository(repository.clone())),
+                            ],
+                            ratios: vec![0.5, 0.5],
+                            id: 1,
+                        });
+                        repository
+                    });
+                    let repository_id = repository.entity_id();
+                    let search =
+                        repository.update(cx, |repository, _| repository.test_history_search());
+                    let focus_subscription = tree.update(cx, |_, cx| {
+                        cx.subscribe_in(&terminal, window, move |tree, _, event, _, cx| {
+                            if matches!(event, TerminalViewEvent::Focused) {
+                                tree.set_focused(terminal_id, cx);
+                            }
+                        })
+                    });
+                    tree.update(cx, |tree, _| {
+                        tree.subscriptions
+                            .push((terminal_id, vec![focus_subscription]));
+                    });
+                    // Use the same initial focus entry point as workspace selection.
+                    PaneTree::focus_entity(&tree, window, cx);
+                    captured = Some((tree.clone(), terminal, session, search, repository_id));
+                    tree
+                })
+                .unwrap();
+            let (tree, terminal, session, search, repository_id) = captured.unwrap();
+            (window, tree, terminal, session, search, repository_id)
+        });
+
+        // Focus-in/out callbacks require an active headless window, just as
+        // native windows do. Let the queued activation callback settle first.
+        harness
+            .update_window(window, |_, window, _| window.activate_window())
+            .unwrap();
+        harness.run_until_parked();
+
+        let mut input_revision_before_terminal = 0;
+        let terminal_point = harness
+            .update_window(window, |_, window, cx| {
+                window.render_frame(cx);
+                assert!(terminal.read(cx).focus_handle(cx).is_focused(window));
+                assert_eq!(tree.read(cx).focused, Some(terminal.entity_id()));
+                assert!(session.read(cx).shell_pid() > 0);
+                let before = session.read(cx).input_revision();
+                window.input("baseline", cx);
+                assert!(
+                    session.read(cx).input_revision() > before,
+                    "the initially focused terminal must accept text before the focus handoff"
+                );
+                // The left half of this fixed two-pane fixture is the terminal.
+                // Raw terminal divs do not register GPUI Kit component snapshots.
+                let size = window.viewport_size();
+                let terminal_point = gpui::point(size.width / 4.0, size.height / 2.0);
+                window.click(("input", search.entity_id()), cx);
+                terminal_point
+            })
+            .unwrap();
+        harness.run_until_parked();
+
+        harness
+            .update_window(window, |_, window, cx| {
+                assert!(
+                    search.read(cx).focus_handle(cx).is_focused(window),
+                    "selecting the repository pane must preserve focus in its clicked search input"
+                );
+                assert_eq!(tree.read(cx).focused, Some(repository_id));
+                window.input("repository probe", cx);
+                assert_eq!(search.read(cx).value().as_ref(), "repository probe");
+
+                input_revision_before_terminal = session.read(cx).input_revision();
+                // Hit-test the terminal position as a real pointer click would,
+                // without changing focus directly or relying on component IDs.
+                window.dispatch_event(
+                    gpui::PlatformInput::MouseMove(gpui::MouseMoveEvent {
+                        position: terminal_point,
+                        pressed_button: None,
+                        modifiers: Default::default(),
+                    }),
+                    cx,
+                );
+                window.render_frame(cx);
+                window.dispatch_event(
+                    gpui::PlatformInput::MouseDown(gpui::MouseDownEvent {
+                        position: terminal_point,
+                        button: gpui::MouseButton::Left,
+                        modifiers: Default::default(),
+                        click_count: 1,
+                        first_mouse: false,
+                    }),
+                    cx,
+                );
+                window.render_frame(cx);
+                window.dispatch_event(
+                    gpui::PlatformInput::MouseUp(gpui::MouseUpEvent {
+                        position: terminal_point,
+                        button: gpui::MouseButton::Left,
+                        modifiers: Default::default(),
+                        click_count: 1,
+                    }),
+                    cx,
+                );
+                window.render_frame(cx);
+            })
+            .unwrap();
+        harness.run_until_parked();
+
+        harness
+            .update_window(window, |_, window, cx| {
+                assert!(terminal.read(cx).focus_handle(cx).is_focused(window));
+                assert_eq!(tree.read(cx).focused, Some(terminal.entity_id()));
+                window.input("git status", cx);
+                assert!(
+                    session.read(cx).input_revision() > input_revision_before_terminal,
+                    "text after clicking the shell must be delivered to the terminal input handler"
+                );
+                assert_eq!(search.read(cx).value().as_ref(), "repository probe");
+            })
+            .unwrap();
+
+        drop(tree);
+        harness.update(|cx| session.update(cx, |session, _| session.close()));
+        harness
+            .update_window(window, |_, window, _| window.remove_window())
+            .unwrap();
         let _ = std::fs::remove_dir_all(home);
     }
 }
@@ -2497,5 +2828,106 @@ mod tests {
         };
         assert!((ratios[0] - 0.9).abs() < 1e-6);
         assert!(!set_ratio(&mut root, 99, 0, 0.5));
+    }
+}
+
+#[cfg(test)]
+mod pane_render_geometry_tests {
+    use super::{Axis, HiddenPaneEdges, split_resize_fraction};
+
+    #[test]
+    fn hidden_edges_cover_split_boundaries_and_nested_outer_edges() {
+        let edges = HiddenPaneEdges::default();
+        let horizontal = (0..3)
+            .map(|index| edges.child(Axis::Horizontal, index, 3))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            horizontal,
+            vec![
+                HiddenPaneEdges {
+                    right: true,
+                    ..edges
+                },
+                HiddenPaneEdges {
+                    right: true,
+                    left: true,
+                    ..edges
+                },
+                HiddenPaneEdges {
+                    left: true,
+                    ..edges
+                },
+            ]
+        );
+
+        let nested_vertical = horizontal[1].child(Axis::Vertical, 0, 2);
+        assert_eq!(
+            nested_vertical,
+            HiddenPaneEdges {
+                right: true,
+                bottom: true,
+                left: true,
+                ..edges
+            }
+        );
+        assert_eq!(
+            horizontal[1].child(Axis::Vertical, 1, 2),
+            HiddenPaneEdges {
+                top: true,
+                right: true,
+                left: true,
+                ..edges
+            }
+        );
+    }
+
+    #[test]
+    fn split_resize_preserves_center_and_edge_grab_offsets() {
+        let origin = 37.0;
+        let extent = 1000.0;
+        let child_count = 3;
+        let divider_index = 1;
+        let available = extent - 2.0 * super::SPLIT_DIVIDER_HITBOX;
+        let target_fraction = 0.34;
+
+        for grab_offset in [0.0, 3.5, super::SPLIT_DIVIDER_HITBOX] {
+            let pointer = origin
+                + target_fraction * available
+                + divider_index as f32 * super::SPLIT_DIVIDER_HITBOX
+                + grab_offset;
+            let fraction = split_resize_fraction(
+                pointer,
+                origin,
+                extent,
+                child_count,
+                divider_index,
+                grab_offset,
+            )
+            .unwrap();
+            assert!((fraction - target_fraction).abs() < 0.0001);
+
+            let moved = split_resize_fraction(
+                pointer + 11.0,
+                origin,
+                extent,
+                child_count,
+                divider_index,
+                grab_offset,
+            )
+            .unwrap();
+            assert!((moved - target_fraction - 11.0 / available).abs() < 0.0001);
+            assert_eq!(
+                split_resize_fraction(
+                    pointer,
+                    origin,
+                    extent,
+                    child_count,
+                    divider_index,
+                    grab_offset,
+                ),
+                Some(fraction),
+                "a stationary drag position must not accumulate ratio drift"
+            );
+        }
     }
 }

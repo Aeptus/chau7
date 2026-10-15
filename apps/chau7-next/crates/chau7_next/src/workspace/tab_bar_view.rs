@@ -55,6 +55,196 @@ pub(super) fn tab_accessibility_description(lang: Lang, selected: bool) -> Strin
 /// Height of a tab chip (`OverlayLayout.tabChipHeight`).
 pub(super) const TAB_CHIP_HEIGHT: f32 = 24.0;
 
+#[derive(Clone, Copy)]
+pub(super) struct GroupTabLineEdges {
+    is_first: bool,
+    is_last: bool,
+}
+
+impl GroupTabLineEdges {
+    fn bounds(self, tab: Bounds<Pixels>) -> Bounds<Pixels> {
+        // The first tab reaches back across the full tag gap. Neighboring tabs
+        // meet halfway across each gap, while the last tab ends at its edge.
+        let leading = if self.is_first {
+            TAB_SPACING
+        } else {
+            TAB_SPACING / 2.0
+        };
+        let trailing = if self.is_last { 0.0 } else { TAB_SPACING / 2.0 };
+        Bounds::new(
+            point(tab.origin.x - px(leading), tab.origin.y),
+            gpui::size(tab.size.width + px(leading + trailing), px(1.0)),
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct BorderPathGeometry {
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    radius: f32,
+}
+
+fn border_path_geometry(bounds: Bounds<Pixels>, radius: f32) -> BorderPathGeometry {
+    let x0 = f32::from(bounds.left());
+    let y0 = f32::from(bounds.top());
+    let x1 = f32::from(bounds.right());
+    let y1 = f32::from(bounds.bottom());
+    BorderPathGeometry {
+        x0,
+        y0,
+        x1,
+        y1,
+        radius: radius.min((x1 - x0) / 2.0).min((y1 - y0) / 2.0).max(0.0),
+    }
+}
+
+fn tab_background_color(
+    selected: bool,
+    group_color: Option<Hsla>,
+    effective_color: Hsla,
+    mcp_look: bool,
+    is_dark: bool,
+    text_primary: Hsla,
+) -> Hsla {
+    if let Some(group_color) = group_color {
+        // Match Swift's selected grouped-tab fill, and keep every grouped tab
+        // visibly tied to its repository when it is not selected.
+        group_color.opacity(if selected { 0.32 } else { 0.12 })
+    } else if selected {
+        // Preserve custom tab colors for selected tabs outside a repo group.
+        effective_color.opacity(0.25)
+    } else if mcp_look {
+        style_color(crate::tab_bar::StyleColor::Purple, text_primary).opacity(0.15)
+    } else if is_dark {
+        gpui::hsla(0.0, 0.0, 0.0, 0.18)
+    } else {
+        gpui::hsla(0.0, 0.0, 0.0, 0.06)
+    }
+}
+
+#[cfg(test)]
+mod group_tab_line_tests {
+    use super::*;
+
+    fn tab_bounds(left: f32, top: f32, width: f32) -> Bounds<Pixels> {
+        Bounds::new(
+            point(px(left), px(top)),
+            gpui::size(px(width), px(TAB_CHIP_HEIGHT)),
+        )
+    }
+
+    #[test]
+    fn group_line_starts_at_bracket_and_connects_across_tab_gaps() {
+        let first = tab_bounds(100.0, 30.0, 60.0);
+        let middle = tab_bounds(164.0, 30.0, 60.0);
+        let last = tab_bounds(228.0, 30.0, 60.0);
+
+        let first_line = GroupTabLineEdges {
+            is_first: true,
+            is_last: false,
+        }
+        .bounds(first);
+        let middle_line = GroupTabLineEdges {
+            is_first: false,
+            is_last: false,
+        }
+        .bounds(middle);
+        let last_line = GroupTabLineEdges {
+            is_first: false,
+            is_last: true,
+        }
+        .bounds(last);
+
+        assert_eq!(first_line.origin.x, first.origin.x - px(TAB_SPACING));
+        assert_eq!(first_line.origin.y, first.origin.y);
+        assert_eq!(first_line.size.height, px(1.0));
+        assert_eq!(
+            first_line.origin.x + first_line.size.width,
+            middle_line.origin.x
+        );
+        assert_eq!(
+            middle_line.origin.x + middle_line.size.width,
+            last_line.origin.x
+        );
+        assert_eq!(
+            last_line.origin.x + last_line.size.width,
+            last.origin.x + last.size.width
+        );
+    }
+
+    #[test]
+    fn single_tab_group_line_runs_from_bracket_to_tab_edge() {
+        let tab = tab_bounds(100.0, 30.0, 60.0);
+        let line = GroupTabLineEdges {
+            is_first: true,
+            is_last: true,
+        }
+        .bounds(tab);
+
+        assert_eq!(line.origin.x, tab.origin.x - px(TAB_SPACING));
+        assert_eq!(line.origin.y, tab.origin.y);
+        assert_eq!(
+            line.origin.x + line.size.width,
+            tab.origin.x + tab.size.width
+        );
+    }
+
+    #[test]
+    fn notification_border_centerline_matches_chip_bounds_and_corner_radius() {
+        let bounds = tab_bounds(10.0, 20.0, 100.0);
+        let geometry = border_path_geometry(bounds, 8.0);
+
+        assert_eq!(geometry.x0, 10.0);
+        assert_eq!(geometry.y0, 20.0);
+        assert_eq!(geometry.x1, 110.0);
+        assert_eq!(geometry.y1, 44.0);
+        assert_eq!(geometry.radius, 8.0);
+    }
+
+    #[test]
+    fn notification_border_corner_radius_stays_inside_small_chip_bounds() {
+        let bounds = Bounds::new(point(px(10.0), px(20.0)), gpui::size(px(10.0), px(8.0)));
+        let geometry = border_path_geometry(bounds, 8.0);
+
+        assert_eq!(geometry.radius, 4.0);
+    }
+
+    #[test]
+    fn grouped_tab_background_uses_repo_tint_for_selected_and_unselected_tabs() {
+        let repo = gpui::hsla(0.61, 0.72, 0.48, 1.0);
+        let custom = gpui::hsla(0.04, 0.86, 0.53, 1.0);
+        let text = gpui::hsla(0.0, 0.0, 0.9, 1.0);
+
+        let selected = tab_background_color(true, Some(repo), custom, false, true, text);
+        let unselected = tab_background_color(false, Some(repo), custom, true, false, text);
+
+        assert_eq!(selected.h, repo.h);
+        assert_eq!(selected.a, 0.32);
+        assert_eq!(unselected.h, repo.h);
+        assert_eq!(unselected.a, 0.12);
+    }
+
+    #[test]
+    fn ungrouped_selected_and_mcp_backgrounds_keep_their_existing_colors() {
+        let custom = gpui::hsla(0.04, 0.86, 0.53, 1.0);
+        let text = gpui::hsla(0.0, 0.0, 0.9, 1.0);
+
+        let selected = tab_background_color(true, None, custom, false, true, text);
+        let mcp = tab_background_color(false, None, custom, true, true, text);
+
+        assert_eq!(selected.h, custom.h);
+        assert_eq!(selected.a, 0.25);
+        assert_eq!(
+            mcp.h,
+            style_color(crate::tab_bar::StyleColor::Purple, text).h
+        );
+        assert_eq!(mcp.a, 0.15);
+    }
+}
+
 /// Scroll animation of the tab row (selected tab centered, 0.25 s ease).
 pub(super) struct TabScroll {
     pub(super) handle: ScrollHandle,
@@ -153,12 +343,17 @@ pub(super) fn paint_border(
     color: Hsla,
     window: &mut Window,
 ) {
-    let inset = width / 2.0;
-    let x0 = f32::from(bounds.left()) + inset;
-    let y0 = f32::from(bounds.top()) + inset;
-    let x1 = f32::from(bounds.right()) - inset;
-    let y1 = f32::from(bounds.bottom()) - inset;
-    let r = radius.min((x1 - x0) / 2.0).min((y1 - y0) / 2.0).max(0.0);
+    // Match Swift's RoundedRectangle(...).stroke(...): the path centerline is
+    // on the chip edge. The chip keeps visible overflow so the outside half
+    // of the stroke is not clipped.
+    let geometry = border_path_geometry(bounds, radius);
+    let BorderPathGeometry {
+        x0,
+        y0,
+        x1,
+        y1,
+        radius: r,
+    } = geometry;
     let p = |x: f32, y: f32| point(px(x), px(y));
     let mut builder = PathBuilder::stroke(px(width));
     if !style.dash().is_empty() {
@@ -483,17 +678,16 @@ impl Workspace {
             .when(notification.italic, |d| d.italic())
             .child(title.clone());
 
-        // UnifiedTabButton: tab color at 25% when selected, purple for MCP
-        // tabs, dark 18% otherwise.
-        let background = if selected {
-            color.opacity(0.25)
-        } else if mcp_look {
-            style_color(crate::tab_bar::StyleColor::Purple, text_primary).opacity(0.15)
-        } else if chrome.is_dark {
-            gpui::hsla(0.0, 0.0, 0.0, 0.18)
-        } else {
-            gpui::hsla(0.0, 0.0, 0.0, 0.06)
-        };
+        // Repo color remains visible on every grouped tab. Selected ungrouped
+        // tabs continue to use their effective (including custom) color.
+        let background = tab_background_color(
+            selected,
+            group_color,
+            color,
+            mcp_look,
+            chrome.is_dark,
+            text_primary,
+        );
         let border = (notification.border_width > 0.0).then(|| {
             (
                 notification.border_width,
@@ -532,7 +726,6 @@ impl Workspace {
             .gap(px(8.0))
             .h(px(TAB_CHIP_HEIGHT))
             .max_w(px(280.0))
-            .overflow_hidden()
             .px(px(10.0))
             .rounded(px(8.0))
             .text_xs()
@@ -695,7 +888,8 @@ impl Workspace {
                     })),
             )
             // Record layout for drag slot math and cross-window drops, and
-            // draw the notification border and the repo group top line.
+            // draw the notification border. The group line is painted by the
+            // group-level overlay so the gap segments stay outside tab clips.
             .child(
                 canvas(
                     move |bounds, _, _| {
@@ -705,13 +899,6 @@ impl Workspace {
                     move |_, bounds, window, _| {
                         if let Some((width, style, color)) = border {
                             paint_border(bounds, 8.0, width, style, color, window);
-                        }
-                        if let Some(group_color) = group_color {
-                            let top = Bounds::new(
-                                bounds.origin - point(px(TAB_SPACING / 2.0), px(3.0)),
-                                gpui::size(bounds.size.width + px(TAB_SPACING), px(1.0)),
-                            );
-                            window.paint_quad(gpui::fill(top, group_color.opacity(0.5)));
                         }
                     },
                 )
@@ -946,6 +1133,8 @@ impl Workspace {
             .iter()
             .map(|id| self.render_tab(*id, true, Some(group_color), chrome, cx))
             .collect();
+        let frames_for_paint = frames.clone();
+        let member_ids_for_paint = members;
         div()
             .id(SharedString::from(format!("group-{group}")))
             .relative()
@@ -1025,8 +1214,23 @@ impl Workspace {
                 canvas(
                     move |bounds, _, _| {
                         frames.borrow_mut().groups.insert(group_for_frames, bounds);
+                        bounds
                     },
-                    |_, _, _, _| {},
+                    move |_, _, window, _| {
+                        let frames = frames_for_paint.borrow();
+                        let member_count = member_ids_for_paint.len();
+                        for (index, id) in member_ids_for_paint.iter().enumerate() {
+                            let Some(tab_bounds) = frames.tabs.get(id).copied() else {
+                                continue;
+                            };
+                            let line = GroupTabLineEdges {
+                                is_first: index == 0,
+                                is_last: index + 1 == member_count,
+                            }
+                            .bounds(tab_bounds);
+                            window.paint_quad(gpui::fill(line, group_color.opacity(0.5)));
+                        }
+                    },
                 )
                 .absolute()
                 .size_full(),

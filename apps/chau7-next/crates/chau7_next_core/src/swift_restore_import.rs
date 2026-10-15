@@ -1344,8 +1344,8 @@ mod tests {
     use super::*;
 
     fn fixture() -> PathBuf {
-        let path = std::env::temp_dir()
-            .join(format!("swift-restore-import-{}", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("swift-restore-import-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&path).unwrap();
         fs::create_dir_all(path.join("bundle/current")).unwrap();
         fs::create_dir_all(path.join("bundle/current/contexts/windows/0/tabs/a/panes")).unwrap();

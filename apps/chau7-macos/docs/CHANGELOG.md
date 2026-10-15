@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Restore continuous repository group lines and pale repository-colored tab
+  backgrounds, and align waiting/status outlines with the tab's rounded edge.
+- Preserve focus in repository-panel inputs and restore terminal input focus
+  when switching panes; render split separators as one thin visual rule.
+- Keep terminal engine diagnostics opt-in during normal use while retaining
+  numeric performance measurements and warning/error logs.
+- Report the canonical Rust build channel and source revision in diagnostics.
+- Account for failed telemetry worker jobs and disconnected queues without
+  reporting an unavailable worker as healthy or leaving stale pending writes.
+
 - Preserve Swift synthetic AI tracking metadata and legacy command-block/preview
   payloads as inert Rust restoration data through activation and later saves.
 - Distinguish preserved metadata from actual migration loss warnings, and keep

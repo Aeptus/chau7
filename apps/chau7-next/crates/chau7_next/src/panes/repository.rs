@@ -157,6 +157,13 @@ impl RepositoryPane {
     pub fn directory(&self) -> Option<&PathBuf> {
         self.directory.as_ref()
     }
+
+    #[cfg(test)]
+    pub(crate) fn test_history_search(&mut self) -> Entity<InputState> {
+        self.section = Section::History;
+        self.search.clone()
+    }
+
     pub fn load(&mut self, directory: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         if self.directory.as_ref() == Some(&directory) {
             return;
