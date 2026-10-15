@@ -49,8 +49,8 @@ not change the Mac/iOS network protocol or stored restoration formats.
 
 | Check | Result |
 | --- | --- |
-| Initial Swift macOS full XCTest suite | 4,593 executed, 3 skipped, 0 failures; 87.1 seconds. |
-| Initial Swift macOS build | Passed; 2.22 seconds using the populated cache. |
+| Swift macOS full XCTest suite, including CTO follow-up | 4,594 executed, 3 skipped, 0 failures; 96.6 seconds. |
+| Swift macOS build | Passed; 1.47 seconds using the populated cache. |
 | SwiftFormat / strict SwiftLint | Passed across Sources and Tests (1,123 checked files); the touched CTO test file was formatted before its final lint. |
 | Swift CTO follow-up integration suite | 33 passed, 0 failures, including the bounded wrapper recursion regression. |
 | Native Periphery analysis | Passed with a fresh native index in this worktree; no unused code detected. |
@@ -64,10 +64,10 @@ not change the Mac/iOS network protocol or stored restoration formats.
 | Terminal FFI | Generated C header matches the checked-in header byte for byte; Rust and Swift ABI layout tests pass. |
 | Staged checks | Eight gates passed, including secret scanning, shared dependency pins, shellcheck and tooling tests. |
 
-The initial full Swift suite and warm build timing precede the CTO follow-up;
-that change passes its 33 focused integration tests. The publication hook also
-runs the full local CI against the committed tree. The new Cargo-home fixture
-fails against the earlier iOS script and passes after the fix.
+The final Swift suite includes the CTO follow-up; that change also passes its
+33 focused integration tests. The publication hook runs full local CI against
+the committed tree. The new Cargo-home fixture fails against the earlier iOS
+script and passes after the fix.
 
 Copying the native Swift ModuleCache and index store from another worktree
 caused absolute-path failures and 560 erroneous unused-code findings. Those

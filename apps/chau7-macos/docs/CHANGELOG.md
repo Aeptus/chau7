@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep terminal folding compatible with strict Rust 1.99 Clippy checks.
+
 - Preserve iOS command drafts until WebSocket completion and retain uncertain
   sends for an acknowledged manual retry; fence callbacks and pending-state
   fetches across reconnects and pairing changes.

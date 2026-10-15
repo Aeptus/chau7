@@ -1824,13 +1824,8 @@ impl Chau7Terminal {
                             display_cursor =
                                 Some((col_in_row as u16, (row_offsets.len() - 1) as u16));
                         }
-                        for source_index in idx..idx + cell_count {
-                            push_cell(
-                                &cells[source_index],
-                                &clusters,
-                                &mut out_cells,
-                                &mut out_clusters,
-                            );
+                        for source_cell in &cells[idx..idx + cell_count] {
+                            push_cell(source_cell, &clusters, &mut out_cells, &mut out_clusters);
                         }
                         idx += cell_count;
                         col_in_row += cell_count;
