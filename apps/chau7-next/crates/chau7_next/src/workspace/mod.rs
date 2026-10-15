@@ -1263,6 +1263,7 @@ impl Workspace {
                 manual_color: meta.manual_color_override,
                 layout: capture.layout,
                 focused_pane: capture.focused,
+                archived_context: capture.archived_context,
                 panes: capture.panes,
             },
         ))
@@ -1460,6 +1461,7 @@ impl Workspace {
                     manual_color: meta.manual_color_override,
                     layout: capture.as_ref().and_then(|c| c.layout.clone()),
                     focused_pane: capture.as_ref().and_then(|c| c.focused),
+                    archived_context: capture.as_ref().and_then(|c| c.archived_context.clone()),
                     panes: capture.map(|c| c.panes).unwrap_or_default(),
                 }
             })

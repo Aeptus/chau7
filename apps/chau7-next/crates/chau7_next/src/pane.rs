@@ -223,6 +223,8 @@ impl Render for DividerGhost {
 pub struct PaneTree {
     /// Complete saved payload parked until this tab is actually selected.
     deferred_saved: Option<SavedTab>,
+    /// Inert Swift tab context carried through activation and future saves.
+    archived_context: Option<chau7_next_core::session_restore::models::ArchivedTabContext>,
     deferred_cwd: Option<PathBuf>,
     restore_selected: Cell<bool>,
     restore_prepared: Option<crate::restore::preparation::PreparedTab>,
@@ -256,6 +258,7 @@ impl PaneTree {
     fn empty() -> Self {
         Self {
             deferred_saved: None,
+            archived_context: None,
             deferred_cwd: None,
             restore_selected: Cell::new(false),
             restore_prepared: None,
@@ -297,9 +300,14 @@ impl PaneTree {
 
     fn park_saved(saved: SavedTab, cwd: Option<PathBuf>) -> Self {
         let mut this = Self::empty();
+        this.retain_archived_context(&saved);
         this.deferred_saved = Some(saved);
         this.deferred_cwd = cwd;
         this
+    }
+
+    fn retain_archived_context(&mut self, saved: &SavedTab) {
+        self.archived_context = saved.archived_context.clone();
     }
 
     /// Startup placeholders retain the complete payload without a hidden shell.
@@ -321,6 +329,11 @@ impl PaneTree {
     }
     pub fn deferred_saved(&self) -> Option<&SavedTab> {
         self.deferred_saved.as_ref()
+    }
+    pub(crate) fn archived_context(
+        &self,
+    ) -> Option<&chau7_next_core::session_restore::models::ArchivedTabContext> {
+        self.archived_context.as_ref()
     }
     pub fn is_deferred(&self) -> bool {
         self.deferred_saved.is_some()
@@ -416,6 +429,7 @@ impl PaneTree {
             .iter()
             .map(|p| (p.id, p.clone()))
             .collect();
+        self.retain_archived_context(&prepared.saved);
         self.deferred_saved = Some(prepared.saved.clone());
         true
     }
@@ -465,6 +479,7 @@ impl PaneTree {
                 .iter()
                 .map(|pane| (pane.id, pane.clone()))
                 .collect();
+            active.retain_archived_context(&prepared.saved);
             active.restore_override = token_override;
             if let Some(owner) = owner {
                 active.set_owner_tab(owner, window, cx);
@@ -579,11 +594,17 @@ impl PaneTree {
             })
             .and_then(SavedSplitNode::normalized);
         let (Some(saved), Some(layout)) = (saved, layout) else {
-            return Self::new_with_owner(cwd, owner.unwrap_or_else(uuid::Uuid::new_v4), window, cx);
+            let mut this =
+                Self::new_with_owner(cwd, owner.unwrap_or_else(uuid::Uuid::new_v4), window, cx);
+            if let Some(saved) = saved {
+                this.retain_archived_context(saved);
+            }
+            return this;
         };
         let mut this = Self::empty();
         this.owner_tab = owner;
         this.deferred_cwd = cwd;
+        this.retain_archived_context(saved);
         let states: HashMap<PaneId, &SavedPane> = saved.panes.iter().map(|p| (p.id, p)).collect();
         let root = this.build_node(&layout, &states, window, cx);
         this.root = Some(root);
@@ -2277,15 +2298,27 @@ mod tests {
         std::fs::create_dir_all(&home).unwrap();
         let root = chau7_next_core::data_root::DataRoot::with_home(home.clone(), true);
         let owner = uuid::Uuid::new_v4();
+        let archived_ai = chau7_next_core::session_restore::models::ArchivedAIResumeMetadata {
+            provider: Some("codex".into()),
+            session_id: Some("synth:fixture".into()),
+            session_id_source: Some("synthetic".into()),
+            resume_command: None,
+        };
+        let archived_context = chau7_next_core::session_restore::models::ArchivedTabContext {
+            command_blocks: Some(vec![serde_json::json!({"command":"printf inert"})]),
+            preview_snapshot_png_data: Some("AQID".into()),
+        };
         let saved = SavedTab {
             uuid: Some(owner),
             cwd: Some(home.clone()),
             focused_pane: Some(8),
+            archived_context: Some(archived_context.clone()),
             panes: vec![SavedPane {
                 id: 8,
                 scrollback: true,
                 ai_provider: Some("codex".into()),
                 ai_session_id: Some("thread-fixture".into()),
+                archived_ai_resume: Some(archived_ai.clone()),
                 ..Default::default()
             }],
             ..Default::default()
@@ -2319,6 +2352,17 @@ mod tests {
                 .as_deref(),
             Some("codex resume thread-fixture")
         );
+        assert_eq!(tree.archived_context(), Some(&archived_context));
+        assert_eq!(
+            tree.restored_metadata(8)
+                .and_then(|pane| pane.archived_ai_resume.as_ref()),
+            Some(&archived_ai)
+        );
+        assert_eq!(
+            crate::restore::archived_ai_resume_for_capture(tree.restored_metadata(8)),
+            Some(archived_ai.clone())
+        );
+        assert_eq!(tree.archived_context().cloned(), Some(archived_context));
         assert!(tree.restore_prepared.is_none());
         assert!(tree.resume_meta.is_empty());
         tree.deferred_saved = None;

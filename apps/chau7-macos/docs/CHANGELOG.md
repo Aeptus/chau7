@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Preserve Swift synthetic AI tracking metadata and legacy command-block/preview
+  payloads as inert Rust restoration data through activation and later saves.
+- Distinguish preserved metadata from actual migration loss warnings, and keep
+  validated CLI resume commands separate from archived source commands.
+- Add a guarded local Rust upgrade script with verified backups, reusable build
+  receipts, explicit failure/success stages, and manual application launch.
+
 - Keep terminal folding compatible with strict Rust 1.99 Clippy checks.
 
 - Preserve iOS command drafts until WebSocket completion and retain uncertain

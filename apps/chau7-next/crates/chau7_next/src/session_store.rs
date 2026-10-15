@@ -904,11 +904,31 @@ mod tests {
                     token_opt_override: Some(TabTokenOptOverride::ForceOn),
                     created_at: Some(1_700_000_000.0),
                     manual_color: true,
-                    layout: Some(SavedSplitNode::Terminal {
-                        id: 7,
-                        directory: Some("/tmp".into()),
+                    layout: Some(SavedSplitNode::Split {
+                        id: 1,
+                        axis: chau7_next_core::session_restore::SavedAxis::Horizontal,
+                        ratios: vec![0.5, 0.5],
+                        children: vec![
+                            SavedSplitNode::Terminal {
+                                id: 7,
+                                directory: Some("/tmp".into()),
+                            },
+                            SavedSplitNode::Terminal {
+                                id: 8,
+                                directory: Some("/tmp".into()),
+                            },
+                        ],
                     }),
                     focused_pane: Some(7),
+                    archived_context: Some(
+                        chau7_next_core::session_restore::models::ArchivedTabContext {
+                            command_blocks: Some(vec![serde_json::json!({
+                                "command": "printf inert",
+                                "startLine": 1,
+                            })]),
+                            preview_snapshot_png_data: Some("AQID".into()),
+                        },
+                    ),
                     panes: vec![SavedPane {
                         id: 7,
                         directory: Some("/tmp".into()),
@@ -916,6 +936,17 @@ mod tests {
                         ai_provider: Some("claude".into()),
                         ai_session_id: Some("abc".into()),
                         ai_resume_command: Some("claude --resume abc".into()),
+                        ..Default::default()
+                    }, SavedPane {
+                        id: 8,
+                        archived_ai_resume: Some(
+                            chau7_next_core::session_restore::models::ArchivedAIResumeMetadata {
+                                provider: Some("codex".into()),
+                                session_id: Some("synth:fixture".into()),
+                                session_id_source: Some("synthetic".into()),
+                                resume_command: None,
+                            },
+                        ),
                         ..Default::default()
                     }],
                 }],
@@ -930,6 +961,43 @@ mod tests {
         std::fs::write(root.scrollback_dir().join("7.txt"), "saved history").unwrap();
         save(&root, &session).unwrap();
         assert_eq!(load(&root), Some(session.clone()));
+        let restored = load(&root).unwrap();
+        let archived_only = restored.windows[0].tabs[0]
+            .panes
+            .iter()
+            .find(|pane| pane.id == 8)
+            .unwrap();
+        let archived_identity = archived_only.archived_ai_resume.as_ref().unwrap();
+        assert!(archived_only.ai_provider.is_none());
+        assert!(archived_only.ai_session_id.is_none());
+        assert!(archived_only.ai_resume_command.is_none());
+        assert!(
+            resolve_resume_metadata_from_saved(
+                archived_only.ai_provider.as_deref(),
+                archived_only.ai_session_id.as_deref(),
+                archived_only.ai_resume_command.as_deref(),
+            )
+            .is_none()
+        );
+        assert!(
+            build_ai_resume_command(
+                archived_identity.provider.as_deref(),
+                archived_identity.session_id.as_deref(),
+            )
+            .is_none()
+        );
+        let tab_context = restored.windows[0].tabs[0]
+            .archived_context
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            tab_context.command_blocks.as_ref().unwrap()[0]["command"],
+            "printf inert"
+        );
+        assert_eq!(
+            tab_context.preview_snapshot_png_data.as_deref(),
+            Some("AQID")
+        );
         assert!(root.session_file().starts_with(&home));
         // A damaged session.json falls back to the backup.
         std::fs::write(root.session_file(), "{ not json").unwrap();

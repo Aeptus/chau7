@@ -26,10 +26,17 @@ pub struct TabCapture {
     pub layout: Option<SavedSplitNode>,
     pub focused: Option<PaneId>,
     pub panes: Vec<SavedPane>,
+    pub archived_context: Option<chau7_next_core::session_restore::models::ArchivedTabContext>,
 }
 
 pub fn scrollback_file(root: &DataRoot, pane: PaneId) -> PathBuf {
     root.scrollback_dir().join(format!("{pane}.txt"))
+}
+
+pub(crate) fn archived_ai_resume_for_capture(
+    restored: Option<&SavedPane>,
+) -> Option<chau7_next_core::session_restore::models::ArchivedAIResumeMetadata> {
+    restored.and_then(|pane| pane.archived_ai_resume.clone())
 }
 
 /// Capture the layout and per-pane state of one tab. `claimed` holds the AI
@@ -55,8 +62,10 @@ pub fn capture_tab(
             layout: saved.layout.clone(),
             focused: saved.focused_pane,
             panes: saved.panes.clone(),
+            archived_context: saved.archived_context.clone(),
         };
     }
+    let archived_context = tree.archived_context().cloned();
     let mut saved = Vec::new();
     for (id, session) in tree.pane_sessions(cx) {
         // Not replayed yet (the app was closed right after launch): keep what
@@ -164,6 +173,7 @@ pub fn capture_tab(
                 .or_else(|| session.shell().ai_provider().map(str::to_owned)),
             ai_session_id: meta.map(|m| m.1),
             ai_session_id_source: inherited.and_then(|pane| pane.ai_session_id_source.clone()),
+            archived_ai_resume: archived_ai_resume_for_capture(tree.restored_metadata(id)),
             last_input_at: Some(session.shell().last_input_at()),
             last_output_at: Some(session.shell().last_output_at()),
             known_repo_root: session
@@ -194,6 +204,7 @@ pub fn capture_tab(
         layout: tree.export_layout(cx),
         focused: tree.focused_pane_id(),
         panes: saved,
+        archived_context,
     }
 }
 
@@ -285,6 +296,40 @@ mod tests {
         );
         assert_eq!(std::fs::read_dir(root.scrollback_dir()).unwrap().count(), 1);
         let _ = std::fs::remove_dir_all(root.home());
+    }
+
+    #[test]
+    fn active_capture_keeps_archival_ai_metadata_inert() {
+        let archived = chau7_next_core::session_restore::models::ArchivedAIResumeMetadata {
+            provider: Some("codex".into()),
+            session_id: Some("synth:fixture".into()),
+            session_id_source: Some("synthetic".into()),
+            resume_command: None,
+        };
+        let restored = SavedPane {
+            archived_ai_resume: Some(archived.clone()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            archived_ai_resume_for_capture(Some(&restored)),
+            Some(archived)
+        );
+        assert!(
+            chau7_next_core::session_restore::resolve_resume_metadata_from_saved(
+                restored.ai_provider.as_deref(),
+                restored.ai_session_id.as_deref(),
+                restored.ai_resume_command.as_deref(),
+            )
+            .is_none()
+        );
+        assert!(
+            build_ai_resume_command(
+                restored.ai_provider.as_deref(),
+                restored.ai_session_id.as_deref(),
+            )
+            .is_none()
+        );
     }
 
     #[test]
