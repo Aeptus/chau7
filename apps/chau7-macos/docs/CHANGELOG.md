@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Forward requested wheel events to full-screen terminal apps such as Codex,
+  even when click/drag reporting is off. Honor DEC 1007 alternate scrolling,
+  keep Shift/Ctrl and active text selection local, and expose numeric input
+  modes in performance snapshots.
+
 - Preserve fractional trackpad movement when scrolling terminal history.
 - Keep terminal drag selection active outside pane bounds, extend word/line
   selections after double/triple click, and select the correct history rows

@@ -68,3 +68,57 @@ These are automated interaction tests, not a physical trackpad or native-window
 hand test. The app under /Applications is not replaced or relaunched by this
 workflow. Packaging verifies a separate production bundle against its clean
 source revision and seven executable hashes.
+
+
+## Follow-up: complete wheel failure in Codex
+
+The user clarified that both wheel and trackpad were completely ineffective
+in Codex, although Page Up/Down worked. Fractional delta handling alone does
+not fix that failure.
+
+The saved performance snapshot at 2026-10-15T18:34:38Z showed both selected
+terminal panes using the alternate screen with zero active history rows.
+The pre-fix handler gated wheel reports behind the click/drag setting (off by
+default), then consumed the event while trying to scroll that empty history.
+Page keys instead reached the foreground application.
+
+[Codex 0.162.1's alternate-screen input implementation](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/tui/src/tui/alternate_screen.rs)
+requests mouse tracking with SGR reports for its owned transcript. When mouse
+capture is unavailable, it requests DEC 1007 alternate scrolling instead.
+Chau7 now routes wheel input according to those terminal modes, with no
+provider-name heuristic:
+
+- Requested mouse reports take precedence in the alternate screen, independently
+  of the click/drag setting. Normal-screen reporting still follows that setting.
+- Without requested mouse tracking, ALT_SCREEN plus DEC 1007 sends SS3 Up/Down,
+  matching [Alacritty's input implementation](https://github.com/alacritty/alacritty/blob/master/alacritty/src/input/mod.rs).
+  Leaving the alternate screen or disabling DEC 1007 removes that route.
+- Shift, Ctrl, and an active local selection gesture keep wheel input local.
+  Stored selections after mouse release do not disable application scrolling.
+- Fractional movement resets when switching between history, mouse reports, and
+  alternate keys, preventing a prior route's remainder from becoming input.
+- Settings explain the wheel behavior; numeric snapshots expose raw mouse mode,
+  the click/drag setting, and alternate-scroll state without terminal text.
+
+The old running build does not expose raw mouse modes in its numeric snapshot.
+The diagnosis combines the observed screen/history state with code and isolated
+protocol reproduction; it is not a capture of the user's actual input stream.
+
+
+Codex follow-up validation:
+
+- The new rendered SGR regression fails against the previous `mouse.rs` with
+  an empty PTY receipt, then passes with the fixed handler. Its child is an
+  isolated raw/no-echo shell and `cat`, with no provider or user profile.
+- All nine terminal mouse tests pass. They verify line and pixel input in both
+  directions, actual SGR/SS3 delivery, protocol precedence, local selection,
+  Shift/Ctrl overrides, event consumption, and return to primary scrollback.
+- Full Rust app/core suites: 3,197 passed, 0 failed, 2 ignored. The shared native
+  terminal adds 161 passing tests and one ignored documentation example.
+- Strict Clippy for app, core and native terminal, plus Cargo formatting, passed.
+- Legacy Swift: 4,594 tests executed, 3 skipped, 0 failures; build passed.
+
+These checks do not constitute a physical trackpad/mouse hand test in the
+user's running Codex session. A separate production bundle is built from the
+clean committed source; the running application and restoration data remain
+untouched.

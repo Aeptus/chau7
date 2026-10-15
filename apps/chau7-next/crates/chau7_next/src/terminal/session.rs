@@ -880,7 +880,12 @@ impl TerminalSession {
     /// On-demand retained capacities and native estimates, never terminal text.
     /// Native debug_state uses O(1) row counters rather than walking history.
     pub fn allocation_snapshot(&self) -> serde_json::Value {
-        let native = self.term.read().debug_state();
+        let terminal = self.term.read();
+        let native = terminal.debug_state();
+        let raw_mouse_mode = native.mouse_mode;
+        let alternate_scroll_active = terminal.is_alternate_scroll_active();
+        drop(terminal);
+        let mouse_reporting_enabled = self.mouse_reporting_enabled.get();
         let output = self.output.lock();
         let pending = self.pending_input.borrow();
         let grid_cells = self
@@ -904,6 +909,9 @@ impl TerminalSession {
             "session_id":self.id, "render_phase":self.profiling_phase(),
             "grid_cols":native.cols, "grid_rows":native.rows,
             "history_rows":native.history_size, "alternate_screen_active":native.alternate_screen != 0,
+            "raw_mouse_mode":raw_mouse_mode,
+            "mouse_reporting_enabled":mouse_reporting_enabled as u8,
+            "alternate_scroll_active":alternate_scroll_active as u8,
             "native_ring_estimated_bytes":native.estimated_grid_bytes,
             "ui_grid_cells_capacity_bytes":grid_cells, "ui_grid_cluster_string_capacity_bytes":clusters,
             "pending_output_bytes":output.0.len(), "pending_output_capacity_bytes":output_capacity,
@@ -2386,6 +2394,26 @@ impl TerminalSession {
         } else {
             mode & !0b111
         }
+    }
+
+    /// Mouse tracking mode for wheel reports. Full-screen programs receive
+    /// the wheel reports they request even when click/drag reporting is off.
+    /// On the primary screen, the three tracking bits still follow the setting.
+    pub fn wheel_mouse_mode(&self) -> u32 {
+        let terminal = self.term.read();
+        let mode = terminal.mouse_mode();
+        if self.mouse_reporting_enabled.get() || terminal.is_alternate_screen_active() {
+            mode
+        } else {
+            mode & !0b111
+        }
+    }
+
+    /// Whether DEC 1007 alternate scrolling is enabled on the alternate
+    /// screen. The native terminal combines both modes so callers do not have
+    /// to infer this from mouse reporting bits.
+    pub fn is_alternate_scroll_active(&self) -> bool {
+        self.term.read().is_alternate_scroll_active()
     }
 
     pub fn link_url(&self, link_id: u16) -> Option<String> {

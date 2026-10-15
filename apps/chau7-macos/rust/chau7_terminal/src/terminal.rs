@@ -2707,6 +2707,22 @@ impl Chau7Terminal {
         active
     }
 
+    /// Whether DECSET 1007 alternate scrolling is active on the alternate
+    /// screen. The mode can be enabled while the primary screen is active,
+    /// but it only changes wheel behavior for a full-screen program when
+    /// both terminal modes are set.
+    pub fn is_alternate_scroll_active(&self) -> bool {
+        let term = self.term.lock();
+        let mode = term.mode();
+        let active =
+            mode.contains(TermMode::ALT_SCREEN) && mode.contains(TermMode::ALTERNATE_SCROLL);
+        trace!(
+            "[terminal-{}] is_alternate_scroll_active: {}",
+            self.id, active
+        );
+        active
+    }
+
     /// Check if a bell event has occurred since the last check, and clear the flag
     #[must_use]
     pub fn check_bell(&self) -> bool {
@@ -5279,6 +5295,38 @@ mod tests {
             "Restoring from alt screen should show original content, got: {:?}",
             after
         );
+    }
+
+    #[test]
+    fn test_alternate_scroll_requires_alternate_screen_and_resets() {
+        let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
+
+        // Alacritty enables DEC 1007 by default, but it must not affect the
+        // primary screen's scrollback behavior.
+        assert!(!term.is_alternate_scroll_active());
+        term.inject_output(b"\x1b[?1007l");
+        assert!(!term.is_alternate_scroll_active());
+
+        // Disabling DEC 1007 keeps alternate-screen wheel input local.
+        term.inject_output(b"\x1b[?1049h");
+        assert!(term.is_alternate_screen_active());
+        assert!(!term.is_alternate_scroll_active());
+
+        // Enabling DEC 1007 forwards wheel input only while on the alternate
+        // screen. Leaving that screen disables the combined state.
+        term.inject_output(b"\x1b[?1007h");
+        assert!(term.is_alternate_scroll_active());
+        term.inject_output(b"\x1b[?1049l");
+        assert!(!term.is_alternate_screen_active());
+        assert!(!term.is_alternate_scroll_active());
+
+        // The mode survives a screen leave/re-entry, while RIS resets the
+        // active screen and restores the terminal's default mode state.
+        term.inject_output(b"\x1b[?1049h");
+        assert!(term.is_alternate_scroll_active());
+        term.inject_output(b"\x1bc");
+        assert!(!term.is_alternate_screen_active());
+        assert!(!term.is_alternate_scroll_active());
     }
 
     #[test]

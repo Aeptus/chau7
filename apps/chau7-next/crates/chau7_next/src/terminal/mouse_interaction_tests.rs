@@ -1,7 +1,10 @@
 //! Rendered terminal mouse regressions. Each fixture uses an isolated `/bin/cat`
 //! PTY and a temporary data root; no user profile or provider is involved.
 
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::{Duration, Instant},
+};
 
 use chau7_next_core::data_root::DataRoot;
 use chau7_terminal::Chau7Terminal;
@@ -649,4 +652,526 @@ fn rendered_selection_survives_wheel_drag_copy_paste_and_click_extensions(
     harness.run_until_parked();
     assert!(harness.update(|cx| fixture.session.read(cx).input_revision()) > revision);
     close_fixture(harness, fixture);
+}
+
+struct RawPtyFixture {
+    fixture: Fixture,
+    ready: PathBuf,
+    receipt: PathBuf,
+}
+
+fn raw_pty_fixture(
+    harness: &mut TestAppContext,
+    initial_output: &[u8],
+    primary_history: usize,
+) -> RawPtyFixture {
+    let home =
+        std::env::temp_dir().join(format!("chau7-terminal-raw-mouse-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&home).unwrap();
+    harness.on_quit({
+        let home = home.clone();
+        move || {
+            let _ = std::fs::remove_dir_all(home);
+        }
+    });
+
+    let ready = home.join("pty-ready");
+    let receipt = home.join("pty-input");
+    let ready_env = ready.to_string_lossy().into_owned();
+    let receipt_env = receipt.to_string_lossy().into_owned();
+    const CAPTURE_SCRIPT: &str = concat!(
+        "exec 3> \"$CHAU7_MOUSE_RECEIPT\"; ",
+        "stty raw -echo || exit 71; ",
+        ": > \"$CHAU7_MOUSE_READY\"; ",
+        "exec /bin/cat >&3"
+    );
+
+    let data_root = DataRoot::with_home(home.clone(), true);
+    harness.update(|cx| {
+        gpui_kit::init(cx);
+        let mut settings = Settings::default();
+        settings.input.mouse_reporting = false;
+        settings.input.copy_on_select = false;
+        settings.input.click_to_position = false;
+        cx.set_global(settings);
+        cx.set_global(AppData::new(data_root));
+        crate::terminal::command_guard::init(cx);
+        crate::observability::init_for_test(cx);
+    });
+
+    let (window, root) = harness.update(|cx| {
+        gpui_kit::open_window(gpui::WindowOptions::default(), cx, |window, cx| {
+            let model = Chau7Terminal::new_with_args_env_in_dir(
+                80,
+                24,
+                "/bin/sh",
+                &["-c", CAPTURE_SCRIPT],
+                &[
+                    ("TERM", "xterm-256color"),
+                    ("CHAU7_MOUSE_READY", &ready_env),
+                    ("CHAU7_MOUSE_RECEIPT", &receipt_env),
+                ],
+                None,
+            )
+            .unwrap();
+            for line in 0..primary_history {
+                model.inject_output(
+                    format!("history-{line:03} alpha beta target tail marker\r\n").as_bytes(),
+                );
+            }
+            model.inject_output(initial_output);
+            let session = cx.new(|cx| {
+                let mut session = TerminalSession::from_terminal_manually_driven(model, None, cx);
+                session.apply_settings(Settings::get(cx));
+                session
+            });
+            let terminal = cx.new(|cx| TerminalView::new(session.clone(), window, cx));
+            cx.new(|_| MouseTestRoot {
+                terminal,
+                session,
+                bubbled_scrolls: 0,
+            })
+        })
+        .unwrap()
+    });
+    let (terminal, session) = harness.update(|cx| {
+        let root = root.read(cx);
+        (root.terminal.clone(), root.session.clone())
+    });
+    let fixture = Fixture {
+        window,
+        root,
+        terminal,
+        session,
+        home,
+    };
+    harness
+        .update_window(fixture.window, |_, window, _| window.activate_window())
+        .unwrap();
+    harness.run_until_parked();
+    harness
+        .update_window(fixture.window, |_, window, cx| {
+            let focus = fixture.terminal.read(cx).focus_handle(cx);
+            window.focus(&focus, cx);
+            window.render_frame(cx);
+        })
+        .unwrap();
+    harness.run_until_parked();
+
+    let raw = RawPtyFixture {
+        fixture,
+        ready,
+        receipt,
+    };
+    assert!(
+        wait_for_raw_pty(&raw.ready, Duration::from_secs(3)),
+        "raw PTY helper did not become ready; stty may have failed"
+    );
+    raw
+}
+
+fn wait_for_raw_pty(path: &Path, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if path.exists() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    false
+}
+
+fn read_pty_receipt(path: &Path) -> Vec<u8> {
+    match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => panic!("failed to read PTY receipt: {error}"),
+    }
+}
+
+fn wait_for_pty_receipt(
+    path: &Path,
+    description: &str,
+    mut predicate: impl FnMut(&[u8]) -> bool,
+) -> Vec<u8> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut bytes = Vec::new();
+    while Instant::now() < deadline {
+        bytes = read_pty_receipt(path);
+        if predicate(&bytes) {
+            return bytes;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!(
+        "PTY did not receive {description}; captured {:?}",
+        String::from_utf8_lossy(&bytes)
+    );
+}
+
+fn assert_no_new_pty_bytes(path: &Path, expected: &[u8]) {
+    let deadline = Instant::now() + Duration::from_millis(200);
+    while Instant::now() < deadline {
+        let actual = read_pty_receipt(path);
+        assert_eq!(
+            actual.as_slice(),
+            expected,
+            "local terminal interaction unexpectedly wrote to the PTY: {:?}",
+            String::from_utf8_lossy(&actual)
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn count_subsequence(haystack: &[u8], needle: &[u8]) -> usize {
+    haystack
+        .windows(needle.len())
+        .filter(|window| *window == needle)
+        .count()
+}
+
+#[gpui::test]
+fn alternate_screen_mouse_wheel_reports_sgr_to_pty_and_keeps_selection_local(
+    harness: &mut TestAppContext,
+) {
+    let raw = raw_pty_fixture(
+        harness,
+        b"\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h\x1b[?1007l\x1b[Hlocal-alpha beta target gamma delta\r\nlocal-drag end\r\n",
+        0,
+    );
+    let fixture = &raw.fixture;
+    assert_eq!(
+        harness.update(|cx| fixture.session.read(cx).mouse_mode() & 0b111),
+        0,
+        "mouse reporting is disabled in settings for this fixture"
+    );
+    assert_ne!(
+        harness.update(|cx| fixture.session.read(cx).wheel_mouse_mode() & 0b111),
+        0,
+        "the alternate-screen program did enable mouse tracking"
+    );
+    assert!(harness.update(|cx| {
+        fixture
+            .session
+            .read(cx)
+            .with_terminal(|terminal| terminal.is_alternate_screen_active())
+    }));
+
+    let position = terminal_bounds(harness, fixture).center();
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, 1.0)),
+        Modifiers::default(),
+        TouchPhase::Moved,
+    );
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, -1.0)),
+        Modifiers::default(),
+        TouchPhase::Moved,
+    );
+
+    let line_height = harness
+        .update_window(fixture.window, |_, window, cx| {
+            window.render_frame(cx);
+            fixture
+                .terminal
+                .read(cx)
+                .metrics
+                .as_ref()
+                .unwrap()
+                .line_height
+        })
+        .unwrap();
+    let pixel_delta = |fraction: f32| ScrollDelta::Pixels(point(px(0.0), line_height * fraction));
+    for (fraction, phase) in [
+        (0.25, TouchPhase::Started),
+        (0.25, TouchPhase::Moved),
+        (0.25, TouchPhase::Moved),
+        (0.25, TouchPhase::Ended),
+        (-0.25, TouchPhase::Started),
+        (-0.25, TouchPhase::Moved),
+        (-0.25, TouchPhase::Moved),
+        (-0.25, TouchPhase::Ended),
+    ] {
+        dispatch_scroll(
+            harness,
+            fixture,
+            position,
+            pixel_delta(fraction),
+            Modifiers::default(),
+            phase,
+        );
+    }
+
+    let sgr_up = b"\x1b[<64;";
+    let sgr_down = b"\x1b[<65;";
+    let received = wait_for_pty_receipt(&raw.receipt, "SGR wheel up/down reports", |bytes| {
+        count_subsequence(bytes, sgr_up) >= 2 && count_subsequence(bytes, sgr_down) >= 2
+    });
+    assert_eq!(count_subsequence(&received, sgr_up), 2);
+    assert_eq!(count_subsequence(&received, sgr_down), 2);
+
+    // Raw tracking wins when DEC 1007 is also enabled.
+    harness.update(|cx| {
+        fixture
+            .session
+            .update(cx, |session, _| session.inject_output("\x1b[?1007h"))
+    });
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, 1.0)),
+        Modifiers::default(),
+        TouchPhase::Moved,
+    );
+    let received = wait_for_pty_receipt(
+        &raw.receipt,
+        "raw mouse report with DEC 1007 active",
+        |bytes| count_subsequence(bytes, sgr_up) >= 3,
+    );
+    assert_eq!(count_subsequence(&received, sgr_up), 3);
+    assert_eq!(count_subsequence(&received, sgr_down), 2);
+    assert!(!received.windows(3).any(|window| window == b"\x1bOA"));
+    assert!(!received.windows(3).any(|window| window == b"\x1bOB"));
+
+    // With the setting off, clicks and drags remain local even though the
+    // alternate-screen app enabled all mouse tracking modes.
+    let before_local_interactions = received;
+    let start = cell_point(harness, fixture, 0, 0);
+    let end = cell_point(harness, fixture, 0, 26);
+    dispatch_down(harness, fixture, start, Modifiers::default(), 1);
+    dispatch_move(
+        harness,
+        fixture,
+        end,
+        Some(MouseButton::Left),
+        Modifiers::default(),
+    );
+    assert!(
+        harness.update(|cx| fixture
+            .session
+            .read(cx)
+            .selection_text()
+            .is_some_and(|text| text.contains("local-alpha") && text.contains("target"))),
+        "plain click-drag should create a local text selection"
+    );
+
+    // A wheel during an owned local drag must not be diverted to the app.
+    dispatch_scroll(
+        harness,
+        fixture,
+        end,
+        ScrollDelta::Lines(point(0.0, 1.0)),
+        Modifiers::default(),
+        TouchPhase::Moved,
+    );
+    dispatch_up(harness, fixture, end, Modifiers::default(), 1);
+    let selection = harness.update(|cx| fixture.session.read(cx).selection_text().unwrap());
+    assert!(selection.contains("local-alpha"));
+    assert!(selection.contains("target"));
+    assert_no_new_pty_bytes(&raw.receipt, &before_local_interactions);
+
+    // A completed selection remains visible, but it must not keep future
+    // unmodified wheel input in the local-drag route.
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, 1.0)),
+        Modifiers::default(),
+        TouchPhase::Moved,
+    );
+    let after_mouseup_wheel =
+        wait_for_pty_receipt(&raw.receipt, "wheel after selection mouse-up", |bytes| {
+            count_subsequence(bytes, sgr_up) >= 4
+        });
+    assert_eq!(count_subsequence(&after_mouseup_wheel, sgr_up), 4);
+    assert_eq!(
+        harness.update(|cx| fixture.session.read(cx).selection_text().unwrap()),
+        selection
+    );
+
+    // Shift and Ctrl also force local scrolling while the selection remains
+    // intact. There is no scrollback on the alternate screen, but the events
+    // must still avoid generating mouse reports.
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, 1.0)),
+        shift(),
+        TouchPhase::Moved,
+    );
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, -1.0)),
+        Modifiers {
+            control: true,
+            ..Default::default()
+        },
+        TouchPhase::Moved,
+    );
+    assert_no_new_pty_bytes(&raw.receipt, &after_mouseup_wheel);
+    assert_eq!(
+        harness.update(|cx| fixture.session.read(cx).selection_text().unwrap()),
+        selection
+    );
+    close_fixture(harness, raw.fixture);
+}
+
+#[gpui::test]
+fn alternate_scroll_mode_sends_ss3_arrows_without_mouse_tracking(harness: &mut TestAppContext) {
+    let raw = raw_pty_fixture(harness, b"\x1b[?1049h\x1b[?1007h", 0);
+    let fixture = &raw.fixture;
+    assert!(harness.update(|cx| fixture.session.read(cx).is_alternate_scroll_active()));
+    assert_eq!(
+        harness.update(|cx| fixture.session.read(cx).wheel_mouse_mode() & 0b111),
+        0
+    );
+
+    let position = terminal_bounds(harness, fixture).center();
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, 1.0)),
+        Modifiers::default(),
+        TouchPhase::Moved,
+    );
+    let up = wait_for_pty_receipt(&raw.receipt, "DEC 1007 up key", |bytes| {
+        bytes.windows(3).any(|window| window == b"\x1bOA")
+    });
+    assert!(up.windows(3).any(|window| window == b"\x1bOA"));
+
+    // DEC 1007 uses SS3 regardless of DECCKM's application-cursor flag.
+    harness.update(|cx| {
+        fixture
+            .session
+            .update(cx, |session, _| session.inject_output("\x1b[?1h"))
+    });
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, -1.0)),
+        Modifiers::default(),
+        TouchPhase::Moved,
+    );
+    let both = wait_for_pty_receipt(&raw.receipt, "DEC 1007 down key", |bytes| {
+        bytes.windows(3).any(|window| window == b"\x1bOB")
+    });
+    assert!(both.windows(3).any(|window| window == b"\x1bOA"));
+    assert!(both.windows(3).any(|window| window == b"\x1bOB"));
+    assert_eq!(
+        both.as_slice(),
+        b"\x1bOA\x1bOB",
+        "DEC 1007 should write only the corresponding SS3 arrows"
+    );
+    close_fixture(harness, raw.fixture);
+}
+
+#[gpui::test]
+fn disabled_alternate_scroll_and_primary_screen_wheel_stay_local(harness: &mut TestAppContext) {
+    let raw = raw_pty_fixture(harness, b"\x1b[?1007h", 180);
+    let fixture = &raw.fixture;
+    assert!(!harness.update(|cx| {
+        fixture
+            .session
+            .read(cx)
+            .with_terminal(|terminal| terminal.is_alternate_screen_active())
+    }));
+    assert!(!harness.update(|cx| fixture.session.read(cx).is_alternate_scroll_active()));
+
+    let position = terminal_bounds(harness, fixture).center();
+    let before = harness.update(|cx| fixture.session.read(cx).display_offset());
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, 1.0)),
+        Modifiers::default(),
+        TouchPhase::Moved,
+    );
+    assert!(
+        harness.update(|cx| fixture.session.read(cx).display_offset()) > before,
+        "primary-screen wheel input should move local scrollback"
+    );
+    assert_no_new_pty_bytes(&raw.receipt, &[]);
+
+    harness.update(|cx| {
+        fixture.session.update(cx, |session, cx| {
+            session.scroll_to_bottom();
+            session.refresh(cx);
+            session.inject_output("\x1b[?1049h\x1b[?1007l");
+        })
+    });
+    assert!(harness.update(|cx| {
+        fixture
+            .session
+            .read(cx)
+            .with_terminal(|terminal| terminal.is_alternate_screen_active())
+    }));
+    assert!(!harness.update(|cx| fixture.session.read(cx).is_alternate_scroll_active()));
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, 1.0)),
+        Modifiers::default(),
+        TouchPhase::Moved,
+    );
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, -1.0)),
+        Modifiers::default(),
+        TouchPhase::Moved,
+    );
+    assert_no_new_pty_bytes(&raw.receipt, &[]);
+
+    // Leaving the alternate screen must restore local scrollback routing,
+    // even if the primary application has DEC 1007 set.
+    harness.update(|cx| {
+        fixture.session.update(cx, |session, _| {
+            session.inject_output("\x1b[?1049l\x1b[?1007h")
+        })
+    });
+    assert!(!harness.update(|cx| {
+        fixture
+            .session
+            .read(cx)
+            .with_terminal(|terminal| terminal.is_alternate_screen_active())
+    }));
+    assert!(!harness.update(|cx| fixture.session.read(cx).is_alternate_scroll_active()));
+    let before_returned_primary_scroll =
+        harness.update(|cx| fixture.session.read(cx).display_offset());
+    dispatch_scroll(
+        harness,
+        fixture,
+        position,
+        ScrollDelta::Lines(point(0.0, 1.0)),
+        Modifiers::default(),
+        TouchPhase::Moved,
+    );
+    assert!(
+        harness.update(|cx| fixture.session.read(cx).display_offset())
+            > before_returned_primary_scroll,
+        "wheel input should return to primary scrollback after leaving the alternate screen"
+    );
+    assert_no_new_pty_bytes(&raw.receipt, &[]);
+    assert_eq!(
+        harness.update(|cx| fixture.root.read(cx).bubbled_scrolls),
+        0,
+        "vertical wheel events remain owned by the terminal, including disabled alternate scrolling"
+    );
+    close_fixture(harness, raw.fixture);
 }

@@ -46,21 +46,25 @@ pub(super) struct MouseState {
     last_copied: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScrollRoute {
+    History,
+    MouseReport(u32),
+    AlternateKeys,
+}
+
 #[derive(Default)]
 struct ScrollLineAccumulator {
     fractional_lines: f32,
-    reporting_mode: Option<bool>,
+    route: Option<ScrollRoute>,
 }
 
 impl ScrollLineAccumulator {
-    fn set_reporting_mode(&mut self, reporting: bool) {
-        if self
-            .reporting_mode
-            .is_some_and(|previous| previous != reporting)
-        {
+    fn set_route(&mut self, route: ScrollRoute) {
+        if self.route.is_some_and(|previous| previous != route) {
             self.fractional_lines = 0.0;
         }
-        self.reporting_mode = Some(reporting);
+        self.route = Some(route);
     }
 
     fn accumulate(&mut self, delta_lines: f32, phase: TouchPhase) -> i32 {
@@ -125,6 +129,19 @@ impl TerminalView {
         modifiers: gpui::Modifiers,
         cx: &mut Context<Self>,
     ) -> bool {
+        let mode = self.session.read(cx).mouse_mode();
+        self.report_mouse_in_mode(button, action, position, modifiers, mode, cx)
+    }
+
+    fn report_mouse_in_mode(
+        &mut self,
+        button: MouseButtonCode,
+        action: MouseAction,
+        position: Point<Pixels>,
+        modifiers: gpui::Modifiers,
+        mode: u32,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let Some((col, row)) = self.cell_at(position, cx) else {
             return false;
         };
@@ -134,7 +151,6 @@ impl TerminalView {
             control: modifiers.control,
             platform: false,
         };
-        let mode = self.session.read(cx).mouse_mode();
         match key_encoding::encode_mouse(button, action, col as u16, row as u16, mods, mode) {
             Some(bytes) => {
                 self.session.read(cx).write(&bytes);
@@ -600,11 +616,28 @@ impl TerminalView {
             cx.stop_propagation();
         }
 
-        let reports_mouse = self.reports_mouse(event.modifiers, cx);
-        self.input
-            .mouse
-            .wheel_scroll
-            .set_reporting_mode(reports_mouse);
+        // A full-screen program owns its history. Its requested wheel reports
+        // must not be gated by the click/drag setting: the alternate grid has
+        // no scrollback to move. Shift/Ctrl and an owned local drag still keep
+        // scrolling local, so wheel input cannot disrupt text selection.
+        let route = if event.modifiers.shift
+            || event.modifiers.control
+            || self.selecting
+            || self.input.mouse.down.is_some()
+        {
+            ScrollRoute::History
+        } else {
+            let session = self.session.read(cx);
+            let mode = session.wheel_mouse_mode();
+            if mode & 0b111 != 0 {
+                ScrollRoute::MouseReport(mode)
+            } else if session.is_alternate_scroll_active() {
+                ScrollRoute::AlternateKeys
+            } else {
+                ScrollRoute::History
+            }
+        };
+        self.input.mouse.wheel_scroll.set_route(route);
         let delta_lines = match event.delta {
             ScrollDelta::Lines(delta) => delta.y,
             ScrollDelta::Pixels(delta) => self
@@ -622,22 +655,32 @@ impl TerminalView {
         if lines == 0 {
             return;
         }
-        if reports_mouse {
+        if let ScrollRoute::MouseReport(mode) = route {
             let wheel = if lines > 0 {
                 MouseButtonCode::WheelUp
             } else {
                 MouseButtonCode::WheelDown
             };
             for _ in 0..lines.unsigned_abs().min(10) {
-                self.report_mouse(
+                self.report_mouse_in_mode(
                     wheel,
                     MouseAction::Press,
                     event.position,
                     event.modifiers,
+                    mode,
                     cx,
                 );
             }
             cx.stop_propagation();
+            return;
+        }
+        if route == ScrollRoute::AlternateKeys {
+            // DECSET 1007 uses SS3 cursor keys, independently of DECCKM.
+            // Only the active alternate screen can request this route; never
+            // turn an ordinary shell wheel gesture into command-history keys.
+            let sequence = if lines > 0 { b"\x1bOA" } else { b"\x1bOB" };
+            let bytes = sequence.repeat(lines.unsigned_abs().min(10) as usize);
+            self.session.read(cx).write(&bytes);
             return;
         }
         self.session.read(cx).scroll_lines(lines);
@@ -713,7 +756,7 @@ impl TerminalView {
 }
 #[cfg(test)]
 mod scroll_line_accumulator_tests {
-    use super::ScrollLineAccumulator;
+    use super::{ScrollLineAccumulator, ScrollRoute};
     use gpui::TouchPhase;
 
     #[test]
@@ -750,9 +793,15 @@ mod scroll_line_accumulator_tests {
     #[test]
     fn resets_after_non_finite_deltas_and_reporting_mode_changes() {
         let mut accumulator = ScrollLineAccumulator::default();
-        accumulator.set_reporting_mode(false);
+        accumulator.set_route(ScrollRoute::History);
         assert_eq!(accumulator.accumulate(0.8, TouchPhase::Moved), 0);
-        accumulator.set_reporting_mode(true);
+        accumulator.set_route(ScrollRoute::MouseReport(1));
+        assert_eq!(accumulator.fractional_lines, 0.0);
+        assert_eq!(accumulator.accumulate(0.8, TouchPhase::Moved), 0);
+        accumulator.set_route(ScrollRoute::AlternateKeys);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+        assert_eq!(accumulator.accumulate(0.8, TouchPhase::Moved), 0);
+        accumulator.set_route(ScrollRoute::History);
         assert_eq!(accumulator.fractional_lines, 0.0);
         assert_eq!(accumulator.accumulate(f32::NAN, TouchPhase::Moved), 0);
         assert_eq!(accumulator.fractional_lines, 0.0);
