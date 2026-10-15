@@ -2,6 +2,105 @@ import Chau7Core
 import Foundation
 import os
 
+/// Result of URLSession accepting a WebSocket send. `.transportCompleted`
+/// means the local WebSocket API completed successfully; the protocol has no
+/// application-level ACK, so the remote terminal's receipt is not proven.
+enum RemoteSendOutcome: Equatable, Sendable {
+    case transportCompleted
+    case failed(String)
+    case indeterminate
+
+    static func fenced(
+        _ outcome: RemoteSendOutcome,
+        sendGeneration: UInt64,
+        currentGeneration: UInt64
+    ) -> RemoteSendOutcome {
+        sendGeneration == currentGeneration ? outcome : .indeterminate
+    }
+}
+
+/// Captured identity for one REST pending-state snapshot. A canceled request
+/// may still return from URLSession, so callers must match the current pairing
+/// and transport generation before applying its response.
+struct PendingStateFetchFence: Equatable {
+    let id: UUID
+    let pairing: RemotePairingPayload
+    let transportGeneration: UInt64
+
+    func admits(
+        currentFence: PendingStateFetchFence?,
+        currentPairing: RemotePairingPayload?,
+        currentTransportGeneration: UInt64,
+        isCancelled: Bool
+    ) -> Bool {
+        !isCancelled
+            && currentFence == self
+            && currentPairing == pairing
+            && currentTransportGeneration == transportGeneration
+    }
+}
+
+/// UI-side lifecycle for one composer submission. A terminal command is
+/// never retried automatically: after an asynchronous error or socket change,
+/// delivery may be ambiguous and the draft stays available for inspection.
+struct RemoteInputSubmissionState: Equatable {
+    struct Resolution: Equatable {
+        let draft: String
+        let transportCompleted: Bool
+        let deliveryUncertain: Bool
+    }
+
+    private(set) var pendingID: UUID?
+    private var submittedText: String?
+    private(set) var requiresRetryAcknowledgement = false
+
+    var isPending: Bool { pendingID != nil }
+
+    mutating func begin(id: UUID, text: String) -> Bool {
+        guard !text.isEmpty, pendingID == nil, !requiresRetryAcknowledgement else { return false }
+        pendingID = id
+        submittedText = text
+        return true
+    }
+
+    mutating func acknowledgeDeliveryUncertainty() {
+        requiresRetryAcknowledgement = false
+    }
+
+    mutating func cancel(id: UUID) {
+        guard pendingID == id else { return }
+        pendingID = nil
+        submittedText = nil
+    }
+
+    mutating func resolve(
+        id: UUID,
+        outcome: RemoteSendOutcome,
+        currentDraft: String
+    ) -> Resolution? {
+        guard pendingID == id, let submittedText else { return nil }
+        pendingID = nil
+        self.submittedText = nil
+
+        switch outcome {
+        case .transportCompleted:
+            requiresRetryAcknowledgement = false
+            return Resolution(
+                draft: currentDraft == submittedText ? "" : currentDraft,
+                transportCompleted: true,
+                deliveryUncertain: false
+            )
+        case .failed, .indeterminate:
+            requiresRetryAcknowledgement = true
+            return Resolution(
+                draft: currentDraft,
+                transportCompleted: false,
+                deliveryUncertain: true
+            )
+        }
+    }
+}
+
 private let log = Logger(subsystem: "ch7", category: "RemoteTransport")
 
 struct RemoteTerminalFrameIdentity: Equatable, Sendable, CustomStringConvertible {
@@ -471,6 +570,7 @@ final class RemoteTransport {
     private var lastThrottleLogAt: Date?
     private var inboundQueue = RemoteInboundMessageQueue()
     private var drainTask: Task<Void, Never>?
+    private var pendingSendCompletions: [UUID: @MainActor (RemoteSendOutcome) -> Void] = [:]
 
     /// Awaited serially by the application-queue drain. Queue age/depth and
     /// superseded-grid count feed streaming performance diagnostics.
@@ -502,24 +602,43 @@ final class RemoteTransport {
         drainTask = nil
         inboundQueue.removeAll()
         generation &+= 1
+        let completions = Array(pendingSendCompletions.values)
+        pendingSendCompletions.removeAll(keepingCapacity: true)
+        completions.forEach { $0(.indeterminate) }
     }
 
     /// Send raw bytes. Returns false immediately when no socket is open;
-    /// otherwise the completion reports the async send outcome (the error's
-    /// description on failure, for telemetry).
+    /// otherwise the completion settles exactly once. Closing the socket
+    /// resolves outstanding sends as indeterminate so callers do not wait
+    /// forever for a cancellation callback from URLSession.
     @discardableResult
-    func send(_ data: Data, completion: (@MainActor (Bool, String?) -> Void)? = nil) -> Bool {
+    func send(_ data: Data, completion: (@MainActor (RemoteSendOutcome) -> Void)? = nil) -> Bool {
         guard let webSocketTask else { return false }
-        webSocketTask.send(.data(data)) { error in
+        let sendID = UUID()
+        let sendGeneration = generation
+        if let completion {
+            pendingSendCompletions[sendID] = completion
+        }
+        webSocketTask.send(.data(data)) { [weak self] error in
+            let outcome: RemoteSendOutcome
             if let error {
-                log.error("WebSocket send failed: \(error.localizedDescription)")
-                Task { @MainActor in
-                    completion?(false, error.localizedDescription)
+                outcome = .failed(error.localizedDescription)
+            } else {
+                outcome = .transportCompleted
+            }
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let completion = self.pendingSendCompletions.removeValue(forKey: sendID)
+                else { return }
+
+                guard self.generation == sendGeneration else {
+                    completion(.indeterminate)
+                    return
                 }
-            } else if let completion {
-                Task { @MainActor in
-                    completion(true, nil)
+                if case let .failed(message) = outcome {
+                    log.error("WebSocket send failed: \(message)")
                 }
+                completion(outcome)
             }
         }
         return true

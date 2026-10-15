@@ -436,9 +436,12 @@ fn recover_legacy_windows(root: &DataRoot, session: &mut SavedSession, paths: &[
                         .count(),
                 )
             })
+            .filter(|(_, score)| *score > 0)
             .max_by_key(|(position, score)| (*score, std::cmp::Reverse(*position)))
-            .map(|(position, _)| position)
-            .unwrap_or(0);
+            .map(|(position, _)| position);
+        // An unrelated archive is not evidence that this legacy primary lost
+        // additional windows. Keep looking for a shared stable tab identity.
+        let Some(best) = best else { continue };
         let decoded = if let Some(bundle) = &bundle {
             let Some(decoded) = decoded_contexts(root, bundle) else {
                 continue;
@@ -1252,6 +1255,42 @@ mod tests {
         save(&root, &primary).unwrap();
         std::fs::remove_file(bundle_file(&root)).unwrap();
         assert_eq!(load(&root), Some(primary));
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+
+    #[test]
+    fn legacy_primary_does_not_resurrect_unrelated_backup_windows() {
+        let root = isolated_root();
+        let primary = one_tab(1, "current primary");
+        let mut unrelated = one_tab(2, "old primary");
+        unrelated
+            .windows
+            .push(one_tab(3, "old secondary").windows.remove(0));
+        save_for(&root, &unrelated, true).unwrap();
+        std::fs::write(root.session_file(), serde_json::to_vec(&primary).unwrap()).unwrap();
+        std::fs::remove_file(bundle_file(&root)).unwrap();
+        assert_eq!(load(&root), Some(primary));
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+
+    #[test]
+    fn legacy_recovery_skips_unrelated_latest_and_uses_matching_archive() {
+        let root = isolated_root();
+        let primary = one_tab(1, "current primary");
+        let mut matching = one_tab(2, "matching secondary");
+        matching.windows.push(primary.windows[0].clone());
+        save_for(&root, &matching, true).unwrap();
+        let mut unrelated = one_tab(3, "unrelated primary");
+        unrelated
+            .windows
+            .push(one_tab(4, "unrelated secondary").windows.remove(0));
+        save_for(&root, &unrelated, true).unwrap();
+        std::fs::write(root.session_file(), serde_json::to_vec(&primary).unwrap()).unwrap();
+        std::fs::remove_file(bundle_file(&root)).unwrap();
+        let restored = load(&root).unwrap();
+        assert_eq!(restored.windows.len(), 2);
+        assert_eq!(restored.windows[0], primary.windows[0]);
+        assert_eq!(restored.windows[1], matching.windows[0]);
         std::fs::remove_dir_all(root.home()).unwrap();
     }
 

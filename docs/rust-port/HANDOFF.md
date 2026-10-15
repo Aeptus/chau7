@@ -1,5 +1,15 @@
 # Chau7 Next: handoff
 
+## Application review follow-up (2026-10-15)
+
+The iOS and macOS review adds fixes for reconnect races, terminal rendering,
+SSH URL actions, restoration recovery, asynchronous Git results, and remote
+approval targeting. See [APP-REVIEW-2026-10-15.md](APP-REVIEW-2026-10-15.md)
+for confirmed findings, validation results, and remaining acceptance work.
+These source changes require a new candidate build. They do not update the
+previously packaged artifact or authorize a production release. The running
+Chau7 and Chau7 Next apps were not replaced or relaunched for this review.
+
 ## Current release status (2026-10-14)
 
 The Rust/GPUI production transition is in preparation. The published stable
@@ -49,7 +59,7 @@ no app installation, production relaunch, real provider, or paired-device
 contact occurred during that work.
 
 Read this first when picking up Chau7 Next (the Rust/GPUI port of Chau7).
-Last updated 2026-10-14.
+Last updated 2026-10-15.
 
 ## 1. Where things are
 

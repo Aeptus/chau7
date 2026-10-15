@@ -119,17 +119,25 @@ case "$platform" in
            "$PLATFORM_LIB_DIR/libchau7_terminal.a"
         ;;
     iphonesimulator)
-        simulator_targets=(
-            "aarch64-apple-ios-sim"
-            "x86_64-apple-ios"
-        )
-        for target in "${simulator_targets[@]}"; do
+        # Xcode has already resolved ONLY_ACTIVE_ARCH into ARCHS. A local
+        # Apple Silicon simulator needs only arm64; generic simulator builds
+        # still request both slices. Standalone invocations keep both by default.
+        read -r -a simulator_archs <<< "${ARCHS:-arm64 x86_64}"
+        simulator_libraries=()
+        for arch in "${simulator_archs[@]}"; do
+            case "$arch" in
+                arm64) target="aarch64-apple-ios-sim" ;;
+                x86_64) target="x86_64-apple-ios" ;;
+                *)
+                    echo "Unsupported iOS simulator architecture: $arch" >&2
+                    exit 1
+                    ;;
+            esac
             require_target "$target"
             build_target "$target"
+            simulator_libraries+=("$RUST_TARGET_DIR/$target/$build_mode/libchau7_terminal.a")
         done
-        lipo -create \
-            "$RUST_TARGET_DIR/aarch64-apple-ios-sim/$build_mode/libchau7_terminal.a" \
-            "$RUST_TARGET_DIR/x86_64-apple-ios/$build_mode/libchau7_terminal.a" \
+        lipo -create "${simulator_libraries[@]}" \
             -output "$PLATFORM_LIB_DIR/libchau7_terminal.a"
         ;;
     *)

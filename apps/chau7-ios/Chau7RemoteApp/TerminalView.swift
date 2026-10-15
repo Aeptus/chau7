@@ -19,6 +19,8 @@ struct TerminalView: View {
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
 
     @State private var inputText = ""
+    @State private var inputSubmission = RemoteInputSubmissionState()
+    @State private var inputDeliveryWarning: String?
     @State private var terminalSelection: RemoteTerminalSelectionSnapshot?
     @State private var showsTabPicker = false
     /// The user hid an auto-surfaced key row for the current waiting episode.
@@ -95,21 +97,26 @@ struct TerminalView: View {
                     text: pendingProtectedSend.text,
                     flaggedAction: pendingProtectedSend.flaggedAction
                 )
-                if client.sendInput(
+                _ = startInputSubmission(
                     pendingProtectedSend.text,
                     appendNewline: true,
-                    to: stillValidTab.tabID
-                ) {
-                    inputText = ""
-                    markSent()
-                    self.pendingProtectedSend = nil
-                } else {
-                    inputText = pendingProtectedSend.text
-                    self.pendingProtectedSend = nil
-                }
+                    to: stillValidTab.tabID,
+                    trigger: "protected_approval"
+                )
+                self.pendingProtectedSend = nil
             }
         } message: {
             Text(pendingProtectedSend?.message ?? "")
+        }
+        .onChange(of: client.pairingInfo) { oldPairing, newPairing in
+            guard oldPairing != newPairing else { return }
+            // Drafts and protected confirmations are scoped to the terminal
+            // the user was viewing. Never carry them into a newly paired Mac.
+            inputText = ""
+            inputSubmission = RemoteInputSubmissionState()
+            inputDeliveryWarning = nil
+            pendingProtectedSend = nil
+            inputFocused = false
         }
     }
 
@@ -121,6 +128,21 @@ struct TerminalView: View {
             // Keep the terminal shortcut row in the flow above the composer.
             if showsPinnedControlKeys {
                 controlKeyRow
+            }
+            if let inputDeliveryWarning {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text(inputDeliveryWarning)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Dismiss") {
+                        self.inputSubmission.acknowledgeDeliveryUncertainty()
+                        self.inputDeliveryWarning = nil
+                    }
+                        .buttonStyle(.plain)
+                }
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 12)
             }
             inputBar
         }
@@ -487,6 +509,7 @@ struct TerminalView: View {
 
             RemoteTerminalComposer(text: $inputText, focused: $inputFocused,
                                    holdToSend: holdToSend, onSubmit: { submitInput(trigger: "return_key") })
+                .disabled(inputSubmission.isPending)
                 .background(Color(UIColor.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(alignment: .topLeading) {
                     if inputText.isEmpty {
@@ -503,6 +526,7 @@ struct TerminalView: View {
                 inputText += strings.joined(separator: "\n")
                 inputFocused = true
             }
+            .disabled(inputSubmission.isPending)
             .labelStyle(.iconOnly)
             .accessibilityLabel("Paste into terminal input")
             .accessibilityHint("Review pasted text, then use Send.")
@@ -543,7 +567,8 @@ struct TerminalView: View {
     @ViewBuilder
     private var sendButton: some View {
         if holdToSend {
-            HoldToSendButton(isEnabled: !inputText.isEmpty && client.canSendInput) {
+            HoldToSendButton(isEnabled: !inputText.isEmpty && client.canSendInput
+                             && !inputSubmission.isPending && !inputSubmission.requiresRetryAcknowledgement) {
                 submitInput()
             }
             .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.5), trigger: sendCount)
@@ -554,7 +579,8 @@ struct TerminalView: View {
                     .frame(width: 44, height: 44)
             }
             .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.5), trigger: sendCount)
-            .disabled(inputText.isEmpty || !client.canSendInput)
+            .disabled(inputText.isEmpty || !client.canSendInput || inputSubmission.isPending
+                      || inputSubmission.requiresRetryAcknowledgement)
             .accessibilityLabel("Send")
         }
     }
@@ -578,7 +604,8 @@ struct TerminalView: View {
 
     private func submitInput(trigger: String = "send_button") {
         let text = inputText
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty, !inputSubmission.isPending,
+              !inputSubmission.requiresRetryAcknowledgement else { return }
 
         DiagnosticsLog.shared.info(.input, "Submit requested", [
             "trigger": trigger,
@@ -619,16 +646,75 @@ struct TerminalView: View {
         // turn every send into an inert text drop (body lands in the
         // composer, nothing executes) — a footgun, not a feature. The only
         // terminator suppression left is the deliberate menu-digit case.
-        guard client.sendInput(text, appendNewline: !suppressTerminator) else {
+        guard startInputSubmission(
+            text,
+            appendNewline: !suppressTerminator,
+            trigger: trigger
+        ) else {
             DiagnosticsLog.shared.error(.input, "Submit blocked", [
                 "trigger": trigger,
                 "reason": client.lastError ?? "unknown"
             ])
             return
         }
-        DiagnosticsLog.shared.info(.input, "Input sent", ["bytes": String(text.utf8.count)])
-        inputText = ""
-        markSent()
+    }
+
+    @MainActor
+    private func startInputSubmission(
+        _ text: String,
+        appendNewline: Bool,
+        to tabID: UInt32? = nil,
+        trigger: String
+    ) -> Bool {
+        let sendID = UUID()
+        guard inputSubmission.begin(id: sendID, text: text) else { return false }
+        let submittedPairing = client.pairingInfo
+        let targetTabID = tabID ?? client.activeTabID
+        let targetTabTitle = client.tabs.first(where: { $0.tabID == targetTabID })?.title ?? "terminal"
+
+        let completion: @MainActor (RemoteSendOutcome) -> Void = { outcome in
+            // `pairingInfo` changes before SwiftUI delivers its `onChange`
+            // update. A close triggered by that change can synchronously
+            // settle this old send, so fence it here as well as in the view.
+            guard self.client.pairingInfo == submittedPairing else { return }
+            guard let resolution = self.inputSubmission.resolve(
+                id: sendID,
+                outcome: outcome,
+                currentDraft: self.inputText
+            ) else { return }
+
+            self.inputText = resolution.draft
+            if resolution.transportCompleted {
+                self.inputDeliveryWarning = nil
+                DiagnosticsLog.shared.info(.input, "Input send completed by transport", [
+                    "trigger": trigger,
+                    "bytes": String(text.utf8.count),
+                    "tab_id": String(targetTabID)
+                ])
+                self.markSent()
+            } else if resolution.deliveryUncertain {
+                let message = "Delivery to \(targetTabTitle) is uncertain. Check it before dismissing and retrying."
+                self.inputDeliveryWarning = message
+                self.client.lastError = message
+                DiagnosticsLog.shared.warn(.input, "Input delivery is uncertain; draft retained", [
+                    "trigger": trigger,
+                    "bytes": String(text.utf8.count),
+                    "tab_id": String(targetTabID)
+                ])
+            }
+        }
+
+        let acceptedByTransport = self.client.sendInput(
+            text,
+            appendNewline: appendNewline,
+            to: targetTabID,
+            completion: completion
+        )
+
+        if !acceptedByTransport {
+            self.inputSubmission.cancel(id: sendID)
+        }
+        return acceptedByTransport
     }
 
     private func markSent() {

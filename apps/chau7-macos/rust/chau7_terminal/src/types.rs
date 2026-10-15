@@ -114,7 +114,7 @@ impl Default for CellData {
 /// of which must be freed via `chau7_terminal_free_display_rows`.
 #[repr(C)]
 pub struct DisplayRowBuffer {
-    /// Folded display cells. Exactly `display_cols * display_rows` elements.
+    /// Folded display cells. Exactly `cell_count` elements; rows may be shorter.
     pub cells: *mut CellData,
     /// Allocated capacity of `cells`, recorded because the buffer crosses the
     /// FFI boundary and must be reconstructed exactly on free. Dropping it
@@ -139,6 +139,10 @@ pub struct DisplayRowBuffer {
     pub source_cols: u16,
     /// Source grid height the fold was computed from.
     pub source_rows: u16,
+    /// Cursor coordinates after folding, valid only when `cursor_visible != 0`.
+    pub cursor_col: u16,
+    pub cursor_row: u16,
+    pub cursor_visible: u8,
 }
 
 /// C-compatible grid snapshot containing all cell data.

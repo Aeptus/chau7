@@ -7,13 +7,14 @@ use std::path::PathBuf;
 
 use chau7_next_core::command_block::git_changes;
 use chau7_next_core::editor::diff::DiffMode;
-use gpui::{Axis, Context, Div, Stateful, Window, prelude::*};
+use gpui::{Axis, Context, Div, Entity, EntityId, Stateful, Window, prelude::*};
 
 use super::Workspace;
 use crate::actions::{
     AppendSelectionToEditor, ClosePane, FocusNextPane, FocusPreviousPane, OpenDiffViewer,
     OpenFilePreview, OpenRepositoryPane, OpenTextEditor, ShowChangedFiles, SplitDown, SplitRight,
 };
+use crate::pane::PaneTree;
 
 impl Workspace {
     /// Open `path` in the selected tab's editor pane, at 1-based `line`
@@ -73,6 +74,14 @@ impl Workspace {
         let Some(panes) = self.selected_panes() else {
             return (Vec::new(), None);
         };
+        Self::last_changed_files_for(&panes, cx)
+    }
+
+    /// Changed files and directory for one captured pane tree.
+    fn last_changed_files_for(
+        panes: &Entity<PaneTree>,
+        cx: &gpui::App,
+    ) -> (Vec<String>, Option<String>) {
         let tree = panes.read(cx);
         let directory = tree.cwd(cx).map(|p| p.to_string_lossy().into_owned());
         let focused = tree.focused_session(cx);
@@ -89,12 +98,21 @@ impl Workspace {
     /// `openDiffViewerPane`: the first file the last AI command changed,
     /// else the first dirty file of `git status --porcelain`.
     fn open_diff_for_last_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let (files, directory) = self.last_changed_files(cx);
+        let Some(tab_id) = self.state.selected() else {
+            return;
+        };
+        let Some(panes) = self.entries.get(&tab_id).map(|entry| entry.panes.clone()) else {
+            return;
+        };
+        let target_panes_id = panes.entity_id();
+        let (files, directory) = Self::last_changed_files_for(&panes, cx);
         let Some(directory) = directory else {
             return;
         };
         if let Some(file) = files.into_iter().next() {
-            self.open_diff_viewer(file, directory, window, cx);
+            panes.update(cx, |p, cx| {
+                p.open_diff_viewer(file, directory, DiffMode::WorkingTree, window, cx)
+            });
             return;
         }
         let dir = directory.clone();
@@ -106,12 +124,37 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             if let Some(file) = task.await {
                 let _ = this.update_in(cx, |this, window, cx| {
-                    this.open_diff_viewer(file, directory, window, cx)
+                    let live_target = this
+                        .state
+                        .get(tab_id)
+                        .and_then(|_| this.entries.get(&tab_id))
+                        .map(|entry| (tab_id, entry.panes.entity_id()));
+                    if diff_target_is_live(
+                        tab_id,
+                        target_panes_id,
+                        this.state.selected(),
+                        live_target,
+                    ) {
+                        panes.update(cx, |p, cx| {
+                            p.open_diff_viewer(file, directory, DiffMode::WorkingTree, window, cx)
+                        });
+                    }
                 });
             }
         })
         .detach();
     }
+}
+
+fn diff_target_is_live(
+    target_tab: crate::tab_bar::TabId,
+    target_panes: EntityId,
+    selected_tab: Option<crate::tab_bar::TabId>,
+    live: Option<(crate::tab_bar::TabId, EntityId)>,
+) -> bool {
+    // Opening a new diff focuses its pane immediately and on the next frame.
+    // A result for a background tab must not steal the selected tab's focus.
+    selected_tab == Some(target_tab) && live == Some((target_tab, target_panes))
 }
 
 pub(super) fn register_pane_actions(
@@ -179,4 +222,46 @@ pub(super) fn register_pane_actions(
             }
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::diff_target_is_live;
+    use gpui::EntityId;
+
+    #[test]
+    fn async_diff_target_requires_the_original_selected_tab_and_live_pane_tree() {
+        let target_pane = EntityId::from(11);
+        assert!(diff_target_is_live(
+            3,
+            target_pane,
+            Some(3),
+            Some((3, target_pane))
+        ));
+        assert!(!diff_target_is_live(
+            3,
+            target_pane,
+            Some(3),
+            Some((4, target_pane))
+        ));
+        assert!(!diff_target_is_live(
+            3,
+            target_pane,
+            Some(3),
+            Some((3, EntityId::from(12)))
+        ));
+        assert!(!diff_target_is_live(3, target_pane, Some(3), None));
+        assert!(!diff_target_is_live(
+            3,
+            target_pane,
+            Some(4),
+            Some((3, target_pane))
+        ));
+        assert!(!diff_target_is_live(
+            3,
+            target_pane,
+            None,
+            Some((3, target_pane))
+        ));
+    }
 }

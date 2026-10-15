@@ -3123,7 +3123,7 @@ final class OverlayTabsModelTests: XCTestCase {
     }
 
     func testExportTabStatesPersistsKnownRepoIdentity() {
-        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+        let repoRoot = URL(fileURLWithPath: RuntimeIsolation.homePath())
             .appendingPathComponent("Downloads/Repositories/Chau7")
             .path
         let session = model.tabs[0].session!
@@ -3153,7 +3153,7 @@ final class OverlayTabsModelTests: XCTestCase {
             RepositoryCache.shared.resetNegativeCache()
         }
 
-        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+        let repoRoot = URL(fileURLWithPath: RuntimeIsolation.homePath())
             .appendingPathComponent("Downloads/Repositories/Chau7")
             .path
         let paneID = UUID()

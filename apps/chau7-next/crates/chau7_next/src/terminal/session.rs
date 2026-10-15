@@ -40,7 +40,7 @@ use chau7_next_core::{shell_env, shell_integration, shell_tips};
 use chau7_terminal::{
     Chau7Terminal, GridCopy, OutputInterrupt, OutputReady, graphics::ShellIntegrationEvent,
 };
-use futures::channel::mpsc;
+use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
 use gpui::{AppContext, Context, EventEmitter, Global, Task};
 use parking_lot::{Mutex, RwLock};
@@ -131,6 +131,12 @@ fn refresh_wait(interval: Duration, suspended: bool, elapsed: Duration) -> Durat
 
 static NEXT_SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+/// Monotonic command-finish order shared across terminal sessions. Git scans
+/// complete asynchronously, so their callbacks cannot define command order.
+#[derive(Default)]
+struct ChangedFilesFinishOrder(AtomicU64);
+impl Global for ChangedFilesFinishOrder {}
+
 /// Set when the app quits: sessions dropped afterwards get SIGTERM at once.
 static APP_QUITTING: AtomicBool = AtomicBool::new(false);
 
@@ -177,8 +183,14 @@ pub enum SessionEvent {
         notify: bool,
         tab_name_as_tool: bool,
     },
-    /// The last command changed these files (git, MON-014).
-    ChangedFiles(Vec<String>),
+    /// A command changed these files (git, MON-014). The block identity and
+    /// finish order keep delayed Git scans in command order.
+    ChangedFiles {
+        block_id: uuid::Uuid,
+        end_time: f64,
+        finish_order: u64,
+        files: Vec<String>,
+    },
 }
 
 /// Last finished command, from shell integration (OSC 133 D).
@@ -291,8 +303,9 @@ pub struct TerminalSession {
     pub shell_slow: bool,
     /// Visual bell: paint a white flash until this time.
     pub bell_flash_until: Option<Instant>,
-    /// Git status at the start of the running command (OSC 133 C).
-    git_baseline: Arc<Mutex<Option<BTreeSet<String>>>>,
+    /// Git status snapshots at OSC 133 C, keyed by the command block they
+    /// belong to so overlapping scans cannot steal another command's base.
+    git_baselines: HashMap<uuid::Uuid, oneshot::Receiver<BTreeSet<String>>>,
     /// The user closed this session (no "shell exited" notice).
     close_requested: bool,
     last_cwd_check: Instant,
@@ -843,7 +856,7 @@ impl TerminalSession {
             first_output: false,
             shell_slow: false,
             bell_flash_until: None,
-            git_baseline: Arc::new(Mutex::new(None)),
+            git_baselines: HashMap::new(),
             close_requested: false,
             last_cwd_check: now,
             cwd_probe_pending: false,
@@ -1215,6 +1228,7 @@ impl TerminalSession {
                     command,
                     directory,
                     from_shell_integration,
+                    block_id,
                 } => {
                     if self.is_restore_command(command.as_deref()) {
                         continue;
@@ -1226,11 +1240,19 @@ impl TerminalSession {
                             command.as_deref().unwrap_or_default(),
                         );
                     }
-                    if from_shell_integration && self.git_root.is_some() {
-                        let baseline = self.git_baseline.clone();
+                    if from_shell_integration
+                        && self.git_root.is_some()
+                        && let Some(block_id) = block_id
+                    {
+                        // Only one shell command can own the current baseline.
+                        // Drop any abandoned receiver from a command without a
+                        // matching OSC 133 D before recording the new one.
+                        self.git_baselines.clear();
+                        let (baseline_tx, baseline_rx) = oneshot::channel();
+                        self.git_baselines.insert(block_id, baseline_rx);
                         let directory = directory.clone();
                         cx.background_spawn(async move {
-                            *baseline.lock() = Some(git_dirty_files(&directory));
+                            let _ = baseline_tx.send(git_dirty_files(&directory));
                         })
                         .detach();
                     }
@@ -1257,6 +1279,7 @@ impl TerminalSession {
                     exit_code,
                     duration,
                     from_shell_integration,
+                    block_id,
                 } => {
                     if self.is_restore_command(command.as_deref()) {
                         self.restore_line_pending = false;
@@ -1307,8 +1330,11 @@ impl TerminalSession {
                         changed = true;
                         cx.emit(SessionEvent::CommandFinished(code));
                     }
-                    if from_shell_integration && self.git_root.is_some() {
-                        self.collect_changed_files(cx);
+                    if from_shell_integration
+                        && self.git_root.is_some()
+                        && let Some(block_id) = block_id
+                    {
+                        self.collect_changed_files(block_id, cx);
                     }
                 }
                 ShellSessionEvent::ActiveAppChanged(app) => {
@@ -1367,10 +1393,30 @@ impl TerminalSession {
         changed
     }
 
-    fn collect_changed_files(&mut self, cx: &mut Context<Self>) {
-        let directory = self.tracker.current_directory().to_string();
-        let baseline = self.git_baseline.lock().take();
+    fn collect_changed_files(&mut self, block_id: uuid::Uuid, cx: &mut Context<Self>) {
+        let finish_order = cx
+            .default_global::<ChangedFilesFinishOrder>()
+            .0
+            .fetch_add(1, Ordering::Relaxed);
+        let block = self
+            .tracker
+            .blocks()
+            .blocks()
+            .iter()
+            .find(|block| block.id == block_id);
+        let directory = block
+            .and_then(|block| block.directory.clone())
+            .unwrap_or_else(|| self.tracker.current_directory().to_string());
+        let end_time = block
+            .and_then(|block| block.end_time.as_ref())
+            .map(|time| time.timestamp_millis() as f64 / 1_000.0)
+            .unwrap_or_else(now_secs);
+        let baseline = self.git_baselines.remove(&block_id);
         let task = cx.background_spawn(async move {
+            let baseline = match baseline {
+                Some(receiver) => receiver.await.ok(),
+                None => None,
+            };
             let current = git_dirty_files(&directory);
             git_changes::changed_files(baseline.as_ref(), &current)
         });
@@ -1380,9 +1426,19 @@ impl TerminalSession {
                 return;
             }
             let _ = this.update(cx, |this, cx| {
-                this.tracker.blocks_mut().set_changed_files(files.clone());
-                cx.emit(SessionEvent::ChangedFiles(files));
-                cx.notify();
+                if this
+                    .tracker
+                    .blocks_mut()
+                    .set_changed_files_for(block_id, files.clone())
+                {
+                    cx.emit(SessionEvent::ChangedFiles {
+                        block_id,
+                        end_time,
+                        finish_order,
+                        files,
+                    });
+                    cx.notify();
+                }
             });
         })
         .detach();

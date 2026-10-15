@@ -119,8 +119,14 @@ pub enum PaneEvent {
         notify: bool,
         tab_name_as_tool: bool,
     },
-    /// A command of some pane changed these files.
-    ChangedFiles(Vec<String>),
+    /// A command of some pane changed these files. The block identity and
+    /// finish order preserve command order when Git scans finish late.
+    ChangedFiles {
+        block_id: uuid::Uuid,
+        end_time: f64,
+        finish_order: u64,
+        files: Vec<String>,
+    },
     /// The user answered a prompt in some pane: clear a permission border.
     PermissionResolved,
 }
@@ -778,9 +784,17 @@ impl PaneTree {
                         notify: *notify,
                         tab_name_as_tool: *tab_name_as_tool,
                     }),
-                    SessionEvent::ChangedFiles(files) => {
-                        cx.emit(PaneEvent::ChangedFiles(files.clone()))
-                    }
+                    SessionEvent::ChangedFiles {
+                        block_id,
+                        end_time,
+                        finish_order,
+                        files,
+                    } => cx.emit(PaneEvent::ChangedFiles {
+                        block_id: *block_id,
+                        end_time: *end_time,
+                        finish_order: *finish_order,
+                        files: files.clone(),
+                    }),
                     SessionEvent::PermissionResolved => cx.emit(PaneEvent::PermissionResolved),
                     SessionEvent::ClipboardStore(_)
                     | SessionEvent::ClipboardLoad

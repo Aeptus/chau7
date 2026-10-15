@@ -10,6 +10,22 @@ final class RuntimeIsolationTests: XCTestCase {
         XCTAssertEqual(url.path, "/tmp/chau7-isolated-home")
     }
 
+    func testHomeAndChau7DirectoryStayIsolatedWithoutAnOverrideUnderXCTest() {
+        let expected = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Chau7Tests-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+        let home = RuntimeIsolation.homeDirectory(environment: [:])
+        XCTAssertEqual(home.standardizedFileURL, expected.standardizedFileURL)
+        XCTAssertEqual(
+            RuntimeIsolation.chau7Directory(environment: [:]).standardizedFileURL,
+            expected.appendingPathComponent(".chau7", isDirectory: true).standardizedFileURL
+        )
+        XCTAssertEqual(
+            RuntimeIsolation.expandTilde(in: "~/.claude", environment: [:]),
+            expected.path + "/.claude"
+        )
+        XCTAssertFalse(home.path.hasPrefix(NSHomeDirectory()))
+    }
+
     func testApplicationSupportDirectoryUsesOverrideRoot() {
         let url = RuntimeIsolation.applicationSupportDirectory(environment: [
             "CHAU7_HOME_ROOT": "/tmp/chau7-isolated-home"

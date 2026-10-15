@@ -660,7 +660,9 @@ impl Workspace {
                     }
                 }
             }
-            PaneEvent::Ai { .. } | PaneEvent::ChangedFiles(_) | PaneEvent::PermissionResolved => {
+            PaneEvent::Ai { .. }
+            | PaneEvent::ChangedFiles { .. }
+            | PaneEvent::PermissionResolved => {
                 this.handle_ai_pane_event(id, event, cx);
             }
             PaneEvent::CommandStarted(command) => {

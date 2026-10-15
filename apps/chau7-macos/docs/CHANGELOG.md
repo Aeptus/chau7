@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Preserve iOS command drafts until WebSocket completion and retain uncertain
+  sends for an acknowledged manual retry; fence callbacks and pending-state
+  fetches across reconnects and pairing changes.
+- Clear approvals, queued decisions, drafts and telemetry when changing paired
+  Macs, and release in-flight approval state for same-host reconnects.
+- Preserve split UTF-8 characters and a bounded text fallback on iOS; map the
+  cursor and wide graphemes correctly when folding the Rust terminal grid.
+- Validate and confirm Swift SSH URL actions, keep queued input on the new tab,
+  and honor explicit SSH ports in both macOS apps.
+- Require shared tab identity before recovering legacy secondary windows from
+  a backup, preventing unrelated windows from being restored.
+- Bind asynchronous Git changes to their command UUID and completion order;
+  discard delayed diff requests after switching tabs so they cannot steal focus.
+- Target remote MCP approval context at the requested tab and evict discarded
+  protected inputs together with their pending approval cards.
+- Honor Xcode's selected simulator architectures in the iOS Rust build and
+  recheck nested Rust sources through Cargo on every build invocation.
+- Keep home-derived stores isolated in XCTest even when a test clears its
+  explicit override, and make test fixtures respect isolated homes and services.
+
 - Preserve user directory names when localizing Full Disk Access alerts,
   using translated string slices for native prompt buttons.
 

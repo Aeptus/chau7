@@ -866,6 +866,16 @@ private final class RemoteTerminalCanvasView: UIView {
             )
         }
 
+        if let cursor = display.visibleCursor, visibleRows.contains(cursor.row) {
+            colorScheme.cursorUIColor.withAlphaComponent(0.28).setFill()
+            UIRectFill(CGRect(
+                x: CGFloat(cursor.column) * cellW,
+                y: CGFloat(cursor.row) * cellH,
+                width: cellW,
+                height: cellH
+            ))
+        }
+
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
         for row in visibleRows {

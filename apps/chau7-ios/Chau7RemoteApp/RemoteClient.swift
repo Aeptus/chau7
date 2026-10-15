@@ -82,6 +82,26 @@ final class RemoteClient {
     var pairingInfo: PairingInfo? {
         didSet {
             RemotePairingStore.savePairing(pairingInfo)
+            if oldValue != pairingInfo {
+                // Pending approvals and notification decisions belong to a
+                // specific paired Mac. Drop them before the new pairing can
+                // open a socket or fetch /pending.
+                cancelPendingStateFetch()
+                lastPendingStateFetchAt = nil
+                disconnect(
+                    autoReconnect: false,
+                    preserveApprovalsAndPrompts: false,
+                    trigger: .connectionRestart,
+                    discardUserIntent: true
+                )
+                // Socket close settles its sends synchronously. Drop old-host
+                // events after that settlement so none can reach the new Mac.
+                telemetryBuffer.removeAll()
+                telemetrySendAttempts.removeAll(keepingCapacity: true)
+                deferredDecisions.reset()
+                pushDeliveredIDs.removeAll(keepingCapacity: true)
+                suppressedPromptIDs.removeAll(keepingCapacity: true)
+            }
             if RemoteTabInventoryRetention.shouldClear(
                 previousPairing: oldValue, nextPairing: pairingInfo, discardingUserIntent: false
             ) {
@@ -152,6 +172,7 @@ final class RemoteClient {
     /// underlying state changed — so a genuinely new occurrence still surfaces.
     private var suppressedPromptIDs: Set<String> = []
     private var pendingStateFetchTask: Task<Void, Never>?
+    private var pendingStateFetchFence: PendingStateFetchFence?
     private var lastPendingStateFetchAt: Date?
     /// Approval decisions taken from a notification before the request was
     /// known (cold launch from a lock-screen action). Applied once the
@@ -235,6 +256,10 @@ final class RemoteClient {
         terminalRenderer.onFramePresented = { [weak self] trace in
             self?.streamingPerformance.recordPresentation(trace)
         }
+        terminalRenderer.onAvailabilityChanged = { [weak self] isAvailable in
+            guard !isAvailable else { return }
+            self?.refreshVisibleOutput(prioritizeStrippedOutput: true)
+        }
         _ = DiagnosticsLog.shared
         // Anything left on the lock screen from a previous run is very likely
         // stale: the requests it refers to were resolved while we were not
@@ -283,7 +308,7 @@ final class RemoteClient {
             }
         } else {
             terminalRenderer.reset()
-            scheduleStrippedOutputRefresh(immediate: true)
+            refreshVisibleOutput(prioritizeStrippedOutput: true)
         }
 
         DiagnosticsLog.shared.info(.render, "Terminal presentation changed", [
@@ -426,7 +451,7 @@ final class RemoteClient {
     /// Re-reads the system notification authorization so Settings reflects changes
     /// the user made in iOS Settings while the app was backgrounded.
     func refreshNotificationAuthorization() {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
             let granted = settings.authorizationStatus == .authorized
                 || settings.authorizationStatus == .provisional
                 || settings.authorizationStatus == .ephemeral
@@ -502,6 +527,8 @@ final class RemoteClient {
         reconnectTask = nil
         cancelHandshakeTasks()
         transport.close()
+        approvalCoordinator.resetInFlight()
+        cancelPendingStateFetch()
         isConnected = false
         status = .disconnected
         session.invalidateSession(clearHandshakeMaterial: true)
@@ -577,8 +604,12 @@ final class RemoteClient {
     // MARK: - Input
 
     @discardableResult
-    func sendInput(_ text: String, appendNewline: Bool) -> Bool {
-        sendInput(text, appendNewline: appendNewline, to: activeTabID)
+    func sendInput(
+        _ text: String,
+        appendNewline: Bool,
+        completion: (@MainActor (RemoteSendOutcome) -> Void)? = nil
+    ) -> Bool {
+        sendInput(text, appendNewline: appendNewline, to: activeTabID, completion: completion)
     }
 
     /// Sends to an explicit tab rather than whichever tab happens to be active
@@ -589,8 +620,13 @@ final class RemoteClient {
     /// switch between composing the command and confirming it could retarget a
     /// confirmed destructive command at a different shell.
     @discardableResult
-    func sendInput(_ text: String, appendNewline: Bool, to tabID: UInt32) -> Bool {
-        sendInput(text, appendNewline: appendNewline, to: tabID, allowUnlistedTab: false)
+    func sendInput(
+        _ text: String,
+        appendNewline: Bool,
+        to tabID: UInt32,
+        completion: (@MainActor (RemoteSendOutcome) -> Void)? = nil
+    ) -> Bool {
+        sendInput(text, appendNewline: appendNewline, to: tabID, allowUnlistedTab: false, completion: completion)
     }
 
     /// Whether keys should go over the semantic KEY_INPUT frame. False
@@ -871,6 +907,13 @@ final class RemoteClient {
 
         let wasConnected = isConnected
         cancelHandshakeTasks()
+        // A receive or send failure ends this socket generation immediately.
+        // Leaving the task open until the backoff fires lets old callbacks
+        // mutate approval state and makes ordinary connect-if-needed callers
+        // mistake a failed socket for a live one.
+        transport.close()
+        approvalCoordinator.resetInFlight()
+        cancelPendingStateFetch()
         isConnected = false
         status = .disconnected
         session.invalidateSession(clearHandshakeMaterial: false)
@@ -1486,16 +1529,15 @@ private func handlePairAccept(_ data: Data) {
             )
         }
 
-        // Rich replay owns its bytes off-main. Maintain the String/ANSI path
-        // only while it is actually visible (or after renderer failure).
-        let plainTextNeedsOutput = desiredTerminalPresentation == .text || !terminalRenderer.isAvailable
-        if plainTextNeedsOutput {
-            outputStore.append(data, to: resolvedTabID)
-            if outputStore.pendingByteCount(for: resolvedTabID) >= RemoteOutputTuning.maxPendingBytesPerTab {
-                flushPendingOutput(for: resolvedTabID)
-            } else {
-                scheduleOutputFlush()
-            }
+        // Keep a bounded text checkpoint alongside rich replay. If playback
+        // construction fails after the last checkpoint, the text fallback can
+        // still show the output that arrived before the renderer reported its
+        // failure. The store retains only the configured tail per visible tab.
+        outputStore.append(data, to: resolvedTabID)
+        if outputStore.pendingByteCount(for: resolvedTabID) >= RemoteOutputTuning.maxPendingBytesPerTab {
+            flushPendingOutput(for: resolvedTabID)
+        } else {
+            scheduleOutputFlush()
         }
         os_signpost(
             .end,
@@ -1504,7 +1546,7 @@ private func handlePairAccept(_ data: Data) {
             signpostID: signpostID,
             "tab=%{public}u pending=%{public}d",
             resolvedTabID,
-            plainTextNeedsOutput ? outputStore.pendingByteCount(for: resolvedTabID) : 0
+            outputStore.pendingByteCount(for: resolvedTabID)
         )
     }
 
@@ -1655,7 +1697,8 @@ private func handlePairAccept(_ data: Data) {
         type: RemoteFrameType,
         tabID: UInt32,
         payload: Data,
-        completion: (@MainActor (Bool) -> Void)? = nil
+        completion: (@MainActor (Bool) -> Void)? = nil,
+        sendOutcomeCompletion: (@MainActor (RemoteSendOutcome) -> Void)? = nil
     ) -> Bool {
         guard let crypto else { return false }
         let frame = RemoteFrame(type: type.rawValue, tabID: tabID, seq: session.nextSeq(), payload: payload)
@@ -1663,19 +1706,37 @@ private func handlePairAccept(_ data: Data) {
             log.error("Encryption failed for frame type \(type.rawValue)")
             return false
         }
-        return send(encrypted, completion: completion)
+        return send(encrypted, completion: completion, sendOutcomeCompletion: sendOutcomeCompletion)
     }
 
     @discardableResult
     private func send(
         _ frame: RemoteFrame,
-        completion: (@MainActor (Bool) -> Void)? = nil
+        completion: (@MainActor (Bool) -> Void)? = nil,
+        sendOutcomeCompletion: (@MainActor (RemoteSendOutcome) -> Void)? = nil
     ) -> Bool {
-        transport.send(frame.encode()) { [weak self] success, errorDescription in
-            if !success {
-                self?.emitTelemetry(type: .sendFailed, status: "send_failed", message: errorDescription)
+        let sendGeneration = transport.generation
+        return transport.send(frame.encode()) { [weak self] outcome in
+            guard let self else { return }
+            // A completion from a closed socket must not resolve approval or
+            // telemetry state for the replacement session. Composer sends
+            // still settle as ambiguous so their draft can be retained.
+            switch RemoteSendOutcome.fenced(
+                outcome,
+                sendGeneration: sendGeneration,
+                currentGeneration: transport.generation
+            ) {
+            case .transportCompleted:
+                completion?(true)
+                sendOutcomeCompletion?(.transportCompleted)
+            case let .failed(errorDescription):
+                emitTelemetry(type: .sendFailed, status: "send_failed", message: errorDescription)
+                handleDisconnect(reason: errorDescription, trigger: .transportFailure)
+                completion?(false)
+                sendOutcomeCompletion?(.failed(errorDescription))
+            case .indeterminate:
+                sendOutcomeCompletion?(.indeterminate)
             }
-            completion?(success)
         }
     }
 
@@ -1849,7 +1910,13 @@ private func handlePairAccept(_ data: Data) {
     }
 
     @discardableResult
-    private func sendInput(_ text: String, appendNewline: Bool, to tabID: UInt32, allowUnlistedTab: Bool = false) -> Bool {
+    private func sendInput(
+        _ text: String,
+        appendNewline: Bool,
+        to tabID: UInt32,
+        allowUnlistedTab: Bool = false,
+        completion: (@MainActor (RemoteSendOutcome) -> Void)? = nil
+    ) -> Bool {
         guard !text.isEmpty else { return false }
         guard crypto != nil, transport.isOpen else {
             reportBlockedInput(
@@ -1881,7 +1948,12 @@ private func handlePairAccept(_ data: Data) {
             data = scoped
             frameType = .paneInput
         }
-        guard sendEncrypted(type: frameType, tabID: tabID, payload: data) else {
+        guard sendEncrypted(
+            type: frameType,
+            tabID: tabID,
+            payload: data,
+            sendOutcomeCompletion: completion
+        ) else {
             reportBlockedInput(
                 "Input could not be encrypted for the current remote session.",
                 reason: "encrypt_failed",
@@ -1967,14 +2039,14 @@ private func handlePairAccept(_ data: Data) {
     }
 
     private func refreshVisibleOutput(prioritizeStrippedOutput: Bool = false) {
-        let visibleOutput = outputStore.visibleOutput(for: activeTabID)
-        let outputChanged = visibleOutput != outputText
-        outputText = visibleOutput
-
         let plainTextIsVisible = desiredTerminalPresentation == .text
             || !terminalRenderer.isAvailable
             || terminalRenderer.renderState == nil
-        if plainTextIsVisible, prioritizeStrippedOutput || outputChanged {
+        guard plainTextIsVisible else { return }
+        let visibleOutput = outputStore.visibleOutput(for: activeTabID)
+        let outputChanged = visibleOutput != outputText
+        if outputChanged { outputText = visibleOutput }
+        if prioritizeStrippedOutput || outputChanged {
             scheduleStrippedOutputRefresh(immediate: prioritizeStrippedOutput)
         }
     }
@@ -2001,7 +2073,7 @@ private func handlePairAccept(_ data: Data) {
     }
 
     private func schedulePendingStateFetch(reason: String, force: Bool = false) {
-        guard pairingInfo != nil else { return }
+        guard let pairing = pairingInfo else { return }
         if !force {
             if pendingStateFetchTask != nil {
                 return
@@ -2016,13 +2088,28 @@ private func handlePairAccept(_ data: Data) {
         // refreshes (push wake, scene-active, pair-accept) don't stack
         // concurrent network requests.
         pendingStateFetchTask?.cancel()
+        let fence = PendingStateFetchFence(
+            id: UUID(),
+            pairing: pairing,
+            transportGeneration: transport.generation
+        )
+        pendingStateFetchFence = fence
         pendingStateFetchTask = Task { @MainActor [weak self] in
             defer {
-                self?.pendingStateFetchTask = nil
-                self?.lastPendingStateFetchAt = Date()
+                if let self, self.pendingStateFetchFence == fence {
+                    self.pendingStateFetchTask = nil
+                    self.pendingStateFetchFence = nil
+                    self.lastPendingStateFetchAt = Date()
+                }
             }
-            await self?.fetchPendingState(reason: reason)
+            await self?.fetchPendingState(reason: reason, fence: fence)
         }
+    }
+
+    private func cancelPendingStateFetch() {
+        pendingStateFetchTask?.cancel()
+        pendingStateFetchTask = nil
+        pendingStateFetchFence = nil
     }
 
     private var shouldScheduleLocalApprovalNotification: Bool {
@@ -2042,13 +2129,18 @@ private func handlePairAccept(_ data: Data) {
         pushDeliveredIDs.removeAll { $0 == id }
     }
 
-    private func fetchPendingState(reason: String) async {
-        guard let request = pendingStateRequest() else { return }
+    private func fetchPendingState(reason: String, fence: PendingStateFetchFence) async {
+        guard isCurrentPendingStateFetch(fence),
+              let request = pendingStateRequest(for: fence.pairing)
+        else { return }
         // Mark the fetch instant: WS deltas arriving at/after this moment
         // outrank whatever the snapshot says (see PendingStateReconciler).
         pendingReconciler.beginSnapshotFetch(now: Date())
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            // URLSession cancellation is cooperative. Discard a response from
+            // an older pairing or session before it reaches the reconciler.
+            guard isCurrentPendingStateFetch(fence) else { return }
             guard let httpResponse = response as? HTTPURLResponse else { return }
             guard httpResponse.statusCode == 200 else {
                 log.warning("Pending state fetch failed: status \(httpResponse.statusCode)")
@@ -2077,12 +2169,21 @@ private func handlePairAccept(_ data: Data) {
             }
             emitTelemetry(type: .remoteStateFetched, status: reason)
         } catch {
+            guard isCurrentPendingStateFetch(fence) else { return }
             log.error("Pending state fetch failed (\(reason)): \(error.localizedDescription)")
         }
     }
 
-    private func pendingStateRequest() -> URLRequest? {
-        guard let pairing = pairingInfo else { return nil }
+    private func isCurrentPendingStateFetch(_ fence: PendingStateFetchFence) -> Bool {
+        fence.admits(
+            currentFence: pendingStateFetchFence,
+            currentPairing: pairingInfo,
+            currentTransportGeneration: transport.generation,
+            isCancelled: Task.isCancelled
+        )
+    }
+
+    private func pendingStateRequest(for pairing: PairingInfo) -> URLRequest? {
         guard var components = Self.relayAPIURLComponents(from: pairing.relayURL) else {
             return nil
         }
@@ -2526,14 +2627,20 @@ private func handlePairAccept(_ data: Data) {
         // the next flush (bounded per-event attempts), instead of the old
         // fire-and-forget that silently dropped it.
         let rebufferCandidate = event
-        let sent = sendEncrypted(type: .remoteTelemetry, tabID: event.tabID ?? 0, payload: data) { [weak self] success in
-            guard let self else { return }
-            if success {
-                telemetrySendAttempts.removeValue(forKey: rebufferCandidate.id)
-            } else {
-                rebufferTelemetryEvent(rebufferCandidate)
+        let sent = sendEncrypted(
+            type: .remoteTelemetry,
+            tabID: event.tabID ?? 0,
+            payload: data,
+            sendOutcomeCompletion: { [weak self] outcome in
+                guard let self else { return }
+                switch outcome {
+                case .transportCompleted:
+                    telemetrySendAttempts.removeValue(forKey: rebufferCandidate.id)
+                case .failed, .indeterminate:
+                    rebufferTelemetryEvent(rebufferCandidate)
+                }
             }
-        }
+        )
         if !sent {
             rebufferTelemetryEvent(rebufferCandidate)
         }

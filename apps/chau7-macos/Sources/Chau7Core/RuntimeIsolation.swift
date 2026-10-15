@@ -22,11 +22,17 @@ public enum RuntimeIsolation {
     }
 
     public static func homeDirectory(
-        fileManager _: FileManager = .default,
+        fileManager: FileManager = .default,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> URL {
         if let override = normalizedHomeRoot(from: environment) {
             return override
+        }
+        // A test may remove a temporary override during tearDown. Keep all
+        // home-based stores isolated in that case, including .chau7 and CLI
+        // transcript discovery, not only Application Support and logs.
+        if isXCTestProcess(environment: environment) {
+            return testHomeDirectory(fileManager: fileManager)
         }
         return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).standardizedFileURL
     }

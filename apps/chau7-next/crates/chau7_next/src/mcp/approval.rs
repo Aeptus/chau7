@@ -128,6 +128,7 @@ pub fn request_command_approval(
     flagged: &str,
     permissions: &ResolvedPermissions,
     tab_id: &str,
+    target_tab: Option<crate::tab_bar::TabId>,
 ) -> MCPApprovalResult {
     let _dialog = DIALOG.lock().unwrap_or_else(|e| e.into_inner());
     let request_id = uuid::Uuid::new_v4().to_string().to_uppercase();
@@ -159,7 +160,9 @@ pub fn request_command_approval(
             event.detail.insert("approval".into(), summary);
             crate::observability::record(event, cx);
             // The paired iPhone gets the same request (RMT-017).
-            crate::remote::send_approval_request(payload, cx);
+            if let Some(target_tab) = target_tab {
+                crate::remote::send_approval_request(payload, target_tab, cx);
+            }
             let parent = dialog_window(window, cx);
             let Some(dialog) = super::approval_window::open(
                 parent,
@@ -228,16 +231,17 @@ pub fn request_command_approval(
 
 /// `enforceVerdict`: `None` when the command may run, else the error to
 /// return. "Always Allow" adds the command to the matched profile or the
-/// global list. `context` names the tab in the log.
+/// global list. The captured tab identifier is also used in the audit log.
 pub fn enforce(
     main: &MainThread,
     check: CheckResult,
     permissions: &ResolvedPermissions,
     full_input: &str,
-    context: &str,
     window: Option<AnyWindowHandle>,
     tab_id: &str,
+    target_tab: Option<crate::tab_bar::TabId>,
 ) -> Option<String> {
+    let context = format!("tab {tab_id}");
     for name in &check.audited {
         log::info!(
             "MCP audit: command '{name}' allowed under audit-only mode ({})",
@@ -253,7 +257,15 @@ pub fn enforce(
             )))
         }
         CommandVerdict::NeedsApproval(cmd) => {
-            match request_command_approval(main, window, full_input, &cmd, permissions, tab_id) {
+            match request_command_approval(
+                main,
+                window,
+                full_input,
+                &cmd,
+                permissions,
+                tab_id,
+                target_tab,
+            ) {
                 MCPApprovalResult::Denied => {
                     log::info!("MCP: user denied '{cmd}' in {context}");
                     Some(json_error(&format!("Command '{cmd}' was denied by user.")))
