@@ -32,3 +32,39 @@ These are pre-change measurements. They do not establish a post-build performanc
 `cargo clippy -p chau7_next -p chau7_next_core --all-targets --locked --no-deps -- -D warnings` passed. Production packaging is verified separately against its source revision and artifact receipt.
 
 Native visual validation and comparable post-change runtime measurements have not been performed. The running app was left untouched; no install or profile write was performed. Do not report a measured latency gain until comparable post-build measurements are available.
+
+## Follow-up: terminal scroll and selection
+
+The terminal wheel handler rounded each event independently. Precise macOS
+trackpad deltas below half a terminal line became zero and were discarded.
+The handler must retain fractional movement across events, consume vertical
+movement intended for the terminal, and reset residual movement at gesture
+boundaries or cancellation.
+
+The selection review also found that GPUI's div mouse-move handler only runs
+while its hitbox is hovered. Leaving the terminal during a drag therefore
+stopped pointer tracking. Double/triple clicks did not keep the semantic
+selection active for dragging, and wheel selection extension read the grid's
+cached display offset before refresh. The fixes use an owned drag listener,
+keep semantic selection active, and read the current backend offset.
+
+Pane clipping and the split separator do not intercept terminal wheel events.
+No renderer or restored history format change is needed for these fixes.
+
+Follow-up validation:
+
+- Six new mouse tests pass: four scroll-accumulator tests and two rendered GPUI
+  interaction fixtures using a temporary profile and an isolated `/bin/cat` PTY.
+- The rendered fixtures cover fractional pixels, gesture boundaries, wheel
+  propagation, normal shell scrolling, mouse-reporting overrides, selection in
+  scrolled history, outside dragging and auto-scroll, missed release recovery,
+  Shift anchor preservation, double/triple-click extension, copy and paste,
+  and Option-drag copy suppression.
+- Full Rust app/core suites: 3,194 passed, 0 failed, 2 ignored.
+- Cargo formatting and strict app/core Clippy passed.
+- Legacy Swift: 4,594 tests executed, 3 skipped, 0 failures; build passed.
+
+These are automated interaction tests, not a physical trackpad or native-window
+hand test. The app under /Applications is not replaced or relaunched by this
+workflow. Packaging verifies a separate production bundle against its clean
+source revision and seven executable hashes.

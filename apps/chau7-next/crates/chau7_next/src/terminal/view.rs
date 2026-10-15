@@ -2,6 +2,10 @@
 //! `paint.rs`, images in `images.rs`; keyboard and IME input in `input.rs`,
 //! mouse input in `mouse.rs` (child modules, so they reach the view's fields).
 
+#[cfg(all(test, unix))]
+#[path = "mouse_interaction_tests.rs"]
+mod mouse_interaction_tests;
+
 #[path = "input.rs"]
 mod input;
 #[path = "mouse.rs"]
@@ -564,7 +568,7 @@ impl TerminalView {
 
     /// Convert a viewport row into the terminal's grid line (scrollback aware).
     fn grid_line(&self, row: i32, cx: &App) -> i32 {
-        row - self.session.read(cx).grid.display_offset as i32
+        row - self.session.read(cx).display_offset() as i32
     }
 
     fn write(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
@@ -797,6 +801,30 @@ impl Render for TerminalView {
                         }
                     },
                     move |bounds, state, window, cx| {
+                        // Terminal selection and mouse reporting need movement
+                        // after the pointer leaves this element. Register in
+                        // paint so capture sees the event before hit-tested
+                        // handlers on other elements.
+                        let mouse_view = view.downgrade();
+                        window.on_mouse_event(
+                            move |event: &gpui::MouseMoveEvent, phase, window, cx| {
+                                if phase != gpui::DispatchPhase::Capture {
+                                    return;
+                                }
+                                let Some(view) = mouse_view.upgrade() else {
+                                    return;
+                                };
+                                if view.read(cx).has_active_mouse_gesture() {
+                                    view.update(cx, |terminal, cx| {
+                                        terminal.on_mouse_move(event, window, cx)
+                                    });
+                                    // The capture handler owns this gesture, so
+                                    // don't also deliver it to the hit-tested
+                                    // terminal or an overlay underneath it.
+                                    cx.stop_propagation();
+                                }
+                            },
+                        );
                         window.handle_input(
                             &focus_handle,
                             ElementInputHandler::new(bounds, view.clone()),

@@ -14,7 +14,7 @@ use chau7_next_core::input::{cursor_moves, drop};
 use chau7_next_core::key_encoding::{self, KeyMods, MouseAction, MouseButtonCode};
 use gpui::{
     ClipboardItem, Context, ExternalPaths, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, Task, Window, px,
+    MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, Task, TouchPhase, Window, px,
 };
 
 use super::TerminalView;
@@ -40,9 +40,51 @@ pub(super) struct MouseState {
     /// Auto-scroll direction (-1 up into history, 1 down) and distance past the edge.
     scroll_dir: i32,
     scroll_distance: f32,
+    wheel_scroll: ScrollLineAccumulator,
     auto_scroll: Option<Task<()>>,
     copy_task: Option<Task<()>>,
     last_copied: Option<String>,
+}
+
+#[derive(Default)]
+struct ScrollLineAccumulator {
+    fractional_lines: f32,
+    reporting_mode: Option<bool>,
+}
+
+impl ScrollLineAccumulator {
+    fn set_reporting_mode(&mut self, reporting: bool) {
+        if self
+            .reporting_mode
+            .is_some_and(|previous| previous != reporting)
+        {
+            self.fractional_lines = 0.0;
+        }
+        self.reporting_mode = Some(reporting);
+    }
+
+    fn accumulate(&mut self, delta_lines: f32, phase: TouchPhase) -> i32 {
+        if phase == TouchPhase::Started {
+            self.fractional_lines = 0.0;
+        }
+        if phase == TouchPhase::Cancelled {
+            self.fractional_lines = 0.0;
+            return 0;
+        }
+        if !delta_lines.is_finite() {
+            self.fractional_lines = 0.0;
+            return 0;
+        }
+
+        let accumulated = self.fractional_lines + delta_lines;
+        let lines = accumulated.trunc() as i32;
+        self.fractional_lines = if phase == TouchPhase::Ended {
+            0.0
+        } else {
+            accumulated - lines as f32
+        };
+        lines
+    }
 }
 
 impl TerminalView {
@@ -59,6 +101,7 @@ impl TerminalView {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_other_mouse_up))
+            .on_mouse_up_out(MouseButton::Middle, cx.listener(Self::on_other_mouse_up))
             .on_scroll_wheel(cx.listener(Self::on_scroll))
             .on_drop(cx.listener(Self::on_drop_paths))
     }
@@ -108,6 +151,23 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus_handle, cx);
+        self.stop_auto_scroll();
+        self.input.mouse.copy_task = None;
+        // A fresh press also terminates a reported drag whose release was
+        // lost, including when Shift now requests local selection.
+        if let Some(button) = self.reporting_button.take() {
+            self.report_mouse(
+                button,
+                MouseAction::Release,
+                event.position,
+                event.modifiers,
+                cx,
+            );
+        }
+        self.input.mouse.down = None;
+        self.input.mouse.down_alt = false;
+        self.input.mouse.dragged = false;
+        self.selecting = false;
         if self.reports_mouse(event.modifiers, cx) {
             self.reporting_button = Some(MouseButtonCode::Left);
             self.report_mouse(
@@ -159,11 +219,13 @@ impl TerminalView {
                 session.selection_start(col, line, kind);
                 session.selection_update(col, line);
                 self.input.mouse.down = None;
-                self.schedule_copy_on_select(event.modifiers.alt, cx);
+                self.selecting = true;
             }
             _ if event.modifiers.shift && session.selection_text().is_some() => {
-                // Shift-click extends the selection.
+                // Preserve the existing anchor when Shift-click continues
+                // into a drag, just as for word/line selection above.
                 session.selection_update(col, line);
+                self.input.mouse.down = None;
                 self.selecting = true;
             }
             _ => session.selection_clear(),
@@ -240,14 +302,53 @@ impl TerminalView {
         self.show_context_menu(event.position, window, cx);
     }
 
-    fn on_mouse_move(
+    pub(super) fn has_active_mouse_gesture(&self) -> bool {
+        self.input.mouse.down.is_some() || self.selecting || self.reporting_button.is_some()
+    }
+
+    pub(super) fn on_mouse_move(
         &mut self,
         event: &MouseMoveEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A release can be missed when the pointer leaves the window or the
+        // app loses the drag. End the gesture and cancel its timer while
+        // keeping the selection already written to the terminal session.
+        if event.pressed_button.is_none() {
+            let had_reporting_button = self.reporting_button.is_some();
+            if let Some(button) = self.reporting_button.take() {
+                self.report_mouse(
+                    button,
+                    MouseAction::Release,
+                    event.position,
+                    event.modifiers,
+                    cx,
+                );
+            }
+            let had_mouse_down = self.input.mouse.down.take().is_some();
+            let down_alt = std::mem::take(&mut self.input.mouse.down_alt);
+            let was_selecting = std::mem::take(&mut self.selecting);
+            if had_mouse_down || was_selecting || had_reporting_button {
+                self.input.mouse.dragged = false;
+                self.stop_auto_scroll();
+                if was_selecting {
+                    self.publish_selection(window, cx);
+                    self.schedule_copy_on_select(down_alt || event.modifiers.alt, cx);
+                }
+                if self.link_hover {
+                    self.link_hover = false;
+                    cx.notify();
+                }
+                return;
+            }
+        }
+
         // Holding Cmd over a link shows the pointing hand.
-        let hover = super::links::is_link_modifier(&event.modifiers)
+        let hover = self
+            .bounds
+            .is_some_and(|bounds| bounds.contains(&event.position))
+            && super::links::is_link_modifier(&event.modifiers)
             && self
                 .cell_at(event.position, cx)
                 .is_some_and(|(c, r)| super::links::target_at(&self.session, c, r, cx).is_some());
@@ -316,11 +417,14 @@ impl TerminalView {
         }
     }
 
-    fn extend_selection_to(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+    fn extend_selection_to(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) -> bool {
         if let Some((col, row)) = self.cell_at(position, cx) {
             let line = self.grid_line(row, cx);
             self.session.read(cx).selection_update(col, line);
             self.session.update(cx, |s, cx| s.refresh(cx));
+            true
+        } else {
+            false
         }
     }
 
@@ -393,6 +497,7 @@ impl TerminalView {
 
     fn on_mouse_up(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
         let down = self.input.mouse.down.take();
+        let down_alt = std::mem::take(&mut self.input.mouse.down_alt);
         let dragged = std::mem::take(&mut self.input.mouse.dragged);
         let was_selecting = std::mem::take(&mut self.selecting);
         self.stop_auto_scroll();
@@ -414,7 +519,7 @@ impl TerminalView {
         {
             let input = &Settings::get(cx).input;
             let mods = event.modifiers;
-            if self.input.mouse.down_alt && input.option_click_cursor {
+            if down_alt && input.option_click_cursor {
                 // Option-click moves the cursor to the clicked cell.
                 if let Some(target) = self.screen_cell(down, cx) {
                     let cursor = self.cursor_cell(cx);
@@ -440,7 +545,7 @@ impl TerminalView {
             }
         }
         if was_selecting {
-            self.schedule_copy_on_select(event.modifiers.alt, cx);
+            self.schedule_copy_on_select(down_alt || event.modifiers.alt, cx);
         }
     }
 
@@ -485,17 +590,39 @@ impl TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(metrics) = self.metrics.as_ref() else {
-            return;
+        let has_vertical_delta = match event.delta {
+            ScrollDelta::Lines(delta) => delta.y != 0.0,
+            ScrollDelta::Pixels(delta) => delta.y != px(0.0),
         };
-        let lines = match event.delta {
-            ScrollDelta::Lines(delta) => delta.y.round() as i32,
-            ScrollDelta::Pixels(delta) => (delta.y / metrics.line_height).round() as i32,
+        if has_vertical_delta {
+            // Fractional trackpad events still belong to the terminal even
+            // when they have not accumulated to a whole cell yet.
+            cx.stop_propagation();
+        }
+
+        let reports_mouse = self.reports_mouse(event.modifiers, cx);
+        self.input
+            .mouse
+            .wheel_scroll
+            .set_reporting_mode(reports_mouse);
+        let delta_lines = match event.delta {
+            ScrollDelta::Lines(delta) => delta.y,
+            ScrollDelta::Pixels(delta) => self
+                .metrics
+                .as_ref()
+                .filter(|metrics| metrics.line_height > px(0.0))
+                .map(|metrics| delta.y / metrics.line_height)
+                .unwrap_or(0.0),
         };
+        let lines = self
+            .input
+            .mouse
+            .wheel_scroll
+            .accumulate(delta_lines, event.touch_phase);
         if lines == 0 {
             return;
         }
-        if self.reports_mouse(event.modifiers, cx) {
+        if reports_mouse {
             let wheel = if lines > 0 {
                 MouseButtonCode::WheelUp
             } else {
@@ -514,11 +641,12 @@ impl TerminalView {
             return;
         }
         self.session.read(cx).scroll_lines(lines);
-        // The wheel extends an active selection.
-        if self.selecting {
-            self.extend_selection_to(event.position, cx);
+        // The wheel extends an active selection. Its coordinate conversion
+        // reads the backend's live offset after the scroll.
+        let selection_refreshed = self.selecting && self.extend_selection_to(event.position, cx);
+        if !selection_refreshed {
+            self.session.update(cx, |s, cx| s.refresh(cx));
         }
-        self.session.update(cx, |s, cx| s.refresh(cx));
         cx.stop_propagation();
     }
 
@@ -581,5 +709,67 @@ impl TerminalView {
             .map(|p| p.to_string_lossy().to_string())
             .collect();
         self.paste_text(&drop::paths_text(&names), cx);
+    }
+}
+#[cfg(test)]
+mod scroll_line_accumulator_tests {
+    use super::ScrollLineAccumulator;
+    use gpui::TouchPhase;
+
+    #[test]
+    fn accumulates_fractional_trackpad_deltas_until_a_line_is_ready() {
+        let mut accumulator = ScrollLineAccumulator::default();
+
+        let emitted: Vec<_> = (0..5)
+            .map(|_| accumulator.accumulate(0.2, TouchPhase::Moved))
+            .collect();
+
+        assert_eq!(emitted, [0, 0, 0, 0, 1]);
+        assert!(accumulator.fractional_lines.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn handles_negative_scroll_and_direction_reversals_without_stray_lines() {
+        let mut accumulator = ScrollLineAccumulator::default();
+        let emitted: Vec<_> = (0..5)
+            .map(|_| accumulator.accumulate(-0.2, TouchPhase::Moved))
+            .collect();
+        assert_eq!(emitted, [0, 0, 0, 0, -1]);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+
+        assert_eq!(accumulator.accumulate(0.8, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.accumulate(-0.4, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.accumulate(-0.4, TouchPhase::Ended), 0);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+
+        assert_eq!(accumulator.accumulate(0.5, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.accumulate(0.0, TouchPhase::Ended), 0);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+    }
+
+    #[test]
+    fn resets_after_non_finite_deltas_and_reporting_mode_changes() {
+        let mut accumulator = ScrollLineAccumulator::default();
+        accumulator.set_reporting_mode(false);
+        assert_eq!(accumulator.accumulate(0.8, TouchPhase::Moved), 0);
+        accumulator.set_reporting_mode(true);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+        assert_eq!(accumulator.accumulate(f32::NAN, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+        assert_eq!(accumulator.accumulate(-1.0, TouchPhase::Moved), -1);
+    }
+
+    #[test]
+    fn phases_reset_or_finish_the_fractional_gesture() {
+        let mut accumulator = ScrollLineAccumulator::default();
+        assert_eq!(accumulator.accumulate(0.4, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.accumulate(0.3, TouchPhase::Started), 0);
+        assert!((accumulator.fractional_lines - 0.3).abs() < f32::EPSILON);
+
+        assert_eq!(accumulator.accumulate(0.2, TouchPhase::Ended), 0);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+        assert_eq!(accumulator.accumulate(0.4, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.accumulate(1.0, TouchPhase::Cancelled), 0);
+        assert_eq!(accumulator.fractional_lines, 0.0);
     }
 }

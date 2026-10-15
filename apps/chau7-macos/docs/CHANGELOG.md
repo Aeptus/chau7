@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Preserve fractional trackpad movement when scrolling terminal history.
+- Keep terminal drag selection active outside pane bounds, extend word/line
+  selections after double/triple click, and select the correct history rows
+  while scrolling. Preserve Option-drag copy suppression through mouse release.
+
 - Restore continuous repository group lines and pale repository-colored tab
   backgrounds, and align waiting/status outlines with the tab's rounded edge.
 - Preserve focus in repository-panel inputs and restore terminal input focus
