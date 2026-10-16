@@ -271,3 +271,89 @@ fn tab_color_action_tab_focus_selects_the_entire_title(harness: &mut TestAppCont
     close_fixture(harness, fixture);
     let _ = std::fs::remove_dir_all(home);
 }
+
+#[gpui::test]
+fn clicking_title_from_tab_color_returns_arrow_keys_to_text_input(harness: &mut TestAppContext) {
+    let home = init(harness);
+    let fixture = open_fixture(harness, Some("色 🎨 / Project"), true);
+    let input_id = ("input", fixture.input.entity_id());
+
+    harness
+        .update_window(fixture.window, |_, window, cx| {
+            window.render_frame(cx);
+            window.click(input_id, cx);
+        })
+        .unwrap();
+    harness.run_until_parked();
+
+    let color_before = harness
+        .update_window(fixture.window, |_, window, cx| {
+            window.render_frame(cx);
+            assert_eq!(window.find(input_id).focused(), Some(true));
+            let input = fixture.input.read(cx);
+            let selected = input.selected_range();
+            assert_eq!(selected.start, selected.end, "a click places a caret");
+
+            let workspace = fixture.workspace.read(cx);
+            let rename = workspace.rename.as_ref().unwrap();
+            assert!(
+                !rename.color_focus,
+                "input focus leaves color keyboard mode"
+            );
+            rename.color
+        })
+        .unwrap();
+
+    let (color_after, selected_after) = harness
+        .update_window(fixture.window, |_, window, cx| {
+            // Recreate a stale mode bit to exercise the Workspace focus guard
+            // on a real key event that the Input deliberately propagates at
+            // the start of its text.
+            fixture.workspace.update(cx, |workspace, _| {
+                workspace.rename.as_mut().unwrap().color_focus = true;
+            });
+            window.render_frame(cx);
+
+            assert!(
+                window
+                    .context_stack()
+                    .iter()
+                    .all(|context| !context.contains("rename_color_focus")),
+                "the focused title input does not activate the color-row key context"
+            );
+            fixture
+                .input
+                .update(cx, |input, cx| input.select_all(window, cx));
+            window.press("left", cx);
+            assert_eq!(fixture.input.read(cx).selected_range(), 0..0);
+            window.press("left", cx);
+
+            let workspace = fixture.workspace.read(cx);
+            (
+                workspace.rename.as_ref().unwrap().color,
+                fixture.input.read(cx).selected_range(),
+            )
+        })
+        .unwrap();
+
+    let (focused, value, selected) = rendered_input(harness, &fixture);
+    assert_eq!(focused, Some(true));
+    assert_eq!(value, fixture.original_title);
+    assert_eq!(
+        selected,
+        0..0,
+        "Left collapses the title selection to its start"
+    );
+    assert_eq!(
+        selected_after,
+        0..0,
+        "the second Left stays at the title boundary"
+    );
+    assert_eq!(
+        color_after, color_before,
+        "the title boundary does not change tab color"
+    );
+
+    close_fixture(harness, fixture);
+    let _ = std::fs::remove_dir_all(home);
+}

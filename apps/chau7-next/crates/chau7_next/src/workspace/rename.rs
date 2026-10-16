@@ -67,12 +67,22 @@ impl Workspace {
                 .placeholder(crate::l10n::tr("Tab name"))
                 .default_value(title.clone())
         });
-        let subscription =
-            cx.subscribe_in(&input, window, |this, _, event: &InputEvent, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    this.commit_rename(window, cx);
+        let subscription = cx.subscribe_in(
+            &input,
+            window,
+            |this, _, event: &InputEvent, window, cx| match event {
+                InputEvent::PressEnter { .. } => this.commit_rename(window, cx),
+                InputEvent::Focus => {
+                    if let Some(rename) = this.rename.as_mut()
+                        && rename.color_focus
+                    {
+                        rename.color_focus = false;
+                        cx.notify();
+                    }
                 }
-            });
+                _ => {}
+            },
+        );
         self.panel_generation += 1;
         self.rename = Some(RenameState {
             tab: id,
@@ -134,7 +144,12 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.rename.as_ref().is_some_and(|r| r.color_focus) {
+        // This listener is attached to the Workspace and receives bubbled
+        // events from its child title input. Keep color shortcuts active only
+        // while the Workspace itself owns focus.
+        if !self.focus_handle.is_focused(window)
+            || !self.rename.as_ref().is_some_and(|r| r.color_focus)
+        {
             return;
         }
         match event.keystroke.key.as_str() {

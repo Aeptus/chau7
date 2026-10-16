@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Focus and select the full tab title when opening Rename Tab or moving from
-  the color row to its name field, including with a native editor open.
+  the color row to its name field, including with a native editor open; clicking
+  the title keeps keyboard input there.
 
 - Keep tab reordering in its source window when another window overlaps it;
   resolve transfers against the visible frontmost window and native screen
