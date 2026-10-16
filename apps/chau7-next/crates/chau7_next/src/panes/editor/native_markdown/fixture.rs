@@ -1387,6 +1387,7 @@ pub(in crate::panes::editor) async fn verify(
         .shared
         .fixture_trace
         .begin(&native.text, "fixture.before_mark");
+    let composition_target_utf16 = initial.encode_utf16().count();
     cx.update(|_| {
         native
             .shared
@@ -1394,11 +1395,26 @@ pub(in crate::panes::editor) async fn verify(
             .record(&native.text, "fixture.set_selection.before", None);
         native
             .text
-            .setSelectedRange(NSRange::new(initial.encode_utf16().count(), 0));
-        native
-            .shared
-            .fixture_trace
-            .record(&native.text, "fixture.set_selection.after", None);
+            .setSelectedRange(NSRange::new(composition_target_utf16, 0));
+        let selected_range = native.text.selectedRange();
+        native.shared.fixture_trace.record_details(
+            &native.text,
+            "fixture.set_selection.after",
+            serde_json::json!({
+                "expected_utf16_location": composition_target_utf16,
+                "expected_utf16_length": 0,
+                "actual_utf16_location": selected_range.location,
+                "actual_utf16_length": selected_range.length,
+            }),
+        );
+        ensure(
+            selected_range.location == composition_target_utf16 && selected_range.length == 0,
+            &format!(
+                "native composition selection changed before mark: expected_utf16_range={composition_target_utf16}..{composition_target_utf16}, actual_utf16_range={}..{}",
+                selected_range.location,
+                selected_range.location + selected_range.length,
+            ),
+        )?;
         native
             .shared
             .fixture_trace
@@ -1407,7 +1423,7 @@ pub(in crate::panes::editor) async fn verify(
             native.text.setMarkedText_selectedRange_replacementRange(
                 &NSString::from_str("に"),
                 NSRange::new(1, 0),
-                NSRange::new(NSNotFound as usize, 0),
+                NSRange::new(composition_target_utf16, 0),
             );
         }
         native
@@ -1502,9 +1518,23 @@ pub(in crate::panes::editor) async fn verify(
                 native.has_pending_edits(),
             ),
         )?;
+        let expected_composition = format!("{initial}に");
+        let actual_composition = native.text.string().to_string();
+        let expected_utf16_len = expected_composition.encode_utf16().count();
+        let actual_utf16_len = actual_composition.encode_utf16().count();
+        let exact_text_match = actual_composition == expected_composition;
+        let actual_marked_range = native.text.markedRange();
+        let actual_selection_range = native.text.selectedRange();
         ensure(
-            native.text.string().to_string() == format!("{initial}に"),
-            "composition text drifted",
+            exact_text_match,
+            &format!(
+                "composition text drifted: exact_text_match={exact_text_match}, expected_utf16_len={expected_utf16_len}, actual_utf16_len={actual_utf16_len}, expected_marked_utf16_range={composition_target_utf16}..{}, actual_marked_utf16_range={}..{}, actual_selection_utf16_range={}..{}",
+                composition_target_utf16 + 1,
+                actual_marked_range.location,
+                actual_marked_range.location + actual_marked_range.length,
+                actual_selection_range.location,
+                actual_selection_range.location + actual_selection_range.length,
+            ),
         )?;
         unsafe {
             native.text.setMarkedText_selectedRange_replacementRange(
