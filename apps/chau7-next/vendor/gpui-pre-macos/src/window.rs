@@ -3886,7 +3886,7 @@ extern "C" fn observe_value_for_key_path(
 ) {
     if context == content_layout_rect_observer_context()
         && !key_path.is_null()
-        && key_path.to_str() == "contentLayoutRect"
+        && unsafe { key_path.to_str() } == "contentLayoutRect"
     {
         unsafe {
             // contentLayoutRect can change reentrantly while a window callback holds

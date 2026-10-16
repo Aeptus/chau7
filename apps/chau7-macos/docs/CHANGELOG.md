@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Add a native two-window quit regression checking the latest resume metadata.
 - Follow native fullscreen toolbar layout when revealing the system menu,
   keeping the tab bar clear and pointer, drag and text-input coordinates aligned.
+  Guard queued native layout callbacks after a window closes.
 
 - Record screen safe areas in isolated fullscreen checks and distinguish forced
   menu visibility from pointer-driven reveal, with explicit focus validation.

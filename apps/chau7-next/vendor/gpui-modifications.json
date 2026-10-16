@@ -395,9 +395,15 @@
           "description": "Preserve AppKit fullscreen toolbar auto-hide options and track the KVO-compliant contentLayoutRect with the GPUI renderer view, restoring full content bounds when hidden or exiting; align renderer sizing and native view-local pointer, drag, and text-input coordinates; skip queued layout updates after close and add geometry and options regressions",
           "before_sha256": "91eadb38a9693b6d56218fcf609492f3ccf69de6552e6231f810716dd53123c6",
           "after_sha256": "ff07868c01a78e3da2d33159ac1b35d11571250b17e73dc8be97e5ddb3db03fd"
+        },
+        {
+          "kind": "semantic",
+          "description": "Use an explicit unsafe block for the Objective-C KVO key-path string conversion; apply Rust 1.99 formatting",
+          "before_sha256": "ff07868c01a78e3da2d33159ac1b35d11571250b17e73dc8be97e5ddb3db03fd",
+          "after_sha256": "c9195382c1519aea2836c0274ecad0efef563732a7f0f4b613abbd2d1ab6b00f"
         }
       ],
-      "current_sha256": "ff07868c01a78e3da2d33159ac1b35d11571250b17e73dc8be97e5ddb3db03fd",
+      "current_sha256": "c9195382c1519aea2836c0274ecad0efef563732a7f0f4b613abbd2d1ab6b00f",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"
