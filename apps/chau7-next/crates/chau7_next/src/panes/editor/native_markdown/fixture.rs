@@ -1289,8 +1289,34 @@ pub(in crate::panes::editor) async fn verify(
     })
     .map_err(error)??;
 
-    // Restore both focus owners through an actual native click before the
-    // composition and keyboard portions of this existing source fixture.
+    // All focus, race, desynchronization, and terminal-input assertions above
+    // are complete. Foreground ownership can change while the fake PTY probes
+    // settle, so reacquire the owned key window before the independent
+    // composition and keyboard scenario.
+    if !(application.isActive() && native_window.isVisible() && native_window.isKeyWindow()) {
+        let frontmost_application = NSWorkspace::sharedWorkspace().frontmostApplication();
+        eprintln!(
+            "native_editor_restore_foreground_before={}",
+            serde_json::json!({
+                "application_active": application.isActive(),
+                "window_number": native_window.windowNumber(),
+                "window_visible": native_window.isVisible(),
+                "window_key": native_window.isKeyWindow(),
+                "application_key_window_number": application
+                    .keyWindow()
+                    .map(|window| window.windowNumber()),
+                "frontmost_application": frontmost_application.as_ref().map(|application| {
+                    serde_json::json!({
+                        "process_id": application.processIdentifier(),
+                        "bundle_identifier": application
+                            .bundleIdentifier()
+                            .map(|id| id.to_string()),
+                    })
+                }),
+            })
+        );
+    }
+    prepare_visible_owned_window(handle, cx).await?;
     click_native_source(
         &application,
         &native_window,
