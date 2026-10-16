@@ -8,13 +8,13 @@ use chau7_next_core::session_restore::{SavedAxis, SavedSplitNode};
 use chau7_terminal::{CELL_FLAG_BOLD, CELL_FLAG_UNDERLINE, Chau7Terminal};
 use gpui::{AppContext, AsyncApp, Focusable, WindowHandle, WindowOptions, size};
 use gpui_kit::base::Root;
-use objc2::{MainThreadMarker, rc::Retained};
+use objc2::{MainThreadMarker, rc::Retained, runtime::AnyObject};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationPresentationOptions, NSColorSpace,
     NSEvent, NSEventModifierFlags, NSEventType, NSMenu, NSView, NSWindow, NSWindowButton,
     NSWindowStyleMask,
 };
-use objc2_foundation::{NSArray, NSBundle, NSObject, NSPoint, NSString};
+use objc2_foundation::{NSArray, NSBundle, NSEdgeInsets, NSObject, NSPoint, NSString};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -239,6 +239,59 @@ fn native_mutation(action: impl FnOnce()) -> Result<(), String> {
 }
 fn activate_owned_application(application: &NSApplication) -> Result<(), String> {
     native_mutation(|| application.activate())
+}
+
+async fn prepare_fullscreen_menu_state(
+    stage: &'static str,
+    native: &NSWindow,
+    application: &NSApplication,
+    cx: &mut AsyncApp,
+) -> Result<serde_json::Value, String> {
+    let was_active = application.isActive();
+    let was_key = native.isKeyWindow();
+    let reacquisition_requested = !was_active || !was_key;
+    if reacquisition_requested {
+        native_mutation(|| native.makeKeyAndOrderFront(None))?;
+        activate_owned_application(application)?;
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    wait_until_deadline(cx, stage, deadline, |_| {
+        application.isActive()
+            && native.isVisible()
+            && native.isKeyWindow()
+            && native.styleMask().contains(NSWindowStyleMask::FullScreen)
+    })
+    .await?;
+
+    // A focus change during this bounded interval is an assertion failure;
+    // this helper does not repeatedly reacquire after the initial attempt.
+    for _ in 0..3 {
+        ensure(
+            application.isActive()
+                && native.isVisible()
+                && native.isKeyWindow()
+                && native.styleMask().contains(NSWindowStyleMask::FullScreen),
+            "owned fullscreen fixture lost foreground during its stability window",
+        )?;
+        pause(cx, Duration::from_millis(25)).await;
+    }
+
+    let evidence = serde_json::json!({
+        "stage": stage,
+        "was_active_before": was_active,
+        "was_key_before": was_key,
+        "reacquisition_requested": reacquisition_requested,
+        "app_active_after": application.isActive(),
+        "window_visible_after": native.isVisible(),
+        "window_key_after": native.isKeyWindow(),
+        "window_fullscreen_after": native.styleMask().contains(NSWindowStyleMask::FullScreen),
+        "stability_samples": 3,
+        "sample_interval_ms": 25,
+        "scope": "only the owned fixture application and its fullscreen window",
+    });
+    eprintln!("native_fullscreen_menu_foreground={evidence}");
+    Ok(evidence)
 }
 
 fn emit_activation_handshake(
@@ -1995,6 +2048,45 @@ async fn wait_for_menu_bar_visibility(cx: &AsyncApp, expected: bool) -> Result<(
 }
 
 #[derive(Clone, Copy)]
+struct FullscreenScreenGeometry {
+    frame: objc2_foundation::NSRect,
+    safe_area_insets: NSEdgeInsets,
+    menu_bar_height: f64,
+    menu_bar_frame: objc2_foundation::NSRect,
+}
+
+impl FullscreenScreenGeometry {
+    fn capture(native: &NSWindow, application: &NSApplication) -> Result<Self, String> {
+        let screen: *mut AnyObject = unsafe { objc2::msg_send![native, screen] };
+        ensure(!screen.is_null(), "owned fullscreen window has no NSScreen")?;
+        let screen = unsafe { &*screen };
+        let frame: objc2_foundation::NSRect = unsafe { objc2::msg_send![screen, frame] };
+        let safe_area_insets: NSEdgeInsets = unsafe { objc2::msg_send![screen, safeAreaInsets] };
+        let menu_bar_height = application
+            .mainMenu()
+            .ok_or("owned fullscreen application has no main menu")?
+            .menuBarHeight();
+        ensure(
+            menu_bar_height.is_finite() && menu_bar_height >= 0.0,
+            "AppKit returned an invalid main menu bar height",
+        )?;
+        let menu_bar_frame = objc2_foundation::NSRect::new(
+            NSPoint::new(
+                frame.origin.x,
+                frame.origin.y + frame.size.height - menu_bar_height,
+            ),
+            objc2_foundation::NSSize::new(frame.size.width, menu_bar_height),
+        );
+        Ok(Self {
+            frame,
+            safe_area_insets,
+            menu_bar_height,
+            menu_bar_frame,
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
 struct FullscreenMenuGeometry {
     window_frame: objc2_foundation::NSRect,
     content_layout_rect: objc2_foundation::NSRect,
@@ -2002,18 +2094,35 @@ struct FullscreenMenuGeometry {
     content_view_bounds: objc2_foundation::NSRect,
     renderer_frame: objc2_foundation::NSRect,
     renderer_bounds: objc2_foundation::NSRect,
+    screen: FullscreenScreenGeometry,
+    renderer_rect_in_screen: objc2_foundation::NSRect,
+    menu_bar_overlaps_renderer: bool,
 }
 
 impl FullscreenMenuGeometry {
-    fn capture(native: &NSWindow, content_view: &NSView, renderer: &NSView) -> Self {
-        Self {
+    fn capture(
+        native: &NSWindow,
+        application: &NSApplication,
+        content_view: &NSView,
+        renderer: &NSView,
+    ) -> Result<Self, String> {
+        let screen = FullscreenScreenGeometry::capture(native, application)?;
+        let renderer_rect_in_window = renderer.convertRect_toView(renderer.bounds(), None);
+        let renderer_rect_in_screen = native.convertRectToScreen(renderer_rect_in_window);
+        Ok(Self {
             window_frame: native.frame(),
             content_layout_rect: native.contentLayoutRect(),
             content_view_frame: content_view.frame(),
             content_view_bounds: content_view.bounds(),
             renderer_frame: renderer.frame(),
             renderer_bounds: renderer.bounds(),
-        }
+            menu_bar_overlaps_renderer: native_rects_intersect(
+                screen.menu_bar_frame,
+                renderer_rect_in_screen,
+            ),
+            screen,
+            renderer_rect_in_screen,
+        })
     }
 
     fn delta(self, after: Self) -> serde_json::Value {
@@ -2024,8 +2133,26 @@ impl FullscreenMenuGeometry {
             "content_view_bounds": native_rect_delta(self.content_view_bounds, after.content_view_bounds),
             "renderer_frame": native_rect_delta(self.renderer_frame, after.renderer_frame),
             "renderer_bounds": native_rect_delta(self.renderer_bounds, after.renderer_bounds),
+            "screen_frame": native_rect_delta(self.screen.frame, after.screen.frame),
+            "safe_area_insets": [
+                after.screen.safe_area_insets.top - self.screen.safe_area_insets.top,
+                after.screen.safe_area_insets.left - self.screen.safe_area_insets.left,
+                after.screen.safe_area_insets.bottom - self.screen.safe_area_insets.bottom,
+                after.screen.safe_area_insets.right - self.screen.safe_area_insets.right,
+            ],
+            "menu_bar_height": after.screen.menu_bar_height - self.screen.menu_bar_height,
+            "menu_bar_frame": native_rect_delta(self.screen.menu_bar_frame, after.screen.menu_bar_frame),
+            "renderer_rect_in_screen": native_rect_delta(self.renderer_rect_in_screen, after.renderer_rect_in_screen),
+            "menu_bar_overlaps_renderer_changed": self.menu_bar_overlaps_renderer != after.menu_bar_overlaps_renderer,
         })
     }
+}
+
+fn native_rects_intersect(left: objc2_foundation::NSRect, right: objc2_foundation::NSRect) -> bool {
+    left.origin.x < right.origin.x + right.size.width
+        && right.origin.x < left.origin.x + left.size.width
+        && left.origin.y < right.origin.y + right.size.height
+        && right.origin.y < left.origin.y + left.size.height
 }
 
 fn native_rect_delta(
@@ -2111,7 +2238,7 @@ fn fullscreen_menu_snapshot(
     let content_view = native
         .contentView()
         .ok_or("owned fullscreen window has no content view")?;
-    let geometry = FullscreenMenuGeometry::capture(native, &content_view, &renderer);
+    let geometry = FullscreenMenuGeometry::capture(native, application, &content_view, &renderer)?;
     let renderer_bounds = renderer.bounds();
     let renderer_visible_rect = renderer.visibleRect();
     let renderer_bounds_finite = [
@@ -2176,7 +2303,22 @@ fn fullscreen_menu_snapshot(
             "renderer_frame": native_rect_values(geometry.renderer_frame),
             "renderer_bounds": native_rect_values(geometry.renderer_bounds),
             "renderer_rect_in_content_view": native_rect_values(renderer_rect_in_content),
+            "renderer_rect_in_screen": native_rect_values(geometry.renderer_rect_in_screen),
             "renderer_visible_rect": native_rect_values(renderer_visible_rect),
+            "screen_frame": native_rect_values(geometry.screen.frame),
+            "screen_safe_area_insets": {
+                "top": geometry.screen.safe_area_insets.top,
+                "left": geometry.screen.safe_area_insets.left,
+                "bottom": geometry.screen.safe_area_insets.bottom,
+                "right": geometry.screen.safe_area_insets.right,
+            },
+            "main_menu_bar_height": geometry.screen.menu_bar_height,
+            "menu_bar_band_frame": native_rect_values(geometry.screen.menu_bar_frame),
+            "menu_bar_band_overlaps_renderer": geometry.menu_bar_overlaps_renderer,
+            "screen_top_minus_window_top": geometry.screen.frame.origin.y
+                + geometry.screen.frame.size.height
+                - geometry.window_frame.origin.y
+                - geometry.window_frame.size.height,
             "renderer_is_flipped": renderer.isFlipped(),
             "renderer_bounds_finite": renderer_bounds_finite,
             "tabbar_crop_rect": native_rect_values(crop),
@@ -2426,7 +2568,24 @@ fn fullscreen_menu_snapshot(
         "renderer_frame": native_rect_values(geometry.renderer_frame),
         "renderer_bounds": native_rect_values(geometry.renderer_bounds),
         "renderer_rect_in_content_view": native_rect_values(renderer_rect_in_content),
+        "renderer_rect_in_screen": native_rect_values(geometry.renderer_rect_in_screen),
         "renderer_visible_rect": native_rect_values(renderer.visibleRect()),
+        "screen": {
+            "frame": native_rect_values(geometry.screen.frame),
+            "safe_area_insets": {
+                "top": geometry.screen.safe_area_insets.top,
+                "left": geometry.screen.safe_area_insets.left,
+                "bottom": geometry.screen.safe_area_insets.bottom,
+                "right": geometry.screen.safe_area_insets.right,
+            },
+            "main_menu_bar_height": geometry.screen.menu_bar_height,
+            "menu_bar_band_frame": native_rect_values(geometry.screen.menu_bar_frame),
+            "menu_bar_band_overlaps_renderer": geometry.menu_bar_overlaps_renderer,
+            "screen_top_minus_window_top": geometry.screen.frame.origin.y
+                + geometry.screen.frame.size.height
+                - geometry.window_frame.origin.y
+                - geometry.window_frame.size.height,
+        },
         "renderer_is_flipped": renderer.isFlipped(),
         "renderer_backend": renderer_backend,
         "tabbar_crop_in_renderer_bounds": crop_in_bounds,
@@ -2479,20 +2638,22 @@ async fn verify_fullscreen_menu_reveal(
     application: &NSApplication,
     cx: &mut AsyncApp,
 ) -> Result<serde_json::Value, String> {
-    ensure(
-        application.isActive()
-            && native.isVisible()
-            && native.isKeyWindow()
-            && native.styleMask().contains(NSWindowStyleMask::FullScreen),
-        "menu reveal must run only while the owned fixture window is foreground and fullscreen",
-    )?;
+    let entry_foreground =
+        prepare_fullscreen_menu_state("fullscreen menu entry", native, application, cx).await?;
     let original_menu_bar_visibility = native_menu_bar_visible()?;
     let cycle_result = async {
         set_native_menu_bar_visible(false)?;
         wait_for_menu_bar_visibility(cx, false).await?;
         pause(cx, Duration::from_millis(250)).await;
         settle(handle, cx).await?;
-        let hidden_before = fullscreen_menu_snapshot(
+        let hidden_foreground = prepare_fullscreen_menu_state(
+            "fullscreen menu hidden-before snapshot",
+            native,
+            application,
+            cx,
+        )
+        .await?;
+        let mut hidden_before = fullscreen_menu_snapshot(
             "fullscreen_menu_hidden_before_reveal",
             false,
             application,
@@ -2500,12 +2661,20 @@ async fn verify_fullscreen_menu_reveal(
             handle,
             cx,
         )?;
+        hidden_before.report["foreground_reacquisition"] = hidden_foreground;
 
         set_native_menu_bar_visible(true)?;
         wait_for_menu_bar_visibility(cx, true).await?;
         pause(cx, Duration::from_millis(300)).await;
         settle(handle, cx).await?;
-        let revealed = fullscreen_menu_snapshot(
+        let revealed_foreground = prepare_fullscreen_menu_state(
+            "fullscreen menu revealed snapshot",
+            native,
+            application,
+            cx,
+        )
+        .await?;
+        let mut revealed = fullscreen_menu_snapshot(
             "fullscreen_menu_revealed",
             true,
             application,
@@ -2513,12 +2682,20 @@ async fn verify_fullscreen_menu_reveal(
             handle,
             cx,
         )?;
+        revealed.report["foreground_reacquisition"] = revealed_foreground;
 
         set_native_menu_bar_visible(false)?;
         wait_for_menu_bar_visibility(cx, false).await?;
         pause(cx, Duration::from_millis(300)).await;
         settle(handle, cx).await?;
-        let hidden_after = fullscreen_menu_snapshot(
+        let hidden_after_foreground = prepare_fullscreen_menu_state(
+            "fullscreen menu hidden-after snapshot",
+            native,
+            application,
+            cx,
+        )
+        .await?;
+        let mut hidden_after = fullscreen_menu_snapshot(
             "fullscreen_menu_hidden_after_reveal",
             false,
             application,
@@ -2526,9 +2703,14 @@ async fn verify_fullscreen_menu_reveal(
             handle,
             cx,
         )?;
+        hidden_after.report["foreground_reacquisition"] = hidden_after_foreground;
 
         Ok::<_, String>(serde_json::json!({
-            "api": "NSMenu.menuBarVisible / setMenuBarVisible",
+            "stimulus": {
+                "api": "NSMenu.menuBarVisible / setMenuBarVisible",
+                "kind": "forced application menu-bar visibility",
+                "pointer_hover_exercised": false,
+            },
             "states": {
                 "hidden_before": hidden_before.report,
                 "revealed": revealed.report,
@@ -2553,6 +2735,15 @@ async fn verify_fullscreen_menu_reveal(
     .await;
 
     let restoration = async {
+        let foreground = prepare_fullscreen_menu_state(
+            "fullscreen menu visibility restoration",
+            native,
+            application,
+            cx,
+        )
+        .await;
+        // Always undo the fixture's visibility change, even if foreground was
+        // interrupted during cleanup. The call changes this application's menu.
         set_native_menu_bar_visible(original_menu_bar_visibility)?;
         wait_for_menu_bar_visibility(cx, original_menu_bar_visibility).await?;
         let restored = native_menu_bar_visible()?;
@@ -2560,15 +2751,17 @@ async fn verify_fullscreen_menu_reveal(
             restored == original_menu_bar_visibility,
             "owned fixture did not restore the original menu bar visibility",
         )?;
-        Ok::<_, String>(restored)
+        Ok::<_, String>((restored, foreground?))
     }
     .await;
 
     match (cycle_result, restoration) {
-        (Ok(mut report), Ok(restored)) => {
+        (Ok(mut report), Ok((restored, restoration_foreground))) => {
             report["original_menu_bar_visibility"] =
                 serde_json::json!(original_menu_bar_visibility);
             report["restored_menu_bar_visibility"] = serde_json::json!(restored);
+            report["entry_foreground"] = entry_foreground;
+            report["restoration_foreground"] = restoration_foreground;
             Ok(report)
         }
         (Err(error), Ok(_)) => Err(error),
@@ -4300,5 +4493,27 @@ mod tests {
         assert_eq!(alternate["window_visible"], false);
         assert_eq!(alternate["window_key"], true);
         assert_eq!(alternate["window_can_become_key"], false);
+    }
+}
+
+#[cfg(test)]
+mod fullscreen_menu_geometry_tests {
+    use super::*;
+
+    #[test]
+    fn reserved_menu_band_does_not_overlap_touching_content() {
+        let rect = |x, y, width, height| {
+            objc2_foundation::NSRect::new(
+                NSPoint::new(x, y),
+                objc2_foundation::NSSize::new(width, height),
+            )
+        };
+        let menu = rect(0.0, 949.0, 1512.0, 33.0);
+        assert!(!native_rects_intersect(menu, rect(0.0, 0.0, 1512.0, 949.0)));
+        assert!(native_rects_intersect(menu, rect(0.0, 0.0, 1512.0, 982.0)));
+        assert!(!native_rects_intersect(
+            menu,
+            rect(1512.0, 0.0, 1920.0, 1080.0)
+        ));
     }
 }

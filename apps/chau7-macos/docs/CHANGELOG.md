@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Record screen safe areas in isolated fullscreen checks and distinguish forced
+  menu visibility from pointer-driven reveal, with explicit focus validation.
+
 - Refresh isolated restoration fixtures through the production scroll action
   before checking cached styled history and print snapshots.
 
