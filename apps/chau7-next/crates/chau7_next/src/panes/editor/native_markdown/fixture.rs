@@ -336,14 +336,34 @@ fn verify_rich_terminal_source(
             sample_glyph.get_or_insert(glyph_index);
         }
         let sample_glyph = sample_glyph.ok_or("native wrapper has no content glyph")?;
+        let sample_character_index = layout.characterIndexForGlyphAtIndex(sample_glyph);
+        let mut line_glyph_range = NSRange::new(0, 0);
         let line_rect = unsafe {
             layout
-                .lineFragmentRectForGlyphAtIndex_effectiveRange(sample_glyph, std::ptr::null_mut())
+                .lineFragmentRectForGlyphAtIndex_effectiveRange(sample_glyph, &mut line_glyph_range)
         };
-        ensure(
-            line_rect.size.height == 0.0,
-            "native wrapper line retained vertical layout height",
-        )?;
+        if line_rect.size.height != 0.0 {
+            let line_character_range = unsafe {
+                layout.characterRangeForGlyphRange_actualGlyphRange(
+                    line_glyph_range,
+                    std::ptr::null_mut(),
+                )
+            };
+            let sample_character_is_null = layout
+                .propertyForGlyphAtIndex(sample_glyph)
+                .contains(objc2_app_kit::NSGlyphProperty::Null);
+            return Err(format!(
+                "native wrapper line retained vertical layout height: wrapper_index={index}, wrapper_utf8={range:?}, sample_utf16={sample_character_index}, sample_glyph={sample_glyph}, sample_glyph_is_null={sample_character_is_null}, line_glyph_range={}..{}, line_character_range={}..{}, line_rect=({}, {}, {}, {})",
+                line_glyph_range.location,
+                line_glyph_range.location + line_glyph_range.length,
+                line_character_range.location,
+                line_character_range.location + line_character_range.length,
+                line_rect.origin.x,
+                line_rect.origin.y,
+                line_rect.size.width,
+                line_rect.size.height,
+            ));
+        }
     }
 
     let body_visible_index = source[..block.body_range.start + 2].encode_utf16().count();

@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep line breaks, indentation, terminal colors, emphasis and links when
   copying terminal selections into the Markdown side panel; preserve rich
   blocks when saving and reopening the document.
+- Collapse native editor fragments that contain only hidden terminal metadata,
+  including fragments containing just the wrapper line terminator.
 - Continue drag selection beyond terminal edges, retain the pointer column,
   stop on release or focus loss, and accumulate scrolling TUI content without
   including fixed headers or input footers. Preserve both endpoint characters

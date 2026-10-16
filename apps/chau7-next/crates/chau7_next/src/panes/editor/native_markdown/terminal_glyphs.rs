@@ -117,20 +117,21 @@ define_class!(
                 return Bool::NO;
             }
             let mut all_characters_hidden = true;
-            let mut has_null_glyph = false;
             for glyph_index in glyph_range.location..glyph_range.location + glyph_range.length {
                 let character_index = layout_manager.characterIndexForGlyphAtIndex(glyph_index);
                 if !contains(&ranges.hidden_lines, character_index) {
                     all_characters_hidden = false;
                     break;
                 }
-                has_null_glyph |= layout_manager
-                    .propertyForGlyphAtIndex(glyph_index)
-                    .contains(NSGlyphProperty::Null);
             }
             drop(ranges);
 
-            if !all_characters_hidden || !has_null_glyph {
+            // TextKit may place a hidden row's line terminator in a separate
+            // fragment after the wrapper's content has become null glyphs. In
+            // that case this fragment contains no null glyph itself, but every
+            // character still belongs to the hidden source range. The source
+            // range check is sufficient to identify wrapper-only fragments.
+            if !all_characters_hidden {
                 return Bool::NO;
             }
 
