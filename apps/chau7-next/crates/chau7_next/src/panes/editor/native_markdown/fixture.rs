@@ -372,7 +372,6 @@ fn verify_rich_terminal_source(
             },
             "native metadata fence source was not preserved",
         )?;
-        let mut sample_glyph = None;
         for (byte, character) in hidden_source.char_indices() {
             if matches!(character, '\r' | '\n') {
                 continue;
@@ -386,31 +385,63 @@ fn verify_rich_terminal_source(
                         .contains(objc2_app_kit::NSGlyphProperty::Null),
                 "native wrapper glyph remained visible in TextKit",
             )?;
-            sample_glyph.get_or_insert(glyph_index);
         }
-        let sample_glyph = sample_glyph.ok_or("native wrapper has no content glyph")?;
-        let sample_character_index = layout.characterIndexForGlyphAtIndex(sample_glyph);
+
+        // A null content glyph may map to the preceding visible line fragment.
+        // Measure the wrapper's own line terminator and only treat its geometry
+        // as evidence after TextKit returns a fragment wholly inside this range.
+        let terminator_byte = hidden_source
+            .rfind('\n')
+            .ok_or("native wrapper has no LF line terminator")?;
+        let terminator_character_index = source[..range.start + terminator_byte]
+            .encode_utf16()
+            .count();
+        let terminator_glyph = layout.glyphIndexForCharacterAtIndex(terminator_character_index);
+        ensure(
+            layout.isValidGlyphIndex(terminator_glyph),
+            "native wrapper line terminator has no TextKit glyph",
+        )?;
+        let wrapper_utf16_start = source[..range.start].encode_utf16().count();
+        let wrapper_utf16_end = source[..range.end].encode_utf16().count();
         let mut line_glyph_range = NSRange::new(0, 0);
         let line_rect = unsafe {
-            layout
-                .lineFragmentRectForGlyphAtIndex_effectiveRange(sample_glyph, &mut line_glyph_range)
+            layout.lineFragmentRectForGlyphAtIndex_effectiveRange(
+                terminator_glyph,
+                &mut line_glyph_range,
+            )
         };
-        if line_rect.size.height != 0.0 {
-            let line_character_range = unsafe {
-                layout.characterRangeForGlyphRange_actualGlyphRange(
-                    line_glyph_range,
-                    std::ptr::null_mut(),
-                )
-            };
-            let sample_character_is_null = layout
-                .propertyForGlyphAtIndex(sample_glyph)
-                .contains(objc2_app_kit::NSGlyphProperty::Null);
+        let line_character_range = unsafe {
+            layout.characterRangeForGlyphRange_actualGlyphRange(
+                line_glyph_range,
+                std::ptr::null_mut(),
+            )
+        };
+        let line_character_end = line_character_range.location + line_character_range.length;
+        let line_is_wrapper_only = line_character_range.length > 0
+            && line_character_range.location >= wrapper_utf16_start
+            && line_character_end <= wrapper_utf16_end
+            && line_character_range.location <= terminator_character_index
+            && terminator_character_index < line_character_end;
+        if !line_is_wrapper_only {
             return Err(format!(
-                "native wrapper line retained vertical layout height: wrapper_index={index}, wrapper_utf8={range:?}, sample_utf16={sample_character_index}, sample_glyph={sample_glyph}, sample_glyph_is_null={sample_character_is_null}, line_glyph_range={}..{}, line_character_range={}..{}, line_rect=({}, {}, {}, {})",
+                "native wrapper terminator did not map to a wrapper-only line fragment: wrapper_index={index}, wrapper_utf8={range:?}, wrapper_utf16={wrapper_utf16_start}..{wrapper_utf16_end}, terminator_utf16={terminator_character_index}, terminator_glyph={terminator_glyph}, line_glyph_range={}..{}, line_character_range={}..{}, line_rect=({}, {}, {}, {})",
                 line_glyph_range.location,
                 line_glyph_range.location + line_glyph_range.length,
                 line_character_range.location,
-                line_character_range.location + line_character_range.length,
+                line_character_end,
+                line_rect.origin.x,
+                line_rect.origin.y,
+                line_rect.size.width,
+                line_rect.size.height,
+            ));
+        }
+        if line_rect.size.height != 0.0 {
+            return Err(format!(
+                "native wrapper terminator line retained vertical layout height: wrapper_index={index}, wrapper_utf8={range:?}, wrapper_utf16={wrapper_utf16_start}..{wrapper_utf16_end}, terminator_utf16={terminator_character_index}, terminator_glyph={terminator_glyph}, line_glyph_range={}..{}, line_character_range={}..{}, line_rect=({}, {}, {}, {})",
+                line_glyph_range.location,
+                line_glyph_range.location + line_glyph_range.length,
+                line_character_range.location,
+                line_character_end,
                 line_rect.origin.x,
                 line_rect.origin.y,
                 line_rect.size.width,
@@ -427,6 +458,13 @@ fn verify_rich_terminal_source(
                 .propertyForGlyphAtIndex(body_glyph)
                 .contains(objc2_app_kit::NSGlyphProperty::Null),
         "native terminal body glyph was hidden with its metadata",
+    )?;
+    let body_line_rect = unsafe {
+        layout.lineFragmentRectForGlyphAtIndex_effectiveRange(body_glyph, std::ptr::null_mut())
+    };
+    ensure(
+        body_line_rect.size.height > 0.0,
+        "native terminal body line lost vertical layout height",
     )?;
 
     let storage = unsafe { native.text.textStorage() }

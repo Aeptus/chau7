@@ -1,5 +1,5 @@
 {
-  "reason": "Adds fixture-only foreground preparation before the independent composition scenario after fake PTY focus probes; preceding focus assertions and production behavior are unchanged.",
+  "reason": "Updates fixture-only wrapper geometry checks to measure each wrapper newline within its own hidden fragment, and prepares the owned window before the independent composition scenario; product behavior is unchanged.",
   "paths": [
     "apps/chau7-next/crates/chau7_next/src/panes/editor/native_markdown/fixture.rs"
   ]
