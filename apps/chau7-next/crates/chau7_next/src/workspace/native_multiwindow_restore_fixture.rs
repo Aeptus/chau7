@@ -4,7 +4,7 @@
 use super::AppData;
 use crate::session_store::{SavedPane, SavedTab, SavedWindow};
 use chau7_next_core::session_restore::SavedSplitNode;
-use gpui::{App, AppContext, AsyncApp};
+use gpui::{App, AsyncApp};
 use serde_json::json;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;

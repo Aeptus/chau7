@@ -2282,6 +2282,20 @@ fn fullscreen_menu_snapshot(
     let renderer_rect_in_content =
         renderer.convertRect_toView(renderer_bounds, Some(&content_view));
     let owned_window_number = native.windowNumber();
+    let controls_host = native
+        .standardWindowButton(NSWindowButton::CloseButton)
+        .and_then(|button| unsafe { button.superview() })
+        .ok_or("fullscreen traffic lights have no native host")?;
+    let controls_in_content =
+        controls_host.convertRect_toView(controls_host.bounds(), Some(&content_view));
+    let top_edge = |rect: objc2_foundation::NSRect| {
+        if content_view.isFlipped() {
+            rect.origin.y
+        } else {
+            rect.origin.y + rect.size.height
+        }
+    };
+    let controls_top_delta = top_edge(controls_in_content) - top_edge(renderer_rect_in_content);
 
     // Emit native numeric geometry before any state, visibility, or occlusion
     // assertion, so a failed reveal still says what AppKit and GPUI reported.
@@ -2307,6 +2321,8 @@ fn fullscreen_menu_snapshot(
             "renderer_rect_in_content_view": native_rect_values(renderer_rect_in_content),
             "layout_rect_in_content_view": native_rect_values(layout_in_content),
             "renderer_tracks_content_layout": renderer_tracks_layout,
+            "traffic_light_host_rect_in_content_view": native_rect_values(controls_in_content),
+            "traffic_light_host_top_delta_from_renderer": controls_top_delta,
             "presentation_options": application.presentationOptions().0,
             "effective_presentation_options": application.currentSystemPresentationOptions().0,
             "renderer_rect_in_screen": native_rect_values(geometry.renderer_rect_in_screen),
@@ -2372,6 +2388,10 @@ fn fullscreen_menu_snapshot(
     ensure(
         renderer_tracks_layout,
         "fullscreen renderer did not follow AppKit's unobscured content layout",
+    )?;
+    ensure(
+        controls_top_delta.is_finite() && controls_top_delta.abs() <= 0.5,
+        "fullscreen traffic lights did not follow the renderer's top edge",
     )?;
     if !expected_menu_visible {
         ensure(
@@ -4315,6 +4335,8 @@ async fn verify_retention(
 
 #[cfg(test)]
 mod tests {
+    use super::{NSApplicationPresentationOptions, menu_reveal_presentation_options};
+
     #[test]
     fn forced_menu_reveal_preserves_unrelated_flags_and_toolbar_dependencies() {
         let original = NSApplicationPresentationOptions::FullScreen

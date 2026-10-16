@@ -1054,7 +1054,9 @@ impl MacWindowState {
         let Some(position) = self.traffic_light_position else {
             return;
         };
-        let bounds = content_view.bounds();
+        // The renderer view follows `contentLayoutRect` while AppKit reveals
+        // the fullscreen toolbar. Keep the native controls on that same row.
+        let bounds: Objc2NSRect = unsafe { msg_send![self.native_view.as_ptr() as id, frame] };
         // A plain AppKit NSView uses an unflipped local coordinate system.
         let initial_layout = fullscreen_traffic_light_layout(
             bounds,
@@ -1175,7 +1177,9 @@ impl MacWindowState {
             }
         }
         let Some(layout) = fullscreen_traffic_light_layout(
-            content_view.bounds(),
+            // The host is a content-view child, so use the renderer's frame in
+            // content-view coordinates rather than the full content bounds.
+            unsafe { msg_send![self.native_view.as_ptr() as id, frame] },
             content_view.isFlipped(),
             overlay.host_view.isFlipped(),
             overlay.frames,
@@ -1839,14 +1843,12 @@ impl Drop for MacWindow {
         if this.renderer.backend() == renderer::WindowBackend::Software {
             this.closed.store(true, Ordering::Release);
         }
-        // `accesskit_macos::SubclassingAdapter::for_window` strong-retains the
-        // window's content view, and that content view keeps the `GPUIView` it
-        // hosts alive. Together with the `Arc<Mutex<MacWindowState>>` parked in
-        // both views' `windowState` ivar, that forms
-        // `MacWindowState -> adapter -> content view -> GPUIView -> MacWindowState`,
-        // a cycle the delegate/`frame_source` teardown below cannot break. Drop
-        // the adapter here so the native view, its `CAMetalLayer` and the
-        // renderer's command queue are actually released with the window.
+        // The AccessKit adapter strong-retains the GPUI view, which carries an
+        // `Arc<Mutex<MacWindowState>>` in its `windowState` ivar. That forms
+        // `MacWindowState -> adapter -> GPUIView -> MacWindowState`, a cycle
+        // the delegate/`frame_source` teardown below cannot break. Drop the
+        // adapter here so the native view, its `CAMetalLayer` and the renderer's
+        // command queue are actually released with the window.
         drop(this.accesskit_adapter.take());
         this.renderer.destroy();
         let window = this.native_window;
@@ -2923,8 +2925,8 @@ impl PlatformWindow for MacWindow {
         let action_handler = A11yActionHandler(callbacks.action);
 
         let adapter = unsafe {
-            accesskit_macos::SubclassingAdapter::for_window(
-                lock.native_window as *mut c_void,
+            accesskit_macos::SubclassingAdapter::new(
+                lock.native_view.as_ptr() as *mut c_void,
                 activation_handler,
                 action_handler,
             )
@@ -3994,6 +3996,10 @@ fn synchronize_fullscreen_content_view_frame(window_state: &Arc<Mutex<MacWindowS
             || current_frame.size.height != target_frame.size.height
         {
             let _: () = msg_send![native_view, setFrame: target_frame];
+            let mut state = window_state.lock();
+            if state.fullscreen_controls_active {
+                state.update_fullscreen_traffic_lights();
+            }
         }
     }
 }

@@ -401,9 +401,15 @@
           "description": "Use an explicit unsafe block for the Objective-C KVO key-path string conversion; apply Rust 1.99 formatting",
           "before_sha256": "ff07868c01a78e3da2d33159ac1b35d11571250b17e73dc8be97e5ddb3db03fd",
           "after_sha256": "c9195382c1519aea2836c0274ecad0efef563732a7f0f4b613abbd2d1ab6b00f"
+        },
+        {
+          "kind": "semantic",
+          "description": "Anchor AccessKit to the inset GPUI renderer view and keep custom fullscreen traffic lights aligned with its frame as contentLayoutRect changes; format with Rust 1.99",
+          "before_sha256": "c9195382c1519aea2836c0274ecad0efef563732a7f0f4b613abbd2d1ab6b00f",
+          "after_sha256": "1c4e6b71bd963a6fbe6a1b6807f1ede597ad885c84d8e31c178433414330ed81"
         }
       ],
-      "current_sha256": "c9195382c1519aea2836c0274ecad0efef563732a7f0f4b613abbd2d1ab6b00f",
+      "current_sha256": "1c4e6b71bd963a6fbe6a1b6807f1ede597ad885c84d8e31c178433414330ed81",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"

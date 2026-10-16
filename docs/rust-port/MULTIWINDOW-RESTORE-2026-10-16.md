@@ -63,7 +63,9 @@ its toolbar and is observable through KVO:
 [Apple documentation](https://developer.apple.com/documentation/appkit/nswindow/contentlayoutrect).
 
 The native regression must compare the actual renderer view frame with that
-layout rect during hidden, revealed and hidden-again states. Offscreen GPUI
+layout rect during hidden, revealed and hidden-again states, with no hidden-menu
+gutter and with the traffic-light host on the same top edge. Mouse, drag, text
+input and VoiceOver frames must use the actual renderer view. Offscreen GPUI
 pixels alone cannot establish that an AppKit overlay is absent. Forced menu
 visibility and physical pointer hover are distinct acceptance conditions.
 

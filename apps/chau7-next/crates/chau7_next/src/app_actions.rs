@@ -442,7 +442,7 @@ fn open_tab_with_command(command: String, cx: &mut App) {
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod quit_tests {
     use super::*;
     use crate::{
@@ -462,12 +462,28 @@ mod quit_tests {
             std::env::temp_dir().join(format!("chau7-quit-{}", uuid::Uuid::new_v4())),
             true,
         );
+        root.ensure_dirs().expect("create owned quit-test profile");
+        let fake_shell = root.home().join("quit-test-shell");
+        std::fs::write(
+            &fake_shell,
+            b"#!/bin/sh\nprintf started > quit-test-shell-started\nexec /bin/cat > quit-test-shell-input\n",
+        )
+        .expect("write owned quit-test shell");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake_shell, std::fs::Permissions::from_mode(0o700))
+                .expect("make owned quit-test shell executable");
+        }
         harness.update(|cx| {
             gpui_kit::init(cx);
             let mut settings = Settings::default();
             settings.general.full_disk_access_guard_enabled = false;
+            settings.terminal.shell = Some(fake_shell.to_string_lossy().into_owned());
             cx.set_global(settings);
             cx.set_global(AppData::new(root.clone()));
+            #[cfg(unix)]
+            cx.set_global(crate::terminal::session::ManuallyDrivenRestoreFixture);
             crate::terminal::command_guard::init(cx);
             crate::observability::init_for_test(cx);
             crate::restore::writer::init(cx);
