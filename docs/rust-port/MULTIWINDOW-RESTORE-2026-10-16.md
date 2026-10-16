@@ -104,7 +104,7 @@ visibility and physical pointer hover are distinct acceptance conditions.
 
 ## Validation
 
-The native `multiwindow-restore` case passed at source `918cad58ef73af7d027651ec2a6dbf3c9269cd7d`.
+The native `multiwindow-restore` case passed at source `43d296ab3b27fe33c61eb0bcc25b54ce601ff795`.
 It opened two production workspace windows in an isolated profile, added a late
 tab in the second window, requested quit from that window's update callback and
 verified the final manifest after the application exited. Both windows, all
@@ -112,12 +112,17 @@ three fixture tabs and the newest provider resume identity were preserved. The
 profile was removed only after verification; the production app was untouched.
 This case verifies final persistence, not a second application launch.
 
-The preceding regression run passed 749 app tests, 2,492 core tests and six
-contract tests. The Swift suite passed 4,594 tests with three expected skips.
-The full local quality gate passed Swift, Periphery and legacy Rust checks, then
-stopped at an installed Go linter that could not read Go 1.27.2 export data.
-An isolated official golangci-lint 2.14.0 passed both Go modules; the remaining
-full-gate stages still require execution.
+The consolidated Rust run at that source passed 752 app tests, 2,492 core tests,
+three CLI tests and six contract tests. The native-harness Python suite passed
+61 tests and the production-updater suite passed 41 tests.
+
+All nine full pre-push gates passed, including Swift build/tests, Periphery,
+legacy Rust, Go lint/tests, relay build/tests and dependency audits. The Swift
+suite executed 4,594 tests with three expected skips and no failures. That gate
+run started at `028ec29c`; the later `43d296ab` change only corrected the manual
+native fixture's error type and its changelog entry. The installed Go linter
+was replaced for this run only by an isolated official golangci-lint 2.14.0,
+which understands the repository's Go 1.27.2 export data.
 
 Fullscreen acceptance remains open. Hidden-state geometry and traffic-light
 alignment passed, but the programmatic menu reveal was ignored by this macOS

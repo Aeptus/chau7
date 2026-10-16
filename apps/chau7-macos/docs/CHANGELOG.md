@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve every Rust window when quitting from a tab action; defer final
   capture until the active window is available and reject incomplete snapshots.
   Leave the app running if its final capture cannot be queued.
+  Verify two-window persistence and latest resume identity in a native regression.
   Add a native two-window quit regression checking the latest resume metadata.
 - Save Rust windows parked by Close Window in periodic and quit snapshots,
   preserving their frames, split layouts, scrollback and provider identities;
