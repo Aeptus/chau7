@@ -3357,3 +3357,9 @@
 "status.never" = "Never";
 "status.unconfigured" = "Unconfigured";
 "status.visible" = "Visible";
+
+// Rust tab navigation and idle repository sections.
+"tabs.idle.noRepository" = "Sin repositorio";
+"settings.tabs.numberedShortcutsVisibleOnly" = "Atajos numéricos solo para pestañas visibles";
+"settings.tabs.numberedShortcutsVisibleOnly.help" = "Contar solo las pestañas de la barra al seleccionar una pestaña por número.";
+"settings.search.numberedShortcutsVisibleOnly.keywords" = "pestañas visibles,atajos numéricos,comando número,cmd,alt,teclas de función,inactivas,grupos contraídos";

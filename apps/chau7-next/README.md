@@ -197,6 +197,12 @@ Settings save and apply to all open windows immediately. In `config.toml`, set
 `repo_grouping_mode` under `[next]` to `off`, `auto`, or `manual`; after
 editing the file directly, use Chau7 Next > Reload Settings.
 
+### Idle tabs and numbered navigation
+
+The idle-tabs dropdown has repository headings and separators, with tabs that have no repository collected at the end. The list scrolls while **Close All Idle** remains accessible below it.
+
+**Settings > Tabs > Keyboard Navigation > Numbered Shortcuts Target Visible Tabs Only** makes numbered shortcuts follow the tab bar order, skipping tabs in the Idle dropdown. Horizontal clipping does not change the numbering. The default is off, keeping the all-tabs behavior. To configure it in a file, set `numbered_shortcuts_visible_only = true` under `[next]`, then reload settings.
+
 ## Shortcuts (macOS)
 
 | | |

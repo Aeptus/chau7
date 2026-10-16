@@ -243,6 +243,118 @@ mod group_tab_line_tests {
         );
         assert_eq!(mcp.a, 0.15);
     }
+
+    #[test]
+    fn idle_sections_group_by_full_repo_path_keep_tab_order_and_put_ungrouped_last() {
+        let sections = group_idle_tabs_by_repo([
+            (7, Some("/work/first/project".to_string())),
+            (3, None),
+            (9, Some("/archive/second/project".to_string())),
+            (6, Some("/work/first/project".to_string())),
+            (4, None),
+        ]);
+
+        assert_eq!(
+            sections,
+            vec![
+                IdleTabSection {
+                    repo_group_id: Some("/work/first/project".to_string()),
+                    tab_ids: vec![7, 6],
+                },
+                IdleTabSection {
+                    repo_group_id: Some("/archive/second/project".to_string()),
+                    tab_ids: vec![9],
+                },
+                IdleTabSection {
+                    repo_group_id: None,
+                    tab_ids: vec![3, 4],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn idle_repo_identity_prefers_group_then_falls_back_to_nonempty_git_root() {
+        assert_eq!(
+            idle_repo_identity(Some("/group/repo"), Some("/git/repo")),
+            Some("/group/repo".to_string())
+        );
+        assert_eq!(
+            idle_repo_identity(None, Some("/git/repo")),
+            Some("/git/repo".to_string())
+        );
+        assert_eq!(
+            idle_repo_identity(Some(""), Some("/git/repo")),
+            Some("/git/repo".to_string())
+        );
+        assert_eq!(idle_repo_identity(Some(""), Some("")), None);
+    }
+
+    #[test]
+    fn idle_sections_handle_empty_and_all_ungrouped_tabs() {
+        assert!(group_idle_tabs_by_repo(std::iter::empty::<(TabId, Option<String>)>()).is_empty());
+        assert_eq!(
+            group_idle_tabs_by_repo([(5, None), (2, None)]),
+            vec![IdleTabSection {
+                repo_group_id: None,
+                tab_ids: vec![5, 2],
+            }]
+        );
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IdleTabSection {
+    repo_group_id: Option<String>,
+    tab_ids: Vec<TabId>,
+}
+
+/// Bucket idle tabs by their full repository identity, preserving the order
+/// of first-seen repositories and the original order of tabs in each bucket.
+/// Tabs without a repository remain visible in a final section.
+fn group_idle_tabs_by_repo(
+    tabs: impl IntoIterator<Item = (TabId, Option<String>)>,
+) -> Vec<IdleTabSection> {
+    let mut sections: Vec<IdleTabSection> = Vec::new();
+    let mut section_by_repo: HashMap<String, usize> = HashMap::new();
+    let mut ungrouped = Vec::new();
+
+    for (tab_id, repo_group_id) in tabs {
+        let Some(repo_group_id) = repo_group_id else {
+            ungrouped.push(tab_id);
+            continue;
+        };
+
+        let section_index = match section_by_repo.get(&repo_group_id).copied() {
+            Some(index) => index,
+            None => {
+                let index = sections.len();
+                section_by_repo.insert(repo_group_id.clone(), index);
+                sections.push(IdleTabSection {
+                    repo_group_id: Some(repo_group_id),
+                    tab_ids: Vec::new(),
+                });
+                index
+            }
+        };
+        sections[section_index].tab_ids.push(tab_id);
+    }
+
+    if !ungrouped.is_empty() {
+        sections.push(IdleTabSection {
+            repo_group_id: None,
+            tab_ids: ungrouped,
+        });
+    }
+
+    sections
+}
+
+fn idle_repo_identity(repo_group_id: Option<&str>, git_root: Option<&str>) -> Option<String> {
+    repo_group_id
+        .filter(|path| !path.is_empty())
+        .or_else(|| git_root.filter(|path| !path.is_empty()))
+        .map(str::to_string)
 }
 
 /// Scroll animation of the tab row (selected tab centered, 0.25 s ease).
@@ -1307,6 +1419,14 @@ impl Workspace {
             .map(|t| t.id)
             .filter(|id| idle.contains(id))
             .collect();
+        let sections = group_idle_tabs_by_repo(ids.iter().copied().map(|id| {
+            (
+                id,
+                self.state.get(id).and_then(|tab| {
+                    idle_repo_identity(tab.repo_group_id.as_deref(), tab.git_root.as_deref())
+                }),
+            )
+        }));
         let anchor = {
             let frames = self.frames.borrow();
             frames
@@ -1317,93 +1437,160 @@ impl Workspace {
         };
         let card_anchor = anchor.x + px(40.0);
         let mut rows: Vec<gpui::AnyElement> = Vec::new();
-        for (index, id) in ids.iter().copied().enumerate() {
-            if index > 0 {
-                rows.push(div().h(px(1.0)).bg(chrome.border).into_any_element());
+        for (section_index, section) in sections.iter().enumerate() {
+            if section_index > 0 {
+                rows.push(
+                    div()
+                        .flex_shrink_0()
+                        .mx(px(8.0))
+                        .my(px(3.0))
+                        .h(px(1.0))
+                        .bg(chrome.border)
+                        .into_any_element(),
+                );
             }
-            // Swift: custom title, else the running app, else "Tab".
-            let title = self
-                .state
-                .get(id)
-                .and_then(|t| t.custom_title.clone())
-                .or_else(|| self.session_info(id, cx).and_then(|i| i.ai_app))
-                .unwrap_or_else(|| "Tab".into());
-            let idle_for = self
-                .state
-                .get(id)
-                .map(|t| idle_duration(now - t.last_activity))
-                .unwrap_or_default();
-            rows.push(
-                div()
-                    .id(("idle-row", id as usize))
-                    .role(Role::Button)
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .px(px(10.0))
-                    .py(px(6.0))
-                    .rounded_md()
-                    .hover(|d| d.bg(chrome.tab_hover_bg))
-                    .child(div().text_xs().text_color(chrome.text_muted).child("☾"))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_ellipsis()
-                            .text_sm()
-                            .child(title),
+
+            let tab_count = section.tab_ids.len();
+            let (label, label_color, repository_tooltip, accessibility_label) =
+                if let Some(repo_group_id) = section.repo_group_id.as_deref() {
+                    let name = repo_group_name(repo_group_id);
+                    (
+                        name.to_string(),
+                        tab_color(repo_group_color(repo_group_id)),
+                        Some(SharedString::from(repo_group_id.to_string())),
+                        format!("{name}, {repo_group_id}, {tab_count}"),
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .font_family("Menlo")
-                            .text_color(chrome.text_muted)
-                            .child(idle_for),
+                } else {
+                    let label = crate::l10n::tr("No repository");
+                    (
+                        label.clone(),
+                        chrome.text_muted,
+                        None,
+                        format!("{label}, {tab_count}"),
                     )
-                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                        this.hover_tab(id, *hovered, Some(card_anchor), cx)
-                    }))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.dismiss_hover_card(cx);
-                        this.idle_open = false;
-                        this.select_tab(id, window, cx);
-                    }))
-                    .into_any_element(),
-            );
-        }
-        rows.push(div().h(px(1.0)).bg(chrome.border).into_any_element());
-        rows.push(
-            div()
-                .id("idle-close-all")
-                .role(Role::Button)
+                };
+            let header = div()
+                .id(("idle-repo-header", section_index))
+                .role(Role::Heading)
+                .aria_label(accessibility_label)
                 .flex()
+                .flex_shrink_0()
                 .items_center()
                 .gap(px(6.0))
                 .px(px(10.0))
-                .py(px(6.0))
-                .rounded_md()
+                .py(px(4.0))
                 .text_xs()
-                .hover(|d| d.bg(chrome.tab_hover_bg))
-                .child("⊗")
-                .child(crate::l10n::tr("Close All Idle"))
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.dismiss_hover_card(cx);
-                    this.idle_open = false;
-                    let ids = ids.clone();
-                    this.close_tabs_confirming(ids, window, cx);
-                    cx.notify();
-                }))
-                .into_any_element(),
-        );
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .text_color(label_color)
+                        .child(label),
+                )
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .text_color(chrome.text_muted)
+                        .child(tab_count.to_string()),
+                )
+                .when_some(repository_tooltip, |d, tooltip| {
+                    d.tooltip(move |window, cx| {
+                        gpui_kit::component::tooltip::Tooltip::new(tooltip.clone())
+                            .build(window, cx)
+                    })
+                });
+            rows.push(header.into_any_element());
+
+            for id in section.tab_ids.iter().copied() {
+                // Swift: custom title, else the running app, else "Tab".
+                let title = self
+                    .state
+                    .get(id)
+                    .and_then(|t| t.custom_title.clone())
+                    .or_else(|| self.session_info(id, cx).and_then(|i| i.ai_app))
+                    .unwrap_or_else(|| "Tab".into());
+                let idle_for = self
+                    .state
+                    .get(id)
+                    .map(|t| idle_duration(now - t.last_activity))
+                    .unwrap_or_default();
+                rows.push(
+                    div()
+                        .id(("idle-row", id as usize))
+                        .role(Role::Button)
+                        .flex()
+                        .flex_shrink_0()
+                        .items_center()
+                        .gap(px(6.0))
+                        .px(px(10.0))
+                        .py(px(6.0))
+                        .rounded_md()
+                        .hover(|d| d.bg(chrome.tab_hover_bg))
+                        .child(div().text_xs().text_color(chrome.text_muted).child("☾"))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_ellipsis()
+                                .text_sm()
+                                .child(title),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_family("Menlo")
+                                .text_color(chrome.text_muted)
+                                .child(idle_for),
+                        )
+                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            this.hover_tab(id, *hovered, Some(card_anchor), cx)
+                        }))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.dismiss_hover_card(cx);
+                            this.idle_open = false;
+                            this.select_tab(id, window, cx);
+                        }))
+                        .into_any_element(),
+                );
+            }
+        }
+        let close_all = div()
+            .id("idle-close-all")
+            .role(Role::Button)
+            .flex()
+            .flex_shrink_0()
+            .items_center()
+            .gap(px(6.0))
+            .px(px(10.0))
+            .py(px(6.0))
+            .rounded_md()
+            .text_xs()
+            .hover(|d| d.bg(chrome.tab_hover_bg))
+            .child("⊗")
+            .child(crate::l10n::tr("Close All Idle"))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.dismiss_hover_card(cx);
+                this.idle_open = false;
+                let ids = ids.clone();
+                this.close_tabs_confirming(ids, window, cx);
+                cx.notify();
+            }));
         Some(
             deferred(
                 anchored().position(anchor).snap_to_window().child(
                     div()
                         .id("idle-popover")
+                        .flex()
+                        .flex_col()
                         .occlude()
                         .w(px(240.0))
+                        .max_h(px(360.0))
                         .p_1()
                         .rounded_lg()
                         .border_1()
@@ -1411,7 +1598,25 @@ impl Workspace {
                         .bg(chrome.panel_bg)
                         .text_color(chrome.text)
                         .shadow_lg()
-                        .children(rows)
+                        .child(
+                            div()
+                                .id("idle-list")
+                                .flex()
+                                .flex_col()
+                                .min_h_0()
+                                .max_h(px(300.0))
+                                .overflow_y_scroll()
+                                .children(rows),
+                        )
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .mx(px(8.0))
+                                .my(px(3.0))
+                                .h(px(1.0))
+                                .bg(chrome.border),
+                        )
+                        .child(close_all)
                         .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                             this.idle_open = false;
                             cx.notify();

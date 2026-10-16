@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Group Rust idle tabs by repository with colored headings, section separators,
+  full-path tooltips, and a scrollable list above Close All Idle.
+- Add an opt-in Rust setting for numbered shortcuts to select only tabs in the
+  tab bar, preserving the existing all-tabs behavior by default.
+
 - Forward requested wheel events to full-screen terminal apps such as Codex,
   even when click/drag reporting is off. Honor DEC 1007 alternate scrolling,
   keep Shift/Ctrl and active text selection local, and expose numeric input

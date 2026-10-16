@@ -3275,3 +3275,9 @@
 "status.never" = "Never";
 "status.unconfigured" = "Unconfigured";
 "status.visible" = "Visible";
+
+// Rust tab navigation and idle repository sections.
+"tabs.idle.noRepository" = "بلا مستودع";
+"settings.tabs.numberedShortcutsVisibleOnly" = "قصر الاختصارات الرقمية على علامات التبويب المرئية";
+"settings.tabs.numberedShortcutsVisibleOnly.help" = "عدّ علامات التبويب المعروضة في الشريط فقط عند اختيار علامة تبويب برقمها.";
+"settings.search.numberedShortcutsVisibleOnly.keywords" = "علامات تبويب مرئية,اختصارات رقمية,رقم الأمر,cmd,alt,مفاتيح الوظائف,خاملة,مجموعات مطوية";

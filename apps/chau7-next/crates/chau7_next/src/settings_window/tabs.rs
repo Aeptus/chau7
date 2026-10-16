@@ -7,7 +7,7 @@ use gpui::{SharedString, div, prelude::*, px};
 
 use super::SectionContext;
 use super::update;
-use super::widgets::{chip, row, section as titled, stepper, toggle};
+use super::widgets::{chip, description, row, section as titled, stepper, toggle};
 use crate::settings::{LastTabClose, RepoGroupingMode};
 use crate::theme::Chrome;
 
@@ -213,7 +213,27 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         ));
 
     let shortcuts = TAB_SHORTCUTS.iter().fold(
-        titled("Keyboard Navigation", chrome),
+        titled("Keyboard Navigation", chrome)
+            .child(row(
+                crate::l10n::l(
+                    "settings.tabs.numberedShortcutsVisibleOnly",
+                    "Numbered Shortcuts Target Visible Tabs Only",
+                ),
+                toggle(
+                    "numbered-shortcuts-visible-only",
+                    s.numbered_shortcuts_visible_only,
+                    chrome,
+                    |s, v| s.tabs.numbered_shortcuts_visible_only = v,
+                ),
+                chrome,
+            ))
+            .child(description(
+                crate::l10n::l(
+                    "settings.tabs.numberedShortcutsVisibleOnly.help",
+                    "Count only tabs shown in the tab bar when selecting a tab by number.",
+                ),
+                chrome,
+            )),
         |d, (label, mac, other)| {
             d.child(shortcut_row(
                 label,

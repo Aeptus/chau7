@@ -152,6 +152,23 @@ const NEXT_SUMMARY_DEFAULTS: &[(&str, &str)] = &[
     ("status.visible", "Visible"),
 ];
 
+// Rust-specific tab navigation labels. The original Swift catalog stays intact.
+const NEXT_TAB_NAVIGATION_DEFAULTS: &[(&str, &str)] = &[
+    ("tabs.idle.noRepository", "No repository"),
+    (
+        "settings.tabs.numberedShortcutsVisibleOnly",
+        "Numbered Shortcuts Target Visible Tabs Only",
+    ),
+    (
+        "settings.tabs.numberedShortcutsVisibleOnly.help",
+        "Count only tabs shown in the tab bar when selecting a tab by number.",
+    ),
+    (
+        "settings.search.numberedShortcutsVisibleOnly.keywords",
+        "visible tabs,numbered shortcuts,command number,cmd,alt,function keys,idle,collapsed groups",
+    ),
+];
+
 #[test]
 fn tables_match_the_swift_resources() {
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -164,7 +181,11 @@ fn tables_match_the_swift_resources() {
         let swift = std::fs::read_to_string(&path).unwrap();
         let swift_table = parse_strings(&swift);
         let mut next_base = table(lang).clone();
-        for (key, _) in NEXT_STATUS_DEFAULTS.iter().chain(NEXT_SUMMARY_DEFAULTS) {
+        for (key, _) in NEXT_STATUS_DEFAULTS
+            .iter()
+            .chain(NEXT_SUMMARY_DEFAULTS)
+            .chain(NEXT_TAB_NAVIGATION_DEFAULTS)
+        {
             if !swift_table.contains_key(*key) {
                 assert!(
                     next_base.remove(*key).is_some(),
@@ -490,4 +511,21 @@ fn production_branding_does_not_rewrite_user_format_arguments() {
         &[Arg::from(user_text)],
     );
     assert_eq!(text, user_text);
+}
+
+#[test]
+fn tab_navigation_labels_are_translated() {
+    for (key, default) in NEXT_TAB_NAVIGATION_DEFAULTS {
+        assert_eq!(
+            table(Lang::En).get(*key).map(String::as_str),
+            Some(*default)
+        );
+        for lang in [Lang::Fr, Lang::Es, Lang::Ar, Lang::He] {
+            let translated = table(lang)
+                .get(*key)
+                .expect("missing tab navigation translation");
+            assert!(!translated.is_empty());
+            assert_ne!(translated.as_str(), *default, "{}: {key}", lang.code());
+        }
+    }
 }

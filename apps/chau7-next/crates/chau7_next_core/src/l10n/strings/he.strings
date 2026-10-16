@@ -3275,3 +3275,9 @@
 "status.never" = "Never";
 "status.unconfigured" = "Unconfigured";
 "status.visible" = "Visible";
+
+// Rust tab navigation and idle repository sections.
+"tabs.idle.noRepository" = "ללא מאגר";
+"settings.tabs.numberedShortcutsVisibleOnly" = "קיצורי מקשים ממוספרים ללשוניות גלויות בלבד";
+"settings.tabs.numberedShortcutsVisibleOnly.help" = "ספור רק לשוניות המוצגות בסרגל בעת בחירת לשונית לפי מספר.";
+"settings.search.numberedShortcutsVisibleOnly.keywords" = "לשוניות גלויות,קיצורים ממוספרים,מספר פקודה,cmd,alt,מקשי פונקציות,לא פעילות,קבוצות מכווצות";

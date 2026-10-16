@@ -1570,7 +1570,11 @@ fn register_tab_actions(div: Stateful<Div>, cx: &mut Context<Workspace>) -> Stat
         }
     }))
     .on_action(cx.listener(|this, action: &SelectTabNumber, window, cx| {
-        this.state.select_number(action.0);
+        if Settings::get(cx).tabs.numbered_shortcuts_visible_only {
+            this.state.select_visible_number(action.0, AppData::now(cx));
+        } else {
+            this.state.select_number(action.0);
+        }
         if let Some(id) = this.state.selected() {
             this.select_tab(id, window, cx);
         }

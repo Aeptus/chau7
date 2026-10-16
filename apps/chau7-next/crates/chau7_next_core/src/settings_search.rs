@@ -747,6 +747,17 @@ pub const SEARCHABLE_SETTINGS: &[SearchableSetting] = &[
         description_key: "settings.search.tabSwitchShortcut.description",
     },
     SearchableSetting {
+        id: "numberedShortcutsVisibleOnly",
+        section: SettingsSection::Tabs,
+        title: "Numbered Shortcuts Target Visible Tabs Only",
+        keywords: "number,numbered,shortcut,cmd,command,visible,idle,repo,repository,collapsed",
+        description: "Count only tabs shown in the tab bar when selecting a tab by number.",
+        anchor_id: "numberedShortcutsVisibleOnly",
+        title_key: "settings.tabs.numberedShortcutsVisibleOnly",
+        keywords_key: "settings.search.numberedShortcutsVisibleOnly.keywords",
+        description_key: "settings.tabs.numberedShortcutsVisibleOnly.help",
+    },
+    SearchableSetting {
         id: "shell",
         section: SettingsSection::Shell,
         title: "Shell",
@@ -1548,12 +1559,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn current_28_sections_in_6_groups_and_99_entries() {
+    fn current_28_sections_in_6_groups_and_100_entries() {
         assert_eq!(SettingsSection::ALL.len(), 28);
         assert_eq!(SettingsGroup::ALL.len(), 6);
         let grouped: usize = SettingsGroup::ALL.iter().map(|g| g.sections().len()).sum();
         assert_eq!(grouped, 28);
-        assert_eq!(SEARCHABLE_SETTINGS.len(), 99);
+        assert_eq!(SEARCHABLE_SETTINGS.len(), 100);
         for section in SettingsSection::ALL {
             assert!(section.group().sections().contains(&section));
         }
