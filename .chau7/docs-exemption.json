@@ -1,0 +1,6 @@
+{
+  "reason": "Only extends failure diagnostics and stage labels in the optional native-parity-fixture acceptance harness; production behavior and public capabilities are unchanged.",
+  "paths": [
+    "apps/chau7-next/crates/chau7_next/src/panes/editor/native_markdown/fixture.rs"
+  ]
+}

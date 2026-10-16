@@ -21,7 +21,7 @@ use gpui_kit::{
 };
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSEvent, NSEventType, NSPasteboard, NSView,
-    NSWindow,
+    NSWindow, NSWorkspace,
 };
 use objc2_foundation::{NSNotFound, NSString};
 use std::os::unix::fs::PermissionsExt;
@@ -189,12 +189,65 @@ fn click_native_source(
     application: &NSApplication,
     native_window: &NSWindow,
     native: &NativeMarkdown,
+    stage: &'static str,
 ) -> Result<(), String> {
     MainThreadMarker::new().ok_or("native source click is not on the main thread")?;
-    ensure(
-        application.isActive() && native_window.isVisible() && native_window.isKeyWindow(),
-        "native source click target is not the active owned window",
-    )?;
+    if !(application.isActive() && native_window.isVisible() && native_window.isKeyWindow()) {
+        let application_key_window = application.keyWindow();
+        let application_main_window = application.mainWindow();
+        let source_window = native.text.window();
+        let frontmost_application = NSWorkspace::sharedWorkspace().frontmostApplication();
+        let frontmost_application = frontmost_application.as_ref().map(|application| {
+            serde_json::json!({
+                "process_id": application.processIdentifier(),
+                "bundle_identifier": application.bundleIdentifier().map(|id| id.to_string()),
+            })
+        });
+        let current_event = application.currentEvent();
+        let current_event = current_event.as_ref().map(|event| {
+            serde_json::json!({
+                "type": event.r#type().0,
+                "timestamp": event.timestamp(),
+                "window_number": event.windowNumber(),
+            })
+        });
+        let snapshot = serde_json::json!({
+            "stage": stage,
+            "application_active": application.isActive(),
+            "activation_policy": application.activationPolicy().0,
+            "target_window_number": native_window.windowNumber(),
+            "target_visible": native_window.isVisible(),
+            "target_key": native_window.isKeyWindow(),
+            "target_main": native_window.isMainWindow(),
+            "target_miniaturized": native_window.isMiniaturized(),
+            "target_can_become_key": native_window.canBecomeKeyWindow(),
+            "target_occlusion_state": native_window.occlusionState().0,
+            "application_key_window_number": application_key_window
+                .as_ref()
+                .map(|window| window.windowNumber()),
+            "application_key_is_target": application_key_window
+                .as_ref()
+                .is_some_and(|window| std::ptr::eq::<NSWindow>(&**window, native_window)),
+            "application_main_window_number": application_main_window
+                .as_ref()
+                .map(|window| window.windowNumber()),
+            "application_main_is_target": application_main_window
+                .as_ref()
+                .is_some_and(|window| std::ptr::eq::<NSWindow>(&**window, native_window)),
+            "source_window_number": source_window.as_ref().map(|window| window.windowNumber()),
+            "source_window_is_target": source_window
+                .as_ref()
+                .is_some_and(|window| std::ptr::eq::<NSWindow>(&**window, native_window)),
+            "source_first_responder": source_is_first_responder(native, native_window),
+            "host_first_responder": host_is_first_responder(native, native_window),
+            "frontmost_application": frontmost_application,
+            "current_event": current_event,
+        });
+        eprintln!("native_editor_click_owner={snapshot}");
+        return Err(format!(
+            "native source click target is not the active owned window: {snapshot}"
+        ));
+    }
     let down = source_mouse_event(native, native_window, NSEventType::LeftMouseDown)?;
     let up = source_mouse_event(native, native_window, NSEventType::LeftMouseUp)?;
     // NSTextView may track a mouse-down synchronously until it consumes the
@@ -1102,7 +1155,12 @@ pub(in crate::panes::editor) async fn verify(
                 )?;
                 Ok((application, native_window))
             })?;
-    click_native_source(&application, &native_window, &native)?;
+    click_native_source(
+        &application,
+        &native_window,
+        &native,
+        "initial_editor_click",
+    )?;
     settle(handle, cx).await?;
     cx.update_window(handle.into(), |_, window, cx| {
         let panes = workspace
@@ -1158,7 +1216,7 @@ pub(in crate::panes::editor) async fn verify(
     // Exercise the delivery race: an AppKit source click queues GPUI focus
     // delivery, then the terminal is clicked before that async delivery gets
     // a frame. The late source-focus message must not steal focus back.
-    click_native_source(&application, &native_window, &native)?;
+    click_native_source(&application, &native_window, &native, "pending_focus_race")?;
     click_gpui_terminal_immediately(handle, terminal_point, cx)?;
     settle(handle, cx).await?;
     cx.update_window(handle.into(), |_, window, cx| {
@@ -1233,7 +1291,12 @@ pub(in crate::panes::editor) async fn verify(
 
     // Restore both focus owners through an actual native click before the
     // composition and keyboard portions of this existing source fixture.
-    click_native_source(&application, &native_window, &native)?;
+    click_native_source(
+        &application,
+        &native_window,
+        &native,
+        "restore_editor_click",
+    )?;
     settle(handle, cx).await?;
     cx.update_window(handle.into(), |_, window, cx| {
         ensure(
