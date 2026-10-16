@@ -68,8 +68,8 @@ fn verify_grouping_summary(
 
 fn styled_scrollback_sample(term: &Chau7Terminal) -> Result<serde_json::Value, String> {
     // Sample the first retained row, not the recent screen tail, before
-    // persistence and after the production reload.
-    term.scroll_to(1.0);
+    // persistence and after the production reload. The fixture moves the
+    // session to this viewport through its production scroll/refresh path.
     let grid = term.grid_copy();
     ensure(grid.cols > 0, "styled fixture terminal has no columns")?;
     ensure(
@@ -181,6 +181,38 @@ fn styled_scrollback_sample(term: &Chau7Terminal) -> Result<serde_json::Value, S
         },
     }))
 }
+
+fn styled_viewport_diagnostic(session: &TerminalSession) -> serde_json::Value {
+    let cached = &session.grid;
+    let raw = session.with_terminal(|term| {
+        let grid = term.grid_copy();
+        serde_json::json!({
+            "cols": grid.cols,
+            "rows": grid.rows,
+            "scrollback_rows": grid.scrollback_rows,
+            "display_offset": grid.display_offset,
+            "at_top": grid.scrollback_rows > 0 && grid.display_offset == grid.scrollback_rows,
+            "styled_background_present": grid.cells.iter().any(|cell| cell.bg == (7, 8, 9)),
+        })
+    });
+    let allocation = session.allocation_snapshot();
+    serde_json::json!({
+        "cached": {
+            "cols": cached.cols,
+            "rows": cached.rows,
+            "scrollback_rows": cached.scrollback_rows,
+            "display_offset": cached.display_offset,
+            "at_top": cached.scrollback_rows > 0
+                && cached.display_offset == cached.scrollback_rows,
+            "styled_background_present": cached.cells.iter().any(|cell| cell.bg == (7, 8, 9)),
+        },
+        "raw": raw,
+        "render_suspended": allocation["render_suspended"],
+        "refresh_cap_interval_ms": allocation["refresh_cap_interval_ms"],
+        "refresh_interactive": allocation["refresh_interactive"],
+    })
+}
+
 fn activation_diagnostic(
     app_active: bool,
     activation_policy: isize,
@@ -3783,17 +3815,28 @@ async fn verify_retention(
     })
     .await?;
     let before = cx.update(|cx| ordinary.read(cx).buffer_text());
+    cx.update(|cx| {
+        ordinary.update(cx, |session, cx| {
+            session.scroll_to_top();
+            session.refresh(cx);
+        });
+    });
     let styled_cells_before =
         cx.update(|cx| ordinary.read(cx).with_terminal(styled_scrollback_sample))?;
-    // Let the production poll/refresh path publish the raw terminal scroll to
-    // the cached grid that print_snapshot actually paints.
-    wait_until(cx, "cached styled scrollback viewport for print", |cx| {
+    // A raw terminal scroll does not produce PTY output, so drive the same
+    // session refresh the production scroll action uses before checking the
+    // cached grid that print_snapshot paints.
+    let cache_wait = wait_until(cx, "cached styled scrollback viewport for print", |cx| {
         let grid = &ordinary.read(cx).grid;
         grid.scrollback_rows > 0
             && grid.display_offset == grid.scrollback_rows
             && grid.cells.iter().any(|cell| cell.bg == (7, 8, 9))
     })
-    .await?;
+    .await;
+    if let Err(wait_error) = cache_wait {
+        let viewport = cx.update(|cx| styled_viewport_diagnostic(ordinary.read(cx)));
+        return Err(format!("{wait_error}; viewport_diagnostic={viewport}"));
+    }
     // Snapshot this real selected view at the retained styled marker. Decode
     // the production PNG and check its exact ANSI background RGB, without
     // opening or submitting an NSPrintOperation.
@@ -3960,6 +4003,12 @@ async fn verify_retention(
     )
     .await?;
     let restored = cx.update(|cx| ordinary.read(cx).buffer_text());
+    cx.update(|cx| {
+        ordinary.update(cx, |session, cx| {
+            session.scroll_to_top();
+            session.refresh(cx);
+        });
+    });
     let styled_cells_after =
         cx.update(|cx| ordinary.read(cx).with_terminal(styled_scrollback_sample))?;
     ensure(

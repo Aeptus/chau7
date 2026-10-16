@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Refresh isolated restoration fixtures through the production scroll action
+  before checking cached styled history and print snapshots.
+
 - Preserve custom titlebar transparency in macOS fullscreen transitions so
   revealing the system menu does not introduce an opaque native titlebar.
 - Add a guarded repeat update for existing Rust production installations, with
