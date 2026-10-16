@@ -9,9 +9,10 @@ use std::{
 use chau7_next_core::data_root::DataRoot;
 use chau7_terminal::Chau7Terminal;
 use gpui::{
-    AnyWindowHandle, AppContext, ClipboardItem, Context, Entity, Focusable, Modifiers, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, PlatformInput, Render, ScrollDelta,
-    ScrollWheelEvent, TestAppContext, TouchPhase, Window, div, point, prelude::*, px,
+    AnyWindowHandle, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable,
+    Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, PlatformInput,
+    Render, ScrollDelta, ScrollWheelEvent, TestAppContext, TouchPhase, Window, div, point,
+    prelude::*, px,
 };
 use gpui_kit::test::TestWindowExt;
 
@@ -25,14 +26,41 @@ struct MouseTestRoot {
     terminal: Entity<TerminalView>,
     session: Entity<TerminalSession>,
     bubbled_scrolls: usize,
+    side_panel_mouse_moves: usize,
+    show_side_panel: bool,
+    focus_handle: FocusHandle,
+}
+
+impl Focusable for MouseTestRoot {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
 }
 
 impl Render for MouseTestRoot {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+        let root = div()
             .size_full()
+            .flex()
+            .flex_row()
+            .track_focus(&self.focus_handle)
             .on_scroll_wheel(cx.listener(|this, _, _, _| this.bubbled_scrolls += 1))
-            .child(self.terminal.clone())
+            .child(if self.show_side_panel {
+                div().w(px(560.0)).h_full().child(self.terminal.clone())
+            } else {
+                div().flex_1().h_full().child(self.terminal.clone())
+            });
+        if self.show_side_panel {
+            root.child(
+                div()
+                    .id("terminal-mouse-side-panel")
+                    .flex_1()
+                    .h_full()
+                    .on_mouse_move(cx.listener(|this, _, _, _| this.side_panel_mouse_moves += 1)),
+            )
+        } else {
+            root
+        }
     }
 }
 
@@ -45,6 +73,10 @@ struct Fixture {
 }
 
 fn fixture(harness: &mut TestAppContext) -> Fixture {
+    fixture_with_side_panel(harness, false)
+}
+
+fn fixture_with_side_panel(harness: &mut TestAppContext, show_side_panel: bool) -> Fixture {
     let home = std::env::temp_dir().join(format!("chau7-terminal-mouse-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&home).unwrap();
     harness.on_quit({
@@ -88,10 +120,13 @@ fn fixture(harness: &mut TestAppContext) -> Fixture {
                 session
             });
             let terminal = cx.new(|cx| TerminalView::new(session.clone(), window, cx));
-            cx.new(|_| MouseTestRoot {
+            cx.new(|cx| MouseTestRoot {
                 terminal,
                 session,
                 bubbled_scrolls: 0,
+                side_panel_mouse_moves: 0,
+                show_side_panel,
+                focus_handle: cx.focus_handle(),
             })
         })
         .unwrap()
@@ -281,6 +316,38 @@ fn shift_alt() -> Modifiers {
     }
 }
 
+fn codex_screen_frame(first_line: usize, spinner: char, enter_alternate: bool) -> String {
+    let mut frame = String::new();
+    if enter_alternate {
+        // Codex-like mode 28: motion reporting, focus reporting, and SGR.
+        // Alacritty defaults DEC 1007 on, so explicitly disable it to verify
+        // that drag auto-scroll sends SGR wheels without that mode.
+        frame.push_str("\x1b[?1049h\x1b[?1007l\x1b[?1003h\x1b[?1004h\x1b[?1006h");
+    }
+    frame.push_str("\x1b[2J\x1b[1;1HCodex session");
+    for row in 1..22 {
+        frame.push_str(&format!(
+            "\x1b[{};1Hresponse-{:03} distinct output line",
+            row + 1,
+            first_line + row - 1,
+        ));
+    }
+    frame.push_str(&format!("\x1b[23;1Hspinner {spinner} working"));
+    frame.push_str("\x1b[24;1HEsc to interrupt");
+    frame
+}
+
+fn inject_fake_tui_frame(harness: &mut TestAppContext, fixture: &Fixture, frame: &str) {
+    harness.update(|cx| {
+        fixture
+            .session
+            .update(cx, |session, _| session.inject_output(frame));
+    });
+    harness
+        .update_window(fixture.window, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+}
+
 #[gpui::test]
 fn rendered_wheel_routes_reporting_accumulates_pixels_and_bubbles_horizontal_only(
     harness: &mut TestAppContext,
@@ -447,7 +514,8 @@ fn rendered_selection_survives_wheel_drag_copy_paste_and_click_extensions(
         .unwrap();
 
     let start = cell_point(harness, &fixture, 3, 2);
-    let end = cell_point(harness, &fixture, 7, 35);
+    // Stop before `target` so the endpoint assertion detects horizontal drift.
+    let end = cell_point(harness, &fixture, 7, 18);
     dispatch_down(harness, &fixture, start, shift(), 1);
     dispatch_move(harness, &fixture, end, Some(MouseButton::Left), shift());
     let old_offset = harness.update(|cx| fixture.session.read(cx).display_offset());
@@ -475,23 +543,75 @@ fn rendered_selection_survives_wheel_drag_copy_paste_and_click_extensions(
         "selection ended at {last_selected_line:?}, expected {endpoint_label:?}"
     );
 
-    // Continue the drag beyond the canvas, let one auto-scroll tick run, then
-    // synthesize a lost release outside the canvas and verify the timer stops.
+    // Keep the pointer stationary below the canvas for several timer ticks.
+    // Scrolling must continue the selection at the pointer's column.
     let bounds = terminal_bounds(harness, &fixture);
-    let outside = point(bounds.center().x, bounds.bottom() + px(1.0));
-    dispatch_move(harness, &fixture, outside, Some(MouseButton::Left), shift());
+    let below = point(end.x, bounds.bottom() + px(1.0));
+    dispatch_move(harness, &fixture, below, Some(MouseButton::Left), shift());
     let before_auto_scroll = harness.update(|cx| fixture.session.read(cx).display_offset());
-    harness.executor().advance_clock(Duration::from_millis(60));
-    harness.run_until_parked();
+    for _ in 0..3 {
+        harness.executor().advance_clock(Duration::from_millis(60));
+        harness.run_until_parked();
+    }
     let after_auto_scroll = harness.update(|cx| fixture.session.read(cx).display_offset());
-    assert!(after_auto_scroll < before_auto_scroll);
-    dispatch_move(harness, &fixture, outside, None, shift());
+    assert_eq!(before_auto_scroll - after_auto_scroll, 3);
+    let bottom_endpoint = harness.update(|cx| {
+        let session = fixture.session.read(cx);
+        let bottom_row = session.grid.rows.saturating_sub(1) as i32;
+        session
+            .line_text(bottom_row - session.display_offset() as i32)
+            .unwrap()
+    });
+    let expected_endpoint_prefix: String = bottom_endpoint.chars().take(19).collect();
+    let bottom_selection = harness.update(|cx| fixture.session.read(cx).selection_text().unwrap());
+    let last_selected_line = bottom_selection.lines().last().unwrap().trim_start();
+    assert_eq!(
+        last_selected_line.trim_end(),
+        expected_endpoint_prefix.trim_end(),
+        "the bottom endpoint should match the exact visible row text through its pointer column"
+    );
+    assert!(
+        !last_selected_line.contains("target"),
+        "the endpoint column should remain under the stationary pointer: {last_selected_line:?}"
+    );
+
+    // Reverse direction while still dragging and verify the endpoint follows
+    // the top edge too.
+    let above = point(
+        cell_point(harness, &fixture, 0, 0).x,
+        bounds.top() - px(1.0),
+    );
+    dispatch_move(harness, &fixture, above, Some(MouseButton::Left), shift());
+    let before_up_scroll = harness.update(|cx| fixture.session.read(cx).display_offset());
+    // The recurring 50 ms timer keeps its phase when the drag reverses. The
+    // downward pass advanced to t=180 ms, so the next three deadlines are
+    // t=200, 250, and 300 ms. Advance 130 ms to exercise exactly those ticks.
+    harness.executor().advance_clock(Duration::from_millis(130));
+    harness.run_until_parked();
+    let after_up_scroll = harness.update(|cx| fixture.session.read(cx).display_offset());
+    assert_eq!(after_up_scroll - before_up_scroll, 3);
+    let top_endpoint = harness.update(|cx| {
+        fixture
+            .session
+            .read(cx)
+            .line_text(-(after_up_scroll as i32))
+            .unwrap()
+    });
+    let top_endpoint_label = top_endpoint.split_whitespace().next().unwrap();
+    let top_selection = harness.update(|cx| fixture.session.read(cx).selection_text().unwrap());
+    let first_selected_line = top_selection.lines().next().unwrap().trim_start();
+    assert!(first_selected_line.starts_with(top_endpoint_label));
+
+    // A real mouse-up outside the canvas must stop the recurring timer while
+    // preserving the completed selection.
+    dispatch_up(harness, &fixture, above, shift(), 1);
+    let after_mouse_up = harness.update(|cx| fixture.session.read(cx).display_offset());
     harness.executor().advance_clock(Duration::from_millis(200));
     harness.run_until_parked();
     assert_eq!(
         harness.update(|cx| fixture.session.read(cx).display_offset()),
-        after_auto_scroll,
-        "an outside release must stop auto-scroll while preserving the selection"
+        after_mouse_up,
+        "mouse-up outside the canvas must stop auto-scroll"
     );
     assert!(harness.update(|cx| fixture.session.read(cx).selection_text().is_some()));
 
@@ -654,6 +774,341 @@ fn rendered_selection_survives_wheel_drag_copy_paste_and_click_extensions(
     close_fixture(harness, fixture);
 }
 
+#[gpui::test]
+fn copy_on_select_republishes_same_selection_after_clipboard_changes(harness: &mut TestAppContext) {
+    let fixture = fixture(harness);
+    let row = visible_row(harness, &fixture, "row-158");
+    let start = cell_point(harness, &fixture, row, 2);
+    let end = cell_point(harness, &fixture, row, 23);
+
+    dispatch_down(harness, &fixture, start, shift(), 1);
+    dispatch_move(harness, &fixture, end, Some(MouseButton::Left), shift());
+    dispatch_up(harness, &fixture, end, shift(), 1);
+    harness.executor().advance_clock(Duration::from_millis(350));
+    harness.run_until_parked();
+    let selected = harness.update(|cx| {
+        fixture
+            .terminal
+            .read(cx)
+            .selection_for_copy(cx)
+            .unwrap()
+            .plain_text
+    });
+    assert_eq!(
+        harness
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .as_deref(),
+        Some(selected.as_str())
+    );
+
+    harness.write_to_clipboard(ClipboardItem::new_string(
+        "external clipboard update".into(),
+    ));
+    dispatch_down(harness, &fixture, start, shift(), 1);
+    dispatch_move(harness, &fixture, end, Some(MouseButton::Left), shift());
+    dispatch_up(harness, &fixture, end, shift(), 1);
+    harness.executor().advance_clock(Duration::from_millis(350));
+    harness.run_until_parked();
+    assert_eq!(
+        harness
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .as_deref(),
+        Some(selected.as_str()),
+        "copy-on-select must refresh the clipboard for a repeated selection"
+    );
+
+    close_fixture(harness, fixture);
+}
+
+#[gpui::test]
+fn selection_autoscroll_keeps_capture_when_drag_crosses_into_sibling_panel(
+    harness: &mut TestAppContext,
+) {
+    let fixture = fixture_with_side_panel(harness, true);
+    harness.update(|cx| {
+        fixture.session.update(cx, |session, cx| {
+            session.scroll_lines(20);
+            session.refresh(cx);
+        })
+    });
+    harness
+        .update_window(fixture.window, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+
+    let start = cell_point(harness, &fixture, 3, 2);
+    let end = cell_point(harness, &fixture, 7, 30);
+    dispatch_down(harness, &fixture, start, shift(), 1);
+    dispatch_move(harness, &fixture, end, Some(MouseButton::Left), shift());
+
+    let terminal = terminal_bounds(harness, &fixture);
+    let over_sibling = point(terminal.right() + px(20.0), terminal.bottom() - px(4.0));
+    dispatch_move(
+        harness,
+        &fixture,
+        over_sibling,
+        Some(MouseButton::Left),
+        shift(),
+    );
+    let before = harness.update(|cx| fixture.session.read(cx).display_offset());
+    for _ in 0..3 {
+        harness.executor().advance_clock(Duration::from_millis(60));
+        harness.run_until_parked();
+    }
+    let after = harness.update(|cx| fixture.session.read(cx).display_offset());
+    assert_eq!(
+        before - after,
+        3,
+        "dragging into the sibling edge should keep scrolling"
+    );
+    assert_eq!(
+        harness.update(|cx| fixture.root.read(cx).side_panel_mouse_moves),
+        0,
+        "the terminal capture listener must keep the drag from reaching sibling handlers"
+    );
+
+    dispatch_up(harness, &fixture, over_sibling, shift(), 1);
+    let after_release = harness.update(|cx| fixture.session.read(cx).display_offset());
+    harness.executor().advance_clock(Duration::from_millis(120));
+    harness.run_until_parked();
+    assert_eq!(
+        harness.update(|cx| fixture.session.read(cx).display_offset()),
+        after_release,
+        "mouse-up in a sibling panel must cancel the recurring timer"
+    );
+    close_fixture(harness, fixture);
+}
+
+#[gpui::test]
+fn rendered_selection_autoscroll_stops_on_focus_loss(harness: &mut TestAppContext) {
+    let fixture = fixture(harness);
+    harness.update(|cx| {
+        fixture.session.update(cx, |session, cx| {
+            session.scroll_lines(12);
+            session.refresh(cx);
+        })
+    });
+    harness
+        .update_window(fixture.window, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+
+    let start = cell_point(harness, &fixture, 3, 2);
+    dispatch_down(harness, &fixture, start, shift(), 1);
+    let bounds = terminal_bounds(harness, &fixture);
+    let below = point(
+        cell_point(harness, &fixture, 7, 23).x,
+        bounds.bottom() + px(1.0),
+    );
+    dispatch_move(harness, &fixture, below, Some(MouseButton::Left), shift());
+    harness.executor().advance_clock(Duration::from_millis(60));
+    harness.run_until_parked();
+    let after_first_tick = harness.update(|cx| fixture.session.read(cx).display_offset());
+
+    harness
+        .update_window(fixture.window, |_, window, cx| {
+            let root_focus = fixture.root.read(cx).focus_handle(cx);
+            window.focus(&root_focus, cx);
+            window.render_frame(cx);
+        })
+        .unwrap();
+    harness.executor().advance_clock(Duration::from_millis(200));
+    harness.run_until_parked();
+    assert_eq!(
+        harness.update(|cx| fixture.session.read(cx).display_offset()),
+        after_first_tick,
+        "focus loss must cancel selection auto-scroll"
+    );
+    assert!(harness.update(|cx| fixture.session.read(cx).selection_text().is_some()));
+
+    close_fixture(harness, fixture);
+}
+
+#[gpui::test]
+fn alternate_tui_autoscroll_accumulates_redraws_and_copies_after_release(
+    harness: &mut TestAppContext,
+) {
+    let initial = codex_screen_frame(0, '⠋', true);
+    let raw = raw_pty_fixture(harness, initial.as_bytes(), 0);
+    let fixture = &raw.fixture;
+    assert!(harness.update(|cx| {
+        fixture
+            .session
+            .read(cx)
+            .with_terminal(|terminal| terminal.is_alternate_screen_active())
+    }));
+    assert_eq!(
+        harness.update(|cx| fixture.session.read(cx).wheel_mouse_mode()),
+        28
+    );
+    assert!(!harness.update(|cx| fixture.session.read(cx).is_alternate_scroll_active()));
+
+    let anchor = cell_point(harness, fixture, 2, 0);
+    let bounds = terminal_bounds(harness, fixture);
+    let outside_bottom = point(
+        cell_point(harness, fixture, 20, 30).x,
+        bounds.bottom() + px(1.0),
+    );
+    dispatch_down(harness, fixture, anchor, shift(), 1);
+    dispatch_move(
+        harness,
+        fixture,
+        outside_bottom,
+        Some(MouseButton::Left),
+        shift(),
+    );
+
+    // The first tick requests a TUI scroll. The fake TUI then redraws a full
+    // frame; subsequent timer ticks must map its moving body rows while the
+    // header, spinner, and footer remain pinned.
+    for (line, spinner) in [(1, '⠙'), (2, '⠋')] {
+        harness.executor().advance_clock(Duration::from_millis(110));
+        harness.run_until_parked();
+        inject_fake_tui_frame(harness, fixture, &codex_screen_frame(line, spinner, false));
+    }
+    harness.executor().advance_clock(Duration::from_millis(110));
+    harness.run_until_parked();
+
+    let visible_selection = harness.update(|cx| {
+        fixture
+            .session
+            .read(cx)
+            .selection_text()
+            .unwrap_or_default()
+    });
+    assert!(
+        visible_selection.contains("response-002"),
+        "the visible highlight should follow the current content band: {visible_selection:?}"
+    );
+    assert!(
+        !visible_selection.contains("response-001"),
+        "the offscreen logical anchor should not be drawn on the stale row: {visible_selection:?}"
+    );
+
+    dispatch_up(harness, fixture, outside_bottom, shift(), 1);
+    let accumulated = harness.update(|cx| {
+        fixture
+            .terminal
+            .read(cx)
+            .selection_for_copy(cx)
+            .map(|selection| selection.plain_text)
+            .unwrap()
+    });
+    assert!(accumulated.contains("response-001"), "{accumulated:?}");
+    assert!(accumulated.contains("response-022"), "{accumulated:?}");
+
+    harness.write_to_clipboard(ClipboardItem::new_string("copy-sentinel".into()));
+    harness
+        .update_window(fixture.window, |_, window, cx| {
+            window.dispatch_action(Box::new(crate::actions::Copy), cx);
+        })
+        .unwrap();
+    harness.run_until_parked();
+    assert_eq!(
+        harness
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .as_deref(),
+        Some(accumulated.as_str()),
+        "Copy should use the accumulated selection after native redraws"
+    );
+
+    let received = wait_for_pty_receipt(&raw.receipt, "fake TUI SGR scroll requests", |bytes| {
+        count_subsequence(bytes, b"\x1b[<65;") >= 3
+    });
+    assert!(
+        received
+            .windows(b"\x1b[<65;1;3M".len())
+            .any(|window| window == b"\x1b[<65;1;3M")
+    );
+    assert_eq!(count_subsequence(&received, b"\x1b[<65;31;22M"), 2);
+    assert!(
+        !received
+            .windows(b";24M".len())
+            .any(|window| window == b";24M")
+    );
+    close_fixture(harness, raw.fixture);
+}
+
+#[gpui::test]
+fn alternate_screen_exit_during_drag_cancels_autoscroll_and_cached_copy(
+    harness: &mut TestAppContext,
+) {
+    let raw = raw_pty_fixture(harness, codex_screen_frame(0, '⠋', true).as_bytes(), 180);
+    let fixture = &raw.fixture;
+    let anchor = cell_point(harness, fixture, 4, 8);
+    let bounds = terminal_bounds(harness, fixture);
+    let outside_top = point(
+        cell_point(harness, fixture, 12, 0).x,
+        bounds.top() - px(1.0),
+    );
+
+    dispatch_down(harness, fixture, anchor, shift(), 1);
+    dispatch_move(
+        harness,
+        fixture,
+        outside_top,
+        Some(MouseButton::Left),
+        shift(),
+    );
+    assert!(harness.update(|cx| { fixture.terminal.read(cx).selection_for_copy(cx).is_some() }));
+
+    // Let the alternate-screen timer run once, then return to the primary
+    // screen before its next tick. The next tick must not scroll shell history.
+    harness.executor().advance_clock(Duration::from_millis(110));
+    harness.run_until_parked();
+    let primary_offset = harness.update(|cx| fixture.session.read(cx).display_offset());
+    harness.update(|cx| {
+        fixture
+            .session
+            .update(cx, |session, _| session.inject_output("\x1b[?1049l"));
+    });
+    assert!(!harness.update(|cx| {
+        fixture
+            .session
+            .read(cx)
+            .with_terminal(|terminal| terminal.is_alternate_screen_active())
+    }));
+    assert!(harness.update(|cx| { fixture.terminal.read(cx).selection_for_copy(cx).is_none() }));
+
+    // The copy guard also covers the short interval before Output dispatch
+    // observes and clears the cached TUI selection.
+    harness.update(|cx| {
+        fixture
+            .session
+            .update(cx, |session, cx| session.refresh(cx));
+    });
+    harness.run_until_parked();
+
+    harness.executor().advance_clock(Duration::from_millis(220));
+    harness.run_until_parked();
+    assert_eq!(
+        harness.update(|cx| fixture.session.read(cx).display_offset()),
+        primary_offset,
+        "an alternate-screen drag must not fall through to primary history scrolling"
+    );
+
+    // Re-entering the TUI must not resurrect the previous accumulator or the
+    // backend's old viewport coordinates as a copy selection.
+    harness.update(|cx| {
+        fixture.session.update(cx, |session, cx| {
+            session.inject_output(&codex_screen_frame(40, '⠙', true));
+            session.refresh(cx);
+        });
+    });
+    harness.run_until_parked();
+    assert!(harness.update(|cx| {
+        fixture
+            .session
+            .read(cx)
+            .with_terminal(|terminal| terminal.is_alternate_screen_active())
+    }));
+    assert!(harness.update(|cx| { fixture.terminal.read(cx).selection_for_copy(cx).is_none() }));
+
+    dispatch_up(harness, fixture, outside_top, shift(), 1);
+    close_fixture(harness, raw.fixture);
+}
+
 struct RawPtyFixture {
     fixture: Fixture,
     ready: PathBuf,
@@ -726,10 +1181,13 @@ fn raw_pty_fixture(
                 session
             });
             let terminal = cx.new(|cx| TerminalView::new(session.clone(), window, cx));
-            cx.new(|_| MouseTestRoot {
+            cx.new(|cx| MouseTestRoot {
                 terminal,
                 session,
                 bubbled_scrolls: 0,
+                side_panel_mouse_moves: 0,
+                show_side_panel: false,
+                focus_handle: cx.focus_handle(),
             })
         })
         .unwrap()
@@ -971,11 +1429,53 @@ fn alternate_screen_mouse_wheel_reports_sgr_to_pty_and_keeps_selection_local(
         Modifiers::default(),
         TouchPhase::Moved,
     );
-    dispatch_up(harness, fixture, end, Modifiers::default(), 1);
+    // The alternate screen has no local history. While a local selection is
+    // held at the edge, bounded wheel reports ask the TUI to scroll; this fake
+    // capture app leaves its screen unchanged, so the selection stays intact.
+    let bounds = terminal_bounds(harness, fixture);
+    let outside = point(end.x, bounds.bottom() + px(1.0));
+    dispatch_move(
+        harness,
+        fixture,
+        outside,
+        Some(MouseButton::Left),
+        Modifiers::default(),
+    );
+    for _ in 0..3 {
+        harness.executor().advance_clock(Duration::from_millis(60));
+        harness.run_until_parked();
+    }
+    assert_eq!(
+        harness.update(|cx| fixture.session.read(cx).display_offset()),
+        0,
+        "the alternate screen has no local scrollback"
+    );
+    let during_auto_scroll =
+        harness.update(|cx| fixture.session.read(cx).selection_text().unwrap());
+    assert!(during_auto_scroll.contains("local-alpha"));
+    assert!(during_auto_scroll.contains("target"));
+    dispatch_up(harness, fixture, outside, Modifiers::default(), 1);
     let selection = harness.update(|cx| fixture.session.read(cx).selection_text().unwrap());
     assert!(selection.contains("local-alpha"));
     assert!(selection.contains("target"));
-    assert_no_new_pty_bytes(&raw.receipt, &before_local_interactions);
+    let during_auto_scroll = wait_for_pty_receipt(
+        &raw.receipt,
+        "alternate-screen auto-scroll wheel report",
+        |bytes| {
+            count_subsequence(bytes, b"\x1b[<65;")
+                > count_subsequence(&before_local_interactions, b"\x1b[<65;")
+        },
+    );
+    assert!(
+        count_subsequence(&during_auto_scroll, b"\x1b[<65;")
+            <= count_subsequence(&before_local_interactions, b"\x1b[<65;") + 256,
+        "the local drag must keep wheel reports bounded"
+    );
+    assert!(
+        !during_auto_scroll
+            .windows(3)
+            .any(|window| window == b"\x1bOA" || window == b"\x1bOB")
+    );
 
     // A completed selection remains visible, but it must not keep future
     // unmodified wheel input in the local-drag route.
@@ -987,11 +1487,20 @@ fn alternate_screen_mouse_wheel_reports_sgr_to_pty_and_keeps_selection_local(
         Modifiers::default(),
         TouchPhase::Moved,
     );
+    let up_count_before_release_wheel = count_subsequence(&during_auto_scroll, sgr_up);
+    let down_count_before_release_wheel = count_subsequence(&during_auto_scroll, sgr_down);
     let after_mouseup_wheel =
         wait_for_pty_receipt(&raw.receipt, "wheel after selection mouse-up", |bytes| {
-            count_subsequence(bytes, sgr_up) >= 4
+            count_subsequence(bytes, sgr_up) > up_count_before_release_wheel
         });
-    assert_eq!(count_subsequence(&after_mouseup_wheel, sgr_up), 4);
+    assert_eq!(
+        count_subsequence(&after_mouseup_wheel, sgr_up),
+        up_count_before_release_wheel + 1
+    );
+    assert_eq!(
+        count_subsequence(&after_mouseup_wheel, sgr_down),
+        down_count_before_release_wheel
+    );
     assert_eq!(
         harness.update(|cx| fixture.session.read(cx).selection_text().unwrap()),
         selection

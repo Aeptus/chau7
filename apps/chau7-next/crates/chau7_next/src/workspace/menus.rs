@@ -1,7 +1,7 @@
 //! Tab and group context menus (right click, or Ctrl+click on macOS).
 
 use chau7_next_core::tabs_state::{TabColor, repo_group_name};
-use gpui::{App, Context, Div, Pixels, Point, Stateful, Window, prelude::*};
+use gpui::{App, Context, Div, EntityId, Pixels, Point, Stateful, Window, prelude::*};
 use gpui_kit::component::native_menu::NativeMenu;
 
 use super::drag::move_tabs_to;
@@ -156,7 +156,7 @@ impl Workspace {
     pub(super) fn window_submenu(
         &self,
         cx: &App,
-        action: impl Fn(Option<usize>) -> Box<dyn gpui::Action>,
+        action: impl Fn(Option<EntityId>) -> Box<dyn gpui::Action>,
     ) -> NativeMenu {
         let mut menu = NativeMenu::new().menu(crate::l10n::tr("New Window"), action(None));
         let others: Vec<_> = AppData::live(cx)
@@ -168,13 +168,14 @@ impl Workspace {
             menu = menu.separator();
         }
         for (index, (_, ws)) in others {
+            let target = ws.entity_id();
             let ws = ws.read(cx);
             let title = ws
                 .state
                 .selected()
                 .map(|id| ws.tab_title(id, cx))
                 .unwrap_or_else(|| format!("Window {}", index + 1));
-            menu = menu.menu(title, action(Some(index)));
+            menu = menu.menu(title, action(Some(target)));
         }
         menu
     }

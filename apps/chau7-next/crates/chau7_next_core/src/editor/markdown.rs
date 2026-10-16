@@ -27,11 +27,20 @@ pub enum MarkdownSection {
         language: Option<String>,
         code: String,
     },
+    /// A terminal selection stored as literal text inside a special fenced
+    /// block. Invalid style metadata falls back to a plain monospace run.
+    TerminalSelection(Vec<InlineRun>),
 }
 
 /// `parseMarkdown`: not CommonMark, the cases runbooks use.
 pub fn parse_markdown(input: &str) -> Vec<MarkdownSection> {
     let lines: Vec<&str> = input.split('\n').collect();
+    let mut line_offsets = Vec::with_capacity(lines.len());
+    let mut offset = 0;
+    for line in &lines {
+        line_offsets.push(offset);
+        offset += line.len() + 1;
+    }
     let mut sections = Vec::new();
     let mut text = String::new();
     let flush = |text: &mut String, sections: &mut Vec<MarkdownSection>| {
@@ -44,12 +53,56 @@ pub fn parse_markdown(input: &str) -> Vec<MarkdownSection> {
     let mut i = 0;
     while i < lines.len() {
         let line = lines[i];
-        if let Some(lang) = line.strip_prefix("```") {
+        if let Some(block) = crate::terminal_clipboard::parse_markdown_block(input, line_offsets[i])
+        {
+            flush(&mut text, &mut sections);
+            let body = &input[block.body_range.clone()];
+            let runs = block
+                .spans
+                .iter()
+                .map(|span| InlineRun {
+                    text: body[span.start..span.end].to_string(),
+                    bold: span.bold,
+                    italic: span.italic,
+                    code: false,
+                    strike: span.strikethrough,
+                    underline: span.underline,
+                    foreground: span.foreground,
+                    background: span.background,
+                    monospace: true,
+                    link: span.link.clone(),
+                })
+                .collect();
+            sections.push(MarkdownSection::TerminalSelection(runs));
+            i = line_offsets
+                .partition_point(|line_offset| *line_offset <= block.closing_range.start);
+            continue;
+        }
+        if let Some(block) =
+            crate::terminal_clipboard::parse_reserved_terminal_fence(input, line_offsets[i])
+        {
+            flush(&mut text, &mut sections);
+            let body = &input[block.body_range];
+            let runs = if body.is_empty() {
+                Vec::new()
+            } else {
+                vec![InlineRun {
+                    text: body.to_string(),
+                    monospace: true,
+                    ..Default::default()
+                }]
+            };
+            sections.push(MarkdownSection::TerminalSelection(runs));
+            i = line_offsets
+                .partition_point(|line_offset| *line_offset <= block.closing_range.start);
+            continue;
+        }
+        if let Some((fence_char, fence_len, lang)) = parse_fence_open(line) {
             flush(&mut text, &mut sections);
             let lang = lang.trim();
             let mut code = Vec::new();
             i += 1;
-            while i < lines.len() && !lines[i].starts_with("```") {
+            while i < lines.len() && !is_fence_close(lines[i], fence_char, fence_len) {
                 code.push(lines[i]);
                 i += 1;
             }
@@ -115,6 +168,20 @@ pub fn parse_markdown(input: &str) -> Vec<MarkdownSection> {
     }
     flush(&mut text, &mut sections);
     sections
+}
+
+fn parse_fence_open(line: &str) -> Option<(char, usize, &str)> {
+    let character = line.chars().next()?;
+    if !matches!(character, '`' | '~') {
+        return None;
+    }
+    let length = line.chars().take_while(|item| *item == character).count();
+    (length >= 3).then_some((character, length, &line[length..]))
+}
+
+fn is_fence_close(line: &str, character: char, length: usize) -> bool {
+    let count = line.chars().take_while(|item| *item == character).count();
+    count >= length && line[count..].trim().is_empty()
 }
 
 fn checkbox_line(line: &str) -> Option<(bool, &str)> {
@@ -263,6 +330,10 @@ pub struct InlineRun {
     pub italic: bool,
     pub code: bool,
     pub strike: bool,
+    pub underline: bool,
+    pub foreground: Option<[u8; 3]>,
+    pub background: Option<[u8; 3]>,
+    pub monospace: bool,
     pub link: Option<String>,
 }
 
@@ -274,18 +345,45 @@ struct Style {
     bold: bool,
     italic: bool,
     strike: bool,
+    underline: bool,
+    foreground: Option<[u8; 3]>,
+    background: Option<[u8; 3]>,
+    monospace: bool,
 }
 
 /// Inline markdown of a text block. Unmatched markers stay as text.
 pub fn parse_inline(text: &str) -> Vec<InlineRun> {
     let mut out = Vec::new();
     inline_into(text, Style::default(), None, &mut out);
+    merge_inline_runs(out)
+}
+
+fn merge_inline_runs(out: Vec<InlineRun>) -> Vec<InlineRun> {
     // Merge neighbours with the same style.
     let mut merged: Vec<InlineRun> = Vec::new();
     for run in out {
         if let Some(last) = merged.last_mut()
-            && (last.bold, last.italic, last.code, last.strike, &last.link)
-                == (run.bold, run.italic, run.code, run.strike, &run.link)
+            && (
+                last.bold,
+                last.italic,
+                last.code,
+                last.strike,
+                last.underline,
+                last.foreground,
+                last.background,
+                last.monospace,
+                &last.link,
+            ) == (
+                run.bold,
+                run.italic,
+                run.code,
+                run.strike,
+                run.underline,
+                run.foreground,
+                run.background,
+                run.monospace,
+                &run.link,
+            )
         {
             last.text.push_str(&run.text);
             continue;
@@ -304,6 +402,10 @@ fn push(out: &mut Vec<InlineRun>, text: &str, style: Style, code: bool, link: Op
         italic: style.italic,
         code,
         strike: style.strike,
+        underline: style.underline,
+        foreground: style.foreground,
+        background: style.background,
+        monospace: style.monospace,
         link: link.map(str::to_string),
     });
 }
@@ -424,6 +526,34 @@ mod tests {
             code_blocks("```\na\n```\ntext\n```\nb\n```"),
             vec!["a", "b"]
         );
+    }
+
+    #[test]
+    fn terminal_fences_are_never_runnable_when_styles_are_valid_or_invalid() {
+        let selection = crate::terminal_clipboard::StyledClipboardSelection::new(
+            "echo never-run".into(),
+            vec![crate::terminal_clipboard::StyledClipboardRun {
+                text: "echo never-run".into(),
+                bold: true,
+                ..Default::default()
+            }],
+        )
+        .unwrap();
+        let valid = selection.markdown_source().unwrap();
+        assert!(code_blocks(&valid).is_empty());
+        assert!(shell_blocks(&valid).is_empty());
+
+        let invalid = valid.replace("echo never-run", "echo still-visible");
+        assert!(code_blocks(&invalid).is_empty());
+        assert!(shell_blocks(&invalid).is_empty());
+        let parsed_invalid = parse_markdown(&invalid);
+        let [MarkdownSection::TerminalSelection(runs)] = parsed_invalid.as_slice() else {
+            panic!("invalid terminal metadata must remain a terminal text section")
+        };
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].text, "echo still-visible");
+        assert!(runs[0].monospace);
+        assert!(!runs[0].bold);
     }
 
     #[test]

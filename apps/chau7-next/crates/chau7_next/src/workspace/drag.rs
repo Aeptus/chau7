@@ -4,14 +4,17 @@
 
 use chau7_next_core::tab_bar_layout::{
     OverlayWindowDropCandidate, Point as LayoutPoint, Rect as LayoutRect, TabBarLayoutItem,
-    drop_target_index,
+    fallback_drop_target_index,
 };
 use gpui::{
-    App, Bounds, Context, DispatchPhase, Entity, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels,
-    Point, Window, canvas, prelude::*,
+    App, Bounds, Context, DispatchPhase, Entity, EntityId, MouseButton, MouseMoveEvent,
+    MouseUpEvent, Pixels, Point, Window, canvas, prelude::*,
 };
 
 use super::{AppData, Workspace};
+use crate::platform::window_drop::{
+    NativeDropHit, eligible_window_number, native_drop_hit_for_position,
+};
 use crate::tab_bar::{DRAG_THRESHOLD, DragSubject, TAB_SPACING, TabDrag, TabId};
 
 impl Workspace {
@@ -92,7 +95,10 @@ impl Workspace {
             return;
         };
         drag.current = position;
-        if !drag.active && (position.x - drag.start.x).abs() > DRAG_THRESHOLD {
+        let drag_distance = f32::from(position.x - drag.start.x)
+            .abs()
+            .max(f32::from(position.y - drag.start.y).abs());
+        if !drag.active && drag_distance > f32::from(DRAG_THRESHOLD) {
             drag.active = true;
             self.hover = None;
         }
@@ -124,14 +130,19 @@ impl Workspace {
             cx.notify();
             return;
         }
-        // Like `handleTabDragEnd` in Swift: try a cross-window drop first
-        // (other windows' tab bars, then their frames); otherwise reorder here.
+        // Resolve the actual frontmost window for cross-window drops; if none
+        // is eligible, finish the drag as a local reorder.
         let screen = self.screen_bounds.origin + position;
+        let native_hit = native_drop_hit_for_position(window, position);
         let me = cx.entity();
-        let _ = window;
         // Resolve after this update: the resolver reads every workspace, this one included.
         cx.defer(move |cx| {
-            if let Some(target) = drop_target_for(&me, screen, cx) {
+            let target = drop_target_for(&me, screen, native_hit, cx).and_then(|index| {
+                AppData::live(cx)
+                    .get(index)
+                    .map(|(_, workspace)| workspace.entity_id())
+            });
+            if let Some(target) = target {
                 move_subject_to(me, drag.subject.clone(), target, cx);
             } else {
                 me.update(cx, |ws, cx| ws.finish_reorder(drag, cx));
@@ -235,105 +246,176 @@ impl Workspace {
 /// there, like `AppDelegate.moveTab`.
 pub fn move_tabs_to(
     source: Entity<Workspace>,
-    ids: Vec<TabId>,
-    target: Option<usize>,
+    mut ids: Vec<TabId>,
+    target: Option<EntityId>,
     cx: &mut App,
 ) {
-    let target_ws = target.and_then(|index| {
-        // Indexes come from the menu, which lists every window except the source.
-        let all = AppData::live(cx);
-        all.get(index).map(|(_, ws)| ws.clone())
-    });
-    let target_ws = target_ws.filter(|ws| ws.entity_id() != source.entity_id());
     let Some(source_window) = source.read(cx).window_handle else {
         return;
     };
-    let mut moved = Vec::new();
-    let _ = source_window.update(cx, |_, window, cx| {
-        source.update(cx, |ws, cx| {
-            for id in &ids {
-                if let Some(tab) = ws.take_tab(*id, window, cx) {
-                    moved.push(tab);
-                }
-            }
-            cx.notify();
-        });
+    ids.retain(|id| {
+        let workspace = source.read(cx);
+        workspace.state.get(*id).is_some() && workspace.entries.contains_key(id)
     });
-    if moved.is_empty() {
+    if ids.is_empty() {
         return;
     }
-    match target_ws {
-        Some(target) => {
-            let Some(handle) = target.read(cx).window_handle else {
+    let created_window = target.is_none();
+    let (target_window, target_ws) = match target {
+        Some(target_id) => {
+            let Some((handle, workspace)) = AppData::live(cx)
+                .into_iter()
+                .find(|(_, workspace)| workspace.entity_id() == target_id)
+            else {
+                log::warn!("TABBAR move_window cancelled: destination no longer exists");
                 return;
             };
-            let count = moved.len();
-            let _ = handle.update(cx, |_, window, cx| {
-                target.update(cx, |ws, cx| {
-                    for (i, (meta, panes)) in moved.into_iter().enumerate() {
-                        log::info!(
-                            "TABBAR move_window tab={} target={:?}",
-                            meta.id,
-                            handle.window_id()
-                        );
-                        ws.adopt_tab(meta, panes, i + 1 == count, cx);
-                    }
-                    log::info!("TABBAR move_window done target_tabs={}", ws.state.len());
-                    ws.focus_selected(window, cx);
-                });
-                window.activate_window();
-            });
+            if workspace.entity_id() == source.entity_id() {
+                return;
+            }
+            (handle, workspace)
         }
         None => {
-            crate::open_window_with_tabs(moved, cx);
+            // Create a usable destination before extracting any source tab.
+            // Window creation can fail, especially while displays reconnect.
+            let Some(destination) = crate::open_window_for_transfer(cx) else {
+                return;
+            };
+            destination
         }
+    };
+    let mut moved_count = 0;
+    // Enter the destination window first. A stale/closed handle must leave
+    // the source tabs and their live sessions completely untouched.
+    let result = target_window.update(cx, |_, target_window, cx| {
+        let moved = source_window.update(cx, |_, source_window, cx| {
+            source.update(cx, |workspace, cx| {
+                let moved: Vec<_> = ids
+                    .iter()
+                    .filter_map(|id| workspace.take_tab(*id, source_window, cx))
+                    .collect();
+                cx.notify();
+                moved
+            })
+        });
+        let moved = match moved {
+            Ok(moved) => moved,
+            Err(error) => {
+                log::warn!("TABBAR move_window cancelled: source unavailable: {error}");
+                return;
+            }
+        };
+        moved_count = moved.len();
+        if moved_count == 0 {
+            return;
+        }
+        target_ws.update(cx, |workspace, cx| {
+            for (index, (meta, panes)) in moved.into_iter().enumerate() {
+                log::info!(
+                    "TABBAR move_window tab={} target={:?}",
+                    meta.id,
+                    target_window.window_handle().window_id()
+                );
+                workspace.adopt_tab(meta, panes, index + 1 == moved_count, cx);
+            }
+            log::info!(
+                "TABBAR move_window done target_tabs={}",
+                workspace.state.len()
+            );
+            workspace.focus_selected(target_window, cx);
+        });
+        target_window.activate_window();
+    });
+    if let Err(error) = result {
+        log::warn!("TABBAR move_window cancelled: destination unavailable: {error}");
+    }
+    if created_window && moved_count == 0 {
+        // Only retire the empty window this operation just created.
+        let _ = target_window.update(cx, |_, window, _| window.remove_window());
     }
 }
 
-/// Window index (in `AppData::live` order) under a screen point, excluding
-/// the source: tab bar frame first, then window frame
-/// (`OverlayWindowDropResolver`).
+/// Window index (in `AppData::live` order) under a drag point.
+///
+/// macOS uses AppKit's actual frontmost window hit. If AppKit reports no
+/// target or a window outside the live workspaces, that blocks geometric
+/// fallback so drops cannot pass through another app or Space. When native
+/// z-order is unavailable, cached geometry transfers only to a unique target
+/// that does not overlap the source.
 pub(super) fn drop_target_for(
     source: &Entity<Workspace>,
     screen: Point<Pixels>,
-    cx: &App,
+    native_hit: NativeDropHit,
+    cx: &mut App,
 ) -> Option<usize> {
     let all = AppData::live(cx);
     let source_index = all
         .iter()
         .position(|(_, ws)| ws.entity_id() == source.entity_id());
-    let candidates: Vec<OverlayWindowDropCandidate> = all
-        .iter()
-        .enumerate()
-        .map(|(index, (_, ws))| {
-            let ws = ws.read(cx);
-            let origin = ws.screen_bounds.origin;
-            let bar = ws
-                .frames
-                .borrow()
-                .bar
-                .map(|b| Bounds::new(origin + b.origin, b.size))
-                .unwrap_or_default();
-            OverlayWindowDropCandidate::new(index, layout_rect(bar), layout_rect(ws.screen_bounds))
-        })
-        .collect();
     let point = LayoutPoint {
         x: f32::from(screen.x),
         y: f32::from(screen.y),
     };
-    let target = drop_target_index(point, &candidates, source_index);
-    log::info!(
-        "TABBAR drop_target screen=({:.0},{:.0}) target={target:?}",
-        point.x,
-        point.y
-    );
-    target
+    match native_hit {
+        NativeDropHit::Window(native_number) => {
+            let target = all.iter().enumerate().find_map(|(index, (_, workspace))| {
+                let (workspace_id, handle) = {
+                    let workspace_id = workspace.entity_id();
+                    let state = workspace.read(cx);
+                    (workspace_id, state.window_handle)
+                };
+                if workspace_id == source.entity_id() {
+                    return None;
+                }
+                let handle = handle?;
+                let candidate_number = handle
+                    .update(cx, |_, window, _| eligible_window_number(window))
+                    .ok()
+                    .flatten()?;
+                (candidate_number == native_number).then_some(index)
+            });
+            log::info!("TABBAR drop_target native_hit={native_number} target={target:?}");
+            target
+        }
+        NativeDropHit::Blocked => {
+            log::info!("TABBAR drop_target native_hit=blocked target=None");
+            None
+        }
+        NativeDropHit::Unavailable => {
+            let candidates: Vec<OverlayWindowDropCandidate> = all
+                .iter()
+                .enumerate()
+                .map(|(index, (_, workspace))| {
+                    let workspace = workspace.read(cx);
+                    let origin = workspace.screen_bounds.origin;
+                    let bar = workspace
+                        .frames
+                        .borrow()
+                        .bar
+                        .map(|bounds| Bounds::new(origin + bounds.origin, bounds.size))
+                        .unwrap_or_default();
+                    OverlayWindowDropCandidate::new(
+                        index,
+                        layout_rect(bar),
+                        layout_rect(workspace.screen_bounds),
+                    )
+                })
+                .collect();
+            let target = fallback_drop_target_index(point, &candidates, source_index);
+            log::info!(
+                "TABBAR drop_target fallback screen=({:.0},{:.0}) target={target:?}",
+                point.x,
+                point.y
+            );
+            target
+        }
+    }
 }
 
 pub(super) fn move_subject_to(
     source: Entity<Workspace>,
     subject: DragSubject,
-    target: usize,
+    target: EntityId,
     cx: &mut App,
 ) {
     let ids = match subject {
@@ -351,3 +433,7 @@ pub(super) fn layout_rect(b: Bounds<Pixels>) -> LayoutRect {
         height: f32::from(b.size.height),
     }
 }
+
+#[cfg(test)]
+#[path = "drag_tests.rs"]
+mod drag_tests;

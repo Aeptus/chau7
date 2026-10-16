@@ -12,6 +12,7 @@ mod pty;
 #[cfg(unix)]
 mod reader_pool;
 mod rust_api;
+mod selection;
 mod terminal;
 mod types;
 
@@ -21,5 +22,6 @@ pub use metrics::*;
 pub use pool::*;
 pub use pty::*;
 pub use rust_api::*;
+pub use selection::*;
 pub use terminal::*;
 pub use types::*;

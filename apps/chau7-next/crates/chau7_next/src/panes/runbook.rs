@@ -89,6 +89,9 @@ pub(super) fn render(
                 .border_color(chrome.border)
                 .into_any_element(),
             MarkdownSection::Text(text) => inline_text(index, &text, chrome).into_any_element(),
+            MarkdownSection::TerminalSelection(runs) => {
+                terminal_selection(index, runs, chrome, mono.clone()).into_any_element()
+            }
             MarkdownSection::CodeBlock { language, code } => {
                 let status = states.get(&(index, code.clone())).copied();
                 code_block(
@@ -116,7 +119,24 @@ pub(super) fn render(
 
 /// A text block with inline markdown (bold, italic, code, strike, links).
 fn inline_text(index: usize, text: &str, chrome: Chrome) -> impl IntoElement {
-    let runs = parse_inline(text);
+    inline_runs(index, parse_inline(text), chrome, None)
+}
+
+fn terminal_selection(
+    index: usize,
+    runs: Vec<chau7_next_core::editor::markdown::InlineRun>,
+    chrome: Chrome,
+    mono: SharedString,
+) -> impl IntoElement {
+    inline_runs(index, runs, chrome, Some(mono))
+}
+
+fn inline_runs(
+    index: usize,
+    runs: Vec<chau7_next_core::editor::markdown::InlineRun>,
+    chrome: Chrome,
+    mono: Option<SharedString>,
+) -> impl IntoElement {
     let mut full = String::new();
     let mut highlights = Vec::new();
     let mut links = Vec::new();
@@ -140,13 +160,38 @@ fn inline_text(index: usize, text: &str, chrome: Chrome) -> impl IntoElement {
                 color: None,
             });
         }
-        if let Some(url) = &run.link {
-            style.color = Some(chrome.accent);
+        if run.underline {
+            let color = run
+                .foreground
+                .map(|value| gpui::rgb(rgb24(value)).into())
+                .unwrap_or(chrome.text);
             style.underline = Some(UnderlineStyle {
                 thickness: px(1.0),
-                color: Some(chrome.accent),
+                color: Some(color),
                 wavy: false,
             });
+        }
+        if let Some(color) = run.foreground {
+            style.color = Some(gpui::rgb(rgb24(color)).into());
+        }
+        if let Some(color) = run.background {
+            style.background_color = Some(gpui::rgb(rgb24(color)).into());
+        }
+        if let Some(url) = &run.link {
+            if run.foreground.is_none() {
+                style.color = Some(chrome.accent);
+            }
+            if !run.underline {
+                style.underline = Some(UnderlineStyle {
+                    thickness: px(1.0),
+                    color: Some(
+                        run.foreground
+                            .map(|value| gpui::rgb(rgb24(value)).into())
+                            .unwrap_or(chrome.accent),
+                    ),
+                    wavy: false,
+                });
+            }
             links.push((range.clone(), url.clone()));
         }
         if style != HighlightStyle::default() {
@@ -155,17 +200,31 @@ fn inline_text(index: usize, text: &str, chrome: Chrome) -> impl IntoElement {
     }
     let ranges: Vec<_> = links.iter().map(|(r, _)| r.clone()).collect();
     let styled = StyledText::new(full).with_highlights(highlights);
-    div().w_full().child(
-        InteractiveText::new(
-            ElementId::Name(format!("runbook-text-{index}").into()),
-            styled,
-        )
-        .on_click(ranges, move |i, _, cx| {
-            if let Some((_, url)) = links.get(i) {
-                cx.open_url(url);
-            }
-        }),
+    let text = InteractiveText::new(
+        ElementId::Name(format!("runbook-text-{index}").into()),
+        styled,
     )
+    .on_click(ranges, move |i, _, cx| {
+        if let Some((_, url)) = links.get(i)
+            && chau7_next_core::terminal_clipboard::is_safe_link(url)
+        {
+            cx.open_url(url);
+        }
+    });
+    let container = div().w_full().child(text);
+    if let Some(mono) = mono {
+        return container
+            .id(("runbook-inline-scroll", index))
+            .font_family(mono)
+            .whitespace_nowrap()
+            .overflow_x_scroll()
+            .into_any_element();
+    }
+    container.into_any_element()
+}
+
+fn rgb24([red, green, blue]: [u8; 3]) -> u32 {
+    (u32::from(red) << 16) | (u32::from(green) << 8) | u32::from(blue)
 }
 
 fn code_block(

@@ -2431,6 +2431,10 @@ impl Chau7Terminal {
         let point = Self::clamped_selection_point(&term, col, row);
         if let Some(ref mut selection) = term.selection {
             selection.update(point, Side::Right);
+            // Keep whole-cell selection symmetric when the drag reverses.
+            // The endpoint sorts before the original anchor, so Side::Right
+            // alone would omit that first cell.
+            selection.include_all();
             self.grid_dirty.store(true, Ordering::Release);
             self.dirty_rows.mark_all_dirty();
         }
@@ -3327,7 +3331,7 @@ impl Chau7Terminal {
         }
     }
 
-    fn effective_cell_fg(cell: &Cell) -> AnsiColor {
+    pub(crate) fn effective_cell_fg(cell: &Cell) -> AnsiColor {
         if cell.flags.contains(CellFlags::BOLD) {
             match cell.fg {
                 AnsiColor::Indexed(idx) if idx < 8 => AnsiColor::Indexed(idx + 8),
@@ -4525,6 +4529,44 @@ mod tests {
             term.selection_text().is_some(),
             "line selection should produce text"
         );
+    }
+
+    #[test]
+    fn selection_updates_include_whole_cells_in_both_directions_and_styles() {
+        fn assert_selection(
+            term: &Chau7Terminal,
+            start: (i32, i32),
+            end: (i32, i32),
+            kind: u8,
+            expected: &str,
+        ) {
+            term.selection_start(start.0, start.1, kind);
+            term.selection_update(end.0, end.1);
+            let plain = term.selection_text().expect("selected text");
+            assert_eq!(plain, expected);
+
+            let styled = term.selection_styled_text().expect("styled selection");
+            assert_eq!(styled.plain_text, plain);
+            assert_eq!(
+                styled
+                    .runs
+                    .iter()
+                    .map(|run| run.text.as_str())
+                    .collect::<String>(),
+                plain,
+            );
+        }
+
+        let term = Chau7Terminal::new_headless(10, 2).expect("headless terminal");
+        term.inject_output(b"abcdef");
+
+        // Forward and reverse simple selections include both endpoint cells.
+        assert_selection(&term, (0, 0), (5, 0), 0, "abcdef");
+        assert_selection(&term, (5, 0), (0, 0), 0, "abcdef");
+        assert_selection(&term, (3, 0), (3, 0), 0, "d");
+
+        // Block selections also retain whole-cell behavior when reversed.
+        assert_selection(&term, (5, 0), (0, 0), 1, "abcdef");
     }
 
     #[test]

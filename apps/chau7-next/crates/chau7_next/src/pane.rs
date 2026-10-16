@@ -287,6 +287,11 @@ pub struct PaneTree {
 impl EventEmitter<PaneEvent> for PaneTree {}
 
 impl PaneTree {
+    #[cfg(test)]
+    pub(crate) fn empty_for_test() -> Self {
+        Self::empty()
+    }
+
     fn empty() -> Self {
         Self {
             deferred_saved: None,

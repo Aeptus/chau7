@@ -22,8 +22,8 @@ use chau7_next_core::input::shortcuts;
 use chau7_next_core::key_encoding::{self, KeyContext, KeyMods};
 use chau7_next_core::snippet_store::{Insertion, Navigation, cursor_move_bytes};
 use gpui::{
-    App, Bounds, ClipboardItem, Context, EntityInputHandler, Global, KeyDownEvent, KeyUpEvent,
-    Pixels, Point, UTF16Selection, Window, point, size,
+    App, Bounds, Context, EntityInputHandler, Global, KeyDownEvent, KeyUpEvent, Pixels, Point,
+    UTF16Selection, Window, point, size,
 };
 
 use super::TerminalView;
@@ -162,7 +162,8 @@ impl TerminalView {
         });
         // A pending composition (a dead key) must not leak into another tab
         // (Swift `resignFirstResponder` discards it).
-        let blur = cx.on_blur(&self.focus_handle, window, |this, _, cx| {
+        let blur = cx.on_blur(&self.focus_handle, window, |this, window, cx| {
+            this.cancel_mouse_gesture_on_blur(window, cx);
             if this.marked_text.take().is_some() {
                 if let Err(err) = crate::platform::input_method::discard_marked_text() {
                     log::warn!("discard marked text: {err}");
@@ -478,9 +479,8 @@ impl TerminalView {
     /// Cmd+C: copy the selection, or send Ctrl-C (interrupt) when nothing
     /// is selected (`RustTerminalView.copy`). Cmd+X does the same.
     fn copy(&mut self, _: &Copy, _window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(text) = self.session.read(cx).selection_text() {
-            crate::workspace::record_clipboard(&text, cx);
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        if let Some(selection) = self.selection_for_copy(cx) {
+            self.copy_selection_to_clipboard(&selection, cx);
         } else {
             self.write(&[0x03], cx);
         }
@@ -524,6 +524,7 @@ impl TerminalView {
     /// Cmd+A selects the current command line (wrapped rows included); a
     /// second Cmd+A within 0.4 s selects the whole buffer (`AppDelegate.selectAll`).
     fn select_all(&mut self, _: &SelectAll, window: &mut Window, cx: &mut Context<Self>) {
+        self.clear_accumulated_selection();
         let now = Instant::now();
         let double = self
             .input
@@ -591,6 +592,7 @@ impl TerminalView {
             TerminalMenuOp::Paste => self.paste(&Paste, window, cx),
             TerminalMenuOp::PasteEscaped => self.paste_escaped(cx),
             TerminalMenuOp::SelectAll => {
+                self.clear_accumulated_selection();
                 self.session.read(cx).select_all();
                 self.session.update(cx, |s, cx| s.refresh(cx));
                 self.publish_selection(window, cx);
@@ -612,7 +614,7 @@ impl TerminalView {
     ) {
         use gpui_kit::component::native_menu::NativeMenu;
         window.focus(&self.focus_handle, cx);
-        let can_copy = self.session.read(cx).selection_text().is_some();
+        let can_copy = self.selection_for_copy(cx).is_some();
         let can_paste = cx
             .read_from_clipboard()
             .and_then(|item| item.text())

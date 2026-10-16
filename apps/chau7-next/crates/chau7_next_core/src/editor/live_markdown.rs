@@ -17,6 +17,15 @@ pub enum Kind {
     HorizontalRule,
     TaskCheckbox(bool),
     CompletedTask,
+    TerminalSpan {
+        bold: bool,
+        italic: bool,
+        underline: bool,
+        strikethrough: bool,
+        foreground: Option<[u8; 3]>,
+        background: Option<[u8; 3]>,
+    },
+    TerminalLink,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Run {
@@ -43,11 +52,19 @@ pub struct Update {
     pub restyled_lines: usize,
 }
 #[derive(Debug, Clone, Default)]
+struct TerminalMarkdownData {
+    runs: Vec<Run>,
+    hidden_ranges: Vec<Range<usize>>,
+    links: Vec<(Range<usize>, String)>,
+}
+#[derive(Debug, Clone, Default)]
 pub struct Document {
     text: String,
     lines: Vec<Line>,
     runs: Vec<Run>,
     indents: Vec<Indent>,
+    hidden_terminal_ranges: Vec<Range<usize>>,
+    terminal_links: Vec<(Range<usize>, String)>,
     restyled: Range<usize>,
 }
 impl Document {
@@ -56,6 +73,15 @@ impl Document {
     }
     pub fn indents(&self) -> &[Indent] {
         &self.indents
+    }
+    /// Source ranges occupied by structurally complete terminal-selection
+    /// fence markers. Native rendering can hide these while retaining source.
+    pub fn hidden_terminal_ranges(&self) -> &[Range<usize>] {
+        &self.hidden_terminal_ranges
+    }
+    /// Link text ranges and their validated destinations in terminal selections.
+    pub fn terminal_links(&self) -> &[(Range<usize>, String)] {
+        &self.terminal_links
     }
     /// Last update window, on UTF-8 boundaries; empty when text did not change.
     pub fn restyled_range(&self) -> Range<usize> {
@@ -70,6 +96,16 @@ impl Document {
             return Update::default();
         }
         if self.lines.is_empty() {
+            return self.replace(text);
+        }
+        // Terminal style metadata is byte-offset based. Reparse the complete
+        // document on edits to a valid or invalid terminal fence so stale
+        // offsets can never be applied to changed source.
+        if self
+            .text
+            .contains(crate::terminal_clipboard::STYLED_SELECTION_FENCE_INFO)
+            || text.contains(crate::terminal_clipboard::STYLED_SELECTION_FENCE_INFO)
+        {
             return self.replace(text);
         }
         let (prefix, suffix) = common_edges(&self.text, text);
@@ -142,6 +178,10 @@ impl Document {
             .flat_map(|l| l.runs.iter().cloned())
             .collect();
         self.indents = self.lines.iter().filter_map(|l| l.indent.clone()).collect();
+        let terminal = terminal_markdown_data(&self.text, &self.lines);
+        self.runs.extend(terminal.runs);
+        self.hidden_terminal_ranges = terminal.hidden_ranges;
+        self.terminal_links = terminal.links;
     }
 }
 fn shift(index: usize, delta: isize) -> usize {
@@ -220,6 +260,81 @@ fn contains_fence(text: &str, ranges: &[Range<usize>], change: Range<usize>) -> 
     let touched = touched(ranges, change);
     ranges[touched].iter().any(|r| fence(&text[r.clone()]))
 }
+
+fn terminal_markdown_data(text: &str, lines: &[Line]) -> TerminalMarkdownData {
+    use crate::terminal_clipboard::{parse_markdown_block, parse_reserved_terminal_fence};
+
+    let mut data = TerminalMarkdownData::default();
+    let mut line_index = 0;
+    while line_index < lines.len() {
+        if lines[line_index].inside_before {
+            line_index += 1;
+            continue;
+        }
+        let line_start = lines[line_index].range.start;
+        if let Some(block) = parse_markdown_block(text, line_start) {
+            data.hidden_ranges
+                .push(block.opening_range.start..block.body_range.start);
+            data.hidden_ranges
+                .push(line_range_with_ending(text, block.closing_range.clone()));
+            for span in block.spans {
+                let range = block.body_range.start + span.start..block.body_range.start + span.end;
+                data.runs.push(Run {
+                    kind: Kind::TerminalSpan {
+                        bold: span.bold,
+                        italic: span.italic,
+                        underline: span.underline,
+                        strikethrough: span.strikethrough,
+                        foreground: span.foreground,
+                        background: span.background,
+                    },
+                    range: range.clone(),
+                });
+                if let Some(link) = span.link {
+                    data.links.push((range.clone(), link));
+                    data.runs.push(Run {
+                        kind: Kind::TerminalLink,
+                        range,
+                    });
+                }
+            }
+            line_index =
+                lines.partition_point(|line| line.range.start <= block.closing_range.start);
+            continue;
+        }
+
+        // If style metadata no longer matches an edited body, preserve the
+        // reserved fence behavior without trusting its offsets: keep the body
+        // as ordinary monospace source, but hide wrapper lines only when the
+        // fence still has an exact closing delimiter. An incomplete/malformed
+        // block stays fully visible so source is never hidden speculatively.
+        let Some(block) = parse_reserved_terminal_fence(text, line_start)
+            .filter(|block| !block.closing_range.is_empty())
+        else {
+            line_index += 1;
+            continue;
+        };
+        data.hidden_ranges
+            .push(block.opening_range.start..block.body_range.start);
+        data.hidden_ranges
+            .push(line_range_with_ending(text, block.closing_range.clone()));
+        line_index = lines.partition_point(|line| line.range.start <= block.closing_range.start);
+    }
+    data
+}
+
+fn line_range_with_ending(text: &str, range: Range<usize>) -> Range<usize> {
+    let ending = &text[range.end..];
+    let ending_len = if ending.starts_with("\r\n") {
+        2
+    } else if ending.starts_with('\n') || ending.starts_with('\r') {
+        1
+    } else {
+        0
+    };
+    range.start..range.end + ending_len
+}
+
 static HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\s*)(#{1,6})\s+(.*)$").unwrap());
 static QUOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(>+)\s?(.*)$").unwrap());
 static TASK: LazyLock<Regex> =
@@ -236,12 +351,42 @@ fn horizontal_rule(body: &str) -> bool {
         })
 }
 fn parse_lines(text: &str, offset: usize, mut inside: bool) -> Vec<Line> {
+    let mut terminal_closing_start = None;
     line_ranges(text, offset)
         .into_iter()
         .map(|range| {
             let raw = &text[range.start - offset..range.end - offset];
             let body = line_body(raw);
             let mut runs = Vec::new();
+            let local_start = range.start - offset;
+            if !inside && terminal_closing_start.is_none() {
+                terminal_closing_start =
+                    crate::terminal_clipboard::parse_markdown_block(text, local_start)
+                        .map(|block| block.closing_range.start);
+            }
+            if let Some(closing_start) = terminal_closing_start {
+                if local_start <= closing_start {
+                    let before = inside;
+                    let whole = range.start..range.start + body.len();
+                    if !whole.is_empty() {
+                        runs.push(Run {
+                            kind: Kind::CodeFence,
+                            range: whole,
+                        });
+                    }
+                    if local_start == closing_start {
+                        terminal_closing_start = None;
+                    }
+                    return Line {
+                        range,
+                        inside_before: before,
+                        inside_after: before,
+                        runs,
+                        indent: None,
+                    };
+                }
+                terminal_closing_start = None;
+            }
             let indent = TASK
                 .captures(body)
                 .and_then(|c| c.get(3))
@@ -461,6 +606,114 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["- [x] ", "> ", "1. "]
         );
+    }
+    #[test]
+    fn styled_terminal_source_keeps_preformatted_text_and_styles_in_live_document() {
+        use crate::terminal_clipboard::{StyledClipboardRun, StyledClipboardSelection};
+
+        let literal = "  if x < y && z > 0\n\t\"é\"";
+        let selection = StyledClipboardSelection::new(
+            literal.to_string(),
+            vec![
+                StyledClipboardRun {
+                    text: "  if x < y && z > 0\n\t".into(),
+                    bold: true,
+                    foreground: Some([230, 80, 20]),
+                    ..Default::default()
+                },
+                StyledClipboardRun {
+                    text: "\"".into(),
+                    ..Default::default()
+                },
+                StyledClipboardRun {
+                    text: "é".into(),
+                    italic: true,
+                    underline: true,
+                    background: Some([18, 52, 86]),
+                    link: Some("https://example.test".into()),
+                    ..Default::default()
+                },
+                StyledClipboardRun {
+                    text: "\"".into(),
+                    ..Default::default()
+                },
+            ],
+        )
+        .unwrap();
+        let text = selection.markdown_source().unwrap();
+        let block = crate::terminal_clipboard::parse_markdown_block(&text, 0).unwrap();
+        assert_eq!(&text[block.body_range.clone()], literal);
+
+        let mut document = doc(&text);
+        let terminal_styles: Vec<_> = document
+            .runs()
+            .iter()
+            .filter_map(|run| match run.kind {
+                Kind::TerminalSpan { .. } => Some((run.kind, &text[run.range.clone()])),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(terminal_styles.len(), 4);
+        assert!(matches!(
+            terminal_styles[0].0,
+            Kind::TerminalSpan {
+                bold: true,
+                foreground: Some([230, 80, 20]),
+                ..
+            }
+        ));
+        assert_eq!(terminal_styles[0].1, "  if x < y && z > 0\n\t");
+        assert!(matches!(
+            terminal_styles[2].0,
+            Kind::TerminalSpan {
+                italic: true,
+                underline: true,
+                background: Some([18, 52, 86]),
+                ..
+            }
+        ));
+        assert_eq!(terminal_styles[2].1, "é");
+        assert_eq!(spans(&text, Kind::TerminalLink), vec!["é"]);
+        assert_eq!(document.hidden_terminal_ranges().len(), 2);
+        assert!(
+            document
+                .hidden_terminal_ranges()
+                .iter()
+                .all(|range| text[range.clone()].starts_with('`'))
+        );
+        assert_eq!(document.terminal_links().len(), 1);
+        assert_eq!(document.terminal_links()[0].1, "https://example.test");
+
+        // A body edit invalidates its byte-offset metadata. Keep the literal
+        // body as plain monospace code and hide only the still-valid wrappers.
+        let changed = text.replace("z > 0", "z > 00");
+        assert!(document.update(&changed).full);
+        assert_eq!(document.hidden_terminal_ranges().len(), 2);
+        assert!(
+            document
+                .hidden_terminal_ranges()
+                .iter()
+                .all(|range| changed[range.clone()].starts_with('`'))
+        );
+        assert!(
+            !document
+                .runs()
+                .iter()
+                .any(|run| matches!(run.kind, Kind::TerminalSpan { .. }))
+        );
+        assert!(document.runs().iter().any(|run| {
+            matches!(run.kind, Kind::CodeFence) && changed[run.range.clone()].contains("z > 00")
+        }));
+        assert!(changed.contains("  if x < y && z > 00\n\t\"é\""));
+
+        let block = crate::terminal_clipboard::parse_markdown_block(&text, 0).unwrap();
+        let malformed = changed.replacen(&text[block.closing_range.clone()], "``", 1);
+        document.update(&malformed);
+        assert!(document.hidden_terminal_ranges().is_empty());
+        assert!(malformed.contains(crate::terminal_clipboard::STYLED_SELECTION_FENCE_INFO));
+
+        document.update(&text);
+        assert_eq!(document.runs(), doc(&text).runs());
     }
     #[test]
     fn inline_delimiters_hug_content_and_do_not_italicize_bold() {

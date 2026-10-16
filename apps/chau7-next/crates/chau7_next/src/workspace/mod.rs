@@ -1650,7 +1650,20 @@ impl Render for Workspace {
 
         div()
             .id("workspace")
-            .key_context("Workspace")
+            .key_context(
+                if self
+                    .rename
+                    .as_ref()
+                    .is_some_and(|rename| rename.color_focus)
+                    && self.focus_handle.is_focused(window)
+                {
+                    // Root handles Tab before keydown listeners, so the scoped context lets the
+                    // rename handler select the title first.
+                    "Workspace rename_color_focus"
+                } else {
+                    "Workspace"
+                },
+            )
             .track_focus(&self.focus_handle)
             .size_full()
             .flex()

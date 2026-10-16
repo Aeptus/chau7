@@ -38,7 +38,8 @@ use chau7_next_core::shell_session::{
 use chau7_next_core::work_profiler::{self, Key as WorkKey, Kind as WorkKind, Queue as WorkQueue};
 use chau7_next_core::{shell_env, shell_integration, shell_tips};
 use chau7_terminal::{
-    Chau7Terminal, GridCopy, OutputInterrupt, OutputReady, graphics::ShellIntegrationEvent,
+    Chau7Terminal, GridCopy, OutputInterrupt, OutputReady, StyledScreen, StyledSelection,
+    graphics::ShellIntegrationEvent,
 };
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
@@ -2365,7 +2366,23 @@ impl TerminalSession {
     }
 
     pub fn selection_text(&self) -> Option<String> {
-        clipboard_selection(&self.term.read(), self.tracker.is_ai_running())
+        self.term
+            .read()
+            .selection_text()
+            .filter(|text| !text.is_empty())
+    }
+
+    /// Selection text and terminal attributes from one backend grid snapshot.
+    pub fn selection_styled_text(&self) -> Option<StyledSelection> {
+        self.term
+            .read()
+            .selection_styled_text()
+            .filter(|selection| !selection.plain_text.is_empty())
+    }
+
+    /// Visible terminal cells, exported only when the UI asks for selection.
+    pub fn visible_styled_screen(&self) -> StyledScreen {
+        self.term.read().visible_styled_screen()
     }
 
     pub fn clear_scrollback(&self) {
@@ -3181,68 +3198,58 @@ pub(crate) fn apply_agent_feedback(event: &AiEvent, cx: &mut gpui::App) {
     });
 }
 
-/// Shared by all UI and MCP selection callers; native selection joins soft wraps.
-fn clipboard_selection(terminal: &Chau7Terminal, live_ai: bool) -> Option<String> {
-    terminal
-        .selection_text()
-        .map(|text| {
-            chau7_next_core::terminal_clipboard::copied_text(
-                &text,
-                live_ai || terminal.is_alt_screen(),
-            )
-            .into_owned()
-        })
-        .filter(|text| !text.is_empty())
-}
-
 #[cfg(test)]
 mod clipboard_tests {
     use super::*;
     #[test]
-    fn actual_native_selection_preserves_soft_wrap_spaces_and_trims_padding() {
+    fn actual_native_selection_preserves_soft_wraps_and_terminal_styles() {
         let term = Chau7Terminal::new_headless(5, 2).unwrap();
-        term.inject_output(b"echo hello");
+        term.inject_output(b"\x1b[1;31mecho\x1b[0m hello");
         term.selection_start(0, 0, 0);
         term.selection_update(4, 1);
-        let native = term.selection_text().unwrap();
-        assert_eq!(native.trim_end_matches('\n'), "echo hello");
-        assert_eq!(clipboard_selection(&term, false).unwrap(), native);
-        assert_eq!(clipboard_selection(&term, true).unwrap(), "echo hello");
+        let styled = term.selection_styled_text().unwrap();
+        assert_eq!(styled.plain_text, "echo hello");
+        assert_eq!(
+            styled
+                .runs
+                .iter()
+                .map(|run| run.text.as_str())
+                .collect::<String>(),
+            styled.plain_text
+        );
+        assert!(styled.runs.iter().any(|run| run.text == "echo" && run.bold));
     }
     #[test]
-    fn actual_tui_hard_wrapped_path_and_argument_selection() {
-        for (raw, end, expected) in [
+    fn actual_ai_and_alternate_screen_keep_hard_breaks_and_indentation() {
+        for (raw, end, expected, alt_screen) in [
             (
                 &b"cat /tmp/very\r\nlongpath"[..],
                 7,
-                "cat /tmp/verylongpath",
+                "cat /tmp/very\nlongpath",
+                false,
             ),
-            (&b"echo hello\r\n    --flag"[..], 9, "echo hello --flag"),
+            (
+                &b"echo hello\r\n    --flag"[..],
+                9,
+                "echo hello\n    --flag",
+                false,
+            ),
+            (
+                &b"\x1b[?1049hecho hello\r\n    --flag"[..],
+                9,
+                "echo hello\n    --flag",
+                true,
+            ),
         ] {
             let term = Chau7Terminal::new_headless(40, 2).unwrap();
             term.inject_output(raw);
+            assert_eq!(term.is_alt_screen(), alt_screen);
             term.selection_start(0, 0, 0);
             term.selection_update(end, 1);
-            assert_eq!(clipboard_selection(&term, true).unwrap(), expected);
-            assert_eq!(
-                clipboard_selection(&term, false).unwrap(),
-                term.selection_text().unwrap()
-            );
+            assert_eq!(term.selection_styled_text().unwrap().plain_text, expected);
         }
-    }
-    #[test]
-    fn actual_alternate_screen_is_tui_without_detected_ai() {
         let term = Chau7Terminal::new_headless(40, 2).unwrap();
-        term.inject_output(b"\x1b[?1049hecho hello\r\n    --flag");
-        assert!(term.is_alt_screen());
-        term.selection_start(0, 0, 0);
-        term.selection_update(9, 1);
-        assert_eq!(
-            clipboard_selection(&term, false).unwrap(),
-            "echo hello --flag"
-        );
-        term.selection_clear();
-        assert_eq!(clipboard_selection(&term, false), None);
+        assert_eq!(term.selection_styled_text(), None);
     }
 }
 

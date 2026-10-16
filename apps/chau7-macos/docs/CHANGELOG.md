@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Focus and select the full tab title when opening Rename Tab or moving from
+  the color row to its name field, including with a native editor open.
+
+- Keep tab reordering in its source window when another window overlaps it;
+  resolve transfers against the visible frontmost window and native screen
+  coordinates, including multiple displays. Recognize vertical drags and keep
+  menu destinations stable when another window closes; cancel unavailable
+  destinations before removing any source tab.
+
+- Return keyboard focus from the native Markdown side panel to the terminal
+  when clicking another pane, including after the editor surface remounts.
+- Keep line breaks, indentation, terminal colors, emphasis and links when
+  copying terminal selections into the Markdown side panel; preserve rich
+  blocks when saving and reopening the document.
+- Continue drag selection beyond terminal edges, retain the pointer column,
+  stop on release or focus loss, and accumulate scrolling TUI content without
+  including fixed headers or input footers. Preserve both endpoint characters
+  when a selection reverses direction.
+
+- Anchor Rust tab status outlines to the same bounds as their rounded backgrounds,
+  correcting the padding offset; align repository brackets and tab measurements too.
+
 - Group Rust idle tabs by repository with colored headings, section separators,
   full-path tooltips, and a scrollable list above Close All Idle.
 - Add an opt-in Rust setting for numbered shortcuts to select only tabs in the

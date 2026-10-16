@@ -7,7 +7,7 @@ mod keymap;
 mod menus;
 mod tab_actions;
 
-use gpui::{Action, actions};
+use gpui::{Action, EntityId, actions};
 
 pub use keymap::{bind_keys, bind_shortcut_settings};
 pub use menus::app_menus;
@@ -143,10 +143,10 @@ pub enum TabMenuOp {
     RemoveFromRepoGroup,
     GroupAllSameRepo,
     MoveToIdle,
-    /// Move this tab to the window at this index in the window list; `None` opens a new window.
-    MoveToWindow(Option<usize>),
+    /// Move this tab to the identified window; `None` opens a new window.
+    MoveToWindow(Option<EntityId>),
     /// Move this tab's group to another window.
-    MoveGroupToWindow(Option<usize>),
+    MoveGroupToWindow(Option<EntityId>),
     SetColor(chau7_next_core::tabs_state::TabColor),
     ToggleBroadcastInclusion,
 }
@@ -166,7 +166,7 @@ pub enum GroupMenuOp {
     UnmuteNotifications,
     Ungroup,
     CloseGroup,
-    MoveToWindow(Option<usize>),
+    MoveToWindow(Option<EntityId>),
 }
 
 // (dev) Feature profiler report. Minimal mode (Cmd+Shift+M) is declared

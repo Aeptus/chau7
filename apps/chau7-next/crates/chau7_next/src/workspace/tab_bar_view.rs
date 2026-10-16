@@ -78,6 +78,13 @@ impl GroupTabLineEdges {
     }
 }
 
+/// Anchor frame measurements and decoration to the parent's border box. An
+/// absolute child with automatic insets still uses flex alignment and padding
+/// for its static position, even when its size is 100% of the parent.
+fn tab_frame_overlay<T: gpui::Styled>(element: T) -> T {
+    element.absolute().top_0().left_0().size_full()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct BorderPathGeometry {
     x0: f32,
@@ -190,6 +197,141 @@ mod group_tab_line_tests {
             line.origin.x + line.size.width,
             tab.origin.x + tab.size.width
         );
+    }
+
+    #[gpui::test]
+    fn frame_overlay_matches_padded_chip_layout(harness: &mut gpui::TestAppContext) {
+        use gpui_kit::test::{TestSupportExt, TestWindowExt};
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        const CASES: [(f32, f32, f32); 4] = [
+            (10.0, 180.0, 0.0),
+            (10.0, 103.5, -37.5),
+            (4.0, 80.0, 29.0),
+            (0.0, 280.0, 0.0),
+        ];
+
+        struct FrameOverlayFixture {
+            captures: Vec<Rc<Cell<Option<Bounds<Pixels>>>>>,
+            cases: [(f32, f32, f32); 4],
+        }
+
+        impl gpui::Render for FrameOverlayFixture {
+            fn render(
+                &mut self,
+                _window: &mut Window,
+                _cx: &mut Context<Self>,
+            ) -> impl gpui::IntoElement {
+                let rows = self
+                    .cases
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (padding, width, offset))| {
+                        let corrected_capture = self.captures[index * 2].clone();
+                        let legacy_capture = self.captures[index * 2 + 1].clone();
+                        let chip = |id: String, overlay: gpui::AnyElement| {
+                            div()
+                                .id(SharedString::from(id))
+                                .relative()
+                                .left(px(offset))
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .w(px(width))
+                                .h(px(TAB_CHIP_HEIGHT))
+                                .px(px(padding))
+                                .rounded(px(8.0))
+                                .bg(gpui::black())
+                                .child(div().size(px(14.0)))
+                                .child(div().w(px(17.5)).h(px(14.0)))
+                                .child(div().size(px(12.0)))
+                                .child(overlay)
+                                .test_support()
+                        };
+                        let corrected = canvas(
+                            move |bounds, _, _| corrected_capture.set(Some(bounds)),
+                            |_, _, _, _| {},
+                        )
+                        .map(tab_frame_overlay)
+                        .into_any_element();
+                        let legacy = canvas(
+                            move |bounds, _, _| legacy_capture.set(Some(bounds)),
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .size_full()
+                        .into_any_element();
+
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap(px(12.0))
+                            .child(chip(format!("fixed-chip-{index}"), corrected))
+                            .child(chip(format!("legacy-chip-{index}"), legacy))
+                    })
+                    .collect::<Vec<_>>();
+
+                div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .items_start()
+                    .gap(px(8.0))
+                    .pl(px(13.5))
+                    .pt(px(7.5))
+                    .children(rows)
+            }
+        }
+
+        harness.update(gpui_kit::init);
+        let captures: Vec<_> = (0..CASES.len() * 2)
+            .map(|_| Rc::new(Cell::new(None)))
+            .collect();
+        let handle: gpui::AnyWindowHandle = harness
+            .add_window(|_, _| FrameOverlayFixture {
+                captures: captures.clone(),
+                cases: CASES,
+            })
+            .into();
+        handle
+            .update(harness, |_, window, cx| {
+                for scale in [1.0, 2.0] {
+                    window.set_scale_factor(scale);
+                    window.render_frame(cx);
+                    for (index, (padding, width, offset)) in CASES.iter().copied().enumerate() {
+                        let context = format!(
+                            "scale={scale}, padding={padding}, width={width}, offset={offset}"
+                        );
+                        let expected = window
+                            .find(SharedString::from(format!("fixed-chip-{index}")))
+                            .bounds();
+                        let observed = captures[index * 2]
+                            .get()
+                            .expect("corrected canvas was prepainted");
+                        assert_eq!(observed, expected, "corrected overlay: {context}");
+
+                        let legacy_parent = window
+                            .find(SharedString::from(format!("legacy-chip-{index}")))
+                            .bounds();
+                        let legacy = captures[index * 2 + 1]
+                            .get()
+                            .expect("legacy canvas was prepainted");
+                        assert_eq!(legacy.size, legacy_parent.size, "legacy size: {context}");
+                        assert_eq!(
+                            legacy.origin.x,
+                            legacy_parent.origin.x + px(padding),
+                            "legacy x offset: {context}"
+                        );
+                        assert_eq!(
+                            legacy.origin.y, legacy_parent.origin.y,
+                            "legacy y: {context}"
+                        );
+                    }
+                }
+                window.remove_window();
+            })
+            .unwrap();
     }
 
     #[test]
@@ -1014,8 +1156,7 @@ impl Workspace {
                         }
                     },
                 )
-                .absolute()
-                .size_full(),
+                .map(tab_frame_overlay),
             )
             .on_a11y_action(AccessibleAction::Click, {
                 let workspace = cx.entity().downgrade();
@@ -1157,8 +1298,7 @@ impl Workspace {
                 },
                 |_, _, _, _| {},
             )
-            .absolute()
-            .size_full(),
+            .map(tab_frame_overlay),
         );
         div()
             .flex()
@@ -1280,8 +1420,7 @@ impl Workspace {
                                 paint_bracket(bounds, group_color.opacity(0.5), window)
                             },
                         )
-                        .absolute()
-                        .size_full(),
+                        .map(tab_frame_overlay),
                     )
                     .on_mouse_down(
                         MouseButton::Left,
@@ -1344,8 +1483,7 @@ impl Workspace {
                         }
                     },
                 )
-                .absolute()
-                .size_full(),
+                .map(tab_frame_overlay),
             )
             .into_any_element()
     }
@@ -1389,8 +1527,7 @@ impl Workspace {
                     },
                     |_, _, _, _| {},
                 )
-                .absolute()
-                .size_full(),
+                .map(tab_frame_overlay),
             )
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|this, _, _, cx| {

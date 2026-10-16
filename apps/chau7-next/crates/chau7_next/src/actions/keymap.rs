@@ -53,6 +53,12 @@ fn common_bindings(p: &str) -> Vec<KeyBinding> {
         // mask them; the keys then reach the terminal's key handler.
         KeyBinding::new("tab", gpui::NoAction, Some("Terminal")),
         KeyBinding::new("shift-tab", gpui::NoAction, Some("Terminal")),
+        // Only the rename color row overrides Root Tab traversal.
+        KeyBinding::new(
+            "tab",
+            gpui::NoAction,
+            Some("Workspace && rename_color_focus"),
+        ),
         KeyBinding::new("ctrl-tab", NextTab, None),
         KeyBinding::new("ctrl-shift-tab", PreviousTab, None),
         KeyBinding::new("escape", ToggleSearch, Some("SearchBar")),
