@@ -2239,6 +2239,8 @@ fn fullscreen_menu_snapshot(
         .contentView()
         .ok_or("owned fullscreen window has no content view")?;
     let geometry = FullscreenMenuGeometry::capture(native, application, &content_view, &renderer)?;
+    let layout_in_content = content_view.convertRect_fromView(native.contentLayoutRect(), None);
+    let renderer_tracks_layout = native_rects_match(renderer.frame(), layout_in_content);
     let renderer_bounds = renderer.bounds();
     let renderer_visible_rect = renderer.visibleRect();
     let renderer_bounds_finite = [
@@ -2303,6 +2305,10 @@ fn fullscreen_menu_snapshot(
             "renderer_frame": native_rect_values(geometry.renderer_frame),
             "renderer_bounds": native_rect_values(geometry.renderer_bounds),
             "renderer_rect_in_content_view": native_rect_values(renderer_rect_in_content),
+            "layout_rect_in_content_view": native_rect_values(layout_in_content),
+            "renderer_tracks_content_layout": renderer_tracks_layout,
+            "presentation_options": application.presentationOptions().0,
+            "effective_presentation_options": application.currentSystemPresentationOptions().0,
             "renderer_rect_in_screen": native_rect_values(geometry.renderer_rect_in_screen),
             "renderer_visible_rect": native_rect_values(renderer_visible_rect),
             "screen_frame": native_rect_values(geometry.screen.frame),
@@ -2363,6 +2369,16 @@ fn fullscreen_menu_snapshot(
         })
     );
 
+    ensure(
+        renderer_tracks_layout,
+        "fullscreen renderer did not follow AppKit's unobscured content layout",
+    )?;
+    if !expected_menu_visible {
+        ensure(
+            native_rects_match(renderer.frame(), content_view.bounds()),
+            "hidden fullscreen menu left an empty gutter above the GPUI content",
+        )?;
+    }
     ensure(
         app_active && window_visible && window_key && window_fullscreen,
         "menu reveal snapshot requires the owned active fullscreen window",
@@ -2632,6 +2648,19 @@ fn max_sample_rgb_delta(left: &[[f64; 3]], right: &[[f64; 3]]) -> Option<f64> {
     )
 }
 
+// Apple requires AutoHideToolbar to be paired with FullScreen and
+// AutoHideMenuBar. Keep every unrelated flag while forcing menu visibility.
+fn menu_reveal_presentation_options(
+    options: NSApplicationPresentationOptions,
+) -> NSApplicationPresentationOptions {
+    NSApplicationPresentationOptions(
+        options.0
+            & !(NSApplicationPresentationOptions::AutoHideToolbar.0
+                | NSApplicationPresentationOptions::AutoHideMenuBar.0
+                | NSApplicationPresentationOptions::HideMenuBar.0),
+    )
+}
+
 async fn verify_fullscreen_menu_reveal(
     handle: WindowHandle<Root>,
     native: &NSWindow,
@@ -2641,6 +2670,7 @@ async fn verify_fullscreen_menu_reveal(
     let entry_foreground =
         prepare_fullscreen_menu_state("fullscreen menu entry", native, application, cx).await?;
     let original_menu_bar_visibility = native_menu_bar_visible()?;
+    let original_presentation_options = application.presentationOptions();
     let cycle_result = async {
         set_native_menu_bar_visible(false)?;
         wait_for_menu_bar_visibility(cx, false).await?;
@@ -2663,6 +2693,11 @@ async fn verify_fullscreen_menu_reveal(
         )?;
         hidden_before.report["foreground_reacquisition"] = hidden_foreground;
 
+        // NSMenu alone can be ignored while AppKit owns fullscreen auto-hide.
+        // Change only this owned fixture application's presentation policy,
+        // clearing AutoHideToolbar together with its required AutoHideMenuBar.
+        let revealed_options = menu_reveal_presentation_options(original_presentation_options);
+        native_mutation(|| application.setPresentationOptions(revealed_options))?;
         set_native_menu_bar_visible(true)?;
         wait_for_menu_bar_visibility(cx, true).await?;
         pause(cx, Duration::from_millis(300)).await;
@@ -2684,6 +2719,7 @@ async fn verify_fullscreen_menu_reveal(
         )?;
         revealed.report["foreground_reacquisition"] = revealed_foreground;
 
+        native_mutation(|| application.setPresentationOptions(original_presentation_options))?;
         set_native_menu_bar_visible(false)?;
         wait_for_menu_bar_visibility(cx, false).await?;
         pause(cx, Duration::from_millis(300)).await;
@@ -2707,8 +2743,10 @@ async fn verify_fullscreen_menu_reveal(
 
         Ok::<_, String>(serde_json::json!({
             "stimulus": {
-                "api": "NSMenu.menuBarVisible / setMenuBarVisible",
-                "kind": "forced application menu-bar visibility",
+                "api": "NSApplication.presentationOptions and NSMenu.menuBarVisible / setMenuBarVisible",
+                "kind": "forced owned-application menu-bar visibility",
+                "original_presentation_options": original_presentation_options.0,
+                "revealed_presentation_options": revealed_options.0,
                 "pointer_hover_exercised": false,
             },
             "states": {
@@ -2744,7 +2782,18 @@ async fn verify_fullscreen_menu_reveal(
         .await;
         // Always undo the fixture's visibility change, even if foreground was
         // interrupted during cleanup. The call changes this application's menu.
-        set_native_menu_bar_visible(original_menu_bar_visibility)?;
+        let restore_options =
+            native_mutation(|| application.setPresentationOptions(original_presentation_options));
+        let restore_visibility = set_native_menu_bar_visible(original_menu_bar_visibility);
+        match (restore_options, restore_visibility) {
+            (Ok(()), Ok(())) => {}
+            (Err(error), Ok(())) | (Ok(()), Err(error)) => return Err(error),
+            (Err(options), Err(visibility)) => {
+                return Err(format!(
+                    "presentation restoration: {options}; menu restoration: {visibility}"
+                ));
+            }
+        }
         wait_for_menu_bar_visibility(cx, original_menu_bar_visibility).await?;
         let restored = native_menu_bar_visible()?;
         ensure(
@@ -2809,17 +2858,15 @@ fn verify_custom_titlebar_fullscreen_options(
             willUseFullScreenPresentationOptions: proposed
         ]
     };
-    let expected = NSApplicationPresentationOptions(
-        proposed.0 & !NSApplicationPresentationOptions::AutoHideToolbar.0,
-    );
+    let expected = proposed;
     ensure(
         actual == expected,
-        "custom-titlebar fullscreen policy did not preserve options while keeping toolbar controls visible",
+        "custom-titlebar fullscreen policy changed AppKit presentation options",
     )?;
     Ok(serde_json::json!({
         "proposed_options": proposed.0,
         "returned_options": actual.0,
-        "auto_hide_toolbar_removed": !actual.contains(NSApplicationPresentationOptions::AutoHideToolbar),
+        "auto_hide_toolbar_preserved": actual.contains(NSApplicationPresentationOptions::AutoHideToolbar),
         "auto_hide_menu_bar_preserved": actual.contains(NSApplicationPresentationOptions::AutoHideMenuBar),
         "fullscreen_preserved": actual.contains(NSApplicationPresentationOptions::FullScreen),
         "other_options_preserved": actual.0 == expected.0,
@@ -4268,6 +4315,23 @@ async fn verify_retention(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn forced_menu_reveal_preserves_unrelated_flags_and_toolbar_dependencies() {
+        let original = NSApplicationPresentationOptions::FullScreen
+            | NSApplicationPresentationOptions::AutoHideMenuBar
+            | NSApplicationPresentationOptions::AutoHideToolbar
+            | NSApplicationPresentationOptions::AutoHideDock
+            | NSApplicationPresentationOptions::DisableMenuBarTransparency;
+        let revealed = menu_reveal_presentation_options(original);
+        assert_eq!(
+            revealed,
+            NSApplicationPresentationOptions::FullScreen
+                | NSApplicationPresentationOptions::AutoHideDock
+                | NSApplicationPresentationOptions::DisableMenuBarTransparency
+        );
+        assert_eq!(menu_reveal_presentation_options(revealed), revealed);
+    }
+
     use super::{
         RendererFrameCounters, RevealDiagnostic, SessionSurfaceDiagnostic, WindowFrameEvidence,
         activation_diagnostic, final_native_focus_ready, rendered_frame_delta,

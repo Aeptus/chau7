@@ -292,6 +292,12 @@ pub fn running_process_names(cx: &App) -> Vec<String> {
 
 /// Cmd+Q: ask first when processes run in any tab, then save and quit.
 pub fn request_quit(cx: &mut App) {
+    // Resolve prompt targets only after the current action/window update has
+    // returned its active window to GPUI's handle map.
+    cx.defer(request_quit_after_window_update);
+}
+
+fn request_quit_after_window_update(cx: &mut App) {
     let Some((title, detail)) = app_shell::quit_confirmation_localized(
         &running_process_names(cx),
         chau7_next_core::l10n::current(),
@@ -326,7 +332,7 @@ pub fn request_quit(cx: &mut App) {
     });
     let Some(answer) = answer else {
         QUIT_PROMPT_OPEN.store(false, Ordering::SeqCst);
-        quit_now(cx);
+        log::warn!("Cannot show quit confirmation; leaving the app running");
         return;
     };
     cx.spawn(async move |cx| {
@@ -340,10 +346,15 @@ pub fn request_quit(cx: &mut App) {
 }
 
 fn quit_now(cx: &mut App) {
-    crate::save_session(cx, true);
-    crate::settings::sync::push_now(cx);
-    platform::power::end_latency_critical();
-    cx.quit();
+    // Quit can be dispatched while GPUI has temporarily taken the active
+    // window out of its handle map for a nested update. Run the final capture
+    // at the end of this effect cycle, after all stacked windows are restored.
+    cx.defer(|cx| {
+        crate::save_session(cx, true);
+        crate::settings::sync::push_now(cx);
+        platform::power::end_latency_critical();
+        cx.quit();
+    });
 }
 
 // ----- URL scheme ----------------------------------------------------------
@@ -429,4 +440,179 @@ fn open_tab_with_command(command: String, cx: &mut App) {
         window.activate_window();
         workspace.update(cx, |ws, cx| ws.new_tab_with_command(command, window, cx));
     });
+}
+
+#[cfg(test)]
+mod quit_tests {
+    use super::*;
+    use crate::{
+        pane::PaneTree,
+        session_store::{SavedPane, SavedSession, SavedTab, SavedWindow},
+        settings::Settings,
+        workspace::AppData,
+    };
+    use chau7_next_core::{
+        data_root::DataRoot,
+        tabs_state::{TabColor, TabMeta},
+    };
+    use gpui::{AppContext, TestAppContext};
+
+    fn init(harness: &mut TestAppContext) -> DataRoot {
+        let root = DataRoot::with_home(
+            std::env::temp_dir().join(format!("chau7-quit-{}", uuid::Uuid::new_v4())),
+            true,
+        );
+        harness.update(|cx| {
+            gpui_kit::init(cx);
+            let mut settings = Settings::default();
+            settings.general.full_disk_access_guard_enabled = false;
+            cx.set_global(settings);
+            cx.set_global(AppData::new(root.clone()));
+            crate::terminal::command_guard::init(cx);
+            crate::observability::init_for_test(cx);
+            crate::restore::writer::init(cx);
+        });
+        root
+    }
+
+    fn open_two_windows(cx: &mut App) -> (AnyWindowHandle, AnyWindowHandle) {
+        let (first_handle, first) = crate::open_window_for_transfer(cx).unwrap();
+        let first_panes = cx.new(|_| PaneTree::empty_for_test());
+        let mut first_meta = TabMeta::new(0, TabColor::Blue);
+        first_meta.custom_title = Some("first-window-live".into());
+        first.update(cx, |workspace, cx| {
+            workspace.adopt_tab_public(first_meta, first_panes, true, cx)
+        });
+
+        let (second_handle, second) = crate::open_window_for_transfer(cx).unwrap();
+        let second_tab_uuid = uuid::Uuid::new_v4();
+        let fresh_tab = SavedTab {
+            uuid: Some(second_tab_uuid),
+            panes: vec![SavedPane {
+                id: 8301,
+                ai_provider: Some("codex".into()),
+                ai_session_id: Some("thread-prequit-window-two".into()),
+                ai_resume_command: Some("codex resume thread-prequit-window-two".into()),
+                last_exit_code: Some(73),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let second_panes = second_handle
+            .update(cx, |_, window, cx| {
+                cx.new(|cx| {
+                    PaneTree::from_saved_deferred_with_owner(
+                        Some(&fresh_tab),
+                        None,
+                        second_tab_uuid,
+                        window,
+                        cx,
+                    )
+                })
+            })
+            .unwrap();
+        let mut second_meta = TabMeta::new(0, TabColor::Blue);
+        second_meta.custom_title = Some("second-window-fresh-at-quit".into());
+        second.update(cx, |workspace, cx| {
+            workspace.adopt_tab_public(second_meta, second_panes, true, cx)
+        });
+        (first_handle, second_handle)
+    }
+
+    fn previous_complete_session() -> SavedSession {
+        SavedSession {
+            version: 1,
+            windows: ["previous-window-one", "previous-window-two"]
+                .into_iter()
+                .map(|title| SavedWindow {
+                    tabs: vec![SavedTab {
+                        custom_title: Some(title.into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })
+                .collect(),
+        }
+    }
+
+    #[gpui::test]
+    fn failed_nested_window_capture_keeps_the_previous_complete_snapshot(
+        harness: &mut TestAppContext,
+    ) {
+        let root = init(harness);
+        let (first_window, second_window) = harness.update(open_two_windows);
+        let previous = previous_complete_session();
+        crate::session_store::save(&root, &previous).unwrap();
+
+        // During a nested update GPUI temporarily removes the current window
+        // from the handle map. A failed capture must not submit window one's
+        // successful snapshot by itself.
+        second_window
+            .update(harness, |_, _, cx| {
+                assert!(first_window.update(cx, |_, _, _| ()).is_ok());
+                assert!(second_window.update(cx, |_, _, _| ()).is_err());
+                crate::save_session(cx, false);
+            })
+            .unwrap();
+        harness.run_until_parked();
+
+        let writer = harness
+            .update(|cx| crate::restore::writer::shutdown(cx))
+            .expect("restore writer was initialized");
+        writer.join().expect("restore writer joins");
+        let saved = crate::session_store::load(&root).unwrap();
+        assert_eq!(saved.windows.len(), 2);
+        assert_eq!(
+            saved.windows[0].tabs[0].custom_title.as_deref(),
+            Some("previous-window-one")
+        );
+        assert_eq!(
+            saved.windows[1].tabs[0].custom_title.as_deref(),
+            Some("previous-window-two")
+        );
+        let _ = std::fs::remove_dir_all(root.home());
+    }
+
+    #[gpui::test]
+    fn cmd_q_from_second_window_saves_its_fresh_metadata_and_both_windows(
+        harness: &mut TestAppContext,
+    ) {
+        let root = init(harness);
+        let (_, second_window) = harness.update(open_two_windows);
+
+        // This is the normal Cmd+Q handler, invoked while window two is still
+        // on the Window::update stack. Its deferred capture must run after that
+        // stack has returned so the final restore manifest contains both.
+        second_window
+            .update(harness, |_, _, cx| request_quit(cx))
+            .unwrap();
+        harness.run_until_parked();
+
+        let writer = harness
+            .update(|cx| crate::restore::writer::shutdown(cx))
+            .expect("restore writer was initialized");
+        writer.join().expect("restore writer joins");
+        let saved = crate::session_store::load(&root).unwrap();
+        assert_eq!(saved.windows.len(), 2);
+        assert_eq!(
+            saved.windows[0].tabs[0].custom_title.as_deref(),
+            Some("first-window-live")
+        );
+        let second_tab = &saved.windows[1].tabs[0];
+        assert_eq!(
+            second_tab.custom_title.as_deref(),
+            Some("second-window-fresh-at-quit")
+        );
+        let pane = &second_tab.panes[0];
+        assert_eq!(
+            pane.ai_session_id.as_deref(),
+            Some("thread-prequit-window-two")
+        );
+        assert_eq!(
+            pane.ai_resume_command.as_deref(),
+            Some("codex resume thread-prequit-window-two")
+        );
+        assert_eq!(pane.last_exit_code, Some(73));
+        let _ = std::fs::remove_dir_all(root.home());
+    }
 }

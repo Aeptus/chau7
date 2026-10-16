@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Preserve every Rust window when quitting from a tab action; defer final
+  capture until the active window is available and reject incomplete snapshots.
+  Add a native two-window quit regression checking the latest resume metadata.
+- Follow native fullscreen toolbar layout when revealing the system menu,
+  keeping the tab bar clear and pointer, drag and text-input coordinates aligned.
+
 - Record screen safe areas in isolated fullscreen checks and distinguish forced
   menu visibility from pointer-driven reveal, with explicit focus validation.
 

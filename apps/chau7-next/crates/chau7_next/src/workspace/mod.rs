@@ -42,6 +42,8 @@ mod menus;
 #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
 mod native_accessibility_fixture;
 #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+mod native_multiwindow_restore_fixture;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
 mod native_restore_fixture;
 mod notifications;
 mod palette_window;
@@ -55,6 +57,11 @@ mod rename;
 mod restore_fixture;
 #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
 pub(crate) use native_accessibility_fixture::verify as verify_native_accessibility_fixture;
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub(crate) use native_multiwindow_restore_fixture::{
+    add_latest_tab_and_request_quit as add_latest_native_restore_tab_and_request_quit,
+    prepare as prepare_native_multiwindow_restore_fixture,
+};
 #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
 pub(crate) use native_restore_fixture::{
     dispose as dispose_native_fixture, verify as verify_native_restore_fixture,

@@ -605,18 +605,38 @@ pub fn open_window_for_transfer(
 /// Save the open windows. Hidden windows are not saved; at quit with no
 /// visible window the saved state is cleared (`saveAllWindowStates`).
 pub(crate) fn save_session(cx: &mut App, terminating: bool) {
-    let mut windows = Vec::new();
-    for (handle, ws) in AppData::live(cx) {
-        let snapshot = handle.update(cx, |_, window, cx| ws.read(cx).snapshot(window, cx));
-        if let Ok(mut snapshot) = snapshot {
-            session_store::apply_position_reset(&mut snapshot);
-            windows.push(snapshot);
-        }
+    let workspaces = AppData::live(cx);
+    let mut windows = Vec::with_capacity(workspaces.len());
+    for (handle, workspace) in &workspaces {
+        let snapshot = handle.update(cx, |_, window, cx| workspace.read(cx).snapshot(window, cx));
+        let mut snapshot = match snapshot {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                // A failed window capture must not replace a complete prior
+                // session with a partial one. In particular, the current
+                // window can be temporarily unavailable inside a nested
+                // Window::update while a quit action is being dispatched.
+                log::warn!(
+                    "Cannot capture every session window; keeping the prior restore snapshot: {error}"
+                );
+                return;
+            }
+        };
+        session_store::apply_position_reset(&mut snapshot);
+        windows.push(snapshot);
     }
-    // Closed tabs keep their scrollback for Reopen Closed Tab.
-    let closed_panes: Vec<_> = AppData::live(cx)
+    let tab_count = windows
         .iter()
-        .flat_map(|(_, ws)| ws.read(cx).closed_scrollback_panes())
+        .map(|window| window.tabs.len())
+        .sum::<usize>();
+    log::debug!(
+        "Captured complete restore snapshot: windows={} tabs={tab_count} terminating={terminating}",
+        windows.len()
+    );
+    // Closed tabs keep their scrollback for Reopen Closed Tab.
+    let closed_panes: Vec<_> = workspaces
+        .iter()
+        .flat_map(|(_, workspace)| workspace.read(cx).closed_scrollback_panes())
         .collect();
     if windows.is_empty() {
         if terminating {

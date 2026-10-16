@@ -1,6 +1,7 @@
 use crate::{
     BoolExt, MacDisplay, NSRange, NSStringExt, TISCopyCurrentKeyboardInputSource,
-    TISGetInputSourceProperty, WindowFrameSource, events::platform_input_from_native,
+    TISGetInputSourceProperty, WindowFrameSource,
+    events::{native_window_point_to_gpui, platform_input_from_native},
     kTISPropertyInputSourceIsASCIICapable, kTISPropertyInputSourceType, kTISTypeKeyboardInputMode,
     ns_string, renderer,
 };
@@ -39,7 +40,7 @@ use image::RgbaImage;
 use core_foundation::base::{CFRelease, CFTypeRef};
 use core_foundation_sys::base::CFEqual;
 use core_foundation_sys::number::{CFBooleanGetValue, CFBooleanRef};
-use core_graphics::display::{CGDirectDisplayID, CGRect};
+use core_graphics::display::CGDirectDisplayID;
 use ctor::ctor;
 use futures::channel::oneshot;
 use gpui_util::ResultExt;
@@ -55,12 +56,12 @@ use objc2::{
     rc::Retained,
     runtime::{AnyObject as Objc2Object, ProtocolObject},
 };
+#[cfg(test)]
+use objc2_app_kit::NSApplicationPresentationOptions as Objc2NSApplicationPresentationOptions;
 use objc2_app_kit::{
-    NSAlert, NSAlertStyle,
-    NSApplicationPresentationOptions as Objc2NSApplicationPresentationOptions,
-    NSAutoresizingMaskOptions, NSBeep, NSButton as Objc2NSButton, NSDraggingImageComponent,
-    NSDraggingImageComponentIconKey, NSDraggingItem, NSPasteboardWriting, NSTrackingArea,
-    NSTrackingAreaOptions, NSView as Objc2NSView, NSWindow as Objc2NSWindow,
+    NSAlert, NSAlertStyle, NSAutoresizingMaskOptions, NSBeep, NSButton as Objc2NSButton,
+    NSDraggingImageComponent, NSDraggingImageComponentIconKey, NSDraggingItem, NSPasteboardWriting,
+    NSTrackingArea, NSTrackingAreaOptions, NSView as Objc2NSView, NSWindow as Objc2NSWindow,
     NSWindowButton as Objc2NSWindowButton, NSWorkspace,
 };
 use objc2_foundation::{
@@ -86,6 +87,7 @@ use std::{
 };
 
 const WINDOW_STATE_IVAR: &str = "windowState";
+static CONTENT_LAYOUT_RECT_OBSERVER_CONTEXT: u8 = 0;
 
 static RESTORES_WORKSPACE_AT_LAUNCH_DEFAULT: Once = Once::new();
 
@@ -384,12 +386,12 @@ extern "C" fn window_state_unarchiver_restoration_options(_this: &Object, _sel: 
     }
 }
 
-pub(crate) fn convert_mouse_position(position: NSPoint, window_height: Pixels) -> Point<Pixels> {
-    point(
-        px(position.x as f32),
-        // macOS screen coordinates are relative to bottom left
-        window_height - px(position.y as f32),
-    )
+pub(crate) fn convert_mouse_position(
+    position: NSPoint,
+    native_view: id,
+    view_height: Pixels,
+) -> Point<Pixels> {
+    unsafe { native_window_point_to_gpui(native_view, position, view_height) }
 }
 
 /// Stores the cursor style on the active GPUI window and invalidates its cursor rects.
@@ -500,6 +502,10 @@ unsafe fn build_window_class(name: &'static str, superclass: &Class) -> *const C
             sel!(window:willUseFullScreenPresentationOptions:),
             window_will_use_full_screen_presentation_options
                 as extern "C" fn(&Object, Sel, id, NSUInteger) -> NSUInteger,
+        );
+        decl.add_method(
+            sel!(observeValueForKeyPath:ofObject:change:context:),
+            observe_value_for_key_path as extern "C" fn(&Object, Sel, id, id, id, *mut c_void),
         );
 
         decl.add_method(sel!(close), close_window as extern "C" fn(&Object, Sel));
@@ -815,6 +821,7 @@ struct MacWindowState {
     pre_fullscreen_traffic_light_frames: Option<TrafficLightFrames>,
     fullscreen_traffic_light_overlay: Option<FullscreenTrafficLightOverlay>,
     fullscreen_controls_active: bool,
+    content_layout_rect_observer_registered: bool,
     transparent_titlebar: bool,
     previous_modifiers_changed_event: Option<PlatformInput>,
     keystroke_for_do_command: Option<Keystroke>,
@@ -1376,7 +1383,7 @@ impl MacWindowState {
 
     fn content_size(&self) -> Size<Pixels> {
         let NSSize { width, height, .. } =
-            unsafe { NSView::frame(self.native_window.contentView()) }.size;
+            unsafe { NSView::frame(self.native_view.as_ptr() as id) }.size;
         size(px(width as f32), px(height as f32))
     }
 
@@ -1565,6 +1572,7 @@ impl MacWindow {
                 pre_fullscreen_traffic_light_frames: None,
                 fullscreen_traffic_light_overlay: None,
                 fullscreen_controls_active: false,
+                content_layout_rect_observer_registered: false,
                 transparent_titlebar: titlebar
                     .as_ref()
                     .is_none_or(|titlebar| titlebar.appears_transparent),
@@ -1636,6 +1644,18 @@ impl MacWindow {
 
             content_view.addSubview_(native_view.autorelease());
             native_window.makeFirstResponder_(native_view);
+
+            let key_path = ns_string("contentLayoutRect");
+            let observer_context = content_layout_rect_observer_context();
+            let _: () = msg_send![
+                native_window,
+                addObserver: native_window
+                forKeyPath: key_path
+                options: 0 as NSUInteger
+                context: observer_context
+            ];
+            window.0.lock().content_layout_rect_observer_registered = true;
+            synchronize_fullscreen_content_view_frame(&window.0);
 
             let app: id = NSApplication::sharedApplication(nil);
             let main_window: id = msg_send![app, mainWindow];
@@ -2162,13 +2182,16 @@ impl PlatformWindow for MacWindow {
     }
 
     fn mouse_position(&self) -> Point<Pixels> {
-        let position = unsafe {
-            self.0
-                .lock()
-                .native_window
-                .mouseLocationOutsideOfEventStream()
+        let (position, native_view, view_height) = {
+            let state = self.0.lock();
+            let position = unsafe { state.native_window.mouseLocationOutsideOfEventStream() };
+            (
+                position,
+                state.native_view.as_ptr() as id,
+                state.content_size().height,
+            )
         };
-        convert_mouse_position(position, self.content_size().height)
+        convert_mouse_position(position, native_view, view_height)
     }
 
     fn modifiers(&self) -> Modifiers {
@@ -3011,6 +3034,19 @@ extern "C" fn yes(_: &Object, _: Sel) -> BOOL {
 
 extern "C" fn dealloc_window(this: &Object, _: Sel) {
     unsafe {
+        let window_state = get_window_state(this);
+        let observer_registered = window_state.lock().content_layout_rect_observer_registered;
+        if observer_registered {
+            let key_path = ns_string("contentLayoutRect");
+            let observer_context = content_layout_rect_observer_context();
+            let _: () = msg_send![
+                this,
+                removeObserver: this
+                forKeyPath: key_path
+                context: observer_context
+            ];
+        }
+        drop(window_state);
         drop_window_state(this);
         let _: () = msg_send![super(this, class!(NSWindow)), dealloc];
     }
@@ -3177,7 +3213,9 @@ extern "C" fn handle_key_event(this: &Object, native_event: id, key_equivalent: 
     let mut lock = window_state.as_ref().lock();
 
     let window_height = lock.content_size().height;
-    let event = unsafe { platform_input_from_native(native_event, Some(window_height)) };
+    let native_view = lock.native_view.as_ptr() as id;
+    let event =
+        unsafe { platform_input_from_native(native_event, native_view, Some(window_height)) };
 
     let Some(event) = event else {
         return NO;
@@ -3331,7 +3369,9 @@ extern "C" fn handle_view_event(this: &Object, _: Sel, native_event: id) {
         }
         _ => {}
     }
-    let event = unsafe { platform_input_from_native(native_event, Some(window_height)) };
+    let native_view = lock.native_view.as_ptr() as id;
+    let event =
+        unsafe { platform_input_from_native(native_event, native_view, Some(window_height)) };
 
     if let Some(mut event) = event {
         // AppKit unhides the cursor on the next mouse movement; mirror that here.
@@ -3541,6 +3581,7 @@ extern "C" fn window_did_change_occlusion_state(this: &Object, _: Sel, _: id) {
 extern "C" fn window_did_resize(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     window_state.as_ref().lock().move_traffic_light();
+    synchronize_fullscreen_content_view_frame(&window_state);
 }
 
 extern "C" fn window_will_enter_fullscreen(this: &Object, _: Sel, _: id) {
@@ -3557,6 +3598,8 @@ extern "C" fn window_will_enter_fullscreen(this: &Object, _: Sel, _: id) {
     // Move the real AppKit buttons into the content hierarchy before AppKit
     // removes the titlebar while entering fullscreen.
     lock.update_fullscreen_traffic_lights();
+    drop(lock);
+    synchronize_fullscreen_content_view_frame(&window_state);
 }
 
 extern "C" fn window_did_fail_to_enter_fullscreen(this: &Object, _: Sel, _: id) {
@@ -3567,6 +3610,8 @@ extern "C" fn window_did_fail_to_enter_fullscreen(this: &Object, _: Sel, _: id) 
     lock.restore_fullscreen_traffic_lights();
     lock.traffic_light_frames = lock.pre_fullscreen_traffic_light_frames.take();
     lock.move_traffic_light();
+    drop(lock);
+    synchronize_fullscreen_content_view_frame(&window_state);
 }
 
 extern "C" fn window_did_enter_fullscreen(this: &Object, _: Sel, _: id) {
@@ -3575,6 +3620,8 @@ extern "C" fn window_did_enter_fullscreen(this: &Object, _: Sel, _: id) {
     apply_fullscreen_titlebar_appearance(&lock);
     lock.fullscreen_controls_active = true;
     lock.update_fullscreen_traffic_lights();
+    drop(lock);
+    synchronize_fullscreen_content_view_frame(&window_state);
 }
 
 extern "C" fn window_will_exit_fullscreen(this: &Object, _: Sel, _: id) {
@@ -3587,6 +3634,8 @@ extern "C" fn window_will_exit_fullscreen(this: &Object, _: Sel, _: id) {
 
     lock.restore_fullscreen_traffic_lights();
     lock.move_traffic_light();
+    drop(lock);
+    synchronize_fullscreen_content_view_frame(&window_state);
 }
 
 extern "C" fn window_did_fail_to_exit_fullscreen(this: &Object, _: Sel, _: id) {
@@ -3597,6 +3646,8 @@ extern "C" fn window_did_fail_to_exit_fullscreen(this: &Object, _: Sel, _: id) {
     lock.restore_traffic_light();
     lock.fullscreen_controls_active = true;
     lock.update_fullscreen_traffic_lights();
+    drop(lock);
+    synchronize_fullscreen_content_view_frame(&window_state);
 }
 
 extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: id) {
@@ -3612,6 +3663,8 @@ extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: id) {
     // Keep using the native windowed frames when restoring them on the next entry.
     lock.traffic_light_frames = lock.pre_fullscreen_traffic_light_frames.take();
     lock.move_traffic_light();
+    drop(lock);
+    synchronize_fullscreen_content_view_frame(&window_state);
 }
 
 fn fullscreen_titlebar_appearance_update(
@@ -3815,17 +3868,133 @@ extern "C" fn window_should_close(this: &Object, _: Sel, _: id) -> BOOL {
 }
 
 extern "C" fn window_will_use_full_screen_presentation_options(
-    this: &Object,
+    _this: &Object,
     _: Sel,
     _: id,
     proposed_options: NSUInteger,
 ) -> NSUInteger {
-    let window_state = unsafe { get_window_state(this) };
-    let window_state = window_state.as_ref().lock();
-    if window_state.traffic_light_position.is_some() {
-        proposed_options & !(Objc2NSApplicationPresentationOptions::AutoHideToolbar.0 as NSUInteger)
+    fullscreen_presentation_options_update(proposed_options)
+}
+
+extern "C" fn observe_value_for_key_path(
+    this: &Object,
+    _: Sel,
+    key_path: id,
+    object: id,
+    change: id,
+    context: *mut c_void,
+) {
+    if context == content_layout_rect_observer_context()
+        && !key_path.is_null()
+        && key_path.to_str() == "contentLayoutRect"
+    {
+        unsafe {
+            // contentLayoutRect can change reentrantly while a window callback holds
+            // MacWindowState's mutex. Defer the read and frame update until AppKit's
+            // current layout transaction has returned, retaining the window meanwhile.
+            let retained_window: id = msg_send![this, retain];
+            DispatchQueue::main().exec_async_f(
+                retained_window as *mut c_void,
+                synchronize_fullscreen_content_view_frame_deferred,
+            );
+        }
+        return;
+    }
+
+    unsafe {
+        let is_panel: BOOL = msg_send![this, isKindOfClass: PANEL_CLASS];
+        if is_panel == YES {
+            let _: () = msg_send![
+                super(this, class!(NSPanel)),
+                observeValueForKeyPath: key_path
+                ofObject: object
+                change: change
+                context: context
+            ];
+        } else {
+            let _: () = msg_send![
+                super(this, class!(NSWindow)),
+                observeValueForKeyPath: key_path
+                ofObject: object
+                change: change
+                context: context
+            ];
+        }
+    }
+}
+
+extern "C" fn synchronize_fullscreen_content_view_frame_deferred(context: *mut c_void) {
+    let native_window = context as id;
+    unsafe {
+        let window_state = get_window_state(&*native_window);
+        synchronize_fullscreen_content_view_frame(&window_state);
+        let _: () = msg_send![native_window, release];
+    }
+}
+
+fn content_layout_rect_observer_context() -> *mut c_void {
+    ptr::addr_of!(CONTENT_LAYOUT_RECT_OBSERVER_CONTEXT) as *mut c_void
+}
+
+fn fullscreen_presentation_options_update(proposed_options: NSUInteger) -> NSUInteger {
+    // Let AppKit auto-hide the native fullscreen toolbar with the menu bar. GPUI
+    // follows contentLayoutRect so its rendered content moves clear of that toolbar.
+    proposed_options
+}
+
+fn fullscreen_content_view_frame(
+    is_fullscreen: bool,
+    is_exiting_fullscreen: bool,
+    uses_full_size_content_view: bool,
+    content_view_bounds: NSRect,
+    content_layout_rect: NSRect,
+) -> NSRect {
+    if is_fullscreen && !is_exiting_fullscreen && uses_full_size_content_view {
+        content_layout_rect
     } else {
-        proposed_options
+        content_view_bounds
+    }
+}
+
+fn synchronize_fullscreen_content_view_frame(window_state: &Arc<Mutex<MacWindowState>>) {
+    let (native_window, native_view, is_fullscreen, is_exiting_fullscreen) = {
+        let state = window_state.lock();
+        if state.closed.load(Ordering::Acquire) {
+            return;
+        }
+        (
+            state.native_window,
+            state.native_view.as_ptr() as id,
+            state.is_fullscreen(),
+            state.is_exiting_fullscreen,
+        )
+    };
+
+    unsafe {
+        let content_view: id = msg_send![native_window, contentView];
+        let content_view_bounds: NSRect = msg_send![content_view, bounds];
+        let content_layout_rect: NSRect = msg_send![native_window, contentLayoutRect];
+        let content_layout_rect_in_content_view: NSRect = msg_send![
+            content_view,
+            convertRect: content_layout_rect
+            fromView: nil
+        ];
+        let style_mask: NSWindowStyleMask = msg_send![native_window, styleMask];
+        let target_frame = fullscreen_content_view_frame(
+            is_fullscreen,
+            is_exiting_fullscreen,
+            style_mask.contains(NSWindowStyleMask::NSFullSizeContentViewWindowMask),
+            content_view_bounds,
+            content_layout_rect_in_content_view,
+        );
+        let current_frame: NSRect = msg_send![native_view, frame];
+        if current_frame.origin.x != target_frame.origin.x
+            || current_frame.origin.y != target_frame.origin.y
+            || current_frame.size.width != target_frame.size.width
+            || current_frame.size.height != target_frame.size.height
+        {
+            let _: () = msg_send![native_view, setFrame: target_frame];
+        }
     }
 }
 
@@ -4008,13 +4177,12 @@ fn get_frame(this: &Object) -> NSRect {
     unsafe {
         let state = get_window_state(this);
         let lock = state.lock();
-        let mut frame = NSWindow::frame(lock.native_window);
-        let content_layout_rect: CGRect = msg_send![lock.native_window, contentLayoutRect];
-        let style_mask: NSWindowStyleMask = msg_send![lock.native_window, styleMask];
-        if !style_mask.contains(NSWindowStyleMask::NSFullSizeContentViewWindowMask) {
-            frame.origin.y -= frame.size.height - content_layout_rect.size.height;
-        }
-        frame
+        let native_view = lock.native_view.as_ptr() as id;
+        let native_window = lock.native_window;
+        let view_bounds: NSRect = msg_send![native_view, bounds];
+        let view_frame_in_window: NSRect =
+            msg_send![native_view, convertRect: view_bounds toView: nil];
+        msg_send![native_window, convertRectToScreen: view_frame_in_window]
     }
 }
 
@@ -4354,7 +4522,14 @@ fn send_file_drop_event(
 
 fn drag_event_position(window_state: &Mutex<MacWindowState>, dragging_info: id) -> Point<Pixels> {
     let drag_location: NSPoint = unsafe { msg_send![dragging_info, draggingLocation] };
-    convert_mouse_position(drag_location, window_state.lock().content_size().height)
+    let (native_view, view_height) = {
+        let state = window_state.lock();
+        (
+            state.native_view.as_ptr() as id,
+            state.content_size().height,
+        )
+    };
+    convert_mouse_position(drag_location, native_view, view_height)
 }
 
 fn with_input_handler<F, R>(window: &Object, f: F) -> Option<R>
@@ -4543,6 +4718,57 @@ extern "C" fn toggle_tab_bar(this: &Object, _sel: Sel, _id: id) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_native_rect_eq(left: NSRect, right: NSRect) {
+        assert_eq!(left.origin.x, right.origin.x);
+        assert_eq!(left.origin.y, right.origin.y);
+        assert_eq!(left.size.width, right.size.width);
+        assert_eq!(left.size.height, right.size.height);
+    }
+
+    #[test]
+    fn fullscreen_content_layout_moves_renderer_only_while_obscured() {
+        let content_bounds = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1000.0, 700.0));
+        let hidden_menu_layout = content_bounds;
+        let revealed_menu_layout = NSRect::new(NSPoint::new(0.0, 17.0), NSSize::new(1000.0, 620.0));
+
+        let hidden_frame =
+            fullscreen_content_view_frame(true, false, true, content_bounds, hidden_menu_layout);
+        assert_native_rect_eq(hidden_frame, content_bounds);
+
+        let revealed_frame =
+            fullscreen_content_view_frame(true, false, true, content_bounds, revealed_menu_layout);
+        assert_native_rect_eq(revealed_frame, revealed_menu_layout);
+
+        let exit_frame =
+            fullscreen_content_view_frame(true, true, true, content_bounds, revealed_menu_layout);
+        assert_native_rect_eq(exit_frame, content_bounds);
+
+        let windowed_frame = fullscreen_content_view_frame(
+            false,
+            false,
+            false,
+            content_bounds,
+            revealed_menu_layout,
+        );
+        assert_native_rect_eq(windowed_frame, content_bounds);
+
+        let native_titlebar_frame =
+            fullscreen_content_view_frame(true, false, false, content_bounds, revealed_menu_layout);
+        assert_native_rect_eq(native_titlebar_frame, content_bounds);
+    }
+
+    #[test]
+    fn fullscreen_presentation_options_preserve_appkit_toolbar_behavior() {
+        let proposed_options = (Objc2NSApplicationPresentationOptions::FullScreen
+            | Objc2NSApplicationPresentationOptions::AutoHideMenuBar
+            | Objc2NSApplicationPresentationOptions::AutoHideToolbar)
+            .0 as NSUInteger;
+        assert_eq!(
+            fullscreen_presentation_options_update(proposed_options),
+            proposed_options
+        );
+    }
 
     #[test]
     fn fullscreen_titlebar_appearance_preserves_configured_transparency() {

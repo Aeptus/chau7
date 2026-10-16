@@ -77,6 +77,7 @@ fn supported_native_case(requested: &str) -> bool {
             | "accessibility"
             | "keyboard"
             | "focus-companion"
+            | "multiwindow-restore"
     )
 }
 
@@ -323,6 +324,69 @@ pub(crate) fn run_if_requested() -> Option<i32> {
             crate::l10n::settings_applied(cx);
         }
         crate::observability::init(cx);
+        if case == "multiwindow-restore" {
+            crate::restore::writer::init(cx);
+            cx.set_shutdown_timeout(None);
+            cx.on_app_quit(move |cx| {
+                // Production request_quit submits the final snapshot before
+                // calling cx.quit. This fixture owns the normal writer drain.
+                let restore_worker = crate::restore::writer::shutdown(cx);
+                crate::terminal::session::terminate_all_for_quit();
+                cx.background_spawn(async move {
+                    if let Some(worker) = restore_worker
+                        && let Err(error) = worker.join()
+                    {
+                        log::error!("native multiwindow fixture restore writer join: {error:?}");
+                    }
+                })
+            })
+            .detach();
+
+            if let Err(error) =
+                crate::workspace::prepare_native_multiwindow_restore_fixture(&owned_home, cx)
+            {
+                let evidence = json!({
+                    "case": "multiwindow-restore",
+                    "pid": std::process::id(),
+                    "passed": false,
+                    "error": error,
+                    "phase": "prepare",
+                });
+                println!("{evidence}");
+                let _ = std::io::stdout().flush();
+                completion.store(1, Ordering::Release);
+                cx.quit();
+                return;
+            }
+
+            let case = case.clone();
+            let completion = completion.clone();
+            cx.spawn(async move |cx| {
+                if let Err(error) =
+                    crate::workspace::add_latest_native_restore_tab_and_request_quit(
+                        cx,
+                        completion.clone(),
+                    )
+                    .await
+                {
+                    let evidence = json!({
+                        "case": case,
+                        "pid": std::process::id(),
+                        "passed": false,
+                        "error": error,
+                        "phase": "dispatch",
+                    });
+                    println!("{evidence}");
+                    let _ = std::io::stdout().flush();
+                    completion.store(1, Ordering::Release);
+                    cx.update(|cx| cx.quit());
+                }
+                // On success the production quit path exits this app after the
+                // registered writer drain. Python reads the profile afterward.
+            })
+            .detach();
+            return;
+        }
         if case == "restore" {
             // Restore acceptance exercises the same repository cache/probe
             // service that normal app startup installs before any workspace.
@@ -532,6 +596,7 @@ mod native_case_tests {
     fn keyboard_is_explicit_and_unknown_cases_are_rejected() {
         assert!(supported_native_case("keyboard"));
         assert!(supported_native_case("focus-companion"));
+        assert!(supported_native_case("multiwindow-restore"));
         assert!(supported_native_case("restore"));
         assert!(!supported_native_case("all"));
         assert!(!supported_native_case("unknown"));

@@ -1152,8 +1152,114 @@ def application_gone(pid):
     return False
 
 
+MULTIWINDOW_RESTORE_EXPECTED = (
+    (
+        {
+            "uuid": "10000000-0000-4000-8000-000000000101",
+            "title": "first-window",
+            "pane_id": 7301,
+            "resume_id": "fixture-first-window",
+        },
+    ),
+    (
+        {
+            "uuid": "10000000-0000-4000-8000-000000000102",
+            "title": "second-window-initial",
+            "pane_id": 7302,
+            "resume_id": "fixture-second-window",
+        },
+        {
+            "uuid": "10000000-0000-4000-8000-000000000103",
+            "title": "second-window-latest-at-quit",
+            "pane_id": 7303,
+            "resume_id": "fixture-second-window-latest",
+        },
+    ),
+)
+
+
+def multiwindow_restore_manifest_matches(session):
+    windows = session.get("windows") if isinstance(session, dict) else None
+    if not isinstance(windows, list) or len(windows) != len(MULTIWINDOW_RESTORE_EXPECTED):
+        return False
+    seen_tabs = set()
+    seen_resume_ids = set()
+    for window, expected_tabs in zip(windows, MULTIWINDOW_RESTORE_EXPECTED, strict=True):
+        tabs = window.get("tabs") if isinstance(window, dict) else None
+        if not isinstance(tabs, list) or len(tabs) != len(expected_tabs):
+            return False
+        for tab, expected in zip(tabs, expected_tabs, strict=True):
+            if not isinstance(tab, dict):
+                return False
+            if tab.get("uuid") != expected["uuid"] or tab.get("custom_title") != expected["title"]:
+                return False
+            if expected["uuid"] in seen_tabs:
+                return False
+            seen_tabs.add(expected["uuid"])
+            panes = tab.get("panes")
+            if not isinstance(panes, list) or len(panes) != 1:
+                return False
+            pane = panes[0]
+            resume_id = expected["resume_id"]
+            if (
+                not isinstance(pane, dict)
+                or pane.get("id") != expected["pane_id"]
+                or pane.get("ai_provider") != "codex"
+                or pane.get("ai_session_id") != resume_id
+                or pane.get("ai_resume_command") != f"codex resume {resume_id}"
+                or resume_id in seen_resume_ids
+            ):
+                return False
+            seen_resume_ids.add(resume_id)
+    return len(seen_tabs) == 3 and len(seen_resume_ids) == 3
+
+
+def read_owned_multiwindow_restore_manifest(home):
+    root = Path(home)
+    temporary = Path(tempfile.gettempdir()).resolve(strict=True)
+    if root.is_symlink() or root.parent != temporary or not root.name.startswith("chau7-native-fixture-"):
+        raise ValueError("multiwindow fixture home is outside its exact owned temporary profile")
+    root_info = root.lstat()
+    resolved = root.resolve(strict=True)
+    if not stat.S_ISDIR(root_info.st_mode) or resolved != root:
+        raise ValueError("multiwindow fixture home is not its exact real directory")
+    state_dir = root / ".chau7-next-state"
+    session_path = state_dir / "session.json"
+    if state_dir.is_symlink() or session_path.is_symlink():
+        raise ValueError("multiwindow fixture restore state must not contain symlink paths")
+    state_info = state_dir.lstat()
+    session_info = session_path.lstat()
+    if not stat.S_ISDIR(state_info.st_mode) or not stat.S_ISREG(session_info.st_mode):
+        raise ValueError("multiwindow fixture restore manifest is not a regular owned file")
+    if session_info.st_size > 16 * 1024 * 1024 or session_info.st_nlink != 1:
+        raise ValueError("multiwindow fixture restore manifest exceeds its owned file bounds")
+    with session_path.open("r", encoding="utf-8") as manifest_file:
+        session = json.load(manifest_file)
+    if not multiwindow_restore_manifest_matches(session):
+        raise ValueError(
+            "post-quit restore manifest did not retain both windows and the latest second-window resume metadata"
+        )
+    return {
+        "path": str(session_path),
+        "window_count": 2,
+        "tab_counts": [1, 2],
+        "latest_second_window_tab_uuid": MULTIWINDOW_RESTORE_EXPECTED[1][1]["uuid"],
+        "latest_second_window_resume_id": MULTIWINDOW_RESTORE_EXPECTED[1][1]["resume_id"],
+    }
+
+
 def case_passed(record):
     outcome = record.get("outcome") or {}
+    if record.get("case") == "multiwindow-restore":
+        return (
+            not record.get("timed_out", False)
+            and record.get("exit_code") == 0
+            and outcome.get("passed") is True
+            and record.get("application_pid_verified") is True
+            and record.get("application_process_gone") is True
+            and record.get("restore_manifest_verified") is True
+            and record.get("owned_home_removed") is True
+        )
     base = (
         not record.get("timed_out", False)
         and record.get("exit_code") == 0
@@ -1546,6 +1652,7 @@ def argument_parser():
             "cache",
             "accessibility",
             "keyboard",
+            "multiwindow-restore",
         ),
         default="all",
     )
@@ -1986,6 +2093,14 @@ def main():
                         break
                     time.sleep(0.05)
             record["application_process_gone"] = gone
+            if case == "multiwindow-restore" and gone and not record["timed_out"]:
+                try:
+                    record["restore_manifest"] = read_owned_multiwindow_restore_manifest(home)
+                    record["restore_manifest_verified"] = True
+                    shutil.rmtree(home)
+                except (OSError, ValueError, json.JSONDecodeError) as error:
+                    record["restore_manifest_verified"] = False
+                    record["restore_manifest_error"] = str(error)
             record["owned_home_removed"] = not home.exists()
             if bundle_root is not None and gone and not record["timed_out"]:
                 archive_and_remove_owned_restore_bundle(record, bundle_root, evidence)

@@ -389,9 +389,15 @@
           "description": "Preserve configured custom-titlebar transparency throughout native fullscreen enter, exit and failure callbacks on macOS 15.3 and later, avoiding the opaque native band over the GPUI tabbar when the system menu reveals; add a policy regression and apply Rust 1.99 formatting to this source",
           "before_sha256": "0fb49084c11d29dcfd0e19f1f36316a97794995652b2a283f859e35e6fa3667c",
           "after_sha256": "91eadb38a9693b6d56218fcf609492f3ccf69de6552e6231f810716dd53123c6"
+        },
+        {
+          "kind": "semantic",
+          "description": "Preserve AppKit fullscreen toolbar auto-hide options and track the KVO-compliant contentLayoutRect with the GPUI renderer view, restoring full content bounds when hidden or exiting; align renderer sizing and native view-local pointer, drag, and text-input coordinates; skip queued layout updates after close and add geometry and options regressions",
+          "before_sha256": "91eadb38a9693b6d56218fcf609492f3ccf69de6552e6231f810716dd53123c6",
+          "after_sha256": "ff07868c01a78e3da2d33159ac1b35d11571250b17e73dc8be97e5ddb3db03fd"
         }
       ],
-      "current_sha256": "91eadb38a9693b6d56218fcf609492f3ccf69de6552e6231f810716dd53123c6",
+      "current_sha256": "ff07868c01a78e3da2d33159ac1b35d11571250b17e73dc8be97e5ddb3db03fd",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"
@@ -539,6 +545,20 @@
       "original_sha256": "3f9de99c94f9390abcc1f1d69729f35304b233468668e471420793b0f4e02513",
       "package": "gpui-pre-macos",
       "path": "src/display_link.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "b83958a1523d7e82135f69b52a8058b311b2803618a2ea986378e9e7f3c036d7",
+          "before_sha256": "a4027cd12e14953b0954c5c04981148125ff85e8460a7219200dbcc3e93d50f7",
+          "description": "Convert NSEvent and drag positions from window-base coordinates into the GPUI native view before top-left mapping; add a view-local coordinate regression",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "b83958a1523d7e82135f69b52a8058b311b2803618a2ea986378e9e7f3c036d7",
+      "original_sha256": "a4027cd12e14953b0954c5c04981148125ff85e8460a7219200dbcc3e93d50f7",
+      "package": "gpui-pre-macos",
+      "path": "src/events.rs"
     },
     {
       "changes": [

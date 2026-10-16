@@ -58,11 +58,18 @@ class NativeParityArgumentTests(unittest.TestCase):
             "keyboard",
         )
 
+    def test_multiwindow_restore_is_opt_in_only(self):
+        self.assertEqual(NATIVE_PARITY.cases_for("multiwindow-restore"), ("multiwindow-restore",))
+        self.assertEqual(
+            NATIVE_PARITY.argument_parser().parse_args(["--case", "multiwindow-restore"]).case,
+            "multiwindow-restore",
+        )
+
     def test_only_restore_and_keyboard_use_launchservices(self):
         for case in ("restore", "keyboard"):
             with self.subTest(case=case):
                 self.assertTrue(NATIVE_PARITY.launch_services_for(case))
-        for case in ("settings", "editor", "cache", "accessibility"):
+        for case in ("settings", "editor", "cache", "accessibility", "multiwindow-restore"):
             with self.subTest(case=case):
                 self.assertFalse(NATIVE_PARITY.launch_services_for(case))
 
@@ -319,6 +326,42 @@ class NativeArtifactModeTests(unittest.TestCase):
                     log.write_text(json.dumps(invalid) + "\n")
                     with self.assertRaises(ValueError):
                         NATIVE_PARITY.cargo_binary_artifact(log, binary, "aarch64-apple-darwin")
+
+
+class MultiwindowRestoreManifestTests(unittest.TestCase):
+    def valid_session(self):
+        windows = []
+        for expected_tabs in NATIVE_PARITY.MULTIWINDOW_RESTORE_EXPECTED:
+            tabs = []
+            for expected in expected_tabs:
+                resume_id = expected["resume_id"]
+                tabs.append(
+                    {
+                        "uuid": expected["uuid"],
+                        "custom_title": expected["title"],
+                        "panes": [
+                            {
+                                "id": expected["pane_id"],
+                                "ai_provider": "codex",
+                                "ai_session_id": resume_id,
+                                "ai_resume_command": f"codex resume {resume_id}",
+                            }
+                        ],
+                    }
+                )
+            windows.append({"tabs": tabs})
+        return {"windows": windows}
+
+    def test_manifest_requires_both_windows_and_late_second_window_metadata(self):
+        session = self.valid_session()
+        self.assertTrue(NATIVE_PARITY.multiwindow_restore_manifest_matches(session))
+        session["windows"][1]["tabs"].pop()
+        self.assertFalse(NATIVE_PARITY.multiwindow_restore_manifest_matches(session))
+
+    def test_manifest_rejects_resume_metadata_mismatch(self):
+        session = self.valid_session()
+        session["windows"][1]["tabs"][1]["panes"][0]["ai_resume_command"] = "codex resume wrong"
+        self.assertFalse(NATIVE_PARITY.multiwindow_restore_manifest_matches(session))
 
 
 class FrontmostApplicationReaderTests(unittest.TestCase):
