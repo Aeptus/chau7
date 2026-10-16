@@ -113,6 +113,7 @@ jobs:
           set -o pipefail
           {
             python3 ./scripts/test_native_parity.py
+            python3 ./scripts/test-production-update.py
             ./scripts/test-build-mode.sh
             ./scripts/test-cli-installer.sh
           } 2>&1 | tee "$RUNNER_TEMP/ci.log"

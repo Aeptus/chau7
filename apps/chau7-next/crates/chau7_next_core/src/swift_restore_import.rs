@@ -9,7 +9,10 @@
 use crate::session_restore::transaction::{SourceDecision, source_decision};
 use crate::session_restore::{
     MAX_SCROLLBACK_BYTES, SavedAxis, SavedSplitNode, build_ai_resume_command,
-    models::{SavedPane, SavedSession, SavedTab, SavedWindow},
+    models::{
+        ArchivedAIResumeMetadata, ArchivedTabContext, SavedPane, SavedSession, SavedTab,
+        SavedWindow,
+    },
     resolve_resume_metadata_from_saved,
 };
 use crate::token_optimization::TabTokenOptOverride;
@@ -50,6 +53,14 @@ pub struct ImportSummary {
     pub panes: usize,
     pub context_bytes: usize,
     pub truncated_contexts: usize,
+    /// Raw AI tuples retained in the inert archive without an active safe
+    /// resume identity.
+    pub preserved_inert_ai_identities: usize,
+    /// Individual command-block records retained in tab archives.
+    pub preserved_tab_command_blocks: usize,
+    /// Nonempty opaque Swift PNG payloads retained in tab archives.
+    pub preserved_tab_preview_images: usize,
+    /// Counts data actually discarded; archived values do not increment these.
     pub dropped_unsupported_ai_identities: usize,
     pub dropped_tab_preview_contexts: usize,
     pub dropped_dashboard_group_ids: usize,
@@ -701,25 +712,6 @@ impl Converter {
         };
         if tab_context.as_ref().is_some_and(|context| {
             context
-                .command_blocks
-                .as_ref()
-                .is_some_and(|blocks| !blocks.is_empty())
-                || context.preview_snapshot_png_data.is_some()
-                || tab
-                    .command_blocks
-                    .as_ref()
-                    .is_some_and(|blocks| !blocks.is_empty())
-                || tab.preview_snapshot_png_data.is_some()
-        }) || tab
-            .command_blocks
-            .as_ref()
-            .is_some_and(|blocks| !blocks.is_empty())
-            || tab.preview_snapshot_png_data.is_some()
-        {
-            self.summary.dropped_tab_preview_contexts += 1;
-        }
-        if tab_context.as_ref().is_some_and(|context| {
-            context
                 .tab_id
                 .as_deref()
                 .is_some_and(|id| tab.tab_id.as_deref() != Some(id))
@@ -728,6 +720,34 @@ impl Converter {
                 "the Swift tab context belongs to a different tab",
             ));
         }
+        // The immutable sidecar is the full-fidelity source when available;
+        // the preference index remains a fallback for older/partial bundles.
+        // These values are archived as opaque metadata and are never rendered
+        // or executed during import.
+        let command_blocks = tab_context
+            .as_ref()
+            .and_then(|context| context.command_blocks.clone())
+            .or_else(|| tab.command_blocks.clone());
+        let preview_snapshot_png_data = tab_context
+            .as_ref()
+            .and_then(|context| context.preview_snapshot_png_data.clone())
+            .or_else(|| tab.preview_snapshot_png_data.clone());
+        let archived_context = if command_blocks.is_some() || preview_snapshot_png_data.is_some() {
+            self.summary.preserved_tab_command_blocks +=
+                command_blocks.as_ref().map_or(0, Vec::len);
+            if preview_snapshot_png_data
+                .as_ref()
+                .is_some_and(|data| !data.is_empty())
+            {
+                self.summary.preserved_tab_preview_images += 1;
+            }
+            Some(ArchivedTabContext {
+                command_blocks,
+                preview_snapshot_png_data,
+            })
+        } else {
+            None
+        };
 
         let mut panes = Vec::new();
         for (raw_id, id, layout_directory) in &terminal_layout {
@@ -810,15 +830,6 @@ impl Converter {
                         .then_some(tab.ai_resume_command.as_deref())
                         .flatten()
                 });
-            let metadata = resolve_resume_metadata_from_saved(provider, session_id, resume_command);
-            let safe_resume = metadata.as_ref().and_then(|meta| {
-                build_ai_resume_command(Some(&meta.provider), Some(&meta.session_id))
-            });
-            let has_ai_payload =
-                provider.is_some() || session_id.is_some() || resume_command.is_some();
-            if has_ai_payload && safe_resume.is_none() {
-                self.summary.dropped_unsupported_ai_identities += 1;
-            }
             let source = identity
                 .and_then(|item| item.ai_session_id_source.clone())
                 .or_else(|| state.and_then(|item| item.ai_session_id_source.clone()))
@@ -827,6 +838,32 @@ impl Converter {
                         .then(|| tab.ai_session_id_source.clone())
                         .flatten()
                 });
+            let metadata = resolve_resume_metadata_from_saved(provider, session_id, resume_command);
+            let safe_resume = if source.as_deref() == Some("synthetic") {
+                None
+            } else {
+                metadata.as_ref().and_then(|meta| {
+                    build_ai_resume_command(Some(&meta.provider), Some(&meta.session_id))
+                })
+            };
+            let has_ai_payload =
+                provider.is_some() || session_id.is_some() || resume_command.is_some();
+            let archived_ai_resume = if has_ai_payload || source.is_some() {
+                Some(ArchivedAIResumeMetadata {
+                    provider: provider.map(str::to_owned),
+                    session_id: session_id.map(str::to_owned),
+                    session_id_source: source.clone(),
+                    resume_command: resume_command.map(str::to_owned),
+                })
+            } else {
+                None
+            };
+            // `has_ai_payload` guarantees an archive above, so unsupported or
+            // synthetic identities are preserved as inert data rather than
+            // counted as dropped.
+            if has_ai_payload && safe_resume.is_none() {
+                self.summary.preserved_inert_ai_identities += 1;
+            }
             let directory = directory
                 .map(|value| value.trim().to_owned())
                 .filter(|value| !value.is_empty());
@@ -852,6 +889,7 @@ impl Converter {
                     .and_then(|_| metadata.as_ref().map(|meta| meta.session_id.clone())),
                 ai_resume_command: safe_resume,
                 ai_session_id_source: metadata.as_ref().and(source),
+                archived_ai_resume,
                 agent_launch_command: identity
                     .and_then(|item| item.agent_launch_command.clone())
                     .or_else(|| state.and_then(|item| item.agent_launch_command.clone()))
@@ -946,6 +984,7 @@ impl Converter {
             manual_color: false,
             layout,
             focused_pane,
+            archived_context,
             panes,
         })
     }
@@ -1303,14 +1342,11 @@ fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn fixture() -> PathBuf {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("swift-restore-import-{nonce}"));
+        let path =
+            std::env::temp_dir().join(format!("swift-restore-import-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&path).unwrap();
         fs::create_dir_all(path.join("bundle/current")).unwrap();
         fs::create_dir_all(path.join("bundle/current/contexts/windows/0/tabs/a/panes")).unwrap();
         path
@@ -1336,7 +1372,7 @@ mod tests {
             "tabID": tab_id,
             "scrollbackContent": "legacy context",
             "commandBlocks": [{"command":"private-fixture"}],
-            "previewSnapshotPNGData": null,
+            "previewSnapshotPNGData": "cG5n",
         });
         let pane_context = serde_json::json!({
             "schemaVersion": 1,
@@ -1467,8 +1503,114 @@ mod tests {
                 .contains("resume")
         );
         assert_eq!(plan.scrollback.values().next().unwrap(), b"pane history");
-        assert_eq!(plan.summary.dropped_tab_preview_contexts, 1);
+        assert_eq!(plan.summary.preserved_tab_command_blocks, 1);
+        assert_eq!(plan.summary.preserved_tab_preview_images, 1);
+        assert_eq!(plan.summary.preserved_inert_ai_identities, 0);
+        assert_eq!(plan.summary.dropped_unsupported_ai_identities, 0);
+        assert_eq!(plan.summary.dropped_tab_preview_contexts, 0);
+        let blocks = plan.session.windows[0].tabs[0]
+            .archived_context
+            .as_ref()
+            .and_then(|context| context.command_blocks.as_ref())
+            .unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["command"], "private-fixture");
+        assert_eq!(
+            plan.session.windows[0].tabs[0]
+                .archived_context
+                .as_ref()
+                .and_then(|context| context.preview_snapshot_png_data.as_deref()),
+            Some("cG5n")
+        );
+        assert_eq!(
+            plan.session.windows[0].tabs[0].panes[1].archived_ai_resume,
+            None
+        );
         validate_source_snapshot(&plan).unwrap();
+    }
+
+    #[test]
+    fn preserves_synthetic_swift_identity_as_inert_archive_without_building_resume() {
+        let root = fixture();
+        let source = write_fixture(&root);
+        let manifest_path = source.bundle_root.join("current/manifest.json");
+        let mut manifest: JsonValue =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        let identity = &mut manifest["windows"][0][0]["paneIdentities"][0];
+        identity["aiProvider"] = serde_json::json!("codex");
+        identity["aiSessionId"] = serde_json::json!("synth:fixture");
+        identity["aiSessionIdSource"] = serde_json::json!("synthetic");
+        fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+        let plan = prepare_swift_import(&source).unwrap().unwrap();
+        let pane = &plan.session.windows[0].tabs[0].panes[0];
+        assert_eq!(pane.ai_provider, None);
+        assert_eq!(pane.ai_session_id, None);
+        assert_eq!(pane.ai_resume_command, None);
+        let archived = pane.archived_ai_resume.as_ref().unwrap();
+        assert_eq!(archived.provider.as_deref(), Some("codex"));
+        assert_eq!(archived.session_id.as_deref(), Some("synth:fixture"));
+        assert_eq!(archived.session_id_source.as_deref(), Some("synthetic"));
+        assert_eq!(archived.resume_command, None);
+        assert_eq!(plan.summary.preserved_inert_ai_identities, 1);
+        assert_eq!(plan.summary.dropped_unsupported_ai_identities, 0);
+    }
+
+    #[test]
+    fn synthetic_source_never_builds_a_resume_command_from_valid_shaped_id() {
+        let root = fixture();
+        let source = write_fixture(&root);
+        let manifest_path = source.bundle_root.join("current/manifest.json");
+        let mut manifest: JsonValue =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        let identity = &mut manifest["windows"][0][0]["paneIdentities"][0];
+        identity["aiProvider"] = serde_json::json!("codex");
+        identity["aiSessionId"] = serde_json::json!("synthetic-fixture");
+        identity["aiSessionIdSource"] = serde_json::json!("synthetic");
+        fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+        let plan = prepare_swift_import(&source).unwrap().unwrap();
+        let pane = &plan.session.windows[0].tabs[0].panes[0];
+        assert_eq!(pane.ai_session_id, None);
+        assert_eq!(pane.ai_resume_command, None);
+        assert_eq!(
+            pane.archived_ai_resume
+                .as_ref()
+                .and_then(|metadata| metadata.session_id.as_deref()),
+            Some("synthetic-fixture")
+        );
+        assert_eq!(plan.summary.preserved_inert_ai_identities, 1);
+        assert_eq!(plan.summary.dropped_unsupported_ai_identities, 0);
+    }
+
+    #[test]
+    fn preserves_provider_only_partial_payload_without_counting_a_drop() {
+        let root = fixture();
+        let source = write_fixture(&root);
+        let manifest_path = source.bundle_root.join("current/manifest.json");
+        let mut manifest: JsonValue =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        let identity = &mut manifest["windows"][0][0]["paneIdentities"][0];
+        identity["aiProvider"] = serde_json::json!("Shell");
+        identity["aiSessionId"] = JsonValue::Null;
+        identity["aiSessionIdSource"] = JsonValue::Null;
+        identity["aiResumeCommand"] = serde_json::json!("shell command fixture");
+        fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+        let plan = prepare_swift_import(&source).unwrap().unwrap();
+        let pane = &plan.session.windows[0].tabs[0].panes[0];
+        assert_eq!(pane.ai_provider, None);
+        assert_eq!(pane.ai_session_id, None);
+        assert_eq!(pane.ai_resume_command, None);
+        let archived = pane.archived_ai_resume.as_ref().unwrap();
+        assert_eq!(archived.provider.as_deref(), Some("Shell"));
+        assert_eq!(archived.session_id, None);
+        assert_eq!(
+            archived.resume_command.as_deref(),
+            Some("shell command fixture")
+        );
+        assert_eq!(plan.summary.preserved_inert_ai_identities, 1);
+        assert_eq!(plan.summary.dropped_unsupported_ai_identities, 0);
     }
 
     #[test]

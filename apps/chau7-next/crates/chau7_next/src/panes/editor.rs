@@ -1311,7 +1311,11 @@ fn tab_size(config: &EditorConfig) -> TabSize {
 
 impl Focusable for EditorPane {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
-        if self.markdown_mode {
+        #[cfg(target_os = "macos")]
+        let native_source_owns_focus = self.is_markdown_file() && self.native_markdown.is_some();
+        #[cfg(not(target_os = "macos"))]
+        let native_source_owns_focus = false;
+        if self.markdown_mode || native_source_owns_focus {
             self.focus_handle.clone()
         } else {
             self.state.read(cx).focus_handle(cx)
@@ -1374,13 +1378,8 @@ impl Render for EditorPane {
                 self.native_guard_subscriptions.push(cx.on_focus_out(
                     &self.focus_handle,
                     window,
-                    |this, _, window, cx| {
-                        if window
-                            .context_stack()
-                            .iter()
-                            .any(|c| c.contains("PopupMenu"))
-                            && let Some(native) = &this.native_markdown
-                        {
+                    |this, _, _, cx| {
+                        if let Some(native) = &this.native_markdown {
                             native.detach();
                         }
                         cx.notify();

@@ -238,14 +238,18 @@ pub fn record_output(session: u64, data: &[u8], cx: &mut App) {
 
 /// Show an MCP command approval on the phone (`sendApprovalRequest`).
 /// Called by `mcp::approval::request_command_approval`.
-pub fn send_approval_request(request: ApprovalRequestPayload, cx: &mut App) {
+pub fn send_approval_request(
+    request: ApprovalRequestPayload,
+    target_tab: crate::tab_bar::TabId,
+    cx: &mut App,
+) {
     if let Some(entity) = handle(cx) {
         // Deferred: the caller may be inside a window or tab update, and the
         // host reads every window's tabs.
         cx.defer(move |cx| {
             entity.update(cx, |rc, cx| {
                 rc.with_host(cx, |host, env, sink| {
-                    host.send_approval_request(&request, env, sink)
+                    host.send_approval_request(&request, Some(target_tab), env, sink)
                 });
             });
         });

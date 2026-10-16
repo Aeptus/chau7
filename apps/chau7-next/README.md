@@ -197,6 +197,31 @@ Settings save and apply to all open windows immediately. In `config.toml`, set
 `repo_grouping_mode` under `[next]` to `off`, `auto`, or `manual`; after
 editing the file directly, use Chau7 Next > Reload Settings.
 
+### Idle tabs and numbered navigation
+
+The idle-tabs dropdown has repository headings and separators, with tabs that have no repository collected at the end. The list scrolls while **Close All Idle** remains accessible below it.
+
+**Settings > Tabs > Keyboard Navigation > Numbered Shortcuts Target Visible Tabs Only** makes numbered shortcuts follow the tab bar order, skipping tabs in the Idle dropdown. Horizontal clipping does not change the numbering. The default is off, keeping the all-tabs behavior. To configure it in a file, set `numbered_shortcuts_visible_only = true` under `[next]`, then reload settings.
+
+### Selecting and copying terminal text
+
+Drag past the top or bottom edge of a terminal pane to scroll while extending
+its selection. Release the mouse button or move keyboard focus to another pane
+to stop. In a full-screen TUI, selection follows the scrolling content while
+excluding fixed headers and input footers. If a redraw cannot be matched
+unambiguously, selection stops at the last confirmed text.
+
+Terminal copy preserves line breaks and indentation. On macOS, copying also
+publishes HTML and a Chau7 rich-text flavor with colors, emphasis and links.
+Pasting into the Markdown text panel stores a styled terminal block, so its
+formatting survives saving and reopening. Other paste destinations can choose
+the plain-text or HTML flavor. Cmd+C without a selection still interrupts the
+foreground process.
+
+Large or unusually style-heavy selections fall back to the complete plain text
+when the rich-format budget is exceeded. Editing a saved terminal block can
+invalidate its stored style ranges; the text remains available in monospace.
+
 ## Shortcuts (macOS)
 
 | | |

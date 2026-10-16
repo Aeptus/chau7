@@ -77,6 +77,7 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "std",
     "block2",
     "objc2-core-foundation",
+    "objc2-core-graphics",
     "NSAccessibility",
     "NSAppearance",
     "NSApplication",
@@ -124,6 +125,7 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSEvent",
     "NSTextInputClient",
 ] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGFont"] }
 objc2-user-notifications = { version = "0.3.2", default-features = false, features = [
     "std",
     "block2",

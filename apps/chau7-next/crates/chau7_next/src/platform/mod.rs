@@ -20,6 +20,9 @@
 //! | [`autofill`] | Password AutoFill ("AutoFill from Passwords...") |
 //! | [`workspace`] | NSWorkspace: open with a given app, default app, file icons |
 //! | [`pasteboard`] | NSPasteboard change count (copies made in other apps) |
+//! | [`rich_clipboard`] | Rich terminal selection flavors on NSPasteboard |
+//! | [`terminal_focus`] | Synchronize native responder with GPUI terminal focus |
+//! | [`window_drop`] | Frontmost native-window hit testing for tab drops |
 //! | [`print`] | NSPrintOperation: print a CPU-rendered terminal snapshot |
 //! | [`icloud`] | iCloud key-value store for the settings sync (`CloudStore`) |
 //! | [`login_item`] | Launch at login, SMAppService (`LoginItem`) |
@@ -85,11 +88,14 @@ pub mod pasteboard;
 pub mod power;
 pub mod print;
 pub mod process;
+pub mod rich_clipboard;
 pub mod secrets;
 pub mod services;
 pub mod sound;
 pub mod status_item;
 pub mod system;
+pub mod terminal_focus;
+pub mod window_drop;
 pub mod window_style;
 pub mod workspace;
 

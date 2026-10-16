@@ -3307,3 +3307,9 @@
 "status.never" = "Never";
 "status.unconfigured" = "Unconfigured";
 "status.visible" = "Visible";
+
+// Rust tab navigation and idle repository sections.
+"tabs.idle.noRepository" = "No repository";
+"settings.tabs.numberedShortcutsVisibleOnly" = "Numbered Shortcuts Target Visible Tabs Only";
+"settings.tabs.numberedShortcutsVisibleOnly.help" = "Count only tabs shown in the tab bar when selecting a tab by number.";
+"settings.search.numberedShortcutsVisibleOnly.keywords" = "visible tabs,numbered shortcuts,command number,cmd,alt,function keys,idle,collapsed groups";

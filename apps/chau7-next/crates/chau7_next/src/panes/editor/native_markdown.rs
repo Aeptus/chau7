@@ -6,8 +6,9 @@ pub(super) mod fixture;
 mod editing;
 mod host;
 mod styles;
+mod terminal_glyphs;
 
-use super::{EditorPane, SaveEditor, ToggleMarkdownMode};
+use super::EditorPane;
 use chau7_next_core::editor::{config::EditorConfig, live_markdown::Document, text as edtext};
 use futures::{StreamExt, channel::mpsc};
 use gpui::{
@@ -28,7 +29,7 @@ use objc2_app_kit::{
 };
 #[cfg(feature = "native-parity-fixture")]
 use objc2_app_kit::{
-    NSSelectionAffinity, NSTextInputContext, NSTextStorage,
+    NSPasteboard, NSSelectionAffinity, NSTextInputContext, NSTextStorage,
     NSTextStorageDidProcessEditingNotification, NSWindow,
 };
 #[cfg(feature = "native-parity-fixture")]
@@ -269,6 +270,7 @@ struct Shared {
     mirroring: Cell<bool>,
     deferred_style: Cell<bool>,
     host: host::SourceHost,
+    terminal_glyphs: RefCell<Option<terminal_glyphs::TerminalGlyphs>>,
     #[cfg(feature = "native-parity-fixture")]
     fixture_trace: Rc<FixtureTrace>,
 }
@@ -292,6 +294,9 @@ impl Shared {
             let text = view.string().to_string();
             let mut doc = self.document.borrow_mut();
             doc.update(&text);
+            if let Some(glyphs) = self.terminal_glyphs.borrow().as_ref() {
+                glyphs.update(&text, doc.hidden_terminal_ranges());
+            }
             *self.line_starts.borrow_mut() = line_starts(&text);
             if let Some(ruler) = self.ruler.borrow().as_ref().and_then(Weak::load) {
                 ruler.resize(self.line_starts.borrow().len());
@@ -388,7 +393,11 @@ fn start_delivery(
                         "gpui_focus_handle_focused": this.focus_handle.is_focused(window),
                     }));
                 }
-                if pending.focused {
+                let native_still_owns_focus = this
+                    .native_markdown
+                    .as_ref()
+                    .is_some_and(|native| native.owns_native_focus());
+                if pending.focused && native_still_owns_focus {
                     #[cfg(feature = "native-parity-fixture")]
                     if let (Some(trace), Some(native)) =
                         (fixture_trace.as_ref(), this.native_markdown.as_ref())
@@ -418,14 +427,13 @@ fn start_delivery(
                     }
                 }
                 for action in pending.actions {
+                    // These requests came from the native source view before
+                    // delivery. Apply them to this pane directly so transfer
+                    // does not depend on taking focus from the target window.
                     match action {
-                        Action::Save => window.dispatch_action(Box::new(SaveEditor), cx),
-                        Action::Toggle => window.dispatch_action(Box::new(ToggleMarkdownMode), cx),
-                        Action::Jump => {
-                            if let Some(native) = &this.native_markdown {
-                                native.jump();
-                            }
-                        }
+                        Action::Save => this.save(window, cx).detach(),
+                        Action::Toggle => this.toggle_markdown_mode(window, cx),
+                        Action::Jump => this.jump_to_matching_bracket(cx),
                     }
                 }
                 cx.notify();
@@ -437,6 +445,8 @@ fn start_delivery(
 struct SourceIvars {
     shared: Rc<Shared>,
     history: editing::SourceHistory,
+    #[cfg(feature = "native-parity-fixture")]
+    fixture_pasteboard: RefCell<Option<Retained<NSPasteboard>>>,
 }
 define_class!(
     #[unsafe(super = NSTextView)]
@@ -651,6 +661,41 @@ define_class!(
             self.ivars().shared.changed(self,false);
             self.highlight_bracket();
         }
+        #[unsafe(method(paste:))]
+        fn paste(&self, sender: Option<&AnyObject>) {
+            #[cfg(not(any(test, feature = "native-parity-fixture")))]
+            if let Some(json) = crate::platform::rich_clipboard::read_terminal_selection_json()
+                && self.paste_styled_terminal_json(&json)
+            {
+                return;
+            }
+
+            #[cfg(feature = "native-parity-fixture")]
+            {
+                // A fixture may inject only its owned private board. If none is
+                // present, this selector is deliberately a no-op: it never
+                // falls back to the user's general clipboard.
+                let pasteboard = self.ivars().fixture_pasteboard.borrow().clone();
+                if let Some(pasteboard) = pasteboard
+                    && let Some(json) = crate::platform::rich_clipboard::
+                        read_terminal_selection_from_fixture_pasteboard(&pasteboard)
+                    && self.paste_styled_terminal_json(&json)
+                {
+                    return;
+                }
+            }
+
+            #[cfg(any(test, feature = "native-parity-fixture"))]
+            {
+                // Fixture and unit-test builds must never reach AppKit's
+                // general-pasteboard reader, even through NSTextView's default.
+                let _ = sender;
+            }
+            #[cfg(not(any(test, feature = "native-parity-fixture")))]
+            unsafe {
+                let _: () = msg_send![super(self), paste: sender];
+            }
+        }
         #[unsafe(method(insertTab:))]
         fn tab(&self,_sender:Option<&AnyObject>) { self.insert(&self.ivars().shared.config.borrow().tab_string(),self.selectedRange()); }
         #[unsafe(method(insertBacktab:))]
@@ -764,7 +809,7 @@ impl SourceTextView {
                 }
                 "v" if !shift => {
                     unsafe {
-                        self.paste(None);
+                        let _: () = msg_send![self, paste: None::<&AnyObject>];
                     }
                     return true;
                 }
@@ -827,6 +872,8 @@ impl SourceTextView {
         let this = Self::alloc(mtm).set_ivars(SourceIvars {
             shared,
             history: editing::SourceHistory::new(mtm),
+            #[cfg(feature = "native-parity-fixture")]
+            fixture_pasteboard: RefCell::new(None),
         });
         let text: Retained<Self> = unsafe {
             msg_send![super(this),initWithFrame:NSRect::new(NSPoint::new(0.,0.),NSSize::new(400.,400.))]
@@ -899,6 +946,37 @@ impl SourceTextView {
             self.showFindIndicatorForRange(bytes_to_range(&text, target..target + c.len_utf8()));
         }
     }
+    #[cfg(any(not(test), feature = "native-parity-fixture"))]
+    fn paste_styled_terminal_json(&self, json: &str) -> bool {
+        let Some(selection) =
+            chau7_next_core::terminal_clipboard::StyledClipboardSelection::decode_json(json)
+        else {
+            return false;
+        };
+        let Some(source) = selection.markdown_source() else {
+            return false;
+        };
+        let document = self.string().to_string();
+        let selected = self.selectedRange();
+        let start = utf16_to_byte(&document, selected.location);
+        let end = utf16_to_byte(&document, selected.location + selected.length);
+        let Some(insertion) = chau7_next_core::terminal_clipboard::place_markdown_block(
+            &document,
+            start..end,
+            &source,
+        ) else {
+            return false;
+        };
+        // One native replacement preserves undo and text-input behavior.
+        self.insert(&insertion, selected);
+        true
+    }
+
+    #[cfg(feature = "native-parity-fixture")]
+    pub(super) fn set_fixture_pasteboard(&self, pasteboard: Option<Retained<NSPasteboard>>) {
+        *self.ivars().fixture_pasteboard.borrow_mut() = pasteboard;
+    }
+
     fn insert(&self, text: &str, range: NSRange) {
         // Actual user insertion API registers native undo and preserves IME semantics.
         unsafe {
@@ -995,13 +1073,17 @@ impl LineRuler {
             )
         };
         let starts = self.ivars().shared.line_starts.borrow();
+        let document = self.ivars().shared.document.borrow();
+        let hidden_lines = utf8_ranges_to_utf16(document.text(), document.hidden_terminal_ranges());
         let first = starts
             .partition_point(|s| *s < chars.location)
             .saturating_sub(1);
         let end = starts.partition_point(|s| *s <= chars.location + chars.length);
         let source = text.string();
         for (i, char_start) in starts[first..end].iter().enumerate() {
-            if !ruler_start_valid(&source, *char_start) {
+            if !ruler_start_valid(&source, *char_start)
+                || hidden_lines.iter().any(|range| range.contains(char_start))
+            {
                 continue;
             }
             let glyph = layout.glyphIndexForCharacterAtIndex(*char_start);
@@ -1033,6 +1115,32 @@ fn ruler_start_valid(text: &NSString, index: usize) -> bool {
     index < text.len_utf16()
 }
 
+fn utf8_ranges_to_utf16(
+    text: &str,
+    ranges: &[std::ops::Range<usize>],
+) -> Vec<std::ops::Range<usize>> {
+    let mut boundaries = Vec::with_capacity(ranges.len() * 2);
+    for (index, range) in ranges.iter().enumerate() {
+        boundaries.push((range.start, index * 2));
+        boundaries.push((range.end, index * 2 + 1));
+    }
+    boundaries.sort_unstable_by_key(|(byte, _)| *byte);
+    let mut converted = vec![0; boundaries.len()];
+    let mut units = 0;
+    let mut characters = text.char_indices().peekable();
+    for (target, index) in boundaries {
+        while characters.peek().is_some_and(|(byte, _)| *byte < target) {
+            units += characters.next().unwrap().1.len_utf16();
+        }
+        converted[index] = units;
+    }
+    ranges
+        .iter()
+        .enumerate()
+        .map(|(index, _)| converted[index * 2]..converted[index * 2 + 1])
+        .collect()
+}
+
 fn line_starts(text: &str) -> Vec<usize> {
     let mut starts = vec![0];
     let mut units = 0;
@@ -1059,6 +1167,17 @@ pub(super) struct NativeMarkdown {
     fixture_attach_decision: Cell<Option<FixtureAttachDecision>>,
 }
 impl NativeMarkdown {
+    fn owns_native_focus(&self) -> bool {
+        self.text
+            .window()
+            .and_then(|window| {
+                window
+                    .firstResponder()
+                    .and_then(|responder| responder.downcast::<SourceTextView>().ok())
+            })
+            .is_some_and(|responder| std::ptr::eq(&*responder, &*self.text))
+    }
+
     pub(super) fn create(
         window: &mut Window,
         cx: &mut Context<EditorPane>,
@@ -1080,10 +1199,12 @@ impl NativeMarkdown {
             mirroring: Cell::new(false),
             deferred_style: Cell::new(false),
             host: host::SourceHost::new(&raw),
+            terminal_glyphs: RefCell::new(None),
             #[cfg(feature = "native-parity-fixture")]
             fixture_trace: Rc::new(FixtureTrace::default()),
         });
         let text = SourceTextView::new(mtm, shared.clone());
+        *shared.terminal_glyphs.borrow_mut() = terminal_glyphs::TerminalGlyphs::new(&text, mtm);
         text.setFont(Some(&NSFont::systemFontOfSize(
             shared.config.borrow().font_size as f64,
         )));
@@ -1240,6 +1361,9 @@ impl NativeMarkdown {
         }
         let mut doc = self.shared.document.borrow_mut();
         doc.update(text);
+        if let Some(glyphs) = self.shared.terminal_glyphs.borrow().as_ref() {
+            glyphs.update(text, doc.hidden_terminal_ranges());
+        }
         let deferred_style = self.shared.deferred_style.replace(false);
         let range = if size_changed || loaded || deferred_style {
             0..text.len()
@@ -1699,6 +1823,30 @@ mod tests {
     }
 
     #[test]
+    fn ruler_hidden_terminal_ranges_skip_wrapper_rows_after_unicode() {
+        let source = "before 😀\n```metadata\nbody\n```\nafter";
+        let opening = source.find("```").unwrap();
+        let body = source.find("body").unwrap();
+        let closing = source[body..].find("```").unwrap() + body;
+        let closing_end = source[closing..].find('\n').unwrap() + closing + 1;
+        let hidden = utf8_ranges_to_utf16(source, &[opening..body, closing..closing_end]);
+        let to_utf16 = |byte| source[..byte].encode_utf16().count();
+        assert!(
+            hidden
+                .iter()
+                .any(|range| range.contains(&to_utf16(opening)))
+        );
+        assert!(
+            hidden
+                .iter()
+                .any(|range| range.contains(&to_utf16(closing)))
+        );
+        assert!(!hidden.iter().any(|range| range.contains(&to_utf16(body))));
+        let after = source.find("after").unwrap();
+        assert!(!hidden.iter().any(|range| range.contains(&to_utf16(after))));
+    }
+
+    #[test]
     fn native_indices_and_cached_line_starts_handle_surrogates_and_all_newlines() {
         let text = "é👩🏽‍💻\r\n漢\u{2028}z\n";
         for (byte, _) in text.char_indices() {
@@ -1752,6 +1900,11 @@ mod tests {
         });
         cx.update_window(target, |_, window, cx| window.render_frame(cx))
             .unwrap();
+        let target_focus_before_delivery = cx
+            .update_window(target, |_, window, cx| {
+                pane.read_with(cx, |pane, _| pane.focus_handle.is_focused(window))
+            })
+            .unwrap();
         // Actual native attachment re-signals the preserved queue on mount.
         queued.set(true);
         sender.unbounded_send(()).unwrap();
@@ -1765,7 +1918,11 @@ mod tests {
                     pane.markdown_mode,
                     "Toggle was dispatched in the target window"
                 );
-                assert!(pane.focus_handle.is_focused(window));
+                assert_eq!(
+                    pane.focus_handle.is_focused(window),
+                    target_focus_before_delivery,
+                    "stale source focus must not override the transferred window's focus"
+                );
             });
         })
         .unwrap();

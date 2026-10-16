@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Record screen safe areas in isolated fullscreen checks and distinguish forced
+  menu visibility from pointer-driven reveal, with explicit focus validation.
+
+- Refresh isolated restoration fixtures through the production scroll action
+  before checking cached styled history and print snapshots.
+
+- Preserve custom titlebar transparency in macOS fullscreen transitions so
+  revealing the system menu does not introduce an opaque native titlebar.
+- Add a guarded repeat update for existing Rust production installations, with
+  candidate verification, saved-state backups and retained rollback bundles.
+- Compile the repository history-search test helper only on its supported Unix
+  test targets, fixing the Windows warnings-as-errors check.
+
+- Focus and select the full tab title when opening Rename Tab or moving from
+  the color row to its name field, including with a native editor open; clicking
+  the title keeps keyboard input there.
+
+- Keep tab reordering in its source window when another window overlaps it;
+  resolve transfers against the visible frontmost window and native screen
+  coordinates, including multiple displays. Recognize vertical drags and keep
+  menu destinations stable when another window closes; cancel unavailable
+  destinations before removing any source tab.
+
+- Return keyboard focus from the native Markdown side panel to the terminal
+  when clicking another pane, including after the editor surface remounts.
+- Keep line breaks, indentation, terminal colors, emphasis and links when
+  copying terminal selections into the Markdown side panel; preserve rich
+  blocks when saving and reopening the document.
+- Collapse native editor fragments that contain only hidden terminal metadata,
+  including fragments containing just the wrapper line terminator.
+- Continue drag selection beyond terminal edges, retain the pointer column,
+  stop on release or focus loss, and accumulate scrolling TUI content without
+  including fixed headers or input footers. Preserve both endpoint characters
+  when a selection reverses direction.
+
+- Anchor Rust tab status outlines to the same bounds as their rounded backgrounds,
+  correcting the padding offset; align repository brackets and tab measurements too.
+
+- Group Rust idle tabs by repository with colored headings, section separators,
+  full-path tooltips, and a scrollable list above Close All Idle.
+- Add an opt-in Rust setting for numbered shortcuts to select only tabs in the
+  tab bar, preserving the existing all-tabs behavior by default.
+
+- Forward requested wheel events to full-screen terminal apps such as Codex,
+  even when click/drag reporting is off. Honor DEC 1007 alternate scrolling,
+  keep Shift/Ctrl and active text selection local, and expose numeric input
+  modes in performance snapshots.
+
+- Preserve fractional trackpad movement when scrolling terminal history.
+- Keep terminal drag selection active outside pane bounds, extend word/line
+  selections after double/triple click, and select the correct history rows
+  while scrolling. Preserve Option-drag copy suppression through mouse release.
+
+- Restore continuous repository group lines and pale repository-colored tab
+  backgrounds, and align waiting/status outlines with the tab's rounded edge.
+- Preserve focus in repository-panel inputs and restore terminal input focus
+  when switching panes; render split separators as one thin visual rule.
+- Keep terminal engine diagnostics opt-in during normal use while retaining
+  numeric performance measurements and warning/error logs.
+- Report the canonical Rust build channel and source revision in diagnostics.
+- Account for failed telemetry worker jobs and disconnected queues without
+  reporting an unavailable worker as healthy or leaving stale pending writes.
+
+- Preserve Swift synthetic AI tracking metadata and legacy command-block/preview
+  payloads as inert Rust restoration data through activation and later saves.
+- Distinguish preserved metadata from actual migration loss warnings, and keep
+  validated CLI resume commands separate from archived source commands.
+- Add a guarded local Rust upgrade script with verified backups, reusable build
+  receipts, explicit failure/success stages, and manual application launch.
+
+- Keep terminal folding compatible with strict Rust 1.99 Clippy checks.
+
+- Preserve iOS command drafts until WebSocket completion and retain uncertain
+  sends for an acknowledged manual retry; fence callbacks and pending-state
+  fetches across reconnects and pairing changes.
+- Clear approvals, queued decisions, drafts and telemetry when changing paired
+  Macs, and release in-flight approval state for same-host reconnects.
+- Preserve split UTF-8 characters and a bounded text fallback on iOS; map the
+  cursor and wide graphemes correctly when folding the Rust terminal grid.
+- Validate and confirm Swift SSH URL actions, keep queued input on the new tab,
+  and honor explicit SSH ports in both macOS apps.
+- Require shared tab identity before recovering legacy secondary windows from
+  a backup, preventing unrelated windows from being restored.
+- Bind asynchronous Git changes to their command UUID and completion order;
+  discard delayed diff requests after switching tabs so they cannot steal focus.
+- Target remote MCP approval context at the requested tab and evict discarded
+  protected inputs together with their pending approval cards.
+- Honor Xcode's selected simulator architectures in the iOS Rust build and
+  recheck nested Rust sources through Cargo on every build invocation.
+- Prevent CTO wrappers from recursively resolving themselves when HOME changes
+  or PATH contains symlink aliases; honor CARGO_HOME in the iOS Rust build.
+- Keep home-derived stores isolated in XCTest even when a test clears its
+  explicit override, and make test fixtures respect isolated homes and services.
+
 - Preserve user directory names when localizing Full Disk Access alerts,
   using translated string slices for native prompt buttons.
 

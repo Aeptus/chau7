@@ -58,15 +58,38 @@ pub fn begin_launch() {
     let _ = identity();
 }
 
+fn bundle_build_metadata(
+    lookup: impl Fn(&str) -> Option<String>,
+    production: bool,
+) -> (String, Option<String>) {
+    let channel = lookup("Chau7BuildChannel")
+        .filter(|value| matches!(value.as_str(), "production" | "next"))
+        .unwrap_or_else(|| if production { "production" } else { "next" }.into());
+    let (revision_key, legacy_key) = if channel == "production" {
+        ("Chau7SourceRevision", "Chau7NextSourceRevision")
+    } else {
+        ("Chau7NextSourceRevision", "Chau7SourceRevision")
+    };
+    let revision = lookup(revision_key).or_else(|| lookup(legacy_key));
+    (channel, revision)
+}
+
+pub(crate) fn build_metadata() -> (String, Option<String>) {
+    bundle_build_metadata(
+        system::bundle_string,
+        chau7_next_core::data_root::PRODUCTION_CHANNEL,
+    )
+}
+
 /// Same public identity keys as Swift, populated from this app's own bundle.
 pub fn runtime_info() -> Value {
     let version = system::bundle_string("CFBundleShortVersionString")
         .unwrap_or_else(|| env!("CARGO_PKG_VERSION").into());
     let build = system::bundle_string("CFBundleVersion");
-    let sha = system::bundle_string("Chau7NextSourceRevision");
+    let (channel, sha) = build_metadata();
     json!({"app_version": version, "build_number": build, "build_sha": sha,
         "build_timestamp": system::bundle_string("Chau7BuildTimestamp"),
-        "build_channel": "next", "bundle_id": system::bundle_string("CFBundleIdentifier"),
+        "build_channel": channel, "bundle_id": system::bundle_string("CFBundleIdentifier"),
         "process_id": std::process::id(), "launch_time": identity().launch_time,
         "session_started_at": identity().launch_time,
         "mcp_protocol_version": chau7_next_core::mcp::protocol::PROTOCOL_VERSION,
@@ -459,6 +482,53 @@ fn write_snapshot(dir: &Path, snapshot: &Value, history_limit: u64) -> io::Resul
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn production_runtime_uses_canonical_bundle_metadata() {
+        let (channel, revision) = super::bundle_build_metadata(
+            |key| match key {
+                "Chau7BuildChannel" => Some("production".into()),
+                "Chau7SourceRevision" => Some("production-sha".into()),
+                "Chau7NextSourceRevision" => Some("other-sha".into()),
+                _ => None,
+            },
+            false,
+        );
+        assert_eq!(channel, "production");
+        assert_eq!(revision.as_deref(), Some("production-sha"));
+    }
+
+    #[test]
+    fn next_runtime_preserves_its_own_revision_key() {
+        let (channel, revision) = super::bundle_build_metadata(
+            |key| match key {
+                "Chau7BuildChannel" => Some("next".into()),
+                "Chau7NextSourceRevision" => Some("next-sha".into()),
+                "Chau7SourceRevision" => Some("other-sha".into()),
+                _ => None,
+            },
+            true,
+        );
+        assert_eq!(channel, "next");
+        assert_eq!(revision.as_deref(), Some("next-sha"));
+    }
+
+    #[test]
+    fn runtime_build_fallback_uses_compiled_channel_and_keeps_unknown_revision_null() {
+        assert_eq!(
+            super::bundle_build_metadata(|_| None, true),
+            ("production".into(), None)
+        );
+        assert_eq!(
+            super::bundle_build_metadata(|_| None, false),
+            ("next".into(), None)
+        );
+        let (_, revision) = super::bundle_build_metadata(
+            |key| (key == "Chau7NextSourceRevision").then(|| "legacy-sha".into()),
+            true,
+        );
+        assert_eq!(revision.as_deref(), Some("legacy-sha"));
+    }
+
     #[test]
     fn unresponsive_diagnostics_keep_process_identity_and_mark_gui_data_unknown() {
         let snapshot = super::unresponsive_snapshot();

@@ -2,6 +2,10 @@
 //! `paint.rs`, images in `images.rs`; keyboard and IME input in `input.rs`,
 //! mouse input in `mouse.rs` (child modules, so they reach the view's fields).
 
+#[cfg(all(test, unix))]
+#[path = "mouse_interaction_tests.rs"]
+mod mouse_interaction_tests;
+
 #[path = "input.rs"]
 mod input;
 #[path = "mouse.rs"]
@@ -11,6 +15,7 @@ use std::ops::Range;
 use std::time::{Duration, Instant};
 
 use chau7_next_core::key_encoding;
+use chau7_terminal::StyledSelection;
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementInputHandler, Entity, EntityId,
     EventEmitter, FocusHandle, Focusable, Pixels, Point, Render, Task, Window, canvas, div,
@@ -157,6 +162,7 @@ impl TerminalView {
                 cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
             }
             if matches!(event, SessionEvent::Output) {
+                this.observe_alternate_screen_output(cx);
                 this.cursor_on = true;
                 this.overlays
                     .on_output(this.session.read(cx), Settings::get(cx));
@@ -564,7 +570,7 @@ impl TerminalView {
 
     /// Convert a viewport row into the terminal's grid line (scrollback aware).
     fn grid_line(&self, row: i32, cx: &App) -> i32 {
-        row - self.session.read(cx).grid.display_offset as i32
+        row - self.session.read(cx).display_offset() as i32
     }
 
     fn write(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
@@ -594,6 +600,7 @@ impl TerminalView {
         let session = self.session.read(cx);
         session.scroll_to_bottom();
         session.selection_clear();
+        self.clear_accumulated_selection();
         crate::platform::services::clear_selection_for_session(session.id);
         session.write_input(bytes);
         session.record_input_dispatch(dispatch_started);
@@ -608,6 +615,57 @@ impl TerminalView {
     /// is selected (`RustTerminalView.copy`).
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         window.focus(&self.focus_handle, cx);
+    }
+
+    /// The styled selection currently owned by the terminal, including a
+    /// safe snapshot of rows drawn while a TUI was on the alternate screen.
+    pub fn selection_for_copy(&self, cx: &App) -> Option<StyledSelection> {
+        if self.accumulated_selection_is_stale(cx) {
+            return None;
+        }
+        self.accumulated_styled_selection(cx)
+            .or_else(|| self.session.read(cx).selection_styled_text())
+            .filter(|selection| !selection.plain_text.is_empty())
+    }
+
+    /// Preserve GPUI's plain-text clipboard behavior and add rich native
+    /// flavors when this is a real application platform.
+    pub fn copy_selection_to_clipboard(&self, selection: &StyledSelection, cx: &mut Context<Self>) {
+        crate::workspace::record_clipboard(&selection.plain_text, cx);
+        cx.write_to_clipboard(ClipboardItem::new_string(selection.plain_text.clone()));
+        if cx.is_test() {
+            return;
+        }
+        let runs = selection
+            .runs
+            .iter()
+            .map(
+                |run| chau7_next_core::terminal_clipboard::StyledClipboardRun {
+                    text: run.text.clone(),
+                    bold: run.bold,
+                    italic: run.italic,
+                    underline: run.underline,
+                    strikethrough: run.strikethrough,
+                    foreground: run.foreground,
+                    background: run.background,
+                    // Keep the text and visual styling even when OSC 8 carries an
+                    // unsupported scheme; only conventional URLs become clickable.
+                    link: run
+                        .link
+                        .clone()
+                        .filter(|link| chau7_next_core::terminal_clipboard::is_safe_link(link)),
+                },
+            )
+            .collect();
+        if let Some(payload) = chau7_next_core::terminal_clipboard::StyledClipboardSelection::new(
+            selection.plain_text.clone(),
+            runs,
+        ) && !crate::platform::rich_clipboard::write_terminal_selection(&payload)
+        {
+            // The rich adapter clears before writing its flavors. Restore
+            // GPUI's interoperable plain text if any native flavor failed.
+            cx.write_to_clipboard(ClipboardItem::new_string(selection.plain_text.clone()));
+        }
     }
 }
 
@@ -797,6 +855,30 @@ impl Render for TerminalView {
                         }
                     },
                     move |bounds, state, window, cx| {
+                        // Terminal selection and mouse reporting need movement
+                        // after the pointer leaves this element. Register in
+                        // paint so capture sees the event before hit-tested
+                        // handlers on other elements.
+                        let mouse_view = view.downgrade();
+                        window.on_mouse_event(
+                            move |event: &gpui::MouseMoveEvent, phase, window, cx| {
+                                if phase != gpui::DispatchPhase::Capture {
+                                    return;
+                                }
+                                let Some(view) = mouse_view.upgrade() else {
+                                    return;
+                                };
+                                if view.read(cx).has_active_mouse_gesture() {
+                                    view.update(cx, |terminal, cx| {
+                                        terminal.on_mouse_move(event, window, cx)
+                                    });
+                                    // The capture handler owns this gesture, so
+                                    // don't also deliver it to the hit-tested
+                                    // terminal or an overlay underneath it.
+                                    cx.stop_propagation();
+                                }
+                            },
+                        );
                         window.handle_input(
                             &focus_handle,
                             ElementInputHandler::new(bounds, view.clone()),

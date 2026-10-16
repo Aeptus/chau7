@@ -93,6 +93,72 @@ final class ApprovalCoordinatorTests: XCTestCase {
         XCTAssertTrue(sendable.isEmpty)
         XCTAssertFalse(coordinator.hasQueuedResponses, "answers for vanished requests are forgotten")
     }
+
+    func testReconnectReleasesInFlightGateButPreservesQueuedApproval() {
+        let coordinator = ApprovalCoordinator()
+        coordinator.queue(requestID: "r1", approved: true)
+        XCTAssertEqual(coordinator.takeSendable { _ in true }.count, 1)
+        XCTAssertTrue(coordinator.takeSendable { _ in true }.isEmpty)
+
+        coordinator.resetInFlight()
+
+        XCTAssertEqual(
+            coordinator.takeSendable { _ in true }.map(\.requestID),
+            ["r1"],
+            "the replacement session must be able to flush a response whose old socket completion was fenced"
+        )
+        XCTAssertEqual(coordinator.queuedResponses["r1"], true)
+    }
+}
+
+final class PendingStateFetchFenceTests: XCTestCase {
+    func testSnapshotMustMatchPairingGenerationAndCurrentFetchToken() {
+        let pairing = RemotePairingPayload(
+            relayURL: "wss://relay.example",
+            deviceID: "mac-a",
+            macPub: "pub-a",
+            pairingCode: "1234",
+            expiresAt: "later"
+        )
+        let fence = PendingStateFetchFence(id: UUID(), pairing: pairing, transportGeneration: 7)
+
+        XCTAssertTrue(fence.admits(
+            currentFence: fence,
+            currentPairing: pairing,
+            currentTransportGeneration: 7,
+            isCancelled: false
+        ))
+        XCTAssertFalse(fence.admits(
+            currentFence: PendingStateFetchFence(id: UUID(), pairing: pairing, transportGeneration: 7),
+            currentPairing: pairing,
+            currentTransportGeneration: 7,
+            isCancelled: false
+        ), "a stale task must not clear or apply over the newer fetch")
+        XCTAssertFalse(fence.admits(
+            currentFence: fence,
+            currentPairing: RemotePairingPayload(
+                relayURL: "wss://relay.example",
+                deviceID: "mac-b",
+                macPub: "pub-b",
+                pairingCode: "5678",
+                expiresAt: "later"
+            ),
+            currentTransportGeneration: 7,
+            isCancelled: false
+        ), "an old Mac's REST response must not enter the new Mac's pending state")
+        XCTAssertFalse(fence.admits(
+            currentFence: fence,
+            currentPairing: pairing,
+            currentTransportGeneration: 8,
+            isCancelled: false
+        ), "a snapshot from an older WebSocket session must not overwrite the new session")
+        XCTAssertFalse(fence.admits(
+            currentFence: fence,
+            currentPairing: pairing,
+            currentTransportGeneration: 7,
+            isCancelled: true
+        ))
+    }
 }
 
 @MainActor
@@ -767,6 +833,87 @@ final class RemoteStreamingPerformanceWindowTests: XCTestCase {
 
 @MainActor
 final class RemoteTransportTests: XCTestCase {
+    func testComposerSubmissionRetainsDraftOnFailureAndNeverRetriesItAutomatically() {
+        var submission = RemoteInputSubmissionState()
+        let sendID = UUID()
+        XCTAssertTrue(submission.begin(id: sendID, text: "rm -rf /tmp/example"))
+        XCTAssertFalse(submission.begin(id: UUID(), text: "rm -rf /tmp/example"), "pending submission cannot be sent twice")
+
+        let result = submission.resolve(
+            id: sendID,
+            outcome: .failed("socket closed"),
+            currentDraft: "rm -rf /tmp/example"
+        )
+
+        XCTAssertEqual(result?.draft, "rm -rf /tmp/example")
+        XCTAssertEqual(result?.transportCompleted, false)
+        XCTAssertEqual(result?.deliveryUncertain, true)
+        XCTAssertFalse(submission.isPending)
+        XCTAssertTrue(submission.requiresRetryAcknowledgement)
+        XCTAssertFalse(submission.begin(id: UUID(), text: "rm -rf /tmp/example"), "retry requires an explicit acknowledgement")
+        XCTAssertNil(
+            submission.resolve(id: sendID, outcome: .transportCompleted, currentDraft: "rm -rf /tmp/example"),
+            "a late or duplicate callback cannot clear the retained command"
+        )
+        submission.acknowledgeDeliveryUncertainty()
+        XCTAssertTrue(submission.begin(id: UUID(), text: "rm -rf /tmp/example"), "the user can choose to retry after inspecting delivery")
+    }
+
+    func testComposerClearsOnlyTheDraftThatWasSuccessfullySubmitted() {
+        var submission = RemoteInputSubmissionState()
+        let sendID = UUID()
+        XCTAssertTrue(submission.begin(id: sendID, text: "echo first"))
+
+        let result = submission.resolve(
+            id: sendID,
+            outcome: .transportCompleted,
+            currentDraft: "echo first"
+        )
+
+        XCTAssertEqual(result?.draft, "")
+        XCTAssertEqual(result?.transportCompleted, true)
+        XCTAssertEqual(result?.deliveryUncertain, false)
+        XCTAssertFalse(submission.requiresRetryAcknowledgement)
+
+        let editedID = UUID()
+        XCTAssertTrue(submission.begin(id: editedID, text: "echo sent"))
+        let editedDraft = submission.resolve(
+            id: editedID,
+            outcome: .transportCompleted,
+            currentDraft: "new draft"
+        )
+        XCTAssertEqual(editedDraft?.draft, "new draft", "a completion only clears the text it submitted")
+    }
+
+    func testIndeterminateComposerSendRetainsDraftUntilUserAcknowledges() {
+        var submission = RemoteInputSubmissionState()
+        let sendID = UUID()
+        XCTAssertTrue(submission.begin(id: sendID, text: "deploy production"))
+
+        let result = submission.resolve(
+            id: sendID,
+            outcome: .indeterminate,
+            currentDraft: "deploy production"
+        )
+
+        XCTAssertEqual(result?.draft, "deploy production")
+        XCTAssertEqual(result?.deliveryUncertain, true)
+        XCTAssertFalse(submission.begin(id: UUID(), text: "deploy production"))
+        submission.acknowledgeDeliveryUncertainty()
+        XCTAssertTrue(submission.begin(id: UUID(), text: "deploy production"))
+    }
+
+    func testOldGenerationSendCompletionIsAmbiguous() {
+        XCTAssertEqual(
+            RemoteSendOutcome.fenced(.transportCompleted, sendGeneration: 4, currentGeneration: 5),
+            .indeterminate
+        )
+        XCTAssertEqual(
+            RemoteSendOutcome.fenced(.failed("closed"), sendGeneration: 5, currentGeneration: 5),
+            .failed("closed")
+        )
+    }
+
     func testInboundQueueCoalescesGridSnapshotsWithoutReorderingRetainedFrames() {
         var queue = RemoteInboundMessageQueue()
         let output1 = RemoteFrame(type: RemoteFrameType.output.rawValue, tabID: 1, seq: 1, payload: Data([1])).encode()

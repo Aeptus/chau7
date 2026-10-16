@@ -22,27 +22,6 @@ struct RustGridSnapshot {
     var capacity: Int
 }
 
-/// iOS mirror of the Rust `DisplayRowBuffer` (see chau7_terminal.h).
-///
-/// The grid already folded to a width the client can paint, so the renderer
-/// blits rows straight out of it instead of re-deriving cell indices through a
-/// source-to-display mapping.
-struct RustDisplayRowBuffer {
-    var cells: UnsafeMutablePointer<RustCellData>?
-    var cells_capacity: Int
-    var clusters_utf8: UnsafeMutablePointer<UInt8>?
-    var clusters_len: Int
-    var clusters_capacity: Int
-    var row_offsets: UnsafeMutablePointer<UInt32>?
-    var row_offsets_len: Int
-    var row_offsets_capacity: Int
-    var cell_count: Int
-    var display_cols: UInt16
-    var display_rows: UInt16
-    var source_cols: UInt16
-    var source_rows: UInt16
-}
-
 @_silgen_name("chau7_terminal_create_headless")
 private nonisolated func chau7_terminal_create_headless(_ cols: UInt16, _ rows: UInt16) -> UnsafeMutableRawPointer?
 
@@ -198,7 +177,10 @@ final nonisolated class RemoteRustTerminalPlayback {
             clusters: clusters,
             rowOffsets: rowOffsets,
             displayCols: Int(buffer.display_cols),
-            displayRows: Int(buffer.display_rows)
+            displayRows: Int(buffer.display_rows),
+            cursorCol: Int(buffer.cursor_col),
+            cursorRow: Int(buffer.cursor_row),
+            cursorVisible: buffer.cursor_visible != 0
         )
     }
 

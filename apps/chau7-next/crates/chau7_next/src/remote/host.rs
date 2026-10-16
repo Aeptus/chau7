@@ -871,21 +871,32 @@ impl RemoteHost {
         })
     }
 
-    /// `registerApprovalContext`: tie the request to the protected input's
-    /// tab, else to the selected tab.
-    fn register_approval(&mut self, env: &mut dyn HostEnv, request: &ApprovalRequestPayload) {
+    /// `registerApprovalContext`: tie the request to its explicit MCP target,
+    /// protected input target, or selected tab (for legacy unscoped requests).
+    fn register_approval(
+        &mut self,
+        env: &mut dyn HostEnv,
+        request: &ApprovalRequestPayload,
+        explicit_target: Option<TabKey>,
+    ) -> bool {
         let now = env.now();
         let tabs = env.tabs();
-        let target = match self.pending_protected.get(&request.request_id) {
-            Some(input) => Some(input.tab_id),
-            None => env.selected().and_then(|key| self.registry.tab_id(key)),
+        let target = match explicit_target {
+            Some(key) => self.registry.tab_id(key),
+            None => match self.pending_protected.get(&request.request_id) {
+                Some(input) => Some(input.tab_id),
+                None => env.selected().and_then(|key| self.registry.tab_id(key)),
+            },
         };
-        let Some(tab_id) = target else { return };
+        let Some(tab_id) = target else { return false };
         let Some(tab) = self.tab_and_main(&tabs, tab_id) else {
-            return;
+            return false;
         };
         if let Some(context) = self.context_for(&tab, tab_id, request, now) {
             self.approvals.insert(request.request_id.clone(), context);
+            true
+        } else {
+            false
         }
     }
 
@@ -894,15 +905,31 @@ impl RemoteHost {
     pub fn send_approval_request(
         &mut self,
         request: &ApprovalRequestPayload,
+        explicit_target: Option<TabKey>,
         env: &mut dyn HostEnv,
         sink: &mut dyn FrameSink,
     ) {
         if !self.ipc_connected {
             return;
         }
-        self.register_approval(env, request);
+        if explicit_target.is_some() {
+            self.send_tab_list(env, sink, false);
+        }
+        let registered = self.register_approval(env, request, explicit_target);
+        if explicit_target.is_some() && !registered {
+            log::info!(
+                "Remote: skipped approval {} because its target tab is no longer available",
+                request.request_id
+            );
+            return;
+        }
+        let enriched = self
+            .approvals
+            .get(&request.request_id)
+            .map(ApprovalContext::payload)
+            .unwrap_or_else(|| request.clone());
         let wire =
-            chau7_next_core::remote::push_composition::compose_approval(request, env.spine_seq());
+            chau7_next_core::remote::push_composition::compose_approval(&enriched, env.spine_seq());
         self.send_json(sink, RemoteFrameType::ApprovalRequest, 0, &wire);
         self.send_activity(env, sink, false);
         log::info!("Remote: sent approval request {}", request.request_id);
@@ -931,6 +958,7 @@ impl RemoteHost {
                 .map(|(k, _)| k.clone())
             {
                 self.pending_protected.remove(&oldest);
+                self.approvals.remove(&oldest);
             }
         }
         self.pending_protected.insert(
@@ -956,7 +984,7 @@ impl RemoteHost {
                 self.approvals.insert(request_id.clone(), context);
             }
         }
-        self.send_approval_request(&request, env, sink);
+        self.send_approval_request(&request, None, env, sink);
         log::warn!("Remote: queued protected action approval for tab {tab_id}");
     }
 
@@ -1863,15 +1891,47 @@ pub(crate) mod tests {
     fn protected_inputs_expire_and_are_capped() {
         let (mut host, mut env, _) = connected();
         let mut out = Vec::new();
+        let mut requested = Vec::new();
         for _ in 0..25 {
+            let start = out.len();
             host.handle_frame(
                 frame(RemoteFrameType::Input, 0, "pkill chau7"),
                 &mut env,
                 &mut out,
             );
+            let approval = out[start..]
+                .iter()
+                .find(|frame| frame.frame_type() == Some(RemoteFrameType::ApprovalRequest))
+                .expect("protected input should request approval");
+            let request: ApprovalRequestPayload =
+                serde_json::from_slice(&approval.payload).unwrap();
+            requested.push(request.request_id);
             env.now += chrono::Duration::seconds(1);
         }
         assert_eq!(host.pending_protected.len(), 20);
+        assert_eq!(host.approvals.len(), 20);
+        let protected_ids: std::collections::HashSet<_> =
+            host.pending_protected.keys().cloned().collect();
+        let approval_ids: std::collections::HashSet<_> = host.approvals.keys().cloned().collect();
+        let expected_ids: std::collections::HashSet<_> = requested.into_iter().skip(5).collect();
+        assert_eq!(protected_ids, expected_ids);
+        assert_eq!(approval_ids, expected_ids);
+
+        // A reconnect must not resurrect cards whose input was evicted.
+        host.on_disconnected();
+        out.clear();
+        host.on_connected(&mut env, &mut out);
+        let replayed_ids: std::collections::HashSet<_> = out
+            .iter()
+            .filter(|frame| frame.frame_type() == Some(RemoteFrameType::ApprovalRequest))
+            .map(|frame| {
+                serde_json::from_slice::<ApprovalRequestPayload>(&frame.payload)
+                    .unwrap()
+                    .request_id
+            })
+            .collect();
+        assert_eq!(replayed_ids, expected_ids);
+
         env.now += chrono::Duration::seconds(121);
         let response = r#"{"request_id":"other","approved":true}"#;
         host.handle_frame(
@@ -1892,7 +1952,7 @@ pub(crate) mod tests {
         let mut request =
             ApprovalRequestPayload::new("REQ-1", "rm -rf build", "rm -rf", iso8601(env.now));
         request.context_note = Some("Permissions source: global settings".into());
-        host.send_approval_request(&request, &mut env, &mut out);
+        host.send_approval_request(&request, None, &mut env, &mut out);
         assert_eq!(out[0].frame_type(), Some(RemoteFrameType::ApprovalRequest));
         assert_eq!(host.pending_approval_ids(), ["REQ-1"]);
         let initial: serde_json::Value = serde_json::from_slice(&out[0].payload).unwrap();
@@ -1935,8 +1995,59 @@ pub(crate) mod tests {
 
         // Not registered while the agent is away.
         host.on_disconnected();
-        host.send_approval_request(&request, &mut env, &mut out);
+        host.send_approval_request(&request, None, &mut env, &mut out);
         assert!(host.pending_approval_ids().is_empty());
+    }
+
+    #[test]
+    fn mcp_approval_context_uses_its_target_tab_and_skips_a_closed_target() {
+        let (mut host, mut env, _) = connected();
+        env.tabs[1].title = "Build tab".into();
+        env.tabs[1].panes[0].cwd = Some("/work/build".into());
+        env.tabs[1].panes[0].git_branch = Some("feature/build".into());
+        let mut out = Vec::new();
+        let request =
+            ApprovalRequestPayload::new("REQ-TARGET", "rm -rf build", "rm", iso8601(env.now));
+
+        // Tab 10 is selected, while the MCP command targets tab 20.
+        host.send_approval_request(&request, Some(20), &mut env, &mut out);
+        assert_eq!(host.pending_approval_ids(), ["REQ-TARGET"]);
+        let initial: ApprovalRequestPayload = out
+            .iter()
+            .find(|frame| frame.frame_type() == Some(RemoteFrameType::ApprovalRequest))
+            .map(|frame| serde_json::from_slice(&frame.payload).unwrap())
+            .unwrap();
+        assert_eq!(initial.tab_title.as_deref(), Some("Build tab"));
+        assert_eq!(initial.current_directory.as_deref(), Some("/work/build"));
+        assert_eq!(initial.branch_name.as_deref(), Some("feature/build"));
+
+        host.on_disconnected();
+        out.clear();
+        host.on_connected(&mut env, &mut out);
+        let resent: ApprovalRequestPayload = out
+            .iter()
+            .find(|frame| frame.frame_type() == Some(RemoteFrameType::ApprovalRequest))
+            .map(|frame| serde_json::from_slice(&frame.payload).unwrap())
+            .unwrap();
+        assert_eq!(resent.tab_title.as_deref(), Some("Build tab"));
+        assert_eq!(resent.current_directory.as_deref(), Some("/work/build"));
+        assert_eq!(resent.branch_name.as_deref(), Some("feature/build"));
+
+        let (mut closed_host, mut closed_env, _) = connected();
+        closed_env.tabs.retain(|tab| tab.key != 20);
+        out.clear();
+        let closed_request = ApprovalRequestPayload::new(
+            "REQ-CLOSED",
+            "rm -rf build",
+            "rm",
+            iso8601(closed_env.now),
+        );
+        closed_host.send_approval_request(&closed_request, Some(20), &mut closed_env, &mut out);
+        assert!(
+            out.iter()
+                .all(|frame| frame.frame_type() != Some(RemoteFrameType::ApprovalRequest))
+        );
+        assert!(closed_host.pending_approval_ids().is_empty());
     }
 
     #[test]

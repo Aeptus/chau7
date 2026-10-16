@@ -65,6 +65,71 @@ paths as test fixtures or public release assets. Importing a session is not a
 claim that Keychain credentials, permissions or every Swift preference migrated;
 record these separately in acceptance results.
 
+## Guarded local upgrade
+
+Run `apps/chau7-next/scripts/upgrade-macos-production.command` in Terminal.app,
+outside Chau7. It builds and verifies a local production candidate first, then
+asks the user to quit Chau7 normally. It never closes the app or its tabs itself.
+The source for this workflow is explicitly **Swift Chau7**, not the Next profile.
+
+The workflow makes a dated, checksum-verified copy of the source profiles and
+keeps the previous application bundle. It imports from that frozen backup home,
+checks the dry-run summary, applies only to an empty Rust destination, compares
+the resulting receipt, and then installs the verified bundle. It does not open
+the new app. Follow the launch command printed only after installation succeeds.
+Do not reopen either app while the backup/import/replacement is in progress.
+
+A final status identifies the completed stage, whether restoration was imported,
+and whether the app was replaced. The log stays with the backup, and the machine-readable status is saved under
+`~/Library/Logs/Chau7/`; both paths are printed at exit. A warning or failure before import leaves Swift installed; successful
+compilation alone does not mean the upgrade happened. If import succeeded but
+installation failed, retain the Rust destination and receipt for recovery. Do not
+delete them or rerun an import over them.
+
+Swift's synthetic AI tracking identities are not CLI session IDs. They are kept
+as inert metadata and never turned into shell input. Legacy command blocks and
+PNG previews are also retained in the restore schema through activation, later
+saves, and tab moves. They are distinct from active runtime command-block UI.
+The import report separates these `preserved` counts from actual loss warnings;
+nonzero loss warnings still stop the script before import. Valid CLI session IDs
+continue to generate the same validated resume prefill as before.
+
+For an already prepared candidate, supply `CHAU7_UPGRADE_APP`,
+`CHAU7_UPGRADE_RECEIPT`, and `CHAU7_UPGRADE_EXPECTED_SHA` together, with
+`CHAU7_UPGRADE_REPO` pointing to the reviewed checkout. The candidate is reverified
+against its receipt before the user is asked to quit. This avoids recompilation
+while retaining source, identity, signature, and executable-hash checks.
+
+## Updating an existing Rust installation
+
+Use `apps/chau7-next/scripts/update-macos-production.command` for a Mac already
+running production Rust Chau7. The migration script above is only for the first
+Swift import and refuses an existing Rust destination.
+
+Prepare the exact clean production bundle and its receipt first. From
+Terminal.app, outside Chau7, inspect the candidate with:
+
+```sh
+./apps/chau7-next/scripts/update-macos-production.command \
+  --app "/path/to/Chau7.app" \
+  --receipt "/path/to/Chau7-Production-aarch64-apple-darwin-fast.json" \
+  --expected-sha "FULL_REVIEWED_COMMIT_SHA" \
+  --dry-run
+```
+
+After reviewing the successful preflight, replace `--dry-run` with
+`--apply --wait-seconds 600`. The updater verifies the production identity,
+source revision, receipt, executable hashes and signatures before waiting for
+you to quit Chau7 normally. It does not quit or launch Chau7 itself. Keep the
+app closed until the updater reports completion.
+
+The updater requires existing Rust state, preserves both Rust profile directories,
+backs up the current application and saved data, and stages the complete candidate
+on the destination volume before replacing the app. It retains a rollback bundle
+and verifies the installed candidate. It never reruns the Swift importer. A
+failed preflight leaves the installed app untouched. Use the exact backup and rollback paths reported by the updater for recovery; do not delete
+saved profiles to make an update pass.
+
 ## Build, sign and release
 
 `CHANNEL=production RELEASE_VERSION=0.6.0-rc.1 BUILD_MODE=fast ./scripts/bundle-macos.sh` from

@@ -288,6 +288,7 @@ final class RemoteTerminalRendererStore {
 
     @ObservationIgnored var onFramePublished: ((Double) -> Void)?
     @ObservationIgnored var onFramePresented: ((RemoteTerminalFrameTrace) -> Void)?
+    @ObservationIgnored var onAvailabilityChanged: ((Bool) -> Void)?
 
     init() {
         let scheme = AppSettings.currentColorScheme
@@ -476,6 +477,7 @@ final class RemoteTerminalRendererStore {
             let snapshot = await engine.snapshot(for: tabID)
             guard let self, self.generation == currentGeneration else { return }
             self.renderRequestInFlight = false
+            let availabilityChanged = self.isAvailable != snapshot.isAvailable
             self.isAvailable = snapshot.isAvailable
             if tabID == self.activeTabID {
                 if var frameTrace = snapshot.frameTrace,
@@ -494,6 +496,9 @@ final class RemoteTerminalRendererStore {
                 // the engine could not fold; the canvas then paints the grid
                 // directly rather than falling back to its own fold.
                 self.displayState = self.isActiveAlternateScreen ? nil : snapshot.display
+            }
+            if availabilityChanged {
+                self.onAvailabilityChanged?(snapshot.isAvailable)
             }
             let elapsed = startedAt.duration(to: .now)
             let milliseconds = Double(elapsed.components.seconds) * 1000

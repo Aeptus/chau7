@@ -1,4 +1,5 @@
 import XCTest
+import Chau7Core
 @testable import Chau7
 
 final class RepositoryCacheTests: XCTestCase {
@@ -115,7 +116,7 @@ final class RepositoryCacheTests: XCTestCase {
             ProtectedPathPolicy.resetAccessChecks()
         }
 
-        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+        let repoRoot = URL(fileURLWithPath: RuntimeIsolation.homePath())
             .appendingPathComponent("Downloads/Repositories/Chau7")
             .path
 
@@ -198,7 +199,7 @@ final class RepositoryCacheTests: XCTestCase {
             ProtectedPathPolicy.resetAccessChecks()
         }
 
-        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+        let repoRoot = URL(fileURLWithPath: RuntimeIsolation.homePath())
             .appendingPathComponent("Downloads/Repositories/Chau7")
             .path
 
@@ -298,7 +299,7 @@ final class RepositoryCacheTests: XCTestCase {
             ProtectedPathPolicy.resetAccessChecks()
         }
 
-        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+        let repoRoot = URL(fileURLWithPath: RuntimeIsolation.homePath())
             .appendingPathComponent("Downloads/Repositories/SharedRepoTest")
             .path
 
@@ -346,7 +347,7 @@ final class RepositoryCacheTests: XCTestCase {
             ProtectedPathPolicy.resetAccessChecks()
         }
 
-        let repoRoot = URL(fileURLWithPath: NSHomeDirectory())
+        let repoRoot = URL(fileURLWithPath: RuntimeIsolation.homePath())
             .appendingPathComponent("Downloads/Repositories/BranchUpdateTest")
             .path
 

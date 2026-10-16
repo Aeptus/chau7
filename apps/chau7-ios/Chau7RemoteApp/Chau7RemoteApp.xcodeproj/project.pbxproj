@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C7A215000000000000000001 /* RemoteTerminalOutputStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78F31F2A00100A1B001 /* RemoteTerminalOutputStore.swift */; };
 		C7A196000000000000000002 /* RemoteTerminalCellMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A196000000000000000001 /* RemoteTerminalCellMetrics.swift */; };
 		C7A196000000000000000003 /* RemoteTerminalCellMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A196000000000000000001 /* RemoteTerminalCellMetrics.swift */; };
 		C7A196000000000000000005 /* RemoteTerminalCellMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A196000000000000000004 /* RemoteTerminalCellMetricsTests.swift */; };
@@ -425,6 +426,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		4A94D79731F2A00100A1B001 /* Build Rust Terminal */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -463,6 +465,7 @@
 				C7A196000000000000000003 /* RemoteTerminalCellMetrics.swift in Sources */,
 				C7A196000000000000000005 /* RemoteTerminalCellMetricsTests.swift in Sources */,
 				AFB28EFD06FD3AC670A01E92 /* RemoteTransport.swift in Sources */,
+				C7A215000000000000000001 /* RemoteTerminalOutputStore.swift in Sources */,
 				E570863FEAD1BF0245EC079F /* RemoteSessionController.swift in Sources */,
 				58B00A5CA2C678BDB76285BD /* RemoteConnectionStatus.swift in Sources */,
 				65E060C5E28959F2B6FA70E9 /* ApprovalCoordinator.swift in Sources */,

@@ -69,6 +69,14 @@ final class ApprovalCoordinator {
         inFlight.remove(requestID)
     }
 
+    /// A socket generation ended while responses were in flight. Keep the
+    /// user's queued answers, but make them eligible for the replacement
+    /// session. Completions from the old generation are fenced by
+    /// `RemoteClient.send` and must not resolve these entries.
+    func resetInFlight() {
+        inFlight.removeAll(keepingCapacity: true)
+    }
+
     func reset() {
         queuedResponses.removeAll(keepingCapacity: true)
         inFlight.removeAll(keepingCapacity: true)
@@ -94,7 +102,11 @@ final class DeferredDecisionLedger {
     private var order: [String] = []
     private let capacity: Int
 
-    init(capacity: Int = DeferredDecisionLedger.defaultCapacity) {
+    init() {
+        self.capacity = max(1, Self.defaultCapacity)
+    }
+
+    init(capacity: Int) {
         self.capacity = max(1, capacity)
     }
 

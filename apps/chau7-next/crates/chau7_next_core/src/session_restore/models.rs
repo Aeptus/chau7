@@ -4,6 +4,32 @@ use crate::token_optimization::TabTokenOptOverride;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Resume fields kept verbatim for migrations and future recovery. This is
+/// archival data only: restore code must never treat its command as executable.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchivedAIResumeMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_command: Option<String>,
+}
+
+/// Swift tab context that Chau7 Next does not yet render. Command blocks and
+/// preview bytes remain opaque persisted data; callers must validate them
+/// before any future display or action.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ArchivedTabContext {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_blocks: Option<Vec<serde_json::Value>>,
+    /// Swift's JSONEncoder representation of `Data` (standard base64).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_snapshot_png_data: Option<String>,
+}
+
 /// What is saved for one terminal pane (`SavedTerminalPaneState`). The
 /// scrollback text itself lives in `DataRoot::scrollback_dir()/<id>.txt`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -18,6 +44,10 @@ pub struct SavedPane {
     /// `claude --resume <id>` or `codex resume <id>`, typed into the prompt
     /// (not run) after the restore.
     pub ai_resume_command: Option<String>,
+    /// Raw Swift resume metadata retained separately from the active resume
+    /// fields. This field is inert archival state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived_ai_resume: Option<ArchivedAIResumeMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_session_id_source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -65,6 +95,9 @@ pub struct SavedTab {
     /// Focused terminal pane (`focusedPaneID`).
     #[serde(default)]
     pub focused_pane: Option<u64>,
+    /// Swift tab previews and command history not currently rendered by Next.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived_context: Option<ArchivedTabContext>,
     #[serde(default)]
     pub panes: Vec<SavedPane>,
 }
@@ -177,5 +210,42 @@ mod tests {
         let empty: SavedPane = serde_json::from_str("{\"id\":5}").unwrap();
         assert_eq!(empty.last_exit_code, None);
         assert_eq!(empty.last_output_at, None);
+    }
+
+    #[test]
+    fn archived_swift_metadata_round_trips_without_becoming_an_active_resume() {
+        let pane = SavedPane {
+            id: 9,
+            archived_ai_resume: Some(ArchivedAIResumeMetadata {
+                provider: Some("codex".into()),
+                session_id: Some("synth:fixture".into()),
+                session_id_source: Some("synthetic".into()),
+                resume_command: None,
+            }),
+            ..Default::default()
+        };
+        let tab = SavedTab {
+            archived_context: Some(ArchivedTabContext {
+                command_blocks: Some(vec![serde_json::json!({"command": "fixture command"})]),
+                preview_snapshot_png_data: Some("cG5n".into()),
+            }),
+            panes: vec![pane],
+            ..Default::default()
+        };
+
+        let decoded: SavedTab =
+            serde_json::from_str(&serde_json::to_string(&tab).unwrap()).unwrap();
+        assert_eq!(decoded, tab);
+        let archived_pane = &decoded.panes[0];
+        assert_eq!(archived_pane.ai_provider, None);
+        assert_eq!(archived_pane.ai_session_id, None);
+        assert_eq!(archived_pane.ai_resume_command, None);
+        assert_eq!(
+            archived_pane
+                .archived_ai_resume
+                .as_ref()
+                .and_then(|metadata| metadata.session_id.as_deref()),
+            Some("synth:fixture")
+        );
     }
 }

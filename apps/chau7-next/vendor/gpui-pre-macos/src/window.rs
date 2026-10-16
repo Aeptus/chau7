@@ -58,11 +58,10 @@ use objc2::{
 use objc2_app_kit::{
     NSAlert, NSAlertStyle,
     NSApplicationPresentationOptions as Objc2NSApplicationPresentationOptions,
-    NSAutoresizingMaskOptions, NSBeep,
-    NSButton as Objc2NSButton, NSDraggingImageComponent, NSDraggingImageComponentIconKey,
-    NSDraggingItem, NSPasteboardWriting, NSTrackingArea, NSTrackingAreaOptions,
-    NSView as Objc2NSView, NSWindow as Objc2NSWindow, NSWindowButton as Objc2NSWindowButton,
-    NSWorkspace,
+    NSAutoresizingMaskOptions, NSBeep, NSButton as Objc2NSButton, NSDraggingImageComponent,
+    NSDraggingImageComponentIconKey, NSDraggingItem, NSPasteboardWriting, NSTrackingArea,
+    NSTrackingAreaOptions, NSView as Objc2NSView, NSWindow as Objc2NSWindow,
+    NSWindowButton as Objc2NSWindowButton, NSWorkspace,
 };
 use objc2_foundation::{
     NSPoint as Objc2NSPoint, NSRect as Objc2NSRect, NSSize as Objc2NSSize, NSURL,
@@ -1071,10 +1070,8 @@ impl MacWindowState {
         // SAFETY: fullscreen overlay installation is only called from AppKit's
         // main-thread window callbacks.
         let main_thread = unsafe { MainThreadMarker::new_unchecked() };
-        let host_view = Objc2NSView::initWithFrame(
-            Objc2NSView::alloc(main_thread),
-            initial_layout.host_frame,
-        );
+        let host_view =
+            Objc2NSView::initWithFrame(Objc2NSView::alloc(main_thread), initial_layout.host_frame);
         let flexible_bottom_margin = if content_view.isFlipped() {
             NSAutoresizingMaskOptions::ViewMaxYMargin
         } else {
@@ -1133,9 +1130,10 @@ impl MacWindowState {
             return;
         };
         let host = Retained::as_ptr(&overlay.host_view) as id;
-        let host_is_in_content_view = unsafe { overlay.host_view.superview() }.is_some_and(
-            |superview| Retained::as_ptr(&superview) == Retained::as_ptr(&content_view),
-        );
+        let host_is_in_content_view =
+            unsafe { overlay.host_view.superview() }.is_some_and(|superview| {
+                Retained::as_ptr(&superview) == Retained::as_ptr(&content_view)
+            });
         if !host_is_in_content_view {
             unsafe {
                 let _: () = msg_send![host, removeFromSuperview];
@@ -1225,7 +1223,10 @@ impl MacWindowState {
             ] {
                 let _: () = msg_send![button, removeFromSuperview];
             }
-            let _: () = msg_send![Retained::as_ptr(&overlay.host_view) as id, removeFromSuperview];
+            let _: () = msg_send![
+                Retained::as_ptr(&overlay.host_view) as id,
+                removeFromSuperview
+            ];
         }
     }
 
@@ -1251,7 +1252,10 @@ impl MacWindowState {
                 let _: () = msg_send![button, setHidden: NO];
                 let _: () = msg_send![button, setAlphaValue: 1.0f64];
             }
-            let _: () = msg_send![Retained::as_ptr(&overlay.host_view) as id, removeFromSuperview];
+            let _: () = msg_send![
+                Retained::as_ptr(&overlay.host_view) as id,
+                removeFromSuperview
+            ];
         }
 
         overlay.buttons.close.setFrame(overlay.frames.close);
@@ -3548,14 +3552,7 @@ extern "C" fn window_will_enter_fullscreen(this: &Object, _: Sel, _: id) {
     lock.is_exiting_fullscreen = false;
     lock.pre_fullscreen_traffic_light_frames = lock.traffic_light_frames;
     lock.restore_traffic_light();
-
-    let min_version = NSOperatingSystemVersion::new(15, 3, 0);
-
-    if is_macos_version_at_least(min_version) {
-        unsafe {
-            lock.native_window.setTitlebarAppearsTransparent_(NO);
-        }
-    }
+    apply_fullscreen_titlebar_appearance(&lock);
 
     // Move the real AppKit buttons into the content hierarchy before AppKit
     // removes the titlebar while entering fullscreen.
@@ -3565,6 +3562,7 @@ extern "C" fn window_will_enter_fullscreen(this: &Object, _: Sel, _: id) {
 extern "C" fn window_did_fail_to_enter_fullscreen(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.as_ref().lock();
+    apply_fullscreen_titlebar_appearance(&lock);
     lock.fullscreen_controls_active = false;
     lock.restore_fullscreen_traffic_lights();
     lock.traffic_light_frames = lock.pre_fullscreen_traffic_light_frames.take();
@@ -3574,6 +3572,7 @@ extern "C" fn window_did_fail_to_enter_fullscreen(this: &Object, _: Sel, _: id) 
 extern "C" fn window_did_enter_fullscreen(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.as_ref().lock();
+    apply_fullscreen_titlebar_appearance(&lock);
     lock.fullscreen_controls_active = true;
     lock.update_fullscreen_traffic_lights();
 }
@@ -3584,13 +3583,7 @@ extern "C" fn window_will_exit_fullscreen(this: &Object, _: Sel, _: id) {
     lock.is_exiting_fullscreen = true;
     lock.fullscreen_controls_active = false;
 
-    let min_version = NSOperatingSystemVersion::new(15, 3, 0);
-
-    if is_macos_version_at_least(min_version) && lock.transparent_titlebar {
-        unsafe {
-            lock.native_window.setTitlebarAppearsTransparent_(YES);
-        }
-    }
+    apply_fullscreen_titlebar_appearance(&lock);
 
     lock.restore_fullscreen_traffic_lights();
     lock.move_traffic_light();
@@ -3599,6 +3592,7 @@ extern "C" fn window_will_exit_fullscreen(this: &Object, _: Sel, _: id) {
 extern "C" fn window_did_fail_to_exit_fullscreen(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.as_ref().lock();
+    apply_fullscreen_titlebar_appearance(&lock);
     lock.is_exiting_fullscreen = false;
     lock.restore_traffic_light();
     lock.fullscreen_controls_active = true;
@@ -3610,6 +3604,7 @@ extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: id) {
     // WINDOW_STATE_IVAR with an Arc<Mutex<MacWindowState>> during window creation.
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.as_ref().lock();
+    apply_fullscreen_titlebar_appearance(&lock);
     lock.is_exiting_fullscreen = false;
     lock.fullscreen_controls_active = false;
     lock.restore_fullscreen_traffic_lights();
@@ -3617,6 +3612,34 @@ extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: id) {
     // Keep using the native windowed frames when restoring them on the next entry.
     lock.traffic_light_frames = lock.pre_fullscreen_traffic_light_frames.take();
     lock.move_traffic_light();
+}
+
+fn fullscreen_titlebar_appearance_update(
+    titlebar_is_transparent: bool,
+    macos_15_3_or_later: bool,
+) -> Option<bool> {
+    macos_15_3_or_later.then_some(titlebar_is_transparent)
+}
+
+fn apply_fullscreen_titlebar_appearance(window_state: &MacWindowState) {
+    let macos_15_3_or_later = is_macos_version_at_least(NSOperatingSystemVersion::new(15, 3, 0));
+    if let Some(titlebar_is_transparent) = fullscreen_titlebar_appearance_update(
+        window_state.transparent_titlebar,
+        macos_15_3_or_later,
+    ) {
+        // An opaque native titlebar can cover custom content in the full-size
+        // content view when the auto-hidden menu bar is revealed.
+        let desired_appearance = if titlebar_is_transparent { YES } else { NO };
+        let current_appearance: BOOL =
+            unsafe { msg_send![window_state.native_window, titlebarAppearsTransparent] };
+        if current_appearance != desired_appearance {
+            unsafe {
+                window_state
+                    .native_window
+                    .setTitlebarAppearsTransparent_(desired_appearance);
+            }
+        }
+    }
 }
 
 pub(crate) fn is_macos_version_at_least(version: NSOperatingSystemVersion) -> bool {
@@ -4521,33 +4544,31 @@ extern "C" fn toggle_tab_bar(this: &Object, _sel: Sel, _id: id) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn fullscreen_titlebar_appearance_preserves_configured_transparency() {
+        assert_eq!(
+            fullscreen_titlebar_appearance_update(true, true),
+            Some(true)
+        );
+        assert_eq!(
+            fullscreen_titlebar_appearance_update(false, true),
+            Some(false)
+        );
+        assert_eq!(fullscreen_titlebar_appearance_update(true, false), None);
+    }
+
     fn traffic_light_frames() -> TrafficLightFrames {
         TrafficLightFrames {
-            titlebar: Objc2NSRect::new(
-                Objc2NSPoint::new(0.0, 0.0),
-                Objc2NSSize::new(300.0, 38.0),
-            ),
-            close: Objc2NSRect::new(
-                Objc2NSPoint::new(7.0, 16.0),
-                Objc2NSSize::new(14.0, 14.0),
-            ),
-            minimize: Objc2NSRect::new(
-                Objc2NSPoint::new(27.0, 16.0),
-                Objc2NSSize::new(14.0, 14.0),
-            ),
-            zoom: Objc2NSRect::new(
-                Objc2NSPoint::new(47.0, 16.0),
-                Objc2NSSize::new(14.0, 14.0),
-            ),
+            titlebar: Objc2NSRect::new(Objc2NSPoint::new(0.0, 0.0), Objc2NSSize::new(300.0, 38.0)),
+            close: Objc2NSRect::new(Objc2NSPoint::new(7.0, 16.0), Objc2NSSize::new(14.0, 14.0)),
+            minimize: Objc2NSRect::new(Objc2NSPoint::new(27.0, 16.0), Objc2NSSize::new(14.0, 14.0)),
+            zoom: Objc2NSRect::new(Objc2NSPoint::new(47.0, 16.0), Objc2NSSize::new(14.0, 14.0)),
         }
     }
 
     #[test]
     fn fullscreen_traffic_light_host_keeps_original_button_y_near_top() {
-        let bounds = Objc2NSRect::new(
-            Objc2NSPoint::new(5.0, 7.0),
-            Objc2NSSize::new(900.0, 600.0),
-        );
+        let bounds = Objc2NSRect::new(Objc2NSPoint::new(5.0, 7.0), Objc2NSSize::new(900.0, 600.0));
         let layout = fullscreen_traffic_light_layout(
             bounds,
             false,
@@ -4574,15 +4595,11 @@ mod tests {
 
     #[test]
     fn fullscreen_traffic_light_host_anchors_at_top_for_both_content_orientations() {
-        let bounds = Objc2NSRect::new(
-            Objc2NSPoint::new(-4.0, 5.0),
-            Objc2NSSize::new(900.0, 600.0),
-        );
+        let bounds = Objc2NSRect::new(Objc2NSPoint::new(-4.0, 5.0), Objc2NSSize::new(900.0, 600.0));
         let frames = traffic_light_frames();
 
         let unflipped =
-            fullscreen_traffic_light_layout(bounds, false, false, frames, 6.0, 9.0, 9.0)
-                .unwrap();
+            fullscreen_traffic_light_layout(bounds, false, false, frames, 6.0, 9.0, 9.0).unwrap();
         let flipped =
             fullscreen_traffic_light_layout(bounds, true, false, frames, 6.0, 9.0, 9.0).unwrap();
         let flipped_host =

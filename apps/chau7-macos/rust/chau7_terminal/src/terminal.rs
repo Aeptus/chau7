@@ -1642,26 +1642,41 @@ impl Chau7Terminal {
     /// line in a wide grid does not inflate the display height, and a wide
     /// grapheme is never split across a fold boundary.
     ///
-    /// `display_cols` of 0 (or wider than the source grid) yields the source
-    /// grid unchanged, one display row per source row.
+    /// `display_cols` of 0 uses the maximum width. A nonzero width is at least
+    /// two columns so a wide grapheme can always remain intact.
     pub fn get_display_rows(&self, display_cols: u16) -> DisplayRowBuffer {
         let display_cols = if display_cols == 0 {
             u16::MAX
         } else {
-            display_cols
+            display_cols.max(2)
         };
         let fold_width = display_cols as usize;
         let theme = self.theme_colors.read().clone();
 
-        let (mut cells, mut clusters, out_cells, out_clusters, row_offsets, cols, rows) = {
+        let (
+            mut cells,
+            mut clusters,
+            out_cells,
+            out_clusters,
+            row_offsets,
+            cols,
+            rows,
+            display_cursor,
+        ) = {
             let term = self.term.lock();
             let grid = term.grid();
             let cursor_visible = term.mode().contains(TermMode::SHOW_CURSOR);
-            let _ = cursor_visible;
 
             let cols = grid.columns();
             let rows = grid.screen_lines();
             let display_offset = grid.display_offset();
+            let cursor = grid.cursor.point;
+            let cursor_row = cursor.line.0 + display_offset as i32;
+            let source_cursor = (cursor_visible
+                && cursor_row >= 0
+                && (cursor_row as usize) < rows
+                && cursor.column.0 < cols)
+                .then(|| cursor_row as usize * cols + cursor.column.0);
             let selection_range = term.selection.as_ref().and_then(|sel| sel.to_range(&*term));
 
             let total_cells = cols * rows;
@@ -1669,6 +1684,7 @@ impl Chau7Terminal {
             let mut clusters: Vec<u8> = Vec::with_capacity(total_cells);
             let mut cluster_scratch = String::with_capacity(16);
             let mut hyperlinks = self.hyperlinks.lock();
+            let mut leading_wide_spacers = Vec::with_capacity(total_cells);
 
             for line_idx in 0..rows {
                 let line = Line(line_idx as i32 - display_offset as i32);
@@ -1677,6 +1693,8 @@ impl Chau7Terminal {
                 for col_idx in 0..cols {
                     let point = Point::new(line, Column(col_idx));
                     let cell = &grid[point];
+                    leading_wide_spacers
+                        .push(cell.flags.contains(CellFlags::LEADING_WIDE_CHAR_SPACER));
                     cells.push(Self::snapshot_cell(
                         cell,
                         point,
@@ -1696,6 +1714,15 @@ impl Chau7Terminal {
             let mut out_cells: Vec<CellData> = Vec::with_capacity(total_cells);
             let mut out_clusters: Vec<u8> = Vec::with_capacity(total_cells);
             let mut row_offsets: Vec<u32> = vec![0];
+            let mut display_cursor = None;
+            // A cursor on a wide continuation highlights its grapheme's owner.
+            let source_cursor = source_cursor.map(|index| {
+                if cells[index].continuation != 0 && index > 0 {
+                    index - 1
+                } else {
+                    index
+                }
+            });
 
             // Copy a source cell into the output buffers, re-basing the cluster
             // offset into the output cluster buffer.
@@ -1752,29 +1779,57 @@ impl Chau7Terminal {
                         let idx = r * cols + c;
                         let cell = &cells[idx];
                         if cell.cluster_len > 0 && !Self::cell_is_space(cell, &clusters) {
-                            last_content = Some(idx);
+                            // Include the continuation of a final wide glyph.
+                            last_content =
+                                Some((idx + usize::from(cell.width.max(1))).min(line_end * cols));
                         }
                     }
                 }
 
-                let content_end = last_content.map_or(line_start * cols, |i| i + 1);
+                let mut content_end = last_content.unwrap_or(line_start * cols);
+                if let Some(cursor) = source_cursor
+                    .filter(|index| *index >= line_start * cols && *index < line_end * cols)
+                {
+                    // Retain spaces through the cursor, including an otherwise
+                    // empty row after a hard newline or a display fold boundary.
+                    content_end = content_end.max(cursor + 1);
+                }
                 let line_begin = line_start * cols;
 
                 if content_end > line_begin || line_end == line_start + 1 {
                     let mut col_in_row = 0usize;
                     let mut idx = line_begin;
                     while idx < content_end {
-                        // Never split a wide grapheme across a fold: if this cell
-                        // owns a following continuation cell, push both.
-                        let cell_width = cells[idx].width;
-                        push_cell(&cells[idx], &clusters, &mut out_cells, &mut out_clusters);
-                        idx += 1;
-                        if cell_width == 2 && idx < content_end {
-                            push_cell(&cells[idx], &clusters, &mut out_cells, &mut out_clusters);
+                        // Source wrap padding is not part of the logical text.
+                        if leading_wide_spacers[idx] {
                             idx += 1;
+                            continue;
                         }
-                        col_in_row += 1;
-                        if col_in_row == fold_width {
+                        let cell_width = usize::from(cells[idx].width.max(1));
+                        let cell_count = if cell_width == 2
+                            && idx + 1 < line_end * cols
+                            && cells[idx + 1].continuation != 0
+                        {
+                            2
+                        } else {
+                            1
+                        };
+                        // Count terminal columns, not graphemes. Move a wide
+                        // pair together when only one column remains.
+                        if col_in_row > 0 && col_in_row + cell_count > fold_width {
+                            row_offsets.push(out_cells.len() as u32);
+                            col_in_row = 0;
+                        }
+                        if source_cursor == Some(idx) {
+                            display_cursor =
+                                Some((col_in_row as u16, (row_offsets.len() - 1) as u16));
+                        }
+                        for source_cell in &cells[idx..idx + cell_count] {
+                            push_cell(source_cell, &clusters, &mut out_cells, &mut out_clusters);
+                        }
+                        idx += cell_count;
+                        col_in_row += cell_count;
+                        if col_in_row >= fold_width {
                             row_offsets.push(out_cells.len() as u32);
                             col_in_row = 0;
                         }
@@ -1800,6 +1855,7 @@ impl Chau7Terminal {
                 row_offsets,
                 cols,
                 rows,
+                display_cursor,
             )
         };
         cells.clear();
@@ -1817,6 +1873,7 @@ impl Chau7Terminal {
             display_rows,
             cols as u16,
             rows as u16,
+            display_cursor,
         )
     }
 
@@ -1830,6 +1887,7 @@ impl Chau7Terminal {
         display_rows: u16,
         source_cols: u16,
         source_rows: u16,
+        cursor: Option<(u16, u16)>,
     ) -> DisplayRowBuffer {
         let cells_ptr = cells.as_mut_ptr();
         let cells_capacity = cells.capacity();
@@ -1864,6 +1922,9 @@ impl Chau7Terminal {
             display_rows,
             source_cols,
             source_rows,
+            cursor_col: cursor.map_or(0, |position| position.0),
+            cursor_row: cursor.map_or(0, |position| position.1),
+            cursor_visible: u8::from(cursor.is_some()),
         }
     }
 
@@ -2370,6 +2431,10 @@ impl Chau7Terminal {
         let point = Self::clamped_selection_point(&term, col, row);
         if let Some(ref mut selection) = term.selection {
             selection.update(point, Side::Right);
+            // Keep whole-cell selection symmetric when the drag reverses.
+            // The endpoint sorts before the original anchor, so Side::Right
+            // alone would omit that first cell.
+            selection.include_all();
             self.grid_dirty.store(true, Ordering::Release);
             self.dirty_rows.mark_all_dirty();
         }
@@ -2641,6 +2706,22 @@ impl Chau7Terminal {
         let active = term.mode().contains(TermMode::ALT_SCREEN);
         trace!(
             "[terminal-{}] is_alternate_screen_active: {}",
+            self.id, active
+        );
+        active
+    }
+
+    /// Whether DECSET 1007 alternate scrolling is active on the alternate
+    /// screen. The mode can be enabled while the primary screen is active,
+    /// but it only changes wheel behavior for a full-screen program when
+    /// both terminal modes are set.
+    pub fn is_alternate_scroll_active(&self) -> bool {
+        let term = self.term.lock();
+        let mode = term.mode();
+        let active =
+            mode.contains(TermMode::ALT_SCREEN) && mode.contains(TermMode::ALTERNATE_SCROLL);
+        trace!(
+            "[terminal-{}] is_alternate_scroll_active: {}",
             self.id, active
         );
         active
@@ -3250,7 +3331,7 @@ impl Chau7Terminal {
         }
     }
 
-    fn effective_cell_fg(cell: &Cell) -> AnsiColor {
+    pub(crate) fn effective_cell_fg(cell: &Cell) -> AnsiColor {
         if cell.flags.contains(CellFlags::BOLD) {
             match cell.fg {
                 AnsiColor::Indexed(idx) if idx < 8 => AnsiColor::Indexed(idx + 8),
@@ -3754,10 +3835,115 @@ mod tests {
                             display_rows: 0,
                             source_cols: 0,
                             source_rows: 0,
+                            cursor_col: 0,
+                            cursor_row: 0,
+                            cursor_visible: 0,
                         },
                     ),
                 )));
             }
+        }
+
+        #[test]
+        fn single_column_request_reports_width_that_can_hold_a_wide_cell() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output("界".as_bytes());
+            let (mut buffer, _) = fold(&term, 1);
+            assert_eq!(buffer.display_cols, 2);
+            let offsets =
+                unsafe { std::slice::from_raw_parts(buffer.row_offsets, buffer.row_offsets_len) };
+            assert!(offsets.windows(2).all(|pair| pair[1] - pair[0] <= 2));
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn cursor_follows_logical_soft_wrap_and_trailing_spaces() {
+            let term = Chau7Terminal::new_headless(8, 4).expect("create headless terminal");
+            term.inject_output(b"abcdefghij   ");
+            let (mut buffer, _) = fold(&term, 5);
+            assert_eq!(buffer.cursor_visible, 1);
+            assert_eq!((buffer.cursor_col, buffer.cursor_row), (3, 2));
+            let offsets =
+                unsafe { std::slice::from_raw_parts(buffer.row_offsets, buffer.row_offsets_len) };
+            assert_eq!(offsets, &[0, 5, 10, 14]);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn cursor_after_exact_display_width_gets_its_own_row() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"abcde");
+            let (mut buffer, _) = fold(&term, 5);
+            assert_eq!((buffer.cursor_col, buffer.cursor_row), (0, 1));
+            assert_eq!(buffer.display_rows, 2);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn cursor_survives_empty_line_after_hard_newline() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"hi\r\n");
+            let (mut buffer, _) = fold(&term, 5);
+            assert_eq!(buffer.cursor_visible, 1);
+            assert_eq!((buffer.cursor_col, buffer.cursor_row), (0, 1));
+            assert_eq!(buffer.display_rows, 2);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn wide_grapheme_moves_together_and_cursor_counts_both_columns() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output("abc界".as_bytes());
+            let (mut buffer, _) = fold(&term, 4);
+            let offsets =
+                unsafe { std::slice::from_raw_parts(buffer.row_offsets, buffer.row_offsets_len) };
+            assert_eq!(offsets, &[0, 3, 6]);
+            assert!(offsets.windows(2).all(|pair| pair[1] - pair[0] <= 4));
+            assert_eq!((buffer.cursor_col, buffer.cursor_row), (2, 1));
+            assert_eq!(unsafe { (*buffer.cells.add(3)).width }, 2);
+            assert_eq!(unsafe { (*buffer.cells.add(4)).continuation }, 1);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn final_wide_grapheme_keeps_continuation_when_cursor_is_hidden() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output("abc界\u{1b}[?25l".as_bytes());
+            let (mut buffer, _) = fold(&term, 4);
+            assert_eq!(buffer.cell_count, 5);
+            assert_eq!(buffer.cursor_visible, 0);
+            assert_eq!(unsafe { (*buffer.cells.add(4)).continuation }, 1);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn source_wide_wrap_padding_does_not_move_display_cursor() {
+            let term = Chau7Terminal::new_headless(4, 4).expect("create headless terminal");
+            term.inject_output("abc界x".as_bytes());
+            let (mut buffer, clusters) = fold(&term, 3);
+            assert_eq!((buffer.cursor_col, buffer.cursor_row), (0, 2));
+            assert_eq!(folded_text(&buffer, &clusters), vec!["abc", "界x", " "]);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn cursor_outside_scrolled_viewport_is_hidden() {
+            let term = Chau7Terminal::new_headless(20, 3).expect("create headless terminal");
+            term.inject_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+            term.scroll_to(1.0);
+            let (mut buffer, _) = fold(&term, 5);
+            assert_eq!(buffer.cursor_visible, 0);
+            release(&mut buffer);
+        }
+
+        #[test]
+        #[cfg(target_pointer_width = "64")]
+        fn display_buffer_matches_swift_64_bit_layout() {
+            assert_eq!(std::mem::size_of::<DisplayRowBuffer>(), 88);
+            assert_eq!(std::mem::align_of::<DisplayRowBuffer>(), 8);
+            assert_eq!(std::mem::offset_of!(DisplayRowBuffer, cursor_col), 80);
+            assert_eq!(std::mem::offset_of!(DisplayRowBuffer, cursor_row), 82);
+            assert_eq!(std::mem::offset_of!(DisplayRowBuffer, cursor_visible), 84);
         }
 
         #[test]
@@ -3770,6 +3956,7 @@ mod tests {
             let text = "abcdefghijklmnopqrstuvwxyz0123456789";
             term.inject_output(text.as_bytes());
 
+            term.inject_output(b"\x1b[?25l");
             let (mut buffer, clusters) = fold(&term, 10);
             let rows = folded_text(&buffer, &clusters);
             let joined: String = rows.concat();
@@ -3791,6 +3978,7 @@ mod tests {
             let text = "abcdefghijklmnopqrstuvwxyz0123456789";
             term.inject_output(text.as_bytes());
 
+            term.inject_output(b"\x1b[?25l");
             let (mut buffer, clusters) = fold(&term, 7);
             let rows = folded_text(&buffer, &clusters);
 
@@ -3820,6 +4008,7 @@ mod tests {
             let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
             term.inject_output(b"hi");
 
+            term.inject_output(b"\x1b[?25l");
             let (mut buffer, clusters) = fold(&term, 10);
             let rows = folded_text(&buffer, &clusters);
 
@@ -3841,6 +4030,7 @@ mod tests {
             let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
             term.inject_output(b"one\r\ntwo");
 
+            term.inject_output(b"\x1b[?25l");
             let (mut buffer, clusters) = fold(&term, 10);
             let rows: Vec<String> = folded_text(&buffer, &clusters)
                 .into_iter()
@@ -3856,6 +4046,7 @@ mod tests {
             let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
             term.inject_output(b"0123456789012345");
 
+            term.inject_output(b"\x1b[?25l");
             let (mut buffer, clusters) = fold(&term, 40);
             let rows = folded_text(&buffer, &clusters);
 
@@ -4338,6 +4529,44 @@ mod tests {
             term.selection_text().is_some(),
             "line selection should produce text"
         );
+    }
+
+    #[test]
+    fn selection_updates_include_whole_cells_in_both_directions_and_styles() {
+        fn assert_selection(
+            term: &Chau7Terminal,
+            start: (i32, i32),
+            end: (i32, i32),
+            kind: u8,
+            expected: &str,
+        ) {
+            term.selection_start(start.0, start.1, kind);
+            term.selection_update(end.0, end.1);
+            let plain = term.selection_text().expect("selected text");
+            assert_eq!(plain, expected);
+
+            let styled = term.selection_styled_text().expect("styled selection");
+            assert_eq!(styled.plain_text, plain);
+            assert_eq!(
+                styled
+                    .runs
+                    .iter()
+                    .map(|run| run.text.as_str())
+                    .collect::<String>(),
+                plain,
+            );
+        }
+
+        let term = Chau7Terminal::new_headless(10, 2).expect("headless terminal");
+        term.inject_output(b"abcdef");
+
+        // Forward and reverse simple selections include both endpoint cells.
+        assert_selection(&term, (0, 0), (5, 0), 0, "abcdef");
+        assert_selection(&term, (5, 0), (0, 0), 0, "abcdef");
+        assert_selection(&term, (3, 0), (3, 0), 0, "d");
+
+        // Block selections also retain whole-cell behavior when reversed.
+        assert_selection(&term, (5, 0), (0, 0), 1, "abcdef");
     }
 
     #[test]
@@ -5108,6 +5337,38 @@ mod tests {
             "Restoring from alt screen should show original content, got: {:?}",
             after
         );
+    }
+
+    #[test]
+    fn test_alternate_scroll_requires_alternate_screen_and_resets() {
+        let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
+
+        // Alacritty enables DEC 1007 by default, but it must not affect the
+        // primary screen's scrollback behavior.
+        assert!(!term.is_alternate_scroll_active());
+        term.inject_output(b"\x1b[?1007l");
+        assert!(!term.is_alternate_scroll_active());
+
+        // Disabling DEC 1007 keeps alternate-screen wheel input local.
+        term.inject_output(b"\x1b[?1049h");
+        assert!(term.is_alternate_screen_active());
+        assert!(!term.is_alternate_scroll_active());
+
+        // Enabling DEC 1007 forwards wheel input only while on the alternate
+        // screen. Leaving that screen disables the combined state.
+        term.inject_output(b"\x1b[?1007h");
+        assert!(term.is_alternate_scroll_active());
+        term.inject_output(b"\x1b[?1049l");
+        assert!(!term.is_alternate_screen_active());
+        assert!(!term.is_alternate_scroll_active());
+
+        // The mode survives a screen leave/re-entry, while RIS resets the
+        // active screen and restores the terminal's default mode state.
+        term.inject_output(b"\x1b[?1049h");
+        assert!(term.is_alternate_scroll_active());
+        term.inject_output(b"\x1bc");
+        assert!(!term.is_alternate_screen_active());
+        assert!(!term.is_alternate_scroll_active());
     }
 
     #[test]

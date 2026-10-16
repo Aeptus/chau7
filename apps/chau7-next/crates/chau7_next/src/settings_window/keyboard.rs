@@ -8,7 +8,7 @@ use gpui::{SharedString, div, prelude::*, px};
 
 use super::SectionContext;
 use super::update;
-use super::widgets::{chip, row, section as titled, stepper, toggle};
+use super::widgets::{chip, description, row, section as titled, stepper, toggle};
 
 pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     let chrome = ctx.chrome;
@@ -84,6 +84,10 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
             toggle("mouse-report", s.input.mouse_reporting, chrome, |s, v| {
                 s.input.mouse_reporting = v
             }),
+            chrome,
+        ))
+        .child(description(
+            "Full-screen apps that request wheel input receive it automatically. This setting also sends clicks and drags; hold Shift for local selection.",
             chrome,
         ))
         .child(row(

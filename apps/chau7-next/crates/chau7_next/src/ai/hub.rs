@@ -33,7 +33,9 @@ use chau7_next_core::monitoring::claude_code::{
 use chau7_next_core::monitoring::codex_sessions::{
     Candidate, CodexSessionResolver, best_matching_session_id,
 };
-use chau7_next_core::monitoring::conflicts::{ConflictDetector, FinishedBlock, conflict_message};
+use chau7_next_core::monitoring::conflicts::{
+    ConflictDetector, FinishedBlock as ConflictFinishedBlock, conflict_message,
+};
 use chau7_next_core::monitoring::tailer::FileTailer;
 use gpui::{App, Global, Task};
 use uuid::Uuid;
@@ -58,9 +60,31 @@ pub struct AiHub {
     pending_claude_starts: VecDeque<PendingClaudeStart>,
     seen_claude_starts: VecDeque<ClaudeStartKey>,
     conflicts: ConflictDetector<TabId>,
-    finished_blocks: HashMap<TabId, Vec<FinishedBlock>>,
+    finished_blocks: HashMap<TabId, Vec<ChangedFilesBlock>>,
     /// "Restart Monitor" was clicked: rebuild the event log tailers.
     restart_requested: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ChangedFilesBlock {
+    block_id: Uuid,
+    end_time: f64,
+    finish_order: u64,
+    changed_files: Vec<String>,
+}
+
+/// Keeps per-tab command changes in command order, even when an older Git
+/// scan completes after a newer one. The order is captured at command finish,
+/// not scan completion. Replacing by block ID makes duplicates harmless.
+fn record_changed_files_block(
+    blocks: &mut Vec<ChangedFilesBlock>,
+    block: ChangedFilesBlock,
+    cutoff: f64,
+) {
+    blocks.retain(|existing| existing.block_id != block.block_id);
+    blocks.push(block);
+    blocks.sort_by_key(|block| block.finish_order);
+    blocks.retain(|block| block.end_time > cutoff);
 }
 
 impl Global for AiHub {}
@@ -738,6 +762,9 @@ pub fn codex_observed_session(
 /// `live` holds every open tab; closed tabs are forgotten.
 pub fn record_changed_files(
     tab: TabId,
+    block_id: Uuid,
+    end_time: f64,
+    finish_order: u64,
     files: Vec<String>,
     live: &std::collections::HashSet<TabId>,
     cx: &mut App,
@@ -756,17 +783,33 @@ pub fn record_changed_files(
         for t in closed {
             hub.conflicts.remove_tab(&t);
         }
+        let cutoff = now - hub.conflicts.lookback_window;
         let blocks = hub.finished_blocks.entry(tab).or_default();
-        blocks.push(FinishedBlock {
-            end_time: now,
-            changed_files: files,
-        });
-        let window = hub.conflicts.lookback_window;
-        blocks.retain(|b| b.end_time > now - window);
-        let all: Vec<(TabId, Vec<FinishedBlock>)> = hub
+        record_changed_files_block(
+            blocks,
+            ChangedFilesBlock {
+                block_id,
+                end_time,
+                finish_order,
+                changed_files: files,
+            },
+            cutoff,
+        );
+        let all: Vec<(TabId, Vec<ConflictFinishedBlock>)> = hub
             .finished_blocks
             .iter()
-            .map(|(t, b)| (*t, b.clone()))
+            .map(|(tab, blocks)| {
+                (
+                    *tab,
+                    blocks
+                        .iter()
+                        .map(|block| ConflictFinishedBlock {
+                            end_time: block.end_time,
+                            changed_files: block.changed_files.clone(),
+                        })
+                        .collect(),
+                )
+            })
             .collect();
         hub.conflicts.check(&all, now)
     };
@@ -802,6 +845,39 @@ pub fn conflicts_for_tab(tab: TabId, cx: &App) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn equal_timestamp_late_scan_keeps_command_finish_order() {
+        let newer_id = Uuid::from_u128(2);
+        let older_id = Uuid::from_u128(1);
+        let mut blocks = Vec::new();
+
+        record_changed_files_block(
+            &mut blocks,
+            ChangedFilesBlock {
+                block_id: newer_id,
+                end_time: 20.0,
+                finish_order: 2,
+                changed_files: vec!["newer.rs".into()],
+            },
+            0.0,
+        );
+        record_changed_files_block(
+            &mut blocks,
+            ChangedFilesBlock {
+                block_id: older_id,
+                end_time: 20.0,
+                finish_order: 1,
+                changed_files: vec!["older.rs".into()],
+            },
+            0.0,
+        );
+
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].block_id, older_id);
+        assert_eq!(blocks.last().unwrap().block_id, newer_id);
+        assert_eq!(blocks.last().unwrap().changed_files, ["newer.rs"]);
+    }
 
     #[test]
     fn provider_keys_and_sources() {

@@ -310,24 +310,49 @@ impl OverlayWindowDropCandidate {
     }
 }
 
-/// Returns the index of the first eligible candidate whose non-empty primary
-/// frame contains `point`, otherwise the first whose fallback frame does.
+fn drop_candidate_contains_point(candidate: &OverlayWindowDropCandidate, point: Point) -> bool {
+    (!candidate.primary_frame.is_empty() && candidate.primary_frame.contains(point))
+        || (!candidate.fallback_frame.is_empty() && candidate.fallback_frame.contains(point))
+}
+
+/// Resolves a drop using candidates ordered front-to-back.
+///
+/// The first window containing `point` is the only visible target at that
+/// location. If it is the source, it blocks windows behind it and the caller
+/// handles a local reorder instead. A tab bar on a covered window cannot take
+/// precedence over the visible window's content.
 pub fn drop_target_index(
     point: Point,
     candidates: &[OverlayWindowDropCandidate],
-    excluding: Option<usize>,
+    source: Option<usize>,
 ) -> Option<usize> {
-    let eligible = || candidates.iter().filter(|c| Some(c.index) != excluding);
+    let hit = candidates
+        .iter()
+        .find(|candidate| drop_candidate_contains_point(candidate, point))?;
 
-    if let Some(exact) =
-        eligible().find(|c| !c.primary_frame.is_empty() && c.primary_frame.contains(point))
-    {
-        return Some(exact.index);
+    (Some(hit.index) != source).then_some(hit.index)
+}
+
+/// Resolves cached geometry when the platform cannot provide window z-order.
+///
+/// The source blocks any overlapping candidate. A cross-window target is
+/// returned only when exactly one non-source candidate contains `point`.
+pub fn fallback_drop_target_index(
+    point: Point,
+    candidates: &[OverlayWindowDropCandidate],
+    source: Option<usize>,
+) -> Option<usize> {
+    if candidates.iter().any(|candidate| {
+        Some(candidate.index) == source && drop_candidate_contains_point(candidate, point)
+    }) {
+        return None;
     }
 
-    eligible()
-        .find(|c| c.fallback_frame.contains(point))
-        .map(|c| c.index)
+    let mut targets = candidates.iter().filter(|candidate| {
+        Some(candidate.index) != source && drop_candidate_contains_point(candidate, point)
+    });
+    let target = targets.next()?.index;
+    targets.next().is_none().then_some(target)
 }
 
 #[cfg(test)]
@@ -521,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn target_index_prefers_primary_tab_bar_frame() {
+    fn target_index_uses_frontmost_window_for_tab_bar_hits() {
         assert_eq!(
             drop_target_index(Point::new(550.0, 10.0), &two_windows(), None),
             Some(1)
@@ -529,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn target_index_falls_back_to_window_frame_when_primary_frame_missing() {
+    fn target_index_falls_back_to_frontmost_window_frame() {
         let candidates = [OverlayWindowDropCandidate::new(
             1,
             Rect::ZERO,
@@ -543,9 +568,138 @@ mod tests {
     }
 
     #[test]
-    fn target_index_excludes_source_window() {
+    fn source_window_blocks_overlapping_windows_behind_it() {
+        let candidates = [
+            OverlayWindowDropCandidate::new(
+                0,
+                Rect::new(0.0, 0.0, 300.0, 24.0),
+                Rect::new(0.0, 0.0, 400.0, 300.0),
+            ),
+            OverlayWindowDropCandidate::new(
+                1,
+                Rect::new(200.0, 0.0, 100.0, 24.0),
+                Rect::new(200.0, 0.0, 400.0, 300.0),
+            ),
+        ];
+
+        // The pointer is on the source tab bar and the covered destination
+        // tab bar, but the source is frontmost and should reorder locally.
         assert_eq!(
-            drop_target_index(Point::new(50.0, 10.0), &two_windows(), Some(0)),
+            drop_target_index(Point::new(250.0, 10.0), &candidates, Some(0)),
+            None
+        );
+    }
+
+    #[test]
+    fn visible_window_content_blocks_a_tab_bar_behind_it() {
+        let candidates = [
+            OverlayWindowDropCandidate::new(
+                0,
+                Rect::new(0.0, 0.0, 100.0, 24.0),
+                Rect::new(0.0, 0.0, 400.0, 300.0),
+            ),
+            OverlayWindowDropCandidate::new(
+                1,
+                Rect::new(200.0, 0.0, 100.0, 24.0),
+                Rect::new(200.0, 0.0, 400.0, 300.0),
+            ),
+        ];
+
+        // The point is over the back window's tab bar, but inside the front
+        // window's content area. The topmost window owns the drop location.
+        assert_eq!(
+            drop_target_index(Point::new(250.0, 10.0), &candidates, None),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn target_index_respects_reversed_front_to_back_order() {
+        let candidates = [
+            OverlayWindowDropCandidate::new(
+                1,
+                Rect::new(200.0, 0.0, 100.0, 24.0),
+                Rect::new(200.0, 0.0, 400.0, 300.0),
+            ),
+            OverlayWindowDropCandidate::new(
+                0,
+                Rect::new(0.0, 0.0, 100.0, 24.0),
+                Rect::new(0.0, 0.0, 400.0, 300.0),
+            ),
+        ];
+
+        // When the destination is actually frontmost, crossing into it is
+        // still a valid cross-window drop.
+        assert_eq!(
+            drop_target_index(Point::new(250.0, 10.0), &candidates, Some(0)),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn fallback_target_allows_one_non_source_window() {
+        let candidates = [
+            OverlayWindowDropCandidate::new(
+                0,
+                Rect::new(0.0, 0.0, 100.0, 24.0),
+                Rect::new(0.0, 0.0, 400.0, 300.0),
+            ),
+            OverlayWindowDropCandidate::new(
+                1,
+                Rect::new(500.0, 0.0, 100.0, 24.0),
+                Rect::new(500.0, 0.0, 400.0, 300.0),
+            ),
+        ];
+
+        assert_eq!(
+            fallback_drop_target_index(Point::new(550.0, 10.0), &candidates, Some(0)),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn fallback_source_hit_blocks_overlapping_destination() {
+        let candidates = [
+            OverlayWindowDropCandidate::new(
+                0,
+                Rect::new(0.0, 0.0, 100.0, 24.0),
+                Rect::new(0.0, 0.0, 400.0, 300.0),
+            ),
+            OverlayWindowDropCandidate::new(
+                1,
+                Rect::new(200.0, 0.0, 100.0, 24.0),
+                Rect::new(200.0, 0.0, 400.0, 300.0),
+            ),
+        ];
+
+        assert_eq!(
+            fallback_drop_target_index(Point::new(250.0, 10.0), &candidates, Some(0)),
+            None
+        );
+    }
+
+    #[test]
+    fn fallback_rejects_ambiguous_destination_windows() {
+        let candidates = [
+            OverlayWindowDropCandidate::new(
+                0,
+                Rect::new(0.0, 0.0, 100.0, 24.0),
+                Rect::new(0.0, 0.0, 150.0, 150.0),
+            ),
+            OverlayWindowDropCandidate::new(
+                1,
+                Rect::new(200.0, 0.0, 100.0, 24.0),
+                Rect::new(200.0, 0.0, 400.0, 300.0),
+            ),
+            OverlayWindowDropCandidate::new(
+                2,
+                Rect::new(200.0, 0.0, 100.0, 24.0),
+                Rect::new(200.0, 0.0, 400.0, 300.0),
+            ),
+        ];
+
+        assert_eq!(
+            fallback_drop_target_index(Point::new(250.0, 10.0), &candidates, Some(0)),
             None
         );
     }

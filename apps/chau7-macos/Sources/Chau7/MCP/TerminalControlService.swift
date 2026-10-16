@@ -864,7 +864,7 @@ final class TerminalControlService {
         }
         let context = onMain { self.gatherTabContext(tabID) }
         let (verdict, permissions) = MCPCommandFilter.check(command, context: context)
-        if let err = enforceVerdict(verdict, permissions: permissions, fullInput: command, context: "tab \(tabID)") {
+        if let err = enforceVerdict(verdict, permissions: permissions, fullInput: command, context: "tab \(tabID)", targetTabID: tabID) {
             return err
         }
 
@@ -2658,7 +2658,7 @@ final class TerminalControlService {
         guard !trimmed.isEmpty else { return nil }
         let context = onMain { self.gatherTabContext(tabID) }
         let (verdict, permissions) = MCPCommandFilter.check(trimmed, context: context)
-        return enforceVerdict(verdict, permissions: permissions, fullInput: trimmed, context: "tab \(tabID)")
+        return enforceVerdict(verdict, permissions: permissions, fullInput: trimmed, context: "tab \(tabID)", targetTabID: tabID)
     }
 
     /// Resolve the native UUID and shell-prompt state for a tab in one main hop.
@@ -2939,7 +2939,7 @@ final class TerminalControlService {
 
     /// Waits only on the caller's worker; main owns the asynchronous sheet and callbacks.
     /// A synchronous main-thread caller cannot wait for its own consent and fails closed.
-    nonisolated func requestCommandApproval(command: String, flaggedCommand: String, reason: String, permissions: ResolvedPermissions) -> MCPApprovalResult {
+    nonisolated func requestCommandApproval(command: String, flaggedCommand: String, reason: String, permissions: ResolvedPermissions, targetTabID: UUID? = nil) -> MCPApprovalResult {
         guard !Thread.isMainThread,
               let timeout = MainActorBridge.read({ self.commandApprovalTimeout }) else { return .denied }
         let requestID = UUID().uuidString
@@ -2961,6 +2961,7 @@ final class TerminalControlService {
                 flaggedCommand: flaggedCommand,
                 reason: reason,
                 permissions: permissions,
+                targetTabID: targetTabID,
                 completion: { decision.complete($0) }
             )
         }) == true else { return .denied }
@@ -2974,6 +2975,7 @@ final class TerminalControlService {
         flaggedCommand: String,
         reason: String,
         permissions: ResolvedPermissions,
+        targetTabID: UUID?,
         completion: @escaping (MCPApprovalResult) -> Void
     ) -> Bool {
         let sourceInfo = permissions.matchedProfile.map { "Permissions source: profile \"\($0.name)\"" }
@@ -3026,7 +3028,7 @@ final class TerminalControlService {
         ).withComposedPushText().withSeverity(
             ApprovalSeverity.classify(command: command, flaggedCommand: flaggedCommand, reason: reason)
         )
-        approvalForwarder?.sendApprovalRequest(requestID: requestID, payload: payload)
+        approvalForwarder?.sendApprovalRequest(requestID: requestID, payload: payload, targetTabID: targetTabID)
         return true
     }
 
@@ -3046,7 +3048,8 @@ final class TerminalControlService {
         _ verdict: MCPCommandVerdict,
         permissions: ResolvedPermissions,
         fullInput: String,
-        context: String
+        context: String,
+        targetTabID: String
     ) -> String? {
         switch verdict {
         case .allowed:
@@ -3055,7 +3058,10 @@ final class TerminalControlService {
             Log.info("MCP: blocked '\(cmd)' in \(context) (\(reason))")
             return jsonError("Command '\(cmd)' was blocked: \(reason).")
         case .needsApproval(let cmd, let reason):
-            let result = requestCommandApproval(command: fullInput, flaggedCommand: cmd, reason: reason, permissions: permissions)
+            guard let nativeTabID = onMain({ self.resolveTab(targetTabID)?.0.id }) else {
+                return jsonError("Tab not found: \(targetTabID)")
+            }
+            let result = requestCommandApproval(command: fullInput, flaggedCommand: cmd, reason: reason, permissions: permissions, targetTabID: nativeTabID)
             switch result {
             case .denied:
                 Log.info("MCP: user denied '\(cmd)' in \(context)")

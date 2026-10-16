@@ -38,9 +38,10 @@ use chau7_next_core::shell_session::{
 use chau7_next_core::work_profiler::{self, Key as WorkKey, Kind as WorkKind, Queue as WorkQueue};
 use chau7_next_core::{shell_env, shell_integration, shell_tips};
 use chau7_terminal::{
-    Chau7Terminal, GridCopy, OutputInterrupt, OutputReady, graphics::ShellIntegrationEvent,
+    Chau7Terminal, GridCopy, OutputInterrupt, OutputReady, StyledScreen, StyledSelection,
+    graphics::ShellIntegrationEvent,
 };
-use futures::channel::mpsc;
+use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
 use gpui::{AppContext, Context, EventEmitter, Global, Task};
 use parking_lot::{Mutex, RwLock};
@@ -131,6 +132,12 @@ fn refresh_wait(interval: Duration, suspended: bool, elapsed: Duration) -> Durat
 
 static NEXT_SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+/// Monotonic command-finish order shared across terminal sessions. Git scans
+/// complete asynchronously, so their callbacks cannot define command order.
+#[derive(Default)]
+struct ChangedFilesFinishOrder(AtomicU64);
+impl Global for ChangedFilesFinishOrder {}
+
 /// Set when the app quits: sessions dropped afterwards get SIGTERM at once.
 static APP_QUITTING: AtomicBool = AtomicBool::new(false);
 
@@ -177,8 +184,14 @@ pub enum SessionEvent {
         notify: bool,
         tab_name_as_tool: bool,
     },
-    /// The last command changed these files (git, MON-014).
-    ChangedFiles(Vec<String>),
+    /// A command changed these files (git, MON-014). The block identity and
+    /// finish order keep delayed Git scans in command order.
+    ChangedFiles {
+        block_id: uuid::Uuid,
+        end_time: f64,
+        finish_order: u64,
+        files: Vec<String>,
+    },
 }
 
 /// Last finished command, from shell integration (OSC 133 D).
@@ -291,8 +304,9 @@ pub struct TerminalSession {
     pub shell_slow: bool,
     /// Visual bell: paint a white flash until this time.
     pub bell_flash_until: Option<Instant>,
-    /// Git status at the start of the running command (OSC 133 C).
-    git_baseline: Arc<Mutex<Option<BTreeSet<String>>>>,
+    /// Git status snapshots at OSC 133 C, keyed by the command block they
+    /// belong to so overlapping scans cannot steal another command's base.
+    git_baselines: HashMap<uuid::Uuid, oneshot::Receiver<BTreeSet<String>>>,
     /// The user closed this session (no "shell exited" notice).
     close_requested: bool,
     last_cwd_check: Instant,
@@ -843,7 +857,7 @@ impl TerminalSession {
             first_output: false,
             shell_slow: false,
             bell_flash_until: None,
-            git_baseline: Arc::new(Mutex::new(None)),
+            git_baselines: HashMap::new(),
             close_requested: false,
             last_cwd_check: now,
             cwd_probe_pending: false,
@@ -867,7 +881,12 @@ impl TerminalSession {
     /// On-demand retained capacities and native estimates, never terminal text.
     /// Native debug_state uses O(1) row counters rather than walking history.
     pub fn allocation_snapshot(&self) -> serde_json::Value {
-        let native = self.term.read().debug_state();
+        let terminal = self.term.read();
+        let native = terminal.debug_state();
+        let raw_mouse_mode = native.mouse_mode;
+        let alternate_scroll_active = terminal.is_alternate_scroll_active();
+        drop(terminal);
+        let mouse_reporting_enabled = self.mouse_reporting_enabled.get();
         let output = self.output.lock();
         let pending = self.pending_input.borrow();
         let grid_cells = self
@@ -891,6 +910,9 @@ impl TerminalSession {
             "session_id":self.id, "render_phase":self.profiling_phase(),
             "grid_cols":native.cols, "grid_rows":native.rows,
             "history_rows":native.history_size, "alternate_screen_active":native.alternate_screen != 0,
+            "raw_mouse_mode":raw_mouse_mode,
+            "mouse_reporting_enabled":mouse_reporting_enabled as u8,
+            "alternate_scroll_active":alternate_scroll_active as u8,
             "native_ring_estimated_bytes":native.estimated_grid_bytes,
             "ui_grid_cells_capacity_bytes":grid_cells, "ui_grid_cluster_string_capacity_bytes":clusters,
             "pending_output_bytes":output.0.len(), "pending_output_capacity_bytes":output_capacity,
@@ -1215,6 +1237,7 @@ impl TerminalSession {
                     command,
                     directory,
                     from_shell_integration,
+                    block_id,
                 } => {
                     if self.is_restore_command(command.as_deref()) {
                         continue;
@@ -1226,11 +1249,19 @@ impl TerminalSession {
                             command.as_deref().unwrap_or_default(),
                         );
                     }
-                    if from_shell_integration && self.git_root.is_some() {
-                        let baseline = self.git_baseline.clone();
+                    if from_shell_integration
+                        && self.git_root.is_some()
+                        && let Some(block_id) = block_id
+                    {
+                        // Only one shell command can own the current baseline.
+                        // Drop any abandoned receiver from a command without a
+                        // matching OSC 133 D before recording the new one.
+                        self.git_baselines.clear();
+                        let (baseline_tx, baseline_rx) = oneshot::channel();
+                        self.git_baselines.insert(block_id, baseline_rx);
                         let directory = directory.clone();
                         cx.background_spawn(async move {
-                            *baseline.lock() = Some(git_dirty_files(&directory));
+                            let _ = baseline_tx.send(git_dirty_files(&directory));
                         })
                         .detach();
                     }
@@ -1257,6 +1288,7 @@ impl TerminalSession {
                     exit_code,
                     duration,
                     from_shell_integration,
+                    block_id,
                 } => {
                     if self.is_restore_command(command.as_deref()) {
                         self.restore_line_pending = false;
@@ -1307,8 +1339,11 @@ impl TerminalSession {
                         changed = true;
                         cx.emit(SessionEvent::CommandFinished(code));
                     }
-                    if from_shell_integration && self.git_root.is_some() {
-                        self.collect_changed_files(cx);
+                    if from_shell_integration
+                        && self.git_root.is_some()
+                        && let Some(block_id) = block_id
+                    {
+                        self.collect_changed_files(block_id, cx);
                     }
                 }
                 ShellSessionEvent::ActiveAppChanged(app) => {
@@ -1367,10 +1402,30 @@ impl TerminalSession {
         changed
     }
 
-    fn collect_changed_files(&mut self, cx: &mut Context<Self>) {
-        let directory = self.tracker.current_directory().to_string();
-        let baseline = self.git_baseline.lock().take();
+    fn collect_changed_files(&mut self, block_id: uuid::Uuid, cx: &mut Context<Self>) {
+        let finish_order = cx
+            .default_global::<ChangedFilesFinishOrder>()
+            .0
+            .fetch_add(1, Ordering::Relaxed);
+        let block = self
+            .tracker
+            .blocks()
+            .blocks()
+            .iter()
+            .find(|block| block.id == block_id);
+        let directory = block
+            .and_then(|block| block.directory.clone())
+            .unwrap_or_else(|| self.tracker.current_directory().to_string());
+        let end_time = block
+            .and_then(|block| block.end_time.as_ref())
+            .map(|time| time.timestamp_millis() as f64 / 1_000.0)
+            .unwrap_or_else(now_secs);
+        let baseline = self.git_baselines.remove(&block_id);
         let task = cx.background_spawn(async move {
+            let baseline = match baseline {
+                Some(receiver) => receiver.await.ok(),
+                None => None,
+            };
             let current = git_dirty_files(&directory);
             git_changes::changed_files(baseline.as_ref(), &current)
         });
@@ -1380,9 +1435,19 @@ impl TerminalSession {
                 return;
             }
             let _ = this.update(cx, |this, cx| {
-                this.tracker.blocks_mut().set_changed_files(files.clone());
-                cx.emit(SessionEvent::ChangedFiles(files));
-                cx.notify();
+                if this
+                    .tracker
+                    .blocks_mut()
+                    .set_changed_files_for(block_id, files.clone())
+                {
+                    cx.emit(SessionEvent::ChangedFiles {
+                        block_id,
+                        end_time,
+                        finish_order,
+                        files,
+                    });
+                    cx.notify();
+                }
             });
         })
         .detach();
@@ -2301,7 +2366,23 @@ impl TerminalSession {
     }
 
     pub fn selection_text(&self) -> Option<String> {
-        clipboard_selection(&self.term.read(), self.tracker.is_ai_running())
+        self.term
+            .read()
+            .selection_text()
+            .filter(|text| !text.is_empty())
+    }
+
+    /// Selection text and terminal attributes from one backend grid snapshot.
+    pub fn selection_styled_text(&self) -> Option<StyledSelection> {
+        self.term
+            .read()
+            .selection_styled_text()
+            .filter(|selection| !selection.plain_text.is_empty())
+    }
+
+    /// Visible terminal cells, exported only when the UI asks for selection.
+    pub fn visible_styled_screen(&self) -> StyledScreen {
+        self.term.read().visible_styled_screen()
     }
 
     pub fn clear_scrollback(&self) {
@@ -2330,6 +2411,26 @@ impl TerminalSession {
         } else {
             mode & !0b111
         }
+    }
+
+    /// Mouse tracking mode for wheel reports. Full-screen programs receive
+    /// the wheel reports they request even when click/drag reporting is off.
+    /// On the primary screen, the three tracking bits still follow the setting.
+    pub fn wheel_mouse_mode(&self) -> u32 {
+        let terminal = self.term.read();
+        let mode = terminal.mouse_mode();
+        if self.mouse_reporting_enabled.get() || terminal.is_alternate_screen_active() {
+            mode
+        } else {
+            mode & !0b111
+        }
+    }
+
+    /// Whether DEC 1007 alternate scrolling is enabled on the alternate
+    /// screen. The native terminal combines both modes so callers do not have
+    /// to infer this from mouse reporting bits.
+    pub fn is_alternate_scroll_active(&self) -> bool {
+        self.term.read().is_alternate_scroll_active()
     }
 
     pub fn link_url(&self, link_id: u16) -> Option<String> {
@@ -3097,68 +3198,58 @@ pub(crate) fn apply_agent_feedback(event: &AiEvent, cx: &mut gpui::App) {
     });
 }
 
-/// Shared by all UI and MCP selection callers; native selection joins soft wraps.
-fn clipboard_selection(terminal: &Chau7Terminal, live_ai: bool) -> Option<String> {
-    terminal
-        .selection_text()
-        .map(|text| {
-            chau7_next_core::terminal_clipboard::copied_text(
-                &text,
-                live_ai || terminal.is_alt_screen(),
-            )
-            .into_owned()
-        })
-        .filter(|text| !text.is_empty())
-}
-
 #[cfg(test)]
 mod clipboard_tests {
     use super::*;
     #[test]
-    fn actual_native_selection_preserves_soft_wrap_spaces_and_trims_padding() {
+    fn actual_native_selection_preserves_soft_wraps_and_terminal_styles() {
         let term = Chau7Terminal::new_headless(5, 2).unwrap();
-        term.inject_output(b"echo hello");
+        term.inject_output(b"\x1b[1;31mecho\x1b[0m hello");
         term.selection_start(0, 0, 0);
         term.selection_update(4, 1);
-        let native = term.selection_text().unwrap();
-        assert_eq!(native.trim_end_matches('\n'), "echo hello");
-        assert_eq!(clipboard_selection(&term, false).unwrap(), native);
-        assert_eq!(clipboard_selection(&term, true).unwrap(), "echo hello");
+        let styled = term.selection_styled_text().unwrap();
+        assert_eq!(styled.plain_text, "echo hello");
+        assert_eq!(
+            styled
+                .runs
+                .iter()
+                .map(|run| run.text.as_str())
+                .collect::<String>(),
+            styled.plain_text
+        );
+        assert!(styled.runs.iter().any(|run| run.text == "echo" && run.bold));
     }
     #[test]
-    fn actual_tui_hard_wrapped_path_and_argument_selection() {
-        for (raw, end, expected) in [
+    fn actual_ai_and_alternate_screen_keep_hard_breaks_and_indentation() {
+        for (raw, end, expected, alt_screen) in [
             (
                 &b"cat /tmp/very\r\nlongpath"[..],
                 7,
-                "cat /tmp/verylongpath",
+                "cat /tmp/very\nlongpath",
+                false,
             ),
-            (&b"echo hello\r\n    --flag"[..], 9, "echo hello --flag"),
+            (
+                &b"echo hello\r\n    --flag"[..],
+                9,
+                "echo hello\n    --flag",
+                false,
+            ),
+            (
+                &b"\x1b[?1049hecho hello\r\n    --flag"[..],
+                9,
+                "echo hello\n    --flag",
+                true,
+            ),
         ] {
             let term = Chau7Terminal::new_headless(40, 2).unwrap();
             term.inject_output(raw);
+            assert_eq!(term.is_alt_screen(), alt_screen);
             term.selection_start(0, 0, 0);
             term.selection_update(end, 1);
-            assert_eq!(clipboard_selection(&term, true).unwrap(), expected);
-            assert_eq!(
-                clipboard_selection(&term, false).unwrap(),
-                term.selection_text().unwrap()
-            );
+            assert_eq!(term.selection_styled_text().unwrap().plain_text, expected);
         }
-    }
-    #[test]
-    fn actual_alternate_screen_is_tui_without_detected_ai() {
         let term = Chau7Terminal::new_headless(40, 2).unwrap();
-        term.inject_output(b"\x1b[?1049hecho hello\r\n    --flag");
-        assert!(term.is_alt_screen());
-        term.selection_start(0, 0, 0);
-        term.selection_update(9, 1);
-        assert_eq!(
-            clipboard_selection(&term, false).unwrap(),
-            "echo hello --flag"
-        );
-        term.selection_clear();
-        assert_eq!(clipboard_selection(&term, false), None);
+        assert_eq!(term.selection_styled_text(), None);
     }
 }
 

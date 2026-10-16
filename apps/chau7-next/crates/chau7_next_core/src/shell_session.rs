@@ -104,6 +104,8 @@ pub enum ShellSessionEvent {
         command: Option<String>,
         directory: String,
         from_shell_integration: bool,
+        /// The block created by OSC 133, if one was created.
+        block_id: Option<uuid::Uuid>,
     },
     /// A command finished. `exit_code` is known only with OSC 133 D.
     CommandFinished {
@@ -111,6 +113,9 @@ pub enum ShellSessionEvent {
         exit_code: Option<i32>,
         duration: f64,
         from_shell_integration: bool,
+        /// The command block finished by OSC 133, if one was created.
+        /// Heuristic completion has no command block.
+        block_id: Option<uuid::Uuid>,
     },
     /// The detected AI tool changed (display name).
     ActiveAppChanged(Option<String>),
@@ -254,6 +259,7 @@ pub struct ShellSession {
     current_directory: String,
     osc7: Osc7Scanner,
     blocks: CommandBlockList,
+    pending_block_id: Option<uuid::Uuid>,
     events: Vec<ShellSessionEvent>,
     /// CTO input prefix added to each typed line before it is recorded
     /// (`applyCTOPrefixIfNeeded`); the shell still runs the typed text.
@@ -295,6 +301,7 @@ impl ShellSession {
             current_directory: directory.to_string(),
             osc7: Osc7Scanner::new(),
             blocks: CommandBlockList::new(),
+            pending_block_id: None,
             events: Vec::new(),
             input_prefix: None,
         }
@@ -543,6 +550,7 @@ impl ShellSession {
                 command: persisted,
                 directory: self.current_directory.clone(),
                 from_shell_integration: false,
+                block_id: None,
             });
             self.events.push(ShellSessionEvent::PermissionResolved);
         }
@@ -900,6 +908,7 @@ impl ShellSession {
                 exit_code: None,
                 duration: (now - self.command_started_at).max(0.0),
                 from_shell_integration: false,
+                block_id: None,
             });
         }
     }
@@ -969,6 +978,7 @@ impl ShellSession {
             ShellMark::CommandStart => {
                 self.is_at_prompt = false;
                 self.set_status(CommandStatus::Running);
+                self.pending_block_id = None;
                 self.has_pending_command = true;
                 self.command_started_at = now;
                 self.command_finished_notified = false;
@@ -977,16 +987,18 @@ impl ShellSession {
             }
             ShellMark::CommandExecuted => {
                 let command = self.pending_command_line.clone();
-                self.events.push(ShellSessionEvent::CommandStarted {
-                    command: command.clone(),
-                    directory: self.current_directory.clone(),
-                    from_shell_integration: true,
-                });
-                self.blocks.command_started(
+                let block_id = self.blocks.command_started_with_id(
                     command.as_deref().unwrap_or_default(),
                     line,
                     Some(self.current_directory.clone()),
                 );
+                self.pending_block_id = Some(block_id);
+                self.events.push(ShellSessionEvent::CommandStarted {
+                    command: command.clone(),
+                    directory: self.current_directory.clone(),
+                    from_shell_integration: true,
+                    block_id: Some(block_id),
+                });
             }
             ShellMark::CommandFinished(code) => {
                 if self.command_finished_notified {
@@ -1000,6 +1012,7 @@ impl ShellSession {
                     exit_code: Some(code),
                     duration: (now - self.command_started_at).max(0.0),
                     from_shell_integration: true,
+                    block_id: self.pending_block_id.take(),
                 });
                 self.blocks.command_finished(line, code as i64);
             }
@@ -1037,6 +1050,7 @@ impl ShellSession {
                             exit_code: None,
                             duration: running_for.max(0.0),
                             from_shell_integration: false,
+                            block_id: None,
                         });
                     }
                 } else {
@@ -1457,21 +1471,35 @@ mod tests {
         s.handle_mark(ShellMark::CommandExecuted, 1, 1.0);
         assert!(s.blocks().blocks()[0].is_running());
         assert_eq!(s.blocks().blocks()[0].command, "cargo test");
+        let block_id = s.blocks().blocks()[0].id;
         s.handle_mark(ShellMark::CommandFinished(2), 9, 4.0);
         s.handle_mark(ShellMark::PromptStart, 9, 4.0);
         assert_eq!(s.status(), CommandStatus::Idle);
         let block = &s.blocks().blocks()[0];
         assert_eq!(block.exit_code, Some(2));
         assert_eq!(block.end_line, Some(9));
-        let finished: Vec<_> = s
-            .take_events()
+        let events = s.take_events();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ShellSessionEvent::CommandStarted {
+                from_shell_integration: true,
+                block_id: Some(id),
+                ..
+            } if *id == block_id
+        )));
+        let finished: Vec<_> = events
             .into_iter()
             .filter(|e| matches!(e, ShellSessionEvent::CommandFinished { .. }))
             .collect();
         assert_eq!(finished.len(), 1);
         assert!(matches!(
             finished[0],
-            ShellSessionEvent::CommandFinished { exit_code: Some(2), duration, .. } if (duration - 3.0).abs() < 1e-9
+            ShellSessionEvent::CommandFinished {
+                exit_code: Some(2),
+                duration,
+                block_id: Some(id),
+                ..
+            } if (duration - 3.0).abs() < 1e-9 && id == block_id
         ));
     }
 

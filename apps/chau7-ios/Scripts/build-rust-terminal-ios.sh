@@ -15,7 +15,10 @@ RUST_TARGET_DIR="$IOS_APP_DIR/BuildArtifacts/rust/target/ios-${deployment_target
 PLATFORM_LIB_DIR="$IOS_APP_DIR/BuildArtifacts/rust/lib/${PLATFORM_NAME:-iphonesimulator}"
 
 platform="${PLATFORM_NAME:-iphonesimulator}"
-export PATH="$HOME/.cargo/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+# CFFIXED_USER_HOME can make Xcode change HOME while the installed Rust
+# toolchain remains in CARGO_HOME. Resolve that toolchain before PATH wrappers.
+cargo_tool_home="${CARGO_HOME:-$HOME/.cargo}"
+export PATH="$cargo_tool_home/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
 export IPHONEOS_DEPLOYMENT_TARGET="$deployment_target"
 
 find_tool() {
@@ -32,15 +35,15 @@ find_tool() {
     return 1
 }
 
-CARGO_BIN="$(find_tool cargo "$HOME/.cargo/bin/cargo")" || {
+CARGO_BIN="$(find_tool cargo "$cargo_tool_home/bin/cargo")" || {
     echo "cargo not found. Install Rust and ensure cargo is available to Xcode build scripts." >&2
-    echo "Expected locations checked: \$HOME/.cargo/bin/cargo, PATH=$PATH" >&2
+    echo "Expected locations checked: $cargo_tool_home/bin/cargo, PATH=$PATH" >&2
     exit 1
 }
 
-RUSTUP_BIN="$(find_tool rustup "$HOME/.cargo/bin/rustup")" || {
+RUSTUP_BIN="$(find_tool rustup "$cargo_tool_home/bin/rustup")" || {
     echo "rustup not found. Install Rustup so the build script can verify iOS targets." >&2
-    echo "Expected locations checked: \$HOME/.cargo/bin/rustup, PATH=$PATH" >&2
+    echo "Expected locations checked: $cargo_tool_home/bin/rustup, PATH=$PATH" >&2
     exit 1
 }
 
@@ -119,17 +122,25 @@ case "$platform" in
            "$PLATFORM_LIB_DIR/libchau7_terminal.a"
         ;;
     iphonesimulator)
-        simulator_targets=(
-            "aarch64-apple-ios-sim"
-            "x86_64-apple-ios"
-        )
-        for target in "${simulator_targets[@]}"; do
+        # Xcode has already resolved ONLY_ACTIVE_ARCH into ARCHS. A local
+        # Apple Silicon simulator needs only arm64; generic simulator builds
+        # still request both slices. Standalone invocations keep both by default.
+        read -r -a simulator_archs <<< "${ARCHS:-arm64 x86_64}"
+        simulator_libraries=()
+        for arch in "${simulator_archs[@]}"; do
+            case "$arch" in
+                arm64) target="aarch64-apple-ios-sim" ;;
+                x86_64) target="x86_64-apple-ios" ;;
+                *)
+                    echo "Unsupported iOS simulator architecture: $arch" >&2
+                    exit 1
+                    ;;
+            esac
             require_target "$target"
             build_target "$target"
+            simulator_libraries+=("$RUST_TARGET_DIR/$target/$build_mode/libchau7_terminal.a")
         done
-        lipo -create \
-            "$RUST_TARGET_DIR/aarch64-apple-ios-sim/$build_mode/libchau7_terminal.a" \
-            "$RUST_TARGET_DIR/x86_64-apple-ios/$build_mode/libchau7_terminal.a" \
+        lipo -create "${simulator_libraries[@]}" \
             -output "$PLATFORM_LIB_DIR/libchau7_terminal.a"
         ;;
     *)

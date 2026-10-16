@@ -180,13 +180,28 @@ mod tests {
 
     #[test]
     fn service_names_get_the_prefix_once() {
-        assert_eq!(service_name("ssh"), "com.chau7.next.ssh");
+        assert_eq!(service_name_with_prefix("ssh", None), "com.chau7.next.ssh");
         assert_eq!(
-            service_name("llm.openai.apikey"),
+            service_name_with_prefix("llm.openai.apikey", None),
             "com.chau7.next.llm.openai.apikey"
         );
-        assert_eq!(service_name("com.chau7.next.ssh"), "com.chau7.next.ssh");
-        assert_eq!(service_name(" .ssh "), "com.chau7.next.ssh");
+        assert_eq!(
+            service_name_with_prefix("com.chau7.next.ssh", None),
+            "com.chau7.next.ssh"
+        );
+        assert_eq!(
+            service_name_with_prefix(" .ssh ", None),
+            "com.chau7.next.ssh"
+        );
+    }
+
+    #[test]
+    fn service_names_use_the_configured_isolation_prefix() {
+        let prefix = std::env::var(chau7_next_core::data_root::KEYCHAIN_PREFIX_ENV).ok();
+        assert_eq!(
+            service_name("ssh"),
+            service_name_with_prefix("ssh", prefix.as_deref())
+        );
     }
 
     #[test]

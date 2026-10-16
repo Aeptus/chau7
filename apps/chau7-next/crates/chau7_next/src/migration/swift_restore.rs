@@ -5,9 +5,11 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use chau7_next_core::data_root::DataRoot;
-use chau7_next_core::session_restore::MAX_SCROLLBACK_BYTES;
 use chau7_next_core::session_restore::models::SavedSession;
 use chau7_next_core::session_restore::transaction::{ContextRef, SourceDecision, source_decision};
+use chau7_next_core::session_restore::{
+    MAX_SCROLLBACK_BYTES, build_ai_resume_command, resolve_resume_metadata_from_saved,
+};
 use chau7_next_core::swift_restore_import::{self, PreparedSwiftImport, SwiftRestoreSource};
 use serde::Deserialize;
 
@@ -118,7 +120,39 @@ impl Prepared {
             }
             Self::Next(_) => serde_json::json!({}),
         };
-        serde_json::json!({"source":match self {Self::Swift(_)=>"swift",Self::Next(_)=>"next"},"dry_run":dry_run,"windows":windows.len(),"tabs":windows.iter().map(|w|w.tabs.len()).sum::<usize>(),"panes":windows.iter().flat_map(|w|&w.tabs).map(|t|t.panes.len()).sum::<usize>(),"context_bytes":self.scrollback().values().map(Vec::len).sum::<usize>(),"warnings":warnings})
+        // Preserved legacy metadata is deliberately separate from loss warnings.
+        // Inert AI identities never become shell input; tab context stays in the
+        // restore schema even when the current renderer does not consume it.
+        let tabs = || windows.iter().flat_map(|window| &window.tabs);
+        let preserved = serde_json::json!({
+            "inert_ai_identities": tabs().flat_map(|tab| &tab.panes)
+                .filter(|pane| pane.archived_ai_resume.as_ref().is_some_and(|archive|
+                    archive.provider.is_some() || archive.session_id.is_some() || archive.resume_command.is_some())
+                    && resolve_resume_metadata_from_saved(
+                        pane.ai_provider.as_deref(), pane.ai_session_id.as_deref(),
+                        pane.ai_resume_command.as_deref(),
+                    ).and_then(|metadata| build_ai_resume_command(
+                        Some(&metadata.provider), Some(&metadata.session_id),
+                    )).is_none()).count(),
+            "tab_command_blocks": tabs().filter_map(|tab| tab.archived_context.as_ref()
+                .and_then(|context| context.command_blocks.as_ref())).map(Vec::len).sum::<usize>(),
+            "tabs_with_command_blocks": tabs().filter(|tab| tab.archived_context.as_ref()
+                .and_then(|context| context.command_blocks.as_ref())
+                .is_some_and(|blocks| !blocks.is_empty())).count(),
+            "tab_preview_images": tabs().filter(|tab| tab.archived_context.as_ref()
+                .and_then(|context| context.preview_snapshot_png_data.as_ref())
+                .is_some_and(|data| !data.is_empty())).count(),
+        });
+        serde_json::json!({
+            "source": match self { Self::Swift(_) => "swift", Self::Next(_) => "next" },
+            "dry_run": dry_run,
+            "windows": windows.len(),
+            "tabs": tabs().count(),
+            "panes": tabs().map(|tab| tab.panes.len()).sum::<usize>(),
+            "context_bytes": self.scrollback().values().map(Vec::len).sum::<usize>(),
+            "preserved": preserved,
+            "warnings": warnings,
+        })
     }
 }
 fn swift_source(home: &Path) -> SwiftRestoreSource {
@@ -564,6 +598,108 @@ mod tests {
         assert_eq!(fs::read(source.session_file()).unwrap(), before);
         assert!(execute(&target, options()).is_err());
     }
+    #[test]
+    fn reports_preserved_archives_separately_and_publishes_them_unchanged() {
+        use chau7_next_core::session_restore::models::{
+            ArchivedAIResumeMetadata, ArchivedTabContext,
+        };
+        let (_dir, target, source) = fixture();
+        write_source(&source);
+        let mut session = crate::session_store::load(&source).unwrap();
+        let tab = &mut session.windows[0].tabs[0];
+        tab.archived_context = Some(ArchivedTabContext {
+            command_blocks: Some(vec![serde_json::json!({"command": "fixture only"})]),
+            preview_snapshot_png_data: Some("cG5n".into()),
+        });
+        tab.panes[0].archived_ai_resume = Some(ArchivedAIResumeMetadata {
+            provider: Some("codex".into()),
+            session_id: Some("synth:fixture".into()),
+            session_id_source: Some("synthetic".into()),
+            resume_command: Some("untrusted command; never execute".into()),
+        });
+        crate::session_store::save(&source, &session).unwrap();
+        let options = || Options {
+            source: "next".into(),
+            home: source.home().into(),
+            dry_run: true,
+        };
+        let mut report = execute(&target, options()).unwrap();
+        assert_eq!(report["preserved"]["inert_ai_identities"], 1);
+        assert_eq!(report["preserved"]["tab_command_blocks"], 1);
+        assert_eq!(report["preserved"]["tabs_with_command_blocks"], 1);
+        assert_eq!(report["preserved"]["tab_preview_images"], 1);
+        assert_eq!(report["warnings"], serde_json::json!({}));
+        assert!(!target.state_dir().exists());
+        let applied = execute(
+            &target,
+            Options {
+                dry_run: false,
+                ..options()
+            },
+        )
+        .unwrap();
+        report["dry_run"] = serde_json::json!(false);
+        assert_eq!(applied, report);
+        let loaded = crate::session_store::load(&target).unwrap();
+        assert_eq!(loaded, session);
+        assert!(
+            loaded.windows[0].tabs[0].panes[0]
+                .ai_resume_command
+                .is_none()
+        );
+        let receipt: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                target
+                    .state_dir()
+                    .join("TabRestoreBundles/import-receipt.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(receipt, applied);
+    }
+
+    #[test]
+    fn archive_report_uses_validated_active_identity_not_command_presence() {
+        use chau7_next_core::session_restore::models::{
+            ArchivedAIResumeMetadata, SavedPane, SavedTab, SavedWindow,
+        };
+        for (session_id, command, expected_inert) in [
+            (Some("thread-fixture"), None, 0),
+            (None, Some("codex resume thread-fixture"), 0),
+            (None, Some("unsafe; fixture"), 1),
+        ] {
+            let prepared = Prepared::Next(PreparedNext {
+                session: SavedSession {
+                    windows: vec![SavedWindow {
+                        tabs: vec![SavedTab {
+                            panes: vec![SavedPane {
+                                ai_provider: Some("codex".into()),
+                                ai_session_id: session_id.map(str::to_owned),
+                                ai_resume_command: command.map(str::to_owned),
+                                archived_ai_resume: Some(ArchivedAIResumeMetadata {
+                                    session_id: Some("synth:fixture".into()),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            }],
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                scrollback: BTreeMap::new(),
+                config: None,
+                snapshots: Vec::new(),
+            });
+            assert_eq!(
+                prepared.report(true)["preserved"]["inert_ai_identities"],
+                expected_inert
+            );
+        }
+    }
+
     #[test]
     fn changed_or_corrupt_source_is_rejected_before_publication() {
         let (_dir, target, source) = fixture();

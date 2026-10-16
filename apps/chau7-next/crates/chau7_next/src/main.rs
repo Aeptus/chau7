@@ -62,12 +62,10 @@ mod window_backend;
 mod workspace;
 
 use chau7_next_core::data_root::DataRoot;
-use chau7_next_core::tabs_state::TabMeta;
 use gpui::{App, AppContext, Bounds, Entity, point, px, size};
 use gpui_kit::component::{Theme, ThemeMode};
 
 use crate::actions::*;
-use crate::pane::PaneTree;
 use crate::session_store::{SavedSession, SavedWindow};
 use crate::settings::Settings;
 use crate::workspace::{AppData, ParkedWindow, Workspace, window_options};
@@ -581,19 +579,13 @@ pub fn open_parked_window(parked: ParkedWindow, cx: &mut App) {
     }
 }
 
-/// New window holding tabs moved from another window.
-pub fn open_window_with_tabs(tabs: Vec<(TabMeta, Entity<PaneTree>)>, cx: &mut App) {
+/// Prepare an empty destination before removing tabs from another window.
+pub fn open_window_for_transfer(
+    cx: &mut App,
+) -> Option<(gpui::AnyWindowHandle, Entity<Workspace>)> {
     let options = window_options(None, cx);
-    let result = gpui_kit::open_window(options, cx, move |window, cx| {
-        cx.new(|cx| {
-            let mut ws = Workspace::new_empty(window, cx);
-            let count = tabs.len();
-            for (i, (meta, panes)) in tabs.into_iter().enumerate() {
-                ws.adopt_tab_public(meta, panes, i + 1 == count, cx);
-            }
-            ws.focus_selected_public(window, cx);
-            ws
-        })
+    let result = gpui_kit::open_window(options, cx, |window, cx| {
+        cx.new(|cx| Workspace::new_empty(window, cx))
     });
     match result {
         Ok((handle, workspace)) => {
@@ -601,8 +593,12 @@ pub fn open_window_with_tabs(tabs: Vec<(TabMeta, Entity<PaneTree>)>, cx: &mut Ap
             cx.global_mut::<AppData>()
                 .workspaces
                 .push((handle, workspace.downgrade()));
+            Some((handle, workspace))
         }
-        Err(err) => log::error!("open window: {err}"),
+        Err(error) => {
+            log::error!("open transfer window: {error}");
+            None
+        }
     }
 }
 

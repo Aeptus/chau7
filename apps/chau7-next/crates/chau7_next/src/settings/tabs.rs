@@ -79,6 +79,9 @@ pub struct TabsSettings {
     pub last_tab_close: LastTabClose,
     pub idle_threshold_minutes: u32,
     pub group_idle_tabs: bool,
+    /// Cmd+number and other numbered shortcuts select only tabs in the tab bar row.
+    /// Off preserves the existing all-tabs order.
+    pub numbered_shortcuts_visible_only: bool,
     pub repo_grouping: RepoGroupingMode,
     /// `[general] confirm_close`: always warn before closing a tab
     /// (`tabs.alwaysWarnOnTabClose`, default off).
@@ -122,6 +125,7 @@ impl Default for TabsSettings {
             last_tab_close: LastTabClose::KeepWindow,
             idle_threshold_minutes: 10,
             group_idle_tabs: true,
+            numbered_shortcuts_visible_only: false,
             repo_grouping: RepoGroupingMode::Off,
             confirm_close: false,
             close_on_exit: true,
@@ -156,7 +160,7 @@ impl TabsSettings {
     }
 
     /// The boolean `[next]` keys, with a getter and a setter each.
-    fn bools() -> [BoolField; 14] {
+    fn bools() -> [BoolField; 15] {
         [
             (
                 "new_tabs_use_current_directory",
@@ -167,6 +171,11 @@ impl TabsSettings {
                 "group_idle_tabs",
                 |s| s.group_idle_tabs,
                 |s, v| s.group_idle_tabs = v,
+            ),
+            (
+                "numbered_shortcuts_visible_only",
+                |s| s.numbered_shortcuts_visible_only,
+                |s, v| s.numbered_shortcuts_visible_only = v,
             ),
             (
                 "warn_on_close_running",
@@ -315,6 +324,7 @@ mod tests {
             last_tab_close: LastTabClose::CloseWindow,
             idle_threshold_minutes: 25,
             group_idle_tabs: false,
+            numbered_shortcuts_visible_only: true,
             repo_grouping: RepoGroupingMode::Manual,
             confirm_close: true,
             close_on_exit: false,
@@ -352,6 +362,7 @@ mod tests {
         assert!(tabs.new_tabs_use_current_directory);
         assert!(tabs.show_provider_health_border);
         assert!(!tabs.confirm_close);
+        assert!(!tabs.numbered_shortcuts_visible_only);
         assert_eq!(tabs.repo_grouping, RepoGroupingMode::Off);
     }
 

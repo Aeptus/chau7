@@ -33,7 +33,7 @@ pub(super) struct RenameState {
     color: TabColor,
     original_title: String,
     /// Arrow keys move through the colors (opened by "Tab Color…").
-    color_focus: bool,
+    pub(super) color_focus: bool,
     _subscription: Subscription,
 }
 
@@ -67,20 +67,22 @@ impl Workspace {
                 .placeholder(crate::l10n::tr("Tab name"))
                 .default_value(title.clone())
         });
-        let subscription =
-            cx.subscribe_in(&input, window, |this, _, event: &InputEvent, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    this.commit_rename(window, cx);
+        let subscription = cx.subscribe_in(
+            &input,
+            window,
+            |this, _, event: &InputEvent, window, cx| match event {
+                InputEvent::PressEnter { .. } => this.commit_rename(window, cx),
+                InputEvent::Focus => {
+                    if let Some(rename) = this.rename.as_mut()
+                        && rename.color_focus
+                    {
+                        rename.color_focus = false;
+                        cx.notify();
+                    }
                 }
-            });
-        if color_focus {
-            self.focus_handle.focus(window, cx);
-        } else {
-            input.update(cx, |input, cx| {
-                input.focus(window, cx);
-                input.select_all(window, cx);
-            });
-        }
+                _ => {}
+            },
+        );
         self.panel_generation += 1;
         self.rename = Some(RenameState {
             tab: id,
@@ -90,7 +92,25 @@ impl Workspace {
             color_focus,
             _subscription: subscription,
         });
+        // A native Markdown editor may still own AppKit's first responder.
+        // Focus both layers so typing reaches the selected rename field.
+        crate::platform::terminal_focus::claim_gpui_keyboard(window);
+        if color_focus {
+            self.focus_handle.focus(window, cx);
+        } else {
+            self.focus_rename_title(window, cx);
+        }
         cx.notify();
+    }
+
+    fn focus_rename_title(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(rename) = self.rename.as_mut() {
+            rename.color_focus = false;
+            rename.input.update(cx, |input, cx| {
+                input.focus(window, cx);
+                input.select_all(window, cx);
+            });
+        }
     }
 
     pub(super) fn commit_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -124,7 +144,12 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.rename.as_ref().is_some_and(|r| r.color_focus) {
+        // This listener is attached to the Workspace and receives bubbled
+        // events from its child title input. Keep color shortcuts active only
+        // while the Workspace itself owns focus.
+        if !self.focus_handle.is_focused(window)
+            || !self.rename.as_ref().is_some_and(|r| r.color_focus)
+        {
             return;
         }
         match event.keystroke.key.as_str() {
@@ -134,11 +159,7 @@ impl Workspace {
             "right" => self.step_rename_color(1, cx),
             "tab" => {
                 // Tab moves to the title field.
-                if let Some(rename) = self.rename.as_mut() {
-                    rename.color_focus = false;
-                    let input = rename.input.clone();
-                    input.update(cx, |i, cx| i.focus(window, cx));
-                }
+                self.focus_rename_title(window, cx);
                 cx.notify();
             }
             _ => return,
@@ -229,3 +250,7 @@ impl Workspace {
         Some(self.floating_panel(PanelKind::Rename, 520.0, chrome, content, cx))
     }
 }
+
+#[cfg(test)]
+#[path = "rename_tests.rs"]
+mod tests;

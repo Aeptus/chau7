@@ -1,0 +1,6 @@
+{
+  "reason": "Makes the native fixture’s first synthetic IME replacement deterministic at its verified UTF-16 target; product behavior is unchanged.",
+  "paths": [
+    "apps/chau7-next/crates/chau7_next/src/panes/editor/native_markdown/fixture.rs"
+  ]
+}

@@ -149,7 +149,22 @@ impl AppUrl {
     pub fn tab_command(&self) -> Option<String> {
         match self {
             AppUrl::Run { command, .. } => Some(command.clone()),
-            AppUrl::Ssh { target } => Some(format!("ssh -- {}", shell_quote(target))),
+            AppUrl::Ssh { target } => {
+                let host_port = target.rsplit('@').next().unwrap_or(target);
+                let has_port = if host_port.starts_with('[') {
+                    host_port.contains("]:")
+                } else {
+                    host_port.matches(':').count() == 1
+                };
+                // The URL parser already validates the port. OpenSSH accepts
+                // it in URI form, but treats plain host:port as a host name.
+                let destination = if has_port {
+                    format!("ssh://{target}")
+                } else {
+                    target.clone()
+                };
+                Some(format!("ssh -- {}", shell_quote(&destination)))
+            }
             AppUrl::Cd { path } => Some(format!("cd {} && clear", shell_quote(path))),
             AppUrl::Open { .. } => None,
         }
@@ -462,6 +477,21 @@ mod tests {
             .tab_command()
             .as_deref(),
             Some("cd '/a b' && clear")
+        );
+    }
+
+    #[test]
+    fn ssh_url_ports_reach_openssh_as_uri_destinations() {
+        for target in ["host:2222", "me@host:2222", "[::1]:2222", "me@[::1]:2222"] {
+            let action = parse_url(&active_url(&format!("ssh/{target}"))).unwrap();
+            assert_eq!(
+                action.tab_command(),
+                Some(format!("ssh -- 'ssh://{target}'"))
+            );
+        }
+        assert_eq!(
+            parse_url(&active_url("ssh/host")).unwrap().tab_command(),
+            Some("ssh -- 'host'".into())
         );
     }
 

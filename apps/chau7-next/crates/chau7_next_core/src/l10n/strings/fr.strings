@@ -3309,3 +3309,9 @@
 "status.never" = "Never";
 "status.unconfigured" = "Unconfigured";
 "status.visible" = "Visible";
+
+// Rust tab navigation and idle repository sections.
+"tabs.idle.noRepository" = "Sans dépôt";
+"settings.tabs.numberedShortcutsVisibleOnly" = "Raccourcis numérotés limités aux onglets visibles";
+"settings.tabs.numberedShortcutsVisibleOnly.help" = "Compter uniquement les onglets affichés dans la barre lors de la sélection par numéro.";
+"settings.search.numberedShortcutsVisibleOnly.keywords" = "onglets visibles,raccourcis numérotés,commande numéro,cmd,alt,touches fonction,inactifs,groupes repliés";

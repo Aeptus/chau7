@@ -13,13 +13,17 @@ use std::time::Duration;
 use chau7_next_core::input::{cursor_moves, drop};
 use chau7_next_core::key_encoding::{self, KeyMods, MouseAction, MouseButtonCode};
 use gpui::{
-    ClipboardItem, Context, ExternalPaths, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, Task, Window, px,
+    Context, ExternalPaths, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    Pixels, Point, ScrollDelta, ScrollWheelEvent, Task, TouchPhase, Window, px,
 };
 
 use super::TerminalView;
 use crate::settings::Settings;
 use crate::terminal::session::SelectionKind;
+
+#[path = "mouse_selection.rs"]
+mod mouse_selection;
+use mouse_selection::AltScreenSelection;
 
 /// Movement before a press becomes a drag selection (Swift `dragThreshold`).
 const DRAG_THRESHOLD: f32 = 1.5;
@@ -40,9 +44,59 @@ pub(super) struct MouseState {
     /// Auto-scroll direction (-1 up into history, 1 down) and distance past the edge.
     scroll_dir: i32,
     scroll_distance: f32,
+    /// Last pointer position from the active selection drag. Auto-scroll ticks
+    /// use it to preserve the pointer's column while extending at a row edge.
+    scroll_position: Option<Point<Pixels>>,
+    wheel_scroll: ScrollLineAccumulator,
     auto_scroll: Option<Task<()>>,
     copy_task: Option<Task<()>>,
-    last_copied: Option<String>,
+    /// Snapshots retained only for one local alternate-screen selection drag.
+    alt_selection: Option<AltScreenSelection>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScrollRoute {
+    History,
+    MouseReport(u32),
+    AlternateKeys,
+}
+
+#[derive(Default)]
+struct ScrollLineAccumulator {
+    fractional_lines: f32,
+    route: Option<ScrollRoute>,
+}
+
+impl ScrollLineAccumulator {
+    fn set_route(&mut self, route: ScrollRoute) {
+        if self.route.is_some_and(|previous| previous != route) {
+            self.fractional_lines = 0.0;
+        }
+        self.route = Some(route);
+    }
+
+    fn accumulate(&mut self, delta_lines: f32, phase: TouchPhase) -> i32 {
+        if phase == TouchPhase::Started {
+            self.fractional_lines = 0.0;
+        }
+        if phase == TouchPhase::Cancelled {
+            self.fractional_lines = 0.0;
+            return 0;
+        }
+        if !delta_lines.is_finite() {
+            self.fractional_lines = 0.0;
+            return 0;
+        }
+
+        let accumulated = self.fractional_lines + delta_lines;
+        let lines = accumulated.trunc() as i32;
+        self.fractional_lines = if phase == TouchPhase::Ended {
+            0.0
+        } else {
+            accumulated - lines as f32
+        };
+        lines
+    }
 }
 
 impl TerminalView {
@@ -59,6 +113,7 @@ impl TerminalView {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_other_mouse_up))
+            .on_mouse_up_out(MouseButton::Middle, cx.listener(Self::on_other_mouse_up))
             .on_scroll_wheel(cx.listener(Self::on_scroll))
             .on_drop(cx.listener(Self::on_drop_paths))
     }
@@ -82,16 +137,41 @@ impl TerminalView {
         modifiers: gpui::Modifiers,
         cx: &mut Context<Self>,
     ) -> bool {
+        let mode = self.session.read(cx).mouse_mode();
+        self.report_mouse_in_mode(button, action, position, modifiers, mode, cx)
+    }
+
+    fn report_mouse_in_mode(
+        &mut self,
+        button: MouseButtonCode,
+        action: MouseAction,
+        position: Point<Pixels>,
+        modifiers: gpui::Modifiers,
+        mode: u32,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let Some((col, row)) = self.cell_at(position, cx) else {
             return false;
         };
+        self.report_mouse_in_mode_at_cell(button, action, (col, row), modifiers, mode, cx)
+    }
+
+    fn report_mouse_in_mode_at_cell(
+        &mut self,
+        button: MouseButtonCode,
+        action: MouseAction,
+        cell: (i32, i32),
+        modifiers: gpui::Modifiers,
+        mode: u32,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let (col, row) = cell;
         let mods = KeyMods {
             shift: modifiers.shift,
             alt: modifiers.alt,
             control: modifiers.control,
             platform: false,
         };
-        let mode = self.session.read(cx).mouse_mode();
         match key_encoding::encode_mouse(button, action, col as u16, row as u16, mods, mode) {
             Some(bytes) => {
                 self.session.read(cx).write(&bytes);
@@ -108,6 +188,25 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus_handle, cx);
+        crate::platform::terminal_focus::claim_gpui_keyboard(window);
+        self.stop_auto_scroll();
+        self.clear_accumulated_selection();
+        self.input.mouse.copy_task = None;
+        // A fresh press also terminates a reported drag whose release was
+        // lost, including when Shift now requests local selection.
+        if let Some(button) = self.reporting_button.take() {
+            self.report_mouse(
+                button,
+                MouseAction::Release,
+                event.position,
+                event.modifiers,
+                cx,
+            );
+        }
+        self.input.mouse.down = None;
+        self.input.mouse.down_alt = false;
+        self.input.mouse.dragged = false;
+        self.selecting = false;
         if self.reports_mouse(event.modifiers, cx) {
             self.reporting_button = Some(MouseButtonCode::Left);
             self.report_mouse(
@@ -159,11 +258,13 @@ impl TerminalView {
                 session.selection_start(col, line, kind);
                 session.selection_update(col, line);
                 self.input.mouse.down = None;
-                self.schedule_copy_on_select(event.modifiers.alt, cx);
+                self.selecting = true;
             }
             _ if event.modifiers.shift && session.selection_text().is_some() => {
-                // Shift-click extends the selection.
+                // Preserve the existing anchor when Shift-click continues
+                // into a drag, just as for word/line selection above.
                 session.selection_update(col, line);
+                self.input.mouse.down = None;
                 self.selecting = true;
             }
             _ => session.selection_clear(),
@@ -179,6 +280,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus_handle, cx);
+        crate::platform::terminal_focus::claim_gpui_keyboard(window);
         if self.reports_mouse(event.modifiers, cx) {
             self.reporting_button = Some(MouseButtonCode::Middle);
             self.report_mouse(
@@ -213,6 +315,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus_handle, cx);
+        crate::platform::terminal_focus::claim_gpui_keyboard(window);
         cx.stop_propagation();
         if self.reports_mouse(event.modifiers, cx) {
             for action in [MouseAction::Press, MouseAction::Release] {
@@ -240,14 +343,53 @@ impl TerminalView {
         self.show_context_menu(event.position, window, cx);
     }
 
-    fn on_mouse_move(
+    pub(super) fn has_active_mouse_gesture(&self) -> bool {
+        self.input.mouse.down.is_some() || self.selecting || self.reporting_button.is_some()
+    }
+
+    pub(super) fn on_mouse_move(
         &mut self,
         event: &MouseMoveEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A release can be missed when the pointer leaves the window or the
+        // app loses the drag. End the gesture and cancel its timer while
+        // keeping the selection already written to the terminal session.
+        if event.pressed_button.is_none() {
+            let had_reporting_button = self.reporting_button.is_some();
+            if let Some(button) = self.reporting_button.take() {
+                self.report_mouse(
+                    button,
+                    MouseAction::Release,
+                    event.position,
+                    event.modifiers,
+                    cx,
+                );
+            }
+            let had_mouse_down = self.input.mouse.down.take().is_some();
+            let down_alt = std::mem::take(&mut self.input.mouse.down_alt);
+            let was_selecting = std::mem::take(&mut self.selecting);
+            if had_mouse_down || was_selecting || had_reporting_button {
+                self.input.mouse.dragged = false;
+                self.stop_auto_scroll();
+                if was_selecting {
+                    self.publish_selection(window, cx);
+                    self.schedule_copy_on_select(down_alt || event.modifiers.alt, cx);
+                }
+                if self.link_hover {
+                    self.link_hover = false;
+                    cx.notify();
+                }
+                return;
+            }
+        }
+
         // Holding Cmd over a link shows the pointing hand.
-        let hover = super::links::is_link_modifier(&event.modifiers)
+        let hover = self
+            .bounds
+            .is_some_and(|bounds| bounds.contains(&event.position))
+            && super::links::is_link_modifier(&event.modifiers)
             && self
                 .cell_at(event.position, cx)
                 .is_some_and(|(c, r)| super::links::target_at(&self.session, c, r, cx).is_some());
@@ -308,6 +450,7 @@ impl TerminalView {
                 let line = self.grid_line(row, cx);
                 self.session.read(cx).selection_start(col, line, kind);
                 self.selecting = true;
+                self.start_alt_screen_selection(col, row, matches!(kind, SelectionKind::Block), cx);
             }
         }
         if self.selecting {
@@ -316,11 +459,22 @@ impl TerminalView {
         }
     }
 
-    fn extend_selection_to(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+    fn extend_selection_to(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) -> bool {
         if let Some((col, row)) = self.cell_at(position, cx) {
+            if self.input.mouse.alt_selection.is_some() {
+                let Some(_) = self.observe_alt_screen_at(row as usize, col as usize, cx) else {
+                    self.stop_auto_scroll();
+                    return false;
+                };
+                self.refresh_alt_screen_native_selection(cx);
+                return true;
+            }
             let line = self.grid_line(row, cx);
             self.session.read(cx).selection_update(col, line);
             self.session.update(cx, |s, cx| s.refresh(cx));
+            true
+        } else {
+            false
         }
     }
 
@@ -331,6 +485,7 @@ impl TerminalView {
             return;
         };
         let state = &mut self.input.mouse;
+        state.scroll_position = Some(position);
         let top = bounds.top() + px(EDGE_INSET);
         let bottom = bounds.bottom() - px(EDGE_INSET);
         if position.y < top {
@@ -346,11 +501,18 @@ impl TerminalView {
         if state.auto_scroll.is_some() {
             return;
         }
+        let interval = if self
+            .session
+            .read(cx)
+            .with_terminal(|terminal| terminal.is_alternate_screen_active())
+        {
+            Duration::from_millis(100)
+        } else {
+            Duration::from_millis(50)
+        };
         state.auto_scroll = Some(cx.spawn(async move |this, cx| {
             loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(50))
-                    .await;
+                cx.background_executor().timer(interval).await;
                 let keep = this
                     .update(cx, |this, cx| this.auto_scroll_step(cx))
                     .unwrap_or(false);
@@ -364,35 +526,269 @@ impl TerminalView {
     fn auto_scroll_step(&mut self, cx: &mut Context<Self>) -> bool {
         let dir = self.input.mouse.scroll_dir;
         if dir == 0 || !self.selecting {
-            self.input.mouse.auto_scroll = None;
+            self.stop_auto_scroll();
+            return false;
+        }
+        let Some(position) = self.input.mouse.scroll_position else {
+            self.stop_auto_scroll();
+            return false;
+        };
+        let Some((col, row)) = self.cell_at(position, cx) else {
+            self.stop_auto_scroll();
+            return false;
+        };
+        let session = self.session.read(cx);
+        let alternate_screen =
+            session.with_terminal(|terminal| terminal.is_alternate_screen_active());
+        if alternate_screen {
+            return self.auto_scroll_alternate_screen(col, row, dir, cx);
+        }
+        if self.input.mouse.alt_selection.is_some() {
+            self.cancel_alternate_screen_selection(cx);
             return false;
         }
         let speed = ((self.input.mouse.scroll_distance / 20.0) as i32 + 1).clamp(1, 10);
-        let session = self.session.read(cx);
         // Positive lines scroll up into the history.
         session.scroll_lines(-dir * speed);
-        // Extend to the edge row, even when the scroll was a no-op.
+        // Extend to the pointer's clamped grid cell, even when the scroll was
+        // a no-op. This keeps the horizontal endpoint where the user dragged.
         let offset = session.display_offset() as i32;
-        let (cols, rows) = (session.grid.cols as i32, session.grid.rows as i32);
-        let (col, row) = if dir < 0 {
-            (0, 0)
-        } else {
-            (cols - 1, rows - 1)
-        };
         session.selection_update(col, row - offset);
         self.session.update(cx, |s, cx| s.refresh(cx));
         true
     }
 
-    fn stop_auto_scroll(&mut self) {
+    fn auto_scroll_alternate_screen(
+        &mut self,
+        col: i32,
+        row: i32,
+        dir: i32,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self
+            .session
+            .read(cx)
+            .with_terminal(|terminal| terminal.is_alternate_screen_active())
+        {
+            self.cancel_alternate_screen_selection(cx);
+            return false;
+        }
+        let screen = self.session.read(cx).visible_styled_screen();
+        let observed = self
+            .input
+            .mouse
+            .alt_selection
+            .as_mut()
+            .is_some_and(|selection| selection.observe(screen));
+        if !observed {
+            self.stop_auto_scroll();
+            return false;
+        }
+        let can_send = self
+            .input
+            .mouse
+            .alt_selection
+            .as_ref()
+            .is_some_and(AltScreenSelection::can_send_wheel);
+        let endpoint_set = self
+            .input
+            .mouse
+            .alt_selection
+            .as_mut()
+            .and_then(|selection| selection.set_endpoint(col as usize, row as usize))
+            .is_some();
+        let wheel_target = self
+            .input
+            .mouse
+            .alt_selection
+            .as_ref()
+            .and_then(AltScreenSelection::wheel_target);
+        if !can_send || !endpoint_set {
+            self.stop_auto_scroll();
+            return false;
+        }
+        let Some((wheel_col, wheel_row)) = wheel_target else {
+            self.stop_auto_scroll();
+            return false;
+        };
+
+        self.refresh_alt_screen_native_selection(cx);
+        let (mode, alternate_scroll) = {
+            let session = self.session.read(cx);
+            (
+                session.wheel_mouse_mode(),
+                session.is_alternate_scroll_active(),
+            )
+        };
+        let sent = if mode & 0b111 != 0 {
+            let button = if dir > 0 {
+                MouseButtonCode::WheelDown
+            } else {
+                MouseButtonCode::WheelUp
+            };
+            self.report_mouse_in_mode_at_cell(
+                button,
+                MouseAction::Press,
+                (wheel_col as i32, wheel_row as i32),
+                Modifiers::default(),
+                mode,
+                cx,
+            )
+        } else if alternate_scroll {
+            let sequence: &[u8] = if dir > 0 { b"\x1bOB" } else { b"\x1bOA" };
+            self.session.read(cx).write(sequence);
+            true
+        } else {
+            false
+        };
+        if !sent {
+            self.stop_auto_scroll();
+            return false;
+        }
+        if let Some(selection) = self.input.mouse.alt_selection.as_mut() {
+            selection.note_wheel_sent();
+        }
+        true
+    }
+
+    fn start_alt_screen_selection(
+        &mut self,
+        column: i32,
+        row: i32,
+        block: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let screen = {
+            let session = self.session.read(cx);
+            session
+                .with_terminal(|terminal| terminal.is_alternate_screen_active())
+                .then(|| session.visible_styled_screen())
+        };
+        self.input.mouse.alt_selection = screen.and_then(|screen| {
+            AltScreenSelection::start(screen, column.max(0) as usize, row.max(0) as usize, block)
+        });
+    }
+
+    fn observe_alt_screen_at(
+        &mut self,
+        row: usize,
+        column: usize,
+        cx: &mut Context<Self>,
+    ) -> Option<usize> {
+        let screen = self.session.read(cx).visible_styled_screen();
+        let selection = self.input.mouse.alt_selection.as_mut()?;
+        if !selection.observe(screen) {
+            return None;
+        }
+        selection.set_endpoint(column, row)
+    }
+
+    fn refresh_alt_screen_native_selection(&mut self, cx: &mut Context<Self>) {
+        let Some(visible) = self
+            .input
+            .mouse
+            .alt_selection
+            .as_ref()
+            .and_then(AltScreenSelection::visible_selection)
+        else {
+            return;
+        };
+        let kind = if visible.block {
+            SelectionKind::Block
+        } else {
+            SelectionKind::Simple
+        };
+        let anchor_line = self.grid_line(visible.anchor_row as i32, cx);
+        let endpoint_line = self.grid_line(visible.endpoint_row as i32, cx);
+        let session = self.session.read(cx);
+        session.selection_start(visible.anchor_column as i32, anchor_line, kind);
+        session.selection_update(visible.endpoint_column as i32, endpoint_line);
+        self.session.update(cx, |session, cx| session.refresh(cx));
+    }
+
+    /// Retained TUI rows remain the copy source after a redraw clears the
+    /// terminal backend's viewport selection.
+    pub(super) fn accumulated_styled_selection(
+        &self,
+        _cx: &gpui::App,
+    ) -> Option<chau7_terminal::StyledSelection> {
+        self.input
+            .mouse
+            .alt_selection
+            .as_ref()
+            .and_then(AltScreenSelection::selection)
+    }
+
+    pub(super) fn accumulated_selection_is_stale(&self, cx: &gpui::App) -> bool {
+        self.input.mouse.alt_selection.is_some()
+            && !self
+                .session
+                .read(cx)
+                .with_terminal(|terminal| terminal.is_alternate_screen_active())
+    }
+
+    /// A TUI leaving the alternate screen invalidates its cached local
+    /// selection. Clear the backend coordinates as well so they cannot point
+    /// into the unrelated primary screen.
+    pub(super) fn observe_alternate_screen_output(&mut self, cx: &mut Context<Self>) {
+        if self.input.mouse.alt_selection.is_none() {
+            return;
+        }
+        let alternate_screen = self
+            .session
+            .read(cx)
+            .with_terminal(|terminal| terminal.is_alternate_screen_active());
+        if !alternate_screen && self.input.mouse.alt_selection.is_some() {
+            self.cancel_alternate_screen_selection(cx);
+        }
+    }
+
+    fn cancel_alternate_screen_selection(&mut self, cx: &mut Context<Self>) {
+        self.input.mouse.alt_selection = None;
+        self.input.mouse.down = None;
+        self.input.mouse.down_alt = false;
+        self.input.mouse.dragged = false;
+        self.input.mouse.copy_task = None;
+        self.selecting = false;
+        self.stop_auto_scroll();
+        self.session.read(cx).selection_clear();
+        self.session.update(cx, |session, cx| session.refresh(cx));
+        cx.notify();
+    }
+
+    pub(super) fn clear_accumulated_selection(&mut self) {
+        self.input.mouse.alt_selection = None;
+    }
+
+    pub(super) fn stop_auto_scroll(&mut self) {
         let state = &mut self.input.mouse;
         state.scroll_dir = 0;
         state.scroll_distance = 0.0;
+        state.scroll_position = None;
         state.auto_scroll = None;
+    }
+
+    /// A focus change ends a local mouse gesture just like a lost release.
+    /// Keep the selection already written to the terminal, but stop its timer.
+    pub(super) fn cancel_mouse_gesture_on_blur(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let down_alt = std::mem::take(&mut self.input.mouse.down_alt);
+        let was_selecting = std::mem::take(&mut self.selecting);
+        self.input.mouse.down = None;
+        self.input.mouse.dragged = false;
+        self.stop_auto_scroll();
+        if was_selecting {
+            self.publish_selection(window, cx);
+            self.schedule_copy_on_select(down_alt, cx);
+        }
     }
 
     fn on_mouse_up(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
         let down = self.input.mouse.down.take();
+        let down_alt = std::mem::take(&mut self.input.mouse.down_alt);
         let dragged = std::mem::take(&mut self.input.mouse.dragged);
         let was_selecting = std::mem::take(&mut self.selecting);
         self.stop_auto_scroll();
@@ -414,7 +810,7 @@ impl TerminalView {
         {
             let input = &Settings::get(cx).input;
             let mods = event.modifiers;
-            if self.input.mouse.down_alt && input.option_click_cursor {
+            if down_alt && input.option_click_cursor {
                 // Option-click moves the cursor to the clicked cell.
                 if let Some(target) = self.screen_cell(down, cx) {
                     let cursor = self.cursor_cell(cx);
@@ -440,7 +836,7 @@ impl TerminalView {
             }
         }
         if was_selecting {
-            self.schedule_copy_on_select(event.modifiers.alt, cx);
+            self.schedule_copy_on_select(down_alt || event.modifiers.alt, cx);
         }
     }
 
@@ -457,8 +853,7 @@ impl TerminalView {
     }
 
     /// Copy on select (`feature.copyOnSelect`, default on): after a drag,
-    /// double or triple click, debounced, skipped while Option is held and
-    /// when the text did not change.
+    /// double or triple click, debounced and skipped while Option is held.
     fn schedule_copy_on_select(&mut self, alt_held: bool, cx: &mut Context<Self>) {
         if alt_held || !Settings::get(cx).input.copy_on_select {
             return;
@@ -466,15 +861,10 @@ impl TerminalView {
         self.input.mouse.copy_task = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(COPY_ON_SELECT_DELAY).await;
             let _ = this.update(cx, |this, cx| {
-                let Some(text) = this.session.read(cx).selection_text() else {
+                let Some(selection) = this.selection_for_copy(cx) else {
                     return;
                 };
-                if this.input.mouse.last_copied.as_deref() == Some(text.as_str()) {
-                    return;
-                }
-                crate::workspace::record_clipboard(&text, cx);
-                cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
-                this.input.mouse.last_copied = Some(text);
+                this.copy_selection_to_clipboard(&selection, cx);
             });
         }));
     }
@@ -485,40 +875,90 @@ impl TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(metrics) = self.metrics.as_ref() else {
-            return;
+        let has_vertical_delta = match event.delta {
+            ScrollDelta::Lines(delta) => delta.y != 0.0,
+            ScrollDelta::Pixels(delta) => delta.y != px(0.0),
         };
-        let lines = match event.delta {
-            ScrollDelta::Lines(delta) => delta.y.round() as i32,
-            ScrollDelta::Pixels(delta) => (delta.y / metrics.line_height).round() as i32,
+        if has_vertical_delta {
+            // Fractional trackpad events still belong to the terminal even
+            // when they have not accumulated to a whole cell yet.
+            cx.stop_propagation();
+        }
+
+        // A full-screen program owns its history. Its requested wheel reports
+        // must not be gated by the click/drag setting: the alternate grid has
+        // no scrollback to move. Shift/Ctrl and an owned local drag still keep
+        // scrolling local, so wheel input cannot disrupt text selection.
+        let route = if event.modifiers.shift
+            || event.modifiers.control
+            || self.selecting
+            || self.input.mouse.down.is_some()
+        {
+            ScrollRoute::History
+        } else {
+            let session = self.session.read(cx);
+            let mode = session.wheel_mouse_mode();
+            if mode & 0b111 != 0 {
+                ScrollRoute::MouseReport(mode)
+            } else if session.is_alternate_scroll_active() {
+                ScrollRoute::AlternateKeys
+            } else {
+                ScrollRoute::History
+            }
         };
+        self.input.mouse.wheel_scroll.set_route(route);
+        let delta_lines = match event.delta {
+            ScrollDelta::Lines(delta) => delta.y,
+            ScrollDelta::Pixels(delta) => self
+                .metrics
+                .as_ref()
+                .filter(|metrics| metrics.line_height > px(0.0))
+                .map(|metrics| delta.y / metrics.line_height)
+                .unwrap_or(0.0),
+        };
+        let lines = self
+            .input
+            .mouse
+            .wheel_scroll
+            .accumulate(delta_lines, event.touch_phase);
         if lines == 0 {
             return;
         }
-        if self.reports_mouse(event.modifiers, cx) {
+        if let ScrollRoute::MouseReport(mode) = route {
             let wheel = if lines > 0 {
                 MouseButtonCode::WheelUp
             } else {
                 MouseButtonCode::WheelDown
             };
             for _ in 0..lines.unsigned_abs().min(10) {
-                self.report_mouse(
+                self.report_mouse_in_mode(
                     wheel,
                     MouseAction::Press,
                     event.position,
                     event.modifiers,
+                    mode,
                     cx,
                 );
             }
             cx.stop_propagation();
             return;
         }
-        self.session.read(cx).scroll_lines(lines);
-        // The wheel extends an active selection.
-        if self.selecting {
-            self.extend_selection_to(event.position, cx);
+        if route == ScrollRoute::AlternateKeys {
+            // DECSET 1007 uses SS3 cursor keys, independently of DECCKM.
+            // Only the active alternate screen can request this route; never
+            // turn an ordinary shell wheel gesture into command-history keys.
+            let sequence = if lines > 0 { b"\x1bOA" } else { b"\x1bOB" };
+            let bytes = sequence.repeat(lines.unsigned_abs().min(10) as usize);
+            self.session.read(cx).write(&bytes);
+            return;
         }
-        self.session.update(cx, |s, cx| s.refresh(cx));
+        self.session.read(cx).scroll_lines(lines);
+        // The wheel extends an active selection. Its coordinate conversion
+        // reads the backend's live offset after the scroll.
+        let selection_refreshed = self.selecting && self.extend_selection_to(event.position, cx);
+        if !selection_refreshed {
+            self.session.update(cx, |s, cx| s.refresh(cx));
+        }
         cx.stop_propagation();
     }
 
@@ -581,5 +1021,73 @@ impl TerminalView {
             .map(|p| p.to_string_lossy().to_string())
             .collect();
         self.paste_text(&drop::paths_text(&names), cx);
+    }
+}
+#[cfg(test)]
+mod scroll_line_accumulator_tests {
+    use super::{ScrollLineAccumulator, ScrollRoute};
+    use gpui::TouchPhase;
+
+    #[test]
+    fn accumulates_fractional_trackpad_deltas_until_a_line_is_ready() {
+        let mut accumulator = ScrollLineAccumulator::default();
+
+        let emitted: Vec<_> = (0..5)
+            .map(|_| accumulator.accumulate(0.2, TouchPhase::Moved))
+            .collect();
+
+        assert_eq!(emitted, [0, 0, 0, 0, 1]);
+        assert!(accumulator.fractional_lines.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn handles_negative_scroll_and_direction_reversals_without_stray_lines() {
+        let mut accumulator = ScrollLineAccumulator::default();
+        let emitted: Vec<_> = (0..5)
+            .map(|_| accumulator.accumulate(-0.2, TouchPhase::Moved))
+            .collect();
+        assert_eq!(emitted, [0, 0, 0, 0, -1]);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+
+        assert_eq!(accumulator.accumulate(0.8, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.accumulate(-0.4, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.accumulate(-0.4, TouchPhase::Ended), 0);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+
+        assert_eq!(accumulator.accumulate(0.5, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.accumulate(0.0, TouchPhase::Ended), 0);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+    }
+
+    #[test]
+    fn resets_after_non_finite_deltas_and_reporting_mode_changes() {
+        let mut accumulator = ScrollLineAccumulator::default();
+        accumulator.set_route(ScrollRoute::History);
+        assert_eq!(accumulator.accumulate(0.8, TouchPhase::Moved), 0);
+        accumulator.set_route(ScrollRoute::MouseReport(1));
+        assert_eq!(accumulator.fractional_lines, 0.0);
+        assert_eq!(accumulator.accumulate(0.8, TouchPhase::Moved), 0);
+        accumulator.set_route(ScrollRoute::AlternateKeys);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+        assert_eq!(accumulator.accumulate(0.8, TouchPhase::Moved), 0);
+        accumulator.set_route(ScrollRoute::History);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+        assert_eq!(accumulator.accumulate(f32::NAN, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+        assert_eq!(accumulator.accumulate(-1.0, TouchPhase::Moved), -1);
+    }
+
+    #[test]
+    fn phases_reset_or_finish_the_fractional_gesture() {
+        let mut accumulator = ScrollLineAccumulator::default();
+        assert_eq!(accumulator.accumulate(0.4, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.accumulate(0.3, TouchPhase::Started), 0);
+        assert!((accumulator.fractional_lines - 0.3).abs() < f32::EPSILON);
+
+        assert_eq!(accumulator.accumulate(0.2, TouchPhase::Ended), 0);
+        assert_eq!(accumulator.fractional_lines, 0.0);
+        assert_eq!(accumulator.accumulate(0.4, TouchPhase::Moved), 0);
+        assert_eq!(accumulator.accumulate(1.0, TouchPhase::Cancelled), 0);
+        assert_eq!(accumulator.fractional_lines, 0.0);
     }
 }

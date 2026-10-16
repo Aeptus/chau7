@@ -660,7 +660,9 @@ impl Workspace {
                     }
                 }
             }
-            PaneEvent::Ai { .. } | PaneEvent::ChangedFiles(_) | PaneEvent::PermissionResolved => {
+            PaneEvent::Ai { .. }
+            | PaneEvent::ChangedFiles { .. }
+            | PaneEvent::PermissionResolved => {
                 this.handle_ai_pane_event(id, event, cx);
             }
             PaneEvent::CommandStarted(command) => {
@@ -1261,6 +1263,7 @@ impl Workspace {
                 manual_color: meta.manual_color_override,
                 layout: capture.layout,
                 focused_pane: capture.focused,
+                archived_context: capture.archived_context,
                 panes: capture.panes,
             },
         ))
@@ -1458,6 +1461,7 @@ impl Workspace {
                     manual_color: meta.manual_color_override,
                     layout: capture.as_ref().and_then(|c| c.layout.clone()),
                     focused_pane: capture.as_ref().and_then(|c| c.focused),
+                    archived_context: capture.as_ref().and_then(|c| c.archived_context.clone()),
                     panes: capture.map(|c| c.panes).unwrap_or_default(),
                 }
             })
@@ -1566,7 +1570,11 @@ fn register_tab_actions(div: Stateful<Div>, cx: &mut Context<Workspace>) -> Stat
         }
     }))
     .on_action(cx.listener(|this, action: &SelectTabNumber, window, cx| {
-        this.state.select_number(action.0);
+        if Settings::get(cx).tabs.numbered_shortcuts_visible_only {
+            this.state.select_visible_number(action.0, AppData::now(cx));
+        } else {
+            this.state.select_number(action.0);
+        }
         if let Some(id) = this.state.selected() {
             this.select_tab(id, window, cx);
         }
@@ -1642,7 +1650,20 @@ impl Render for Workspace {
 
         div()
             .id("workspace")
-            .key_context("Workspace")
+            .key_context(
+                if self
+                    .rename
+                    .as_ref()
+                    .is_some_and(|rename| rename.color_focus)
+                    && self.focus_handle.is_focused(window)
+                {
+                    // Root handles Tab before keydown listeners, so the scoped context lets the
+                    // rename handler select the title first.
+                    "Workspace rename_color_focus"
+                } else {
+                    "Workspace"
+                },
+            )
             .track_focus(&self.focus_handle)
             .size_full()
             .flex()

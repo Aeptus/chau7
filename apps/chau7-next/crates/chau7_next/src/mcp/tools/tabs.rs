@@ -434,7 +434,11 @@ pub(crate) fn create_tab(
 fn permissions_for(
     tab_id: &str,
     ctx: &ToolContext,
-) -> Option<(ResolvedPermissions, Option<AnyWindowHandle>)> {
+) -> Option<(
+    ResolvedPermissions,
+    Option<AnyWindowHandle>,
+    Option<crate::tab_bar::TabId>,
+)> {
     let tab_id = tab_id.to_string();
     ctx.main.call(move |cx| {
         let (global, profiles) = approval::permission_settings(cx);
@@ -448,7 +452,10 @@ fn permissions_for(
         let context = tab.as_ref().and_then(|t| tab_context(t, cx));
         let resolved =
             command_filter::resolve_permissions(&global, &profiles, context.as_ref(), Some(&home));
-        (resolved, tab.map(|t| t.window.handle))
+        let (window, target_tab) = tab
+            .map(|t| (Some(t.window.handle), Some(t.tab)))
+            .unwrap_or((None, None));
+        (resolved, window, target_tab)
     })
 }
 
@@ -501,7 +508,7 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
         return error;
     }
     let owner = (!ctx.is_internal()).then(|| ctx.client_id.to_string());
-    let Some((permissions, window)) = permissions_for(tab_id, ctx) else {
+    let Some((permissions, window, target_tab)) = permissions_for(tab_id, ctx) else {
         return no_window();
     };
     let check = command_filter::check(command, &permissions);
@@ -510,9 +517,9 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
         check,
         &permissions,
         command,
-        &format!("tab {tab_id}"),
         window,
         tab_id,
+        target_tab,
     ) {
         return err;
     }
@@ -559,7 +566,7 @@ pub(crate) fn send_input(tab_id: &str, input: &str, ctx: &ToolContext) -> String
         return error;
     }
     let owner = (!ctx.is_internal()).then(|| ctx.client_id.to_string());
-    let Some((permissions, window)) = permissions_for(tab_id, ctx) else {
+    let Some((permissions, window, target_tab)) = permissions_for(tab_id, ctx) else {
         return no_window();
     };
     let check = command_filter::check_raw_input(input, &permissions);
@@ -568,9 +575,9 @@ pub(crate) fn send_input(tab_id: &str, input: &str, ctx: &ToolContext) -> String
         check,
         &permissions,
         input,
-        &format!("tab {tab_id}"),
         window,
         tab_id,
+        target_tab,
     ) {
         return err;
     }

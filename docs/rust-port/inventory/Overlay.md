@@ -195,3 +195,8 @@ Swift persistence: UserDefaults keys `com.chau7.savedTabState` and
 `Application Support/Chau7/TabStateBackups/`. Chau7 Next must not read or
 write these (coexistence rule in AGENTS.md); import, if wanted, belongs to the
 Migration module.
+
+
+### Rust idle-menu enhancement (2026-10-16)
+
+The idle popover groups tabs by full repository identity, preserves tab order within each group, and places tabs without a repository last. Colored headings, full-path tooltips and separators identify groups. The list scrolls within a bounded region while Close All Idle stays below it and continues to cover every group. Full-path identity, ordering, empty and ungrouped-list regressions pass in the 3,203-test app/core suite; live GUI acceptance is pending.

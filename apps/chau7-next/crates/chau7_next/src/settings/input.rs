@@ -16,7 +16,8 @@ pub struct InputSettings {
     /// `feature.copyOnSelect`, default on.
     pub copy_on_select: bool,
     /// `feature.mouseReporting` (`[terminal] mouse_reporting`), default off:
-    /// programs get mouse events only when this is on; Shift forces selection.
+    /// programs receive clicks and drags only when this is on. Full-screen
+    /// programs always receive requested wheel events; Shift forces selection.
     pub mouse_reporting: bool,
     /// `feature.clickToPosition`, default on: a plain click near the cursor
     /// moves it with arrow keys.

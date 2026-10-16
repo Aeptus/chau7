@@ -14,6 +14,14 @@
 | Move Tab Left | ⇧⌥⌘[ |
 | Rename Tab | ⇧⌘R |
 
+## Idle Tabs and Numbered Shortcuts
+
+The idle-tabs dropdown groups tabs by repository, with a repository heading and separators between groups. Tabs without a repository appear in **No repository**. Select a tab to bring it back to the tab bar; **Close All Idle** still applies to every idle group.
+
+In **Settings > Tabs > Keyboard Navigation**, enable **Numbered Shortcuts Target Visible Tabs Only** to make numbered shortcuts follow the visible tab order. Tabs inside the Idle dropdown are skipped. Tabs outside the horizontal viewport still count. The option is off by default, preserving the existing all-tabs order.
+
+The equivalent configuration is `numbered_shortcuts_visible_only = true` under `[next]`. It applies to the configured numbered shortcuts, including Cmd+1–9 on macOS, Alt+1–9 on Linux/Windows, and function-key bindings.
+
 ## Window Management
 
 | Action | Shortcut |

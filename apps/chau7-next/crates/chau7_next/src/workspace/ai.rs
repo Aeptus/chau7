@@ -50,14 +50,30 @@ impl Workspace {
                 let notify = *notify;
                 cx.defer(move |cx| events_out::publish(event, notify, cx));
             }
-            PaneEvent::ChangedFiles(files) => {
+            PaneEvent::ChangedFiles {
+                block_id,
+                end_time,
+                finish_order,
+                files,
+            } => {
+                let block_id = *block_id;
+                let end_time = *end_time;
+                let finish_order = *finish_order;
                 let files = files.clone();
                 cx.defer(move |cx| {
                     let live: HashSet<TabId> = AppData::live(cx)
                         .into_iter()
                         .flat_map(|(_, ws)| ws.read(cx).entries.keys().copied().collect::<Vec<_>>())
                         .collect();
-                    hub::record_changed_files(id, files, &live, cx);
+                    hub::record_changed_files(
+                        id,
+                        block_id,
+                        end_time,
+                        finish_order,
+                        files,
+                        &live,
+                        cx,
+                    );
                     cx.refresh_windows();
                 });
             }

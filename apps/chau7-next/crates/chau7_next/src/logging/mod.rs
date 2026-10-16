@@ -5,9 +5,11 @@
 //! background thread (`writer.rs`). The app logs with the `log` crate:
 //!
 //! - `log::info!("...")` writes `[Chau7][INFO] 2026-01-15T10:30:45.123Z ...`
-//!   (levels INFO, WARN, ERROR and DEBUG always; TRACE only with
-//!   `CHAU7_NEXT_TRACE=1` or `CHAU7_NEXT_VERBOSE=1`). Records of other
-//!   crates are written from WARN up, with their crate name in front.
+//!   (the Chau7 app uses DEBUG by default; TRACE needs `CHAU7_NEXT_TRACE=1` or
+//!   `CHAU7_NEXT_VERBOSE=1`). The `chau7_terminal` engine uses WARN by default
+//!   to keep per-snapshot diagnostics out of normal logs; TRACE/VERBOSE or
+//!   `CHAU7_NEXT_LOG=debug` enables its diagnostics. Other crates are written
+//!   from WARN up, with their crate name in front.
 //! - [`log_cat!`] writes a category line (`LogCategory`): `2026-01-15T10:30:45.123Z
 //!   [WARN][Tabs] message @file.rs:42 module`, mirrored to the macOS unified
 //!   log (subsystem `com.chau7.next`, [`crate::platform::oslog`]). Categories can
@@ -73,6 +75,9 @@ struct State {
     path: PathBuf,
     /// Level for the app's own crates.
     app_level: log::LevelFilter,
+    /// Default for the high-volume terminal engine; explicit log settings can
+    /// still enable its diagnostic records.
+    terminal_engine_level: log::LevelFilter,
     /// Level for every other crate.
     other_level: log::LevelFilter,
     echo: bool,
@@ -120,6 +125,33 @@ impl Logger {
     fn is_app_target(target: &str) -> bool {
         target.starts_with("chau7")
     }
+
+    fn is_terminal_engine_target(target: &str) -> bool {
+        target == "chau7_terminal" || target.starts_with("chau7_terminal::")
+    }
+
+    fn terminal_engine_level(forced: Option<log::LevelFilter>, trace: bool) -> log::LevelFilter {
+        forced.unwrap_or(if trace {
+            log::LevelFilter::Trace
+        } else {
+            log::LevelFilter::Warn
+        })
+    }
+
+    fn level_for_target(
+        target: &str,
+        app_level: log::LevelFilter,
+        terminal_engine_level: log::LevelFilter,
+        other_level: log::LevelFilter,
+    ) -> log::LevelFilter {
+        if Self::is_terminal_engine_target(target) {
+            terminal_engine_level
+        } else if Self::is_app_target(target) {
+            app_level
+        } else {
+            other_level
+        }
+    }
 }
 
 impl log::Log for Logger {
@@ -127,11 +159,12 @@ impl log::Log for Logger {
         let Some(state) = STATE.get() else {
             return false;
         };
-        let limit = if Self::is_app_target(metadata.target()) {
-            state.app_level
-        } else {
-            state.other_level
-        };
+        let limit = Self::level_for_target(
+            metadata.target(),
+            state.app_level,
+            state.terminal_engine_level,
+            state.other_level,
+        );
         metadata.level() <= limit
     }
 
@@ -253,6 +286,7 @@ pub fn init(root: &DataRoot) {
     } else {
         log::LevelFilter::Debug
     });
+    let terminal_engine_level = Logger::terminal_engine_level(forced, env.trace);
     let other_level = forced.unwrap_or(log::LevelFilter::Warn);
     let path = log_file_path(root);
     let echo = env.verbose
@@ -270,6 +304,7 @@ pub fn init(root: &DataRoot) {
         writer: Writer::spawn(path.clone(), env.max_bytes),
         path,
         app_level,
+        terminal_engine_level,
         other_level,
         echo,
         trace: env.trace,
@@ -281,7 +316,7 @@ pub fn init(root: &DataRoot) {
         return;
     }
     if log::set_logger(&LOGGER).is_ok() {
-        log::set_max_level(app_level.max(other_level));
+        log::set_max_level(app_level.max(terminal_engine_level).max(other_level));
     }
 }
 
@@ -376,5 +411,45 @@ mod tests {
         assert!(Logger::is_app_target("chau7_next::tabs"));
         assert!(Logger::is_app_target("chau7::cat::Tabs"));
         assert!(!Logger::is_app_target("gpui::window"));
+    }
+
+    #[test]
+    fn terminal_engine_uses_quiet_default_and_explicit_diagnostic_levels() {
+        use log::LevelFilter;
+
+        assert!(Logger::is_terminal_engine_target(
+            "chau7_terminal::terminal"
+        ));
+        assert_eq!(
+            Logger::level_for_target(
+                "chau7_terminal::terminal",
+                LevelFilter::Debug,
+                Logger::terminal_engine_level(None, false),
+                LevelFilter::Warn,
+            ),
+            LevelFilter::Warn,
+        );
+        assert_eq!(
+            Logger::level_for_target(
+                "chau7_terminal::terminal",
+                LevelFilter::Debug,
+                Logger::terminal_engine_level(None, true),
+                LevelFilter::Warn,
+            ),
+            LevelFilter::Trace,
+        );
+        assert_eq!(
+            Logger::terminal_engine_level(Some(LevelFilter::Debug), true),
+            LevelFilter::Debug,
+        );
+        assert_eq!(
+            Logger::level_for_target(
+                "chau7_next::terminal",
+                LevelFilter::Debug,
+                LevelFilter::Warn,
+                LevelFilter::Warn,
+            ),
+            LevelFilter::Debug,
+        );
     }
 }

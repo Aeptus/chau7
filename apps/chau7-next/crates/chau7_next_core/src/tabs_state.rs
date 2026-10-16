@@ -451,6 +451,24 @@ impl TabsState {
         self.select(id);
     }
 
+    /// Select a 1-based tab by its position in the rendered tab-bar row.
+    /// Idle-dropdown, repository-group, and new-tab items are not numbered.
+    /// The same display policy used by rendering supplies the ordered tabs.
+    pub fn select_visible_number(&mut self, number: usize, now: f64) -> bool {
+        let Some(id) = self
+            .display_items(now)
+            .into_iter()
+            .filter_map(|item| match item {
+                TabBarLayoutItem::Tab(id) => Some(id),
+                _ => None,
+            })
+            .nth(number.max(1) - 1)
+        else {
+            return false;
+        };
+        self.select(id)
+    }
+
     /// `selectTab(number:)`: 1-based, out of range is ignored.
     pub fn select_number(&mut self, number: usize) {
         let index = number.max(1) - 1;
@@ -1072,6 +1090,37 @@ mod tests {
         assert_eq!(s.selected(), Some(1));
         s.select_number(9);
         assert_eq!(s.selected(), Some(1));
+    }
+
+    #[test]
+    fn select_visible_number_follows_display_order_and_skips_idle_dropdown_tabs() {
+        let mut s = state_with(5);
+        s.select(1);
+        for id in 1..=5 {
+            s.touch(id, 0.0);
+        }
+        s.force_idle(2);
+        s.force_idle(4);
+        for id in [1, 3] {
+            s.get_mut(id).unwrap().repo_group_id = Some("/repo".into());
+        }
+
+        assert!(s.select_visible_number(2, 1.0));
+        assert_eq!(s.selected(), Some(3));
+    }
+
+    #[test]
+    fn select_visible_number_preserves_one_based_nine_and_range_semantics() {
+        let mut s = state_with(10);
+        s.group_idle_tabs = false;
+        s.select(2);
+
+        assert!(s.select_visible_number(0, 1.0));
+        assert_eq!(s.selected(), Some(1));
+        assert!(!s.select_visible_number(11, 1.0));
+        assert_eq!(s.selected(), Some(1));
+        assert!(s.select_visible_number(9, 1.0));
+        assert_eq!(s.selected(), Some(9));
     }
 
     #[test]

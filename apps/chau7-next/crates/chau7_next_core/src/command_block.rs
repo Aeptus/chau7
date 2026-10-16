@@ -122,13 +122,25 @@ impl CommandBlockList {
     /// A command started (`commandStarted`): appends a running block and
     /// drops the oldest ones past [`Self::MAX_BLOCKS`].
     pub fn command_started(&mut self, command: &str, line: i64, directory: Option<String>) {
+        self.command_started_with_id(command, line, directory);
+    }
+
+    /// Starts a command and returns the ID used to attach later async results.
+    pub fn command_started_with_id(
+        &mut self,
+        command: &str,
+        line: i64,
+        directory: Option<String>,
+    ) -> Uuid {
         let mut block = CommandBlock::new(command, line);
         block.directory = directory;
+        let id = block.id;
         self.blocks.push(block);
         let excess = self.blocks.len().saturating_sub(Self::MAX_BLOCKS);
         if excess > 0 {
             self.blocks.drain(..excess);
         }
+        id
     }
 
     /// The most recent running block finished (`commandFinished`).
@@ -148,6 +160,21 @@ impl CommandBlockList {
         if let Some(block) = self.blocks.iter_mut().rev().find(|b| !b.is_running()) {
             block.changed_files = files;
         }
+    }
+
+    /// Files changed by a specific completed command. Async Git scans must
+    /// keep their result attached to the block that started them, even if a
+    /// later command finishes first.
+    pub fn set_changed_files_for(&mut self, id: Uuid, files: Vec<String>) -> bool {
+        let Some(block) = self
+            .blocks
+            .iter_mut()
+            .find(|block| block.id == id && !block.is_running())
+        else {
+            return false;
+        };
+        block.changed_files = files;
+        true
     }
 
     /// Changed files of the latest finished block that has any (`lastChangedFiles`).
@@ -510,6 +537,25 @@ mod list_tests {
         assert_eq!(list.last_changed_files(), ["a.rs"]);
         list.clear();
         assert!(list.blocks().is_empty());
+    }
+
+    #[test]
+    fn async_changed_files_attach_to_their_command_when_scans_finish_out_of_order() {
+        let mut list = CommandBlockList::new();
+        list.command_started("first", 1, None);
+        let first = list.blocks().last().unwrap().id;
+        assert!(list.command_finished(2, 0));
+        list.command_started("second", 3, None);
+        let second = list.blocks().last().unwrap().id;
+        assert!(list.command_finished(4, 0));
+
+        // The second scan completes first; the first must not overwrite it.
+        assert!(list.set_changed_files_for(second, vec!["second.rs".into()]));
+        assert!(list.set_changed_files_for(first, vec!["first.rs".into()]));
+
+        assert_eq!(list.blocks()[0].changed_files, ["first.rs"]);
+        assert_eq!(list.blocks()[1].changed_files, ["second.rs"]);
+        assert_eq!(list.last_changed_files(), ["second.rs"]);
     }
 
     #[test]

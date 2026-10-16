@@ -25,6 +25,41 @@ fn style(kind: Kind, palette: Palette) -> HighlightStyle {
             color: Some(dim),
             ..Default::default()
         },
+        Kind::TerminalSpan {
+            bold,
+            italic,
+            underline,
+            strikethrough,
+            foreground,
+            background,
+        } => HighlightStyle {
+            color: Some(foreground.map_or_else(
+                || palette.foreground(),
+                |[r, g, b]| {
+                    gpui::rgb((u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b)).into()
+                },
+            )),
+            background_color: background.map(|[r, g, b]| {
+                gpui::rgb((u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b)).into()
+            }),
+            font_weight: bold.then_some(FontWeight::BOLD),
+            font_style: italic.then_some(FontStyle::Italic),
+            underline: underline.then(|| UnderlineStyle {
+                thickness: px(1.),
+                color: None,
+                wavy: false,
+            }),
+            strikethrough: strikethrough.then(line),
+            ..Default::default()
+        },
+        Kind::TerminalLink => HighlightStyle {
+            underline: Some(UnderlineStyle {
+                thickness: px(1.),
+                color: None,
+                wavy: false,
+            }),
+            ..Default::default()
+        },
         Kind::Bold => HighlightStyle {
             font_weight: Some(FontWeight::BOLD),
             ..Default::default()

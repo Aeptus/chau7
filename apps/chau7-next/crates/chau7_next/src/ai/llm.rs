@@ -169,9 +169,6 @@ mod tests {
     #[test]
     fn services_are_per_provider() {
         assert_eq!(service(LLMProviderType::Anthropic), "llm.anthropic.apikey");
-        assert_eq!(
-            secrets::service_name(&service(LLMProviderType::Openai)),
-            "com.chau7.next.llm.openai.apikey"
-        );
+        assert_eq!(service(LLMProviderType::Openai), "llm.openai.apikey");
     }
 }

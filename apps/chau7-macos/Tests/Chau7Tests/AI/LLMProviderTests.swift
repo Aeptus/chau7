@@ -80,7 +80,10 @@ final class LLMProviderConfigTests: XCTestCase {
 
     func testKeychainService() {
         let config = LLMProviderConfig(provider: .anthropic)
-        XCTAssertEqual(config.keychainService, "com.chau7.llm.anthropic.apikey")
+        XCTAssertEqual(
+            config.keychainService,
+            RuntimeIsolation.keychainServiceName(base: "com.chau7.llm.anthropic.apikey")
+        )
     }
 
     func testKeychainServiceUsesIsolationPrefixWhenConfigured() {

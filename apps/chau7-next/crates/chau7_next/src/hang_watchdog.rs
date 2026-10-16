@@ -516,7 +516,7 @@ fn capture_sample(command: &WatchdogCommand, before: &Heartbeat, stale: Duration
     let manifest = json!({"schema_version":3,"detected_at":chrono::Utc::now().to_rfc3339(),"parent_pid":command.parent_pid,
         "watchdog_pid":std::process::id(),"stale_milliseconds":stale.as_millis(),"sample_path":sample_path,
         "sample_exit_status":status,"sample_launch_error":error,"sample_timed_out":timed_out,"sample_truncated":truncated,
-        "build_sha":crate::platform::system::bundle_string("Chau7NextSourceRevision"),
+        "build_sha":crate::performance::build_metadata().1,
         "heartbeat_before_capture":before,"heartbeat_after_capture":after,
         "capture_evidence":SampleEvidence::new(Some(before.progress_token),after.as_ref().map(|h| h.progress_token),started,completed),
         "main_thread_stacks":StackObservations::from_sample(&text)});

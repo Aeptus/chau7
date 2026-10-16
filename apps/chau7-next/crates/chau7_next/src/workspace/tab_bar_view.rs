@@ -55,6 +55,450 @@ pub(super) fn tab_accessibility_description(lang: Lang, selected: bool) -> Strin
 /// Height of a tab chip (`OverlayLayout.tabChipHeight`).
 pub(super) const TAB_CHIP_HEIGHT: f32 = 24.0;
 
+#[derive(Clone, Copy)]
+pub(super) struct GroupTabLineEdges {
+    is_first: bool,
+    is_last: bool,
+}
+
+impl GroupTabLineEdges {
+    fn bounds(self, tab: Bounds<Pixels>) -> Bounds<Pixels> {
+        // The first tab reaches back across the full tag gap. Neighboring tabs
+        // meet halfway across each gap, while the last tab ends at its edge.
+        let leading = if self.is_first {
+            TAB_SPACING
+        } else {
+            TAB_SPACING / 2.0
+        };
+        let trailing = if self.is_last { 0.0 } else { TAB_SPACING / 2.0 };
+        Bounds::new(
+            point(tab.origin.x - px(leading), tab.origin.y),
+            gpui::size(tab.size.width + px(leading + trailing), px(1.0)),
+        )
+    }
+}
+
+/// Anchor frame measurements and decoration to the parent's border box. An
+/// absolute child with automatic insets still uses flex alignment and padding
+/// for its static position, even when its size is 100% of the parent.
+fn tab_frame_overlay<T: gpui::Styled>(element: T) -> T {
+    element.absolute().top_0().left_0().size_full()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct BorderPathGeometry {
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    radius: f32,
+}
+
+fn border_path_geometry(bounds: Bounds<Pixels>, radius: f32) -> BorderPathGeometry {
+    let x0 = f32::from(bounds.left());
+    let y0 = f32::from(bounds.top());
+    let x1 = f32::from(bounds.right());
+    let y1 = f32::from(bounds.bottom());
+    BorderPathGeometry {
+        x0,
+        y0,
+        x1,
+        y1,
+        radius: radius.min((x1 - x0) / 2.0).min((y1 - y0) / 2.0).max(0.0),
+    }
+}
+
+fn tab_background_color(
+    selected: bool,
+    group_color: Option<Hsla>,
+    effective_color: Hsla,
+    mcp_look: bool,
+    is_dark: bool,
+    text_primary: Hsla,
+) -> Hsla {
+    if let Some(group_color) = group_color {
+        // Match Swift's selected grouped-tab fill, and keep every grouped tab
+        // visibly tied to its repository when it is not selected.
+        group_color.opacity(if selected { 0.32 } else { 0.12 })
+    } else if selected {
+        // Preserve custom tab colors for selected tabs outside a repo group.
+        effective_color.opacity(0.25)
+    } else if mcp_look {
+        style_color(crate::tab_bar::StyleColor::Purple, text_primary).opacity(0.15)
+    } else if is_dark {
+        gpui::hsla(0.0, 0.0, 0.0, 0.18)
+    } else {
+        gpui::hsla(0.0, 0.0, 0.0, 0.06)
+    }
+}
+
+#[cfg(test)]
+mod group_tab_line_tests {
+    use super::*;
+
+    fn tab_bounds(left: f32, top: f32, width: f32) -> Bounds<Pixels> {
+        Bounds::new(
+            point(px(left), px(top)),
+            gpui::size(px(width), px(TAB_CHIP_HEIGHT)),
+        )
+    }
+
+    #[test]
+    fn group_line_starts_at_bracket_and_connects_across_tab_gaps() {
+        let first = tab_bounds(100.0, 30.0, 60.0);
+        let middle = tab_bounds(164.0, 30.0, 60.0);
+        let last = tab_bounds(228.0, 30.0, 60.0);
+
+        let first_line = GroupTabLineEdges {
+            is_first: true,
+            is_last: false,
+        }
+        .bounds(first);
+        let middle_line = GroupTabLineEdges {
+            is_first: false,
+            is_last: false,
+        }
+        .bounds(middle);
+        let last_line = GroupTabLineEdges {
+            is_first: false,
+            is_last: true,
+        }
+        .bounds(last);
+
+        assert_eq!(first_line.origin.x, first.origin.x - px(TAB_SPACING));
+        assert_eq!(first_line.origin.y, first.origin.y);
+        assert_eq!(first_line.size.height, px(1.0));
+        assert_eq!(
+            first_line.origin.x + first_line.size.width,
+            middle_line.origin.x
+        );
+        assert_eq!(
+            middle_line.origin.x + middle_line.size.width,
+            last_line.origin.x
+        );
+        assert_eq!(
+            last_line.origin.x + last_line.size.width,
+            last.origin.x + last.size.width
+        );
+    }
+
+    #[test]
+    fn single_tab_group_line_runs_from_bracket_to_tab_edge() {
+        let tab = tab_bounds(100.0, 30.0, 60.0);
+        let line = GroupTabLineEdges {
+            is_first: true,
+            is_last: true,
+        }
+        .bounds(tab);
+
+        assert_eq!(line.origin.x, tab.origin.x - px(TAB_SPACING));
+        assert_eq!(line.origin.y, tab.origin.y);
+        assert_eq!(
+            line.origin.x + line.size.width,
+            tab.origin.x + tab.size.width
+        );
+    }
+
+    #[gpui::test]
+    fn frame_overlay_matches_padded_chip_layout(harness: &mut gpui::TestAppContext) {
+        use gpui_kit::test::{TestSupportExt, TestWindowExt};
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        const CASES: [(f32, f32, f32); 4] = [
+            (10.0, 180.0, 0.0),
+            (10.0, 103.5, -37.5),
+            (4.0, 80.0, 29.0),
+            (0.0, 280.0, 0.0),
+        ];
+
+        struct FrameOverlayFixture {
+            captures: Vec<Rc<Cell<Option<Bounds<Pixels>>>>>,
+            cases: [(f32, f32, f32); 4],
+        }
+
+        impl gpui::Render for FrameOverlayFixture {
+            fn render(
+                &mut self,
+                _window: &mut Window,
+                _cx: &mut Context<Self>,
+            ) -> impl gpui::IntoElement {
+                let rows = self
+                    .cases
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (padding, width, offset))| {
+                        let corrected_capture = self.captures[index * 2].clone();
+                        let legacy_capture = self.captures[index * 2 + 1].clone();
+                        let chip = |id: String, overlay: gpui::AnyElement| {
+                            div()
+                                .id(SharedString::from(id))
+                                .relative()
+                                .left(px(offset))
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .w(px(width))
+                                .h(px(TAB_CHIP_HEIGHT))
+                                .px(px(padding))
+                                .rounded(px(8.0))
+                                .bg(gpui::black())
+                                .child(div().size(px(14.0)))
+                                .child(div().w(px(17.5)).h(px(14.0)))
+                                .child(div().size(px(12.0)))
+                                .child(overlay)
+                                .test_support()
+                        };
+                        let corrected = canvas(
+                            move |bounds, _, _| corrected_capture.set(Some(bounds)),
+                            |_, _, _, _| {},
+                        )
+                        .map(tab_frame_overlay)
+                        .into_any_element();
+                        let legacy = canvas(
+                            move |bounds, _, _| legacy_capture.set(Some(bounds)),
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .size_full()
+                        .into_any_element();
+
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap(px(12.0))
+                            .child(chip(format!("fixed-chip-{index}"), corrected))
+                            .child(chip(format!("legacy-chip-{index}"), legacy))
+                    })
+                    .collect::<Vec<_>>();
+
+                div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .items_start()
+                    .gap(px(8.0))
+                    .pl(px(13.5))
+                    .pt(px(7.5))
+                    .children(rows)
+            }
+        }
+
+        harness.update(gpui_kit::init);
+        let captures: Vec<_> = (0..CASES.len() * 2)
+            .map(|_| Rc::new(Cell::new(None)))
+            .collect();
+        let handle: gpui::AnyWindowHandle = harness
+            .add_window(|_, _| FrameOverlayFixture {
+                captures: captures.clone(),
+                cases: CASES,
+            })
+            .into();
+        handle
+            .update(harness, |_, window, cx| {
+                for scale in [1.0, 2.0] {
+                    window.set_scale_factor(scale);
+                    window.render_frame(cx);
+                    for (index, (padding, width, offset)) in CASES.iter().copied().enumerate() {
+                        let context = format!(
+                            "scale={scale}, padding={padding}, width={width}, offset={offset}"
+                        );
+                        let expected = window
+                            .find(SharedString::from(format!("fixed-chip-{index}")))
+                            .bounds();
+                        let observed = captures[index * 2]
+                            .get()
+                            .expect("corrected canvas was prepainted");
+                        assert_eq!(observed, expected, "corrected overlay: {context}");
+
+                        let legacy_parent = window
+                            .find(SharedString::from(format!("legacy-chip-{index}")))
+                            .bounds();
+                        let legacy = captures[index * 2 + 1]
+                            .get()
+                            .expect("legacy canvas was prepainted");
+                        assert_eq!(legacy.size, legacy_parent.size, "legacy size: {context}");
+                        assert_eq!(
+                            legacy.origin.x,
+                            legacy_parent.origin.x + px(padding),
+                            "legacy x offset: {context}"
+                        );
+                        assert_eq!(
+                            legacy.origin.y, legacy_parent.origin.y,
+                            "legacy y: {context}"
+                        );
+                    }
+                }
+                window.remove_window();
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn notification_border_centerline_matches_chip_bounds_and_corner_radius() {
+        let bounds = tab_bounds(10.0, 20.0, 100.0);
+        let geometry = border_path_geometry(bounds, 8.0);
+
+        assert_eq!(geometry.x0, 10.0);
+        assert_eq!(geometry.y0, 20.0);
+        assert_eq!(geometry.x1, 110.0);
+        assert_eq!(geometry.y1, 44.0);
+        assert_eq!(geometry.radius, 8.0);
+    }
+
+    #[test]
+    fn notification_border_corner_radius_stays_inside_small_chip_bounds() {
+        let bounds = Bounds::new(point(px(10.0), px(20.0)), gpui::size(px(10.0), px(8.0)));
+        let geometry = border_path_geometry(bounds, 8.0);
+
+        assert_eq!(geometry.radius, 4.0);
+    }
+
+    #[test]
+    fn grouped_tab_background_uses_repo_tint_for_selected_and_unselected_tabs() {
+        let repo = gpui::hsla(0.61, 0.72, 0.48, 1.0);
+        let custom = gpui::hsla(0.04, 0.86, 0.53, 1.0);
+        let text = gpui::hsla(0.0, 0.0, 0.9, 1.0);
+
+        let selected = tab_background_color(true, Some(repo), custom, false, true, text);
+        let unselected = tab_background_color(false, Some(repo), custom, true, false, text);
+
+        assert_eq!(selected.h, repo.h);
+        assert_eq!(selected.a, 0.32);
+        assert_eq!(unselected.h, repo.h);
+        assert_eq!(unselected.a, 0.12);
+    }
+
+    #[test]
+    fn ungrouped_selected_and_mcp_backgrounds_keep_their_existing_colors() {
+        let custom = gpui::hsla(0.04, 0.86, 0.53, 1.0);
+        let text = gpui::hsla(0.0, 0.0, 0.9, 1.0);
+
+        let selected = tab_background_color(true, None, custom, false, true, text);
+        let mcp = tab_background_color(false, None, custom, true, true, text);
+
+        assert_eq!(selected.h, custom.h);
+        assert_eq!(selected.a, 0.25);
+        assert_eq!(
+            mcp.h,
+            style_color(crate::tab_bar::StyleColor::Purple, text).h
+        );
+        assert_eq!(mcp.a, 0.15);
+    }
+
+    #[test]
+    fn idle_sections_group_by_full_repo_path_keep_tab_order_and_put_ungrouped_last() {
+        let sections = group_idle_tabs_by_repo([
+            (7, Some("/work/first/project".to_string())),
+            (3, None),
+            (9, Some("/archive/second/project".to_string())),
+            (6, Some("/work/first/project".to_string())),
+            (4, None),
+        ]);
+
+        assert_eq!(
+            sections,
+            vec![
+                IdleTabSection {
+                    repo_group_id: Some("/work/first/project".to_string()),
+                    tab_ids: vec![7, 6],
+                },
+                IdleTabSection {
+                    repo_group_id: Some("/archive/second/project".to_string()),
+                    tab_ids: vec![9],
+                },
+                IdleTabSection {
+                    repo_group_id: None,
+                    tab_ids: vec![3, 4],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn idle_repo_identity_prefers_group_then_falls_back_to_nonempty_git_root() {
+        assert_eq!(
+            idle_repo_identity(Some("/group/repo"), Some("/git/repo")),
+            Some("/group/repo".to_string())
+        );
+        assert_eq!(
+            idle_repo_identity(None, Some("/git/repo")),
+            Some("/git/repo".to_string())
+        );
+        assert_eq!(
+            idle_repo_identity(Some(""), Some("/git/repo")),
+            Some("/git/repo".to_string())
+        );
+        assert_eq!(idle_repo_identity(Some(""), Some("")), None);
+    }
+
+    #[test]
+    fn idle_sections_handle_empty_and_all_ungrouped_tabs() {
+        assert!(group_idle_tabs_by_repo(std::iter::empty::<(TabId, Option<String>)>()).is_empty());
+        assert_eq!(
+            group_idle_tabs_by_repo([(5, None), (2, None)]),
+            vec![IdleTabSection {
+                repo_group_id: None,
+                tab_ids: vec![5, 2],
+            }]
+        );
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IdleTabSection {
+    repo_group_id: Option<String>,
+    tab_ids: Vec<TabId>,
+}
+
+/// Bucket idle tabs by their full repository identity, preserving the order
+/// of first-seen repositories and the original order of tabs in each bucket.
+/// Tabs without a repository remain visible in a final section.
+fn group_idle_tabs_by_repo(
+    tabs: impl IntoIterator<Item = (TabId, Option<String>)>,
+) -> Vec<IdleTabSection> {
+    let mut sections: Vec<IdleTabSection> = Vec::new();
+    let mut section_by_repo: HashMap<String, usize> = HashMap::new();
+    let mut ungrouped = Vec::new();
+
+    for (tab_id, repo_group_id) in tabs {
+        let Some(repo_group_id) = repo_group_id else {
+            ungrouped.push(tab_id);
+            continue;
+        };
+
+        let section_index = match section_by_repo.get(&repo_group_id).copied() {
+            Some(index) => index,
+            None => {
+                let index = sections.len();
+                section_by_repo.insert(repo_group_id.clone(), index);
+                sections.push(IdleTabSection {
+                    repo_group_id: Some(repo_group_id),
+                    tab_ids: Vec::new(),
+                });
+                index
+            }
+        };
+        sections[section_index].tab_ids.push(tab_id);
+    }
+
+    if !ungrouped.is_empty() {
+        sections.push(IdleTabSection {
+            repo_group_id: None,
+            tab_ids: ungrouped,
+        });
+    }
+
+    sections
+}
+
+fn idle_repo_identity(repo_group_id: Option<&str>, git_root: Option<&str>) -> Option<String> {
+    repo_group_id
+        .filter(|path| !path.is_empty())
+        .or_else(|| git_root.filter(|path| !path.is_empty()))
+        .map(str::to_string)
+}
+
 /// Scroll animation of the tab row (selected tab centered, 0.25 s ease).
 pub(super) struct TabScroll {
     pub(super) handle: ScrollHandle,
@@ -153,12 +597,17 @@ pub(super) fn paint_border(
     color: Hsla,
     window: &mut Window,
 ) {
-    let inset = width / 2.0;
-    let x0 = f32::from(bounds.left()) + inset;
-    let y0 = f32::from(bounds.top()) + inset;
-    let x1 = f32::from(bounds.right()) - inset;
-    let y1 = f32::from(bounds.bottom()) - inset;
-    let r = radius.min((x1 - x0) / 2.0).min((y1 - y0) / 2.0).max(0.0);
+    // Match Swift's RoundedRectangle(...).stroke(...): the path centerline is
+    // on the chip edge. The chip keeps visible overflow so the outside half
+    // of the stroke is not clipped.
+    let geometry = border_path_geometry(bounds, radius);
+    let BorderPathGeometry {
+        x0,
+        y0,
+        x1,
+        y1,
+        radius: r,
+    } = geometry;
     let p = |x: f32, y: f32| point(px(x), px(y));
     let mut builder = PathBuilder::stroke(px(width));
     if !style.dash().is_empty() {
@@ -483,17 +932,16 @@ impl Workspace {
             .when(notification.italic, |d| d.italic())
             .child(title.clone());
 
-        // UnifiedTabButton: tab color at 25% when selected, purple for MCP
-        // tabs, dark 18% otherwise.
-        let background = if selected {
-            color.opacity(0.25)
-        } else if mcp_look {
-            style_color(crate::tab_bar::StyleColor::Purple, text_primary).opacity(0.15)
-        } else if chrome.is_dark {
-            gpui::hsla(0.0, 0.0, 0.0, 0.18)
-        } else {
-            gpui::hsla(0.0, 0.0, 0.0, 0.06)
-        };
+        // Repo color remains visible on every grouped tab. Selected ungrouped
+        // tabs continue to use their effective (including custom) color.
+        let background = tab_background_color(
+            selected,
+            group_color,
+            color,
+            mcp_look,
+            chrome.is_dark,
+            text_primary,
+        );
         let border = (notification.border_width > 0.0).then(|| {
             (
                 notification.border_width,
@@ -532,7 +980,6 @@ impl Workspace {
             .gap(px(8.0))
             .h(px(TAB_CHIP_HEIGHT))
             .max_w(px(280.0))
-            .overflow_hidden()
             .px(px(10.0))
             .rounded(px(8.0))
             .text_xs()
@@ -695,7 +1142,8 @@ impl Workspace {
                     })),
             )
             // Record layout for drag slot math and cross-window drops, and
-            // draw the notification border and the repo group top line.
+            // draw the notification border. The group line is painted by the
+            // group-level overlay so the gap segments stay outside tab clips.
             .child(
                 canvas(
                     move |bounds, _, _| {
@@ -706,17 +1154,9 @@ impl Workspace {
                         if let Some((width, style, color)) = border {
                             paint_border(bounds, 8.0, width, style, color, window);
                         }
-                        if let Some(group_color) = group_color {
-                            let top = Bounds::new(
-                                bounds.origin - point(px(TAB_SPACING / 2.0), px(3.0)),
-                                gpui::size(bounds.size.width + px(TAB_SPACING), px(1.0)),
-                            );
-                            window.paint_quad(gpui::fill(top, group_color.opacity(0.5)));
-                        }
                     },
                 )
-                .absolute()
-                .size_full(),
+                .map(tab_frame_overlay),
             )
             .on_a11y_action(AccessibleAction::Click, {
                 let workspace = cx.entity().downgrade();
@@ -858,8 +1298,7 @@ impl Workspace {
                 },
                 |_, _, _, _| {},
             )
-            .absolute()
-            .size_full(),
+            .map(tab_frame_overlay),
         );
         div()
             .flex()
@@ -946,6 +1385,8 @@ impl Workspace {
             .iter()
             .map(|id| self.render_tab(*id, true, Some(group_color), chrome, cx))
             .collect();
+        let frames_for_paint = frames.clone();
+        let member_ids_for_paint = members;
         div()
             .id(SharedString::from(format!("group-{group}")))
             .relative()
@@ -979,8 +1420,7 @@ impl Workspace {
                                 paint_bracket(bounds, group_color.opacity(0.5), window)
                             },
                         )
-                        .absolute()
-                        .size_full(),
+                        .map(tab_frame_overlay),
                     )
                     .on_mouse_down(
                         MouseButton::Left,
@@ -1025,11 +1465,25 @@ impl Workspace {
                 canvas(
                     move |bounds, _, _| {
                         frames.borrow_mut().groups.insert(group_for_frames, bounds);
+                        bounds
                     },
-                    |_, _, _, _| {},
+                    move |_, _, window, _| {
+                        let frames = frames_for_paint.borrow();
+                        let member_count = member_ids_for_paint.len();
+                        for (index, id) in member_ids_for_paint.iter().enumerate() {
+                            let Some(tab_bounds) = frames.tabs.get(id).copied() else {
+                                continue;
+                            };
+                            let line = GroupTabLineEdges {
+                                is_first: index == 0,
+                                is_last: index + 1 == member_count,
+                            }
+                            .bounds(tab_bounds);
+                            window.paint_quad(gpui::fill(line, group_color.opacity(0.5)));
+                        }
+                    },
                 )
-                .absolute()
-                .size_full(),
+                .map(tab_frame_overlay),
             )
             .into_any_element()
     }
@@ -1073,8 +1527,7 @@ impl Workspace {
                     },
                     |_, _, _, _| {},
                 )
-                .absolute()
-                .size_full(),
+                .map(tab_frame_overlay),
             )
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|this, _, _, cx| {
@@ -1103,6 +1556,14 @@ impl Workspace {
             .map(|t| t.id)
             .filter(|id| idle.contains(id))
             .collect();
+        let sections = group_idle_tabs_by_repo(ids.iter().copied().map(|id| {
+            (
+                id,
+                self.state.get(id).and_then(|tab| {
+                    idle_repo_identity(tab.repo_group_id.as_deref(), tab.git_root.as_deref())
+                }),
+            )
+        }));
         let anchor = {
             let frames = self.frames.borrow();
             frames
@@ -1113,93 +1574,160 @@ impl Workspace {
         };
         let card_anchor = anchor.x + px(40.0);
         let mut rows: Vec<gpui::AnyElement> = Vec::new();
-        for (index, id) in ids.iter().copied().enumerate() {
-            if index > 0 {
-                rows.push(div().h(px(1.0)).bg(chrome.border).into_any_element());
+        for (section_index, section) in sections.iter().enumerate() {
+            if section_index > 0 {
+                rows.push(
+                    div()
+                        .flex_shrink_0()
+                        .mx(px(8.0))
+                        .my(px(3.0))
+                        .h(px(1.0))
+                        .bg(chrome.border)
+                        .into_any_element(),
+                );
             }
-            // Swift: custom title, else the running app, else "Tab".
-            let title = self
-                .state
-                .get(id)
-                .and_then(|t| t.custom_title.clone())
-                .or_else(|| self.session_info(id, cx).and_then(|i| i.ai_app))
-                .unwrap_or_else(|| "Tab".into());
-            let idle_for = self
-                .state
-                .get(id)
-                .map(|t| idle_duration(now - t.last_activity))
-                .unwrap_or_default();
-            rows.push(
-                div()
-                    .id(("idle-row", id as usize))
-                    .role(Role::Button)
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .px(px(10.0))
-                    .py(px(6.0))
-                    .rounded_md()
-                    .hover(|d| d.bg(chrome.tab_hover_bg))
-                    .child(div().text_xs().text_color(chrome.text_muted).child("☾"))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_ellipsis()
-                            .text_sm()
-                            .child(title),
+
+            let tab_count = section.tab_ids.len();
+            let (label, label_color, repository_tooltip, accessibility_label) =
+                if let Some(repo_group_id) = section.repo_group_id.as_deref() {
+                    let name = repo_group_name(repo_group_id);
+                    (
+                        name.to_string(),
+                        tab_color(repo_group_color(repo_group_id)),
+                        Some(SharedString::from(repo_group_id.to_string())),
+                        format!("{name}, {repo_group_id}, {tab_count}"),
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .font_family("Menlo")
-                            .text_color(chrome.text_muted)
-                            .child(idle_for),
+                } else {
+                    let label = crate::l10n::tr("No repository");
+                    (
+                        label.clone(),
+                        chrome.text_muted,
+                        None,
+                        format!("{label}, {tab_count}"),
                     )
-                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                        this.hover_tab(id, *hovered, Some(card_anchor), cx)
-                    }))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.dismiss_hover_card(cx);
-                        this.idle_open = false;
-                        this.select_tab(id, window, cx);
-                    }))
-                    .into_any_element(),
-            );
-        }
-        rows.push(div().h(px(1.0)).bg(chrome.border).into_any_element());
-        rows.push(
-            div()
-                .id("idle-close-all")
-                .role(Role::Button)
+                };
+            let header = div()
+                .id(("idle-repo-header", section_index))
+                .role(Role::Heading)
+                .aria_label(accessibility_label)
                 .flex()
+                .flex_shrink_0()
                 .items_center()
                 .gap(px(6.0))
                 .px(px(10.0))
-                .py(px(6.0))
-                .rounded_md()
+                .py(px(4.0))
                 .text_xs()
-                .hover(|d| d.bg(chrome.tab_hover_bg))
-                .child("⊗")
-                .child(crate::l10n::tr("Close All Idle"))
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.dismiss_hover_card(cx);
-                    this.idle_open = false;
-                    let ids = ids.clone();
-                    this.close_tabs_confirming(ids, window, cx);
-                    cx.notify();
-                }))
-                .into_any_element(),
-        );
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .text_color(label_color)
+                        .child(label),
+                )
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .text_color(chrome.text_muted)
+                        .child(tab_count.to_string()),
+                )
+                .when_some(repository_tooltip, |d, tooltip| {
+                    d.tooltip(move |window, cx| {
+                        gpui_kit::component::tooltip::Tooltip::new(tooltip.clone())
+                            .build(window, cx)
+                    })
+                });
+            rows.push(header.into_any_element());
+
+            for id in section.tab_ids.iter().copied() {
+                // Swift: custom title, else the running app, else "Tab".
+                let title = self
+                    .state
+                    .get(id)
+                    .and_then(|t| t.custom_title.clone())
+                    .or_else(|| self.session_info(id, cx).and_then(|i| i.ai_app))
+                    .unwrap_or_else(|| "Tab".into());
+                let idle_for = self
+                    .state
+                    .get(id)
+                    .map(|t| idle_duration(now - t.last_activity))
+                    .unwrap_or_default();
+                rows.push(
+                    div()
+                        .id(("idle-row", id as usize))
+                        .role(Role::Button)
+                        .flex()
+                        .flex_shrink_0()
+                        .items_center()
+                        .gap(px(6.0))
+                        .px(px(10.0))
+                        .py(px(6.0))
+                        .rounded_md()
+                        .hover(|d| d.bg(chrome.tab_hover_bg))
+                        .child(div().text_xs().text_color(chrome.text_muted).child("☾"))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_ellipsis()
+                                .text_sm()
+                                .child(title),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_family("Menlo")
+                                .text_color(chrome.text_muted)
+                                .child(idle_for),
+                        )
+                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            this.hover_tab(id, *hovered, Some(card_anchor), cx)
+                        }))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.dismiss_hover_card(cx);
+                            this.idle_open = false;
+                            this.select_tab(id, window, cx);
+                        }))
+                        .into_any_element(),
+                );
+            }
+        }
+        let close_all = div()
+            .id("idle-close-all")
+            .role(Role::Button)
+            .flex()
+            .flex_shrink_0()
+            .items_center()
+            .gap(px(6.0))
+            .px(px(10.0))
+            .py(px(6.0))
+            .rounded_md()
+            .text_xs()
+            .hover(|d| d.bg(chrome.tab_hover_bg))
+            .child("⊗")
+            .child(crate::l10n::tr("Close All Idle"))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.dismiss_hover_card(cx);
+                this.idle_open = false;
+                let ids = ids.clone();
+                this.close_tabs_confirming(ids, window, cx);
+                cx.notify();
+            }));
         Some(
             deferred(
                 anchored().position(anchor).snap_to_window().child(
                     div()
                         .id("idle-popover")
+                        .flex()
+                        .flex_col()
                         .occlude()
                         .w(px(240.0))
+                        .max_h(px(360.0))
                         .p_1()
                         .rounded_lg()
                         .border_1()
@@ -1207,7 +1735,25 @@ impl Workspace {
                         .bg(chrome.panel_bg)
                         .text_color(chrome.text)
                         .shadow_lg()
-                        .children(rows)
+                        .child(
+                            div()
+                                .id("idle-list")
+                                .flex()
+                                .flex_col()
+                                .min_h_0()
+                                .max_h(px(300.0))
+                                .overflow_y_scroll()
+                                .children(rows),
+                        )
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .mx(px(8.0))
+                                .my(px(3.0))
+                                .h(px(1.0))
+                                .bg(chrome.border),
+                        )
+                        .child(close_all)
                         .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                             this.idle_open = false;
                             cx.notify();
