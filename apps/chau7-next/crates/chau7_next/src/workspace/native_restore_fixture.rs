@@ -10,11 +10,13 @@ use gpui::{AppContext, AsyncApp, Focusable, WindowHandle, WindowOptions, size};
 use gpui_kit::base::Root;
 use objc2::{MainThreadMarker, rc::Retained, runtime::AnyObject};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSApplicationPresentationOptions, NSColorSpace,
-    NSEvent, NSEventModifierFlags, NSEventType, NSMenu, NSView, NSWindow, NSWindowButton,
-    NSWindowStyleMask,
+    NSApplication, NSApplicationActivationPolicy, NSApplicationPresentationOptions, NSColor,
+    NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSFont, NSMenu, NSScreen,
+    NSTextField, NSView, NSWindow, NSWindowButton, NSWindowStyleMask,
 };
-use objc2_foundation::{NSArray, NSBundle, NSEdgeInsets, NSObject, NSPoint, NSString};
+use objc2_foundation::{
+    NSArray, NSBundle, NSEdgeInsets, NSObject, NSPoint, NSRect, NSSize, NSString,
+};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -2047,6 +2049,120 @@ async fn wait_for_menu_bar_visibility(cx: &AsyncApp, expected: bool) -> Result<(
     }
 }
 
+const MANUAL_MENU_POINTER_ENV: &str = "CHAU7_NEXT_NATIVE_MENU_POINTER";
+const MANUAL_MENU_POINTER_PHASE_TIMEOUT: Duration = Duration::from_secs(12);
+
+fn manual_menu_pointer_requested() -> Result<bool, String> {
+    match std::env::var(MANUAL_MENU_POINTER_ENV) {
+        Ok(value) if value == "1" => Ok(true),
+        Ok(value) if value == "0" => Ok(false),
+        Ok(_) => Err(format!("{MANUAL_MENU_POINTER_ENV} must be 0 or 1")),
+        Err(std::env::VarError::NotPresent) => Ok(false),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err(format!("{MANUAL_MENU_POINTER_ENV} must be UTF-8"))
+        }
+    }
+}
+
+fn rect_contains_point(rect: NSRect, point: NSPoint) -> bool {
+    point.x >= rect.origin.x
+        && point.x <= rect.origin.x + rect.size.width
+        && point.y >= rect.origin.y
+        && point.y <= rect.origin.y + rect.size.height
+}
+
+fn pointer_screen_frame() -> Result<NSRect, String> {
+    let mtm = MainThreadMarker::new().ok_or("pointer display lookup is not on the main thread")?;
+    let pointer = NSEvent::mouseLocation();
+    let screens = NSScreen::screens(mtm);
+    (0..screens.count())
+        .map(|index| screens.objectAtIndex(index).frame())
+        .find(|frame| rect_contains_point(*frame, pointer))
+        .ok_or("manual pointer is outside all NSScreen frames")
+}
+
+fn place_fullscreen_fixture_on_pointer_screen(native: &NSWindow) -> Result<NSRect, String> {
+    let target_frame = pointer_screen_frame()?;
+    let before_move = NSEvent::mouseLocation();
+    ensure(
+        rect_contains_point(target_frame, before_move),
+        "manual pointer display changed before fullscreen window placement",
+    )?;
+
+    // AppKit can leave an already-visible window associated with its old
+    // display unless its origin is set after it is ordered front.
+    native_mutation(|| native.makeKeyAndOrderFront(None))?;
+    let frame = native.frame();
+    native_mutation(|| {
+        native.setFrameOrigin(NSPoint::new(
+            target_frame.origin.x + (target_frame.size.width - frame.size.width) / 2.0,
+            target_frame.origin.y + (target_frame.size.height - frame.size.height) / 2.0,
+        ));
+    })?;
+
+    let actual_frame = native
+        .screen()
+        .ok_or("manual fullscreen fixture window has no NSScreen after placement")?
+        .frame();
+    ensure(
+        native_rects_match(target_frame, actual_frame),
+        "manual fullscreen fixture window did not move to the pointer display",
+    )?;
+    ensure(
+        rect_contains_point(target_frame, NSEvent::mouseLocation()),
+        "manual pointer moved to another display during fullscreen window placement",
+    )?;
+    eprintln!(
+        "native_fullscreen_menu_pointer_display={}",
+        serde_json::json!({
+            "screen_frame": native_rect_values(actual_frame),
+            "pointer_xy": [before_move.x, before_move.y],
+            "window_frame": native_rect_values(native.frame()),
+        })
+    );
+    Ok(target_frame)
+}
+
+struct ManualPointerInstruction {
+    label: Retained<NSTextField>,
+}
+
+impl ManualPointerInstruction {
+    fn show(native: &NSWindow, prompt: &str) -> Result<Self, String> {
+        let mtm = MainThreadMarker::new().ok_or("pointer prompt is not on the main thread")?;
+        let content = native
+            .contentView()
+            .ok_or("manual fullscreen fixture has no content view")?;
+        let bounds = content.bounds();
+        let width = (bounds.size.width - 48.0).clamp(480.0, 920.0);
+        let height = 88.0;
+        let label = NSTextField::wrappingLabelWithString(&NSString::from_str(prompt), mtm);
+        label.setFrame(NSRect::new(
+            NSPoint::new(
+                bounds.origin.x + (bounds.size.width - width) / 2.0,
+                bounds.origin.y + (bounds.size.height - height) / 2.0,
+            ),
+            NSSize::new(width, height),
+        ));
+        label.setFont(Some(&NSFont::boldSystemFontOfSize(18.0)));
+        label.setTextColor(Some(&NSColor::blackColor()));
+        label.setBackgroundColor(Some(&NSColor::systemYellowColor()));
+        label.setDrawsBackground(true);
+        label.setBordered(false);
+        label.setBezeled(false);
+        label.setEditable(false);
+        label.setSelectable(false);
+        content.addSubview(&label);
+        Ok(Self { label })
+    }
+}
+
+impl Drop for ManualPointerInstruction {
+    fn drop(&mut self) {
+        self.label.removeFromSuperview();
+    }
+}
+
 #[derive(Clone, Copy)]
 struct FullscreenScreenGeometry {
     frame: objc2_foundation::NSRect,
@@ -2084,6 +2200,91 @@ impl FullscreenScreenGeometry {
             menu_bar_frame,
         })
     }
+}
+
+async fn wait_for_manual_pointer_menu_phase(
+    phase: u8,
+    prompt: &'static str,
+    expected_menu_visible: bool,
+    stable_for: Duration,
+    native: &NSWindow,
+    application: &NSApplication,
+    cx: &AsyncApp,
+) -> Result<serde_json::Value, String> {
+    let timeout = MANUAL_MENU_POINTER_PHASE_TIMEOUT;
+    let deadline = Instant::now() + timeout;
+    let screen = FullscreenScreenGeometry::capture(native, application)?.frame;
+    let screen_top = screen.origin.y + screen.size.height;
+    let instruction = ManualPointerInstruction::show(native, prompt)?;
+    let mut stable_since = None;
+    let mut samples = 0_u64;
+
+    let result = async {
+        eprintln!(
+            "native_fullscreen_menu_pointer_phase={phase} prompt=\"{prompt}\" timeout_ms={}",
+            timeout.as_millis()
+        );
+        loop {
+            ensure(
+                application.isActive()
+                    && native.isVisible()
+                    && native.isKeyWindow()
+                    && native.styleMask().contains(NSWindowStyleMask::FullScreen),
+                "owned fullscreen application lost active/key state during manual pointer stimulus",
+            )?;
+            let menu_visible = native_menu_bar_visible()?;
+            let pointer = NSEvent::mouseLocation();
+            let pointer_in_screen = rect_contains_point(screen, pointer);
+            let near_top = pointer_in_screen && pointer.y >= screen_top - 3.0;
+            let pointer_position_matches = pointer_in_screen
+                && if expected_menu_visible {
+                    near_top
+                } else {
+                    !near_top
+                };
+            let state_matches = menu_visible == expected_menu_visible && pointer_position_matches;
+            samples += 1;
+
+            if state_matches {
+                let started = stable_since.get_or_insert_with(Instant::now);
+                if started.elapsed() >= stable_for {
+                    let evidence = serde_json::json!({
+                        "phase": phase,
+                        "prompt": prompt,
+                        "expected_menu_bar_visible": expected_menu_visible,
+                        "observed_menu_bar_visible": menu_visible,
+                        "app_active": application.isActive(),
+                        "window_visible": native.isVisible(),
+                        "window_key": native.isKeyWindow(),
+                        "window_fullscreen": native.styleMask().contains(NSWindowStyleMask::FullScreen),
+                        "pointer_screen_xy": [pointer.x, pointer.y],
+                        "pointer_near_screen_top": near_top,
+                        "screen_frame": native_rect_values(screen),
+                        "screen_top_y": screen_top,
+                        "stable_for_ms": stable_for.as_millis(),
+                        "samples": samples,
+                        "timeout_ms": timeout.as_millis(),
+                        "synthetic_pointer_events_posted": false,
+                    });
+                    eprintln!("native_fullscreen_menu_pointer_phase_complete={evidence}");
+                    return Ok(evidence);
+                }
+            } else {
+                stable_since = None;
+            }
+
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "manual pointer phase {phase} timed out: expected menu_visible={expected_menu_visible}, pointer_in_screen=true, pointer_near_top={expected_menu_visible}; observed menu_visible={menu_visible}, pointer_in_screen={pointer_in_screen}, pointer_near_top={near_top}, pointer=({}, {}) after {samples} samples",
+                    pointer.x, pointer.y
+                ));
+            }
+            pause(cx, Duration::from_millis(100)).await;
+        }
+    }
+    .await;
+    drop(instruction);
+    result
 }
 
 #[derive(Clone, Copy)]
@@ -2689,9 +2890,131 @@ async fn verify_fullscreen_menu_reveal(
 ) -> Result<serde_json::Value, String> {
     let entry_foreground =
         prepare_fullscreen_menu_state("fullscreen menu entry", native, application, cx).await?;
+    let manual_pointer_mode = manual_menu_pointer_requested()?;
     let original_menu_bar_visibility = native_menu_bar_visible()?;
     let original_presentation_options = application.presentationOptions();
-    let cycle_result = async {
+    let cycle_result = if manual_pointer_mode {
+        async {
+            let hidden_baseline_stimulus = wait_for_manual_pointer_menu_phase(
+                1,
+                "Éloignez le pointeur du bord supérieur de l’écran jusqu’à ce que le menu disparaisse.",
+                false,
+                Duration::from_millis(500),
+                native,
+                application,
+                cx,
+            )
+            .await?;
+            settle(handle, cx).await?;
+            let hidden_foreground = prepare_fullscreen_menu_state(
+                "fullscreen menu hidden-before manual pointer snapshot",
+                native,
+                application,
+                cx,
+            )
+            .await?;
+            let mut hidden_before = fullscreen_menu_snapshot(
+                "fullscreen_menu_hidden_before_reveal",
+                false,
+                application,
+                native,
+                handle,
+                cx,
+            )?;
+            hidden_before.report["foreground_reacquisition"] = hidden_foreground;
+
+            let reveal_stimulus = wait_for_manual_pointer_menu_phase(
+                2,
+                "Placez le pointeur sur le bord supérieur de cet écran et gardez-le là pendant 3 secondes.",
+                true,
+                Duration::from_secs(3),
+                native,
+                application,
+                cx,
+            )
+            .await?;
+            settle(handle, cx).await?;
+            let revealed_foreground = prepare_fullscreen_menu_state(
+                "fullscreen menu revealed manual pointer snapshot",
+                native,
+                application,
+                cx,
+            )
+            .await?;
+            let mut revealed = fullscreen_menu_snapshot(
+                "fullscreen_menu_revealed",
+                true,
+                application,
+                native,
+                handle,
+                cx,
+            )?;
+            revealed.report["foreground_reacquisition"] = revealed_foreground;
+
+            let hide_stimulus = wait_for_manual_pointer_menu_phase(
+                3,
+                "Éloignez le pointeur du bord supérieur et gardez-le à distance jusqu’à ce que le menu disparaisse.",
+                false,
+                Duration::from_millis(750),
+                native,
+                application,
+                cx,
+            )
+            .await?;
+            settle(handle, cx).await?;
+            let hidden_after_foreground = prepare_fullscreen_menu_state(
+                "fullscreen menu hidden-after manual pointer snapshot",
+                native,
+                application,
+                cx,
+            )
+            .await?;
+            let mut hidden_after = fullscreen_menu_snapshot(
+                "fullscreen_menu_hidden_after_reveal",
+                false,
+                application,
+                native,
+                handle,
+                cx,
+            )?;
+            hidden_after.report["foreground_reacquisition"] = hidden_after_foreground;
+
+            Ok::<_, String>(serde_json::json!({
+                "stimulus": {
+                    "mode": "manual_pointer",
+                    "kind": "physical pointer movement by the test operator",
+                    "pointer_top_transition_observed": true,
+                    "pointer_hover_causality_proven": false,
+                    "synthetic_pointer_events_posted": false,
+                    "menu_api_mutation_calls": 0,
+                    "presentation_option_mutation_calls": 0,
+                    "coverage": "the operator was prompted to move the pointer; samples observed it off-top, at the top edge while the menu was visible, then off-top while hidden; timing alone does not prove causality",
+                    "phases": [hidden_baseline_stimulus, reveal_stimulus, hide_stimulus],
+                },
+                "states": {
+                    "hidden_before": hidden_before.report,
+                    "revealed": revealed.report,
+                    "hidden_after": hidden_after.report,
+                },
+                "geometry_deltas": {
+                    "revealed_from_hidden": hidden_before.geometry.delta(revealed.geometry),
+                    "hidden_after_from_revealed": revealed.geometry.delta(hidden_after.geometry),
+                    "hidden_after_from_initial_hidden": hidden_before.geometry.delta(hidden_after.geometry),
+                },
+                "owned_renderer_crop_max_rgb_delta": {
+                    "revealed_from_hidden": max_sample_rgb_delta(&hidden_before.sample_rgb, &revealed.sample_rgb),
+                    "hidden_after_from_initial_hidden": max_sample_rgb_delta(&hidden_before.sample_rgb, &hidden_after.sample_rgb),
+                },
+                "coverage_limits": {
+                    "renderer_pixels": "software uses AppKit view capture; Metal uses Window::render_to_image offscreen scene pixels; neither capture includes reliable AppKit fullscreen composition",
+                    "occlusion_check": "uses AppKit hit-testing at a point in the actual tabbar band and compares only against the owned window number",
+                    "desktop_capture": false,
+                },
+            }))
+        }
+        .await
+    } else {
+        async {
         set_native_menu_bar_visible(false)?;
         wait_for_menu_bar_visibility(cx, false).await?;
         pause(cx, Duration::from_millis(250)).await;
@@ -2763,11 +3086,14 @@ async fn verify_fullscreen_menu_reveal(
 
         Ok::<_, String>(serde_json::json!({
             "stimulus": {
+                "mode": "forced_programmatic",
                 "api": "NSApplication.presentationOptions and NSMenu.menuBarVisible / setMenuBarVisible",
                 "kind": "forced owned-application menu-bar visibility",
                 "original_presentation_options": original_presentation_options.0,
                 "revealed_presentation_options": revealed_options.0,
                 "pointer_hover_exercised": false,
+                "synthetic_pointer_events_posted": false,
+                "coverage": "programmatic visibility state and geometry only; no physical pointer hover was exercised",
             },
             "states": {
                 "hidden_before": hidden_before.report,
@@ -2789,8 +3115,9 @@ async fn verify_fullscreen_menu_reveal(
                 "desktop_capture": false,
             },
         }))
-    }
-    .await;
+        }
+        .await
+    };
 
     let restoration = async {
         let foreground = prepare_fullscreen_menu_state(
@@ -2800,6 +3127,14 @@ async fn verify_fullscreen_menu_reveal(
             cx,
         )
         .await;
+        if manual_pointer_mode {
+            let final_visibility = native_menu_bar_visible()?;
+            ensure(
+                !final_visibility,
+                "manual pointer cleanup expected the menu to remain hidden after pointer-away phase",
+            )?;
+            return Ok::<_, String>((final_visibility, foreground?));
+        }
         // Always undo the fixture's visibility change, even if foreground was
         // interrupted during cleanup. The call changes this application's menu.
         let restore_options =
@@ -2825,10 +3160,17 @@ async fn verify_fullscreen_menu_reveal(
     .await;
 
     match (cycle_result, restoration) {
-        (Ok(mut report), Ok((restored, restoration_foreground))) => {
+        (Ok(mut report), Ok((final_visibility, restoration_foreground))) => {
             report["original_menu_bar_visibility"] =
                 serde_json::json!(original_menu_bar_visibility);
-            report["restored_menu_bar_visibility"] = serde_json::json!(restored);
+            if manual_pointer_mode {
+                report["final_menu_bar_visibility"] = serde_json::json!(final_visibility);
+                report["visibility_cleanup"] = serde_json::json!(
+                    "pointer moved away; menu and presentation APIs were not mutated"
+                );
+            } else {
+                report["restored_menu_bar_visibility"] = serde_json::json!(final_visibility);
+            }
             report["entry_foreground"] = entry_foreground;
             report["restoration_foreground"] = restoration_foreground;
             Ok(report)
@@ -3206,6 +3548,11 @@ async fn verify_traffic_lights_in_real_fullscreen(
         !native.styleMask().contains(NSWindowStyleMask::FullScreen),
         "owned fullscreen fixture must start windowed",
     )?;
+    let pointer_display = if manual_menu_pointer_requested()? {
+        Some(place_fullscreen_fixture_on_pointer_screen(native)?)
+    } else {
+        None
+    };
     let entered = FullscreenCompletion::new(native, unsafe {
         objc2_app_kit::NSWindowDidEnterFullScreenNotification
     });
@@ -3223,6 +3570,16 @@ async fn verify_traffic_lights_in_real_fullscreen(
             |_| entered.completed() && native.styleMask().contains(NSWindowStyleMask::FullScreen),
         )
         .await?;
+        if let Some(expected_screen) = pointer_display {
+            let actual_screen = native
+                .screen()
+                .ok_or("owned fullscreen fixture has no NSScreen after entering fullscreen")?
+                .frame();
+            ensure(
+                native_rects_match(expected_screen, actual_screen),
+                "owned fullscreen fixture entered fullscreen on a different display",
+            )?;
+        }
         wait_for_native_window_geometry(native, cx, "fullscreen controls after animation", |_| {
             true
         })
@@ -3418,6 +3775,7 @@ async fn verify_traffic_lights_in_real_fullscreen(
     let fullscreen = fullscreen_result?;
     Ok(serde_json::json!({
         "fullscreen": fullscreen,
+        "manual_pointer_display_frame": pointer_display.map(native_rect_values),
         "did_exit_notification": exited.completed(),
         "exit_via_green_button": exit_via_green_button,
         "windowed_after_fullscreen": traffic_light_geometry(native, "after actual fullscreen exit")?,

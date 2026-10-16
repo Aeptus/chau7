@@ -21,8 +21,8 @@ pub(super) fn register_window_actions(
 }
 
 impl Workspace {
-    /// Close Window: the tabs and their shells are kept (macOS), the window
-    /// comes back from the Dock or the next shortcut.
+    /// Close Window: on macOS, keep the tabs and shells in `AppData` after
+    /// removing the native window. The Dock icon or next shortcut reopens them.
     pub(super) fn close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.hide_tabs(window, cx);
         window.remove_window();
@@ -47,7 +47,7 @@ impl Workspace {
         crate::platform::drop_image::uninstall(window);
     }
 
-    /// Closing with the window's close button hides the window too.
+    /// Closing with the window's close button parks its tabs before removal.
     pub(super) fn hide_on_close(window: &mut Window, cx: &mut Context<Self>) {
         let workspace = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {

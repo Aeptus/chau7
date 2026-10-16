@@ -3,6 +3,7 @@
 
 import fcntl
 import hashlib
+import json
 import plistlib
 import re
 import shutil
@@ -10,6 +11,7 @@ import socket
 import tempfile
 import types
 import unittest
+import uuid
 from pathlib import Path
 from unittest import mock
 
@@ -30,7 +32,7 @@ BUILD = "202610160001"
 
 class ProductionUpdaterTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="chau7-production-update-")
+        self.temporary = tempfile.TemporaryDirectory(prefix="chau7-production-update-", dir="/private/tmp")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.app = self.root / f"{CORE.EXPECTED_EXECUTABLE}.app"
@@ -97,6 +99,90 @@ class ProductionUpdaterTests(unittest.TestCase):
     def validate(self, receipt=None, expected=REVISION):
         with mock.patch.object(CORE, "verify_code_signature"):
             return CORE.validate_candidate(self.app, receipt or self.receipt, expected)
+
+    def write_restore_state(self, windows, token, explicit_clear=False, contexts=None, previous_index_token=None):
+        state = self.root / CORE.STATE_RELATIVES[0]
+        state.mkdir(parents=True, exist_ok=True)
+        contexts = contexts or {}
+        references = {}
+        context_directory = state / CORE.RESTORE_CONTEXTS_RELATIVE
+        for pane_id, payload in contexts.items():
+            context_directory.mkdir(parents=True, exist_ok=True)
+            digest = hashlib.sha256(payload).hexdigest()
+            (context_directory / f"{digest}.txt").write_bytes(payload)
+            references[str(pane_id)] = {"sha256": digest, "byte_count": len(payload)}
+
+        session = {"version": 1, "windows": windows}
+        bundle = {
+            "schema_version": 1,
+            "save_token": token,
+            "previous_index_token": previous_index_token,
+            "explicit_clear": explicit_clear,
+            "session": session,
+            "contexts": references,
+        }
+        index = {
+            "save_token": token,
+            "explicit_clear": explicit_clear,
+            **session,
+        }
+        current_path = state / CORE.RESTORE_CURRENT_RELATIVE
+        current_path.parent.mkdir(parents=True, exist_ok=True)
+        current_path.write_text(json.dumps(bundle), encoding="utf-8")
+        (state / CORE.RESTORE_INDEX_RELATIVE).write_text(json.dumps(index), encoding="utf-8")
+        return state, bundle, index
+
+    @staticmethod
+    def saved_tab(tab_uuid, pane_id, session_id, scrollback=False):
+        return {
+            "uuid": str(uuid.UUID(tab_uuid)),
+            "cwd": "/repo",
+            "custom_title": None,
+            "color": "blue",
+            "repo_group_id": None,
+            "created_at": 10.0,
+            "manual_color": False,
+            "focused_pane": pane_id,
+            "panes": [
+                {
+                    "id": pane_id,
+                    "directory": "/repo",
+                    "scrollback": scrollback,
+                    "ai_provider": "claude",
+                    "ai_session_id": session_id,
+                    "ai_session_id_source": "observed",
+                    "ai_resume_command": f"claude --resume {session_id}",
+                    "archived_ai_resume": None,
+                    "agent_launch_command": None,
+                }
+            ],
+        }
+
+    @classmethod
+    def saved_window(cls, *tabs, selected=0):
+        return {
+            "tabs": list(tabs),
+            "selected": selected,
+            "x": 100.0,
+            "y": 100.0,
+            "width": 900.0,
+            "height": 700.0,
+        }
+
+    def new_run_backup(self):
+        backup = self.root / "update-backup"
+        backup.mkdir(mode=0o700)
+        return backup
+
+    @staticmethod
+    def saved_split(*pane_ids):
+        return {
+            "type": "split",
+            "id": max(pane_ids, default=0) + 100,
+            "axis": "horizontal",
+            "ratios": [1.0 / len(pane_ids)] * len(pane_ids) if pane_ids else [],
+            "children": [{"type": "terminal", "id": pane_id, "directory": "/repo"} for pane_id in pane_ids],
+        }
 
     def test_accepts_exact_clean_rust_production_receipt(self):
         result = self.validate()
@@ -263,6 +349,463 @@ class ProductionUpdaterTests(unittest.TestCase):
             (copied_state / socket_relative).read_text(encoding="utf-8"),
             "preserve this regular file\n",
         )
+
+    def test_prequit_snapshot_keeps_bundle_index_and_verified_contexts(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000001", 11, "claude-a", True)
+        second = self.saved_tab("00000000-0000-0000-0000-000000000002", 22, "codex-b")
+        windows = [self.saved_window(first), self.saved_window(second)]
+        state, bundle, _ = self.write_restore_state(
+            windows, "10000000-0000-0000-0000-000000000001", contexts={11: b"saved context\n"}
+        )
+        backup = self.new_run_backup()
+
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+
+        pre_root = prequit["prequit_root"]
+        self.assertEqual(prequit["identity"]["window_count"], 2)
+        self.assertEqual(prequit["identity"]["tab_count"], 2)
+        self.assertEqual(
+            json.loads((pre_root / CORE.RESTORE_CURRENT_RELATIVE).read_text(encoding="utf-8")),
+            bundle,
+        )
+        context_name = hashlib.sha256(b"saved context\n").hexdigest() + ".txt"
+        self.assertEqual(
+            (pre_root / CORE.RESTORE_CONTEXTS_RELATIVE / context_name).read_bytes(),
+            b"saved context\n",
+        )
+        self.assertTrue((pre_root / CORE.RESTORE_INDEX_RELATIVE).is_file())
+        self.assertTrue(prequit["prequit_manifest"].is_file())
+
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+        CORE.compare_restore_states(prequit, postquit, backup)
+
+    def test_postquit_snapshot_rejects_a_dropped_window_and_keeps_recovery_paths(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000011", 11, "claude-a")
+        second = self.saved_tab("00000000-0000-0000-0000-000000000012", 12, "codex-b")
+        old_token = "10000000-0000-0000-0000-000000000011"
+        state, _, _ = self.write_restore_state([self.saved_window(first), self.saved_window(second)], old_token)
+        backup = self.new_run_backup()
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+        self.write_restore_state([self.saved_window(first)], "10000000-0000-0000-0000-000000000012")
+
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+        with self.assertRaisesRegex(CORE.UpdateError, "saved window or tab identities changed") as error:
+            CORE.compare_restore_states(prequit, postquit, backup)
+
+        self.assertIn(str(prequit["prequit_root"]), str(error.exception))
+        self.assertIn(str(backup / "state" / CORE.STATE_RELATIVES[0]), str(error.exception))
+        self.assertIn("keep Chau7 closed", str(error.exception))
+
+    def test_postquit_snapshot_rejects_changed_provider_resume_identity(self):
+        tab_uuid = "00000000-0000-0000-0000-000000000021"
+        original = self.saved_tab(tab_uuid, 21, "claude-original")
+        state, _, _ = self.write_restore_state([self.saved_window(original)], "10000000-0000-0000-0000-000000000021")
+        backup = self.new_run_backup()
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+        changed = self.saved_tab(tab_uuid, 21, "claude-changed")
+        self.write_restore_state([self.saved_window(changed)], "10000000-0000-0000-0000-000000000022")
+
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+        with self.assertRaisesRegex(CORE.UpdateError, "provider resume identity changed"):
+            CORE.compare_restore_states(prequit, postquit, backup)
+
+    def test_missing_current_bundle_with_populated_index_fails_before_quit_prompt(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000031", 31, "claude-a")
+        state, _, _ = self.write_restore_state([self.saved_window(tab)], "10000000-0000-0000-0000-000000000031")
+        (state / CORE.RESTORE_CURRENT_RELATIVE).unlink()
+        backup = self.new_run_backup()
+
+        with self.assertRaisesRegex(CORE.UpdateError, "refusing to ask you to quit"):
+            CORE.capture_prequit_restore(state, backup, self.root)
+
+    def test_apply_does_not_ask_for_quit_when_current_transaction_is_missing(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000032", 32, "claude-a")
+        state, _, _ = self.write_restore_state([self.saved_window(tab)], "10000000-0000-0000-0000-000000000032")
+        (state / CORE.RESTORE_CURRENT_RELATIVE).unlink()
+        ask = mock.Mock()
+
+        with (
+            mock.patch.object(CORE, "require_terminal"),
+            mock.patch.object(CORE, "ask_for_normal_quit", ask),
+            self.assertRaisesRegex(CORE.UpdateError, "refusing to ask you to quit"),
+        ):
+            CORE.apply_update(self.app, self.root / "receipt.json", REVISION, 30, {}, self.root.resolve())
+
+        ask.assert_not_called()
+
+    def test_apply_captures_prequit_transaction_before_asking_for_quit(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000033", 33, "claude-a", True)
+        state, _, _ = self.write_restore_state(
+            [self.saved_window(tab)],
+            "10000000-0000-0000-0000-000000000033",
+            contexts={33: b"before quit\n"},
+        )
+        events = []
+
+        class FakeLock:
+            def close(self):
+                events.append("lock closed")
+
+        def ask_for_quit(wait_seconds, snapshot_path):
+            prequit_root = Path(snapshot_path)
+            guard_path = prequit_root.parents[3] / "restore-guard.json"
+            events.append(("asked", guard_path.is_file()))
+
+        with (
+            mock.patch.object(CORE, "require_terminal", side_effect=lambda: events.append("terminal")),
+            mock.patch.object(CORE, "ask_for_normal_quit", side_effect=ask_for_quit),
+            mock.patch.object(
+                CORE,
+                "acquire_instance_lock",
+                side_effect=lambda home: (events.append("lock"), FakeLock())[1],
+            ),
+            mock.patch.object(CORE, "active_application_pids", side_effect=lambda: (events.append("pids"), [])[1]),
+            mock.patch.object(CORE, "perform_update_locked", side_effect=lambda *args: events.append("update")),
+        ):
+            CORE.apply_update(self.app, self.root / "receipt.json", REVISION, 30, {}, self.root.resolve())
+
+        asked = next(item for item in events if isinstance(item, tuple))
+        self.assertLess(events.index("terminal"), events.index(asked))
+        self.assertEqual(events[-3:], ["pids", "update", "lock closed"])
+        self.assertEqual(asked, ("asked", True))
+
+    def test_missing_current_bundle_with_populated_fallback_fails_closed(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000041", 41, "claude-a")
+        state, bundle, _ = self.write_restore_state([self.saved_window(tab)], "10000000-0000-0000-0000-000000000041")
+        (state / CORE.RESTORE_CURRENT_RELATIVE).unlink()
+        (state / CORE.RESTORE_INDEX_RELATIVE).unlink()
+        latest = state / CORE.RESTORE_LATEST_RELATIVE
+        latest.parent.mkdir(parents=True)
+        latest.write_text(json.dumps(bundle), encoding="utf-8")
+        backup = self.new_run_backup()
+
+        with self.assertRaisesRegex(CORE.UpdateError, "contains restorable tabs"):
+            CORE.capture_prequit_restore(state, backup, self.root)
+
+    def test_absent_current_bundle_accepts_explicit_clear_index(self):
+        state = self.root / CORE.STATE_RELATIVES[0]
+        state.mkdir(parents=True)
+        index = {
+            "save_token": "10000000-0000-0000-0000-000000000051",
+            "explicit_clear": True,
+            "version": 1,
+            "windows": [],
+        }
+        (state / CORE.RESTORE_INDEX_RELATIVE).write_text(json.dumps(index), encoding="utf-8")
+        backup = self.new_run_backup()
+
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+
+        self.assertEqual(prequit["mode"], "explicit-clear")
+        self.assertFalse(prequit["identity"]["has_tabs"])
+        self.assertEqual(
+            json.loads((prequit["prequit_root"] / CORE.RESTORE_INDEX_RELATIVE).read_text(encoding="utf-8")),
+            index,
+        )
+
+    def test_genuinely_unused_state_is_accepted_and_compared_with_empty_postquit(self):
+        state = self.root / CORE.STATE_RELATIVES[0]
+        state.mkdir(parents=True)
+        backup = self.new_run_backup()
+
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+        CORE.compare_restore_states(prequit, postquit, backup)
+
+        self.assertEqual(prequit["mode"], "unused")
+        self.assertTrue(prequit["prequit_manifest"].is_file())
+
+    def test_corrupt_context_hash_fails_before_quit_prompt(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000061", 61, "claude-a", True)
+        state, _, _ = self.write_restore_state(
+            [self.saved_window(tab)],
+            "10000000-0000-0000-0000-000000000061",
+            contexts={61: b"original context\n"},
+        )
+        context_path = next((state / CORE.RESTORE_CONTEXTS_RELATIVE).glob("*.txt"))
+        context_path.write_bytes(b"corrupt context\n")
+        backup = self.new_run_backup()
+
+        with self.assertRaisesRegex(CORE.UpdateError, "hash or byte count does not verify"):
+            CORE.capture_prequit_restore(state, backup, self.root)
+        self.assertFalse((backup / "pre-quit").exists())
+        self.assertEqual(list(backup.glob(".pre-quit-stage-*")), [])
+
+    def test_current_bundle_and_index_tokens_must_form_one_transaction(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000071", 71, "claude-a")
+        state, _, index = self.write_restore_state([self.saved_window(tab)], "10000000-0000-0000-0000-000000000071")
+        index["save_token"] = "10000000-0000-0000-0000-000000000072"
+        (state / CORE.RESTORE_INDEX_RELATIVE).write_text(json.dumps(index), encoding="utf-8")
+        backup = self.new_run_backup()
+
+        with self.assertRaisesRegex(CORE.UpdateError, "do not form a verified save transaction"):
+            CORE.capture_prequit_restore(state, backup, self.root)
+
+    def test_postquit_allows_added_windows_tabs_and_resume_metadata_enrichment(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000081", 81, "stable-session")
+        initially_unknown = self.saved_tab("00000000-0000-0000-0000-000000000082", 82, "placeholder")
+        for field in (
+            "ai_provider",
+            "ai_session_id",
+            "ai_session_id_source",
+            "ai_resume_command",
+            "agent_launch_command",
+        ):
+            initially_unknown["panes"][0][field] = None
+        state, _, _ = self.write_restore_state(
+            [self.saved_window(first), self.saved_window(initially_unknown)],
+            "10000000-0000-0000-0000-000000000081",
+        )
+        backup = self.new_run_backup()
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+
+        enriched = self.saved_tab("00000000-0000-0000-0000-000000000082", 82, "enriched-session")
+        added_to_first = self.saved_tab("00000000-0000-0000-0000-000000000083", 83, "new-tab-session")
+        added_window = self.saved_tab("00000000-0000-0000-0000-000000000084", 84, "new-window-session")
+        self.write_restore_state(
+            [
+                self.saved_window(first, added_to_first, selected=1),
+                self.saved_window(enriched),
+                self.saved_window(added_window),
+            ],
+            "10000000-0000-0000-0000-000000000082",
+        )
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+
+        CORE.compare_restore_states(prequit, postquit, backup)
+
+    def test_postquit_allows_selection_and_focused_pane_changes(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000085", 85, "first")
+        first["panes"].append(
+            {
+                "id": 86,
+                "directory": "/repo",
+                "scrollback": False,
+                "ai_provider": None,
+                "ai_session_id": None,
+                "ai_session_id_source": None,
+                "ai_resume_command": None,
+                "archived_ai_resume": None,
+                "agent_launch_command": None,
+            }
+        )
+        first["focused_pane"] = 85
+        first["created_at"] = 1000.0
+        first["panes"][0]["last_input_at"] = 1000.1
+        first["panes"][0]["last_output_at"] = 1000.2
+        first["panes"][0]["last_status"] = "running"
+        second = self.saved_tab("00000000-0000-0000-0000-000000000087", 87, "second")
+        state, _, _ = self.write_restore_state(
+            [self.saved_window(first, second, selected=0)],
+            "10000000-0000-0000-0000-000000000085",
+        )
+        backup = self.new_run_backup()
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+
+        post_first = json.loads(json.dumps(first))
+        post_first["focused_pane"] = 86
+        post_first["created_at"] = 1000.00001
+        post_first["panes"][0]["last_input_at"] = 1001.0
+        post_first["panes"][0]["last_output_at"] = 1002.0
+        post_first["panes"][0]["last_status"] = "idle"
+        post_second = json.loads(json.dumps(second))
+        self.write_restore_state(
+            [self.saved_window(post_first, post_second, selected=1)],
+            "10000000-0000-0000-0000-000000000086",
+        )
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+
+        CORE.compare_restore_states(prequit, postquit, backup)
+
+    def test_missing_canonical_restore_root_does_not_read_legacy_config_state(self):
+        legacy = self.root / CORE.STATE_RELATIVES[1]
+        legacy.mkdir(parents=True)
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000088", 88, "legacy-session")
+        (legacy / CORE.RESTORE_INDEX_RELATIVE).write_text(
+            json.dumps({"version": 1, "windows": [self.saved_window(tab)]}),
+            encoding="utf-8",
+        )
+        backup = self.new_run_backup()
+
+        prequit = CORE.capture_prequit_restore(self.root / CORE.STATE_RELATIVES[0], backup, self.root)
+
+        self.assertEqual(prequit["mode"], "unused")
+        self.assertFalse(prequit["identity"]["has_tabs"])
+        self.assertFalse((prequit["prequit_root"] / CORE.RESTORE_INDEX_RELATIVE).exists())
+
+    def test_apply_missing_canonical_state_fails_before_quit_prompt(self):
+        legacy = self.root / CORE.STATE_RELATIVES[1]
+        legacy.mkdir(parents=True)
+        ask = mock.Mock()
+
+        with (
+            mock.patch.object(CORE, "require_terminal"),
+            mock.patch.object(CORE, "ask_for_normal_quit", ask),
+            self.assertRaisesRegex(CORE.UpdateError, "canonical RustV1 restore state root is missing"),
+        ):
+            CORE.apply_update(self.app, self.root / "receipt.json", REVISION, 30, {}, self.root.resolve())
+
+        ask.assert_not_called()
+
+    def test_missing_current_rechecks_fallback_bytes_after_unused_scan(self):
+        state = self.root / CORE.STATE_RELATIVES[0]
+        state.mkdir(parents=True)
+        latest = state / CORE.RESTORE_LATEST_RELATIVE
+        latest.parent.mkdir(parents=True)
+        latest.write_text(json.dumps({"version": 1, "windows": []}), encoding="utf-8")
+        original_empty_scan = CORE._empty_restore_state
+
+        def change_fallback_after_scan(root, index_bytes, label):
+            result = original_empty_scan(root, index_bytes, label)
+            latest.write_text(
+                json.dumps({"version": 1, "windows": [], "changed": True}),
+                encoding="utf-8",
+            )
+            return result
+
+        with (
+            mock.patch.object(CORE, "_empty_restore_state", side_effect=change_fallback_after_scan),
+            self.assertRaisesRegex(CORE.UpdateError, "fallback changed while being checked"),
+        ):
+            CORE.read_restore_state(state)
+
+    def test_apply_update_happy_path_reaches_mocked_bundle_install(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000089", 89, "session-a")
+        second = self.saved_tab("00000000-0000-0000-0000-000000000090", 90, "session-b")
+        self.write_restore_state(
+            [self.saved_window(first), self.saved_window(second)],
+            "10000000-0000-0000-0000-000000000089",
+        )
+
+        installed = self.root / "installed" / "Chau7.app"
+        installed.parent.mkdir(parents=True)
+        shutil.copytree(self.app, installed)
+        receipt_path = self.root / "receipt.json"
+        receipt_path.write_text(json.dumps(self.receipt), encoding="utf-8")
+        reached_install = []
+        original_install = CORE.install_staged_bundle
+
+        class FakeLock:
+            def close(self):
+                pass
+
+        def copy_tree(source, destination, needs_sudo=False):
+            self.assertFalse(Path(destination).exists())
+            shutil.copytree(source, destination, symlinks=True, copy_function=shutil.copy2)
+
+        def local_install(*args, **kwargs):
+            reached_install.append(Path(args[0]))
+            return original_install(*args, move=self.move_locally, **kwargs)
+
+        def app_path(prefix, run_id):
+            path = self.root / f"{prefix}-{run_id}.app"
+            self.assertFalse(path.exists())
+            return path
+
+        with (
+            mock.patch.object(CORE, "APP_DESTINATION", installed),
+            mock.patch.object(CORE, "require_terminal"),
+            mock.patch.object(CORE, "ask_for_normal_quit"),
+            mock.patch.object(CORE, "acquire_instance_lock", return_value=FakeLock()),
+            mock.patch.object(CORE, "active_application_pids", return_value=[]),
+            mock.patch.object(CORE, "verify_code_signature"),
+            mock.patch.object(CORE, "copy_with_ditto", side_effect=copy_tree),
+            mock.patch.object(CORE, "unique_app_path", side_effect=app_path),
+            mock.patch.object(CORE, "install_staged_bundle", side_effect=local_install),
+        ):
+            CORE.apply_update(self.app, receipt_path, REVISION, 30, {}, self.root.resolve())
+
+        self.assertEqual(len(reached_install), 1)
+        self.assertTrue((installed / "Contents/MacOS/Chau7").is_file())
+        backup_parent = self.root / "Library/Application Support/Chau7 Production Update Backups"
+        backups = list(backup_parent.iterdir())
+        self.assertEqual(len(backups), 1)
+        self.assertTrue((backups[0] / "pre-quit/restore-guard.json").is_file())
+        self.assertTrue((backups[0] / "previous/Chau7.app").is_dir())
+
+    def test_postquit_rejects_terminal_removed_from_layout_even_when_record_remains(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000091", 91, "layout-session")
+        extra = self.saved_tab("00000000-0000-0000-0000-000000000092", 92, "second-session")
+        tab["panes"].append(extra["panes"][0])
+        tab["layout"] = self.saved_split(91, 92)
+        state, _, _ = self.write_restore_state([self.saved_window(tab)], "10000000-0000-0000-0000-000000000091")
+        backup = self.new_run_backup()
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+
+        post_tab = json.loads(json.dumps(tab))
+        post_tab["layout"] = self.saved_split(91)
+        self.write_restore_state([self.saved_window(post_tab)], "10000000-0000-0000-0000-000000000092")
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+
+        self.assertEqual(set(prequit["identity"]["tabs"][tab["uuid"]]["panes"]), {91, 92})
+        self.assertEqual(set(postquit["identity"]["tabs"][tab["uuid"]]["panes"]), {91, 92})
+        with self.assertRaisesRegex(CORE.UpdateError, "terminal pane is missing from the restored layout"):
+            CORE.compare_restore_states(prequit, postquit, backup)
+
+    def test_postquit_rejects_removed_editor_from_layout(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000097", 97, "editor-session")
+        tab["layout"] = {
+            "type": "split",
+            "id": 197,
+            "axis": "horizontal",
+            "ratios": [0.5, 0.5],
+            "children": [
+                {"type": "terminal", "id": 97, "directory": "/repo"},
+                {"type": "editor", "id": 98, "path": "/repo/notes.md"},
+            ],
+        }
+        state, _, _ = self.write_restore_state([self.saved_window(tab)], "10000000-0000-0000-0000-000000000097")
+        backup = self.new_run_backup()
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+
+        post_tab = json.loads(json.dumps(tab))
+        post_tab["layout"] = {"type": "terminal", "id": 97, "directory": "/repo"}
+        self.write_restore_state([self.saved_window(post_tab)], "10000000-0000-0000-0000-000000000098")
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+
+        with self.assertRaisesRegex(CORE.UpdateError, "layout pane is missing from the restored layout"):
+            CORE.compare_restore_states(prequit, postquit, backup)
+
+    def test_postquit_rejects_reordered_primary_pane_for_layoutless_tab(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000093", 93, "primary-session")
+        extra = self.saved_tab("00000000-0000-0000-0000-000000000094", 94, "other-session")
+        tab["panes"].append(extra["panes"][0])
+        state, _, _ = self.write_restore_state([self.saved_window(tab)], "10000000-0000-0000-0000-000000000093")
+        backup = self.new_run_backup()
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+
+        post_tab = json.loads(json.dumps(tab))
+        post_tab["panes"].reverse()
+        self.write_restore_state([self.saved_window(post_tab)], "10000000-0000-0000-0000-000000000094")
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+
+        with self.assertRaisesRegex(CORE.UpdateError, "terminal pane is missing from the restored layout"):
+            CORE.compare_restore_states(prequit, postquit, backup)
+
+    def test_postquit_allows_added_split_while_retaining_old_terminal(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000095", 95, "primary-session")
+        state, _, _ = self.write_restore_state([self.saved_window(tab)], "10000000-0000-0000-0000-000000000095")
+        backup = self.new_run_backup()
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+
+        post_tab = json.loads(json.dumps(tab))
+        extra = self.saved_tab("00000000-0000-0000-0000-000000000096", 96, "new-session")
+        post_tab["panes"].append(extra["panes"][0])
+        post_tab["layout"] = self.saved_split(95, 96)
+        self.write_restore_state([self.saved_window(post_tab)], "10000000-0000-0000-0000-000000000096")
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+
+        CORE.compare_restore_states(prequit, postquit, backup)
 
     def test_transactional_swap_success_retains_rollback(self):
         stage, destination, rollback, failed = self.transaction_folders()

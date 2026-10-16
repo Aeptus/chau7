@@ -82,6 +82,81 @@ def prepare_restore_bundle(binary, record, evidence, case="restore"):
 
 RESTORE_CAPTURE_NAMES = {"stdout": "restore.stdout", "stderr": "restore.stderr"}
 LAUNCH_SERVICES_CASES = frozenset(("restore", "keyboard"))
+MANUAL_MENU_POINTER_ENV = "CHAU7_NEXT_NATIVE_MENU_POINTER"
+
+
+def fullscreen_menu_stimulus_mode(environment):
+    value = environment.get(MANUAL_MENU_POINTER_ENV)
+    if value in (None, "0"):
+        return "forced_programmatic"
+    if value == "1":
+        return "manual_pointer"
+    raise ValueError(f"{MANUAL_MENU_POINTER_ENV} must be 0 or 1")
+
+
+def launch_services_environment_names(case, environment):
+    if case not in LAUNCH_SERVICES_CASES:
+        return ()
+    names = (("HOME", "ZDOTDIR") if case == "keyboard" else ()) + (
+        "CHAU7_NEXT_NATIVE_PARITY_FIXTURE",
+        "CHAU7_NEXT_ISOLATED_TEST_MODE",
+        "CHAU7_NEXT_HOME_ROOT",
+        "HISTFILE",
+    )
+    if fullscreen_menu_stimulus_mode(environment) == "manual_pointer":
+        if case != "restore":
+            raise ValueError("manual fullscreen menu pointer stimulus is limited to --case restore")
+        names += (MANUAL_MENU_POINTER_ENV,)
+    return names
+
+
+def extract_fullscreen_menu_stimulus(outcome):
+    details = outcome.get("details") if isinstance(outcome, dict) else None
+    traffic = details.get("traffic_light_zoom_geometry") if isinstance(details, dict) else None
+    fullscreen_cycle = traffic.get("actual_fullscreen_cycle") if isinstance(traffic, dict) else None
+    fullscreen = fullscreen_cycle.get("fullscreen") if isinstance(fullscreen_cycle, dict) else None
+    menu_cycle = fullscreen.get("menu_reveal_cycle") if isinstance(fullscreen, dict) else None
+    stimulus = menu_cycle.get("stimulus") if isinstance(menu_cycle, dict) else None
+    return stimulus if isinstance(stimulus, dict) else None
+
+
+def manual_pointer_coverage_matches(record):
+    stimulus = record.get("fullscreen_menu_stimulus")
+    if not (
+        record.get("fullscreen_menu_stimulus_mode_requested") == "manual_pointer"
+        and isinstance(stimulus, dict)
+        and stimulus.get("mode") == "manual_pointer"
+        and stimulus.get("pointer_top_transition_observed") is True
+        and stimulus.get("pointer_hover_causality_proven") is False
+        and stimulus.get("synthetic_pointer_events_posted") is False
+        and stimulus.get("menu_api_mutation_calls") == 0
+        and stimulus.get("presentation_option_mutation_calls") == 0
+        and isinstance(stimulus.get("phases"), list)
+        and len(stimulus["phases"]) == 3
+    ):
+        return False
+    expected_phases = ((1, False, 500), (2, True, 3000), (3, False, 750))
+    for phase, (phase_number, expected_visible, minimum_stable_ms) in zip(
+        stimulus["phases"], expected_phases, strict=True
+    ):
+        if not (
+            isinstance(phase, dict)
+            and phase.get("phase") == phase_number
+            and phase.get("expected_menu_bar_visible") is expected_visible
+            and phase.get("observed_menu_bar_visible") is expected_visible
+            and phase.get("app_active") is True
+            and phase.get("window_visible") is True
+            and phase.get("window_key") is True
+            and phase.get("window_fullscreen") is True
+            and phase.get("synthetic_pointer_events_posted") is False
+            and isinstance(phase.get("samples"), int)
+            and phase["samples"] > 0
+            and isinstance(phase.get("stable_for_ms"), int)
+            and phase["stable_for_ms"] >= minimum_stable_ms
+            and phase.get("pointer_near_screen_top") is expected_visible
+        ):
+            return False
+    return [phase["phase"] for phase in stimulus["phases"]] == [1, 2, 3]
 
 
 def owned_restore_bundle_root(record, bundle_root):
@@ -1285,6 +1360,10 @@ def case_passed(record):
         companion = record.get("focus_companion") or {}
         companion_outcome = companion.get("outcome") or {}
         companion_details = companion_outcome.get("details") or {}
+        if record.get(
+            "fullscreen_menu_stimulus_mode_requested"
+        ) == "manual_pointer" and not manual_pointer_coverage_matches(record):
+            return False
         return (
             record.get("ordered_front_activation_request_passed") is True
             and record.get("fullscreen_focus_yield_request_passed") is True
@@ -1720,6 +1799,12 @@ def validate_arguments(args):
 def main():
     parser = argument_parser()
     args = parser.parse_args()
+    try:
+        requested_menu_stimulus_mode = fullscreen_menu_stimulus_mode(os.environ)
+    except ValueError as error:
+        parser.error(str(error))
+    if requested_menu_stimulus_mode == "manual_pointer" and args.case != "restore":
+        parser.error(f"{MANUAL_MENU_POINTER_ENV}=1 is supported only with --case restore")
     if platform.system() != "Darwin":
         parser.error("native parity fixtures require macOS")
     try:
@@ -1928,6 +2013,8 @@ def main():
             "case": case,
             "fixture_locale": fixture_locale if case == "accessibility" else None,
             "settings_locale": args.settings_locale if case == "settings" else None,
+            "fullscreen_menu_stimulus_mode_requested": (requested_menu_stimulus_mode if case == "restore" else None),
+            "fullscreen_menu_stimulus": None,
             "passed": False,
             "timed_out": False,
             "owned_home": str(home),
@@ -1980,12 +2067,7 @@ def main():
                     "--stderr",
                     str(fixture_stderr_path),
                 ]
-                environment_names = (("HOME", "ZDOTDIR") if case == "keyboard" else ()) + (
-                    "CHAU7_NEXT_NATIVE_PARITY_FIXTURE",
-                    "CHAU7_NEXT_ISOLATED_TEST_MODE",
-                    "CHAU7_NEXT_HOME_ROOT",
-                    "HISTFILE",
-                )
+                environment_names = launch_services_environment_names(case, child_environment)
                 for name in environment_names:
                     command.extend(["--env", name + "=" + child_environment[name]])
                 command.extend(
@@ -2046,6 +2128,8 @@ def main():
             if not launch_services:
                 record["application_exit_code"] = record["exit_code"]
             record["outcome"] = fixture_outcome(fixture_stdout_path, case)
+            if case == "restore":
+                record["fullscreen_menu_stimulus"] = extract_fullscreen_menu_stimulus(record["outcome"] or {})
             outcome_pid = (record["outcome"] or {}).get("pid")
             record["application_process_id"] = outcome_pid
             record["process_id"] = outcome_pid if launch_services else process.pid

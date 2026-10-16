@@ -14,22 +14,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   frames in the two-window quit regression.
 - Preserve every Rust window when quitting from a tab action; defer final
   capture until the active window is available and reject incomplete snapshots.
+  Leave the app running if its final capture cannot be queued.
   Add a native two-window quit regression checking the latest resume metadata.
-- Follow native fullscreen toolbar layout when revealing the system menu,
-  keeping the tab bar clear and pointer, drag and text-input coordinates aligned.
-  Guard queued native layout callbacks after a window closes. Keep VoiceOver
-  frames and fullscreen traffic lights anchored to the same renderer view.
+- Save Rust windows parked by Close Window in periodic and quit snapshots,
+  preserving their frames, split layouts, scrollback and provider identities;
+  keep their tabs queued if replacement window creation fails.
+- Track AppKit fullscreen content-layout changes and keep pointer, drag, text
+  input, VoiceOver and traffic-light geometry aligned with the renderer view.
+  Guard queued layout callbacks after a window closes. Actual system-menu hover
+  acceptance remains open; see the multi-window restoration incident report.
 
-- Record screen safe areas in isolated fullscreen checks and distinguish forced
-  menu visibility from pointer-driven reveal, with explicit focus validation.
+- Record screen safe areas in isolated fullscreen checks. Add an opt-in manual
+  pointer cycle with explicit focus, dwell-time, geometry and hit-test validation;
+  distinguish it from forced programmatic menu visibility.
 
 - Refresh isolated restoration fixtures through the production scroll action
   before checking cached styled history and print snapshots.
 
-- Preserve custom titlebar transparency in macOS fullscreen transitions so
-  revealing the system menu does not introduce an opaque native titlebar.
+- Preserve custom titlebar transparency in macOS fullscreen transitions. This
+  alone does not resolve the reported system-menu occlusion.
 - Add a guarded repeat update for existing Rust production installations, with
   candidate verification, saved-state backups and retained rollback bundles.
+- Snapshot the Rust restore transaction before asking users to quit, then
+  refuse bundle replacement if shutdown loses windows, tabs or resume metadata.
 - Compile the repository history-search test helper only on its supported Unix
   test targets, fixing the Windows warnings-as-errors check.
 

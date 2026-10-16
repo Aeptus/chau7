@@ -77,7 +77,7 @@ mod window;
 mod window_actions;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -730,7 +730,7 @@ impl Workspace {
     }
 
     /// Take every tab out of this window so its shells keep running while the
-    /// window is closed (Close Window only hides the window in Swift).
+    /// native window is removed.
     pub fn park_tabs(&mut self, window: &Window) -> Option<ParkedWindow> {
         if self.state.is_empty() {
             return None;
@@ -1288,9 +1288,9 @@ impl Workspace {
 
     /// Remove a tab and hand back its panes (cross-window move).
     /// Take a tab out for another window (`extractTabForWindowTransfer`).
-    /// The window emptied this way is put away, like a hidden Swift window:
-    /// the next Dock click or Show Chau7 brings it back at the same place
-    /// with a fresh tab (`ensureFreshTabIfNeeded`).
+    /// The window emptied this way is put away. The next Dock click or Show
+    /// Chau7 brings it back at the same place with a fresh tab
+    /// (`ensureFreshTabIfNeeded`).
     fn take_tab(
         &mut self,
         id: TabId,
@@ -1441,23 +1441,46 @@ impl Workspace {
     // ----- persistence --------------------------------------------------
 
     pub fn snapshot(&self, window: &Window, cx: &App) -> SavedWindow {
-        // AI session ids already given to a pane of this window.
-        let mut claimed = std::collections::HashSet::new();
+        let selected = self
+            .state
+            .selected()
+            .and_then(|id| self.state.index_of(id))
+            .unwrap_or(0);
+        let bounds = match window.window_bounds() {
+            WindowBounds::Windowed(b)
+            | WindowBounds::Maximized(b)
+            | WindowBounds::Fullscreen(b) => b,
+        };
         let tabs = self
             .state
             .tabs()
             .iter()
-            .map(|meta| {
-                let capture = self
-                    .entries
-                    .get(&meta.id)
-                    .map(|e| crate::restore::capture_tab(&e.panes, &mut claimed, cx));
+            .map(|meta| (meta, self.entries.get(&meta.id).map(|entry| &entry.panes)));
+        Self::snapshot_tabs(tabs, selected, bounds, cx)
+    }
+
+    /// Serialize parked panes through the same path as live workspace panes.
+    pub(crate) fn snapshot_parked(parked: &ParkedWindow, cx: &App) -> SavedWindow {
+        let tabs = parked.tabs.iter().map(|(meta, panes)| (meta, Some(panes)));
+        Self::snapshot_tabs(tabs, parked.selected, parked.bounds, cx)
+    }
+
+    fn snapshot_tabs<'a>(
+        tabs: impl IntoIterator<Item = (&'a TabMeta, Option<&'a Entity<PaneTree>>)>,
+        selected: usize,
+        bounds: Bounds<Pixels>,
+        cx: &App,
+    ) -> SavedWindow {
+        // AI session ids already given to a pane of this window.
+        let mut claimed = HashSet::new();
+        let tabs = tabs
+            .into_iter()
+            .map(|(meta, panes)| {
+                let capture =
+                    panes.map(|panes| crate::restore::capture_tab(panes, &mut claimed, cx));
                 SavedTab {
                     uuid: Some(meta.uuid),
-                    cwd: self
-                        .entries
-                        .get(&meta.id)
-                        .and_then(|e| e.panes.read(cx).cwd(cx)),
+                    cwd: panes.and_then(|panes| panes.read(cx).cwd(cx)),
                     custom_title: meta.custom_title.clone(),
                     color: Some(meta.color.name().to_string()),
                     repo_group_id: meta.repo_group_id.clone(),
@@ -1473,16 +1496,6 @@ impl Workspace {
                 }
             })
             .collect();
-        let selected = self
-            .state
-            .selected()
-            .and_then(|id| self.state.index_of(id))
-            .unwrap_or(0);
-        let bounds = match window.window_bounds() {
-            WindowBounds::Windowed(b)
-            | WindowBounds::Maximized(b)
-            | WindowBounds::Fullscreen(b) => b,
-        };
         SavedWindow {
             tabs,
             selected,

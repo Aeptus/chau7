@@ -86,6 +86,81 @@ class NativeParityArgumentTests(unittest.TestCase):
             NATIVE_PARITY.fixture_locale_for("accessibility", ["fr", "es"])
 
 
+class NativeFullscreenMenuPointerTests(unittest.TestCase):
+    def test_manual_pointer_mode_is_explicit_and_rejects_other_values(self):
+        self.assertEqual(NATIVE_PARITY.fullscreen_menu_stimulus_mode({}), "forced_programmatic")
+        self.assertEqual(
+            NATIVE_PARITY.fullscreen_menu_stimulus_mode({NATIVE_PARITY.MANUAL_MENU_POINTER_ENV: "1"}),
+            "manual_pointer",
+        )
+        with self.assertRaisesRegex(ValueError, "must be 0 or 1"):
+            NATIVE_PARITY.fullscreen_menu_stimulus_mode({NATIVE_PARITY.MANUAL_MENU_POINTER_ENV: "yes"})
+
+    def test_launchservices_forwards_pointer_opt_in_only_to_restore(self):
+        environment = {
+            "CHAU7_NEXT_NATIVE_PARITY_FIXTURE": "1",
+            "CHAU7_NEXT_ISOLATED_TEST_MODE": "1",
+            "CHAU7_NEXT_HOME_ROOT": "/private/tmp/fixture-home",
+            "HISTFILE": "",
+        }
+        self.assertNotIn(
+            NATIVE_PARITY.MANUAL_MENU_POINTER_ENV,
+            NATIVE_PARITY.launch_services_environment_names("restore", environment),
+        )
+        opted_in = {
+            **environment,
+            NATIVE_PARITY.MANUAL_MENU_POINTER_ENV: "1",
+        }
+        self.assertIn(
+            NATIVE_PARITY.MANUAL_MENU_POINTER_ENV,
+            NATIVE_PARITY.launch_services_environment_names("restore", opted_in),
+        )
+        with self.assertRaisesRegex(ValueError, "limited to --case restore"):
+            NATIVE_PARITY.launch_services_environment_names("keyboard", opted_in)
+
+    def test_manual_pointer_result_requires_actual_three_phase_hover_coverage(self):
+        phases = [
+            {
+                "phase": phase_number,
+                "expected_menu_bar_visible": visible,
+                "observed_menu_bar_visible": visible,
+                "app_active": True,
+                "window_visible": True,
+                "window_key": True,
+                "window_fullscreen": True,
+                "synthetic_pointer_events_posted": False,
+                "samples": 5,
+                "stable_for_ms": (500, 3000, 750)[phase_number - 1],
+                "pointer_near_screen_top": visible,
+            }
+            for phase_number, visible in ((1, False), (2, True), (3, False))
+        ]
+        stimulus = {
+            "mode": "manual_pointer",
+            "pointer_top_transition_observed": True,
+            "pointer_hover_causality_proven": False,
+            "synthetic_pointer_events_posted": False,
+            "menu_api_mutation_calls": 0,
+            "presentation_option_mutation_calls": 0,
+            "phases": phases,
+        }
+        outcome = {
+            "details": {
+                "traffic_light_zoom_geometry": {
+                    "actual_fullscreen_cycle": {"fullscreen": {"menu_reveal_cycle": {"stimulus": stimulus}}}
+                }
+            }
+        }
+        self.assertEqual(NATIVE_PARITY.extract_fullscreen_menu_stimulus(outcome), stimulus)
+        record = {
+            "fullscreen_menu_stimulus_mode_requested": "manual_pointer",
+            "fullscreen_menu_stimulus": stimulus,
+        }
+        self.assertTrue(NATIVE_PARITY.manual_pointer_coverage_matches(record))
+        phases[1]["window_key"] = False
+        self.assertFalse(NATIVE_PARITY.manual_pointer_coverage_matches(record))
+
+
 class NativeArtifactModeTests(unittest.TestCase):
     def test_build_only_requires_a_new_durable_evidence_directory(self):
         args = NATIVE_PARITY.argument_parser().parse_args(["--build-only"])

@@ -550,8 +550,9 @@ pub fn open_workspace_window(
 
 /// A window closed with Close Window comes back with its tabs, shells and
 /// frame.
-pub fn open_parked_window(parked: ParkedWindow, cx: &mut App) {
+pub fn open_parked_window(parked: ParkedWindow, cx: &mut App) -> Result<(), ParkedWindow> {
     let options = window_options(Some(parked.bounds), cx);
+    let backup = parked.clone();
     let ParkedWindow { tabs, selected, .. } = parked;
     let result = gpui_kit::open_window(options, cx, move |window, cx| {
         cx.new(|cx| {
@@ -574,8 +575,12 @@ pub fn open_parked_window(parked: ParkedWindow, cx: &mut App) {
             cx.global_mut::<AppData>()
                 .workspaces
                 .push((handle, workspace.downgrade()));
+            Ok(())
         }
-        Err(err) => log::error!("open window: {err}"),
+        Err(err) => {
+            log::error!("open parked window: {err}");
+            Err(backup)
+        }
     }
 }
 
@@ -602,11 +607,17 @@ pub fn open_window_for_transfer(
     }
 }
 
-/// Save the open windows. Hidden windows are not saved; at quit with no
-/// visible window the saved state is cleared (`saveAllWindowStates`).
-pub(crate) fn save_session(cx: &mut App, terminating: bool) {
+/// Save live and parked terminal windows. A parked-only session remains
+/// restorable; an actually empty app clears its saved state at quit.
+pub(crate) fn save_session(cx: &mut App, terminating: bool) -> bool {
     let workspaces = AppData::live(cx);
-    let mut windows = Vec::with_capacity(workspaces.len());
+    let parked_count = cx
+        .global::<AppData>()
+        .hidden
+        .iter()
+        .filter(|parked| !parked.tabs.is_empty())
+        .count();
+    let mut windows = Vec::with_capacity(workspaces.len() + parked_count);
     for (handle, workspace) in &workspaces {
         let snapshot = handle.update(cx, |_, window, cx| workspace.read(cx).snapshot(window, cx));
         let mut snapshot = match snapshot {
@@ -619,9 +630,17 @@ pub(crate) fn save_session(cx: &mut App, terminating: bool) {
                 log::warn!(
                     "Cannot capture every session window; keeping the prior restore snapshot: {error}"
                 );
-                return;
+                return false;
             }
         };
+        session_store::apply_position_reset(&mut snapshot);
+        windows.push(snapshot);
+    }
+    for parked in &cx.global::<AppData>().hidden {
+        if parked.tabs.is_empty() {
+            continue;
+        }
+        let mut snapshot = Workspace::snapshot_parked(parked, cx);
         session_store::apply_position_reset(&mut snapshot);
         windows.push(snapshot);
     }
@@ -640,9 +659,9 @@ pub(crate) fn save_session(cx: &mut App, terminating: bool) {
         .collect();
     if windows.is_empty() {
         if terminating {
-            restore::writer::submit(None, closed_panes.into_iter().collect(), true, cx);
+            return restore::writer::submit(None, closed_panes.into_iter().collect(), true, cx);
         }
-        return;
+        return true;
     }
     // Scrollback files of panes that are gone are deleted after the save.
     let keep: std::collections::HashSet<_> = windows
@@ -661,7 +680,7 @@ pub(crate) fn save_session(cx: &mut App, terminating: bool) {
         keep,
         terminating,
         cx,
-    );
+    )
 }
 
 pub(crate) const DEFAULT_CONFIG: &str = r#"# Chau7 Next settings. Same format as the Chau7 config.toml.
