@@ -158,7 +158,7 @@ impl RepositoryPane {
         self.directory.as_ref()
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn test_history_search(&mut self) -> Entity<InputState> {
         self.section = Section::History;
         self.search.clone()

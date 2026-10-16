@@ -100,6 +100,36 @@ For an already prepared candidate, supply `CHAU7_UPGRADE_APP`,
 against its receipt before the user is asked to quit. This avoids recompilation
 while retaining source, identity, signature, and executable-hash checks.
 
+## Updating an existing Rust installation
+
+Use `apps/chau7-next/scripts/update-macos-production.command` for a Mac already
+running production Rust Chau7. The migration script above is only for the first
+Swift import and refuses an existing Rust destination.
+
+Prepare the exact clean production bundle and its receipt first. From
+Terminal.app, outside Chau7, inspect the candidate with:
+
+```sh
+./apps/chau7-next/scripts/update-macos-production.command \
+  --app "/path/to/Chau7.app" \
+  --receipt "/path/to/Chau7-Production-aarch64-apple-darwin-fast.json" \
+  --expected-sha "FULL_REVIEWED_COMMIT_SHA" \
+  --dry-run
+```
+
+After reviewing the successful preflight, replace `--dry-run` with
+`--apply --wait-seconds 600`. The updater verifies the production identity,
+source revision, receipt, executable hashes and signatures before waiting for
+you to quit Chau7 normally. It does not quit or launch Chau7 itself. Keep the
+app closed until the updater reports completion.
+
+The updater requires existing Rust state, preserves both Rust profile directories,
+backs up the current application and saved data, and stages the complete candidate
+on the destination volume before replacing the app. It retains a rollback bundle
+and verifies the installed candidate. It never reruns the Swift importer. A
+failed preflight leaves the installed app untouched. Use the exact backup and rollback paths reported by the updater for recovery; do not delete
+saved profiles to make an update pass.
+
 ## Build, sign and release
 
 `CHANNEL=production RELEASE_VERSION=0.6.0-rc.1 BUILD_MODE=fast ./scripts/bundle-macos.sh` from

@@ -11,7 +11,7 @@ use gpui_kit::base::Root;
 use objc2::{MainThreadMarker, rc::Retained};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationPresentationOptions, NSColorSpace,
-    NSEvent, NSEventModifierFlags, NSEventType, NSView, NSWindow, NSWindowButton,
+    NSEvent, NSEventModifierFlags, NSEventType, NSMenu, NSView, NSWindow, NSWindowButton,
     NSWindowStyleMask,
 };
 use objc2_foundation::{NSArray, NSBundle, NSObject, NSPoint, NSString};
@@ -1919,6 +1919,636 @@ fn native_window(
         .map_err(error)?
 }
 
+fn native_gpui_view(
+    handle: WindowHandle<Root>,
+    cx: &mut AsyncApp,
+) -> Result<Retained<NSView>, String> {
+    handle
+        .update(cx, |_, window, _| -> Result<Retained<NSView>, String> {
+            let raw = HasWindowHandle::window_handle(window).map_err(error)?;
+            let RawWindowHandle::AppKit(raw) = raw.as_raw() else {
+                return Err("owned window lacks AppKit renderer view".into());
+            };
+            // SAFETY: GPUI owns this renderer view for the lifetime of the
+            // fixture window; the retained handle is only used on AppKit's main thread.
+            unsafe { Retained::retain(raw.ns_view.cast::<NSView>().as_ptr()) }
+                .ok_or_else(|| "owned GPUI renderer view disappeared".to_owned())
+        })
+        .map_err(error)?
+}
+
+fn native_menu_bar_visible() -> Result<bool, String> {
+    let mtm = MainThreadMarker::new().ok_or("menu bar query is not on the main thread")?;
+    Ok(NSMenu::menuBarVisible(mtm))
+}
+
+fn set_native_menu_bar_visible(visible: bool) -> Result<(), String> {
+    let mtm = MainThreadMarker::new().ok_or("menu bar mutation is not on the main thread")?;
+    native_mutation(|| NSMenu::setMenuBarVisible(visible, mtm))
+}
+
+async fn wait_for_menu_bar_visibility(cx: &AsyncApp, expected: bool) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if native_menu_bar_visible()? == expected {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "owned native fixture deadline: menu bar visibility {expected}"
+            ));
+        }
+        pause(cx, Duration::from_millis(10)).await;
+    }
+}
+
+#[derive(Clone, Copy)]
+struct FullscreenMenuGeometry {
+    window_frame: objc2_foundation::NSRect,
+    content_layout_rect: objc2_foundation::NSRect,
+    content_view_frame: objc2_foundation::NSRect,
+    content_view_bounds: objc2_foundation::NSRect,
+    renderer_frame: objc2_foundation::NSRect,
+    renderer_bounds: objc2_foundation::NSRect,
+}
+
+impl FullscreenMenuGeometry {
+    fn capture(native: &NSWindow, content_view: &NSView, renderer: &NSView) -> Self {
+        Self {
+            window_frame: native.frame(),
+            content_layout_rect: native.contentLayoutRect(),
+            content_view_frame: content_view.frame(),
+            content_view_bounds: content_view.bounds(),
+            renderer_frame: renderer.frame(),
+            renderer_bounds: renderer.bounds(),
+        }
+    }
+
+    fn delta(self, after: Self) -> serde_json::Value {
+        serde_json::json!({
+            "window_frame": native_rect_delta(self.window_frame, after.window_frame),
+            "content_layout_rect": native_rect_delta(self.content_layout_rect, after.content_layout_rect),
+            "content_view_frame": native_rect_delta(self.content_view_frame, after.content_view_frame),
+            "content_view_bounds": native_rect_delta(self.content_view_bounds, after.content_view_bounds),
+            "renderer_frame": native_rect_delta(self.renderer_frame, after.renderer_frame),
+            "renderer_bounds": native_rect_delta(self.renderer_bounds, after.renderer_bounds),
+        })
+    }
+}
+
+fn native_rect_delta(
+    before: objc2_foundation::NSRect,
+    after: objc2_foundation::NSRect,
+) -> [f64; 4] {
+    [
+        after.origin.x - before.origin.x,
+        after.origin.y - before.origin.y,
+        after.size.width - before.size.width,
+        after.size.height - before.size.height,
+    ]
+}
+
+struct FullscreenMenuEvidence {
+    geometry: FullscreenMenuGeometry,
+    report: serde_json::Value,
+    sample_rgb: Vec<[f64; 3]>,
+}
+
+fn renderer_image_crop_rect(
+    image: &image::RgbaImage,
+    renderer_bounds: objc2_foundation::NSRect,
+    crop: objc2_foundation::NSRect,
+    renderer_is_flipped: bool,
+) -> Result<(u32, u32, u32, u32), String> {
+    let width = image.width();
+    let height = image.height();
+    ensure(
+        width > 0 && height > 0 && width <= 16_384 && height <= 16_384,
+        "owned GPUI scene image has invalid dimensions",
+    )?;
+    ensure(
+        renderer_bounds.size.width.is_finite()
+            && renderer_bounds.size.height.is_finite()
+            && renderer_bounds.size.width > 0.0
+            && renderer_bounds.size.height > 0.0,
+        "owned GPUI renderer has invalid dimensions for scene crop",
+    )?;
+
+    let scale_x = width as f64 / renderer_bounds.size.width;
+    let scale_y = height as f64 / renderer_bounds.size.height;
+    let crop_left = crop.origin.x - renderer_bounds.origin.x;
+    let crop_top = if renderer_is_flipped {
+        crop.origin.y - renderer_bounds.origin.y
+    } else {
+        renderer_bounds.origin.y + renderer_bounds.size.height - (crop.origin.y + crop.size.height)
+    };
+    let left = (crop_left * scale_x).floor().clamp(0.0, width as f64) as u32;
+    let top = (crop_top * scale_y).floor().clamp(0.0, height as f64) as u32;
+    let right = ((crop_left + crop.size.width) * scale_x)
+        .ceil()
+        .clamp(0.0, width as f64) as u32;
+    let bottom = ((crop_top + crop.size.height) * scale_y)
+        .ceil()
+        .clamp(0.0, height as f64) as u32;
+    ensure(
+        right > left && bottom > top,
+        "owned GPUI tabbar crop does not intersect the rendered scene",
+    )?;
+    ensure(
+        (right - left) as usize * (bottom - top) as usize <= 4 * 1024 * 1024,
+        "owned GPUI tabbar scene crop exceeds the fixture capture limit",
+    )?;
+    Ok((left, top, right - left, bottom - top))
+}
+
+fn fullscreen_menu_snapshot(
+    stage: &'static str,
+    expected_menu_visible: bool,
+    application: &NSApplication,
+    native: &NSWindow,
+    handle: WindowHandle<Root>,
+    cx: &mut AsyncApp,
+) -> Result<FullscreenMenuEvidence, String> {
+    let menu_bar_visible = native_menu_bar_visible()?;
+    let app_active = application.isActive();
+    let window_visible = native.isVisible();
+    let window_key = native.isKeyWindow();
+    let window_fullscreen = native.styleMask().contains(NSWindowStyleMask::FullScreen);
+    let titlebar_transparent = native.titlebarAppearsTransparent();
+    let renderer = native_gpui_view(handle, cx)?;
+    let content_view = native
+        .contentView()
+        .ok_or("owned fullscreen window has no content view")?;
+    let geometry = FullscreenMenuGeometry::capture(native, &content_view, &renderer);
+    let renderer_bounds = renderer.bounds();
+    let renderer_visible_rect = renderer.visibleRect();
+    let renderer_bounds_finite = [
+        renderer_bounds.origin.x,
+        renderer_bounds.origin.y,
+        renderer_bounds.size.width,
+        renderer_bounds.size.height,
+    ]
+    .iter()
+    .all(|value| value.is_finite());
+    let crop_height = if renderer_bounds.size.height.is_finite() {
+        renderer_bounds.size.height.clamp(0.0, 34.0)
+    } else {
+        0.0
+    };
+    let crop_x = if renderer_bounds.origin.x.is_finite() {
+        renderer_bounds.origin.x + 80.0
+    } else {
+        0.0
+    };
+    let crop_width = if renderer_bounds.size.width.is_finite() {
+        (renderer_bounds.size.width - 80.0).clamp(0.0, 1000.0)
+    } else {
+        0.0
+    };
+    let crop_y = if renderer_bounds_finite && renderer.isFlipped() {
+        renderer_bounds.origin.y
+    } else if renderer_bounds_finite {
+        renderer_bounds.origin.y + renderer_bounds.size.height - crop_height
+    } else {
+        0.0
+    };
+    let crop = objc2_foundation::NSRect::new(
+        NSPoint::new(crop_x, crop_y),
+        objc2_foundation::NSSize::new(crop_width, crop_height),
+    );
+    let crop_in_bounds = rect_contains_with_tolerance(renderer_bounds, crop);
+    let crop_visible = rect_contains_with_tolerance(renderer_visible_rect, crop);
+    let renderer_rect_in_content =
+        renderer.convertRect_toView(renderer_bounds, Some(&content_view));
+    let owned_window_number = native.windowNumber();
+
+    // Emit native numeric geometry before any state, visibility, or occlusion
+    // assertion, so a failed reveal still says what AppKit and GPUI reported.
+    // The diagnostic is limited to this fixture window and its own views.
+    eprintln!(
+        "native_fullscreen_menu_geometry={}",
+        serde_json::json!({
+            "stage": stage,
+            "expected_menu_bar_visible": expected_menu_visible,
+            "menu_bar_visible": menu_bar_visible,
+            "app_active": app_active,
+            "window_visible": window_visible,
+            "window_key": window_key,
+            "window_fullscreen": window_fullscreen,
+            "titlebar_appears_transparent": titlebar_transparent,
+            "window_number": owned_window_number,
+            "window_frame": native_rect_values(geometry.window_frame),
+            "content_layout_rect": native_rect_values(geometry.content_layout_rect),
+            "content_view_frame": native_rect_values(geometry.content_view_frame),
+            "content_view_bounds": native_rect_values(geometry.content_view_bounds),
+            "renderer_frame": native_rect_values(geometry.renderer_frame),
+            "renderer_bounds": native_rect_values(geometry.renderer_bounds),
+            "renderer_rect_in_content_view": native_rect_values(renderer_rect_in_content),
+            "renderer_visible_rect": native_rect_values(renderer_visible_rect),
+            "renderer_is_flipped": renderer.isFlipped(),
+            "renderer_bounds_finite": renderer_bounds_finite,
+            "tabbar_crop_rect": native_rect_values(crop),
+            "tabbar_crop_in_renderer_bounds": crop_in_bounds,
+            "tabbar_crop_in_renderer_visible_rect": crop_visible,
+        })
+    );
+
+    ensure(
+        renderer_bounds_finite,
+        "owned GPUI renderer has non-finite bounds during fullscreen menu reveal",
+    )?;
+
+    // Recompute the tabbar hit point from this state's renderer coordinates;
+    // menu reveal can change AppKit's content geometry between snapshots.
+    let hit_x = if crop.size.width >= 240.0 {
+        crop.origin.x + 120.0
+    } else {
+        crop.origin.x + crop.size.width / 2.0
+    };
+    let hit_in_renderer = objc2_foundation::NSRect::new(
+        NSPoint::new(hit_x, crop.origin.y + crop.size.height / 2.0),
+        objc2_foundation::NSSize::new(0.0, 0.0),
+    );
+    let hit_in_window = renderer.convertRect_toView(hit_in_renderer, None);
+    let hit_on_screen = native.convertRectToScreen(hit_in_window);
+    let hit_point = NSPoint::new(hit_on_screen.origin.x, hit_on_screen.origin.y);
+    let mtm = MainThreadMarker::new().ok_or("fullscreen hit-test is not on the main thread")?;
+    let frontmost_window =
+        NSWindow::windowNumberAtPoint_belowWindowWithWindowNumber(hit_point, 0, mtm);
+    eprintln!(
+        "native_fullscreen_menu_hit_test={}",
+        serde_json::json!({
+            "stage": stage,
+            "renderer_point": [hit_x, hit_in_renderer.origin.y],
+            "screen_point": [hit_point.x, hit_point.y],
+            "topmost_window_number": frontmost_window,
+            "owned_window_number": owned_window_number,
+            "owned_window_is_frontmost": frontmost_window == owned_window_number,
+            "method": "NSWindow.windowNumberAtPoint_belowWindowWithWindowNumber",
+            "scope": "compares only the hit result with the owned fixture window; no other window metadata is read",
+        })
+    );
+
+    ensure(
+        app_active && window_visible && window_key && window_fullscreen,
+        "menu reveal snapshot requires the owned active fullscreen window",
+    )?;
+    ensure(
+        menu_bar_visible == expected_menu_visible,
+        "native menu bar did not reach the requested reveal state",
+    )?;
+    ensure(
+        titlebar_transparent,
+        "custom titlebar stopped being transparent during fullscreen menu reveal",
+    )?;
+    ensure(
+        crop_width >= 160.0 && crop_height >= 20.0,
+        "owned GPUI renderer is too small to contain the fullscreen tab bar",
+    )?;
+    ensure(
+        crop_in_bounds && crop_visible,
+        "owned GPUI tab bar crop is clipped during fullscreen menu reveal",
+    )?;
+    ensure(
+        frontmost_window == owned_window_number,
+        &format!(
+            "owned fullscreen tab bar is occluded at its hit-test point: topmost window {frontmost_window}, owned window {owned_window_number}"
+        ),
+    )?;
+
+    const SAMPLE_COLUMNS: usize = 32;
+    const SAMPLE_ROWS: usize = 4;
+    let renderer_backend = handle
+        .update(cx, |_, window, _| {
+            window
+                .renderer_diagnostics()
+                .map(|diagnostics| diagnostics.backend)
+        })
+        .map_err(error)?
+        .ok_or("owned GPUI renderer diagnostics are unavailable")?;
+
+    let (pixel_width, pixel_height, sample_rgb, visible_samples, png_bytes, capture_source) =
+        match renderer_backend {
+            "software" => {
+                let color_space = NSColorSpace::sRGBColorSpace();
+                let bitmap = renderer
+                    .bitmapImageRepForCachingDisplayInRect(crop)
+                    .and_then(|bitmap| bitmap.bitmapImageRepByRetaggingWithColorSpace(&color_space))
+                    .ok_or("owned software fullscreen tabbar crop allocation failed")?;
+                let pixel_width = u32::try_from(bitmap.pixelsWide()).map_err(error)?;
+                let pixel_height = u32::try_from(bitmap.pixelsHigh()).map_err(error)?;
+                ensure(
+                    pixel_width > 0
+                        && pixel_height > 0
+                        && pixel_width <= 8192
+                        && pixel_height <= 512,
+                    "owned software fullscreen tabbar crop has invalid dimensions",
+                )?;
+                let bytes = usize::try_from(bitmap.bytesPerPlane()).map_err(error)?;
+                ensure(
+                    bitmap.numberOfPlanes() == 1
+                        && !bitmap.bitmapData().is_null()
+                        && bytes > 0
+                        && bytes <= 64 * 1024 * 1024,
+                    "owned software fullscreen tabbar crop has invalid storage",
+                )?;
+                renderer.cacheDisplayInRect_toBitmapImageRep(crop, &bitmap);
+
+                let mut sample_rgb = Vec::with_capacity(SAMPLE_COLUMNS * SAMPLE_ROWS);
+                let mut visible_samples = 0_usize;
+                for row in 0..SAMPLE_ROWS {
+                    let y = ((((row as f64) + 0.5) / SAMPLE_ROWS as f64) * pixel_height as f64)
+                        .floor()
+                        .min((pixel_height - 1) as f64) as u32;
+                    for column in 0..SAMPLE_COLUMNS {
+                        let x = ((((column as f64) + 0.5) / SAMPLE_COLUMNS as f64)
+                            * pixel_width as f64)
+                            .floor()
+                            .min((pixel_width - 1) as f64) as u32;
+                        let color = bitmap
+                            .colorAtX_y(x as isize, y as isize)
+                            .and_then(|color| color.colorUsingColorSpace(&color_space))
+                            .ok_or(
+                                "owned software fullscreen tabbar crop has an unreadable pixel",
+                            )?;
+                        let rgb = [
+                            color.redComponent(),
+                            color.greenComponent(),
+                            color.blueComponent(),
+                        ];
+                        if rgb.iter().copied().fold(0.0_f64, f64::max) > 0.015 {
+                            visible_samples += 1;
+                        }
+                        sample_rgb.push(rgb);
+                    }
+                }
+                let rgba = image::RgbaImage::from_fn(pixel_width, pixel_height, |x, y| {
+                    let color = bitmap
+                        .colorAtX_y(x as isize, y as isize)
+                        .and_then(|color| color.colorUsingColorSpace(&color_space));
+                    let byte = |value: f64| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    match color {
+                        Some(color) => image::Rgba([
+                            byte(color.redComponent()),
+                            byte(color.greenComponent()),
+                            byte(color.blueComponent()),
+                            byte(color.alphaComponent()),
+                        ]),
+                        None => image::Rgba([0, 0, 0, 0]),
+                    }
+                });
+                let mut png = std::io::Cursor::new(Vec::new());
+                image::DynamicImage::ImageRgba8(rgba)
+                    .write_to(&mut png, image::ImageFormat::Png)
+                    .map_err(error)?;
+                (
+                    pixel_width,
+                    pixel_height,
+                    sample_rgb,
+                    visible_samples,
+                    png.into_inner(),
+                    "AppKit cacheDisplayInRect on the owned software-backed GPUI view",
+                )
+            }
+            "metal" => {
+                let frame_image = handle
+                    .update(cx, |_, window, _| -> Result<image::RgbaImage, String> {
+                        window.render_to_image().map_err(error)
+                    })
+                    .map_err(error)??;
+                let (left, top, pixel_width, pixel_height) = renderer_image_crop_rect(
+                    &frame_image,
+                    renderer_bounds,
+                    crop,
+                    renderer.isFlipped(),
+                )?;
+                ensure(
+                    pixel_width <= 8192 && pixel_height <= 512,
+                    "owned Metal fullscreen tabbar crop has invalid dimensions",
+                )?;
+                let crop_image =
+                    image::imageops::crop_imm(&frame_image, left, top, pixel_width, pixel_height)
+                        .to_image();
+                let mut sample_rgb = Vec::with_capacity(SAMPLE_COLUMNS * SAMPLE_ROWS);
+                let mut visible_samples = 0_usize;
+                for row in 0..SAMPLE_ROWS {
+                    let y = ((((row as f64) + 0.5) / SAMPLE_ROWS as f64) * pixel_height as f64)
+                        .floor()
+                        .min((pixel_height - 1) as f64) as u32;
+                    for column in 0..SAMPLE_COLUMNS {
+                        let x = ((((column as f64) + 0.5) / SAMPLE_COLUMNS as f64)
+                            * pixel_width as f64)
+                            .floor()
+                            .min((pixel_width - 1) as f64) as u32;
+                        let pixel = crop_image.get_pixel(x, y).0;
+                        let rgb = [
+                            pixel[0] as f64 / 255.0,
+                            pixel[1] as f64 / 255.0,
+                            pixel[2] as f64 / 255.0,
+                        ];
+                        if rgb.iter().copied().fold(0.0_f64, f64::max) > 0.015 {
+                            visible_samples += 1;
+                        }
+                        sample_rgb.push(rgb);
+                    }
+                }
+                let mut png = std::io::Cursor::new(Vec::new());
+                image::DynamicImage::ImageRgba8(crop_image)
+                    .write_to(&mut png, image::ImageFormat::Png)
+                    .map_err(error)?;
+                (
+                    pixel_width,
+                    pixel_height,
+                    sample_rgb,
+                    visible_samples,
+                    png.into_inner(),
+                    "Window::render_to_image offscreen rerender of the current GPUI scene; not AppKit composition",
+                )
+            }
+            _ => return Err("owned fullscreen fixture selected an unknown GPUI renderer".into()),
+        };
+    ensure(
+        visible_samples >= sample_rgb.len() / 2,
+        "owned fullscreen tabbar renderer crop is black or missing",
+    )?;
+    let mean_rgb: [f64; 3] = std::array::from_fn(|channel| {
+        sample_rgb.iter().map(|pixel| pixel[channel]).sum::<f64>() / sample_rgb.len() as f64
+    });
+    use base64::Engine as _;
+
+    let renderer_rect_in_content =
+        renderer.convertRect_toView(renderer_bounds, Some(&content_view));
+    let report = serde_json::json!({
+        "stage": stage,
+        "menu_bar_visible": menu_bar_visible,
+        "app_active": app_active,
+        "window_visible": window_visible,
+        "window_key": window_key,
+        "window_fullscreen": window_fullscreen,
+        "titlebar_appears_transparent": titlebar_transparent,
+        "window_number": owned_window_number,
+        "window_frame": native_rect_values(geometry.window_frame),
+        "content_layout_rect": native_rect_values(geometry.content_layout_rect),
+        "content_view_frame": native_rect_values(geometry.content_view_frame),
+        "content_view_bounds": native_rect_values(geometry.content_view_bounds),
+        "renderer_frame": native_rect_values(geometry.renderer_frame),
+        "renderer_bounds": native_rect_values(geometry.renderer_bounds),
+        "renderer_rect_in_content_view": native_rect_values(renderer_rect_in_content),
+        "renderer_visible_rect": native_rect_values(renderer.visibleRect()),
+        "renderer_is_flipped": renderer.isFlipped(),
+        "renderer_backend": renderer_backend,
+        "tabbar_crop_in_renderer_bounds": crop_in_bounds,
+        "tabbar_crop_in_renderer_visible_rect": crop_visible,
+        "tabbar_hit_test": {
+            "screen_point": [hit_point.x, hit_point.y],
+            "topmost_window_number": frontmost_window,
+            "owned_window_number": owned_window_number,
+            "owned_window_is_frontmost": frontmost_window == owned_window_number,
+            "method": "NSWindow.windowNumberAtPoint_belowWindowWithWindowNumber",
+            "scope": "compares only the hit result with the owned fixture window; no other window metadata is read",
+        },
+        "owned_renderer_crop": {
+            "rect": native_rect_values(crop),
+            "pixel_size": [pixel_width, pixel_height],
+            "sample_grid": [SAMPLE_COLUMNS, SAMPLE_ROWS],
+            "visible_samples": visible_samples,
+            "sample_count": sample_rgb.len(),
+            "mean_rgb": mean_rgb,
+            "capture_source": capture_source,
+            "capture_scope": "owned GPUI scene/view only; no desktop screenshot or other-app pixels",
+            "limitations": "Metal capture rerenders the current GPUI scene offscreen and does not include AppKit composition; separate native occlusion is checked by the window-number hit-test",
+            "png_base64": base64::engine::general_purpose::STANDARD.encode(png_bytes),
+        },
+    });
+    Ok(FullscreenMenuEvidence {
+        geometry,
+        report,
+        sample_rgb,
+    })
+}
+
+fn max_sample_rgb_delta(left: &[[f64; 3]], right: &[[f64; 3]]) -> Option<f64> {
+    if left.len() != right.len() || left.is_empty() {
+        return None;
+    }
+    Some(
+        left.iter()
+            .zip(right)
+            .flat_map(|(left, right)| {
+                (0..3).map(move |channel| (left[channel] - right[channel]).abs())
+            })
+            .fold(0.0_f64, f64::max),
+    )
+}
+
+async fn verify_fullscreen_menu_reveal(
+    handle: WindowHandle<Root>,
+    native: &NSWindow,
+    application: &NSApplication,
+    cx: &mut AsyncApp,
+) -> Result<serde_json::Value, String> {
+    ensure(
+        application.isActive()
+            && native.isVisible()
+            && native.isKeyWindow()
+            && native.styleMask().contains(NSWindowStyleMask::FullScreen),
+        "menu reveal must run only while the owned fixture window is foreground and fullscreen",
+    )?;
+    let original_menu_bar_visibility = native_menu_bar_visible()?;
+    let cycle_result = async {
+        set_native_menu_bar_visible(false)?;
+        wait_for_menu_bar_visibility(cx, false).await?;
+        pause(cx, Duration::from_millis(250)).await;
+        settle(handle, cx).await?;
+        let hidden_before = fullscreen_menu_snapshot(
+            "fullscreen_menu_hidden_before_reveal",
+            false,
+            application,
+            native,
+            handle,
+            cx,
+        )?;
+
+        set_native_menu_bar_visible(true)?;
+        wait_for_menu_bar_visibility(cx, true).await?;
+        pause(cx, Duration::from_millis(300)).await;
+        settle(handle, cx).await?;
+        let revealed = fullscreen_menu_snapshot(
+            "fullscreen_menu_revealed",
+            true,
+            application,
+            native,
+            handle,
+            cx,
+        )?;
+
+        set_native_menu_bar_visible(false)?;
+        wait_for_menu_bar_visibility(cx, false).await?;
+        pause(cx, Duration::from_millis(300)).await;
+        settle(handle, cx).await?;
+        let hidden_after = fullscreen_menu_snapshot(
+            "fullscreen_menu_hidden_after_reveal",
+            false,
+            application,
+            native,
+            handle,
+            cx,
+        )?;
+
+        Ok::<_, String>(serde_json::json!({
+            "api": "NSMenu.menuBarVisible / setMenuBarVisible",
+            "states": {
+                "hidden_before": hidden_before.report,
+                "revealed": revealed.report,
+                "hidden_after": hidden_after.report,
+            },
+            "geometry_deltas": {
+                "revealed_from_hidden": hidden_before.geometry.delta(revealed.geometry),
+                "hidden_after_from_revealed": revealed.geometry.delta(hidden_after.geometry),
+                "hidden_after_from_initial_hidden": hidden_before.geometry.delta(hidden_after.geometry),
+            },
+            "owned_renderer_crop_max_rgb_delta": {
+                "revealed_from_hidden": max_sample_rgb_delta(&hidden_before.sample_rgb, &revealed.sample_rgb),
+                "hidden_after_from_initial_hidden": max_sample_rgb_delta(&hidden_before.sample_rgb, &hidden_after.sample_rgb),
+            },
+            "coverage_limits": {
+                "renderer_pixels": "software uses AppKit view capture; Metal uses Window::render_to_image offscreen scene pixels; neither capture includes reliable AppKit fullscreen composition",
+                "occlusion_check": "uses AppKit hit-testing at a point in the actual tabbar band and compares only against the owned window number",
+                "desktop_capture": false,
+            },
+        }))
+    }
+    .await;
+
+    let restoration = async {
+        set_native_menu_bar_visible(original_menu_bar_visibility)?;
+        wait_for_menu_bar_visibility(cx, original_menu_bar_visibility).await?;
+        let restored = native_menu_bar_visible()?;
+        ensure(
+            restored == original_menu_bar_visibility,
+            "owned fixture did not restore the original menu bar visibility",
+        )?;
+        Ok::<_, String>(restored)
+    }
+    .await;
+
+    match (cycle_result, restoration) {
+        (Ok(mut report), Ok(restored)) => {
+            report["original_menu_bar_visibility"] =
+                serde_json::json!(original_menu_bar_visibility);
+            report["restored_menu_bar_visibility"] = serde_json::json!(restored);
+            Ok(report)
+        }
+        (Err(error), Ok(_)) => Err(error),
+        (Ok(_), Err(restore_error)) => Err(format!(
+            "fullscreen menu reveal succeeded but visibility restoration failed: {restore_error}"
+        )),
+        (Err(error), Err(restore_error)) => Err(format!(
+            "{error}; owned menu bar restoration also failed: {restore_error}"
+        )),
+    }
+}
+
 fn fullscreen_focus_diagnostic(
     application: &NSApplication,
     native: &NSWindow,
@@ -2313,6 +2943,12 @@ async fn verify_traffic_lights_in_real_fullscreen(
         );
         ensure(application.isActive() && native.isKeyWindow(),
             "fullscreen focus fixture must start with an active key window")?;
+        let menu_reveal =
+            verify_fullscreen_menu_reveal(handle, native, &application, cx).await?;
+        ensure(
+            application.isActive() && native.isVisible() && native.isKeyWindow(),
+            "owned fixture lost foreground after fullscreen menu reveal",
+        )?;
         let resigned = FullscreenCompletion::new(native, unsafe {
             objc2_app_kit::NSWindowDidResignKeyNotification
         });
@@ -2442,6 +3078,7 @@ async fn verify_traffic_lights_in_real_fullscreen(
             "did_enter_notification": entered.completed(),
             "geometry": initial_geometry,
             "composition": initial_composition,
+            "menu_reveal_cycle": menu_reveal,
             "after_deactivation": inactive,
             "after_reactivation": {
                 "app_active": application.isActive(),

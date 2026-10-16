@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Preserve custom titlebar transparency in macOS fullscreen transitions so
+  revealing the system menu does not introduce an opaque native titlebar.
+- Add a guarded repeat update for existing Rust production installations, with
+  candidate verification, saved-state backups and retained rollback bundles.
+- Compile the repository history-search test helper only on its supported Unix
+  test targets, fixing the Windows warnings-as-errors check.
+
 - Focus and select the full tab title when opening Rename Tab or moving from
   the color row to its name field, including with a native editor open; clicking
   the title keeps keyboard input there.

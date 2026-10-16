@@ -383,9 +383,15 @@
           "description": "Keep fullscreen native traffic lights inside a small top-left host row so AppKit restoring titlebar-local button coordinates cannot move them to the bottom of the full-height content view; anchor the host with orientation-aware autoresizing and remove it when restoring the original button hierarchy",
           "before_sha256": "14184138acea51e52380ec54076fae443d3b42fc5f55c865f35e05ef5b80b556",
           "after_sha256": "0fb49084c11d29dcfd0e19f1f36316a97794995652b2a283f859e35e6fa3667c"
+        },
+        {
+          "kind": "semantic",
+          "description": "Preserve configured custom-titlebar transparency throughout native fullscreen enter, exit and failure callbacks on macOS 15.3 and later, avoiding the opaque native band over the GPUI tabbar when the system menu reveals; add a policy regression and apply Rust 1.99 formatting to this source",
+          "before_sha256": "0fb49084c11d29dcfd0e19f1f36316a97794995652b2a283f859e35e6fa3667c",
+          "after_sha256": "91eadb38a9693b6d56218fcf609492f3ccf69de6552e6231f810716dd53123c6"
         }
       ],
-      "current_sha256": "0fb49084c11d29dcfd0e19f1f36316a97794995652b2a283f859e35e6fa3667c",
+      "current_sha256": "91eadb38a9693b6d56218fcf609492f3ccf69de6552e6231f810716dd53123c6",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"
