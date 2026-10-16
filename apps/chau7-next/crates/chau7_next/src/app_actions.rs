@@ -607,7 +607,7 @@ mod quit_tests {
     fn saved_after_writer_shutdown(harness: &mut TestAppContext, root: &DataRoot) -> SavedSession {
         harness.run_until_parked();
         let writer = harness
-            .update(|cx| crate::restore::writer::shutdown(cx))
+            .update(crate::restore::writer::shutdown)
             .expect("restore writer was initialized");
         writer.join().expect("restore writer joins");
         crate::session_store::load(root).expect("restore snapshot was saved")
@@ -651,7 +651,7 @@ mod quit_tests {
         harness.run_until_parked();
 
         let writer = harness
-            .update(|cx| crate::restore::writer::shutdown(cx))
+            .update(crate::restore::writer::shutdown)
             .expect("restore writer was initialized");
         writer.join().expect("restore writer joins");
         let saved = crate::session_store::load(&root).unwrap();
@@ -683,7 +683,7 @@ mod quit_tests {
         harness.run_until_parked();
 
         let writer = harness
-            .update(|cx| crate::restore::writer::shutdown(cx))
+            .update(crate::restore::writer::shutdown)
             .expect("restore writer was initialized");
         writer.join().expect("restore writer joins");
         let saved = crate::session_store::load(&root).unwrap();
@@ -844,7 +844,7 @@ mod quit_tests {
         });
 
         let writer = harness
-            .update(|cx| crate::restore::writer::shutdown(cx))
+            .update(crate::restore::writer::shutdown)
             .expect("restore writer was initialized");
         writer.join().expect("restore writer joins");
         let _ = std::fs::remove_dir_all(root.home());

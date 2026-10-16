@@ -1,6 +1,7 @@
 {
-  "reason": "Makes the native fixture’s first synthetic IME replacement deterministic at its verified UTF-16 target; product behavior is unchanged.",
+  "reason": "Simplifies only regression-test code to satisfy strict Clippy: redundant shutdown closures and an unnecessary local binding in the native restoration fixture. Runtime behavior and user-facing capabilities are unchanged.",
   "paths": [
-    "apps/chau7-next/crates/chau7_next/src/panes/editor/native_markdown/fixture.rs"
+    "apps/chau7-next/crates/chau7_next/src/app_actions.rs",
+    "apps/chau7-next/crates/chau7_next/src/workspace/native_multiwindow_restore_fixture.rs"
   ]
 }

@@ -142,7 +142,7 @@ pub(crate) async fn add_latest_tab_and_request_quit(
         )?
     };
     let (second_handle, second_workspace) = workspaces[1].clone();
-    let dispatched = second_handle
+    second_handle
         .update(cx, |_, window, app| -> Result<(), String> {
             let tab_count = second_workspace.update(app, |workspace, workspace_cx| {
                 workspace.add_tab(Some(latest), true, window, workspace_cx);
@@ -171,6 +171,5 @@ pub(crate) async fn add_latest_tab_and_request_quit(
             crate::app_actions::request_quit(app);
             Ok(())
         })
-        .map_err(error)?;
-    dispatched
+        .map_err(error)?
 }
