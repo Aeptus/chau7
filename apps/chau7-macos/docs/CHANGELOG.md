@@ -26,7 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Record screen safe areas in isolated fullscreen checks. Add an opt-in manual
   pointer cycle with explicit focus, dwell-time, geometry and hit-test validation;
-  distinguish it from forced programmatic menu visibility.
+  distinguish it from forced programmatic menu visibility. Keep manual pointer
+  display errors compatible with the native fixture error type.
 
 - Refresh isolated restoration fixtures through the production scroll action
   before checking cached styled history and print snapshots.

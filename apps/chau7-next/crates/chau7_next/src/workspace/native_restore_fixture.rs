@@ -2078,7 +2078,7 @@ fn pointer_screen_frame() -> Result<NSRect, String> {
     (0..screens.count())
         .map(|index| screens.objectAtIndex(index).frame())
         .find(|frame| rect_contains_point(*frame, pointer))
-        .ok_or("manual pointer is outside all NSScreen frames")
+        .ok_or_else(|| "manual pointer is outside all NSScreen frames".to_string())
 }
 
 fn place_fullscreen_fixture_on_pointer_screen(native: &NSWindow) -> Result<NSRect, String> {
