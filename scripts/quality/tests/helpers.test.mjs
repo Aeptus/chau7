@@ -56,6 +56,40 @@ test("pre-push stdin update lines resolve changed files", () => {
   assert.equal(resolved.updates[0].localSha, head);
 });
 
+test("zero-SHA pre-push updates use the configured upstream as their diff base", () => {
+  const root = makeRepo();
+  const main = commit(root, "shared.txt", "shared\n", "shared base");
+  const upstream = commit(root, "upstream.txt", "upstream\n", "upstream change");
+  execFileSync("git", ["update-ref", "refs/remotes/origin/main", main], { cwd: root });
+  execFileSync("git", ["update-ref", "refs/remotes/origin/feat/chau7-next", upstream], { cwd: root });
+  execFileSync("git", ["config", "remote.origin.url", "https://example.test/origin.git"], { cwd: root });
+  execFileSync("git", ["config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"], { cwd: root });
+  execFileSync("git", ["config", "branch.work.remote", "origin"], { cwd: root });
+  execFileSync("git", ["config", "branch.work.merge", "refs/heads/feat/chau7-next"], { cwd: root });
+  const head = commit(root, "local.txt", "local\n", "local change");
+  const zeroSha = "0".repeat(40);
+  const input = `refs/heads/feat/chau7-next ${head} refs/heads/feat/chau7-next ${zeroSha}\n`;
+
+  assert.equal(resolveFallbackBase(root), upstream);
+  const resolved = resolveChangedFilesFromPrepush(input, root);
+  assert.deepEqual(resolved.files, ["local.txt"]);
+  assert.equal(resolved.ranges[0].base, upstream);
+});
+
+test("zero-SHA pre-push updates retain origin/main as the fallback base", () => {
+  const root = makeRepo();
+  const main = commit(root, "shared.txt", "shared\n", "shared base");
+  commit(root, "branch.txt", "branch\n", "branch change");
+  execFileSync("git", ["update-ref", "refs/remotes/origin/main", main], { cwd: root });
+  const head = commit(root, "local.txt", "local\n", "local change");
+  const zeroSha = "0".repeat(40);
+  const input = `refs/heads/feat/new ${head} refs/heads/feat/new ${zeroSha}\n`;
+
+  const resolved = resolveChangedFilesFromPrepush(input, root);
+  assert.deepEqual(resolved.files, ["branch.txt", "local.txt"]);
+  assert.equal(resolved.ranges[0].base, main);
+});
+
 test("fallback diff base resolves HEAD parent when no upstream exists", () => {
   const root = makeRepo();
   const base = commit(root, "a.txt", "a\n", "base");

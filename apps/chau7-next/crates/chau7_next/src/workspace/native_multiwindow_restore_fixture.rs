@@ -5,6 +5,8 @@ use super::AppData;
 use crate::session_store::{SavedPane, SavedTab, SavedWindow};
 use chau7_next_core::session_restore::SavedSplitNode;
 use gpui::{App, AsyncApp};
+use objc2::MainThreadMarker;
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use serde_json::json;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -23,6 +25,21 @@ const LATE_SECOND_RESUME_ID: &str = "fixture-second-window-latest";
 
 fn error(error: impl std::fmt::Display) -> String {
     error.to_string()
+}
+
+fn activate_owned_application(cx: &mut App) -> Result<(), String> {
+    let application = NSApplication::sharedApplication(
+        MainThreadMarker::new().ok_or("multiwindow fixture is not on the main thread")?,
+    );
+    if application.activationPolicy() != NSApplicationActivationPolicy::Regular {
+        application.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+    }
+    if application.activationPolicy() != NSApplicationActivationPolicy::Regular {
+        return Err("multiwindow fixture application could not become regular".into());
+    }
+    application.activate();
+    cx.activate(true);
+    Ok(())
 }
 
 fn saved_tab(
@@ -104,7 +121,13 @@ pub(crate) async fn add_latest_tab_and_request_quit(
             workspaces.len()
         ));
     }
+    cx.update(activate_owned_application)?;
     for (handle, _) in &workspaces {
+        // Both windows share centered default bounds. Bring each one to the
+        // foreground in turn so an occluded window can submit its native frame.
+        handle
+            .update(cx, |_, window, _| window.activate_window())
+            .map_err(error)?;
         crate::native_parity_fixture::next_frame(*handle, cx).await?;
     }
 

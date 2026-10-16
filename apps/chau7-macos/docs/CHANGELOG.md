@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Resolve zero-SHA pre-push diffs from the configured upstream branch, avoiding
+  full-history quality runs when a feature branch tracks a non-main base.
+
+- Activate the owned app and bring each window forward before waiting for native
+  frames in the two-window quit regression.
 - Preserve every Rust window when quitting from a tab action; defer final
   capture until the active window is available and reject incomplete snapshots.
   Add a native two-window quit regression checking the latest resume metadata.
