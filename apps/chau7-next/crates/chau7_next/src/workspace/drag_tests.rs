@@ -332,7 +332,10 @@ fn closing_windows_commits_remaining_tabs_and_clears_the_last_saved_window(
     let worker = harness.update(crate::restore::writer::shutdown).unwrap();
     assert_eq!(worker.join().unwrap().failed, 0);
     harness.update(|cx| {
-        assert!(crate::session_store::load(&cx.global::<AppData>().root).is_none());
+        // Explicit clear retains a valid empty transaction so older backups
+        // cannot resurrect windows. Absence would permit backup recovery.
+        let restored = crate::session_store::load(&cx.global::<AppData>().root).unwrap();
+        assert!(restored.windows.is_empty());
     });
 }
 
