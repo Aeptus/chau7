@@ -248,9 +248,58 @@ fn record_with_activity(key: Key, ms: f64, bytes: usize, items: usize, idle: Opt
         profiler.record_at_with_activity(key, second(), ms, bytes, items, idle);
     }
 }
+const MAX_ACTIVE_MAIN_SPANS: usize = 16;
+#[derive(Default, Clone)]
+struct ActiveMainWork {
+    next: u64,
+    spans: Vec<(u64, Key, Instant)>,
+}
+impl ActiveMainWork {
+    fn enter(&mut self, key: Key, now: Instant) -> Option<u64> {
+        if key.queue != Queue::Main
+            || key.kind == Kind::Latency
+            || self.spans.len() >= MAX_ACTIVE_MAIN_SPANS
+        {
+            return None;
+        }
+        self.next = self.next.wrapping_add(1);
+        self.spans.push((self.next, key, now));
+        Some(self.next)
+    }
+    fn leave(&mut self, id: u64) {
+        self.spans.retain(|(current, _, _)| *current != id);
+    }
+    fn snapshot(&self, now: Instant) -> serde_json::Value {
+        let entries: Vec<_> = self
+            .spans
+            .iter()
+            .map(|(_, key, started)| {
+                serde_json::json!({"operation":key.operation,"phase":key.phase,"caller":key.caller,
+                "elapsed_ms":now.saturating_duration_since(*started).as_secs_f64()*1000.0})
+            })
+            .collect();
+        serde_json::json!({"status":"captured","entries":entries,"maximum_entries":MAX_ACTIVE_MAIN_SPANS,
+            "interpretation":"Open instrumented phases; elapsed wall time does not establish CPU usage or a blocking cause"})
+    }
+}
+fn active_registry() -> &'static Mutex<ActiveMainWork> {
+    static ACTIVE: OnceLock<Mutex<ActiveMainWork>> = OnceLock::new();
+    ACTIVE.get_or_init(Default::default)
+}
+/// Safe from the watchdog thread while the main thread is unresponsive.
+/// Never wait on a lock held by the thread being diagnosed.
+pub fn active_main_work() -> serde_json::Value {
+    let active = active_registry().try_lock().map(|active| active.clone());
+    match active {
+        Ok(active) => active.snapshot(Instant::now()),
+        Err(_) => serde_json::json!({"status":"busy","entries":[]}),
+    }
+}
+
 pub struct Span {
     key: Key,
     started: Option<Instant>,
+    active_id: Option<u64>,
     bytes: usize,
     items: usize,
     idle: Option<bool>,
@@ -268,6 +317,11 @@ impl Span {
 }
 impl Drop for Span {
     fn drop(&mut self) {
+        if let Some(id) = self.active_id
+            && let Ok(mut active) = active_registry().lock()
+        {
+            active.leave(id);
+        }
         if let Some(started) = self.started {
             record_with_activity(
                 self.key,
@@ -280,9 +334,19 @@ impl Drop for Span {
     }
 }
 pub fn begin(key: Key) -> Span {
+    let started = enabled().then(Instant::now);
+    let active_id = started
+        .filter(|_| key.queue == Queue::Main && key.kind != Kind::Latency)
+        .and_then(|now| {
+            active_registry()
+                .lock()
+                .ok()
+                .and_then(|mut active| active.enter(key, now))
+        });
     Span {
         key,
-        started: enabled().then(Instant::now),
+        started,
+        active_id,
         bytes: 0,
         items: 0,
         idle: None,
@@ -313,6 +377,7 @@ pub fn snapshot() -> serde_json::Value {
         .unwrap_or(serde_json::Value::Null);
     if !value.is_null() {
         value["instrumentation_enabled"] = serde_json::json!(enabled());
+        value["active_main_work"] = active_main_work();
     }
     value
 }
@@ -321,6 +386,25 @@ mod tests {
     use super::*;
     fn key(queue: Queue) -> Key {
         Key::wakeup("pty_poll", "hidden", queue)
+    }
+    #[test]
+    fn active_main_work_preserves_nested_phases_and_is_bounded() {
+        let mut active = ActiveMainWork::default();
+        let now = Instant::now();
+        assert!(active.enter(key(Queue::Background), now).is_none());
+        let outer = active.enter(key(Queue::Main), now).unwrap();
+        let inner = active.enter(key(Queue::Main), now).unwrap();
+        active.leave(outer);
+        let snapshot = active.snapshot(now + std::time::Duration::from_millis(250));
+        assert_eq!(snapshot["entries"].as_array().unwrap().len(), 1);
+        assert_eq!(snapshot["entries"][0]["elapsed_ms"], 250.0);
+        active.leave(inner);
+        assert!(active.spans.is_empty());
+        for _ in 0..MAX_ACTIVE_MAIN_SPANS {
+            assert!(active.enter(key(Queue::Main), now).is_some());
+        }
+        assert!(active.enter(key(Queue::Main), now).is_none());
+        assert_eq!(active.spans.len(), MAX_ACTIVE_MAIN_SPANS);
     }
     #[test]
     fn measured_idle_work_queue_and_windows_are_distinct() {

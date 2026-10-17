@@ -2,6 +2,34 @@
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
 
+/// Leave most of the deadline available for attaching and formatting symbols.
+#[derive(Clone, Copy, Debug)]
+pub struct SamplePolicy {
+    pub duration_seconds: u32,
+    pub interval_ms: u32,
+    pub timeout: Duration,
+}
+impl Default for SamplePolicy {
+    fn default() -> Self {
+        Self {
+            duration_seconds: 1,
+            interval_ms: 10,
+            timeout: Duration::from_secs(10),
+        }
+    }
+}
+impl SamplePolicy {
+    pub fn arguments(self, pid: u32, output: &std::path::Path) -> Vec<String> {
+        vec![
+            pid.to_string(),
+            self.duration_seconds.to_string(),
+            self.interval_ms.to_string(),
+            "-file".into(),
+            output.to_string_lossy().into_owned(),
+        ]
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Policy {
     pub stall_threshold: Duration,
@@ -286,6 +314,16 @@ mod tests {
     use super::*;
     fn at(s: u64) -> Duration {
         Duration::from_secs(s)
+    }
+    #[test]
+    fn sample_budget_captures_short_stalls_and_leaves_report_headroom() {
+        let policy = SamplePolicy::default();
+        assert!(policy.duration_seconds <= 1);
+        assert!(policy.timeout >= Duration::from_secs(policy.duration_seconds as u64 + 5));
+        assert_eq!(
+            policy.arguments(42, std::path::Path::new("/fixture/hang.sample.txt")),
+            ["42", "1", "10", "-file", "/fixture/hang.sample.txt"]
+        );
     }
     #[test]
     fn threshold_samples_once_and_recovers() {

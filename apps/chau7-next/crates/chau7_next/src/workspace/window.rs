@@ -20,16 +20,36 @@ pub(super) fn register_window_actions(
         .on_action(cx.listener(|_, _: &Zoom, window, _| window.zoom_window()))
 }
 
+/// Correlate deferred-window errors without logging tab titles or contents.
+pub(crate) fn lifecycle(handle: gpui::AnyWindowHandle, phase: &'static str, cx: &App) {
+    crate::incidents::record(
+        chau7_next_core::incidents::Kind::WindowLifecycle,
+        chau7_next_core::incidents::Severity::Info,
+        "Terminal window lifecycle",
+        std::collections::BTreeMap::from([
+            ("windowID".into(), format!("{:?}", handle.window_id())),
+            ("phase".into(), phase.into()),
+            ("nativeWindowCount".into(), cx.windows().len().to_string()),
+            (
+                "parkedWindowCount".into(),
+                cx.global::<super::AppData>().hidden.len().to_string(),
+            ),
+        ]),
+    );
+}
+
 impl Workspace {
     /// Close Window: the tabs and their shells are kept (macOS), the window
     /// comes back from the Dock or the next shortcut.
     pub(super) fn close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        lifecycle(window.window_handle(), "close_action", cx);
         self.hide_tabs(window, cx);
         window.remove_window();
     }
 
     /// Park the tabs in `AppData` so closing the window does not end them.
     pub(super) fn hide_tabs(&mut self, window: &Window, cx: &mut Context<Self>) {
+        lifecycle(window.window_handle(), "retiring", cx);
         Self::retire_native_window(window);
         if !cfg!(target_os = "macos") {
             return;
@@ -52,6 +72,7 @@ impl Workspace {
         let workspace = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
             if let Some(workspace) = workspace.upgrade() {
+                lifecycle(window.window_handle(), "native_close", cx);
                 workspace.update(cx, |ws, cx| ws.hide_tabs(window, cx));
             }
             true

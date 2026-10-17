@@ -67,6 +67,7 @@ mod tasks;
 mod timeline;
 pub(crate) mod widgets;
 mod window;
+pub(crate) use window::lifecycle as window_lifecycle;
 mod window_actions;
 
 use std::cell::RefCell;

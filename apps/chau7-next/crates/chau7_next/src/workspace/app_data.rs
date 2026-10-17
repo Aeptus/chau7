@@ -64,9 +64,11 @@ impl AppData {
 
     /// Live workspaces in window order.
     pub fn live(cx: &App) -> Vec<(AnyWindowHandle, Entity<Workspace>)> {
+        let native = cx.windows();
         cx.global::<AppData>()
             .workspaces
             .iter()
+            .filter(|(h, _)| native.contains(h))
             .filter_map(|(h, w)| w.upgrade().map(|w| (*h, w)))
             .collect()
     }
@@ -135,4 +137,45 @@ pub fn start_clipboard_watch(cx: &mut App) {
         }
     })
     .detach();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::AppContext;
+
+    #[gpui::test]
+    fn native_close_excludes_a_workspace_retained_by_a_deferred_task(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(|cx| {
+            cx.set_global(Settings::default());
+            cx.set_global(AppData::new(DataRoot::with_home(
+                std::env::temp_dir()
+                    .join(format!("chau7-window-lifecycle-{}", uuid::Uuid::new_v4())),
+                true,
+            )));
+        });
+        // Keep the workspace alive independently of its native window, as an
+        // asynchronous continuation can do during close/startup transitions.
+        let mut retained = None;
+        let handle = cx.add_window(|window, cx| {
+            retained = Some(cx.new(|cx| Workspace::new_empty(window, cx)));
+            gpui::EmptyView
+        });
+        let retained = retained.unwrap();
+        cx.update(|cx| {
+            cx.global_mut::<AppData>()
+                .workspaces
+                .push((handle.into(), retained.downgrade()));
+            assert_eq!(AppData::live(cx).len(), 1);
+        });
+        handle
+            .update(cx, |_, window, _| window.remove_window())
+            .unwrap();
+        cx.update(|cx| {
+            assert!(retained.downgrade().upgrade().is_some());
+            assert!(AppData::live(cx).is_empty());
+        });
+    }
 }

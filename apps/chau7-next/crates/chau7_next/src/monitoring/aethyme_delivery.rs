@@ -48,71 +48,73 @@ pub fn start(cx: &mut App) {
         executor.timer(Duration::from_secs(15)).await;
         let mut runner = Runner::new(cancel.clone());
         while !cancel.load(Ordering::Acquire) {
-            if !runner.backing_off() {
-                if let Some(executable) = resolve_executable() {
-                    runner.executable = executable;
-                    let snapshots = main.read(live_snapshots).unwrap_or_default();
-                    // All filesystem resolution happens on this background worker.
-                    let roots: HashMap<_, _> = snapshots
-                        .iter()
-                        .filter_map(|snapshot| snapshot.repository_root.as_ref())
-                        .map(|raw| (raw.clone(), canonical(raw)))
-                        .collect();
-                    let mut repos: Vec<_> = roots.values().cloned().collect();
-                    repos.sort();
-                    repos.dedup();
-                    let mut accepted = HashSet::new();
-                    for root in repos {
-                        if runner.backing_off() || cancel.load(Ordering::Acquire) {
-                            break;
-                        }
-                        runner.run_root(&root, |target, prompt| {
-                            if accepted.contains(&(target.tab_id, target.ai_session_id.clone())) {
-                                return Readiness::Retry("target_tab_busy");
-                            }
-                            // A tab may have appeared or changed repository during
-                            // CLI polling. Resolve its current cached identity before
-                            // background canonicalization, then revalidate at write.
-                            let tab_id = target.tab_id;
-                            let latest = main.read(move |cx| {
-                                live_snapshots(cx).into_iter().find(|s| s.tab_id == tab_id)
-                            });
-                            let initial = match latest {
-                                Ok(Some(snapshot)) => snapshot.repository_root,
-                                Ok(None) => return Readiness::Retry("target_tab_missing"),
-                                Err(_) => return Readiness::Retry("main_thread_unresponsive"),
-                            };
-                            let expected = initial.as_ref().map(|raw| canonical(raw));
-                            let target = target.clone();
-                            let prompt = prompt.to_string();
-                            let root = root.clone();
-                            let cancel = cancel.clone();
-                            // Mutations are never timed out and retried: a late accepted
-                            // write must not be reported as retry. Teardown closes the loop.
-                            let key = (target.tab_id, target.ai_session_id.clone());
-                            let readiness = main
-                                .call(move |cx| {
-                                    deliver(
-                                        cx,
-                                        &target,
-                                        &prompt,
-                                        &root,
-                                        initial.as_deref(),
-                                        expected.as_deref(),
-                                        &cancel,
-                                    )
-                                })
-                                .unwrap_or(Readiness::Retry("application_stopping"));
-                            if readiness == Readiness::Ready {
-                                accepted.insert(key);
-                            }
-                            readiness
-                        });
+            if let Some(executable) = resolve_executable() {
+                runner.executable = executable;
+                let snapshots = main.read(live_snapshots).unwrap_or_default();
+                // All filesystem resolution happens on this background worker.
+                let roots: HashMap<_, _> = snapshots
+                    .iter()
+                    .filter_map(|snapshot| snapshot.repository_root.as_ref())
+                    .map(|raw| (raw.clone(), canonical(raw)))
+                    .collect();
+                let mut repos: Vec<_> = roots.values().cloned().collect();
+                repos.sort();
+                repos.dedup();
+                runner.repositories.retain(&repos);
+                let mut accepted = HashSet::new();
+                for root in repos {
+                    if cancel.load(Ordering::Acquire) {
+                        break;
                     }
-                } else {
-                    runner
-                        .log_unavailable("Aethyme Next delivery inactive: executable unavailable");
+                    runner.repositories.select(&root, &mut runner.retry);
+                    if runner.backing_off() {
+                        continue;
+                    }
+                    runner.run_root(&root, |target, prompt| {
+                        if accepted.contains(&(target.tab_id, target.ai_session_id.clone())) {
+                            return Readiness::Retry("target_tab_busy");
+                        }
+                        // A tab may have appeared or changed repository during
+                        // CLI polling. Resolve its current cached identity before
+                        // background canonicalization, then revalidate at write.
+                        let tab_id = target.tab_id;
+                        let latest = main.read(move |cx| {
+                            live_snapshots(cx).into_iter().find(|s| s.tab_id == tab_id)
+                        });
+                        let initial = match latest {
+                            Ok(Some(snapshot)) => snapshot.repository_root,
+                            Ok(None) => return Readiness::Retry("target_tab_missing"),
+                            Err(_) => return Readiness::Retry("main_thread_unresponsive"),
+                        };
+                        let expected = initial.as_ref().map(|raw| canonical(raw));
+                        let target = target.clone();
+                        let prompt = prompt.to_string();
+                        let root = root.clone();
+                        let cancel = cancel.clone();
+                        // Mutations are never timed out and retried: a late accepted
+                        // write must not be reported as retry. Teardown closes the loop.
+                        let key = (target.tab_id, target.ai_session_id.clone());
+                        let readiness = main
+                            .call(move |cx| {
+                                deliver(
+                                    cx,
+                                    &target,
+                                    &prompt,
+                                    &root,
+                                    initial.as_deref(),
+                                    expected.as_deref(),
+                                    &cancel,
+                                )
+                            })
+                            .unwrap_or(Readiness::Retry("application_stopping"));
+                        if readiness == Readiness::Ready {
+                            accepted.insert(key);
+                        }
+                        readiness
+                    });
                 }
+            } else {
+                runner.log_unavailable("Aethyme Next delivery inactive: executable unavailable");
             }
             executor.timer(Duration::from_secs(30)).await;
         }
@@ -345,9 +347,9 @@ struct Runner {
     executable: PathBuf,
     worker: String,
     stopped: Arc<AtomicBool>,
-    backoff: Option<Instant>,
+    retry: delivery::RetryState,
+    repositories: delivery::RepositoryRetries,
     logged_unavailable: bool,
-    incomplete_failures: [u32; 4],
     accepted: AcceptanceLedger,
 }
 impl Runner {
@@ -356,14 +358,16 @@ impl Runner {
             executable: PathBuf::new(),
             worker: format!("chau7-next-{}", std::process::id()),
             stopped,
-            backoff: None,
+            retry: delivery::RetryState::default(),
+            repositories: delivery::RepositoryRetries::default(),
             logged_unavailable: false,
-            incomplete_failures: [0; 4],
             accepted: AcceptanceLedger::default(),
         }
     }
     fn backing_off(&self) -> bool {
-        self.backoff.is_some_and(|until| until > Instant::now())
+        self.retry
+            .backoff
+            .is_some_and(|until| until > Instant::now())
     }
     fn log_unavailable(&mut self, message: &str) {
         if !self.logged_unavailable {
@@ -377,12 +381,12 @@ impl Runner {
         if self.stopped.load(Ordering::Acquire) {
             return false;
         }
-        let failures = &mut self.incomplete_failures[kind as usize];
+        let failures = &mut self.retry.incomplete_failures[kind as usize];
         let first = *failures == 0;
         let exponent = (*failures).min(4);
         let delay = Duration::from_secs((30_u64 << exponent).min(300));
         *failures = failures.saturating_add(1);
-        self.backoff = Some(now + delay);
+        self.retry.backoff = Some(now + delay);
         first
     }
     fn completion_warning_required(&self) -> bool {
@@ -394,6 +398,7 @@ impl Runner {
         args: Vec<String>,
         kind: CaptureKind,
     ) -> Option<subprocess::CaptureResult> {
+        self.repositories.select(root, &mut self.retry);
         if self.backing_off() || self.stopped.load(Ordering::Acquire) {
             return None;
         }
@@ -407,6 +412,7 @@ impl Runner {
             ));
         work.items(1);
         work.idle(false);
+        let started = Instant::now();
         let result = subprocess::capture_unless(
             Command::new(&self.executable)
                 .args(args)
@@ -431,7 +437,7 @@ impl Runner {
         if !result.completed() {
             if self.incomplete_capture(kind, Instant::now()) {
                 log::warn!(
-                    "Aethyme capture incomplete; leaving any uncertain claim to expire; caller={} timed_out={} output_limit_exceeded={} read_failed={} cancelled={} status={:?} stdout_bytes={} stderr_bytes={}",
+                    "Aethyme capture incomplete; leaving any uncertain claim to expire; caller={} timed_out={} output_limit_exceeded={} read_failed={} cancelled={} status={:?} stdout_bytes={} stderr_bytes={} elapsed_ms={} timeout_ms=15000 stderr_hint={} repository_key={}",
                     kind.caller(),
                     result.timed_out,
                     result.output_limit_exceeded,
@@ -440,6 +446,9 @@ impl Runner {
                     result.status,
                     result.stdout.len(),
                     result.stderr.len(),
+                    started.elapsed().as_millis(),
+                    delivery::capture_stderr_hint(&result.stderr),
+                    &ContextRef::new(root.as_bytes()).sha256[..16],
                 );
             }
             return None;
@@ -450,14 +459,24 @@ impl Runner {
                 .iter()
                 .any(|word| message.contains(word))
             {
-                self.backoff = Some(Instant::now() + Duration::from_secs(600));
+                self.retry.backoff = Some(Instant::now() + Duration::from_secs(600));
                 self.log_unavailable("Aethyme Next delivery requires a compatible deployment");
             }
             return None;
         }
-        self.incomplete_failures[kind as usize] = 0;
+        let recovered_attempts = self.retry.incomplete_failures[kind as usize];
+        if recovered_attempts > 0 {
+            log::info!(
+                "Aethyme capture recovered; caller={} failed_attempts={} elapsed_ms={} repository_key={}",
+                kind.caller(),
+                recovered_attempts,
+                started.elapsed().as_millis(),
+                &ContextRef::new(root.as_bytes()).sha256[..16]
+            );
+        }
+        self.retry.incomplete_failures[kind as usize] = 0;
         self.logged_unavailable = false;
-        self.backoff = None;
+        self.retry.backoff = None;
         Some(result)
     }
     fn run_root(&mut self, root: &str, mut deliver: impl FnMut(&Target, &str) -> Readiness) {
@@ -650,7 +669,7 @@ esac
         fn reclaim(&mut self) {
             std::fs::remove_file(self.root.join("claimed")).unwrap();
             // Model broker lease/backoff expiry without sleeping or real claims.
-            self.runner.backoff = None;
+            self.runner.retry.backoff = None;
         }
         fn calls(&self) -> Vec<String> {
             std::fs::read_to_string(self.root.join("calls"))
@@ -748,6 +767,7 @@ esac
         assert!(f.runner.backing_off());
         assert!(
             f.runner
+                .retry
                 .backoff
                 .unwrap()
                 .saturating_duration_since(Instant::now())
@@ -769,18 +789,18 @@ esac
                 index == 0
             );
             assert_eq!(
-                runner.backoff.unwrap().duration_since(now),
+                runner.retry.backoff.unwrap().duration_since(now),
                 Duration::from_secs(seconds)
             );
         }
-        runner.incomplete_failures[CaptureKind::List as usize] = u32::MAX;
+        runner.retry.incomplete_failures[CaptureKind::List as usize] = u32::MAX;
         assert!(!runner.incomplete_capture(CaptureKind::List, now));
         assert_eq!(
-            runner.incomplete_failures[CaptureKind::List as usize],
+            runner.retry.incomplete_failures[CaptureKind::List as usize],
             u32::MAX
         );
         assert_eq!(
-            runner.backoff.unwrap().duration_since(now),
+            runner.retry.backoff.unwrap().duration_since(now),
             Duration::from_secs(300)
         );
     }
@@ -798,7 +818,7 @@ esac
                 .incomplete_capture(CaptureKind::List, Instant::now())
         );
         // Model expiry without sleeping; the actual fake CLI capture must reset.
-        fixture.runner.backoff = None;
+        fixture.runner.retry.backoff = None;
         assert!(
             fixture
                 .runner
@@ -809,8 +829,8 @@ esac
                 )
                 .is_some()
         );
-        assert_eq!(fixture.runner.incomplete_failures, [0; 4]);
-        assert!(fixture.runner.backoff.is_none());
+        assert_eq!(fixture.runner.retry.incomplete_failures, [0; 4]);
+        assert!(fixture.runner.retry.backoff.is_none());
         assert!(
             fixture
                 .runner
@@ -827,8 +847,8 @@ esac
     fn shutdown_cancellation_does_not_open_an_incomplete_outage() {
         let mut runner = Runner::new(Arc::new(AtomicBool::new(true)));
         assert!(!runner.incomplete_capture(CaptureKind::List, Instant::now()));
-        assert_eq!(runner.incomplete_failures, [0; 4]);
-        assert!(runner.backoff.is_none());
+        assert_eq!(runner.retry.incomplete_failures, [0; 4]);
+        assert!(runner.retry.backoff.is_none());
     }
 
     #[test]
@@ -840,14 +860,14 @@ esac
         )
         .unwrap();
         for expected in [1, 2] {
-            fixture.runner.backoff = None;
+            fixture.runner.retry.backoff = None;
             fixture
                 .runner
                 .run_root(fixture.root.to_str().unwrap(), |_, _| {
                     panic!("incomplete capture delivered")
                 });
             assert_eq!(
-                fixture.runner.incomplete_failures[CaptureKind::List as usize],
+                fixture.runner.retry.incomplete_failures[CaptureKind::List as usize],
                 expected
             );
             assert!(fixture.runner.backing_off());
@@ -877,22 +897,22 @@ esac
         let script = script.replace("case \"$3:$4:$5\" in\n", "if [ \"$3:$4\" = 'deliveries:claim' ]; then\nprintf '%s\n' attempt >> attempts\nhead -c 4194305 /dev/zero\nexit 0\nfi\ncase \"$3:$4:$5\" in\n");
         std::fs::write(&fixture.runner.executable, script).unwrap();
         for expected in [1, 2] {
-            fixture.runner.backoff = None;
+            fixture.runner.retry.backoff = None;
             fixture
                 .runner
                 .run_root(fixture.root.to_str().unwrap(), |_, _| {
                     panic!("incomplete claim delivered")
                 });
             assert_eq!(
-                fixture.runner.incomplete_failures[CaptureKind::Claim as usize],
+                fixture.runner.retry.incomplete_failures[CaptureKind::Claim as usize],
                 expected
             );
             assert_eq!(
-                fixture.runner.incomplete_failures[CaptureKind::List as usize],
+                fixture.runner.retry.incomplete_failures[CaptureKind::List as usize],
                 0
             );
             assert_eq!(
-                fixture.runner.incomplete_failures[CaptureKind::Poll as usize],
+                fixture.runner.retry.incomplete_failures[CaptureKind::Poll as usize],
                 0
             );
             assert!(!fixture.runner.completion_warning_required());
@@ -919,7 +939,7 @@ esac
         assert!(runner.completion_warning_required());
         assert!(runner.incomplete_capture(CaptureKind::Complete, Instant::now()));
         assert!(!runner.completion_warning_required());
-        runner.backoff = None;
+        runner.retry.backoff = None;
         assert!(runner.completion_warning_required());
         runner.stopped.store(true, Ordering::Release);
         assert!(!runner.completion_warning_required());

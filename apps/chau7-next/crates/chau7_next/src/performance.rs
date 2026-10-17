@@ -115,6 +115,7 @@ pub fn unresponsive_snapshot() -> Value {
     json!({"schema_version":1,"captured_at":chrono::Utc::now().to_rfc3339(),
         "runtime":runtime_info(),"uptime_seconds":identity().started.elapsed().as_secs_f64(),
         "process":process_snapshot(),"startup":crate::startup::snapshot(),"partial":true,
+        "active_main_work":chau7_next_core::work_profiler::active_main_work(),
         "hang_watchdog":{"status":"main_thread_unresponsive","render_circuit_breaker_open":crate::hang_watchdog::render_blocked()},
         "error":"main_thread_unresponsive","retryable":true,"timeout_ms":1000,
         "main_thread":{"status":"unresponsive","timer_delay_ms":null,"sample_count":null},

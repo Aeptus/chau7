@@ -34,8 +34,6 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_HEARTBEAT: u64 = 16 * 1024;
 #[cfg(any(target_os = "macos", test))]
 const MAX_SAMPLE: u64 = 8 * 1024 * 1024;
-#[cfg(target_os = "macos")]
-const SAMPLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct Shared {
     stop: AtomicBool,
@@ -208,7 +206,8 @@ fn monitor(shared: Arc<Shared>, directory: PathBuf) {
             }
             let record = json!({"schema_version":1,"timestamp":chrono::Utc::now().to_rfc3339(),
                 "kind":"main_thread_hang","phase":observation.phase,"stale_ms":observation.stale_for.as_millis(),
-                "render_circuit_breaker_open":stalled,"parent_pid":std::process::id(),"launch_id":shared.launch_id});
+                "render_circuit_breaker_open":stalled,"parent_pid":std::process::id(),"launch_id":shared.launch_id,
+                "active_main_work":chau7_next_core::work_profiler::active_main_work()});
             crate::incidents::record(
                 chau7_next_core::incidents::Kind::MainThreadHang,
                 if stalled {
@@ -244,6 +243,9 @@ fn monitor(shared: Arc<Shared>, directory: PathBuf) {
                 log::warn!("Hang breadcrumb write failed: {error}");
             }
             if stalled {
+                if let Err(error) = write_json(&directory.join("latest-stall.json"), &record) {
+                    log::warn!("Hang phase breadcrumb write failed: {error}");
+                }
                 log::error!("Main thread stalled; terminal paint circuit breaker opened");
             } else {
                 log::info!("Main thread recovered; terminal paint circuit breaker closed");
@@ -449,44 +451,29 @@ fn capture_sample(command: &WatchdogCommand, before: &Heartbeat, stale: Duration
     let mut error = None;
     let mut timed_out = false;
     let mut status = None;
-    match Command::new("/usr/bin/sample")
-        .args([
-            command.parent_pid.to_string(),
-            "5".into(),
-            "10".into(),
-            "-file".into(),
-        ])
-        .arg(&sample_path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(mut process) => loop {
-            match process.try_wait() {
-                Ok(Some(exit)) => {
-                    status = exit.code();
-                    break;
-                }
-                Ok(None)
-                    if started.saturating_add(SAMPLE_TIMEOUT) > uptime()
-                        && parent_alive(command.parent_pid)
-                        && command.heartbeat.exists() =>
-                {
-                    thread::sleep(Duration::from_millis(50))
-                }
-                Ok(None) => {
-                    timed_out = true;
-                    terminate_helper(&mut process);
-                    break;
-                }
-                Err(e) => {
-                    error = Some(e.to_string());
-                    terminate_helper(&mut process);
-                    break;
-                }
-            }
-        },
+    let policy = chau7_next_core::hang_monitor::SamplePolicy::default();
+    let capture = chau7_next_core::subprocess::capture_unless(
+        Command::new("/usr/bin/sample").args(policy.arguments(command.parent_pid, &sample_path)),
+        policy.timeout,
+        64 * 1024,
+        || !parent_alive(command.parent_pid) || !command.heartbeat.exists(),
+    );
+    let mut sampler_stderr = String::new();
+    let mut cancelled = false;
+    let mut output_limit_exceeded = false;
+    let mut read_failed = false;
+    match capture {
+        Ok(result) => {
+            status = result.status;
+            timed_out = result.timed_out;
+            cancelled = result.cancelled;
+            output_limit_exceeded = result.output_limit_exceeded;
+            read_failed = result.read_failed;
+            sampler_stderr = String::from_utf8_lossy(&result.stderr)
+                .chars()
+                .take(2048)
+                .collect();
+        }
         Err(e) => error = Some(e.to_string()),
     }
     let mut truncated = false;
@@ -513,9 +500,19 @@ fn capture_sample(command: &WatchdogCommand, before: &Heartbeat, stale: Duration
             Ok(bytes)
         })
         .unwrap_or_default();
-    let manifest = json!({"schema_version":3,"detected_at":chrono::Utc::now().to_rfc3339(),"parent_pid":command.parent_pid,
+    let stall = read_bounded(
+        &command.output_directory.join("latest-stall.json"),
+        MAX_HEARTBEAT,
+    )
+    .ok()
+    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+    .filter(|v| v["launch_id"].as_str() == Some(before.launch_id.as_str()));
+    let manifest = json!({"schema_version":4,"detected_at":chrono::Utc::now().to_rfc3339(),"parent_pid":command.parent_pid,
         "watchdog_pid":std::process::id(),"stale_milliseconds":stale.as_millis(),"sample_path":sample_path,
         "sample_exit_status":status,"sample_launch_error":error,"sample_timed_out":timed_out,"sample_truncated":truncated,
+        "sample_cancelled":cancelled,"sample_output_limit_exceeded":output_limit_exceeded,"sample_read_failed":read_failed,
+        "sample_stderr":sampler_stderr,"sample_duration_seconds":policy.duration_seconds,"sample_timeout_ms":policy.timeout.as_millis(),
+        "active_main_work_at_stall":stall.as_ref().and_then(|v| v.get("active_main_work")),
         "build_sha":crate::performance::build_metadata().1,
         "heartbeat_before_capture":before,"heartbeat_after_capture":after,
         "capture_evidence":SampleEvidence::new(Some(before.progress_token),after.as_ref().map(|h| h.progress_token),started,completed),

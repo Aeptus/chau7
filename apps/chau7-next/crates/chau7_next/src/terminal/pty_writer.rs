@@ -245,6 +245,7 @@ fn record_input_metric(
 }
 
 fn close(term: &RwLock<Chau7Terminal>, mode: CloseMode) {
+    let started = Instant::now();
     let (pid, has_pty) = {
         let t = term.read();
         (t.shell_pid() as i32, t.has_pty())
@@ -263,12 +264,20 @@ fn close(term: &RwLock<Chau7Terminal>, mode: CloseMode) {
             if wait_for_exit(term, grace) {
                 return;
             }
-            log::warn!("shell {pid} did not exit after `exit`: sending SIGTERM to its group");
+            log::warn!(
+                "shell {pid} did not exit after `exit`: sending SIGTERM to its group; close_mode={mode:?} grace_ms={} elapsed_ms={}",
+                grace.as_millis(),
+                started.elapsed().as_millis()
+            );
             signal_group(pid, Signal::Term);
             if wait_for_exit(term, escalation) {
                 return;
             }
-            log::error!("shell {pid} still alive after SIGTERM: sending SIGKILL");
+            log::error!(
+                "shell {pid} still alive after SIGTERM: sending SIGKILL; close_mode={mode:?} escalation_ms={} elapsed_ms={}",
+                escalation.as_millis(),
+                started.elapsed().as_millis()
+            );
             signal_group(pid, Signal::Kill);
         }
     }

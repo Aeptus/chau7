@@ -104,19 +104,6 @@ fn find_executable(name: &str) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-fn percent_encode_path(path: &str) -> String {
-    let mut out = String::new();
-    for b in path.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
-
 /// A Cmd-clicked file that "Open in internal editor" sends to the tab's
 /// editor pane (`onFilePathClicked`, CMD-040): the resolved path and line.
 pub fn internal_editor_target(
@@ -188,12 +175,12 @@ fn open_path(path: &PathMatch, cwd: Option<&Path>, cx: &mut App) -> bool {
                 .spawn()
                 .is_ok();
             if !spawned {
-                cx.open_url(&format!("file://{}", percent_encode_path(&full_str)));
+                cx.open_url(&link_detect::file_uri(&full_str));
             }
             true
         }
         EditorLaunch::SystemOpen => {
-            cx.open_url(&format!("file://{}", percent_encode_path(&full_str)));
+            cx.open_url(&link_detect::file_uri(&full_str));
             true
         }
         EditorLaunch::Refused => false,
@@ -208,7 +195,7 @@ mod tests {
     fn file_uri_routes_to_the_same_path_target_as_plain_text() {
         let fixture = std::env::temp_dir().join(format!("chau7 link {}.md", uuid::Uuid::new_v4()));
         std::fs::write(&fixture, "# fixture").unwrap();
-        let url = format!("file://{}", percent_encode_path(&fixture.to_string_lossy()));
+        let url = link_detect::file_uri(&fixture.to_string_lossy());
         let target = url_target(url, None);
         std::fs::remove_file(&fixture).unwrap();
         assert!(matches!(target, Target::Path(p) if Path::new(&p.path) == fixture));
@@ -224,7 +211,10 @@ mod tests {
 
     #[test]
     fn encodes_spaces_and_unicode() {
-        assert_eq!(percent_encode_path("/a b/é.rs"), "/a%20b/%C3%A9.rs");
+        assert_eq!(
+            link_detect::file_uri("/a b/é.rs"),
+            "file:///a%20b/%C3%A9.rs"
+        );
     }
 
     #[test]

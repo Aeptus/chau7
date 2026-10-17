@@ -1,5 +1,5 @@
 {
-  "reason": "Makes the native fixture’s first synthetic IME replacement deterministic at its verified UTF-16 target; product behavior is unchanged. Also restores existing Rust tab-close safety without adding capabilities or settings; the focused pull request documents this regression fix and validation. Also hardens existing prompt history ownership, navigation and restoration; the focused PR records behavior and validation without rebuilding the running app. App-level recall also preserves drafts changed by shell-side completion or history editing instead of restoring guessed text. Also repairs existing terminal file-link detection for spaced paths and local file URIs; the focused PR documents regressions and validation without changing capabilities or settings.",
+  "reason": "Makes the native fixture’s first synthetic IME replacement deterministic at its verified UTF-16 target; product behavior is unchanged. Also restores existing Rust tab-close safety without adding capabilities or settings; the focused pull request documents this regression fix and validation. Also hardens existing prompt history ownership, navigation and restoration; the focused PR records behavior and validation without rebuilding the running app. App-level recall also preserves drafts changed by shell-side completion or history editing instead of restoring guessed text. Also repairs existing terminal file-link detection for spaced paths and local file URIs; the focused PR documents regressions and validation without changing capabilities or settings. Also implements bounded hang phase evidence and faster sampling, repository-isolated delivery retries, window lifecycle diagnostics and portable file URIs. The integration PR documents behavior, tests and the no-app-rebuild constraint.",
   "paths": [
     "apps/chau7-next/crates/chau7_next/src/panes/editor/native_markdown/fixture.rs",
     "apps/chau7-next/crates/chau7_next/src/pane.rs",
@@ -11,6 +11,18 @@
     "apps/chau7-next/crates/chau7_next/src/restore.rs",
     "apps/chau7-next/crates/chau7_next_core/src/swift_restore_import.rs",
     "apps/chau7-next/crates/chau7_next_core/src/link_detect.rs",
-    "apps/chau7-next/crates/chau7_next/src/terminal/links.rs"
+    "apps/chau7-next/crates/chau7_next/src/terminal/links.rs",
+    "apps/chau7-next/crates/chau7_next/src/hang_watchdog.rs",
+    "apps/chau7-next/crates/chau7_next/src/main.rs",
+    "apps/chau7-next/crates/chau7_next/src/monitoring/aethyme_delivery.rs",
+    "apps/chau7-next/crates/chau7_next/src/performance.rs",
+    "apps/chau7-next/crates/chau7_next/src/terminal/pty_writer.rs",
+    "apps/chau7-next/crates/chau7_next/src/workspace/app_data.rs",
+    "apps/chau7-next/crates/chau7_next/src/workspace/mod.rs",
+    "apps/chau7-next/crates/chau7_next/src/workspace/window.rs",
+    "apps/chau7-next/crates/chau7_next_core/src/aethyme_delivery.rs",
+    "apps/chau7-next/crates/chau7_next_core/src/hang_monitor.rs",
+    "apps/chau7-next/crates/chau7_next_core/src/incidents.rs",
+    "apps/chau7-next/crates/chau7_next_core/src/work_profiler.rs"
   ]
 }

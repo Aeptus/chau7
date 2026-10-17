@@ -1,5 +1,47 @@
 //! Isolated current AethymeDelivery.swift contract, using broker advanced.
 use serde::Deserialize;
+/// Retry state follows the canonical repository; another repository succeeding
+/// must neither clear this outage nor be held behind its backoff.
+#[derive(Default)]
+pub struct RetryState {
+    pub backoff: Option<std::time::Instant>,
+    pub incomplete_failures: [u32; 4],
+}
+#[derive(Default)]
+pub struct RepositoryRetries {
+    current: Option<String>,
+    parked: std::collections::HashMap<String, RetryState>,
+}
+impl RepositoryRetries {
+    pub fn select(&mut self, root: &str, active: &mut RetryState) {
+        if self.current.as_deref() == Some(root) {
+            return;
+        }
+        if let Some(previous) = self.current.replace(root.into()) {
+            self.parked.insert(previous, std::mem::take(active));
+        }
+        *active = self.parked.remove(root).unwrap_or_default();
+    }
+    pub fn retain(&mut self, live: &[String]) {
+        self.parked.retain(|root, _| live.contains(root));
+    }
+}
+
+/// Export only a static hint, never CLI stderr (which may contain user data).
+pub fn capture_stderr_hint(stderr: &[u8]) -> &'static str {
+    let text = String::from_utf8_lossy(&stderr[..stderr.len().min(8192)]).to_ascii_lowercase();
+    if text.lines().any(|line| {
+        line.contains("database is locked")
+            || line.contains("database is busy")
+            || (line.contains("lock")
+                && (line.contains("waiting for") || line.contains("lock timeout")))
+    }) {
+        "lock_wait_reported"
+    } else {
+        "unclassified"
+    }
+}
+
 pub const ADAPTER: &str = "chau7-next";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
@@ -266,6 +308,43 @@ mod tests {
             is_at_prompt: true,
             has_pending_input: false,
         }
+    }
+    #[test]
+    fn repository_outages_are_isolated_and_retain_their_failure_budget() {
+        let mut roots = RepositoryRetries::default();
+        let mut active = RetryState::default();
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        roots.select("/fixture/a", &mut active);
+        active.backoff = Some(until);
+        active.incomplete_failures[2] = 4;
+        roots.select("/fixture/b", &mut active);
+        assert!(active.backoff.is_none());
+        assert_eq!(active.incomplete_failures, [0; 4]);
+        roots.select("/fixture/a", &mut active);
+        assert_eq!(active.backoff, Some(until));
+        assert_eq!(active.incomplete_failures[2], 4);
+        roots.select("/fixture/b", &mut active);
+        roots.retain(&["/fixture/b".into()]);
+        roots.select("/fixture/a", &mut active);
+        assert!(active.backoff.is_none());
+    }
+    #[test]
+    fn stderr_hints_are_bounded_and_do_not_export_cli_text() {
+        assert_eq!(
+            capture_stderr_hint(b"waiting for repository coordination lock /private/example"),
+            "lock_wait_reported"
+        );
+        assert_eq!(
+            capture_stderr_hint(b"database is locked"),
+            "lock_wait_reported"
+        );
+        assert_eq!(
+            capture_stderr_hint(b"clock updated, secret token omitted"),
+            "unclassified"
+        );
+        let mut bytes = vec![b'x'; 8192];
+        bytes.extend_from_slice(b"database is locked");
+        assert_eq!(capture_stderr_hint(&bytes), "unclassified");
     }
     #[test]
     fn own_target_round_trip_and_swift_is_rejected() {

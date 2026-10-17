@@ -475,8 +475,10 @@ fn main() {
             })
             .detach();
             cx.on_window_closed(|cx, _| {
+                let native = cx.windows();
                 let data = cx.global_mut::<AppData>();
-                data.workspaces.retain(|(_, w)| w.upgrade().is_some());
+                data.workspaces
+                    .retain(|(handle, w)| native.contains(handle) && w.upgrade().is_some());
                 if cx.windows().is_empty() && !cfg!(target_os = "macos") {
                     cx.quit();
                 }
@@ -545,6 +547,7 @@ pub fn open_workspace_window(
     cx.global_mut::<AppData>()
         .workspaces
         .push((handle, workspace.downgrade()));
+    workspace::window_lifecycle(handle, "opened", cx);
     Some(workspace)
 }
 
@@ -574,6 +577,7 @@ pub fn open_parked_window(parked: ParkedWindow, cx: &mut App) {
             cx.global_mut::<AppData>()
                 .workspaces
                 .push((handle, workspace.downgrade()));
+            workspace::window_lifecycle(handle, "opened", cx);
         }
         Err(err) => log::error!("open window: {err}"),
     }
@@ -593,6 +597,7 @@ pub fn open_window_for_transfer(
             cx.global_mut::<AppData>()
                 .workspaces
                 .push((handle, workspace.downgrade()));
+            workspace::window_lifecycle(handle, "opened", cx);
             Some((handle, workspace))
         }
         Err(error) => {

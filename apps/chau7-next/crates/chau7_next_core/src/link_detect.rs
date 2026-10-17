@@ -181,6 +181,29 @@ pub fn hyperlink_path(href: &str) -> Option<PathMatch> {
     local_file_path(href)
 }
 
+/// Encode absolute filesystem paths as local file URIs on Unix and Windows.
+pub fn file_uri(path: &str) -> String {
+    let drive = path.as_bytes().get(1) == Some(&b':') && path.as_bytes()[0].is_ascii_alphabetic();
+    let path = if drive {
+        format!("/{}", path.replace('\\', "/"))
+    } else {
+        path.into()
+    };
+    let mut url = String::from("file://");
+    for b in path.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b':' | b'-' | b'_' | b'.' | b'~' => {
+                url.push(b as char)
+            }
+            _ => {
+                use std::fmt::Write;
+                let _ = write!(url, "%{b:02X}");
+            }
+        }
+    }
+    url
+}
+
 /// Decode a local file URI exactly once. Remote authorities stay system URLs.
 /// This also accepts raw spaces in OSC 8 targets, whose boundaries are explicit.
 pub fn local_file_path(uri: &str) -> Option<PathMatch> {
@@ -213,6 +236,15 @@ pub fn local_file_path(uri: &str) -> Option<PathMatch> {
     if path.chars().any(char::is_control) || path.starts_with("//") {
         return None;
     }
+    let path = if cfg!(windows)
+        && path.as_bytes().get(2) == Some(&b':')
+        && path.as_bytes().get(1).is_some_and(u8::is_ascii_alphabetic)
+        && path.as_bytes().get(3) == Some(&b'/')
+    {
+        path[1..].to_string()
+    } else {
+        path
+    };
     let line = fragment
         .and_then(|f| f.strip_prefix('L'))
         .and_then(|n| n.parse::<u32>().ok())
@@ -326,6 +358,25 @@ pub fn editor_launch(
 mod tests {
     use super::*;
 
+    #[test]
+    fn file_uri_round_trip_preserves_drive_paths_and_spaced_unicode_names() {
+        assert_eq!(
+            file_uri(r"C:\fixture\My Notes.md"),
+            "file:///C:/fixture/My%20Notes.md"
+        );
+        let p = local_file_path("file:///C:/fixture/My%20Notes.md").unwrap();
+        assert_eq!(
+            p.path,
+            if cfg!(windows) {
+                "C:/fixture/My Notes.md"
+            } else {
+                "/C:/fixture/My Notes.md"
+            }
+        );
+        for path in ["/fixture/Café Notes.md", "/fixture/a%20b+.md"] {
+            assert_eq!(local_file_path(&file_uri(path)).unwrap().path, path);
+        }
+    }
     #[test]
     fn spaced_paths_preserve_the_whole_target_at_every_character() {
         for (text, expected, line) in [

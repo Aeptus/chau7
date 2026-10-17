@@ -17,6 +17,7 @@ const MAX_FIELD_BYTES: usize = 1024;
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
     AppRecovery,
+    WindowLifecycle,
     MainThreadHang,
     MemoryPressure,
     ProxyRequestHighWater,
