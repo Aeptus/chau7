@@ -3600,8 +3600,8 @@ fn traffic_light_geometry(native: &NSWindow, stage: &str) -> Result<serde_json::
     Ok(serde_json::Value::Object(controls))
 }
 
-/// Capture the owned AppKit frame composition, including the native controls.
-/// Geometry alone cannot detect a content layer painted over the titlebar.
+/// Capture the owned frame-view NSView cache around the native controls.
+/// This is NSView-cache evidence only; it is not final window-server composition.
 /// The crop never reads another application or requires screen capture access.
 fn traffic_light_composition(native: &NSWindow, stage: &str) -> Result<serde_json::Value, String> {
     use base64::Engine as _;
@@ -3609,7 +3609,7 @@ fn traffic_light_composition(native: &NSWindow, stage: &str) -> Result<serde_jso
         .contentView()
         .ok_or("owned window has no content view")?;
     let frame = unsafe { content.superview() }.ok_or("owned window has no frame view")?;
-    let mut rects = Vec::new();
+    let mut controls = Vec::new();
     for (kind, name) in [
         (NSWindowButton::CloseButton, "close"),
         (NSWindowButton::MiniaturizeButton, "minimize"),
@@ -3623,26 +3623,32 @@ fn traffic_light_composition(native: &NSWindow, stage: &str) -> Result<serde_jso
             rect_contains_with_tolerance(frame.bounds(), rect),
             &format!("{stage}: {name} is outside the visible window frame"),
         )?;
-        rects.push((name, rect));
+        controls.push((
+            name,
+            rect,
+            button.isEnabled(),
+            button.isHiddenOrHasHiddenAncestor(),
+            button.alphaValue(),
+        ));
     }
-    let left = rects
+    let left = controls
         .iter()
-        .map(|(_, r)| r.origin.x)
+        .map(|(_, r, _, _, _)| r.origin.x)
         .fold(f64::INFINITY, f64::min)
         - 3.0;
-    let bottom = rects
+    let bottom = controls
         .iter()
-        .map(|(_, r)| r.origin.y)
+        .map(|(_, r, _, _, _)| r.origin.y)
         .fold(f64::INFINITY, f64::min)
         - 3.0;
-    let right = rects
+    let right = controls
         .iter()
-        .map(|(_, r)| r.origin.x + r.size.width)
+        .map(|(_, r, _, _, _)| r.origin.x + r.size.width)
         .fold(f64::NEG_INFINITY, f64::max)
         + 3.0;
-    let top = rects
+    let top = controls
         .iter()
-        .map(|(_, r)| r.origin.y + r.size.height)
+        .map(|(_, r, _, _, _)| r.origin.y + r.size.height)
         .fold(f64::NEG_INFINITY, f64::max)
         + 3.0;
     let crop = objc2_foundation::NSRect::new(
@@ -3695,10 +3701,12 @@ fn traffic_light_composition(native: &NSWindow, stage: &str) -> Result<serde_jso
         rgba.get_pixel(0, height - 1),
         rgba.get_pixel(width - 1, height - 1),
     ];
+    let corner_pixels_rgba: Vec<[u8; 4]> =
+        corners.iter().map(|p| [p[0], p[1], p[2], p[3]]).collect();
     let background: [f64; 3] =
         std::array::from_fn(|c| corners.iter().map(|p| p[c] as f64).sum::<f64>() / 4.0);
-    let mut visible_pixels = serde_json::Map::new();
-    for (name, rect) in rects {
+    let mut observations = Vec::with_capacity(controls.len());
+    for (name, rect, enabled, hidden, alpha) in controls {
         let x0 = ((rect.origin.x - left) / crop.size.width * width as f64)
             .floor()
             .max(0.0) as u32;
@@ -3715,22 +3723,92 @@ fn traffic_light_composition(native: &NSWindow, stage: &str) -> Result<serde_jso
                 p[3] > 200 && (0..3).any(|c| (p[c] as f64 - background[c]).abs() >= 20.0)
             })
             .count();
+        observations.push((name, rect, enabled, hidden, alpha, x0, x1, contrast));
+    }
+
+    let mut png = std::io::Cursor::new(Vec::new());
+    let png_result = image::DynamicImage::ImageRgba8(rgba)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .map_err(error)
+        .map(|()| png.into_inner());
+    if observations
+        .iter()
+        .any(|(_, _, _, _, _, _, _, pixels)| *pixels < 8)
+    {
+        const MAX_DIAGNOSTIC_PNG_BYTES: usize = 192 * 1024;
+        let controls: Vec<serde_json::Value> = observations
+            .iter()
+            .map(|(name, rect, enabled, hidden, alpha, x0, x1, pixels)| {
+                serde_json::json!({
+                    "name": name,
+                    "rect_in_frame_view": native_rect_values(*rect),
+                    "pixel_column_range": [x0, x1],
+                    "enabled": enabled,
+                    "hidden_or_has_hidden_ancestor": hidden,
+                    "alpha": alpha,
+                    "view_cache_visible_pixels": pixels,
+                })
+            })
+            .collect();
+        let (png_base64, png_omitted_reason) = match &png_result {
+            Ok(bytes) if bytes.len() <= MAX_DIAGNOSTIC_PNG_BYTES => (
+                Some(base64::engine::general_purpose::STANDARD.encode(bytes)),
+                None,
+            ),
+            Ok(bytes) => (
+                None,
+                Some(format!(
+                    "encoded PNG is {} bytes; diagnostic limit is {MAX_DIAGNOSTIC_PNG_BYTES}",
+                    bytes.len()
+                )),
+            ),
+            Err(error) => (None, Some(format!("PNG encoding failed: {error}"))),
+        };
+        let diagnostic = serde_json::json!({
+            "stage": stage,
+            "capture_method": "NSView bitmapImageRepForCachingDisplayInRect/cacheDisplayInRect_toBitmapImageRep",
+            "capture_scope": "owned NSWindow frame-view subtree only",
+            "final_appkit_window_server_composition": false,
+            "window_frame": native_rect_values(native.frame()),
+            "frame_view_bounds": native_rect_values(frame.bounds()),
+            "frame_view_is_flipped": frame.isFlipped(),
+            "window_backing_scale_factor": native.backingScaleFactor(),
+            "crop_rect_in_frame_view": native_rect_values(crop),
+            "pixel_size": [width, height],
+            "effective_pixel_scale_px_per_point": [
+                width as f64 / crop.size.width,
+                height as f64 / crop.size.height,
+            ],
+            "corner_pixels_rgba": corner_pixels_rgba,
+            "background_rgb_from_corner_average": background,
+            "minimum_visible_pixels_per_control": 8,
+            "controls": controls,
+            "png_byte_length": png_result.as_ref().ok().map(Vec::len),
+            "png_base64": png_base64,
+            "png_omitted_reason": png_omitted_reason,
+        });
+        eprintln!("native_traffic_light_cache_failure={diagnostic}");
+    }
+
+    let mut visible_pixels = serde_json::Map::new();
+    for (name, _, _, _, _, _, _, contrast) in &observations {
         ensure(
-            contrast >= 8,
+            *contrast >= 8,
             &format!(
-                "{stage}: {name} traffic light is absent from the native composition ({contrast} visible pixels)"
+                "{stage}: {name} traffic light has insufficient contrast in the owned NSView cache ({contrast} qualifying pixels)"
             ),
         )?;
-        visible_pixels.insert(name.into(), serde_json::json!(contrast));
+        visible_pixels.insert((*name).into(), serde_json::json!(contrast));
     }
-    let mut png = std::io::Cursor::new(Vec::new());
-    image::DynamicImage::ImageRgba8(rgba)
-        .write_to(&mut png, image::ImageFormat::Png)
-        .map_err(error)?;
+    let png_bytes = png_result?;
     Ok(serde_json::json!({
-        "pixel_size": [width, height], "crop_rect": native_rect_values(crop),
+        "capture_method": "NSView bitmapImageRepForCachingDisplayInRect/cacheDisplayInRect_toBitmapImageRep",
+        "capture_scope": "owned NSWindow frame-view subtree only",
+        "final_appkit_window_server_composition": false,
+        "pixel_size": [width, height],
+        "crop_rect": native_rect_values(crop),
         "visible_control_pixels": visible_pixels,
-        "png_base64": base64::engine::general_purpose::STANDARD.encode(png.into_inner()),
+        "png_base64": base64::engine::general_purpose::STANDARD.encode(png_bytes),
     }))
 }
 
@@ -3823,14 +3901,35 @@ async fn verify_traffic_lights_in_real_fullscreen(
         .await?;
         settle(handle, cx).await?;
         let initial_geometry = traffic_light_geometry(native, "actual fullscreen")?;
-        let initial_composition = traffic_light_composition(native, "actual fullscreen")?;
+        let initial_composition = traffic_light_composition(native, "actual fullscreen");
+        if let Err(error) = &initial_composition {
+            eprintln!(
+                "native_fullscreen_initial_composition_failure={}",
+                serde_json::json!({ "stage": "actual fullscreen", "error": error }),
+            );
+        }
         let application = NSApplication::sharedApplication(
             MainThreadMarker::new().ok_or("fullscreen focus fixture is not on main thread")?,
         );
         ensure(application.isActive() && native.isKeyWindow(),
             "fullscreen focus fixture must start with an active key window")?;
-        let menu_reveal =
-            verify_fullscreen_menu_reveal(handle, native, &application, cx).await?;
+        let menu_reveal = verify_fullscreen_menu_reveal(handle, native, &application, cx).await;
+        if let Err(error) = &menu_reveal {
+            eprintln!(
+                "native_fullscreen_menu_reveal_failure={}",
+                serde_json::json!({ "error": error }),
+            );
+        }
+        let (initial_composition, menu_reveal) = match (initial_composition, menu_reveal) {
+            (Ok(composition), Ok(menu_reveal)) => (composition, menu_reveal),
+            (Err(composition_error), Err(menu_error)) => {
+                return Err(format!(
+                    "fullscreen menu reveal failed: {menu_error}; initial composition also failed: {composition_error}"
+                ));
+            }
+            (Err(composition_error), Ok(_)) => return Err(composition_error),
+            (Ok(_), Err(menu_error)) => return Err(menu_error),
+        };
         ensure(
             application.isActive() && native.isVisible() && native.isKeyWindow(),
             "owned fixture lost foreground after fullscreen menu reveal",

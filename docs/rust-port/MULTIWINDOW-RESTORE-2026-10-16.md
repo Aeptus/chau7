@@ -433,3 +433,23 @@ run additionally lost foreground during menu-visibility cleanup). These are
 partial transition-survival results, not passing restore/visual cases. Both
 owned test processes were subsequently checked separately for normal exit;
 the production process was left running.
+
+
+The first manual-pointer attempt on `104c712e` selected the external display
+from the pointer's position before fullscreen entry. Two transition cycles
+passed, but the subsequent initial fullscreen check stopped before any hover
+instruction: the minimize control had zero qualifying contrast pixels in the
+owned frame-view cache. All three controls passed the preceding native geometry
+and visibility checks. This does not distinguish an actual paint regression
+from a view-cache or disabled-control contrast false negative. The assertion
+ran before crop serialization, so that failed crop was not retained. No physical
+menu reveal was exercised in this attempt. Evidence is retained in
+`/private/tmp/chau7-s18-menu-overlay-review/native-candidate-104c712e/manifest.json`;
+the isolated process exited and production Chau7 stayed open.
+
+The diagnostic follow-up retains all three pixel counts and a bounded owned
+NSView-cache crop before enforcing the same visibility thresholds. It records
+scale, geometry and enabled state rather than inferring screen composition from
+the view cache. The initial control-paint result is retained while the independent
+menu reveal check runs; either failure still fails the complete case. This lets
+the operator exercise the menu without silently accepting a control-paint failure.

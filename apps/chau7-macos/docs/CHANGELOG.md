@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Preserve bounded native-control capture diagnostics before visual checks fail,
+  and continue the independent fullscreen menu test before reporting either
+  failure. Distinguish NSView-cache pixels from actual desktop composition;
+  physical hover acceptance of the current menu correction remains pending.
+
 - Keep the Rust fullscreen tab row below the revealed system menu on external
   displays, reserving only the menu's actual overlap. Hide the complete owned
   empty auxiliary content view and restore it on exit; reject menu overlap in
