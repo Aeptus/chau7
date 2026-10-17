@@ -2246,18 +2246,16 @@ async fn wait_for_manual_pointer_menu_phase(
                 } else {
                     !near_top
                 };
+            // Physical pointer position plus AppKit's observed menu state
+            // cover the requested hover phases. Keep the renderer-frame
+            // stability gate, but do not couple hover to toolbar occlusion.
             let toolbar = gpui_macos::fullscreen_toolbar_reveal_observation(native)
                 .ok_or("owned fullscreen fixture has no GPUI toolbar observation")?;
-            let toolbar_state_matches = if expected_menu_visible {
-                toolbar.toolbar_window_present
-                    && toolbar.toolbar_occlusion_height > 0.5
-            } else {
-                toolbar.toolbar_occlusion_height.abs() <= 0.5
-            };
+            let renderer_tracks_toolbar =
+                native_rects_match(toolbar.renderer_frame, toolbar.expected_renderer_frame);
             let state_matches = menu_visible == expected_menu_visible
                 && pointer_position_matches
-                && toolbar_state_matches
-                && native_rects_match(toolbar.renderer_frame, toolbar.expected_renderer_frame);
+                && renderer_tracks_toolbar;
             samples += 1;
 
             if state_matches {
@@ -2382,6 +2380,40 @@ fn native_rects_intersect(left: objc2_foundation::NSRect, right: objc2_foundatio
         && right.origin.y < left.origin.y + left.size.height
 }
 
+fn native_rect_intersection_height(
+    left: objc2_foundation::NSRect,
+    right: objc2_foundation::NSRect,
+) -> f64 {
+    let left_right = left.origin.x + left.size.width;
+    let right_right = right.origin.x + right.size.width;
+    let left_top = left.origin.y + left.size.height;
+    let right_top = right.origin.y + right.size.height;
+    let values = [
+        left.origin.x,
+        left.origin.y,
+        left.size.width,
+        left.size.height,
+        right.origin.x,
+        right.origin.y,
+        right.size.width,
+        right.size.height,
+        left_right,
+        right_right,
+        left_top,
+        right_top,
+    ];
+    if !values.iter().all(|value| value.is_finite()) {
+        return 0.0;
+    }
+    let width = left_right.min(right_right) - left.origin.x.max(right.origin.x);
+    let height = left_top.min(right_top) - left.origin.y.max(right.origin.y);
+    if width > 0.0 && height > 0.0 {
+        height
+    } else {
+        0.0
+    }
+}
+
 fn native_rect_delta(
     before: objc2_foundation::NSRect,
     after: objc2_foundation::NSRect,
@@ -2478,6 +2510,26 @@ fn fullscreen_menu_snapshot(
             - renderer_rect_in_content.origin.y
             - renderer_rect_in_content.size.height
     };
+    let base_layout_in_window = content_view.convertRect_toView(layout_in_content, None);
+    let base_layout_in_screen = native.convertRectToScreen(base_layout_in_window);
+    let raw_geometry_menu_bar_layout_intersection_height =
+        native_rect_intersection_height(geometry.screen.menu_bar_frame, base_layout_in_screen);
+    let geometry_required_menu_bar_occlusion_height = if toolbar.menu_bar_is_visible {
+        raw_geometry_menu_bar_layout_intersection_height
+    } else {
+        0.0
+    };
+    let raw_observed_menu_bar_frame_layout_intersection_height = toolbar
+        .menu_bar_frame_in_content_view
+        .map(|frame| native_rect_intersection_height(frame, layout_in_content))
+        .unwrap_or(0.0);
+    let observed_active_menu_bar_occlusion_height = if toolbar.menu_bar_is_visible {
+        raw_observed_menu_bar_frame_layout_intersection_height
+    } else {
+        0.0
+    };
+    let expected_total_renderer_top_gap =
+        geometry_required_menu_bar_occlusion_height + toolbar.applied_toolbar_occlusion_height;
     let renderer_tracks_layout =
         native_rects_match(renderer.frame(), toolbar.expected_renderer_frame);
     let raw_toolbar_frame_overlaps_renderer = toolbar
@@ -2495,15 +2547,31 @@ fn fullscreen_menu_snapshot(
         "raw_overlap_height": toolbar.toolbar_occlusion_height,
         "raw_frame_overlaps_renderer": raw_toolbar_frame_overlaps_renderer,
         "empty_toolbar_suppressed": toolbar.empty_toolbar_suppressed,
-        "applied_occlusion_height": toolbar.applied_toolbar_occlusion_height,
+        "applied_toolbar_occlusion_height": toolbar.applied_toolbar_occlusion_height,
         "renderer_top_gap": renderer_top_gap,
-        "api_extra_renderer_top_gap": toolbar.extra_renderer_top_gap,
+        "api_extra_renderer_top_gap_total": toolbar.extra_renderer_top_gap,
+        "expected_total_renderer_top_gap": expected_total_renderer_top_gap,
         "top_gap_matches_api_observation":
             (renderer_top_gap - toolbar.extra_renderer_top_gap).abs() <= 0.5,
         "visible_alpha_geometry_overlap": toolbar_visible_alpha_overlaps_renderer,
         "expected_renderer_frame": native_rect_values(toolbar.expected_renderer_frame),
         "measured_occlusion_height": toolbar.toolbar_occlusion_height,
         "renderer_tracks_unobscured_frame": renderer_tracks_layout,
+    });
+    let menu_bar_occlusion_evidence = serde_json::json!({
+        "visible": toolbar.menu_bar_is_visible,
+        "frame_in_content_view": toolbar
+            .menu_bar_frame_in_content_view
+            .map(native_rect_values),
+        "raw_geometry_intersection_with_content_layout_height":
+            raw_geometry_menu_bar_layout_intersection_height,
+        "geometry_required_visible_occlusion_height": geometry_required_menu_bar_occlusion_height,
+        "raw_observed_frame_intersection_with_content_layout_height":
+            raw_observed_menu_bar_frame_layout_intersection_height,
+        "observed_active_occlusion_height": observed_active_menu_bar_occlusion_height,
+        "applied_menu_bar_occlusion_height": toolbar.applied_menu_bar_occlusion_height,
+        "overlaps_renderer": toolbar.menu_bar_is_visible
+            && geometry.menu_bar_overlaps_renderer,
     });
     let renderer_bounds = renderer.bounds();
     let renderer_visible_rect = renderer.visibleRect();
@@ -2586,6 +2654,7 @@ fn fullscreen_menu_snapshot(
             "empty_toolbar_suppressed": toolbar.empty_toolbar_suppressed,
             "renderer_tracks_content_layout": native_rects_match(renderer.frame(), layout_in_content),
             "fullscreen_toolbar": toolbar_evidence,
+            "fullscreen_menu_bar_occlusion": menu_bar_occlusion_evidence,
             "traffic_light_host_rect_in_content_view": native_rect_values(controls_in_content),
             "traffic_light_host_top_delta_from_renderer": controls_top_delta,
             "presentation_options": application.presentationOptions().0,
@@ -2630,6 +2699,14 @@ fn fullscreen_menu_snapshot(
         NSPoint::new(hit_x, crop.origin.y + crop.size.height / 2.0),
         objc2_foundation::NSSize::new(0.0, 0.0),
     );
+    let crop_in_content_view = renderer.convertRect_toView(crop, Some(&content_view));
+    let crop_in_window = renderer.convertRect_toView(crop, None);
+    let crop_in_screen = native.convertRectToScreen(crop_in_window);
+    let visible_menu_overlaps_tabbar_crop = toolbar.menu_bar_is_visible
+        && toolbar
+            .menu_bar_frame_in_content_view
+            .is_some_and(|frame| native_rects_intersect(frame, crop_in_content_view));
+    let tabbar_crop_outside_observed_visible_menu_band = !visible_menu_overlaps_tabbar_crop;
     let hit_in_window = renderer.convertRect_toView(hit_in_renderer, None);
     let hit_on_screen = native.convertRectToScreen(hit_in_window);
     let hit_point = NSPoint::new(hit_on_screen.origin.x, hit_on_screen.origin.y);
@@ -2642,6 +2719,10 @@ fn fullscreen_menu_snapshot(
             "stage": stage,
             "renderer_point": [hit_x, hit_in_renderer.origin.y],
             "screen_point": [hit_point.x, hit_point.y],
+            "tabbar_crop_in_content_view": native_rect_values(crop_in_content_view),
+            "tabbar_crop_in_screen": native_rect_values(crop_in_screen),
+            "visible_menu_overlaps_tabbar_crop": visible_menu_overlaps_tabbar_crop,
+            "tabbar_crop_outside_observed_visible_menu_band": tabbar_crop_outside_observed_visible_menu_band,
             "topmost_window_number": frontmost_window,
             "owned_window_number": owned_window_number,
             "owned_window_is_frontmost": frontmost_window == owned_window_number,
@@ -2655,9 +2736,48 @@ fn fullscreen_menu_snapshot(
         "fullscreen renderer did not follow AppKit's content layout and toolbar policy",
     )?;
     ensure(
+        toolbar.menu_bar_is_visible == menu_bar_visible,
+        "fullscreen menu occlusion observation disagrees with AppKit menu visibility",
+    )?;
+    if raw_geometry_menu_bar_layout_intersection_height > 0.5 {
+        ensure(
+            toolbar.menu_bar_frame_in_content_view.is_some(),
+            "system menu band intersects contentLayoutRect but its native frame was not observed",
+        )?;
+    }
+    ensure(
+        (raw_observed_menu_bar_frame_layout_intersection_height
+            - raw_geometry_menu_bar_layout_intersection_height)
+            .abs()
+            <= 0.5,
+        "native menu-bar frame intersection disagrees with screen/contentLayoutRect geometry",
+    )?;
+    ensure(
+        (observed_active_menu_bar_occlusion_height - geometry_required_menu_bar_occlusion_height)
+            .abs()
+            <= 0.5,
+        "visibility-gated menu-bar intersection disagrees with geometry",
+    )?;
+    ensure(
+        (toolbar.applied_menu_bar_occlusion_height - geometry_required_menu_bar_occlusion_height)
+            .abs()
+            <= 0.5,
+        "applied OS menu-bar occlusion disagrees with its visible geometry intersection",
+    )?;
+    ensure(
         (renderer_top_gap - toolbar.extra_renderer_top_gap).abs() <= 0.5,
         "fullscreen renderer top-gap observation disagrees with contentLayoutRect geometry",
     )?;
+    ensure(
+        (renderer_top_gap - expected_total_renderer_top_gap).abs() <= 0.5,
+        "fullscreen renderer top gap does not equal menu-bar plus auxiliary-toolbar occlusion",
+    )?;
+    if toolbar.menu_bar_is_visible {
+        ensure(
+            !geometry.menu_bar_overlaps_renderer,
+            "visible system menu bar overlaps the GPUI renderer",
+        )?;
+    }
     if toolbar.toolbar_window_present {
         ensure(
             toolbar.empty_toolbar_suppressed,
@@ -2670,24 +2790,19 @@ fn fullscreen_menu_snapshot(
             "suppressed or absent fullscreen toolbar left an applied renderer inset",
         )?;
         ensure(
-            renderer_top_gap.abs() <= 0.5,
-            "suppressed or absent empty titlebar left an empty gutter above the GPUI tab row",
+            (renderer_top_gap - geometry_required_menu_bar_occlusion_height).abs() <= 0.5,
+            "suppressed or absent empty titlebar left an auxiliary inset beyond OS menu occlusion",
         )?;
         ensure(
-            toolbar.extra_renderer_top_gap.abs() <= 0.5,
-            "fullscreen toolbar observation reports a top gap for the suppressed owned row",
+            (toolbar.extra_renderer_top_gap - geometry_required_menu_bar_occlusion_height).abs()
+                <= 0.5,
+            "fullscreen observation reports an auxiliary inset for the suppressed owned row",
         )?;
     }
     if !toolbar.empty_toolbar_suppressed {
         ensure(
             !toolbar_visible_alpha_overlaps_renderer,
             "native fullscreen toolbar still overlaps the GPUI renderer without suppression",
-        )?;
-    }
-    if expected_menu_visible && manual_menu_pointer_requested()? {
-        ensure(
-            toolbar.toolbar_window_present && toolbar.toolbar_occlusion_height > 0.5,
-            "manual reveal did not produce a measured native toolbar overlap",
         )?;
     }
     ensure(
@@ -2725,9 +2840,13 @@ fn fullscreen_menu_snapshot(
         "owned GPUI tab bar crop is clipped during fullscreen menu reveal",
     )?;
     ensure(
+        tabbar_crop_outside_observed_visible_menu_band,
+        "visible system menu bar overlaps the tabbar crop",
+    )?;
+    ensure(
         frontmost_window == owned_window_number,
         &format!(
-            "owned fullscreen tab bar is occluded at its hit-test point: topmost window {frontmost_window}, owned window {owned_window_number}"
+            "owned fullscreen tabbar is not frontmost at its hit-test point: topmost window {frontmost_window}, owned window {owned_window_number}"
         ),
     )?;
 
@@ -2893,6 +3012,43 @@ fn fullscreen_menu_snapshot(
 
     let renderer_rect_in_content =
         renderer.convertRect_toView(renderer_bounds, Some(&content_view));
+    let screen_evidence = serde_json::json!({
+        "frame": native_rect_values(geometry.screen.frame),
+        "safe_area_insets": {
+            "top": geometry.screen.safe_area_insets.top,
+            "left": geometry.screen.safe_area_insets.left,
+            "bottom": geometry.screen.safe_area_insets.bottom,
+            "right": geometry.screen.safe_area_insets.right,
+        },
+        "main_menu_bar_height": geometry.screen.menu_bar_height,
+        "menu_bar_band_frame": native_rect_values(geometry.screen.menu_bar_frame),
+        "menu_bar_band_overlaps_renderer": geometry.menu_bar_overlaps_renderer,
+        "screen_top_minus_window_top": geometry.screen.frame.origin.y
+            + geometry.screen.frame.size.height
+            - geometry.window_frame.origin.y
+            - geometry.window_frame.size.height,
+    });
+    let tabbar_hit_test_evidence = serde_json::json!({
+        "screen_point": [hit_point.x, hit_point.y],
+        "topmost_window_number": frontmost_window,
+        "owned_window_number": owned_window_number,
+        "owned_window_is_frontmost": frontmost_window == owned_window_number,
+        "method": "NSWindow.windowNumberAtPoint_belowWindowWithWindowNumber",
+        "scope": "compares only the hit result with the owned fixture window; no other window metadata is read",
+        "acceptance_role": "required when the tabbar crop is outside the visible menu band; overlapping points fail the geometry assertion",
+    });
+    let owned_renderer_crop_evidence = serde_json::json!({
+        "rect": native_rect_values(crop),
+        "pixel_size": [pixel_width, pixel_height],
+        "sample_grid": [SAMPLE_COLUMNS, SAMPLE_ROWS],
+        "visible_samples": visible_samples,
+        "sample_count": sample_rgb.len(),
+        "mean_rgb": mean_rgb,
+        "capture_source": capture_source,
+        "capture_scope": "owned GPUI scene/view only; no desktop screenshot or other-app pixels",
+        "limitations": "the capture contains only the owned GPUI view/scene and does not include macOS system-menu composition; menu occlusion is reported and checked separately from the renderer image",
+        "png_base64": base64::engine::general_purpose::STANDARD.encode(png_bytes),
+    });
     let report = serde_json::json!({
         "stage": stage,
         "menu_bar_visible": menu_bar_visible,
@@ -2914,47 +3070,19 @@ fn fullscreen_menu_snapshot(
         "empty_toolbar_suppressed": toolbar.empty_toolbar_suppressed,
         "renderer_rect_in_screen": native_rect_values(geometry.renderer_rect_in_screen),
         "renderer_visible_rect": native_rect_values(renderer.visibleRect()),
-        "screen": {
-            "frame": native_rect_values(geometry.screen.frame),
-            "safe_area_insets": {
-                "top": geometry.screen.safe_area_insets.top,
-                "left": geometry.screen.safe_area_insets.left,
-                "bottom": geometry.screen.safe_area_insets.bottom,
-                "right": geometry.screen.safe_area_insets.right,
-            },
-            "main_menu_bar_height": geometry.screen.menu_bar_height,
-            "menu_bar_band_frame": native_rect_values(geometry.screen.menu_bar_frame),
-            "menu_bar_band_overlaps_renderer": geometry.menu_bar_overlaps_renderer,
-            "screen_top_minus_window_top": geometry.screen.frame.origin.y
-                + geometry.screen.frame.size.height
-                - geometry.window_frame.origin.y
-                - geometry.window_frame.size.height,
-        },
+        "screen": screen_evidence,
         "renderer_is_flipped": renderer.isFlipped(),
         "renderer_backend": renderer_backend,
         "fullscreen_toolbar": toolbar_evidence,
+        "fullscreen_menu_bar_occlusion": menu_bar_occlusion_evidence,
         "tabbar_crop_in_renderer_bounds": crop_in_bounds,
         "tabbar_crop_in_renderer_visible_rect": crop_visible,
-        "tabbar_hit_test": {
-            "screen_point": [hit_point.x, hit_point.y],
-            "topmost_window_number": frontmost_window,
-            "owned_window_number": owned_window_number,
-            "owned_window_is_frontmost": frontmost_window == owned_window_number,
-            "method": "NSWindow.windowNumberAtPoint_belowWindowWithWindowNumber",
-            "scope": "compares only the hit result with the owned fixture window; no other window metadata is read",
-        },
-        "owned_renderer_crop": {
-            "rect": native_rect_values(crop),
-            "pixel_size": [pixel_width, pixel_height],
-            "sample_grid": [SAMPLE_COLUMNS, SAMPLE_ROWS],
-            "visible_samples": visible_samples,
-            "sample_count": sample_rgb.len(),
-            "mean_rgb": mean_rgb,
-            "capture_source": capture_source,
-            "capture_scope": "owned GPUI scene/view only; no desktop screenshot or other-app pixels",
-            "limitations": "Metal capture rerenders the current GPUI scene offscreen and does not include AppKit composition; separate native occlusion is checked by the window-number hit-test",
-            "png_base64": base64::engine::general_purpose::STANDARD.encode(png_bytes),
-        },
+        "tabbar_crop_in_content_view": native_rect_values(crop_in_content_view),
+        "tabbar_crop_in_screen": native_rect_values(crop_in_screen),
+        "visible_menu_overlaps_tabbar_crop": visible_menu_overlaps_tabbar_crop,
+        "tabbar_crop_outside_observed_visible_menu_band": tabbar_crop_outside_observed_visible_menu_band,
+        "tabbar_hit_test": tabbar_hit_test_evidence,
+        "owned_renderer_crop": owned_renderer_crop_evidence,
     });
     Ok(FullscreenMenuEvidence {
         geometry,
@@ -3219,7 +3347,8 @@ async fn verify_fullscreen_menu_reveal(
             },
             "coverage_limits": {
                 "renderer_pixels": "software uses AppKit view capture; Metal uses Window::render_to_image offscreen scene pixels; neither capture includes reliable AppKit fullscreen composition",
-                "occlusion_check": "uses AppKit hit-testing at a point in the actual tabbar band and compares only against the owned window number",
+                "layout_occlusion": "system-menu frame intersection and auxiliary-toolbar inset are reported and validated independently",
+                "hit_test": "requires the owned app to be frontmost at the tabbar hit point after confirming the crop is outside the observed visible menu band",
                 "desktop_capture": false,
             },
         }))
@@ -5195,5 +5324,32 @@ mod fullscreen_menu_geometry_tests {
             menu,
             rect(1512.0, 0.0, 1920.0, 1080.0)
         ));
+        assert_eq!(
+            native_rect_intersection_height(menu, rect(0.0, 0.0, 1512.0, 949.0)),
+            0.0
+        );
+        assert_eq!(
+            native_rect_intersection_height(menu, rect(0.0, 0.0, 1512.0, 982.0)),
+            33.0
+        );
+        assert_eq!(
+            native_rect_intersection_height(menu, rect(0.0, 933.0, 1512.0, 32.0)),
+            16.0
+        );
+
+        // Reflect the same cases into a flipped content-view coordinate space.
+        let flipped_menu = rect(0.0, 0.0, 1512.0, 33.0);
+        assert_eq!(
+            native_rect_intersection_height(flipped_menu, rect(0.0, 33.0, 1512.0, 949.0)),
+            0.0
+        );
+        assert_eq!(
+            native_rect_intersection_height(flipped_menu, rect(0.0, 0.0, 1512.0, 982.0)),
+            33.0
+        );
+        assert_eq!(
+            native_rect_intersection_height(flipped_menu, rect(0.0, 17.0, 1512.0, 949.0)),
+            16.0
+        );
     }
 }

@@ -365,3 +365,71 @@ vendor tests pass, and all 35 vendor hash chains match. The first workspace run
 also exposed the prior production rebuild helper's four intentional bundle-ID
 references in the isolation scan. The scan now permits only those exact file
 and metadata lines; all forbidden data paths remain checked.
+
+
+## Revealed system-menu overlap follow-up, 2026-10-17
+
+The installed `a5534870` survives fullscreen entry, but the user reports tabs
+covered again when the system menu appears. Two distinct areas need separate
+handling. The prior physical built-in-display measurement has a 982-point screen
+and a 949-point fullscreen app: the system menu lies above the app, while an
+additional 32-point AppKit auxiliary titlebar overlaps its top. The isolated
+external-display probe has a full-height 1080-point app/content layout, zero
+safe-area top, and a measured 30-point main menu. Clearing the auxiliary alone
+cannot exclude the external screen's system-menu band.
+
+The backend now converts the current screen's actual menu band into content-view
+coordinates and removes only its intersection while the fullscreen app/window
+is active/key and AppKit reports the menu visible. It clips any remaining
+nonempty native toolbar afterward, avoiding double counting. Existing
+contentLayoutRect reservations therefore add no extra menu inset. Move, screen,
+key and app activation changes coalesce onto the same deferred main-queue sync
+as native auxiliary notifications, avoiding new reentrant renderer updates.
+
+The auxiliary snapshot also retains the exact contentView and its original
+hidden state. Clear-window flags plus hiding only the titlebar container do not
+remove every native drawing view. Reconciliation verifies the current root,
+restores the previous root before accepting a replacement, and restores the
+original root visibility on exit. AppKit's frame, alpha, ordering and
+presentation options remain untouched in production. The borderless accessory
+query guard from the crash correction remains in place.
+
+An isolated AppKit comparison captured only its own 32-point blue tab row while
+forcing its owned auxiliary over that row. The initial image-preview reading
+suggested a difference, but direct RGBA analysis disproved it: all seven label
+regions have identical pixels, including 1,250 near-white pixels in each crop.
+The sampled top window remained the main window in every variant, and the
+system menu was hidden. The forced probe therefore did not establish actual
+auxiliary paint or verify the content-root correction. Earlier captures with
+the auxiliary above the row are also inconclusive. These diagnostics cannot
+replace physical menu-hover acceptance. The content-root change remains a
+reviewed candidate whose final visible result needs that acceptance.
+
+The native fixture now keeps raw menu-band intersection separate from active
+menu inset and auxiliary inset. It rejects a revealed menu overlapping the
+renderer or tab-row crop, requires the app to remain frontmost at the tab hit
+point, and permits only the actual menu-derived gap when the empty auxiliary
+is suppressed. Manual pointer phases retain renderer stability checks without
+requiring an auxiliary overlap as proof of menu visibility. Renderer captures
+remain explicitly non-composited. Full physical reveal/hide and final
+composited acceptance on both display types are still required; they are not
+inferred from the forced probe.
+
+Validation after the combined change: 3,254 workspace Rust tests pass with two
+existing ignored tests; formatting and strict workspace Clippy with all targets
+and the native fixture feature pass. Twelve actual vendor helper/test bodies
+pass through a temporary exact-source rustc harness using Cocoa's real geometry
+types, including the previous borderless-accessory crash guards. This does not
+claim execution of the entire vendor test target. All 35 vendor hash chains
+match. The fixture's expanded JSON evidence is assembled from smaller values
+rather than raising the crate's macro recursion limit.
+
+The exact code candidate also completed two native fullscreen enter/exit cycles
+with the default renderer and two with the software renderer. Both report all
+entry/exit notifications, app survival, successful cleanup and no transition
+error. The complete restore cases remain failed: the later programmatic menu
+reveal reaches its deadline waiting for `menu bar visibility true` (the default
+run additionally lost foreground during menu-visibility cleanup). These are
+partial transition-survival results, not passing restore/visual cases. Both
+owned test processes were subsequently checked separately for normal exit;
+the production process was left running.

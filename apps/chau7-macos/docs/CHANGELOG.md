@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the Rust fullscreen tab row below the revealed system menu on external
+  displays, reserving only the menu's actual overlap. Hide the complete owned
+  empty auxiliary content view and restore it on exit; reject menu overlap in
+  native regression checks instead of accepting renderer-only visibility.
+
 - Fix a Rust fullscreen crash caused by querying titlebar accessories on an
   AppKit borderless auxiliary window. Guard titlebar state by window style and
   check repeated native fullscreen entry/exit before visual acceptance.

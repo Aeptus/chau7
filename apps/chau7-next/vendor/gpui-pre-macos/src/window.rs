@@ -600,6 +600,8 @@ struct TrafficLightButtons {
 
 struct FullscreenAuxiliaryChromeSnapshot {
     window: Retained<Objc2NSWindow>,
+    content_view: Retained<Objc2NSView>,
+    content_view_is_hidden: bool,
     titlebar_container: Retained<Objc2NSView>,
     is_opaque: bool,
     background_color: Retained<Objc2NSColor>,
@@ -612,9 +614,23 @@ struct FullscreenAuxiliaryChromeSnapshot {
 impl FullscreenAuxiliaryChromeSnapshot {
     fn new(
         window: Retained<Objc2NSWindow>,
+        content_view: Retained<Objc2NSView>,
         titlebar_container: Retained<Objc2NSView>,
-    ) -> Self {
-        Self {
+    ) -> Option<Self> {
+        let current_content_view = window
+            .contentView()
+            .map(|view| Retained::as_ptr(&view) as usize);
+        if !fullscreen_auxiliary_content_view_matches(
+            Retained::as_ptr(&window) as usize,
+            Retained::as_ptr(&window) as usize,
+            Retained::as_ptr(&content_view) as usize,
+            current_content_view,
+        ) {
+            return None;
+        }
+
+        Some(Self {
+            content_view_is_hidden: content_view.isHidden(),
             is_opaque: window.isOpaque(),
             background_color: window.backgroundColor(),
             // AppKit's fullscreen auxiliary window can be borderless. Only
@@ -627,11 +643,27 @@ impl FullscreenAuxiliaryChromeSnapshot {
             ignores_mouse_events: window.ignoresMouseEvents(),
             titlebar_container_is_hidden: titlebar_container.isHidden(),
             window,
+            content_view,
             titlebar_container,
-        }
+        })
+    }
+
+    fn matches_live_content_view(&self, candidate: &Retained<Objc2NSWindow>) -> bool {
+        let current_content_view = candidate
+            .contentView()
+            .map(|view| Retained::as_ptr(&view) as usize);
+        fullscreen_auxiliary_content_view_matches(
+            Retained::as_ptr(&self.window) as usize,
+            Retained::as_ptr(candidate) as usize,
+            Retained::as_ptr(&self.content_view) as usize,
+            current_content_view,
+        )
     }
 
     fn apply_and_verify(&self) -> bool {
+        if !self.matches_live_content_view(&self.window) {
+            return false;
+        }
         if self.is_applied() {
             return true;
         }
@@ -658,11 +690,17 @@ impl FullscreenAuxiliaryChromeSnapshot {
         if !self.titlebar_container.isHidden() {
             self.titlebar_container.setHidden(true);
         }
+        // Hide only the auxiliary window's view tree. Keep the NSWindow alive
+        // and leave its AppKit-owned frame and alpha animation untouched.
+        if !self.content_view.isHidden() {
+            self.content_view.setHidden(true);
+        }
         self.is_applied()
     }
 
     fn is_applied(&self) -> bool {
-        !self.window.isOpaque()
+        self.matches_live_content_view(&self.window)
+            && !self.window.isOpaque()
             && self.window.backgroundColor() == Objc2NSColor::clearColor()
             && (self.titlebar_appears_transparent.is_none()
                 || !self.window.styleMask().contains(Objc2NSWindowStyleMask::Titled)
@@ -670,6 +708,7 @@ impl FullscreenAuxiliaryChromeSnapshot {
             && !self.window.hasShadow()
             && self.window.ignoresMouseEvents()
             && self.titlebar_container.isHidden()
+            && self.content_view.isHidden()
     }
 
     fn restore(&self) {
@@ -686,6 +725,9 @@ impl FullscreenAuxiliaryChromeSnapshot {
             .setIgnoresMouseEvents(self.ignores_mouse_events);
         self.titlebar_container
             .setHidden(self.titlebar_container_is_hidden);
+        // Restore the exact retained root, even if AppKit replaced the
+        // window's current contentView while suppression was active.
+        self.content_view.setHidden(self.content_view_is_hidden);
     }
 }
 
@@ -1448,6 +1490,20 @@ impl MacWindowState {
                     object: toolbar_window
                 ];
             }
+            let application: id = msg_send![class!(NSApplication), sharedApplication];
+            for name in [
+                "NSApplicationDidBecomeActiveNotification",
+                "NSApplicationDidResignActiveNotification",
+            ] {
+                let name = ns_string(name);
+                let _: () = msg_send![
+                    center,
+                    addObserver: observer
+                    selector: sel!(fullscreenToolbarWindowDidChange:)
+                    name: name
+                    object: application
+                ];
+            }
         }
         // This observes the public AppKit geometry/lifetime notifications. We
         // sample visibility and alpha with each update; alpha-only Reduce Motion
@@ -1510,36 +1566,74 @@ impl MacWindowState {
                     object: toolbar_window
                 ];
             }
+            let application: id = msg_send![class!(NSApplication), sharedApplication];
+            for name in [
+                "NSApplicationDidBecomeActiveNotification",
+                "NSApplicationDidResignActiveNotification",
+            ] {
+                let name = ns_string(name);
+                let _: () = msg_send![
+                    center,
+                    removeObserver: observer
+                    name: name
+                    object: application
+                ];
+            }
         }
     }
 
     fn reconcile_fullscreen_auxiliary_chrome(&mut self, candidate: &Retained<Objc2NSWindow>) {
-        let eligible = self
+        let Some(content_view) = candidate.contentView() else {
+            self.restore_suppressed_fullscreen_auxiliary_chrome();
+            return;
+        };
+        let snapshot_matches_live_root = self
             .fullscreen_traffic_light_overlay
             .as_ref()
-            .is_some_and(|overlay| self.fullscreen_auxiliary_chrome_is_eligible(candidate, overlay));
+            .and_then(|overlay| overlay.suppressed_auxiliary_chrome.as_ref())
+            .is_some_and(|snapshot| snapshot.matches_live_content_view(candidate));
+        if self
+            .fullscreen_traffic_light_overlay
+            .as_ref()
+            .and_then(|overlay| overlay.suppressed_auxiliary_chrome.as_ref())
+            .is_some()
+            && !snapshot_matches_live_root
+        {
+            // Restore the old retained root before evaluating and, if safe,
+            // snapshotting AppKit's replacement contentView.
+            self.restore_suppressed_fullscreen_auxiliary_chrome();
+        }
+
+        let eligible = self.fullscreen_traffic_light_overlay.as_ref().is_some_and(|overlay| {
+            self.fullscreen_auxiliary_chrome_is_eligible(candidate, &content_view, overlay)
+        });
         if !eligible {
             self.restore_suppressed_fullscreen_auxiliary_chrome();
             return;
         }
 
-        let candidate_ptr = Retained::as_ptr(candidate);
-        let snapshot_ptr = self
+        let needs_snapshot = self
             .fullscreen_traffic_light_overlay
             .as_ref()
-            .and_then(|overlay| overlay.suppressed_auxiliary_chrome.as_ref())
-            .map(|snapshot| Retained::as_ptr(&snapshot.window));
-        if snapshot_ptr.is_some_and(|pointer| pointer != candidate_ptr) {
-            self.restore_suppressed_fullscreen_auxiliary_chrome();
-        }
-
-        if let Some(overlay) = self.fullscreen_traffic_light_overlay.as_mut()
-            && overlay.suppressed_auxiliary_chrome.is_none()
-        {
-            overlay.suppressed_auxiliary_chrome = Some(FullscreenAuxiliaryChromeSnapshot::new(
+            .is_some_and(|overlay| overlay.suppressed_auxiliary_chrome.is_none());
+        if needs_snapshot {
+            let Some(titlebar_container) = self
+                .fullscreen_traffic_light_overlay
+                .as_ref()
+                .map(|overlay| overlay.titlebar_container.clone())
+            else {
+                return;
+            };
+            let Some(snapshot) = FullscreenAuxiliaryChromeSnapshot::new(
                 candidate.clone(),
-                overlay.titlebar_container.clone(),
-            ));
+                content_view,
+                titlebar_container,
+            ) else {
+                return;
+            };
+            if let Some(overlay) = self.fullscreen_traffic_light_overlay.as_mut() {
+                overlay.suppressed_auxiliary_chrome = Some(snapshot);
+            }
         }
 
         let applied = self
@@ -1555,13 +1649,28 @@ impl MacWindowState {
     fn fullscreen_auxiliary_chrome_is_eligible(
         &self,
         candidate: &Retained<Objc2NSWindow>,
+        candidate_content_view: &Retained<Objc2NSView>,
         overlay: &FullscreenTrafficLightOverlay,
     ) -> bool {
         let candidate_id = Retained::as_ptr(candidate) as id;
         let main_window_id = self.native_window;
+        if candidate_id == main_window_id {
+            return false;
+        }
         let Some(content_view) = self.native_window().contentView() else {
             return false;
         };
+        let candidate_content_view_is_current = fullscreen_auxiliary_content_view_matches(
+            candidate_id as usize,
+            candidate_id as usize,
+            Retained::as_ptr(candidate_content_view) as usize,
+            candidate
+                .contentView()
+                .map(|view| Retained::as_ptr(&view) as usize),
+        );
+        if !candidate_content_view_is_current {
+            return false;
+        }
         let host_is_in_content_view = unsafe { overlay.host_view.superview() }.is_some_and(|view| {
             Retained::as_ptr(&view) == Retained::as_ptr(&content_view)
         });
@@ -1584,12 +1693,19 @@ impl MacWindowState {
             overlay.button_container.superview()
         }
         .is_some_and(|view| Retained::as_ptr(&view) == Retained::as_ptr(&overlay.titlebar_container));
-        let saved_titlebar_hidden = overlay
+        let matching_snapshot = overlay
             .suppressed_auxiliary_chrome
             .as_ref()
-            .filter(|snapshot| Retained::as_ptr(&snapshot.window) == Retained::as_ptr(candidate))
-            .map(|snapshot| snapshot.titlebar_container_is_hidden);
-        let titlebar_container_is_visible = fullscreen_auxiliary_titlebar_container_is_eligible(
+            .filter(|snapshot| snapshot.matches_live_content_view(candidate));
+        let saved_content_view_hidden =
+            matching_snapshot.map(|snapshot| snapshot.content_view_is_hidden);
+        let content_view_is_visible = fullscreen_auxiliary_view_is_eligible(
+            candidate_content_view.isHidden(),
+            saved_content_view_hidden,
+        );
+        let saved_titlebar_hidden =
+            matching_snapshot.map(|snapshot| snapshot.titlebar_container_is_hidden);
+        let titlebar_container_is_visible = fullscreen_auxiliary_view_is_eligible(
             overlay.titlebar_container.isHidden(),
             saved_titlebar_hidden,
         );
@@ -1627,6 +1743,7 @@ impl MacWindowState {
             no_native_toolbar_or_accessories,
             no_native_title_or_subtitle,
             buttons_are_hosted && button_container_belongs_to_titlebar,
+            content_view_is_visible,
             titlebar_container_is_visible && !overlay.button_container.isHidden(),
         )
     }
@@ -4087,7 +4204,10 @@ extern "C" fn window_did_move(this: &Object, _: Sel, _: id) {
         drop(lock);
         callback();
         window_state.lock().moved_callback = Some(callback);
+    } else {
+        drop(lock);
     }
+    schedule_fullscreen_content_view_frame_sync(this as *const Object as id, None);
 }
 
 // Update the window scale factor and drawable size, and call the resize callback if any.
@@ -4115,6 +4235,7 @@ extern "C" fn window_did_change_screen(this: &Object, _: Sel, _: id) {
     lock.start_display_link();
     drop(lock);
     update_window_scale_factor(&window_state);
+    schedule_fullscreen_content_view_frame_sync(this as *const Object as id, None);
     report_display_change(&window_state);
 }
 
@@ -4160,6 +4281,7 @@ extern "C" fn window_did_change_key_status(this: &Object, selector: Sel, _: id) 
         unsafe {
             let _: () = msg_send![native_window, resignKeyWindow];
         }
+        schedule_fullscreen_content_view_frame_sync(native_window, None);
         return;
     }
 
@@ -4207,6 +4329,7 @@ extern "C" fn window_did_change_key_status(this: &Object, selector: Sel, _: id) 
         }
     }
 
+    schedule_fullscreen_content_view_frame_sync(this as *const Object as id, None);
     executor
         .spawn(async move {
             let mut lock = window_state.as_ref().lock();
@@ -4295,7 +4418,6 @@ extern "C" fn observe_value_for_key_path(
 }
 
 extern "C" fn fullscreen_toolbar_window_did_change(this: &Object, _: Sel, notification: id) {
-    let window_pointer = this as *const Object as usize;
     let is_closing = unsafe {
         let name: id = msg_send![notification, name];
         !name.is_null() && name.to_str() == "NSWindowWillCloseNotification"
@@ -4306,6 +4428,17 @@ extern "C" fn fullscreen_toolbar_window_did_change(this: &Object, _: Sel, notifi
     } else {
         None
     };
+    schedule_fullscreen_content_view_frame_sync(
+        this as *const Object as id,
+        closing_toolbar_window,
+    );
+}
+
+fn schedule_fullscreen_content_view_frame_sync(
+    native_window: id,
+    closing_toolbar_window: Option<usize>,
+) {
+    let window_pointer = native_window as usize;
     let should_dispatch = {
         let mut pending = FULLSCREEN_TOOLBAR_UPDATES_PENDING
             .get_or_init(|| Mutex::new(HashMap::new()))
@@ -4327,10 +4460,9 @@ extern "C" fn fullscreen_toolbar_window_did_change(this: &Object, _: Sel, notifi
         return;
     }
     unsafe {
-        // Auxiliary toolbar notifications can arrive synchronously while a GPUI
-        // AppKit callback holds MacWindowState's mutex. Read the new geometry only
-        // after that transaction returns. Collapse a burst into one main-queue sync.
-        let retained_window: id = msg_send![this, retain];
+        // AppKit can deliver geometry and activation callbacks inside its own
+        // transactions. Defer native reads until the callback has returned.
+        let retained_window: id = msg_send![native_window, retain];
         DispatchQueue::main().exec_async_f(
             retained_window as *mut c_void,
             synchronize_fullscreen_toolbar_frame_deferred,
@@ -4396,7 +4528,7 @@ fn fullscreen_content_view_frame(
     }
 }
 
-fn fullscreen_toolbar_occlusion_depth(
+fn fullscreen_top_occlusion_depth(
     renderer_frame: NSRect,
     toolbar_frame: NSRect,
     content_view_is_flipped: bool,
@@ -4434,8 +4566,8 @@ fn fullscreen_toolbar_occlusion_depth(
     let overlap_width = overlap_right - overlap_left;
     let overlap_height = overlap_top - overlap_bottom;
 
-    // This view hosts the whole tab row. A narrow auxiliary panel elsewhere in
-    // the content area must not create a full-width empty band.
+    // The tab row spans the content width. A narrow panel elsewhere must not
+    // create a full-width inset; the same rule applies to the screen menu band.
     if overlap_width < renderer_frame.size.width - EDGE_TOLERANCE || overlap_height <= 0.0 {
         return 0.0;
     }
@@ -4458,6 +4590,7 @@ fn fullscreen_empty_auxiliary_chrome_suppression_eligible(
     no_native_toolbar_or_accessories: bool,
     no_native_title_or_subtitle: bool,
     all_standard_buttons_hosted: bool,
+    content_view_is_visible: bool,
     titlebar_container_is_visible: bool,
 ) -> bool {
     custom_transparent_fullsize_titlebar
@@ -4465,14 +4598,24 @@ fn fullscreen_empty_auxiliary_chrome_suppression_eligible(
         && no_native_toolbar_or_accessories
         && no_native_title_or_subtitle
         && all_standard_buttons_hosted
+        && content_view_is_visible
         && titlebar_container_is_visible
 }
 
-fn fullscreen_auxiliary_titlebar_container_is_eligible(
+fn fullscreen_auxiliary_view_is_eligible(
     currently_hidden: bool,
     original_hidden: Option<bool>,
 ) -> bool {
     !original_hidden.unwrap_or(currently_hidden)
+}
+
+fn fullscreen_auxiliary_content_view_matches(
+    snapshot_window: usize,
+    candidate_window: usize,
+    snapshot_content_view: usize,
+    current_content_view: Option<usize>,
+) -> bool {
+    snapshot_window == candidate_window && current_content_view == Some(snapshot_content_view)
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -4517,22 +4660,22 @@ unsafe fn window_has_native_toolbar_or_accessories(window: id) -> bool {
     }
 }
 
-fn fullscreen_content_view_frame_avoiding_toolbar(
+fn fullscreen_content_view_frame_avoiding_top_occlusion(
     renderer_frame: NSRect,
     content_view_is_flipped: bool,
-    toolbar_frame: Option<NSRect>,
-    toolbar_is_visible: bool,
-    toolbar_alpha_value: f64,
+    occluder_frame: Option<NSRect>,
+    occluder_is_visible: bool,
+    occluder_alpha_value: f64,
 ) -> NSRect {
-    let Some(toolbar_frame) = toolbar_frame else {
+    let Some(occluder_frame) = occluder_frame else {
         return renderer_frame;
     };
-    let inset = fullscreen_toolbar_occlusion_depth(
+    let inset = fullscreen_top_occlusion_depth(
         renderer_frame,
-        toolbar_frame,
+        occluder_frame,
         content_view_is_flipped,
-        toolbar_is_visible,
-        toolbar_alpha_value,
+        occluder_is_visible,
+        occluder_alpha_value,
     );
     if inset <= 0.0 || inset >= renderer_frame.size.height {
         return renderer_frame;
@@ -4546,6 +4689,103 @@ fn fullscreen_content_view_frame_avoiding_toolbar(
     frame
 }
 
+fn fullscreen_menu_bar_screen_frame(screen_frame: NSRect, menu_bar_height: f64) -> Option<NSRect> {
+    if !screen_frame.origin.x.is_finite()
+        || !screen_frame.origin.y.is_finite()
+        || !screen_frame.size.width.is_finite()
+        || screen_frame.size.width <= 0.0
+        || !screen_frame.size.height.is_finite()
+        || screen_frame.size.height <= 0.0
+        || !menu_bar_height.is_finite()
+        || menu_bar_height <= 0.0
+        || menu_bar_height > screen_frame.size.height
+    {
+        return None;
+    }
+
+    let screen_top = screen_frame.origin.y + screen_frame.size.height;
+    let menu_bar_y = screen_top - menu_bar_height;
+    if !screen_top.is_finite()
+        || !menu_bar_y.is_finite()
+        || !(screen_frame.origin.x + screen_frame.size.width).is_finite()
+    {
+        return None;
+    }
+    Some(NSRect::new(
+        NSPoint::new(screen_frame.origin.x, menu_bar_y),
+        NSSize::new(screen_frame.size.width, menu_bar_height),
+    ))
+}
+
+fn fullscreen_menu_bar_occlusion_is_active(
+    is_fullscreen: bool,
+    is_exiting_fullscreen: bool,
+    application_is_active: bool,
+    window_is_key: bool,
+    menu_bar_is_visible: bool,
+) -> bool {
+    is_fullscreen
+        && !is_exiting_fullscreen
+        && application_is_active
+        && window_is_key
+        && menu_bar_is_visible
+}
+
+#[derive(Clone, Copy, Default)]
+struct FullscreenMenuBarGeometry {
+    frame_in_content_view: Option<NSRect>,
+    #[cfg(any(test, feature = "test-support"))]
+    menu_bar_is_visible: bool,
+    occlusion_is_active: bool,
+}
+
+unsafe fn fullscreen_menu_bar_geometry(
+    native_window: id,
+    content_view: id,
+    is_fullscreen: bool,
+    is_exiting_fullscreen: bool,
+) -> FullscreenMenuBarGeometry {
+    if !is_fullscreen || is_exiting_fullscreen {
+        return FullscreenMenuBarGeometry::default();
+    }
+
+    unsafe {
+        let application: id = msg_send![class!(NSApplication), sharedApplication];
+        let menu_bar_visible: BOOL = msg_send![class!(NSMenu), menuBarVisible];
+        let application_is_active: BOOL = msg_send![application, isActive];
+        let window_is_key: BOOL = msg_send![native_window, isKeyWindow];
+        let main_menu: id = msg_send![application, mainMenu];
+        let screen: id = msg_send![native_window, screen];
+        let frame_in_content_view = if main_menu.is_null()
+            || screen.is_null()
+            || content_view.is_null()
+        {
+            None
+        } else {
+            let menu_bar_height: f64 = msg_send![main_menu, menuBarHeight];
+            let screen_frame: NSRect = msg_send![screen, frame];
+            fullscreen_menu_bar_screen_frame(screen_frame, menu_bar_height).map(|screen_rect| {
+                let window_rect: NSRect =
+                    msg_send![native_window, convertRectFromScreen: screen_rect];
+                msg_send![content_view, convertRect: window_rect fromView: nil]
+            })
+        };
+        let menu_bar_is_visible = menu_bar_visible == YES;
+        FullscreenMenuBarGeometry {
+            frame_in_content_view,
+            #[cfg(any(test, feature = "test-support"))]
+            menu_bar_is_visible,
+            occlusion_is_active: fullscreen_menu_bar_occlusion_is_active(
+                is_fullscreen,
+                is_exiting_fullscreen,
+                application_is_active == YES,
+                window_is_key == YES,
+                menu_bar_is_visible,
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct FullscreenToolbarGeometry {
     frame_in_content_view: Option<NSRect>,
@@ -4553,6 +4793,77 @@ struct FullscreenToolbarGeometry {
     alpha_value: f64,
     #[cfg(feature = "test-support")]
     is_occlusion_visible: bool,
+}
+
+#[derive(Clone, Copy)]
+struct FullscreenContentViewFrameOcclusions {
+    frame: NSRect,
+    #[cfg(any(test, feature = "test-support"))]
+    menu_bar_height: f64,
+    #[cfg(any(test, feature = "test-support"))]
+    toolbar_height: f64,
+}
+
+fn fullscreen_content_view_frame_with_menu_bar_and_toolbar(
+    base_frame: NSRect,
+    content_view_is_flipped: bool,
+    menu_bar: FullscreenMenuBarGeometry,
+    toolbar: FullscreenToolbarGeometry,
+    empty_toolbar_suppressed: bool,
+) -> FullscreenContentViewFrameOcclusions {
+    #[cfg(any(test, feature = "test-support"))]
+    let menu_bar_height = menu_bar
+        .frame_in_content_view
+        .filter(|_| menu_bar.occlusion_is_active)
+        .map(|menu_frame| {
+            fullscreen_top_occlusion_depth(
+                base_frame,
+                menu_frame,
+                content_view_is_flipped,
+                true,
+                1.0,
+            )
+        })
+        .unwrap_or(0.0);
+    let frame_after_menu_bar = fullscreen_content_view_frame_avoiding_top_occlusion(
+        base_frame,
+        content_view_is_flipped,
+        menu_bar.frame_in_content_view,
+        menu_bar.occlusion_is_active,
+        1.0,
+    );
+    let toolbar_frame = if empty_toolbar_suppressed {
+        None
+    } else {
+        toolbar.frame_in_content_view
+    };
+    #[cfg(any(test, feature = "test-support"))]
+    let toolbar_height = toolbar_frame
+        .map(|toolbar_frame| {
+            fullscreen_top_occlusion_depth(
+                frame_after_menu_bar,
+                toolbar_frame,
+                content_view_is_flipped,
+                toolbar.is_visible,
+                toolbar.alpha_value,
+            )
+        })
+        .unwrap_or(0.0);
+    let frame = fullscreen_content_view_frame_avoiding_top_occlusion(
+        frame_after_menu_bar,
+        content_view_is_flipped,
+        toolbar_frame,
+        toolbar.is_visible,
+        toolbar.alpha_value,
+    );
+
+    FullscreenContentViewFrameOcclusions {
+        frame,
+        #[cfg(any(test, feature = "test-support"))]
+        menu_bar_height,
+        #[cfg(any(test, feature = "test-support"))]
+        toolbar_height,
+    }
 }
 
 fn fullscreen_toolbar_geometry(
@@ -4608,6 +4919,8 @@ pub struct FullscreenToolbarRevealObservation {
     pub renderer_frame: Objc2NSRect,
     pub expected_renderer_frame: Objc2NSRect,
     pub toolbar_frame_in_content_view: Option<Objc2NSRect>,
+    pub menu_bar_frame_in_content_view: Option<Objc2NSRect>,
+    pub menu_bar_is_visible: bool,
     pub toolbar_window_present: bool,
     pub empty_toolbar_suppressed: bool,
     pub toolbar_is_visible: bool,
@@ -4615,7 +4928,9 @@ pub struct FullscreenToolbarRevealObservation {
     pub toolbar_occlusion_state_visible: bool,
     /// Raw measured overlap, retained for diagnostics even when native chrome is suppressed.
     pub toolbar_occlusion_height: f64,
-    /// Renderer inset applied after checking whether owned empty auxiliary chrome is suppressed.
+    /// Renderer inset applied for the local system menu band while it is revealed.
+    pub applied_menu_bar_occlusion_height: f64,
+    /// Toolbar-only inset after first removing any system menu overlap.
     pub applied_toolbar_occlusion_height: f64,
     /// Distance between the content layout top edge and the actual renderer top edge.
     pub extra_renderer_top_gap: f64,
@@ -4686,22 +5001,21 @@ pub fn fullscreen_toolbar_reveal_observation(
             toolbar_window.as_ref().map(|window| &**window),
         );
         let content_view_is_flipped: BOOL = msg_send![content_view, isFlipped];
-        let expected_renderer_frame = fullscreen_content_view_frame_avoiding_toolbar(
+        let menu_bar_geometry =
+            fullscreen_menu_bar_geometry(native_window_id, content_view, true, false);
+        let expected_layout = fullscreen_content_view_frame_with_menu_bar_and_toolbar(
             base_frame,
             content_view_is_flipped == YES,
-            if empty_toolbar_suppressed {
-                None
-            } else {
-                toolbar_geometry.frame_in_content_view
-            },
-            toolbar_geometry.is_visible,
-            toolbar_geometry.alpha_value,
+            menu_bar_geometry,
+            toolbar_geometry,
+            empty_toolbar_suppressed,
         );
+        let expected_renderer_frame = expected_layout.frame;
         let renderer_frame: NSRect = msg_send![native_view, frame];
         let toolbar_occlusion_height = toolbar_geometry
             .frame_in_content_view
             .map(|toolbar_frame| {
-                fullscreen_toolbar_occlusion_depth(
+                fullscreen_top_occlusion_depth(
                     base_frame,
                     toolbar_frame,
                     content_view_is_flipped == YES,
@@ -4710,11 +5024,8 @@ pub fn fullscreen_toolbar_reveal_observation(
                 )
             })
             .unwrap_or(0.0);
-        let applied_toolbar_occlusion_height = fullscreen_renderer_top_gap(
-            base_frame,
-            expected_renderer_frame,
-            content_view_is_flipped == YES,
-        );
+        let applied_menu_bar_occlusion_height = expected_layout.menu_bar_height;
+        let applied_toolbar_occlusion_height = expected_layout.toolbar_height;
         let extra_renderer_top_gap = fullscreen_renderer_top_gap(
             base_frame,
             renderer_frame,
@@ -4730,6 +5041,11 @@ pub fn fullscreen_toolbar_reveal_observation(
             renderer_frame: to_objc_rect(renderer_frame),
             expected_renderer_frame: to_objc_rect(expected_renderer_frame),
             toolbar_frame_in_content_view: toolbar_geometry.frame_in_content_view.map(to_objc_rect),
+            menu_bar_frame_in_content_view: menu_bar_geometry
+                .frame_in_content_view
+                .map(to_objc_rect),
+            #[cfg(any(test, feature = "test-support"))]
+            menu_bar_is_visible: menu_bar_geometry.menu_bar_is_visible,
             toolbar_window_present: toolbar_window.is_some(),
             empty_toolbar_suppressed,
             toolbar_is_visible: toolbar_geometry.is_visible,
@@ -4738,6 +5054,7 @@ pub fn fullscreen_toolbar_reveal_observation(
                 .map(|_| toolbar_geometry.alpha_value),
             toolbar_occlusion_state_visible: toolbar_geometry.is_occlusion_visible,
             toolbar_occlusion_height,
+            applied_menu_bar_occlusion_height,
             applied_toolbar_occlusion_height,
             extra_renderer_top_gap,
         })
@@ -4803,17 +5120,20 @@ fn synchronize_fullscreen_content_view_frame(window_state: &Arc<Mutex<MacWindowS
             content_view,
             toolbar_window.as_ref().map(|window| &**window),
         );
-        let target_frame = fullscreen_content_view_frame_avoiding_toolbar(
+        let menu_bar_geometry = fullscreen_menu_bar_geometry(
+            native_window,
+            content_view,
+            is_fullscreen,
+            is_exiting_fullscreen,
+        );
+        let target_frame = fullscreen_content_view_frame_with_menu_bar_and_toolbar(
             target_frame,
             content_view_objc.isFlipped(),
-            if empty_toolbar_suppressed {
-                None
-            } else {
-                toolbar_geometry.frame_in_content_view
-            },
-            toolbar_geometry.is_visible,
-            toolbar_geometry.alpha_value,
-        );
+            menu_bar_geometry,
+            toolbar_geometry,
+            empty_toolbar_suppressed,
+        )
+        .frame;
         let current_frame: NSRect = msg_send![native_view, frame];
         if current_frame.origin.x != target_frame.origin.x
             || current_frame.origin.y != target_frame.origin.y
@@ -5597,47 +5917,193 @@ mod tests {
         let toolbar = NSRect::new(NSPoint::new(0.0, 668.0), NSSize::new(1000.0, 32.0));
 
         assert_eq!(
-            fullscreen_toolbar_occlusion_depth(content, toolbar, false, true, 1.0),
+            fullscreen_top_occlusion_depth(content, toolbar, false, true, 1.0),
             32.0
         );
         assert_eq!(
-            fullscreen_toolbar_occlusion_depth(content, toolbar, false, false, 1.0),
+            fullscreen_top_occlusion_depth(content, toolbar, false, false, 1.0),
             0.0
         );
         assert_eq!(
-            fullscreen_toolbar_occlusion_depth(content, toolbar, false, true, 0.0),
+            fullscreen_top_occlusion_depth(content, toolbar, false, true, 0.0),
             0.0
         );
 
         let partly_outside_top = NSRect::new(NSPoint::new(0.0, 684.0), NSSize::new(1000.0, 32.0));
         assert_eq!(
-            fullscreen_toolbar_occlusion_depth(content, partly_outside_top, false, true, 1.0),
+            fullscreen_top_occlusion_depth(content, partly_outside_top, false, true, 1.0),
             16.0
         );
 
         let flipped_toolbar = NSRect::new(NSPoint::new(0.0, -16.0), NSSize::new(1000.0, 32.0));
         assert_eq!(
-            fullscreen_toolbar_occlusion_depth(content, flipped_toolbar, true, true, 1.0),
+            fullscreen_top_occlusion_depth(content, flipped_toolbar, true, true, 1.0),
             16.0
         );
 
         let narrow_toolbar = NSRect::new(NSPoint::new(0.0, 668.0), NSSize::new(900.0, 32.0));
         let away_from_top = NSRect::new(NSPoint::new(0.0, 100.0), NSSize::new(1000.0, 32.0));
         assert_eq!(
-            fullscreen_toolbar_occlusion_depth(content, narrow_toolbar, false, true, 1.0),
+            fullscreen_top_occlusion_depth(content, narrow_toolbar, false, true, 1.0),
             0.0
         );
         assert_eq!(
-            fullscreen_toolbar_occlusion_depth(content, away_from_top, false, true, 1.0),
+            fullscreen_top_occlusion_depth(content, away_from_top, false, true, 1.0),
             0.0
         );
+    }
+
+    #[test]
+    fn fullscreen_menu_bar_geometry_uses_each_screen_top_and_actual_height() {
+        let built_in_screen = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1512.0, 982.0));
+        let built_in_menu = fullscreen_menu_bar_screen_frame(built_in_screen, 33.0).unwrap();
+        assert_native_rect_eq(
+            built_in_menu,
+            NSRect::new(NSPoint::new(0.0, 949.0), NSSize::new(1512.0, 33.0)),
+        );
+        let built_in_content = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1512.0, 949.0));
+        assert_eq!(
+            fullscreen_top_occlusion_depth(built_in_content, built_in_menu, false, true, 1.0),
+            0.0
+        );
+
+        let external_screen =
+            NSRect::new(NSPoint::new(3432.0, -87.0), NSSize::new(1920.0, 1080.0));
+        let external_menu = fullscreen_menu_bar_screen_frame(external_screen, 33.0).unwrap();
+        assert_native_rect_eq(
+            external_menu,
+            NSRect::new(NSPoint::new(3432.0, 960.0), NSSize::new(1920.0, 33.0)),
+        );
+        // The fullscreen window starts at screen y=-87, so the local content band
+        // is y=1047..1080 and consumes only the portion not already excluded.
+        let external_content = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1920.0, 1080.0));
+        let external_menu_in_content =
+            NSRect::new(NSPoint::new(0.0, 1047.0), NSSize::new(1920.0, 33.0));
+        assert_eq!(
+            fullscreen_top_occlusion_depth(
+                external_content,
+                external_menu_in_content,
+                false,
+                true,
+                1.0,
+            ),
+            33.0
+        );
+        let content_layout_avoids_menu =
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1920.0, 1047.0));
+        assert_eq!(
+            fullscreen_top_occlusion_depth(
+                content_layout_avoids_menu,
+                external_menu_in_content,
+                false,
+                true,
+                1.0,
+            ),
+            0.0
+        );
+        assert!(fullscreen_menu_bar_screen_frame(external_screen, f64::NAN).is_none());
+    }
+
+    #[test]
+    fn fullscreen_menu_bar_inset_requires_revealed_active_key_window() {
+        assert!(fullscreen_menu_bar_occlusion_is_active(true, false, true, true, true));
+        for state in [
+            (false, false, true, true, true),
+            (true, true, true, true, true),
+            (true, false, false, true, true),
+            (true, false, true, false, true),
+            (true, false, true, true, false),
+        ] {
+            assert!(!fullscreen_menu_bar_occlusion_is_active(
+                state.0, state.1, state.2, state.3, state.4
+            ));
+        }
+    }
+
+    #[test]
+    fn fullscreen_menu_and_toolbar_insets_clip_the_connected_union_once() {
+        let content = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1000.0, 700.0));
+        let menu = NSRect::new(NSPoint::new(0.0, 668.0), NSSize::new(1000.0, 32.0));
+        let overlapping_toolbar = menu;
+        let menu_only = fullscreen_content_view_frame_with_menu_bar_and_toolbar(
+            content,
+            false,
+            FullscreenMenuBarGeometry {
+                frame_in_content_view: Some(menu),
+                #[cfg(any(test, feature = "test-support"))]
+                menu_bar_is_visible: true,
+                occlusion_is_active: true,
+            },
+            FullscreenToolbarGeometry {
+                frame_in_content_view: Some(overlapping_toolbar),
+                is_visible: true,
+                alpha_value: 1.0,
+                #[cfg(feature = "test-support")]
+                is_occlusion_visible: true,
+            },
+            true,
+        );
+        assert_eq!(menu_only.menu_bar_height, 32.0);
+        assert_eq!(menu_only.toolbar_height, 0.0);
+        assert_eq!(
+            fullscreen_renderer_top_gap(content, menu_only.frame, false),
+            32.0
+        );
+
+        let toolbar_below_menu =
+            NSRect::new(NSPoint::new(0.0, 636.0), NSSize::new(1000.0, 32.0));
+        let menu_and_toolbar = fullscreen_content_view_frame_with_menu_bar_and_toolbar(
+            content,
+            false,
+            FullscreenMenuBarGeometry {
+                frame_in_content_view: Some(menu),
+                #[cfg(any(test, feature = "test-support"))]
+                menu_bar_is_visible: true,
+                occlusion_is_active: true,
+            },
+            FullscreenToolbarGeometry {
+                frame_in_content_view: Some(toolbar_below_menu),
+                is_visible: true,
+                alpha_value: 1.0,
+                #[cfg(feature = "test-support")]
+                is_occlusion_visible: true,
+            },
+            false,
+        );
+        assert_eq!(menu_and_toolbar.menu_bar_height, 32.0);
+        assert_eq!(menu_and_toolbar.toolbar_height, 32.0);
+        assert_eq!(
+            fullscreen_renderer_top_gap(content, menu_and_toolbar.frame, false),
+            64.0
+        );
+
+        let hidden_menu = fullscreen_content_view_frame_with_menu_bar_and_toolbar(
+            content,
+            false,
+            FullscreenMenuBarGeometry {
+                frame_in_content_view: Some(menu),
+                #[cfg(any(test, feature = "test-support"))]
+                menu_bar_is_visible: false,
+                occlusion_is_active: false,
+            },
+            FullscreenToolbarGeometry {
+                frame_in_content_view: None,
+                is_visible: false,
+                alpha_value: 0.0,
+                #[cfg(feature = "test-support")]
+                is_occlusion_visible: false,
+            },
+            true,
+        );
+        assert_eq!(hidden_menu.menu_bar_height, 0.0);
+        assert_eq!(fullscreen_renderer_top_gap(content, hidden_menu.frame, false), 0.0);
     }
 
     #[test]
     fn fullscreen_toolbar_frame_restores_when_auxiliary_toolbar_hides() {
         let content = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1000.0, 700.0));
         let toolbar = NSRect::new(NSPoint::new(0.0, 668.0), NSSize::new(1000.0, 32.0));
-        let unflipped = fullscreen_content_view_frame_avoiding_toolbar(
+        let unflipped = fullscreen_content_view_frame_avoiding_top_occlusion(
             content,
             false,
             Some(toolbar),
@@ -5649,7 +6115,7 @@ mod tests {
             NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1000.0, 668.0)),
         );
 
-        let flipped = fullscreen_content_view_frame_avoiding_toolbar(
+        let flipped = fullscreen_content_view_frame_avoiding_top_occlusion(
             content,
             true,
             Some(NSRect::new(
@@ -5664,7 +6130,7 @@ mod tests {
             NSRect::new(NSPoint::new(0.0, 32.0), NSSize::new(1000.0, 668.0)),
         );
 
-        let hidden = fullscreen_content_view_frame_avoiding_toolbar(
+        let hidden = fullscreen_content_view_frame_avoiding_top_occlusion(
             content,
             false,
             Some(toolbar),
@@ -5673,7 +6139,7 @@ mod tests {
         );
         assert_native_rect_eq(hidden, content);
         let missing_toolbar =
-            fullscreen_content_view_frame_avoiding_toolbar(content, false, None, true, 1.0);
+            fullscreen_content_view_frame_avoiding_top_occlusion(content, false, None, true, 1.0);
         assert_native_rect_eq(missing_toolbar, content);
     }
 
@@ -5703,25 +6169,33 @@ mod tests {
     #[test]
     fn fullscreen_empty_auxiliary_suppression_requires_every_safety_gate() {
         assert!(fullscreen_empty_auxiliary_chrome_suppression_eligible(
-            true, true, true, true, true, true
+            true, true, true, true, true, true, true
         ));
-        for failed_gate in 0..6 {
-            let mut gates = [true; 6];
+        for failed_gate in 0..7 {
+            let mut gates = [true; 7];
             gates[failed_gate] = false;
             assert!(!fullscreen_empty_auxiliary_chrome_suppression_eligible(
-                gates[0], gates[1], gates[2], gates[3], gates[4], gates[5]
+                gates[0], gates[1], gates[2], gates[3], gates[4], gates[5], gates[6]
             ));
         }
     }
 
     #[test]
-    fn fullscreen_empty_auxiliary_reconciliation_uses_saved_container_visibility() {
-        assert!(!fullscreen_auxiliary_titlebar_container_is_eligible(true, None));
-        assert!(fullscreen_auxiliary_titlebar_container_is_eligible(false, None));
-        // The hidden container belongs to our active suppression; use its saved
-        // visible state so a geometry notification can safely reapply settings.
-        assert!(fullscreen_auxiliary_titlebar_container_is_eligible(true, Some(false)));
-        assert!(!fullscreen_auxiliary_titlebar_container_is_eligible(false, Some(true)));
+    fn fullscreen_empty_auxiliary_reconciliation_uses_saved_view_visibility() {
+        assert!(!fullscreen_auxiliary_view_is_eligible(true, None));
+        assert!(fullscreen_auxiliary_view_is_eligible(false, None));
+        // A view hidden by active suppression uses its saved original state so
+        // geometry notifications can safely reapply settings.
+        assert!(fullscreen_auxiliary_view_is_eligible(true, Some(false)));
+        assert!(!fullscreen_auxiliary_view_is_eligible(false, Some(true)));
+    }
+
+    #[test]
+    fn fullscreen_empty_auxiliary_suppression_requires_the_same_live_root() {
+        assert!(fullscreen_auxiliary_content_view_matches(1, 1, 2, Some(2)));
+        assert!(!fullscreen_auxiliary_content_view_matches(1, 1, 2, Some(3)));
+        assert!(!fullscreen_auxiliary_content_view_matches(1, 1, 2, None));
+        assert!(!fullscreen_auxiliary_content_view_matches(1, 3, 2, Some(2)));
     }
 
     #[test]
