@@ -2213,8 +2213,12 @@ async fn wait_for_manual_pointer_menu_phase(
 ) -> Result<serde_json::Value, String> {
     let timeout = MANUAL_MENU_POINTER_PHASE_TIMEOUT;
     let deadline = Instant::now() + timeout;
-    let screen = FullscreenScreenGeometry::capture(native, application)?.frame;
+    let screen_geometry = FullscreenScreenGeometry::capture(native, application)?;
+    let screen = screen_geometry.frame;
     let screen_top = screen.origin.y + screen.size.height;
+    // AppKit keeps the menu revealed while the physical pointer is anywhere
+    // within its band, including below the trigger edge on notched displays.
+    let menu_band = screen_geometry.menu_bar_frame;
     let instruction = ManualPointerInstruction::show(native, prompt)?;
     let mut stable_since = None;
     let mut samples = 0_u64;
@@ -2235,7 +2239,7 @@ async fn wait_for_manual_pointer_menu_phase(
             let menu_visible = native_menu_bar_visible()?;
             let pointer = NSEvent::mouseLocation();
             let pointer_in_screen = rect_contains_point(screen, pointer);
-            let near_top = pointer_in_screen && pointer.y >= screen_top - 3.0;
+            let near_top = pointer_in_screen && rect_contains_point(menu_band, pointer);
             let pointer_position_matches = pointer_in_screen
                 && if expected_menu_visible {
                     near_top
@@ -2275,6 +2279,7 @@ async fn wait_for_manual_pointer_menu_phase(
                         "pointer_near_screen_top": near_top,
                         "screen_frame": native_rect_values(screen),
                         "screen_top_y": screen_top,
+                        "menu_pointer_band": native_rect_values(menu_band),
                         "stable_for_ms": stable_for.as_millis(),
                         "samples": samples,
                         "timeout_ms": timeout.as_millis(),
@@ -2289,8 +2294,11 @@ async fn wait_for_manual_pointer_menu_phase(
 
             if Instant::now() >= deadline {
                 return Err(format!(
-                    "manual pointer phase {phase} timed out: expected menu_visible={expected_menu_visible}, pointer_in_screen=true, pointer_near_top={expected_menu_visible}; observed menu_visible={menu_visible}, pointer_in_screen={pointer_in_screen}, pointer_near_top={near_top}, pointer=({}, {}) after {samples} samples",
-                    pointer.x, pointer.y
+                    "manual pointer phase {phase} timed out: expected menu_visible={expected_menu_visible}, pointer_in_screen=true, pointer_near_top={expected_menu_visible}; observed menu_visible={menu_visible}, pointer_in_screen={pointer_in_screen}, pointer_near_top={near_top}, pointer=({}, {}), toolbar_present={}, toolbar_alpha={:?}, toolbar_occlusion={}, renderer={:?}, expected_renderer={:?} after {samples} samples",
+                    pointer.x, pointer.y, toolbar.toolbar_window_present,
+                    toolbar.toolbar_alpha_value, toolbar.toolbar_occlusion_height,
+                    native_rect_values(toolbar.renderer_frame),
+                    native_rect_values(toolbar.expected_renderer_frame)
                 ));
             }
             pause(cx, Duration::from_millis(100)).await;
@@ -4992,6 +5000,17 @@ mod tests {
 #[cfg(test)]
 mod fullscreen_menu_geometry_tests {
     use super::*;
+
+    #[test]
+    fn physical_pointer_inside_revealed_menu_band_is_accepted_below_trigger_edge() {
+        let menu = objc2_foundation::NSRect::new(
+            NSPoint::new(0.0, 949.0),
+            objc2_foundation::NSSize::new(1512.0, 33.0),
+        );
+        assert!(rect_contains_point(menu, NSPoint::new(566.7, 969.4)));
+        assert!(!rect_contains_point(menu, NSPoint::new(566.7, 500.0)));
+        assert!(!rect_contains_point(menu, NSPoint::new(1513.0, 969.4)));
+    }
 
     #[test]
     fn reserved_menu_band_does_not_overlap_touching_content() {

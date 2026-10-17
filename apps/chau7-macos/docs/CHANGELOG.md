@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Accept physical menu hover anywhere inside the revealed system-menu band in
+  native fullscreen checks. Verify two-process window restoration with saved
+  provider identities and split editor content.
+
 
 - Keep failed restoration checks across production update retries, including
   historical failures. Detect missing identities during a read-only dry run;

@@ -172,9 +172,13 @@ split leaves remain in the private source snapshot; the current live MCP API
 cannot import their layout. This is partial live recovery, not proof that the
 original provider identities and notes are durably restored in the running app.
 
-The native regression is being extended to a second isolated process loading
-and opening the saved windows. Until it passes, the earlier native result proves
-final persistence only.
+The extended native regression passed at `1147f853`: a second isolated process
+loaded the saved session through `session_store::load` and reopened its windows
+through `open_workspace_window`. Both windows, all three provider identities,
+working directories, and a split editor with saved content were verified in live
+workspaces before a second normal quit. Both final manifests matched. This tests
+the production load/open/quit paths inside the isolated fixture, not the entire
+normal application bootstrap. The fixture removed only its verified owned profile.
 
 ## 2026-10-17 physical fullscreen measurement
 

@@ -371,7 +371,7 @@ fn live_restore_matches(
         windows,
     };
     let second_workspace = workspaces[1].1.read(cx);
-    Ok(saved_session_matches(&session, home) && editor_panel_loaded(&second_workspace, home, cx))
+    Ok(saved_session_matches(&session, home) && editor_panel_loaded(second_workspace, home, cx))
 }
 
 /// Install two real production workspaces in the fixture app. Their panes use
