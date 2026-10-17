@@ -419,9 +419,15 @@
           "description": "Measure the AppKit-owned fullscreen toolbar window's visible top overlap and inset the GPUI renderer and traffic lights only while it covers the tab row; coalesce move, resize, occlusion, and close notifications, detach observers and clear pending callbacks on close, expose live geometry to test-support, and add orientation/hidden-restore geometry regressions. Visibility and alpha are sampled on public notifications; alpha-only Reduce Motion transitions without a corresponding notification remain unverified.",
           "before_sha256": "1c4e6b71bd963a6fbe6a1b6807f1ede597ad885c84d8e31c178433414330ed81",
           "after_sha256": "d5789b5ca9661c39d4ba9c90922453556376e845dbfdcea333279bceab6d9138"
+        },
+        {
+          "kind": "semantic",
+          "description": "Suppress only owned empty fullscreen titlebar chrome after native controls move to the main content host; restore public AppKit settings on exit, keep occlusion avoidance as fallback, and report independent renderer top-gap evidence",
+          "before_sha256": "d5789b5ca9661c39d4ba9c90922453556376e845dbfdcea333279bceab6d9138",
+          "after_sha256": "c6babb5789ee317b1f00fcaad0658ca67b68e8cab45e51e2c2a7519ee6139d3e"
         }
       ],
-      "current_sha256": "d5789b5ca9661c39d4ba9c90922453556376e845dbfdcea333279bceab6d9138",
+      "current_sha256": "c6babb5789ee317b1f00fcaad0658ca67b68e8cab45e51e2c2a7519ee6139d3e",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"

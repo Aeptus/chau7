@@ -287,3 +287,43 @@ of the observed session, merge, publication, re-read and full-payload comparison
 pass with 40 tabs, 40 contexts and three windows. The ordinary updater's
 read-only history validator accepts this recovered copy for the original
 incident. The production app/profile were not modified by that verification.
+
+
+## Remaining empty fullscreen titlebar, 2026-10-17
+
+The user confirmed that the tab row remains visible in the installed
+`4c870950` build, but an empty black row still appears below the system menu.
+The previous acceptance proved that the tabs were unobscured and clickable;
+it allowed the renderer to shrink by the auxiliary titlebar's 32-point overlap.
+That leaves a second titlebar row because GPUI draws the tabs and relocated
+window controls inside the main content view. The Swift app instead uses an
+actual `NSToolbar` for its tabs.
+
+The candidate correction suppresses only the retained, owned auxiliary chrome
+of a custom transparent full-size-content window with no native toolbar,
+titlebar accessories, visible native title or subtitle, after all three native
+controls have moved into their visible main-content host. It saves and restores AppKit appearance, mouse-event
+policy and original container visibility. Reconciliation is idempotent and
+uses the saved visibility so its own hidden flag cannot alternate suppression
+on successive layout notifications. It does not change window alpha, level,
+ordering, fullscreen presentation options, or other applications' windows.
+
+The renderer uses the full content layout only while suppression settings read
+back successfully. Otherwise it retains the existing occlusion avoidance.
+Native evidence keeps the raw auxiliary overlap separate from the applied
+renderer inset, checks the top gap independently against `contentLayoutRect`,
+and still requires window-server hit testing to select the owned app window.
+A successful geometry-only check cannot establish the final composite pixels.
+
+The candidate passes 3,254 workspace Rust tests with the native fixture feature
+(two existing ignored tests), strict workspace Clippy including all targets and
+the native fixture, and formatting checks. Five pure vendor helpers/tests pass
+through an exact-source temporary harness; the vendor package is outside the
+workspace, so this is not a claim that its entire test target ran. The 35 vendor
+hash chains match the current files.
+
+Physical and composited-pixel acceptance remains pending. A standalone AppKit
+probe is prepared for two real pointer reveal/hide cycles and actual tab-row
+clicks. Settings readback and renderer-only pixels do not establish that AppKit
+has stopped painting the empty row. The PR remains a draft. No current
+production app or restoration state has been changed by this investigation.

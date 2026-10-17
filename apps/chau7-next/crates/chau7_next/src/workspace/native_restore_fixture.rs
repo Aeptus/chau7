@@ -2269,6 +2269,10 @@ async fn wait_for_manual_pointer_menu_phase(
                         "expected_menu_bar_visible": expected_menu_visible,
                         "observed_menu_bar_visible": menu_visible,
                         "toolbar_occlusion_height": toolbar.toolbar_occlusion_height,
+                        "raw_toolbar_overlap_height": toolbar.toolbar_occlusion_height,
+                        "empty_toolbar_suppressed": toolbar.empty_toolbar_suppressed,
+                        "applied_toolbar_occlusion_height": toolbar.applied_toolbar_occlusion_height,
+                        "extra_renderer_top_gap": toolbar.extra_renderer_top_gap,
                         "renderer_tracks_toolbar": native_rects_match(
                             toolbar.renderer_frame, toolbar.expected_renderer_frame),
                         "app_active": application.isActive(),
@@ -2463,24 +2467,42 @@ fn fullscreen_menu_snapshot(
         .ok_or("owned fullscreen window has no content view")?;
     let geometry = FullscreenMenuGeometry::capture(native, application, &content_view, &renderer)?;
     let layout_in_content = content_view.convertRect_fromView(native.contentLayoutRect(), None);
+    let renderer_rect_in_content =
+        renderer.convertRect_toView(renderer.bounds(), Some(&content_view));
     let toolbar = gpui_macos::fullscreen_toolbar_reveal_observation(native)
         .ok_or("owned fullscreen fixture has no GPUI toolbar observation")?;
+    let renderer_top_gap = if content_view.isFlipped() {
+        renderer_rect_in_content.origin.y - layout_in_content.origin.y
+    } else {
+        layout_in_content.origin.y + layout_in_content.size.height
+            - renderer_rect_in_content.origin.y
+            - renderer_rect_in_content.size.height
+    };
     let renderer_tracks_layout =
         native_rects_match(renderer.frame(), toolbar.expected_renderer_frame);
-    let toolbar_overlaps_renderer = toolbar.toolbar_is_visible
+    let raw_toolbar_frame_overlaps_renderer = toolbar
+        .toolbar_frame_in_content_view
+        .is_some_and(|frame| native_rects_intersect(frame, renderer_rect_in_content));
+    let toolbar_visible_alpha_overlaps_renderer = toolbar.toolbar_is_visible
         && toolbar.toolbar_alpha_value.is_some_and(|alpha| alpha > 0.0)
-        && toolbar
-            .toolbar_frame_in_content_view
-            .is_some_and(|frame| native_rects_intersect(frame, renderer.frame()));
+        && raw_toolbar_frame_overlaps_renderer;
     let toolbar_evidence = serde_json::json!({
         "window_present": toolbar.toolbar_window_present,
         "visible": toolbar.toolbar_is_visible,
         "alpha": toolbar.toolbar_alpha_value,
         "occlusion_state_visible": toolbar.toolbar_occlusion_state_visible,
         "frame_in_content_view": toolbar.toolbar_frame_in_content_view.map(native_rect_values),
+        "raw_overlap_height": toolbar.toolbar_occlusion_height,
+        "raw_frame_overlaps_renderer": raw_toolbar_frame_overlaps_renderer,
+        "empty_toolbar_suppressed": toolbar.empty_toolbar_suppressed,
+        "applied_occlusion_height": toolbar.applied_toolbar_occlusion_height,
+        "renderer_top_gap": renderer_top_gap,
+        "api_extra_renderer_top_gap": toolbar.extra_renderer_top_gap,
+        "top_gap_matches_api_observation":
+            (renderer_top_gap - toolbar.extra_renderer_top_gap).abs() <= 0.5,
+        "visible_alpha_geometry_overlap": toolbar_visible_alpha_overlaps_renderer,
         "expected_renderer_frame": native_rect_values(toolbar.expected_renderer_frame),
         "measured_occlusion_height": toolbar.toolbar_occlusion_height,
-        "overlaps_renderer": toolbar_overlaps_renderer,
         "renderer_tracks_unobscured_frame": renderer_tracks_layout,
     });
     let renderer_bounds = renderer.bounds();
@@ -2521,8 +2543,6 @@ fn fullscreen_menu_snapshot(
     );
     let crop_in_bounds = rect_contains_with_tolerance(renderer_bounds, crop);
     let crop_visible = rect_contains_with_tolerance(renderer_visible_rect, crop);
-    let renderer_rect_in_content =
-        renderer.convertRect_toView(renderer_bounds, Some(&content_view));
     let owned_window_number = native.windowNumber();
     let controls_host = native
         .standardWindowButton(NSWindowButton::CloseButton)
@@ -2562,6 +2582,8 @@ fn fullscreen_menu_snapshot(
             "renderer_bounds": native_rect_values(geometry.renderer_bounds),
             "renderer_rect_in_content_view": native_rect_values(renderer_rect_in_content),
             "layout_rect_in_content_view": native_rect_values(layout_in_content),
+            "renderer_top_gap": renderer_top_gap,
+            "empty_toolbar_suppressed": toolbar.empty_toolbar_suppressed,
             "renderer_tracks_content_layout": native_rects_match(renderer.frame(), layout_in_content),
             "fullscreen_toolbar": toolbar_evidence,
             "traffic_light_host_rect_in_content_view": native_rect_values(controls_in_content),
@@ -2630,12 +2652,38 @@ fn fullscreen_menu_snapshot(
 
     ensure(
         renderer_tracks_layout,
-        "fullscreen renderer did not follow AppKit's content layout and actual toolbar overlap",
+        "fullscreen renderer did not follow AppKit's content layout and toolbar policy",
     )?;
     ensure(
-        !toolbar_overlaps_renderer,
-        "native fullscreen toolbar still overlaps the GPUI renderer",
+        (renderer_top_gap - toolbar.extra_renderer_top_gap).abs() <= 0.5,
+        "fullscreen renderer top-gap observation disagrees with contentLayoutRect geometry",
     )?;
+    if toolbar.toolbar_window_present {
+        ensure(
+            toolbar.empty_toolbar_suppressed,
+            "the owned fixture's known-empty fullscreen titlebar window was not suppressed",
+        )?;
+    }
+    if toolbar.empty_toolbar_suppressed || !toolbar.toolbar_window_present {
+        ensure(
+            toolbar.applied_toolbar_occlusion_height.abs() <= 0.5,
+            "suppressed or absent fullscreen toolbar left an applied renderer inset",
+        )?;
+        ensure(
+            renderer_top_gap.abs() <= 0.5,
+            "suppressed or absent empty titlebar left an empty gutter above the GPUI tab row",
+        )?;
+        ensure(
+            toolbar.extra_renderer_top_gap.abs() <= 0.5,
+            "fullscreen toolbar observation reports a top gap for the suppressed owned row",
+        )?;
+    }
+    if !toolbar.empty_toolbar_suppressed {
+        ensure(
+            !toolbar_visible_alpha_overlaps_renderer,
+            "native fullscreen toolbar still overlaps the GPUI renderer without suppression",
+        )?;
+    }
     if expected_menu_visible && manual_menu_pointer_requested()? {
         ensure(
             toolbar.toolbar_window_present && toolbar.toolbar_occlusion_height > 0.5,
@@ -2861,6 +2909,9 @@ fn fullscreen_menu_snapshot(
         "renderer_frame": native_rect_values(geometry.renderer_frame),
         "renderer_bounds": native_rect_values(geometry.renderer_bounds),
         "renderer_rect_in_content_view": native_rect_values(renderer_rect_in_content),
+        "renderer_top_gap": renderer_top_gap,
+        "raw_toolbar_overlap_height": toolbar.toolbar_occlusion_height,
+        "empty_toolbar_suppressed": toolbar.empty_toolbar_suppressed,
         "renderer_rect_in_screen": native_rect_values(geometry.renderer_rect_in_screen),
         "renderer_visible_rect": native_rect_values(renderer.visibleRect()),
         "screen": {

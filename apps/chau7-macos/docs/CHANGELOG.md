@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Prepare suppression of the empty native fullscreen titlebar after relocating
+  the window controls into the Rust tab row. Preserve native toolbars and
+  restore AppKit settings on exit; strengthen fullscreen checks to reject the
+  extra top gutter. Physical-pointer and composited-pixel acceptance is pending.
+
 - Add a guarded recovery helper for incomplete Rust restoration before an update.
   Preserve current tabs and contexts, recover missing original windows and editor
   layouts, retain private snapshots, and publish only after normal quit under the
