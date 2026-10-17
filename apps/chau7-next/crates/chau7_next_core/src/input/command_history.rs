@@ -165,6 +165,11 @@ impl InputLineBuffer {
     pub fn current(&self) -> &str {
         &self.line
     }
+    /// Shell-side completion/search can change text without sending it through
+    /// the PTY input stream. Never replace a draft we cannot reconstruct.
+    pub fn draft(&self) -> Option<&str> {
+        (self.reliable && self.pending.is_empty()).then_some(self.line.as_str())
+    }
     pub fn clear(&mut self) {
         *self = Self::default();
     }
@@ -457,7 +462,9 @@ mod tests {
         assert_eq!(b.feed(b"git che\t\r"), [""]);
         assert_eq!(b.feed(b"pwd\r"), ["pwd"]);
         b.feed(b"abc\t\x01\x15");
+        assert_eq!(b.draft(), None);
         assert_eq!(b.feed(b"\r"), [""]);
+        assert_eq!(b.draft(), Some(""));
         b.feed(b"old\x12");
         b.feed(&recall_bytes("new"));
         assert_eq!(b.feed(b"\r"), ["new"]);

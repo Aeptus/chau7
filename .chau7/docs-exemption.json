@@ -1,5 +1,5 @@
 {
-  "reason": "Makes the native fixture’s first synthetic IME replacement deterministic at its verified UTF-16 target; product behavior is unchanged. Also restores existing Rust tab-close safety without adding capabilities or settings; the focused pull request documents this regression fix and validation. Also hardens existing prompt history ownership, navigation and restoration; the focused PR records behavior and validation without rebuilding the running app.",
+  "reason": "Makes the native fixture’s first synthetic IME replacement deterministic at its verified UTF-16 target; product behavior is unchanged. Also restores existing Rust tab-close safety without adding capabilities or settings; the focused pull request documents this regression fix and validation. Also hardens existing prompt history ownership, navigation and restoration; the focused PR records behavior and validation without rebuilding the running app. App-level recall also preserves drafts changed by shell-side completion or history editing instead of restoring guessed text.",
   "paths": [
     "apps/chau7-next/crates/chau7_next/src/panes/editor/native_markdown/fixture.rs",
     "apps/chau7-next/crates/chau7_next/src/pane.rs",

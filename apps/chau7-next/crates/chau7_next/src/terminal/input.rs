@@ -379,21 +379,20 @@ impl TerminalView {
         if !mods.alt && self.session.read(cx).native_prompt_history {
             return false;
         }
+        let Some(draft) = self.input.line.draft() else {
+            // A shell completion/search may have changed the visible draft.
+            // Leave it intact instead of replacing it with guessed text.
+            return true;
+        };
         let command = if mods.alt {
-            self.input.history_navigation.step(
-                prompt_history(cx),
-                true,
-                up,
-                self.input.line.current(),
-            )
+            self.input
+                .history_navigation
+                .step(prompt_history(cx), true, up, draft)
         } else {
             let session = self.session.read(cx);
-            self.input.history_navigation.step(
-                &session.input_history,
-                false,
-                up,
-                self.input.line.current(),
-            )
+            self.input
+                .history_navigation
+                .step(&session.input_history, false, up, draft)
         };
         // Empty local history must not fall through to a shell's shared history.
         if let Some(command) = command {
