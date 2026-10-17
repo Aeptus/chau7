@@ -30,9 +30,7 @@ use chau7_next_core::monitoring::claude_code::{
     ClaudeCodeEvent, ClaudeSessionTracker, WAITING_INPUT_FALLBACK_DELAY, parse_event_line,
     waiting_input_message,
 };
-use chau7_next_core::monitoring::codex_sessions::{
-    Candidate, CodexSessionResolver, best_matching_session_id,
-};
+use chau7_next_core::monitoring::codex_sessions::{Candidate, CodexSessionResolver};
 use chau7_next_core::monitoring::conflicts::{
     ConflictDetector, FinishedBlock as ConflictFinishedBlock, conflict_message,
 };
@@ -723,36 +721,6 @@ fn history_notice_event(notice: HistoryNotice, directory: Option<String>) -> AiE
     ai.producer = Some("history_idle_monitor".into());
     ai.reliability = AiEventReliability::Fallback;
     ai
-}
-
-// ----- queries used by tabs and restore ---------------------------------------
-
-/// Claude sessions seen by the hook monitor for a directory, best first:
-/// (session id, last activity).
-pub fn claude_session_candidates(directory: &str, cx: &App) -> Vec<(String, f64)> {
-    cx.try_global::<AiHub>()
-        .map(|hub| hub.claude.session_candidates(directory))
-        .unwrap_or_default()
-}
-
-/// The Codex session of `directory` among the last 64 sessions seen in
-/// Codex's history (`resolveResumeMetadata` fallback), skipping `claimed`.
-pub fn codex_observed_session(
-    directory: &str,
-    reference: Option<f64>,
-    claimed: &std::collections::HashSet<String>,
-    cx: &App,
-) -> Option<String> {
-    let hub = cx.try_global::<AiHub>()?;
-    // Already resolved by MonitorIo; this capture/query path never opens
-    // provider files or clones and discards the resolver's cache.
-    let candidates: Vec<Candidate> = hub
-        .codex_candidates
-        .iter()
-        .filter(|candidate| !claimed.contains(&candidate.session_id))
-        .cloned()
-        .collect();
-    best_matching_session_id(directory, reference, &candidates)
 }
 
 // ----- file conflicts --------------------------------------------------------

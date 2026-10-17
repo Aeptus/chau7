@@ -103,57 +103,18 @@ pub fn capture_tab(
         let has_file = writer::record(id, scrollback, cx);
 
         // Persistence uses already captured identity only. Transcript validation
-        // and directory discovery happen once, off UI, during restore preparation.
+        // happens off UI during restore preparation. A fresh launch that clears
+        // its native ID must not resurrect the preceding restored session.
         let available = |provider: &str, id: &str| !claimed.contains(&format!("{provider}:{id}"));
         let meta = session
             .shell()
             .ai_provider()
             .zip(session.shell().ai_session_id())
             .filter(|(provider, id)| available(provider, id))
-            .map(|(provider, id)| (provider.to_owned(), id.to_owned()))
-            .or_else(|| {
-                tree.resume_meta(id)
-                    .filter(|(provider, id)| available(provider, id))
-            })
-            .or_else(|| {
-                // These are in-memory hook/history observations populated by
-                // MonitorIo, never a provider-directory scan on the UI thread.
-                if !session.is_ai_running() {
-                    return None;
-                }
-                let provider = session.shell().ai_provider()?;
-                let dir = directory.as_deref()?;
-                let reference = Some(
-                    session
-                        .shell()
-                        .last_input_at()
-                        .max(session.shell().last_output_at()),
-                );
-                let id = match provider {
-                    "claude" => {
-                        let candidates: Vec<_> = crate::ai::hub::claude_session_candidates(dir, cx)
-                            .into_iter()
-                            .filter(|(id, _)| available(provider, id))
-                            .map(|(session_id, touched_at)| {
-                                chau7_next_core::ai::resume::SessionCandidate {
-                                    session_id,
-                                    touched_at,
-                                }
-                            })
-                            .collect();
-                        chau7_next_core::ai::resume::best_session_match(&candidates, reference)
-                    }
-                    "codex" => {
-                        let raw_claims = claimed
-                            .iter()
-                            .filter_map(|id| id.strip_prefix("codex:").map(str::to_owned))
-                            .collect();
-                        crate::ai::hub::codex_observed_session(dir, reference, &raw_claims, cx)
-                    }
-                    _ => None,
-                }?;
-                Some((provider.to_owned(), id))
-            });
+            .map(|(provider, id)| (provider.to_owned(), id.to_owned()));
+        // Missing ownership stays missing. Cwd/activity-based guesses can give
+        // a tab a sibling's resume link before that sibling is captured.
+
         let inherited = tree.restored_metadata(id).filter(|pane| {
             meta.as_ref().is_some_and(|(provider, id)| {
                 pane.ai_provider.as_deref() == Some(provider)

@@ -587,19 +587,26 @@ pub fn resolve_resume_metadata_from_saved(
     session_id: Option<&str>,
     command: Option<&str>,
 ) -> Option<ResumeMetadata> {
-    let from_command = extract_metadata(command.unwrap_or(""));
-    let provider = provider
-        .and_then(normalize_provider_name)
-        .or_else(|| from_command.as_ref().map(|m| m.provider.clone()))?;
-    let session_id = session_id
-        .map(str::trim)
-        .filter(|s| is_valid_session_id(s))
-        .map(str::to_string)
-        .or_else(|| from_command.map(|m| m.session_id))?;
-    Some(ResumeMetadata {
-        provider,
-        session_id,
-    })
+    let explicit_provider = provider.and_then(normalize_provider_name);
+    let explicit_id = session_id.map(str::trim).filter(|s| !s.is_empty());
+    if let (Some(provider), Some(id)) = (&explicit_provider, explicit_id) {
+        return is_valid_session_id(id).then(|| ResumeMetadata {
+            provider: provider.clone(),
+            session_id: id.to_owned(),
+        });
+    }
+    // A partial field is a constraint, not permission to combine unrelated
+    // provider/session values. Commands may only fill an agreeing identity.
+    let from_command = extract_metadata(command.unwrap_or(""))?;
+    if explicit_provider
+        .as_ref()
+        .is_some_and(|p| *p != from_command.provider)
+        || explicit_id.is_some_and(|id| id != from_command.session_id)
+        || provider.is_some_and(|p| !p.trim().is_empty()) && explicit_provider.is_none()
+    {
+        return None;
+    }
+    Some(from_command)
 }
 
 pub(crate) fn modified_secs(path: &Path) -> f64 {
@@ -1122,6 +1129,29 @@ mod tests {
             ("claude", "cmd-id")
         );
         assert!(resolve_resume_metadata_from_saved(Some("claude"), None, None).is_none());
+    }
+
+    #[test]
+    fn partial_saved_fields_never_form_a_pair_from_conflicting_commands() {
+        for (provider, id, command) in [
+            (Some("claude"), None, "codex resume other-thread"),
+            (None, Some("owned-thread"), "codex resume other-thread"),
+            (Some("unknown-provider"), None, "codex resume other-thread"),
+            (
+                Some("codex"),
+                Some("invalid id!"),
+                "codex resume other-thread",
+            ),
+        ] {
+            assert!(resolve_resume_metadata_from_saved(provider, id, Some(command)).is_none());
+        }
+        for (provider, id) in [(Some("codex"), None), (None, Some("owned-thread"))] {
+            let metadata =
+                resolve_resume_metadata_from_saved(provider, id, Some("codex resume owned-thread"))
+                    .unwrap();
+            assert_eq!(metadata.provider, "codex");
+            assert_eq!(metadata.session_id, "owned-thread");
+        }
     }
 
     #[test]

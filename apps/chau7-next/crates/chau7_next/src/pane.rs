@@ -263,9 +263,6 @@ pub struct PaneTree {
     /// Panes restored from a saved session whose scrollback has not been
     /// replayed yet. Until then the saved state is what gets saved again.
     pending_restore: HashMap<PaneId, SavedPane>,
-    /// AI session a restored pane was running, kept for the life of the pane
-    /// so that it is saved again (`restoreAIMetadata`).
-    resume_meta: HashMap<PaneId, (String, String)>,
     owner_tab: Option<uuid::Uuid>,
     presentation_terminal: Option<EntityId>,
     note_binding: Option<(PathBuf, uuid::Uuid)>,
@@ -300,7 +297,6 @@ impl PaneTree {
             subscriptions: Vec::new(),
             pane_ids: HashMap::new(),
             pending_restore: HashMap::new(),
-            resume_meta: HashMap::new(),
             owner_tab: None,
             presentation_terminal: None,
             note_binding: None,
@@ -543,14 +539,8 @@ impl PaneTree {
                     }
                 });
             }
-            for (pane, prepared) in &prepared.panes {
+            for pane in prepared.panes.keys() {
                 active.pending_restore.remove(pane);
-                if let Some(identity) = &prepared.identity {
-                    active.resume_meta.insert(
-                        *pane,
-                        (identity.provider.clone(), identity.session_id.clone()),
-                    );
-                }
             }
             *self = active;
             self.focus_own(window, cx);
@@ -1571,7 +1561,6 @@ impl PaneTree {
         self.subscriptions.retain(|(view, _)| *view != id);
         if let Some(pane) = self.pane_ids.remove(&id) {
             self.pending_restore.remove(&pane);
-            self.resume_meta.remove(&pane);
         }
         let remaining = self.leaves();
         if remaining.is_empty() {
@@ -1711,11 +1700,6 @@ impl PaneTree {
 
     pub(crate) fn restored_metadata(&self, pane: PaneId) -> Option<&SavedPane> {
         self.restored_metadata.get(&pane)
-    }
-
-    /// AI session a restored pane was running.
-    pub fn resume_meta(&self, pane: PaneId) -> Option<(String, String)> {
-        self.resume_meta.get(&pane).cloned()
     }
 
     // ----- restore ------------------------------------------------------
@@ -2688,7 +2672,6 @@ mod tests {
         );
         assert_eq!(tree.archived_context().cloned(), Some(archived_context));
         assert!(tree.restore_prepared.is_none());
-        assert!(tree.resume_meta.is_empty());
         tree.deferred_saved = None;
         assert!(!tree.apply_deferred_identity(owner, 3, hint_generation, &root, &mut prepared));
         crate::restore::preparation::release_owner(&root, owner);

@@ -1,6 +1,6 @@
 //! Read-only restore preparation. Run on the owned background executor before
 //! constructing PTYs; never mutate provider state or launch a shell here.
-use crate::ai::resume::{extract_metadata, normalize_provider_name};
+use crate::ai::resume::normalize_provider_name;
 use crate::data_root::DataRoot;
 use crate::monitoring::{claude_resolver, codex_sessions::CodexSessionResolver};
 use crate::session_restore::lifecycle::ResumeIdentity;
@@ -245,36 +245,27 @@ fn read_context(root: &DataRoot, pane: &SavedPane) -> Option<String> {
     String::from_utf8(bytes).ok()
 }
 fn candidates(pane: &SavedPane) -> Vec<ResumeIdentity> {
-    let mut out = Vec::new();
-    for command in [
+    // One authoritative identity: explicit fields first, then agreeing legacy
+    // commands. A failed exact artifact check must not switch to another ID.
+    let metadata = crate::session_restore::resolve_resume_metadata_from_saved(
+        pane.ai_provider.as_deref(),
+        pane.ai_session_id.as_deref(),
         pane.ai_resume_command.as_deref(),
-        pane.agent_launch_command.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        if let Some(m) = extract_metadata(command) {
-            out.push(ResumeIdentity {
-                provider: m.provider,
-                session_id: m.session_id,
-            });
-        }
-    }
-    if let Some((provider, id)) = pane
-        .ai_provider
-        .as_deref()
-        .zip(pane.ai_session_id.as_deref())
-        && let Some(provider) = normalize_provider_name(provider)
-        && crate::ai::resume::is_valid_session_id(id)
-    {
-        out.push(ResumeIdentity {
-            provider,
-            session_id: id.to_owned(),
-        });
-    }
-    let mut seen = HashSet::new();
-    out.retain(|m| seen.insert((m.provider.clone(), m.session_id.clone())));
-    out
+    )
+    .or_else(|| {
+        crate::session_restore::resolve_resume_metadata_from_saved(
+            pane.ai_provider.as_deref(),
+            pane.ai_session_id.as_deref(),
+            pane.agent_launch_command.as_deref(),
+        )
+    });
+    metadata
+        .into_iter()
+        .map(|m| ResumeIdentity {
+            provider: m.provider,
+            session_id: m.session_id,
+        })
+        .collect()
 }
 fn validate(
     home: &Path,
@@ -390,7 +381,7 @@ fn prepare_profile(
         .filter(|v| v.is_finite() && *v > 0.0)
         .max_by(f64::total_cmp);
         let synthetic = pane.ai_session_id_source.as_deref() == Some("synthetic");
-        let mut resume_candidates = candidates(pane);
+        let resume_candidates = candidates(pane);
         let had_no_complete_identity = resume_candidates.is_empty()
             && pane
                 .ai_session_id
@@ -407,50 +398,9 @@ fn prepare_profile(
                     .and_then(normalize_provider_name)
             })
             .flatten();
-        if let Some(provider) = &provider_only {
-            let found = match provider.as_str() {
-                "claude" => {
-                    claude_resolver::session_candidates(root.home(), &directory.to_string_lossy())
-                }
-                "codex" => crate::monitoring::codex_sessions::session_candidates_with_limit(
-                    root.home(),
-                    &directory.to_string_lossy(),
-                    reference,
-                    14,
-                )
-                .into_iter()
-                .map(
-                    |(session_id, touched_at)| crate::ai::resume::SessionCandidate {
-                        session_id,
-                        touched_at,
-                    },
-                )
-                .collect(),
-                _ => Vec::new(),
-            };
-            let available: Vec<_> = found
-                .into_iter()
-                .filter(|m| {
-                    !claims.contains(&(provider.clone(), m.session_id.clone()))
-                        && identity_available(
-                            root,
-                            owner,
-                            pane.id,
-                            &ResumeIdentity {
-                                provider: provider.clone(),
-                                session_id: m.session_id.clone(),
-                            },
-                            true,
-                        )
-                })
-                .collect();
-            if let Some(id) = crate::ai::resume::best_session_match(&available, reference) {
-                resume_candidates.push(ResumeIdentity {
-                    provider: provider.clone(),
-                    session_id: id,
-                });
-            }
-        }
+        // Directory and timing are not ownership evidence. Several tabs may
+        // share a cwd, and provider history may belong to another application.
+        // Keep a provider-only pane unresolved until its own session is known.
         let identity = resume_candidates.into_iter().find_map(|m| {
             let valid = validate(
                 root.home(),
@@ -460,7 +410,7 @@ fn prepare_profile(
                 synthetic,
                 &mut codex,
             )?;
-            (identity_available(root, owner, pane.id, &valid, provider_only.is_some())
+            (identity_available(root, owner, pane.id, &valid, false)
                 && claims.insert((valid.provider.clone(), valid.session_id.clone())))
             .then_some(valid)
         });
@@ -489,6 +439,20 @@ fn prepare_profile(
                 None => read_context(root, pane),
             }
         };
+        if identity.is_none()
+            && pane.archived_ai_resume.is_none()
+            && (pane.ai_session_id.is_some() || pane.ai_resume_command.is_some())
+        {
+            // Failed validation removes execution authority, not recovery data.
+            // This archive is inert and never participates in candidates().
+            pane.archived_ai_resume =
+                Some(crate::session_restore::models::ArchivedAIResumeMetadata {
+                    provider: pane.ai_provider.clone(),
+                    session_id: pane.ai_session_id.clone(),
+                    session_id_source: pane.ai_session_id_source.clone(),
+                    resume_command: pane.ai_resume_command.clone(),
+                });
+        }
         pane.directory = Some(directory.to_string_lossy().into_owned());
         pane.ai_provider = identity
             .as_ref()
@@ -504,7 +468,7 @@ fn prepare_profile(
                 context,
                 identity,
                 command,
-                discovered_identity: provider_only.is_some(),
+                discovered_identity: false,
             },
         );
     }
@@ -578,7 +542,7 @@ mod tests {
         );
     }
     #[test]
-    fn parked_saved_owner_is_excluded_from_provider_only_history_discovery() {
+    fn releasing_a_sibling_does_not_grant_provider_only_panes_its_session() {
         let f = Fixture::new();
         f.claude("parked-session", &f.directory);
         let owner = uuid::Uuid::new_v4();
@@ -603,10 +567,8 @@ mod tests {
         assert!(blocked.panes[&1].identity.is_none());
         release_owner(&f.root, owner);
         let available = prepare_identity(&f.root, seeker, None);
-        assert_eq!(
-            available.panes[&1].identity.as_ref().unwrap().session_id,
-            "parked-session"
-        );
+        assert!(available.panes[&1].identity.is_none());
+        assert!(available.panes[&1].command.is_none());
     }
     #[test]
     fn reopened_parked_owner_joins_existing_generation_without_invalidating_other_workers() {
@@ -666,15 +628,17 @@ mod tests {
         );
     }
     #[test]
-    fn concurrent_discovery_results_cannot_reserve_one_session_for_two_owners() {
+    fn provider_only_tabs_never_gain_identity_from_shared_directory_history() {
         let f = Fixture::new();
-        f.claude("discovered-session", &f.directory);
+        f.claude("foreign-session", &f.directory);
         let make = |id| SavedTab {
             uuid: Some(uuid::Uuid::new_v4()),
+            custom_title: Some(format!("tab {id}")),
             ..f.tab(vec![SavedPane {
                 id,
                 directory: Some(f.directory.to_string_lossy().into_owned()),
                 ai_provider: Some("claude".into()),
+                last_output_at: Some(crate::ai::detection_state::now_secs()),
                 ..Default::default()
             }])
         };
@@ -682,25 +646,21 @@ mod tests {
         let b = make(2);
         register_saved_identity_hints(&f.root, [&a, &b]);
         let generation = identity_hint_generation(&f.root);
-        let mut pa = prepare_identity(&f.root, a.clone(), None);
-        let mut pb = prepare_identity(&f.root, b.clone(), None);
-        assert!(pa.panes[&1].identity.is_some());
-        assert!(pb.panes[&2].identity.is_some());
-        assert!(admit_identity_metadata(
-            &f.root,
-            a.uuid.unwrap(),
-            generation,
-            &mut pa
-        ));
-        assert!(admit_identity_metadata(
-            &f.root,
-            b.uuid.unwrap(),
-            generation,
-            &mut pb
-        ));
-        assert!(pa.panes[&1].identity.is_some());
-        assert!(pb.panes[&2].identity.is_none());
-        assert!(pb.saved.panes[0].ai_resume_command.is_none());
+        for saved in [b, a] {
+            let mut prepared = prepare_identity(&f.root, saved.clone(), None);
+            assert!(admit_identity_metadata(
+                &f.root,
+                saved.uuid.unwrap(),
+                generation,
+                &mut prepared
+            ));
+            let prepared = prepare(&f.root, prepared.saved, None);
+            assert_eq!(prepared.saved.custom_title, saved.custom_title);
+            for pane in prepared.panes.values() {
+                assert!(pane.identity.is_none());
+                assert!(pane.command.is_none());
+            }
+        }
     }
     #[test]
     fn live_admission_after_preparation_fences_late_metadata_without_claiming_a_pty() {
@@ -857,7 +817,7 @@ mod tests {
         );
     }
     #[test]
-    fn command_priority_and_every_split_pane_match_current_swift_restore() {
+    fn explicit_identity_beats_stale_commands_in_every_split_pane() {
         let f = Fixture::new();
         let mut a = f.pane(1, "codex", "stale-fields");
         a.ai_resume_command = Some("codex resume command-id".into());
@@ -885,11 +845,11 @@ mod tests {
         let prepared = prepare(&f.root, tab, None);
         assert_eq!(
             prepared.panes[&1].identity.as_ref().unwrap().session_id,
-            "command-id"
+            "stale-fields"
         );
         assert_eq!(
             prepared.panes[&2].identity.as_ref().unwrap().session_id,
-            "launch-id"
+            "stale-b"
         );
         assert_eq!(prepared.saved.focused_pane, Some(2));
         assert_eq!(
@@ -897,6 +857,78 @@ mod tests {
             vec![1, 2]
         );
     }
+    #[test]
+    fn tab_names_and_exact_sessions_remain_paired_across_reordered_restore_cycles() {
+        let f = Fixture::new();
+        let make = |number, title: &str, session: &str, stale: &str| SavedTab {
+            uuid: Some(uuid::Uuid::from_u128(number)),
+            custom_title: Some(title.into()),
+            focused_pane: Some(number as u64),
+            ..f.tab(vec![SavedPane {
+                ai_resume_command: Some(format!("codex resume {stale}")),
+                ..f.pane(number as u64, "codex", session)
+            }])
+        };
+        let mut tabs = vec![
+            make(1, "First task", "first-thread", "second-thread"),
+            make(2, "Second task", "second-thread", "first-thread"),
+        ];
+        for _ in 0..3 {
+            tabs.reverse();
+            register_saved_identity_hints(&f.root, &tabs);
+            tabs = tabs
+                .into_iter()
+                .map(|saved| {
+                    let expected = match saved.uuid.unwrap().as_u128() {
+                        1 => ("First task", "first-thread"),
+                        2 => ("Second task", "second-thread"),
+                        _ => unreachable!(),
+                    };
+                    let metadata = prepare_identity(&f.root, saved, None);
+                    let prepared = prepare(&f.root, metadata.saved, None);
+                    assert_eq!(prepared.saved.custom_title.as_deref(), Some(expected.0));
+                    let id = prepared.saved.focused_pane.unwrap();
+                    assert_eq!(
+                        prepared.panes[&id].identity.as_ref().unwrap().session_id,
+                        expected.1
+                    );
+                    assert_eq!(
+                        prepared.panes[&id].command.as_deref(),
+                        Some(format!("codex resume {}", expected.1).as_str())
+                    );
+                    serde_json::from_str(&serde_json::to_string(&prepared.saved).unwrap()).unwrap()
+                })
+                .collect();
+        }
+    }
+
+    #[test]
+    fn missing_explicit_artifact_cannot_fall_back_to_another_valid_command() {
+        let f = Fixture::new();
+        let mut pane = f.pane(1, "codex", "12345678-1234-1234-1234-123456789abc");
+        pane.ai_resume_command = Some("codex resume unrelated-valid-legacy-id".into());
+        let prepared = prepare(&f.root, f.tab(vec![pane]), None);
+        assert!(prepared.panes[&1].identity.is_none());
+        assert!(prepared.panes[&1].command.is_none());
+        let archived = prepared.saved.panes[0].archived_ai_resume.as_ref().unwrap();
+        assert_eq!(
+            archived.session_id.as_deref(),
+            Some("12345678-1234-1234-1234-123456789abc")
+        );
+        let again = prepare(&f.root, prepared.saved, None);
+        assert!(again.panes[&1].identity.is_none());
+        assert!(again.panes[&1].command.is_none());
+        assert_eq!(
+            again.saved.panes[0]
+                .archived_ai_resume
+                .as_ref()
+                .unwrap()
+                .session_id
+                .as_deref(),
+            Some("12345678-1234-1234-1234-123456789abc")
+        );
+    }
+
     #[test]
     fn rejected_complete_identity_cannot_rediscover_history_and_synthetic_source_is_preserved() {
         let f = Fixture::new();
@@ -917,7 +949,7 @@ mod tests {
         );
     }
     #[test]
-    fn provider_only_discovery_is_scoped_and_uses_actual_saved_reference() {
+    fn provider_only_history_cannot_prove_ownership_even_with_one_candidate() {
         let f = Fixture::new();
         f.claude("nearest", &f.directory);
         let pane = SavedPane {
@@ -928,13 +960,11 @@ mod tests {
             ..Default::default()
         };
         let prepared = prepare(&f.root, f.tab(vec![pane]), None);
+        assert!(prepared.panes[&1].identity.is_none());
+        assert!(prepared.panes[&1].command.is_none());
         assert_eq!(
-            prepared.panes[&1].identity.as_ref().unwrap().provider,
-            "claude"
-        );
-        assert_eq!(
-            prepared.panes[&1].identity.as_ref().unwrap().session_id,
-            "nearest"
+            prepared.saved.panes[0].ai_provider.as_deref(),
+            Some("claude")
         );
     }
     #[test]
