@@ -320,6 +320,23 @@ impl ShellSession {
         self.status
     }
 
+    /// Activity status describes a command or AI turn, not process lifetime.
+    /// A completed agent turn or an unintegrated shell can still own live
+    /// processes. The caller supplies descendants from the shared background
+    /// process snapshot; this decision must never scan processes on the UI.
+    pub fn requires_process_close_warning(&self, has_child_processes: bool) -> bool {
+        self.status != CommandStatus::Exited
+            && (has_child_processes
+                || self.is_ai_running()
+                || matches!(
+                    self.status,
+                    CommandStatus::Running
+                        | CommandStatus::WaitingForInput
+                        | CommandStatus::ApprovalRequired
+                        | CommandStatus::Stuck
+                ))
+    }
+
     pub fn is_at_prompt(&self) -> bool {
         self.is_at_prompt
     }
@@ -1617,6 +1634,55 @@ mod tests {
         assert!(r.active_app().is_some());
         assert!(!r.is_ai_running());
         assert_eq!(display_name_from_provider(None), None);
+    }
+
+    #[test]
+    fn process_close_warning_keeps_completed_live_agent_protected() {
+        let mut s = session();
+        s.restore_ai_metadata(Some("codex"), Some("thread-1"));
+        s.update_live_agent(Some("Codex"));
+        assert!(s.apply_agent_feedback("turn_completed", "codex", Some("thread-1"), 5.0));
+        assert_eq!(s.status(), CommandStatus::Done);
+        assert!(s.requires_process_close_warning(false));
+        s.update_live_agent(None);
+        assert!(!s.requires_process_close_warning(false));
+    }
+
+    #[test]
+    fn process_close_warning_catches_children_without_shell_integration() {
+        let s = session();
+        assert_eq!(s.status(), CommandStatus::Idle);
+        assert!(!s.has_shell_integration());
+        assert!(s.requires_process_close_warning(true));
+        assert!(!s.requires_process_close_warning(false));
+    }
+
+    #[test]
+    fn process_close_warning_ignores_restored_metadata_and_exited_sessions() {
+        let mut s = session();
+        s.restore_ai_metadata(Some("codex"), Some("thread-1"));
+        for status in [CommandStatus::Idle, CommandStatus::Done] {
+            s.set_status(status);
+            assert!(!s.requires_process_close_warning(false));
+            assert!(s.requires_process_close_warning(true));
+        }
+        s.update_live_agent(Some("Codex"));
+        s.set_status(CommandStatus::Exited);
+        assert!(!s.requires_process_close_warning(true));
+    }
+
+    #[test]
+    fn process_close_warning_preserves_busy_statuses() {
+        let mut s = session();
+        for status in [
+            CommandStatus::Running,
+            CommandStatus::WaitingForInput,
+            CommandStatus::ApprovalRequired,
+            CommandStatus::Stuck,
+        ] {
+            s.set_status(status);
+            assert!(s.requires_process_close_warning(false));
+        }
     }
 
     #[test]
