@@ -12,7 +12,7 @@ use std::ops::Range;
 use std::time::{Duration, Instant};
 
 use chau7_next_core::input::command_history::{
-    CommandHistory, InputLineBuffer, RepeatGuard, recall_bytes,
+    CommandHistory, HistoryNavigation, InputLineBuffer, recall_bytes,
 };
 use chau7_next_core::input::input_lines::InputLineTracker;
 use chau7_next_core::input::kitty::{self, KittyEventType, KittyOutput};
@@ -90,7 +90,8 @@ fn prompt_history(cx: &mut App) -> &mut CommandHistory {
 
 /// Keyboard state of one terminal view.
 pub(super) struct InputState {
-    history_repeat: RepeatGuard,
+    history_navigation: HistoryNavigation,
+    line_sensitive: bool,
     /// What was typed since the last Enter, for prompt history.
     line: InputLineBuffer,
     /// Rows where commands were entered (Cmd+Up / Cmd+Down).
@@ -100,9 +101,6 @@ pub(super) struct InputState {
     /// Set while a key press is being typed through the input method, so
     /// text arriving without it (AutoFill, emoji picker) is pasted instead.
     key_text_pending: bool,
-    /// The shell reported a finished command (OSC 133), so `command_running`
-    /// tells whether it sits at a prompt.
-    shell_integration: bool,
     commands_entered: usize,
     local_echo: LocalEcho,
     /// Mouse state (`mouse.rs`).
@@ -112,13 +110,13 @@ pub(super) struct InputState {
 impl InputState {
     pub(super) fn new(scrollback_lines: usize) -> Self {
         Self {
-            history_repeat: RepeatGuard::default(),
+            history_navigation: HistoryNavigation::default(),
+            line_sensitive: false,
             line: InputLineBuffer::new(),
             input_lines: InputLineTracker::new(scrollback_lines.max(1)),
             snippet: None,
             last_select_all: None,
             key_text_pending: false,
-            shell_integration: false,
             commands_entered: 0,
             local_echo: LocalEcho::default(),
             mouse: Default::default(),
@@ -144,7 +142,6 @@ impl TerminalView {
             .read(cx)
             .with_terminal(|t| t.set_kitty_keyboard(true, scrollback));
         let events = cx.subscribe(&self.session, |this, session, event, cx| match event {
-            SessionEvent::CommandFinished(_) => this.input.shell_integration = true,
             SessionEvent::Output if !this.input.local_echo.is_empty() => {
                 let session = session.read(cx);
                 let grid = &session.grid;
@@ -217,7 +214,7 @@ impl TerminalView {
         let key = keystroke.key.as_str();
         let key_char = keystroke.key_char.as_deref();
 
-        if self.snippet_key(key, mods, cx) || self.history_key(key, mods, event.is_held, cx) {
+        if self.snippet_key(key, mods, cx) || self.history_key(key, mods, cx) {
             self.consume(window, cx);
             return;
         }
@@ -344,31 +341,29 @@ impl TerminalView {
         true
     }
 
-    /// Whether the shell sits at a prompt (Swift `isAtPrompt`): never in a
-    /// full-screen program; with shell integration, between commands;
-    /// without it, only until the first command (afterwards the arrows could
-    /// belong to a REPL).
+    /// A finished AI turn is still inside its TUI. Shell prompt state and
+    /// terminal protocols, rather than the last command result, own the arrows.
     fn at_prompt(&self, cx: &App) -> bool {
         let session = self.session.read(cx);
-        if session.exited.is_some() || session.with_terminal(|t| t.is_alt_screen()) {
+        if session.exited.is_some()
+            || session.is_echo_disabled()
+            || session.is_ai_running()
+            || session.command_running
+            || session.is_app_cursor()
+            || session.mouse_mode() != 0
+            || session.with_terminal(|t| t.is_alt_screen() || t.kitty_keyboard_flags() != 0)
+        {
             return false;
         }
-        if self.input.shell_integration || session.last_command.is_some() {
-            !session.command_running
-        } else {
-            self.input.commands_entered == 0
-        }
+        session.shell().is_at_prompt()
+            || (!session.shell().has_shell_integration()
+                && self.input.commands_entered == 0
+                && !session.command_running)
     }
 
     /// Up/Down at a prompt recall this terminal's commands, Option+Up/Down
     /// those of every terminal (Swift `handleHistoryKeyDown`).
-    fn history_key(
-        &mut self,
-        key: &str,
-        mods: KeyMods,
-        held: bool,
-        cx: &mut Context<Self>,
-    ) -> bool {
+    fn history_key(&mut self, key: &str, mods: KeyMods, cx: &mut Context<Self>) -> bool {
         let up = match key {
             "up" => true,
             "down" => false,
@@ -377,28 +372,40 @@ impl TerminalView {
         if mods.platform || mods.control || mods.shift || !self.at_prompt(cx) {
             return false;
         }
-        let tab = self.session.read(cx).id;
-        let history = prompt_history(cx);
-        let command = match (mods.alt, up) {
-            (true, true) => history.previous_global(),
-            (true, false) => history.next_global(),
-            (false, true) => history.previous_in_tab(tab),
-            (false, false) => history.next_in_tab(tab),
-        };
-        // No more history: the key is consumed anyway, as in Swift.
-        let Some(command) = command else {
-            return true;
-        };
-        if self.input.history_repeat.should_skip(&command, up, held) {
-            return true;
+        // Native zsh/bash history is already isolated by stable tab UUID and
+        // survives restoration. Do not mask it with a partial typed-input list:
+        // the shell also knows completions, edits and commands from before the
+        // first snapshot containing Chau7's fallback history.
+        if !mods.alt && self.session.read(cx).native_prompt_history {
+            return false;
         }
-        self.write_raw(&recall_bytes(&command), cx);
-        self.input.line.clear();
-        self.input.line.feed(command.as_bytes());
+        let Some(draft) = self.input.line.draft() else {
+            // A shell completion/search may have changed the visible draft.
+            // Leave it intact instead of replacing it with guessed text.
+            return true;
+        };
+        let command = if mods.alt {
+            self.input
+                .history_navigation
+                .step(prompt_history(cx), true, up, draft)
+        } else {
+            let session = self.session.read(cx);
+            self.input
+                .history_navigation
+                .step(&session.input_history, false, up, draft)
+        };
+        // Empty local history must not fall through to a shell's shared history.
+        if let Some(command) = command {
+            // Use the ordinary admitted-input path so command tracking and
+            // broadcast recipients receive the same replacement as the PTY.
+            let navigation = std::mem::take(&mut self.input.history_navigation);
+            self.write(&recall_bytes(&command), cx);
+            self.input.history_navigation = navigation;
+        }
         true
     }
 
-    /// Bytes generated by Chau7 itself (cursor moves, history recall): sent
+    /// Bytes generated by Chau7 itself (snippet cursor moves): sent
     /// and broadcast like typing, without touching the typed-line buffer.
     fn write_raw(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
         if bytes.is_empty() {
@@ -414,17 +421,20 @@ impl TerminalView {
     /// Every byte the user types or pastes passes here (Swift `handleInput`):
     /// completed lines go to the prompt history and the input line marks.
     pub(super) fn note_user_input(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+        self.input.history_navigation.reset();
+        self.input.line_sensitive |= self.session.read(cx).is_echo_disabled();
         let lines = self.input.line.feed(bytes);
         if lines.is_empty() {
             return;
         }
-        let (tab, echo_off, row, active_ai, session_id, tab_id) = {
+        let at_prompt = self.at_prompt(cx);
+        let sensitive = std::mem::replace(&mut self.input.line_sensitive, false);
+        let (echo_off, row, active_ai, session_id, tab_id) = {
             let session = self.session.read(cx);
             // A password prompt (echo off, canonical mode): never recorded.
             let echo_off = session.is_echo_disabled();
             let row = session.grid.scrollback_rows as i64 + session.cursor.1 as i64;
             (
-                session.id,
                 echo_off,
                 row,
                 session.shell().effective_provider().is_some() || session.ai_app.is_some(),
@@ -439,7 +449,12 @@ impl TerminalView {
             self.input.commands_entered += 1;
             self.input.input_lines.record(row);
             self.danger_note_input_line(&line, row, cx);
-            prompt_history(cx).record(&line, tab, echo_off);
+            if at_prompt {
+                self.session.update(cx, |session, _| {
+                    session.input_history.record(&line, sensitive || echo_off);
+                });
+                prompt_history(cx).record_global(&line, sensitive || echo_off);
+            }
             if let Some(event) = context_session_event(&line, echo_off, active_ai) {
                 crate::proxy::record_context_session_event(event, &session_id, &tab_id, cx);
             }

@@ -230,6 +230,10 @@ fn startup_frame_ready(exited: bool, first_output: bool, loading: bool) -> bool 
 
 pub struct TerminalSession {
     pub id: u64,
+    /// Owned by this terminal, moved and restored with its stable pane.
+    pub input_history: chau7_next_core::input::command_history::CommandHistory,
+    /// zsh/bash were provisioned with a stable tab-owned HISTFILE.
+    pub(crate) native_prompt_history: bool,
     /// This terminal's identity for the analytics proxy and AI run
     /// telemetry (`tabIdentifier`, `CHAU7_NEXT_TAB_ID`): a UUID per session.
     pub tab_identifier: String,
@@ -432,6 +436,9 @@ impl TerminalSession {
             &root.history_file(),
             |key| std::env::var(key).ok(),
         ));
+        let native_prompt_history = history_env
+            .iter()
+            .any(|(key, value)| key == "CHAU7_NEXT_SHELL_HISTORY_FILE" && !value.is_empty());
         env.extend(history_env);
         let start_dir = start_directory(cwd.as_deref(), settings, &home);
         let session_id = uuid::Uuid::new_v4().to_string().to_uppercase();
@@ -537,6 +544,7 @@ impl TerminalSession {
         let drive_output = true;
         let mut session = Self::from_terminal_driving(term, Some(start_dir), drive_output, cx);
         session.tab_identifier = tab_identifier;
+        session.native_prompt_history = native_prompt_history;
         session._shell_history_owner = history_registration;
         session.has_hooks = has_hooks;
         session.shell_name = Path::new(&shell_path)
@@ -848,6 +856,8 @@ impl TerminalSession {
             render_suspended,
             refresh_interval_ns,
             refresh_wake,
+            input_history: Default::default(),
+            native_prompt_history: false,
             tracker: ShellSession::new(config, &directory, now_secs()),
             shell_context: EnvContext {
                 search_path: std::env::var("PATH").ok(),

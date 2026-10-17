@@ -670,13 +670,14 @@ impl PaneTree {
                     .filter(|d| !d.is_empty())
                     .map(PathBuf::from)
                     .or_else(|| self.deferred_cwd.clone());
-                Node::Leaf(PaneItem::Terminal(self.create_terminal(
-                    dir,
-                    *id,
-                    DEFAULT_SIZE,
-                    window,
-                    cx,
-                )))
+                let view = self.create_terminal(dir, *id, DEFAULT_SIZE, window, cx);
+                if let Some(state) = states.get(id) {
+                    let session = view.read(cx).session.clone();
+                    session.update(cx, |session, _| {
+                        session.input_history = state.input_history.clone();
+                    });
+                }
+                Node::Leaf(PaneItem::Terminal(view))
             }
             SavedSplitNode::Editor { id, path } => {
                 let editor = self.create_editor(*id, window, cx);

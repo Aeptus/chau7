@@ -39,6 +39,13 @@ pub struct SavedPane {
     /// A scrollback file exists for this pane.
     #[serde(default)]
     pub scrollback: bool,
+    /// Prompt history belongs to this saved pane, independent of temporary
+    /// runtime session IDs. Old snapshots start with an empty history.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::input::command_history::CommandHistory::is_empty"
+    )]
+    pub input_history: crate::input::command_history::CommandHistory,
     pub ai_provider: Option<String>,
     pub ai_session_id: Option<String>,
     /// `claude --resume <id>` or `codex resume <id>`, typed into the prompt
@@ -143,6 +150,103 @@ pub struct SavedSession {
 mod tests {
     use super::*;
     use crate::session_restore::SavedAxis;
+    #[test]
+    fn input_history_survives_parked_prepared_and_repeated_restore_by_pane_identity() {
+        use crate::input::command_history::{CommandHistory, HistoryNavigation};
+        use crate::session_restore::{SavedAxis, preparation};
+        let home =
+            std::env::temp_dir().join(format!("chau7-history-restore-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).unwrap();
+        let root = crate::data_root::DataRoot::with_home(home.clone(), true);
+        let pane = |id, command: &str| {
+            let mut history = CommandHistory::new();
+            history.record(command, false);
+            SavedPane {
+                id,
+                input_history: history,
+                ..Default::default()
+            }
+        };
+        // Deliberately reuse a pane ID in another tab and share the directory.
+        // Ownership must follow the containing tab plus saved pane, never index,
+        // cwd, focus, or a replacement runtime session ID.
+        let first = SavedTab {
+            uuid: Some(uuid::Uuid::from_u128(1)),
+            cwd: Some(home.clone()),
+            focused_pane: Some(20),
+            layout: Some(SavedSplitNode::Split {
+                id: 30,
+                axis: SavedAxis::Horizontal,
+                ratios: vec![0.5, 0.5],
+                children: vec![
+                    SavedSplitNode::Terminal {
+                        id: 10,
+                        directory: None,
+                    },
+                    SavedSplitNode::Terminal {
+                        id: 20,
+                        directory: None,
+                    },
+                ],
+            }),
+            panes: vec![pane(20, "first secondary"), pane(10, "first primary")],
+            ..Default::default()
+        };
+        let second = SavedTab {
+            uuid: Some(uuid::Uuid::from_u128(2)),
+            cwd: Some(home.clone()),
+            layout: Some(SavedSplitNode::Terminal {
+                id: 10,
+                directory: None,
+            }),
+            panes: vec![pane(10, "second tab")],
+            ..Default::default()
+        };
+        let mut windows = vec![vec![first], vec![second]];
+        for _ in 0..3 {
+            // Parking/save before any view exists is a schema round trip.
+            windows = serde_json::from_str(&serde_json::to_string(&windows).unwrap()).unwrap();
+            for window in &mut windows {
+                for tab in window {
+                    let parked = preparation::prepare_identity(&root, tab.clone(), None).saved;
+                    let activated = preparation::prepare(&root, parked, None).saved;
+                    for old in &tab.panes {
+                        let loaded = activated.panes.iter().find(|p| p.id == old.id).unwrap();
+                        assert_eq!(loaded.input_history, old.input_history);
+                    }
+                    *tab = activated;
+                }
+            }
+        }
+        for (w, id, command) in [
+            (0, 10, "first primary"),
+            (0, 20, "first secondary"),
+            (1, 10, "second tab"),
+        ] {
+            let history = &windows[w][0]
+                .panes
+                .iter()
+                .find(|p| p.id == id)
+                .unwrap()
+                .input_history;
+            assert_eq!(
+                HistoryNavigation::default()
+                    .step(history, false, true, "")
+                    .as_deref(),
+                Some(command)
+            );
+        }
+        let legacy: SavedPane = serde_json::from_str(r#"{"id":10}"#).unwrap();
+        assert!(legacy.input_history.is_empty());
+        assert!(
+            serde_json::to_value(&legacy)
+                .unwrap()
+                .get("input_history")
+                .is_none()
+        );
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
     #[test]
     fn old_saved_pane_omits_new_metadata_and_decodes_unchanged() {
         let value = serde_json::json!({"id":7,"directory":"/repo","scrollback":true,"ai_provider":"codex","ai_session_id":"thread-1","ai_resume_command":"codex resume thread-1"});
