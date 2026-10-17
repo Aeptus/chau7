@@ -102,6 +102,39 @@ while retaining source, identity, signature, and executable-hash checks.
 
 ## Updating an existing Rust installation
 
+For routine local builds, use the stable wrapper from a clean Rust checkout in
+**Terminal.app**, outside Chau7:
+
+```sh
+./apps/chau7-next/scripts/rebuild-macos-production.command
+```
+
+To keep the same short command from any working directory, install its launcher
+once from the repository root:
+
+```sh
+python3 apps/chau7-next/scripts/install-rebuild-command.py
+"$HOME/.local/bin/chau7-rebuild"
+```
+
+The launcher remembers the checkout, uses its current clean commit and reuses a
+private fast build cache. It does not automatically pull or select a branch.
+Use `--debug` only when a separate build with symbols is needed. `--dry-run` is
+read-only; `--no-install` prepares a candidate without quitting or replacing the
+app; `--no-launch` leaves it closed after a successful update. The wrapper
+uses the installed numeric `CFBundleShortVersionString` unless
+`--release-version` is explicit. Supply prerelease suffixes explicitly (for
+example `--release-version 0.6.0-rc.1`); that bundle field does not retain them.
+Run the launcher installer again from a new checkout if the old one is retired.
+
+Compilation and candidate validation happen first. The existing updater then
+makes the pre-quit snapshot and asks you to quit normally with **⌘Q**. Keep
+Chau7 closed until the wrapper finishes; it reopens the app only after a
+successful update. All restoration-loss and rollback guards below remain in
+force. A blocked update is not automatically retried or recovered.
+
+### Updating a separately prepared candidate
+
 Use `apps/chau7-next/scripts/update-macos-production.command` for a Mac already
 running production Rust Chau7. The migration script above is only for the first
 Swift import and refuses an existing Rust destination.

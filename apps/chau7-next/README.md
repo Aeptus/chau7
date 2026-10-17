@@ -53,7 +53,7 @@ download is not a prerequisite for this bundle.
 ```bash
 cd apps/chau7-next
 ./scripts/bundle-macos.sh                      # fast optimized build
-OUT_DIR=~/Applications ./scripts/bundle-macos.sh   # or build straight into ~/Applications
+OUT_DIR="$HOME/Downloads/Chau7-Next-$(date +%Y%m%d-%H%M%S)" ./scripts/bundle-macos.sh
 ```
 
 The default keeps `opt-level=3`, turns LTO off, uses 64 codegen units and
@@ -95,6 +95,52 @@ bundle. Set `BUILD_METADATA_DIR` to put it elsewhere.
 
 For development: `cargo run` from `apps/chau7-next` (logs go to the state
 folder below; set `CHAU7_NEXT_LOG_STDOUT=1` to also print them).
+
+### Rebuild and relaunch an existing Rust production installation
+
+Run this in **macOS Terminal.app**, outside Chau7, from the repository root:
+
+```bash
+./apps/chau7-next/scripts/rebuild-macos-production.command
+```
+
+For a short command that works from any directory, install its local launcher once:
+
+```bash
+python3 apps/chau7-next/scripts/install-rebuild-command.py
+"$HOME/.local/bin/chau7-rebuild"
+```
+
+The launcher remembers this source checkout, not a particular build or commit.
+It does not fetch, switch branches or publish a release. Keep this checkout and its
+disk available. After moving to another checkout, run its installer again to
+update the same launcher. If `~/.local/bin` is in your PATH, `chau7-rebuild` is
+sufficient. An existing private Cargo cache can be reused by passing
+`--target-directory /absolute/path/to/cache` to the launcher installer.
+
+The default builds an optimized production candidate using a persistent fast
+cache, validates its receipt, and snapshots restoration data before asking you
+to quit Chau7 with **⌘Q**. Leave it closed while the updater compares saved
+windows/tabs and installs the candidate. The wrapper reopens Chau7 only after a
+successful installation. It preserves backups and refuses to continue after a
+restoration loss. A failed build never asks you to quit. This workflow requires
+an existing Rust production install; it does not rerun the Swift migration.
+
+Useful options:
+
+```bash
+chau7-rebuild --dry-run      # inspect the plan; no build, install or launch
+chau7-rebuild --no-install   # prepare and verify a candidate; leave Chau7 running
+chau7-rebuild --no-launch    # build and install; leave Chau7 closed afterward
+chau7-rebuild --debug        # explicitly request symbols in a separate cache
+```
+
+Local rebuilds default to the installed numeric bundle version
+(`CFBundleShortVersionString`). Use `--release-version 0.6.0-rc.1` explicitly
+when preserving a prerelease suffix; it is not stored in that bundle field.
+Each candidate gets a fresh numeric build number. See the
+[production update guide](../../docs/rust-port/PRODUCTION-RELEASE.md#updating-an-existing-rust-installation)
+for the lower-level updater and recovery requirements.
 
 ## Data and coexistence
 
