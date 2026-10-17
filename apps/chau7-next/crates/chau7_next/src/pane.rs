@@ -80,17 +80,6 @@ fn restored_primary_cwd(saved: &SavedTab, deferred_cwd: Option<&PathBuf>) -> Opt
     deferred_cwd.cloned().or_else(|| saved.cwd.clone())
 }
 
-fn close_warning_status(status: chau7_next_core::shell_session::CommandStatus) -> bool {
-    use chau7_next_core::shell_session::CommandStatus;
-    matches!(
-        status,
-        CommandStatus::Running
-            | CommandStatus::WaitingForInput
-            | CommandStatus::ApprovalRequired
-            | CommandStatus::Stuck
-    )
-}
-
 fn new_pane_id() -> PaneId {
     (uuid::Uuid::new_v4().as_u128() as u64 & 0x0000_ffff_ffff_ffff) | 1
 }
@@ -1750,15 +1739,23 @@ impl PaneTree {
             .and_then(|s| s.read(cx).cwd.clone())
     }
 
-    /// Whether any pane has a command running (close confirmation).
-    /// Current Swift `countRunningProcesses` counts busy pane statuses,
-    /// rather than scanning the operating system from a close dialog.
+    /// Count panes that own running work, including agents between turns
+    /// and commands without shell integration. Reuse the shared background
+    /// process snapshot so close confirmation never scans on the UI thread.
     pub fn running_process_count(&self, cx: &App) -> usize {
         self.views()
             .iter()
             .map(|v| {
                 let session = v.read(cx).session.read(cx);
-                usize::from(session.exited.is_none() && close_warning_status(session.status()))
+                if session.exited.is_some() {
+                    return 0;
+                }
+                let has_children = !crate::monitoring::process_tree::observed_names(
+                    session.shell_pid() as u32,
+                    cx,
+                )
+                .is_empty();
+                usize::from(session.shell().requires_process_close_warning(has_children))
             })
             .sum()
     }
@@ -2614,16 +2611,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn close_counts_match_all_current_swift_statuses() {
-        use chau7_next_core::shell_session::CommandStatus::*;
-        for status in [Running, WaitingForInput, ApprovalRequired, Stuck] {
-            assert!(super::close_warning_status(status));
-        }
-        for status in [Idle, Done, Exited] {
-            assert!(!super::close_warning_status(status));
-        }
-    }
     #[test]
     fn parked_identity_result_keeps_full_payload_and_rejects_selection_owner_and_generation_changes()
      {
