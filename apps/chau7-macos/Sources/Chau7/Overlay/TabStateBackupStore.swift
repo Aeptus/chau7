@@ -61,9 +61,9 @@ enum TabStateBackupStore {
         loadFullCandidate: (URL) -> [[SavedTabState]]? = loadFullBackup
     ) -> [[SavedTabState]] {
         var merged = baseWindows
-        /// A current, integrity-checked bundle is authoritative about plain
-        /// shells. Do not resurrect a former AI session into one from history.
         func needsRecovery(_ windows: [[SavedTabState]]) -> Bool {
+            // A current, integrity-checked bundle is authoritative about plain
+            // shells. Do not resurrect a former AI session into one from history.
             windows.joined().contains { $0.needsAIResumeBackup(recoverEmptyIdentities: recoverEmptyIdentities) }
         }
         guard needsRecovery(merged) else { return merged }

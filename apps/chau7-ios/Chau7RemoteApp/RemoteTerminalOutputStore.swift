@@ -9,6 +9,9 @@ import Foundation
 struct RemoteTerminalOutputStore {
     private var committedByTabID: [UInt32: String] = [:]
     private var pendingByTabID = RemotePendingOutputBuffer<String>()
+    /// UTF-8 scalars may be split across arbitrary PTY/WebSocket frames. Keep
+    /// only an incomplete, valid suffix until the next chunk completes it.
+    private var incompleteUTF8ByTabID: [UInt32: Data] = [:]
 
     var hasPendingOutput: Bool {
         !pendingByTabID.isEmpty
@@ -25,15 +28,27 @@ struct RemoteTerminalOutputStore {
     mutating func reset() {
         committedByTabID.removeAll()
         pendingByTabID.removeAll(keepingCapacity: true)
+        incompleteUTF8ByTabID.removeAll(keepingCapacity: true)
     }
 
     mutating func retainVisibleTabs(_ visibleTabIDs: Set<UInt32>) {
         committedByTabID = committedByTabID.filter { visibleTabIDs.contains($0.key) }
         pendingByTabID.retain(only: visibleTabIDs)
+        incompleteUTF8ByTabID = incompleteUTF8ByTabID.filter { visibleTabIDs.contains($0.key) }
     }
 
     mutating func append(_ data: Data, to tabID: UInt32) {
-        let text = String(decoding: RemoteOutputTuning.capIncomingFrame(data), as: UTF8.self)
+        let chunk = RemoteOutputTuning.capIncomingFrame(data)
+        guard !chunk.isEmpty else { return }
+
+        var bytes = incompleteUTF8ByTabID.removeValue(forKey: tabID) ?? Data()
+        bytes.append(chunk)
+        let completeCount = Self.incompleteUTF8SuffixStart(in: bytes) ?? bytes.count
+        let text = String(decoding: bytes.prefix(completeCount), as: UTF8.self)
+        if completeCount < bytes.count {
+            incompleteUTF8ByTabID[tabID] = Data(bytes.suffix(bytes.count - completeCount))
+        }
+        guard !text.isEmpty else { return }
         pendingByTabID.append(text, to: tabID) { existing, chunk in
             existing.append(chunk)
         }
@@ -42,6 +57,7 @@ struct RemoteTerminalOutputStore {
     mutating func replaceSnapshot(_ data: Data, for tabID: UInt32) {
         let text = String(decoding: RemoteOutputTuning.capSnapshot(data), as: UTF8.self)
         pendingByTabID.drain(tabID: tabID)
+        incompleteUTF8ByTabID[tabID] = nil
         committedByTabID[tabID] = RemoteOutputTuning.trimRetainedText(text)
     }
 
@@ -72,5 +88,42 @@ struct RemoteTerminalOutputStore {
             return RemoteOutputTuning.trimRetainedText(committed + pending)
         }
         return committed
+    }
+
+    /// Returns the start of a valid but incomplete UTF-8 scalar at the end of
+    /// `data`. Malformed bytes are deliberately left in the decoded prefix so
+    /// String(decoding:as:) retains its replacement-character behavior.
+    private static func incompleteUTF8SuffixStart(in data: Data) -> Int? {
+        let bytes = Array(data.suffix(4))
+        guard !bytes.isEmpty else { return nil }
+
+        let firstCandidate = max(0, bytes.count - 4)
+        var leadIndex = bytes.count - 1
+        while leadIndex > firstCandidate, bytes[leadIndex] & 0xC0 == 0x80 {
+            leadIndex -= 1
+        }
+
+        let lead = bytes[leadIndex]
+        let expectedLength: Int
+        switch lead {
+        case 0xC2 ... 0xDF: expectedLength = 2
+        case 0xE0 ... 0xEF: expectedLength = 3
+        case 0xF0 ... 0xF4: expectedLength = 4
+        default: return nil
+        }
+
+        guard bytes.count - leadIndex < expectedLength else { return nil }
+        for offset in 1 ..< (bytes.count - leadIndex) {
+            let continuation = bytes[leadIndex + offset]
+            guard continuation & 0xC0 == 0x80 else { return nil }
+            guard offset == 1 else { continue }
+            if (lead == 0xE0 && continuation < 0xA0)
+                || (lead == 0xED && continuation > 0x9F)
+                || (lead == 0xF0 && continuation < 0x90)
+                || (lead == 0xF4 && continuation > 0x8F) {
+                return nil
+            }
+        }
+        return data.count - bytes.count + leadIndex
     }
 }

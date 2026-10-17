@@ -247,7 +247,7 @@ typedef struct GridDeltaSnapshot {
  */
 typedef struct DisplayRowBuffer {
     /*
-     Folded display cells. Exactly `display_cols * display_rows` elements.
+     Folded display cells. Exactly `cell_count` elements; rows may be shorter.
      */
     struct CellData *cells;
     /*
@@ -287,6 +287,12 @@ typedef struct DisplayRowBuffer {
      Source grid height the fold was computed from.
      */
     uint16_t source_rows;
+    /*
+     Cursor coordinates after folding, valid only when `cursor_visible != 0`.
+     */
+    uint16_t cursor_col;
+    uint16_t cursor_row;
+    uint8_t cursor_visible;
 } DisplayRowBuffer;
 
 /*

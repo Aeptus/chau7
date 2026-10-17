@@ -70,3 +70,48 @@ pub fn show_config() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tee::TeeMode;
+
+    #[test]
+    fn updated_toml_preserves_default_config_bytes() {
+        assert_eq!(toml::to_string_pretty(&Config::default()).unwrap(),
+            "[tracking]\n\n[tee]\nenabled = true\nmode = \"failures\"\nmax_files = 20\nmax_file_size = 1048576\n");
+    }
+
+    #[test]
+    fn updated_toml_keeps_explicit_disabled_zero_unicode_and_escaped_paths() {
+        // Pure parse/serialize: never uses load/save or the user's config root.
+        let source = r#"[tracking]
+database_path = 'synthetic/été.sqlite'
+[tee]
+enabled = false
+mode = "never"
+max_files = 0
+max_file_size = 0
+directory = 'synthetic\quoted"directory'
+"#;
+        let parsed: Config = toml::from_str(source).unwrap();
+        assert!(!parsed.tee.enabled);
+        assert_eq!(parsed.tee.mode, TeeMode::Never);
+        assert_eq!(parsed.tee.max_files, 0);
+        assert_eq!(parsed.tee.max_file_size, 0);
+        assert_eq!(
+            parsed.tracking.database_path.as_deref(),
+            Some(std::path::Path::new("synthetic/été.sqlite"))
+        );
+        let output = toml::to_string_pretty(&parsed).unwrap();
+        let reopened: Config = toml::from_str(&output).unwrap();
+        assert_eq!(
+            reopened.tracking.database_path,
+            parsed.tracking.database_path
+        );
+        assert_eq!(reopened.tee.directory, parsed.tee.directory);
+        assert_eq!(toml::to_string_pretty(&reopened).unwrap(), output);
+        assert!(toml::from_str::<Config>("[tee]\nenabled = true\nenabled = false\n").is_err());
+        assert!(toml::from_str::<Config>("[tee]\nenabled = [\n").is_err());
+    }
+}

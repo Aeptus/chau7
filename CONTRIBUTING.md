@@ -107,6 +107,8 @@ Quick orientation:
 - **chau7-proxy**: Go TLS proxy for API analytics.
 - **services/chau7-relay**: Cloudflare Worker for the bug report relay and remote control.
 
+The current published macOS app is built from `apps/chau7-macos` (SwiftUI and AppKit). Rust/GPUI work lives in `apps/chau7-next`; branch and CI artifacts are development builds, not the current stable download. Follow [the dual-ship plan](docs/rust-port/DUAL-SHIP.md) and [parity status](docs/rust-port/PARITY.md). Production packaging and the state transition remain gated until the Rust release candidate is accepted; see [the production release guide](docs/rust-port/PRODUCTION-RELEASE.md).
+
 ## What We're Looking For
 
 - Bug fixes. Especially with tests.

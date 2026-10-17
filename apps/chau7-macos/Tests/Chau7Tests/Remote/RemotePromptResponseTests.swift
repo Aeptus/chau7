@@ -90,4 +90,45 @@ final class RemotePromptResponseTests: XCTestCase {
         XCTAssertFalse(input.matchesTarget(sessionID: "original", terminalIdentity: ObjectIdentifier(replacement)))
         XCTAssertFalse(input.matchesTarget(sessionID: "original", terminalIdentity: nil))
     }
+
+    @MainActor
+    func testEvictingProtectedInputAlsoDropsItsApprovalContext() {
+        var inputs = [
+            "old-request": ProtectedRemoteInput(
+                tabID: 7,
+                text: "fixture",
+                flaggedCommand: "fixture",
+                paneID: nil,
+                runtimeSessionID: "session",
+                terminalIdentity: nil
+            )
+        ]
+        var approvals = [
+            "old-request": PendingRemoteApprovalContext(
+                requestID: "old-request",
+                tabID: 7,
+                tabTitle: "Shell",
+                toolName: "Codex",
+                projectName: nil,
+                branchName: nil,
+                currentDirectory: nil,
+                recentCommand: nil,
+                contextNote: nil,
+                sessionID: "session",
+                command: "fixture",
+                flaggedCommand: "fixture",
+                requestedAt: Date(timeIntervalSince1970: 0)
+            )
+        ]
+
+        XCTAssertEqual(
+            RemoteControlManager.evictOldestProtectedInput(
+                from: &inputs,
+                approvalContexts: &approvals
+            ),
+            "old-request"
+        )
+        XCTAssertTrue(inputs.isEmpty)
+        XCTAssertTrue(approvals.isEmpty)
+    }
 }

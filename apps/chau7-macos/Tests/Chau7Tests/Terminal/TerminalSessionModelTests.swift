@@ -248,7 +248,7 @@ final class TerminalSessionModelTests: XCTestCase {
     }
 
     func testResolveStartDirectoryWithTilde() {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
         let result = TerminalSessionModel.resolveStartDirectory("~")
         XCTAssertEqual(
             result,
@@ -258,7 +258,7 @@ final class TerminalSessionModelTests: XCTestCase {
     }
 
     func testResolveStartDirectoryWithTildeSubpath() {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
         let result = TerminalSessionModel.resolveStartDirectory("~/Documents")
         let expected = (home as NSString).appendingPathComponent("Documents")
         XCTAssertEqual(
@@ -269,7 +269,7 @@ final class TerminalSessionModelTests: XCTestCase {
     }
 
     func testResolveStartDirectoryWithEmptyString() {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
         let result = TerminalSessionModel.resolveStartDirectory("")
         XCTAssertEqual(
             result,
@@ -279,7 +279,7 @@ final class TerminalSessionModelTests: XCTestCase {
     }
 
     func testResolveStartDirectoryWithWhitespace() {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
         let result = TerminalSessionModel.resolveStartDirectory("   ")
         XCTAssertEqual(
             result,
@@ -289,7 +289,7 @@ final class TerminalSessionModelTests: XCTestCase {
     }
 
     func testResolveStartDirectoryWithRelativePath() {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
         let result = TerminalSessionModel.resolveStartDirectory("Desktop")
         let expected = URL(fileURLWithPath: (home as NSString).appendingPathComponent("Desktop")).standardized.path
         XCTAssertEqual(

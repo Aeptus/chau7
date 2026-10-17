@@ -62,6 +62,9 @@ type Config struct {
 	// InjectionRulesPath is the path to the prompt injection rules JSON file.
 	// If empty, defaults to ~/.chau7/prompt-rules.json.
 	InjectionRulesPath string
+
+	// Optional Next-owned per-repository overrides; empty preserves Swift behavior.
+	InjectionRepoOverridesDir string
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -78,6 +81,7 @@ type Config struct {
 //   - CHAU7_MOCKUP_URL: Mockup SaaS base URL (optional, v1.2)
 //   - CHAU7_MOCKUP_API_KEY: Mockup API key (optional, v1.2)
 //   - CHAU7_ENABLE_BASELINE: "1" to enable baseline estimation (default: "1", v1.2)
+//   - CHAU7_INJECTION_REPO_OVERRIDES: Optional Next-owned rule overlay directory
 //   - CHAU7_TLS_PORT: HTTPS/WSS port (default: CHAU7_PROXY_PORT+1)
 //   - CHAU7_TLS_CERT: Path to TLS certificate PEM (default: <db_dir>/proxy-cert.pem)
 //   - CHAU7_TLS_KEY: Path to TLS private key PEM (default: <db_dir>/proxy-key.pem)
@@ -150,6 +154,7 @@ func LoadConfig() *Config {
 	}
 
 	cfg.InjectionRulesPath = os.Getenv("CHAU7_INJECTION_RULES")
+	cfg.InjectionRepoOverridesDir = os.Getenv("CHAU7_INJECTION_REPO_OVERRIDES")
 
 	return cfg
 }

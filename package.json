@@ -2,7 +2,7 @@
   "name": "chau7-quality",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.11.1",
+  "packageManager": "pnpm@12.11.2",
   "scripts": {
     "hooks:install": "node scripts/git/install-hooks.mjs",
     "quality:staged": "node scripts/git/run-staged-checks.mjs",

@@ -11,6 +11,31 @@
 
 use log::{debug, trace, warn};
 
+/// Keep Kitty's strict padded STANDARD format. The new engine detects AVX2
+/// or NEON once and uses its scalar backend when the running CPU lacks it.
+/// Other target architectures retain the ordinary scalar engine.
+fn decode_kitty_base64(payload: &[u8]) -> Result<Vec<u8>, base64::DecodeError> {
+    use base64::Engine;
+    #[cfg(any(
+        target_arch = "x86_64",
+        all(target_arch = "aarch64", target_feature = "neon")
+    ))]
+    {
+        static ENGINE: std::sync::LazyLock<base64::engine::simd::Simd> =
+            std::sync::LazyLock::new(|| {
+                base64::engine::simd::Simd::standard(base64::engine::general_purpose::PAD)
+            });
+        ENGINE.decode(payload)
+    }
+    #[cfg(not(any(
+        target_arch = "x86_64",
+        all(target_arch = "aarch64", target_feature = "neon")
+    )))]
+    {
+        base64::engine::general_purpose::STANDARD.decode(payload)
+    }
+}
+
 // ============================================================================
 // Public Types
 // ============================================================================
@@ -60,6 +85,18 @@ pub struct DecodedImage {
     pub anchor_col: u16,
     /// Protocol that produced this image.
     pub protocol: ImageProtocol,
+    /// iTerm2 arguments as sent (`File=name=...;width=...;inline=1`); empty for
+    /// the other protocols. Not part of the C API (Rust callers only).
+    pub args: String,
+    /// Cursor row and column at the point of the stream where the image
+    /// arrived. `anchor_row`/`anchor_col` keep their historical meaning (the
+    /// cursor after the whole output chunk, as the C API reports them); these
+    /// are exact even when text follows the image in the same chunk. Rust only.
+    pub arrival_row: i32,
+    pub arrival_col: u16,
+    /// Scrollback size when the image arrived, so a host can anchor the
+    /// image to an absolute line (`history_size + arrival_row`). Rust only.
+    pub history_size: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,6 +210,10 @@ pub struct GraphicsInterceptor {
     iterm_data: Vec<u8>,
     /// Shell integration events extracted this feed cycle.
     shell_events: Vec<ShellIntegrationEvent>,
+    /// For each graphics event of the last feed, the passthrough length when
+    /// it completed, so the host can place the image where the cursor was
+    /// at that point of the stream (see `take_event_offsets`).
+    event_offsets: Vec<usize>,
     /// Whether each protocol is enabled.
     pub sixel_enabled: bool,
     pub kitty_enabled: bool,
@@ -200,6 +241,7 @@ impl GraphicsInterceptor {
             iterm_args: Vec::new(),
             iterm_data: Vec::new(),
             shell_events: Vec::new(),
+            event_offsets: Vec::new(),
             sixel_enabled: true,
             kitty_enabled: true,
             iterm2_enabled: true, // iTerm2 on by default
@@ -220,6 +262,7 @@ impl GraphicsInterceptor {
     ) -> (&'a [u8], Vec<GraphicsEvent>, Vec<ShellIntegrationEvent>) {
         self.passthrough.clear();
         self.shell_events.clear();
+        self.event_offsets.clear();
         let mut events = Vec::new();
         let mut i = 0;
 
@@ -571,6 +614,12 @@ impl GraphicsInterceptor {
         (owned, events, shell_events)
     }
 
+    /// Passthrough offsets of the graphics events returned by the last
+    /// `feed` / `feed_owned`, one per event, in order.
+    pub fn take_event_offsets(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.event_offsets)
+    }
+
     // ── Event Emitters ───────────────────────────────────────────────
 
     fn emit_sixel(&mut self, events: &mut Vec<GraphicsEvent>) {
@@ -582,6 +631,7 @@ impl GraphicsInterceptor {
                 data.len(),
                 params.len()
             );
+            self.event_offsets.push(self.passthrough.len());
             events.push(GraphicsEvent::Sixel { params, data });
         }
     }
@@ -595,6 +645,7 @@ impl GraphicsInterceptor {
             control,
             payload.len()
         );
+        self.event_offsets.push(self.passthrough.len());
         events.push(GraphicsEvent::Kitty { control, payload });
     }
 
@@ -607,6 +658,7 @@ impl GraphicsInterceptor {
             args,
             base64_data.len()
         );
+        self.event_offsets.push(self.passthrough.len());
         events.push(GraphicsEvent::ITerm2 { args, base64_data });
     }
 
@@ -1057,8 +1109,7 @@ impl KittyAccumulator {
         }
 
         // Decode base64 payload
-        use base64::Engine;
-        let raw = match base64::engine::general_purpose::STANDARD.decode(&self.payload) {
+        let raw = match decode_kitty_base64(&self.payload) {
             Ok(data) => data,
             Err(e) => {
                 warn!("Kitty: base64 decode failed: {}", e);
@@ -1270,6 +1321,62 @@ impl ImageStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kitty_base64_engine_keeps_exact_scalar_bytes_and_errors() {
+        use base64::Engine;
+        let scalar = base64::engine::general_purpose::STANDARD;
+        // Include short tails and both SIMD block boundaries, plus a payload
+        // large enough to enter the vector path rather than only scalar tails.
+        for length in (0..=160).chain([1023, 1024, 1025, 4095, 4096, 4097]) {
+            let bytes: Vec<u8> = (0..length).map(|index| (index % 256) as u8).collect();
+            let encoded = scalar.encode(&bytes);
+            assert_eq!(decode_kitty_base64(encoded.as_bytes()).unwrap(), bytes);
+            for invalid in [b'?', 0, b'\n', 0xff] {
+                let mut malformed = encoded.as_bytes().to_vec();
+                malformed.push(invalid);
+                assert_eq!(decode_kitty_base64(&malformed), scalar.decode(&malformed));
+                if !encoded.is_empty() {
+                    malformed = encoded.as_bytes().to_vec();
+                    let index = malformed.len() / 2;
+                    malformed[index] = invalid;
+                    assert_eq!(decode_kitty_base64(&malformed), scalar.decode(&malformed));
+                }
+            }
+        }
+        for malformed in [
+            "Zg",
+            "Zh==",
+            "Zg===",
+            "Zg==\n",
+            "Zg==A",
+            "_w==",
+            "Zg==\0",
+            "=AAA",
+            "A=AA",
+            "AA=A",
+            "AAA=AAAA",
+            "日本語",
+            "é===",
+        ] {
+            assert_eq!(
+                decode_kitty_base64(malformed.as_bytes()),
+                scalar.decode(malformed)
+            );
+            assert!(decode_kitty_base64(malformed.as_bytes()).is_err());
+        }
+    }
+
+    #[test]
+    fn kitty_base64_pixels_are_owned_after_input_is_released() {
+        use base64::Engine;
+        let expected: Vec<u8> = (0..=255).collect();
+        let decoded = {
+            let payload = base64::engine::general_purpose::STANDARD.encode(&expected);
+            decode_kitty_base64(payload.as_bytes()).unwrap()
+        };
+        assert_eq!(decoded, expected);
+    }
 
     #[test]
     fn test_passthrough_normal_data() {
@@ -1843,6 +1950,10 @@ mod tests {
             anchor_row: 0,
             anchor_col: 0,
             protocol: ImageProtocol::Sixel,
+            args: String::new(),
+            arrival_row: 0,
+            arrival_col: 0,
+            history_size: 0,
         };
         let id = store.push(img);
         assert_eq!(id, 1);

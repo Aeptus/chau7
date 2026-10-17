@@ -1,4 +1,5 @@
 import AppKit
+import Chau7Core
 
 // chau7:// URL scheme handling, split out of AppDelegate.swift verbatim.
 // `application(_:open:)` satisfies the NSApplicationDelegate requirement from
@@ -18,7 +19,7 @@ extension AppDelegate {
         let host = url.host ?? ""
         let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 
-        Log.info("AppDelegate: URL handler: \(url)")
+        Log.info("AppDelegate: URL handler action: \(host)")
 
         switch host {
         case "run":
@@ -33,9 +34,11 @@ extension AppDelegate {
 
         case "ssh":
             // chau7://ssh/user@host or chau7://ssh/user@host:port
-            guard !path.isEmpty else { return }
-            let sanitized = path.replacingOccurrences(of: "'", with: "'\\''")
-            openNewTabWithCommand("ssh '\(sanitized)'")
+            guard let command = ShellEscaping.sshCommand(forURLTarget: path) else {
+                Log.warn("AppDelegate: chau7://ssh invalid destination")
+                return
+            }
+            confirmAndRun(command: command, source: url.absoluteString)
 
         case "cd":
             // chau7://cd/path/to/directory
@@ -66,9 +69,8 @@ extension AppDelegate {
     private func openNewTabWithCommand(_ command: String) {
         guard let model = ensureActiveOverlayModel() else { return }
         model.newTab()
-        // Delay slightly to let the terminal initialize
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            model.selectedTab?.session?.sendInput(command + "\n")
-        }
+        // sendInput queues until the new terminal attaches. Resolve the target
+        // now so a selection change cannot redirect this URL's command.
+        model.selectedTab?.session?.sendInput(command + "\n")
     }
 }

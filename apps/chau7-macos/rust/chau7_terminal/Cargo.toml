@@ -6,7 +6,8 @@ license = "AGPL-3.0-or-later"
 publish = false
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+# rlib lets Chau7 Next (apps/chau7-next) use this crate directly, without FFI.
+crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 alacritty_terminal = "0.26"

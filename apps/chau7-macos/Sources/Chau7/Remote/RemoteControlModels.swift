@@ -195,6 +195,30 @@ struct PendingRemoteApprovalContext {
     let flaggedCommand: String
     let requestedAt: Date
 
+    /// Preserve request semantics while filling the captured target's context
+    /// on the first delivery as well as subsequent reconnects.
+    func enriching(_ payload: ApprovalRequestPayload) -> ApprovalRequestPayload {
+        ApprovalRequestPayload(
+            requestID: payload.requestID,
+            command: payload.command,
+            flaggedCommand: payload.flaggedCommand,
+            timestamp: payload.timestamp,
+            tabTitle: tabTitle,
+            toolName: toolName,
+            projectName: projectName,
+            branchName: branchName,
+            currentDirectory: currentDirectory,
+            recentCommand: recentCommand,
+            contextNote: contextNote,
+            sessionID: sessionID,
+            pushTitle: payload.pushTitle,
+            pushSubtitle: payload.pushSubtitle,
+            pushBody: payload.pushBody,
+            spineSeq: payload.spineSeq,
+            severity: payload.severity
+        )
+    }
+
     var approval: RemoteActivityApproval {
         RemoteActivityApproval(
             requestID: requestID,

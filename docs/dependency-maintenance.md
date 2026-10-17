@@ -8,13 +8,34 @@ surface is `apps/chau7-ios/Chau7RemoteApp`, not a synthetic second Package.swift
 The [upstream fetcher](https://github.com/dependabot/dependabot-core/blob/main/swift/lib/dependabot/swift/file_fetcher.rb)
 defines this support.
 
-Dependabot covers macOS/iOS Swift, both npm services, both Go modules, the Rust
-workspace, Python project/test requirements and Actions. Compatible minor/patch
-updates are grouped; majors and security updates are not globally ignored or
-silently merged. Root pnpm is the dependency-free quality runner, pinned by
-packageManager; service npm packages own package-lock.json and use npm ci. A root
-pnpm lock is unnecessary while the root has no dependency declarations. Rust
-members resolve through their parent workspace; only its Cargo.lock is tracked.
+Dependabot covers macOS/iOS Swift, both npm services, both Go modules, both Rust
+workspaces (apps/chau7-macos/rust and apps/chau7-next), Python project/test
+requirements and Actions. Compatible minor/patch updates are grouped; major and
+security updates are surfaced for review and are not silently merged. The two
+Rust workspaces have separate tracked app-level Cargo.lock files; the vendored
+GPUI package lockfiles are provenance snapshots, not workspace locks.
+
+In Chau7 Next, the gpui* family is grouped for version and security updates.
+gpui-kit and the three local GPUI path patches form one pinned compatible
+snapshot. Dependabot can surface candidate updates, but a GPUI update must
+coordinate the exact manifest pins, affected vendor sources, provenance and
+modification ledgers, and Cargo.lock in one reviewed change. Do not merge a
+partial GPUI update.
+
+The Go proxy's modernc SQLite/libc versions are also a matched pair. The
+[driver guidance](https://pkg.go.dev/modernc.org/sqlite#section-readme) requires
+the exact libc version in the driver's go.mod because that dependency is
+fragile. SQLite 1.60.1 declares libc 1.77.1; an independently newer libc release
+is not a supported standalone upgrade of that pair.
+
+Root pnpm is the dependency-free quality runner, pinned by packageManager;
+service npm packages own package-lock.json and use npm ci. A root pnpm lock is
+unnecessary while the root has no dependency declarations. A scheduled update
+entry describes coverage, not an applied upgrade. A specific update is evidenced
+by its manifest/lockfile diff and reviewed CI result; those establish the version
+change and tested compatibility, not that every newer release was adopted.
+GPUI's source rebase additionally has upstream checksum, provenance and
+modification-ledger records.
 
 Repository text follows LF through .gitattributes; no history normalization was
 performed. Root CHANGELOG.md is already a symlink to the app's canonical changelog; it is preserved. Local

@@ -2,6 +2,8 @@
 
 Your coding agents are running. All of them. Across models, across windows, sometimes at 3 AM. Chau7 is the macOS terminal that notices they exist, tracks what they cost, and lets you steer from the outside. Named after a sock. We're not even sorry.
 
+> **Release status:** The published Chau7 download is still the SwiftUI/AppKit app. A Rust/GPUI production transition is in preparation and has not been released. Homebrew and the Releases link below continue to point to the current published stable build. See [the dual-ship plan](docs/rust-port/DUAL-SHIP.md) and [parity status](docs/rust-port/PARITY.md).
+
 [![Release](https://github.com/aeptus/chau7/actions/workflows/release.yml/badge.svg)](https://github.com/aeptus/chau7/actions/workflows/release.yml)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
@@ -34,6 +36,7 @@ apps/
       chau7_optim/          #   Context Token Optimization engine
       chau7_md/             #   Terminal markdown renderer
     chau7-proxy/            # Go TLS proxy for API analytics
+  chau7-next/               # Chau7 Next: Rust/GPUI port developed alongside the stable app (Cargo)
   chau7-ios/                # Native iOS companion app
 services/
   chau7-relay/              # Cloudflare Workers relay
@@ -44,6 +47,7 @@ scripts/                    # Repo-level CI and build orchestration
 - [macOS app](apps/chau7-macos/README.md)
 - [iOS app](apps/chau7-ios/README.md)
 - [Rust terminal crate](apps/chau7-macos/rust/chau7_terminal/README.md)
+- [Chau7 Next (Rust/GPUI port)](apps/chau7-next/README.md), plan in [docs/rust-port](docs/rust-port/)
 - [Relay service](services/chau7-relay/README.md)
 - [Remote agent](services/chau7-remote/README.md)
 - [Remote protocol](services/chau7-remote/docs/PROTOCOL.md)

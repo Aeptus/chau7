@@ -1,5 +1,7 @@
 # Chau7 (macOS)
 
+> This directory documents the published SwiftUI/AppKit app, which remains the current stable download while the Rust/GPUI production transition is in preparation. The port lives in [`apps/chau7-next`](../chau7-next/README.md); its CI artifacts are not yet the stable release. See the [dual-ship plan](../../docs/rust-port/DUAL-SHIP.md) and [production release guide](../../docs/rust-port/PRODUCTION-RELEASE.md).
+
 Chau7 is a macOS terminal app with a Dock icon, menu bar controls and floating terminal overlay built for AI-assisted CLI work. It tails local JSONL logs and CLI history to send notifications and keep a live multi-tab terminal in view.
 
 ## Feature Highlights

@@ -11,7 +11,11 @@ This repository keeps public-facing documentation close to the code it describes
 - [`scripts/README.md`](../scripts/README.md): build orchestration and CI script reference
 - [`quality-gates.md`](quality-gates.md): hook architecture, quality registry contract, cache policy, and failure reproduction
 - [`aethyme-pr-delivery.md`](aethyme-pr-delivery.md): durable Aethyme PR activity delivery to exact Chau7 agent sessions
-- [`apps/chau7-macos/README.md`](../apps/chau7-macos/README.md): macOS app build, run, packaging, and local verification
+- [`apps/chau7-macos/README.md`](../apps/chau7-macos/README.md): current stable SwiftUI/AppKit app build, packaging, and local verification
+- [`apps/chau7-next/README.md`](../apps/chau7-next/README.md): Rust/GPUI port development and preview packaging
+- [`rust-port/DUAL-SHIP.md`](rust-port/DUAL-SHIP.md): current coexistence and planned production cutover
+- [`rust-port/PARITY.md`](rust-port/PARITY.md): implementation inventory and revision-scoped validation status
+- [`rust-port/PRODUCTION-RELEASE.md`](rust-port/PRODUCTION-RELEASE.md): release candidate, migration, and production release process
 - [`apps/chau7-macos/docs/ARCHITECTURE.md`](../apps/chau7-macos/docs/ARCHITECTURE.md): current macOS architecture overview
 - [`apps/chau7-macos/docs/FEATURES.md`](../apps/chau7-macos/docs/FEATURES.md): stable feature inventory
 - [`apps/chau7-macos/docs/CHANGELOG.md`](../apps/chau7-macos/docs/CHANGELOG.md): release and shipped-change history

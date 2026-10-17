@@ -1,0 +1,29 @@
+[package]
+name = "chau7_next_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Explicit opt-in for production packaging; beta builds remain isolated.
+production = []
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+unicode-segmentation = "1"
+chrono.workspace = true
+uuid.workspace = true
+base64.workspace = true
+sha2.workspace = true
+log.workspace = true
+rusqlite.workspace = true
+plist = "1"
+toml_edit = "0.25.17"
+flate2 = "1"
+
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }

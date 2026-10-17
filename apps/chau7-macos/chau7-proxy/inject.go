@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"log"
 	"os"
 	"path/filepath"
@@ -76,29 +78,35 @@ type injectionSessionSnapshot struct {
 //
 // Both sources are cached in memory and refreshed periodically.
 type Injector struct {
-	mu              sync.RWMutex
-	rules           []InjectionRule
-	repoCache       map[string]repoRuleEntry
-	sessionStates   map[string]injectionSessionState
-	configPath      string
-	lastLoad        time.Time
-	cacheTTL        time.Duration
-	sessionStateTTL time.Duration
+	mu               sync.RWMutex
+	rules            []InjectionRule
+	repoCache        map[string]repoRuleEntry
+	sessionStates    map[string]injectionSessionState
+	configPath       string
+	repoOverridesDir string
+	lastLoad         time.Time
+	cacheTTL         time.Duration
+	sessionStateTTL  time.Duration
 }
 
 // NewInjector creates an Injector that loads rules from configPath.
 // If configPath is empty it defaults to ~/.chau7/prompt-rules.json.
-func NewInjector(configPath string) *Injector {
+func NewInjector(configPath string, overrides ...string) *Injector {
+	repoOverridesDir := ""
+	if len(overrides) > 0 {
+		repoOverridesDir = overrides[0]
+	}
 	if configPath == "" {
 		home, _ := os.UserHomeDir()
 		configPath = filepath.Join(home, ".chau7", "prompt-rules.json")
 	}
 	inj := &Injector{
-		configPath:      configPath,
-		repoCache:       make(map[string]repoRuleEntry),
-		sessionStates:   make(map[string]injectionSessionState),
-		cacheTTL:        30 * time.Second,
-		sessionStateTTL: 24 * time.Hour,
+		configPath:       configPath,
+		repoOverridesDir: repoOverridesDir,
+		repoCache:        make(map[string]repoRuleEntry),
+		sessionStates:    make(map[string]injectionSessionState),
+		cacheTTL:         30 * time.Second,
+		sessionStateTTL:  24 * time.Hour,
 	}
 	inj.loadRules()
 	return inj
@@ -329,6 +337,30 @@ func matchRepository(pattern, project string) bool {
 	return matched
 }
 
+// repoOverrideKey mirrors Rust DataRoot::repo_overlay_key byte for byte.
+func repoOverrideKey(project string) string {
+	full := strings.TrimRight(project, "/")
+	hash := fnv.New64a()
+	_, _ = hash.Write([]byte(full))
+	name := []rune(filepath.Base(full))
+	if full == "" {
+		name = nil
+	}
+	if len(name) > 40 {
+		name = name[:40]
+	}
+	for i, ch := range name {
+		allowed := (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_'
+		if !allowed {
+			name[i] = '_'
+		}
+	}
+	if len(name) == 0 {
+		name = []rune("repo")
+	}
+	return fmt.Sprintf("%s-%016x", string(name), hash.Sum64())
+}
+
 // loadRepoRule checks for a per-repo injection file at {project}/.chau7/injection.json.
 // Results (including misses) are cached with the same TTL as global rules.
 func (inj *Injector) loadRepoRule(project string) *InjectionRule {
@@ -340,6 +372,36 @@ func (inj *Injector) loadRepoRule(project string) *InjectionRule {
 	inj.mu.RUnlock()
 
 	path := filepath.Join(project, ".chau7", "injection.json")
+	// Next's optional owned overlay has priority; a disabled document suppresses
+	// the shared local file while allowing named/global rules to apply.
+	if inj.repoOverridesDir != "" {
+		override := filepath.Join(inj.repoOverridesDir, repoOverrideKey(project), "injection.json")
+		data, err := os.ReadFile(override) // #nosec G304 -- app-configured own overlay root; hash key prevents project path traversal
+		if err == nil {
+			var document struct {
+				InjectionRule
+				Disabled bool `json:"disabled"`
+			}
+			var rule *InjectionRule
+			if err := json.Unmarshal(data, &document); err != nil {
+				log.Printf("[WARN] inject: invalid own repo override: %v", err)
+			} else if !document.Disabled {
+				normalized := normalizeInjectionRule(document.InjectionRule)
+				rule = &normalized
+			}
+			inj.mu.Lock()
+			inj.repoCache[project] = repoRuleEntry{rule: rule, loadedAt: time.Now()}
+			inj.mu.Unlock()
+			return rule
+		}
+		if !os.IsNotExist(err) {
+			log.Printf("[WARN] inject: failed to read own repo override: %v", err)
+			inj.mu.Lock()
+			inj.repoCache[project] = repoRuleEntry{loadedAt: time.Now()}
+			inj.mu.Unlock()
+			return nil
+		}
+	}
 	data, err := os.ReadFile(path) // #nosec G304 -- intentional per-project .chau7/injection.json read; the local application supplies project paths
 	if err != nil {
 		inj.mu.Lock()

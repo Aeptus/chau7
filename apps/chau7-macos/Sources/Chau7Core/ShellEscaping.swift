@@ -59,6 +59,29 @@ public enum ShellEscaping {
         return string.unicodeScalars.allSatisfy { allowedChars.contains($0) }
     }
 
+    /// Builds a destination-only SSH command for an external URL. Shell quoting
+    /// alone does not stop SSH from interpreting a destination as an option.
+    /// The caller must still ask for consent before executing the command.
+    public static func sshCommand(forURLTarget target: String) -> String? {
+        guard !target.isEmpty, !target.hasPrefix("-"),
+              !target.unicodeScalars.contains(where: {
+                  CharacterSet.whitespacesAndNewlines.contains($0)
+                      || CharacterSet.controlCharacters.contains($0)
+              }) else { return nil }
+        let host = target.split(separator: "@", omittingEmptySubsequences: false).last ?? ""
+        guard !host.isEmpty, !host.hasPrefix("-") else { return nil }
+        let hasPort = host.hasPrefix("[")
+            ? host.contains("]:")
+            : host.filter { $0 == ":" }.count == 1
+        if hasPort {
+            guard let colon = target.lastIndex(of: ":"),
+                  let port = UInt16(target[target.index(after: colon)...]), port > 0 else { return nil }
+            // OpenSSH accepts a port in URI form, not in plain host:port form.
+            return "ssh -- \(escapeArgument("ssh://" + target))"
+        }
+        return "ssh -- \(escapeArgument(target))"
+    }
+
     // MARK: - SSH Option Validation
 
     /// Validates an SSH option string for safety.

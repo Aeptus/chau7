@@ -46,7 +46,14 @@ const (
 	TypeApprovalRequest   = 0x50
 	TypeApprovalResponse  = 0x51
 	TypeNotificationEvent = 0x52
-	TypeError             = 0x7F
+	// Read-only viewers (docs/remote-control/VIEWER-PROTOCOL.md). Sent by
+	// Chau7 Next only; the Swift app never shares, so the agent rejects joins.
+	TypeViewerShare    = 0x60
+	TypeViewerJoin     = 0x61
+	TypeViewerDecision = 0x62
+	TypeViewerLeave    = 0x63
+	TypeViewerOutput   = 0x64
+	TypeError          = 0x7F
 )
 
 var (

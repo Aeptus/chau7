@@ -824,11 +824,20 @@ final class RemoteControlManager {
         logger.info("Remote: sent notification event kind=\(payload.kind, privacy: .public)")
     }
 
-    func sendApprovalRequest(requestID: String, payload: ApprovalRequestPayload) {
+    func sendApprovalRequest(requestID: String, payload: ApprovalRequestPayload, targetTabID: UUID? = nil) {
         guard isIPCConnected else { return }
-        let stamped = payload.withSpineSeq(spineSeqProvider?())
+        if targetTabID != nil {
+            let descriptors = refreshTabRegistry()
+            if connectedClientStreamMode == .full { emitTabList(descriptors) }
+        }
+        let registered = registerApprovalContext(requestID: requestID, approval: payload, targetTabID: targetTabID)
+        guard targetTabID == nil || registered else {
+            logger.info("Remote: skipped approval for a target tab that is no longer available")
+            return
+        }
+        let contextual = approvalContexts[requestID]?.enriching(payload) ?? payload
+        let stamped = contextual.withComposedPushText().withSpineSeq(spineSeqProvider?())
         guard let data = Persist.encodeLogged(stamped, context: "remote.approvalRequest(\(requestID))") else { return }
-        registerApprovalContext(requestID: requestID, payload: data)
         sendFrame(type: .approvalRequest, tabID: RemoteTabRegistry.unscopedTabID, payload: data)
         sendRemoteActivity()
         logger.info("Remote: sent approval request \(requestID, privacy: .public)")
@@ -1561,6 +1570,12 @@ final class RemoteControlManager {
         // suppress the first inventory after reconnect and leave iOS with an
         // empty tab list until some unrelated model change occurred.
         guard isIPCConnected, connectedClientStreamMode == .full else { return }
+        let tabPayloads = refreshTabRegistry()
+        emitTabList(tabPayloads)
+    }
+
+    /// Registry identities are also needed when a phone only receives approvals.
+    private func refreshTabRegistry() -> [RemoteTabDescriptor] {
         // Enumerate every window's controllable tabs, not just the primary
         // window's — otherwise tabs in additional Mac windows never appear in
         // the iOS tab list.
@@ -1570,7 +1585,7 @@ final class RemoteControlManager {
             remoteSelectedTabUUID = nil
         }
         let activeUUID = effectiveRemoteSelectedUUID
-        let tabPayloads = tabRegistry.rebuild(
+        return tabRegistry.rebuild(
             with: controllableTabs.map { tab in
                 RemoteTabRegistryEntry(
                     id: tab.id,
@@ -1585,6 +1600,9 @@ final class RemoteControlManager {
                 )
             }
         )
+    }
+
+    private func emitTabList(_ tabPayloads: [RemoteTabDescriptor]) {
         do {
             let tabList = RemoteTabListPayload(
                 tabs: tabPayloads,
@@ -1875,6 +1893,21 @@ final class RemoteControlManager {
 
     private static let maxPendingProtectedInputs = 20
 
+    @discardableResult
+    static func evictOldestProtectedInput(
+        from pendingInputs: inout [String: ProtectedRemoteInput],
+        approvalContexts: inout [String: PendingRemoteApprovalContext]
+    ) -> String? {
+        guard let oldestKey = pendingInputs.min(by: {
+            $0.value.createdAt < $1.value.createdAt
+        })?.key else {
+            return nil
+        }
+        pendingInputs.removeValue(forKey: oldestKey)
+        approvalContexts.removeValue(forKey: oldestKey)
+        return oldestKey
+    }
+
     private func purgeExpiredProtectedInputs() {
         let expired = pendingProtectedInputs.filter { $0.value.isExpired }
         for (key, input) in expired {
@@ -1884,14 +1917,8 @@ final class RemoteControlManager {
         }
     }
 
-    private func registerApprovalContext(requestID: String, payload: Data) {
-        guard let approval = Persist.decodeLogged(ApprovalRequestPayload.self, from: payload, context: "remote.approvalContext(\(requestID), \(payload.count)B)") else {
-            // A malformed approval request must not vanish silently — the
-            // approval card loses all its context downstream.
-            return
-        }
-
-        if let protectedInput = pendingProtectedInputs[requestID],
+    private func registerApprovalContext(requestID: String, approval: ApprovalRequestPayload, targetTabID: UUID?) -> Bool {
+        if targetTabID == nil, let protectedInput = pendingProtectedInputs[requestID],
            let session = scopedInputSession(for: protectedInput.tabID, paneID: protectedInput.paneID),
            let uuid = tabRegistry.uuid(for: protectedInput.tabID),
            let tab = locateTab(uuid: uuid)?.tab {
@@ -1910,14 +1937,15 @@ final class RemoteControlManager {
                 flaggedCommand: approval.flaggedCommand,
                 requestedAt: Self.parseApprovalDate(approval.timestamp)
             )
-            return
+            return true
         }
 
-        guard let uuid = effectiveRemoteSelectedUUID,
+        // An explicit MCP target must never fall back to the selected tab.
+        guard let uuid = targetTabID ?? effectiveRemoteSelectedUUID,
               let tab = locateTab(uuid: uuid)?.tab,
-              let session = tab.session,
+              let session = targetTabID == nil ? tab.session : (tab.displaySession ?? tab.session),
               let tabID = tabRegistry.tabID(for: tab.id) else {
-            return
+            return false
         }
 
         approvalContexts[requestID] = PendingRemoteApprovalContext(
@@ -1935,6 +1963,7 @@ final class RemoteControlManager {
             flaggedCommand: approval.flaggedCommand,
             requestedAt: Self.parseApprovalDate(approval.timestamp)
         )
+        return true
     }
 
     private func queueProtectedRemoteInput(
@@ -1949,9 +1978,10 @@ final class RemoteControlManager {
         purgeExpiredProtectedInputs()
         if pendingProtectedInputs.count >= Self.maxPendingProtectedInputs {
             logger.warning("Remote: pending protected inputs at capacity (\(Self.maxPendingProtectedInputs, privacy: .public)), dropping oldest")
-            if let oldestKey = pendingProtectedInputs.min(by: { $0.value.createdAt < $1.value.createdAt })?.key {
-                pendingProtectedInputs.removeValue(forKey: oldestKey)
-            }
+            Self.evictOldestProtectedInput(
+                from: &pendingProtectedInputs,
+                approvalContexts: &approvalContexts
+            )
         }
         pendingProtectedInputs[requestID] = ProtectedRemoteInput(
             tabID: tabID,

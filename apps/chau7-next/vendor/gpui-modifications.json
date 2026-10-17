@@ -1,0 +1,607 @@
+{
+  "files": [
+    {
+      "changes": [
+        {
+          "after_sha256": "9d22a99a48b5c4dd103aeda638d861771e9571432d862eddcacf5d8318e3ecdc",
+          "before_sha256": "436647169d914d26092fcf3bfd4020a6638a97d1ea3b39466fd2d4641d1c219e",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "whitespace_only"
+        }
+      ],
+      "current_sha256": "9d22a99a48b5c4dd103aeda638d861771e9571432d862eddcacf5d8318e3ecdc",
+      "original_sha256": "436647169d914d26092fcf3bfd4020a6638a97d1ea3b39466fd2d4641d1c219e",
+      "package": "gpui-pre-apple",
+      "path": "src/shaders.metal"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "8dbaf1f77751f57d5a59aeeb15d2d2aa0f868b45d1b80919afc7c4719627da3f",
+          "before_sha256": "bcdeb209fa6309f5c507d9e8918235e75c18751c1985d0ebed632de643d7ea2e",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "whitespace_only"
+        }
+      ],
+      "current_sha256": "8dbaf1f77751f57d5a59aeeb15d2d2aa0f868b45d1b80919afc7c4719627da3f",
+      "original_sha256": "bcdeb209fa6309f5c507d9e8918235e75c18751c1985d0ebed632de643d7ea2e",
+      "package": "gpui-pre",
+      "path": "src/_accessibility.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "af64c64f40f379386d266373130de2b40a512a26c95d3d816f2c0197e87191be",
+          "before_sha256": "4292aa1a2bbc56b653aaef0702726325f8efb93f16226320519e257c3ba8a839",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "af64c64f40f379386d266373130de2b40a512a26c95d3d816f2c0197e87191be",
+      "original_sha256": "4292aa1a2bbc56b653aaef0702726325f8efb93f16226320519e257c3ba8a839",
+      "package": "gpui-pre",
+      "path": "src/color.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "66763b0889508b86bd8a2bdeb56fb6d4146024659f9cb94c5d83775d910417c9",
+          "before_sha256": "28ea7fbcc4e949d77a0b0f796b99864cd8cbdfc58c60c2a88b8484731f8eefab",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        },
+        {
+          "after_sha256": "89a35ae8b182604c06d0efddecb3c0616ed7fd77704964fad57cef94b910d9e1",
+          "before_sha256": "66763b0889508b86bd8a2bdeb56fb6d4146024659f9cb94c5d83775d910417c9",
+          "description": "Format only this rebased fork source with Rust1.99 rustfmt; no pristine upstream children modified",
+          "kind": "whitespace_only"
+        },
+        {
+          "after_sha256": "1544635cdb1d141dc09d9a8a088a1ea0ec24d778e1bcced242195fd435333273",
+          "before_sha256": "89a35ae8b182604c06d0efddecb3c0616ed7fd77704964fad57cef94b910d9e1",
+          "description": "Preserve renderer behavior while satisfying Rust 1.99 strict Clippy: expression initialization, complete fixed-array chunks, explicit Default construction, safety documentation and conditional structure as applicable",
+          "kind": "semantic"
+        },
+        {
+          "after_sha256": "c368c48946d0a760b44e5f1ee3e7921ae346c1b2db3ee03b93891bff688d02ee",
+          "before_sha256": "1544635cdb1d141dc09d9a8a088a1ea0ec24d778e1bcced242195fd435333273",
+          "description": "Gate the headless Metal inherent implementation like its type and constructor; add a regression for all four declarations without enabling test features in production",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "c368c48946d0a760b44e5f1ee3e7921ae346c1b2db3ee03b93891bff688d02ee",
+      "original_sha256": "28ea7fbcc4e949d77a0b0f796b99864cd8cbdfc58c60c2a88b8484731f8eefab",
+      "package": "gpui-pre-apple",
+      "path": "src/metal_renderer.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "b305f94023b0a587fd84ae22f158a683fed69041fced724bf6751c12eae19dfb",
+          "before_sha256": "3addca59aab12ca0e00acb1e39d652863a8904146db2e28192275660aa5b8880",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "b305f94023b0a587fd84ae22f158a683fed69041fced724bf6751c12eae19dfb",
+      "original_sha256": "3addca59aab12ca0e00acb1e39d652863a8904146db2e28192275660aa5b8880",
+      "package": "gpui-pre",
+      "path": "src/scene.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "c3258637e0143241c75150a731f9b0c4fa769c16dfbad240e31a559c4237e16f",
+          "before_sha256": "7e94f1c8354fb955bad10c0e0086562025bb82f460e9cc0894900e8e62c0f2ef",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "c3258637e0143241c75150a731f9b0c4fa769c16dfbad240e31a559c4237e16f",
+      "original_sha256": "7e94f1c8354fb955bad10c0e0086562025bb82f460e9cc0894900e8e62c0f2ef",
+      "package": "gpui-pre-macos",
+      "path": "src/gpui_macos.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "af16d3c2ae7a4fc4a2cb733bb667aef82b71f99170417fab81278feb23c83d4d",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "af16d3c2ae7a4fc4a2cb733bb667aef82b71f99170417fab81278feb23c83d4d",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/atlas.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "e73930868a9679d1a46601b5477e045ed21720f1f07e17157a1165262a3e3e12",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        },
+        {
+          "after_sha256": "de6cde0c4b2aff5b7400b5aa13a6df2216074bfe1ffc80fd3066cac87b1ba068",
+          "before_sha256": "e73930868a9679d1a46601b5477e045ed21720f1f07e17157a1165262a3e3e12",
+          "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "de6cde0c4b2aff5b7400b5aa13a6df2216074bfe1ffc80fd3066cac87b1ba068",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/canvas.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "01aa64beed946c20f9440aaaec6a66b6375d4c93b0b5664ab435fceb4fdd89e1",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        },
+        {
+          "after_sha256": "327c0be915ff447e6c98d5654f4d8cd747af1ae0e908aef7276bfd86ab27000a",
+          "before_sha256": "01aa64beed946c20f9440aaaec6a66b6375d4c93b0b5664ab435fceb4fdd89e1",
+          "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "327c0be915ff447e6c98d5654f4d8cd747af1ae0e908aef7276bfd86ab27000a",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/fills.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "77471db92b15af83c7de1fb728c11693d27289c26969817c79d4d5011e75cf86",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "77471db92b15af83c7de1fb728c11693d27289c26969817c79d4d5011e75cf86",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/mod.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "e723310f9be8b16e2f3daf2af6ae16149e8622df13a9a63a29298de4900c3e59",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        },
+        {
+          "after_sha256": "278e69c491c6534af7c2375d13eeafe49a2c7101d6e1904dbc22da9988662a85",
+          "before_sha256": "e723310f9be8b16e2f3daf2af6ae16149e8622df13a9a63a29298de4900c3e59",
+          "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "278e69c491c6534af7c2375d13eeafe49a2c7101d6e1904dbc22da9988662a85",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/paths.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "530d5e0a70171668655f89172cbb59c582d246469c5f9c711d261b36d1144e00",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "530d5e0a70171668655f89172cbb59c582d246469c5f9c711d261b36d1144e00",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/primitives.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "ada7da1afa61b625d956210eee9c056e6361cda6de78964a8cf41fe127370b70",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        },
+        {
+          "after_sha256": "ec267b6aa0affeb5d05e13c6e36fd2a0a2b87107e84781092def5a54c226899a",
+          "before_sha256": "ada7da1afa61b625d956210eee9c056e6361cda6de78964a8cf41fe127370b70",
+          "description": "Format only this rebased fork source with Rust1.99 rustfmt; no pristine upstream children modified",
+          "kind": "whitespace_only"
+        }
+      ],
+      "current_sha256": "ec267b6aa0affeb5d05e13c6e36fd2a0a2b87107e84781092def5a54c226899a",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/scene.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "d7ffaa6185070929a59fc6015be5c119d8480d5e3cbc1b6b819ab93218dccf99",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "d7ffaa6185070929a59fc6015be5c119d8480d5e3cbc1b6b819ab93218dccf99",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/sprites.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "4333111531c5cdf387f08b1033b1c95bf7922c59310dc545bd0a4f2c787061fd",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        },
+        {
+          "after_sha256": "500bb2b22be122ec0c152250de89ec6a3820e642a3c1dc137262aa9763e4671a",
+          "before_sha256": "4333111531c5cdf387f08b1033b1c95bf7922c59310dc545bd0a4f2c787061fd",
+          "description": "Format only this rebased fork source with Rust1.99 rustfmt; no pristine upstream children modified",
+          "kind": "whitespace_only"
+        }
+      ],
+      "current_sha256": "500bb2b22be122ec0c152250de89ec6a3820e642a3c1dc137262aa9763e4671a",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/surfaces.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "5fac452ac1166965bfc561012af1e5949b8d2fe91a532f1eef02eda9689f9913",
+          "before_sha256": "c414bf9caf88413b04fb6a3214c4f070686b454c82c28fa471af9d1bcc91ddba",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        },
+        {
+          "after_sha256": "dda784e32a387967034f4ef0158f895440b303a811cb78b81333c56c5998bfe8",
+          "before_sha256": "5fac452ac1166965bfc561012af1e5949b8d2fe91a532f1eef02eda9689f9913",
+          "description": "Preserve renderer behavior while satisfying Rust 1.99 strict Clippy: expression initialization, complete fixed-array chunks, explicit Default construction, safety documentation and conditional structure as applicable",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "dda784e32a387967034f4ef0158f895440b303a811cb78b81333c56c5998bfe8",
+      "original_sha256": "c414bf9caf88413b04fb6a3214c4f070686b454c82c28fa471af9d1bcc91ddba",
+      "package": "gpui-pre-apple",
+      "path": "src/metal_atlas.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "7fe2ea1153413ed3e4ec746e92244d8bdfabee343583c2c14c11992aeb51560d",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        },
+        {
+          "after_sha256": "c7d8bb7bb863e6bfe36c41993b09b8e8efb7dc21efba2a7b4fa78d0ee1f9f3a9",
+          "before_sha256": "7fe2ea1153413ed3e4ec746e92244d8bdfabee343583c2c14c11992aeb51560d",
+          "description": "Format only this rebased fork source with Rust1.99 rustfmt; no pristine upstream children modified",
+          "kind": "whitespace_only"
+        }
+      ],
+      "current_sha256": "c7d8bb7bb863e6bfe36c41993b09b8e8efb7dc21efba2a7b4fa78d0ee1f9f3a9",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/presentation.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "fed2d830b9035440d343f80a435c5b518961229b2affad0feb0d6c4e2dbf5d69",
+          "before_sha256": "5281398f5c93e75eee02715c823ff9729087cd71f7dee5f0bfe846e5d3ad2a42",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        },
+        {
+          "after_sha256": "38452bfbffca4b93d1559f42f3407221945b4c7e91e6fb0414d59062ec746802",
+          "before_sha256": "fed2d830b9035440d343f80a435c5b518961229b2affad0feb0d6c4e2dbf5d69",
+          "description": "Enable the existing objc2-core-video CVBase API required by the upstream 0.3.9 pixel-buffer lock test and Software read-only pixel-buffer leases; no version changes",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "38452bfbffca4b93d1559f42f3407221945b4c7e91e6fb0414d59062ec746802",
+      "original_sha256": "5281398f5c93e75eee02715c823ff9729087cd71f7dee5f0bfe846e5d3ad2a42",
+      "package": "gpui-pre-macos",
+      "path": "Cargo.toml"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "3c0306e8d9959c4d5936cd3eefe164fa7977efe9aa6a3560910731e42bce8b5d",
+          "before_sha256": "4be5fbeedecfc6d6f60afeb29704790bb67c78554c7ae8178a07d4a4303a9afa",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "3c0306e8d9959c4d5936cd3eefe164fa7977efe9aa6a3560910731e42bce8b5d",
+      "original_sha256": "4be5fbeedecfc6d6f60afeb29704790bb67c78554c7ae8178a07d4a4303a9afa",
+      "package": "gpui-pre-macos",
+      "path": "src/display.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "f6692450151d5b0e27d0ba89580c4e83556d8b0bd5ac06f98cff9faa09c7f667",
+          "before_sha256": "1bf0adb67969e7389063de4d54efa70e9bb0a7ac7331a74ba74245d3bb87d801",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        },
+        {
+          "after_sha256": "1ef19e0d05805fcf03ff5ea4da3e637c2439ab4d2df4de501b2786ca8e3e5d88",
+          "before_sha256": "f6692450151d5b0e27d0ba89580c4e83556d8b0bd5ac06f98cff9faa09c7f667",
+          "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "1ef19e0d05805fcf03ff5ea4da3e637c2439ab4d2df4de501b2786ca8e3e5d88",
+      "original_sha256": "1bf0adb67969e7389063de4d54efa70e9bb0a7ac7331a74ba74245d3bb87d801",
+      "package": "gpui-pre-macos",
+      "path": "src/platform.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "8938b6d58a0c33b5806906142c62043039c2bc9628f3c03b2df8915288667448",
+          "before_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        },
+        {
+          "after_sha256": "df53f95c5ae50e5a0a787786348de3e36e8682c81e5841ea778619e7b18c98dd",
+          "before_sha256": "8938b6d58a0c33b5806906142c62043039c2bc9628f3c03b2df8915288667448",
+          "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
+          "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Anchor native traffic lights to the actual titlebar superview bounds across zoom and resize; preserve fullscreen controls for custom-titlebar windows by removing only AutoHideToolbar from the proposed presentation options",
+          "before_sha256": "df53f95c5ae50e5a0a787786348de3e36e8682c81e5841ea778619e7b18c98dd",
+          "after_sha256": "6765797cb93be62533dbd06faa005ed5ad4e518542410f8e5ed906a775d293f8"
+        },
+        {
+          "kind": "semantic",
+          "description": "Keep AppKit traffic lights visible during native fullscreen by moving the original buttons into the content view before AppKit removes the titlebar, restoring their original hierarchy on exit or failed entry, repositioning them through fullscreen resize and activation, and retaining native layout for windows without custom titlebars or valid initial button geometry; adapt retained pointer access and optional content-view handling to objc2 0.6; reposition fullscreen controls on key resign and activation, and include the content bounds origin in the top-left placement",
+          "before_sha256": "6765797cb93be62533dbd06faa005ed5ad4e518542410f8e5ed906a775d293f8",
+          "after_sha256": "14184138acea51e52380ec54076fae443d3b42fc5f55c865f35e05ef5b80b556"
+        },
+        {
+          "kind": "semantic",
+          "description": "Keep fullscreen native traffic lights inside a small top-left host row so AppKit restoring titlebar-local button coordinates cannot move them to the bottom of the full-height content view; anchor the host with orientation-aware autoresizing and remove it when restoring the original button hierarchy",
+          "before_sha256": "14184138acea51e52380ec54076fae443d3b42fc5f55c865f35e05ef5b80b556",
+          "after_sha256": "0fb49084c11d29dcfd0e19f1f36316a97794995652b2a283f859e35e6fa3667c"
+        },
+        {
+          "kind": "semantic",
+          "description": "Preserve configured custom-titlebar transparency throughout native fullscreen enter, exit and failure callbacks on macOS 15.3 and later, avoiding the opaque native band over the GPUI tabbar when the system menu reveals; add a policy regression and apply Rust 1.99 formatting to this source",
+          "before_sha256": "0fb49084c11d29dcfd0e19f1f36316a97794995652b2a283f859e35e6fa3667c",
+          "after_sha256": "91eadb38a9693b6d56218fcf609492f3ccf69de6552e6231f810716dd53123c6"
+        }
+      ],
+      "current_sha256": "91eadb38a9693b6d56218fcf609492f3ccf69de6552e6231f810716dd53123c6",
+      "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
+      "package": "gpui-pre-macos",
+      "path": "src/window.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "78bde0c5592acb9edf08434c66cb8133b4653017842885669bfa61d4ba9c853d",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        }
+      ],
+      "current_sha256": "78bde0c5592acb9edf08434c66cb8133b4653017842885669bfa61d4ba9c853d",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/renderer.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "b16c390e00e3394889da30f459302d8cd0bb7754726aa5636ff9c9b85c285ff1",
+          "before_sha256": "dcde9e61f8f13da16d045d7d977731add76e317b3c6283fb61deb299b6e8418b",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Add per-App native quit timeout policy with unchanged 200 ms default and explicit observer completion wait; verify default and slow-observer completion through Next public GPUI dependency tests",
+          "before_sha256": "b16c390e00e3394889da30f459302d8cd0bb7754726aa5636ff9c9b85c285ff1",
+          "after_sha256": "9746e9173966bfe5cf010982c67b0d02e9b381f94a7b4ad54eb810db6f7c0006"
+        },
+        {
+          "kind": "whitespace_only",
+          "description": "Format the native quit policy with pinned Rust 1.99.0 without changing behavior",
+          "before_sha256": "9746e9173966bfe5cf010982c67b0d02e9b381f94a7b4ad54eb810db6f7c0006",
+          "after_sha256": "37150c9dda0b98801e061eae708a00b3bd5a2d098b4b5ba299ec708bf96ff956"
+        }
+      ],
+      "current_sha256": "37150c9dda0b98801e061eae708a00b3bd5a2d098b4b5ba299ec708bf96ff956",
+      "original_sha256": "dcde9e61f8f13da16d045d7d977731add76e317b3c6283fb61deb299b6e8418b",
+      "package": "gpui-pre",
+      "path": "src/app.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "dd65511bd6f0e688ae264050bbb8478faaa899d8a6cda2e14302f8ac8f83690e",
+          "before_sha256": "148dc1c498fdc812c1c37ac92021efeb2acc17ab0dbf3a59b071a660c6951c07",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "dd65511bd6f0e688ae264050bbb8478faaa899d8a6cda2e14302f8ac8f83690e",
+      "original_sha256": "148dc1c498fdc812c1c37ac92021efeb2acc17ab0dbf3a59b071a660c6951c07",
+      "package": "gpui-pre",
+      "path": "src/platform.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "ea8cf009099856a56571b10c7585f767ffcee06fb56287a30f193ab89c5b10c8",
+          "before_sha256": "44f32319b9385fa6dbc15c36b3edea00a26208309b37283ae4f9bd4bead674f8",
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "ea8cf009099856a56571b10c7585f767ffcee06fb56287a30f193ab89c5b10c8",
+      "original_sha256": "44f32319b9385fa6dbc15c36b3edea00a26208309b37283ae4f9bd4bead674f8",
+      "package": "gpui-pre",
+      "path": "src/window.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "cb185e0cbd4383796a8a7be3bbfcdf4ad04f88d2658e0b2258d7368d1d4f5914",
+          "before_sha256": null,
+          "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
+          "kind": "new_source"
+        },
+        {
+          "after_sha256": "14dcaa993686789257d2b237edcb42a6a4e6f4af70932dcd597cf908fa84f8d6",
+          "before_sha256": "cb185e0cbd4383796a8a7be3bbfcdf4ad04f88d2658e0b2258d7368d1d4f5914",
+          "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "14dcaa993686789257d2b237edcb42a6a4e6f4af70932dcd597cf908fa84f8d6",
+      "original_sha256": null,
+      "package": "gpui-pre-macos",
+      "path": "src/software_renderer/frame_clock.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "917f5d3394220c03c19d8100c5e4c033af906a6a4794ba659863decf2d1c5643",
+          "before_sha256": "5aee222ccbf8ee64c9e36e55e5c1c9e487ec2806b0761ef4394a419340c148f0",
+          "description": "Enable the existing objc2-core-video CVBase API required by the upstream 0.3.9 pixel-buffer lock test and Software read-only pixel-buffer leases; no version changes",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "917f5d3394220c03c19d8100c5e4c033af906a6a4794ba659863decf2d1c5643",
+      "original_sha256": "5aee222ccbf8ee64c9e36e55e5c1c9e487ec2806b0761ef4394a419340c148f0",
+      "package": "gpui-pre-apple",
+      "path": "Cargo.toml"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "ca72e597e85944500aa4ed57f13e0c55af1a39f85430ee4c50d552937a0d082f",
+          "before_sha256": "21ec54613d48cd3c419f2f694f75460d1019491c2406a7ed4dfa3374c84824cf",
+          "description": "Preserve renderer behavior while satisfying Rust 1.99 strict Clippy: expression initialization, complete fixed-array chunks, explicit Default construction, safety documentation and conditional structure as applicable",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "ca72e597e85944500aa4ed57f13e0c55af1a39f85430ee4c50d552937a0d082f",
+      "original_sha256": "21ec54613d48cd3c419f2f694f75460d1019491c2406a7ed4dfa3374c84824cf",
+      "package": "gpui-pre-apple",
+      "path": "src/dispatcher.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "f5aacde837893cfbd530a2ba0bba36fade49d0360a9a1aee851a0544ebba9aab",
+          "before_sha256": "932774c521b1bfd99a2552572cf09769e0dd39b2b2e306a3f6df80f57522b375",
+          "description": "Preserve renderer behavior while satisfying Rust 1.99 strict Clippy: expression initialization, complete fixed-array chunks, explicit Default construction, safety documentation and conditional structure as applicable",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "f5aacde837893cfbd530a2ba0bba36fade49d0360a9a1aee851a0544ebba9aab",
+      "original_sha256": "932774c521b1bfd99a2552572cf09769e0dd39b2b2e306a3f6df80f57522b375",
+      "package": "gpui-pre-apple",
+      "path": "src/text_system.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "917b3400ed7408d464e3945e6a22c3fed8be7cd1f3d50debca86cbb94b314e99",
+          "before_sha256": "3f9de99c94f9390abcc1f1d69729f35304b233468668e471420793b0f4e02513",
+          "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "917b3400ed7408d464e3945e6a22c3fed8be7cd1f3d50debca86cbb94b314e99",
+      "original_sha256": "3f9de99c94f9390abcc1f1d69729f35304b233468668e471420793b0f4e02513",
+      "package": "gpui-pre-macos",
+      "path": "src/display_link.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "48134e59ecbb390000565c09e78071a0487a4a26d225e78221cf98a1cf54516c",
+          "before_sha256": "d6cbb1b91f11a67836a094689989b1ea7d79df60d7fa7b1829e6e78e9a01ad2b",
+          "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "48134e59ecbb390000565c09e78071a0487a4a26d225e78221cf98a1cf54516c",
+      "original_sha256": "d6cbb1b91f11a67836a094689989b1ea7d79df60d7fa7b1829e6e78e9a01ad2b",
+      "package": "gpui-pre-macos",
+      "path": "src/keyboard.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "02787fa6e514a8a8e13dad4e749f8b9a7123c602d6718809f8d90fc586850cc7",
+          "before_sha256": "66744f8c74061c999547400dc9e3dccbc40ddd5c4749c60856ee3d5ce2b77a23",
+          "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
+          "kind": "semantic"
+        },
+        {
+          "after_sha256": "1051bf97c1047e6743b3de7694d318e08054e004d856c2a9159bc6cf5873cf79",
+          "before_sha256": "02787fa6e514a8a8e13dad4e749f8b9a7123c602d6718809f8d90fc586850cc7",
+          "description": "Serialize only the five tests using uniquely named AppKit pasteboards and assert the image test starts with an empty pasteboard; preserve existing assertions and leave the custom-type autorelease-pool test independent",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "1051bf97c1047e6743b3de7694d318e08054e004d856c2a9159bc6cf5873cf79",
+      "original_sha256": "66744f8c74061c999547400dc9e3dccbc40ddd5c4749c60856ee3d5ce2b77a23",
+      "package": "gpui-pre-macos",
+      "path": "src/pasteboard.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "b935866c3adbedc7e6167863d79fe70c4dcc02b0fa911cbd793c4d5070379b28",
+          "before_sha256": "df8374f075932996d58b99c043d97a82e1cefebab79e5b0f4648c8a3776ea5fe",
+          "description": "Preserve behavior under Rust 1.99 strict Clippy with callback type aliases, equivalent conditional syntax, fixed-array chunks, removal of redundant casts/clones, and bit-identical gradient coefficient normalization as applicable; no allowances or pixel tolerance changes",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "b935866c3adbedc7e6167863d79fe70c4dcc02b0fa911cbd793c4d5070379b28",
+      "original_sha256": "df8374f075932996d58b99c043d97a82e1cefebab79e5b0f4648c8a3776ea5fe",
+      "package": "gpui-pre-macos",
+      "path": "src/system_notifications.rs"
+    },
+    {
+      "package": "gpui-pre",
+      "path": "src/app/context.rs",
+      "original_sha256": "b05a478fb75a5488887cb46e2ea151c5d85ea8543311aca9ac5e724200f03ecb",
+      "current_sha256": "bc123b21677c19f5873afcdb9bfe159e826f047476011fabb897dd7a4791ce4d",
+      "changes": [
+        {
+          "kind": "documentation",
+          "description": "Describe native quit observer completion policy and unchanged default timeout",
+          "before_sha256": "b05a478fb75a5488887cb46e2ea151c5d85ea8543311aca9ac5e724200f03ecb",
+          "after_sha256": "bc123b21677c19f5873afcdb9bfe159e826f047476011fabb897dd7a4791ce4d"
+        }
+      ]
+    }
+  ],
+  "format_version": 1
+}

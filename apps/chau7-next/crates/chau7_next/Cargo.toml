@@ -1,0 +1,158 @@
+[package]
+name = "chau7_next"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "chau7-next"
+path = "src/main.rs"
+
+[features]
+# Explicit acceptance binary only; production packaging leaves this disabled.
+native-parity-fixture = ["objc2-foundation/NSOperation", "objc2-foundation/block2", "objc2-app-kit/NSGraphicsContext", "objc2-app-kit/NSBitmapImageRep", "objc2-app-kit/NSColorSpace", "gpui-kit/test-support", "gpui-macos/test-support"]
+
+[build-dependencies]
+# Compiles the os_log shim on macOS (build.rs).
+cc = "1"
+
+[dependencies]
+gpui.workspace = true
+gpui-kit.workspace = true
+chau7_next_core.workspace = true
+chau7_terminal.workspace = true
+parking_lot.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+anyhow = "1"
+uuid.workspace = true
+base64.workspace = true
+# Decodes inline images (iTerm2, Kitty PNG) and encodes them for Copy/Save.
+# Same version and formats as GPUI's own `image` dependency.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"] }
+chrono.workspace = true
+regex.workspace = true
+unicode-segmentation = "1"
+# File watching (FSEvents/kqueue on macOS, inotify on Linux); the version
+# gpui-component already uses.
+notify = { version = "8.2.0", features = ["macos_kqueue"] }
+# The OS preferred languages, for "System Default" (l10n).
+sys-locale = "0.3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Exact patched backend; policy must be fixed before the first native window.
+gpui-macos = { package = "gpui-pre-macos", version = "=0.3.9", default-features = false, features = ["font-kit", "runtime_shaders"] }
+# NSWindow behind a GPUI window (platform/window_style.rs).
+raw-window-handle = "0.6"
+# Platform layer (src/platform/). Only the framework features in use are on.
+objc2 = "0.6.5"
+block2 = "0.6.2"
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "objc2-core-foundation",
+    "NSArray",
+    "NSBundle",
+    "NSData",
+    "NSDictionary",
+    "NSError",
+    "NSGeometry",
+    "NSHost",
+    "NSObject",
+    "NSProcessInfo",
+    "NSString",
+    "NSUbiquitousKeyValueStore",
+    "NSURL",
+    "NSAttributedString",
+    "NSRange",
+    "NSValue",
+    "NSUndoManager",
+    "NSNotification",
+] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "block2",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+    "NSAccessibility",
+    "NSAppearance",
+    "NSApplication",
+    "NSBitmapImageRep",
+    "NSButton",
+    "NSCell",
+    "NSControl",
+    "NSDockTile",
+    "NSFont",
+    "NSGraphics",
+    "NSImage",
+    "NSImageRep",
+    "NSImageView",
+    "NSMenu",
+    "NSMenuItem",
+    "NSPasteboard",
+    "NSPrintInfo",
+    "NSPrintOperation",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSSound",
+    "NSSpeechSynthesizer",
+    "NSStatusBar",
+    "NSStatusBarButton",
+    "NSStatusItem",
+    "NSText",
+    "NSTextInputContext",
+    "NSTextView",
+    "NSView",
+    "NSWindow",
+    "NSWorkspace",
+    "NSAttributedString",
+    "NSStringDrawing",
+    "NSColor",
+    "NSFontManager",
+    "NSFontDescriptor",
+    "NSParagraphStyle",
+    "NSTextStorage",
+    "NSLayoutManager",
+    "NSTextContainer",
+    "NSScrollView",
+    "NSClipView",
+    "NSScroller",
+    "NSRulerView",
+    "NSEvent",
+    "NSTextInputClient",
+] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGFont"] }
+objc2-user-notifications = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "block2",
+    "UNNotification",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationResponse",
+    "UNNotificationSettings",
+    "UNNotificationSound",
+    "UNNotificationTrigger",
+    "UNUserNotificationCenter",
+] }
+objc2-service-management = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "objc2",
+    "objc2-foundation",
+    "SMAppService",
+] }
+security-framework = "3.7.0"
+core-foundation = "0.10.1"
+core-foundation-sys = "0.8.7"
+# Single recursive snippets stream through current typed SDK bindings/GCD.
+objc2-core-services = { version = "0.3.2", default-features = false, features = ["std", "FSEvents", "dispatch2"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFArray", "CFString"] }
+dispatch2 = { version = "0.3.1", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+# Deterministic actual EditorState events, selection and undo regression.
+gpui = { workspace = true, features = ["test-support"] }
+gpui-kit = { workspace = true, features = ["test-support"] }

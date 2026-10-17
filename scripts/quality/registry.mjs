@@ -931,7 +931,7 @@ export const gates = [
     wave: "tests",
     tags: ["full", "ci", "slow"],
     cacheable: false,
-    inputs: ["scripts/ci-local", "scripts/ci-lib.sh", "scripts/.jscpd.json"],
+    inputs: ["scripts/ci-local", "scripts/ci-lib.sh", "scripts/.jscpd.json", "scripts/quality/run-duplication.mjs", "apps/chau7-next/vendor"],
     applies: () => true,
     rerun: "pnpm quality:prepush:full --include=full-local-ci",
     // ci-local runs swift build/test; see HOOK_GIT_ENV_VARS.

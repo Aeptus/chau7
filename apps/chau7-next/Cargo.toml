@@ -1,0 +1,65 @@
+[workspace]
+members = ["crates/chau7_next_core", "crates/chau7_next", "crates/chau7_next_mcp_bridge"]
+resolver = "2"
+exclude = ["vendor/gpui-pre", "vendor/gpui-pre-macos", "vendor/gpui-pre-apple"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "UNLICENSED"
+
+[workspace.dependencies]
+# Pinned on purpose. gpui-kit 0.7.3 bundles the matching set: gpui-pre 0.3.9
+# (a snapshot of Zed at 93d7456), gpui-pre-platform 0.3.9 (macOS, Linux,
+# Windows backends), gpui-base and gpui-component 0.7.3. Never upgrade one
+# of these without the others.
+gpui = { package = "gpui-pre", version = "=0.3.9" }
+gpui-kit = { version = "=0.7.3" }
+chau7_terminal = { path = "../chau7-macos/rust/chau7_terminal" }
+chau7_next_core = { path = "crates/chau7_next_core" }
+parking_lot = "0.12"
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+base64 = "0.23.1"
+sha2 = "0.11.0"
+# Command history store (history/). Bundled so no system SQLite is needed.
+rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
+
+# Fast optimized local builds; scripts/build-mode.sh enables explicit diagnostics.
+[profile.release]
+opt-level = 3
+debug = false
+lto = "off"
+codegen-units = 64
+incremental = true
+strip = "symbols"
+
+# macOS 27 rejects some stripped proc-macro dylibs at compile time.
+# Build tools do not ship inside the app bundle.
+[profile.release.build-override]
+strip = "none"
+
+[profile.dev.build-override]
+strip = "none"
+
+[profile.dev]
+opt-level = 1
+# Small debug info keeps backtraces readable while keeping test and app
+# binaries small (many agents build side by side on limited disk).
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+# Keep the locked GPUI snapshot together. Local changes and original hashes are
+# recorded under vendor/; other packages and platform backends stay pinned.
+[patch.crates-io]
+gpui-pre = { path = "vendor/gpui-pre" }
+gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
+gpui-pre-apple = { path = "vendor/gpui-pre-apple" }

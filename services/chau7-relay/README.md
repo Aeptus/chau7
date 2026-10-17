@@ -65,6 +65,15 @@ applies WebSocket backpressure (dropping/closing slow receivers).
 | GET | `/pending/:deviceId` | ios | pending |
 | POST | `/pending/:deviceId` | mac | pending |
 | DELETE | `/pending/:deviceId` | mac | pending |
+| WS | `/view/:shareCode` | viewer | none (see below) |
+
+`/view/:shareCode` is the read-only viewer of a terminal shared by Chau7 Next
+(`docs/remote-control/VIEWER-PROTOCOL.md`). It takes no relay credential: the
+8 character share code finds the sharing Mac through a `share:<code>`
+registry object, the Mac's owner approves every viewer, and attempts are
+limited per client IP. Only the cleartext viewer frames (0x60 to 0x64) are
+read by the relay; they are never forwarded to the paired phone. The Swift
+app never shares, so it never uses this route.
 
 ## Source Files
 
@@ -78,6 +87,7 @@ applies WebSocket backpressure (dropping/closing slow receivers).
 | `src/validation.js` | Body size limits, safe JSON parsing, payload sanitizers |
 | `src/apns.js` | APNs payload + reason-based registration removal |
 | `src/ratelimit.js` | Per-route token-bucket rate limiter |
+| `src/viewer.js` | Read-only viewer routing (Chau7 Next share links) |
 
 ## Build / Deploy
 

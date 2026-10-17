@@ -28,13 +28,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26.11.1
 
       - name: Prepare an iOS simulator for the selected Xcode
         run: node scripts/quality/ios-simulator.mjs
 
       - name: Enable pnpm
-        run: corepack enable
+        run: npm install --global --allow-scripts=pnpm pnpm@12.11.2
 
       - name: Check workflow policy
         run: pnpm quality:cloud-parity --include=quality-cloud-parity-required-workflows
@@ -43,6 +43,9 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: services/chau7-remote/go.mod
+          cache-dependency-path: |
+            services/chau7-remote/go.sum
+            apps/chau7-macos/chau7-proxy/go.sum
 
       - name: Install golangci-lint with the selected Go toolchain
         run: |
@@ -65,15 +68,20 @@ jobs:
         run: brew install swiftformat swiftlint gitleaks shellcheck ruff periphery pip-audit
 
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        run: cargo install cargo-deny --version 0.20.2 --locked
 
       - name: Install jscpd
-        run: npm install --global jscpd
+        run: npm install --global jscpd@5.4.1
 
       - name: Verify full-suite audit tooling
         run: |
           cargo deny --version
           pip-audit --version
+
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: 3.15.0
 
       - name: Prepare Python test prerequisites
         run: |
@@ -128,3 +136,14 @@ jobs:
             cat "$quality_log"
             echo "::endgroup::"
           done
+
+      - name: Upload quality diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quality-diagnostics-${{ github.run_id }}
+          path: |
+            .aeptus-cache/quality/outputs/*.log
+            logs/quality*.log
+          if-no-files-found: warn
+          retention-days: 7

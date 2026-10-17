@@ -37,6 +37,30 @@ struct RustCellData: Sendable {
     var link_id: UInt16 = 0
 }
 
+/// iOS mirror of the Rust `DisplayRowBuffer` (see chau7_terminal.h).
+///
+/// The grid already folded to a width the client can paint, so the renderer
+/// blits rows straight out of it instead of re-deriving cell indices through a
+/// source-to-display mapping.
+struct RustDisplayRowBuffer {
+    var cells: UnsafeMutablePointer<RustCellData>?
+    var cells_capacity: Int
+    var clusters_utf8: UnsafeMutablePointer<UInt8>?
+    var clusters_len: Int
+    var clusters_capacity: Int
+    var row_offsets: UnsafeMutablePointer<UInt32>?
+    var row_offsets_len: Int
+    var row_offsets_capacity: Int
+    var cell_count: Int
+    var display_cols: UInt16
+    var display_rows: UInt16
+    var source_cols: UInt16
+    var source_rows: UInt16
+    var cursor_col: UInt16
+    var cursor_row: UInt16
+    var cursor_visible: UInt8
+}
+
 /// Rows already folded to the client's width, ready to paint.
 ///
 /// Produced by `RemoteRustTerminalPlayback.displayRows(displayCols:)`. The
@@ -49,6 +73,16 @@ struct RemoteTerminalDisplayState: Sendable {
     let rowOffsets: [UInt32]
     let displayCols: Int
     let displayRows: Int
+    var cursorCol: Int = 0
+    var cursorRow: Int = 0
+    var cursorVisible: Bool = false
+
+    /// Coordinates are supplied by the same fold that produced the cells.
+    var visibleCursor: (column: Int, row: Int)? {
+        guard cursorVisible, cursorCol >= 0, cursorCol < displayCols,
+              cursorRow >= 0, cursorRow < displayRows else { return nil }
+        return (cursorCol, cursorRow)
+    }
 
     /// Cell range backing one display row.
     func range(forRow row: Int) -> Range<Int>? {

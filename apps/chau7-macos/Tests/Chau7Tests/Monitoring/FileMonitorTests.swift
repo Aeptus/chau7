@@ -64,16 +64,14 @@ final class FileMonitorTests: XCTestCase {
         let expectation = expectation(description: "file change detected")
         // A single write can surface as multiple dispatch-source events.
         expectation.assertForOverFulfill = false
-        let monitor = FileMonitor(url: fileURL) {
+        let queue = DispatchQueue(label: "com.chau7.tests.atomic-file-write")
+        let monitor = FileMonitor(url: fileURL, queue: queue) {
             expectation.fulfill()
         }
         monitor.start()
+        queue.sync {} // Wait for the target watch to arm before replacing the file.
 
-        // start() arms asynchronously on the monitor's queue — give it a beat
-        // before mutating the file.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
-            try? "modified content".write(to: fileURL, atomically: true, encoding: .utf8)
-        }
+        try? "modified content".write(to: fileURL, atomically: true, encoding: .utf8)
 
         wait(for: [expectation], timeout: 5.0)
         monitor.stop()

@@ -19,6 +19,56 @@ use parking_lot::Mutex;
 
 use crate::pty::PtyMessage;
 
+/// Bound consecutive EINTR retries so one PTY cannot spin the shared reader
+/// thread indefinitely under a sustained signal storm. Other results, including
+/// EOF, EIO, and EAGAIN, retain the caller's existing handling.
+const MAX_READ_EINTR_RETRIES: usize = 16;
+
+enum ReadAttempt<T> {
+    Value(T),
+    /// The bounded EINTR retries were exhausted; leave this fd open and revisit
+    /// it on a later poll cycle.
+    Yield,
+    Error(std::io::Error),
+}
+
+fn classify_read<T>(result: std::io::Result<T>) -> ReadAttempt<T> {
+    match result {
+        Ok(value) => ReadAttempt::Value(value),
+        Err(error) if error.kind() == std::io::ErrorKind::Interrupted => ReadAttempt::Yield,
+        Err(error) => ReadAttempt::Error(error),
+    }
+}
+
+fn retry_interrupted<T>(mut read: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let mut retries = 0;
+    loop {
+        match read() {
+            Err(error)
+                if error.kind() == std::io::ErrorKind::Interrupted
+                    && retries < MAX_READ_EINTR_RETRIES =>
+            {
+                retries += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
+fn read_pty(fd: RawFd, buffer: &mut [u8]) -> ReadAttempt<usize> {
+    classify_read(retry_interrupted(|| {
+        // Capture errno immediately after libc::read so retries and other work
+        // cannot overwrite the result that the caller needs to distinguish.
+        let bytes_read =
+            unsafe { libc::read(fd, buffer.as_mut_ptr() as *mut libc::c_void, buffer.len()) };
+        if bytes_read < 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(bytes_read as usize)
+        }
+    }))
+}
+
 /// Registration info for a single PTY fd in the pool.
 struct PtyEntry {
     fd: RawFd,
@@ -185,7 +235,7 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
         // Process pending adds/removes
         {
             let mut s = state.lock();
-            let adds: Vec<PtyEntry> = s.pending_adds.drain(..).collect();
+            let adds: Vec<PtyEntry> = std::mem::take(&mut s.pending_adds);
             for entry in adds {
                 let tid = entry.terminal_id;
                 let fd = entry.fd;
@@ -197,7 +247,7 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                     s.entries.len()
                 );
             }
-            let removes: Vec<RawFd> = s.pending_removes.drain(..).collect();
+            let removes: Vec<RawFd> = std::mem::take(&mut s.pending_removes);
             for fd in removes {
                 if let Some(entry) = s.entries.remove(&fd) {
                     info!(
@@ -290,7 +340,7 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
 
         // Read from fds that have data
         let mut s = state.lock();
-        for (i, pfd) in pollfds.iter().enumerate() {
+        'ready_fds: for (i, pfd) in pollfds.iter().enumerate() {
             if pfd.revents == 0 {
                 continue;
             }
@@ -306,69 +356,70 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
             }
 
             if pfd.revents & libc::POLLIN != 0 {
-                let bytes_read =
-                    unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
-
-                if bytes_read > 0 {
-                    let data = buf[..bytes_read as usize].to_vec();
-                    trace!(
-                        "SharedPtyReaderPool: terminal {} read {} bytes",
-                        entry.terminal_id, bytes_read
-                    );
-                    // try_send keeps the pool thread non-blocking — a
-                    // blocking send would starve every other terminal
-                    // sharing this single pool thread. On Full, we retain
-                    // the bytes on the entry and stop including the fd in
-                    // the next pollfd rebuild; the kernel PTY buffer fills
-                    // up and the shell backpressures via blocked write().
-                    // Bytes are never dropped: cursor-positioning escape
-                    // sequences are byte-for-byte relative, and dropping
-                    // any chunk corrupts every subsequent redraw (stale
-                    // UI elements stranded in scrollback).
-                    match entry.sender.try_send(PtyMessage::Data(data)) {
-                        Ok(()) => {}
-                        Err(crossbeam_channel::TrySendError::Full(PtyMessage::Data(buf))) => {
-                            warn!(
-                                "SharedPtyReaderPool: backpressuring terminal {} — channel full, retaining {} bytes (next read paused until consumer drains)",
-                                entry.terminal_id,
-                                buf.len()
-                            );
-                            entry.retained = buf;
-                        }
-                        Err(crossbeam_channel::TrySendError::Full(_)) => {
-                            warn!(
-                                "SharedPtyReaderPool: unexpected non-Data Full for terminal {}",
-                                entry.terminal_id
-                            );
-                        }
-                        Err(crossbeam_channel::TrySendError::Disconnected(_)) => {
-                            debug!(
-                                "SharedPtyReaderPool: channel disconnected for terminal {}",
-                                entry.terminal_id
-                            );
-                        }
-                    }
-                } else if bytes_read == 0 {
-                    // EOF — mark closed so the next pollfd rebuild excludes
-                    // this fd. Otherwise POLLIN+read==0 latches every
-                    // iteration and burns a CPU core.
-                    info!(
-                        "SharedPtyReaderPool: EOF on terminal {} (fd={})",
-                        entry.terminal_id, fd
-                    );
-                    entry.closed.store(true, Ordering::Release);
-                    let _ = entry.sender.try_send(PtyMessage::Closed);
-                } else {
-                    // Error — mark closed for the same reason.
-                    let errno = std::io::Error::last_os_error();
-                    if entry.running.load(Ordering::Acquire) {
-                        error!(
-                            "SharedPtyReaderPool: read error on terminal {} (fd={}): {}",
-                            entry.terminal_id, fd, errno
+                match read_pty(fd, &mut buf) {
+                    ReadAttempt::Yield => continue 'ready_fds,
+                    ReadAttempt::Value(0) => {
+                        // EOF — mark closed so the next pollfd rebuild excludes
+                        // this fd. Otherwise POLLIN+read==0 latches every
+                        // iteration and burns a CPU core.
+                        info!(
+                            "SharedPtyReaderPool: EOF on terminal {} (fd={})",
+                            entry.terminal_id, fd
                         );
+                        entry.closed.store(true, Ordering::Release);
+                        let _ = entry.sender.try_send(PtyMessage::Closed);
                     }
-                    entry.closed.store(true, Ordering::Release);
-                    let _ = entry.sender.try_send(PtyMessage::Closed);
+                    ReadAttempt::Value(bytes_read) => {
+                        let data = buf[..bytes_read].to_vec();
+                        trace!(
+                            "SharedPtyReaderPool: terminal {} read {} bytes",
+                            entry.terminal_id, bytes_read
+                        );
+                        // try_send keeps the pool thread non-blocking — a
+                        // blocking send would starve every other terminal
+                        // sharing this single pool thread. On Full, we retain
+                        // the bytes on the entry and stop including the fd in
+                        // the next pollfd rebuild; the kernel PTY buffer fills
+                        // up and the shell backpressures via blocked write().
+                        // Bytes are never dropped: cursor-positioning escape
+                        // sequences are byte-for-byte relative, and dropping
+                        // any chunk corrupts every subsequent redraw (stale
+                        // UI elements stranded in scrollback).
+                        match entry.sender.try_send(PtyMessage::Data(data)) {
+                            Ok(()) => {}
+                            Err(crossbeam_channel::TrySendError::Full(PtyMessage::Data(buf))) => {
+                                warn!(
+                                    "SharedPtyReaderPool: backpressuring terminal {} — channel full, retaining {} bytes (next read paused until consumer drains)",
+                                    entry.terminal_id,
+                                    buf.len()
+                                );
+                                entry.retained = buf;
+                            }
+                            Err(crossbeam_channel::TrySendError::Full(_)) => {
+                                warn!(
+                                    "SharedPtyReaderPool: unexpected non-Data Full for terminal {}",
+                                    entry.terminal_id
+                                );
+                            }
+                            Err(crossbeam_channel::TrySendError::Disconnected(_)) => {
+                                debug!(
+                                    "SharedPtyReaderPool: channel disconnected for terminal {}",
+                                    entry.terminal_id
+                                );
+                            }
+                        }
+                    }
+                    ReadAttempt::Error(errno) => {
+                        // Non-EINTR errors preserve the existing close path.
+                        if entry.running.load(Ordering::Acquire) {
+                            error!(
+                                "SharedPtyReaderPool: read error on terminal {} (fd={}): {}",
+                                entry.terminal_id, fd, errno
+                            );
+                        }
+                        entry.closed.store(true, Ordering::Release);
+                        let _ = entry.sender.try_send(PtyMessage::Closed);
+                    }
                 }
             }
 
@@ -390,15 +441,20 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                     const MAX_HUP_DRAIN_BYTES: usize = 4 * 1024 * 1024;
                     let mut drained_total = 0usize;
                     let mut disconnected = false;
+                    let mut yielded = false;
                     while drained_total < MAX_HUP_DRAIN_BYTES {
-                        let bytes_read = unsafe {
-                            libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len())
+                        let bytes_read = match read_pty(fd, &mut buf) {
+                            ReadAttempt::Yield => {
+                                yielded = true;
+                                break;
+                            }
+                            ReadAttempt::Value(bytes_read) if bytes_read > 0 => bytes_read,
+                            // Preserve the existing behavior for EOF and every
+                            // non-EINTR error (including EIO and EAGAIN).
+                            ReadAttempt::Value(_) | ReadAttempt::Error(_) => break,
                         };
-                        if bytes_read <= 0 {
-                            break;
-                        }
-                        drained_total += bytes_read as usize;
-                        let data = buf[..bytes_read as usize].to_vec();
+                        drained_total += bytes_read;
+                        let data = buf[..bytes_read].to_vec();
                         if entry.retained.is_empty() {
                             match entry.sender.try_send(PtyMessage::Data(data)) {
                                 Ok(()) => {}
@@ -423,6 +479,12 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
                             drained_total, entry.terminal_id
                         );
                     }
+                    if yielded {
+                        // Keep the fd open and its retained bytes intact. Finish
+                        // other ready fds, then let the next poll cycle resume
+                        // this HUP drain.
+                        continue 'ready_fds;
+                    }
                     entry.closed.store(true, Ordering::Release);
                     // Closed must arrive after all data; with retained bytes
                     // pending, the rebuild loop sends it post-flush.
@@ -445,4 +507,134 @@ fn run_pool(state: Arc<Mutex<PoolState>>, shutdown: Arc<AtomicBool>) {
     }
 
     info!("SharedPtyReaderPool: thread exiting");
+}
+
+#[cfg(test)]
+mod retry_interrupted_tests {
+    use super::{MAX_READ_EINTR_RETRIES, ReadAttempt, classify_read, retry_interrupted};
+    use std::cell::Cell;
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn retries_interrupted_read_then_returns_bytes() {
+        let calls = Cell::new(0);
+        let result = retry_interrupted(|| {
+            let call = calls.get() + 1;
+            calls.set(call);
+            if call == 1 {
+                Err(Error::from(ErrorKind::Interrupted))
+            } else {
+                Ok(17usize)
+            }
+        });
+
+        assert!(matches!(classify_read(result), ReadAttempt::Value(17)));
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn retries_interrupted_read_then_preserves_eof() {
+        let calls = Cell::new(0);
+        let result = retry_interrupted(|| {
+            let call = calls.get() + 1;
+            calls.set(call);
+            if call == 1 {
+                Err(Error::from(ErrorKind::Interrupted))
+            } else {
+                Ok(0usize)
+            }
+        });
+
+        assert!(matches!(classify_read(result), ReadAttempt::Value(0)));
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn retries_interrupted_read_then_returns_eio() {
+        let calls = Cell::new(0);
+        let result = retry_interrupted(|| {
+            let call = calls.get() + 1;
+            calls.set(call);
+            if call == 1 {
+                Err(Error::from(ErrorKind::Interrupted))
+            } else {
+                Err::<usize, _>(Error::from_raw_os_error(libc::EIO))
+            }
+        });
+
+        assert!(
+            matches!(classify_read(result), ReadAttempt::Error(error) if error.raw_os_error() == Some(libc::EIO))
+        );
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn retries_interrupted_read_then_returns_eagain() {
+        let calls = Cell::new(0);
+        let result = retry_interrupted(|| {
+            let call = calls.get() + 1;
+            calls.set(call);
+            if call == 1 {
+                Err(Error::from(ErrorKind::Interrupted))
+            } else {
+                Err::<usize, _>(Error::from_raw_os_error(libc::EAGAIN))
+            }
+        });
+
+        assert!(
+            matches!(classify_read(result), ReadAttempt::Error(error) if error.raw_os_error() == Some(libc::EAGAIN))
+        );
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn bounds_repeated_interrupted_reads() {
+        let calls = Cell::new(0);
+        let result = retry_interrupted(|| {
+            calls.set(calls.get() + 1);
+            Err::<usize, _>(Error::from(ErrorKind::Interrupted))
+        });
+
+        assert!(matches!(classify_read(result), ReadAttempt::Yield));
+        assert_eq!(calls.get(), MAX_READ_EINTR_RETRIES + 1);
+    }
+
+    #[test]
+    fn yields_at_retry_cap_then_resumes_with_bytes() {
+        let calls = Cell::new(0);
+        let mut read = || {
+            let call = calls.get() + 1;
+            calls.set(call);
+            if call <= MAX_READ_EINTR_RETRIES + 1 {
+                Err(Error::from(ErrorKind::Interrupted))
+            } else {
+                Ok(23usize)
+            }
+        };
+
+        let first_attempt = retry_interrupted(&mut read);
+        assert!(matches!(classify_read(first_attempt), ReadAttempt::Yield));
+        assert_eq!(calls.get(), MAX_READ_EINTR_RETRIES + 1);
+
+        let resumed_attempt = retry_interrupted(&mut read);
+        assert!(matches!(
+            classify_read(resumed_attempt),
+            ReadAttempt::Value(23)
+        ));
+        assert_eq!(calls.get(), MAX_READ_EINTR_RETRIES + 2);
+    }
+
+    #[test]
+    fn does_not_retry_non_interrupted_errors() {
+        for code in [libc::EIO, libc::EAGAIN] {
+            let calls = Cell::new(0);
+            let result = retry_interrupted(|| {
+                calls.set(calls.get() + 1);
+                Err::<usize, _>(Error::from_raw_os_error(code))
+            });
+
+            assert_eq!(result.unwrap_err().raw_os_error(), Some(code));
+            assert_eq!(calls.get(), 1, "errno {code} must not be retried");
+        }
+    }
 }

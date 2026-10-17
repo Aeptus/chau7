@@ -70,6 +70,23 @@ updates:
         update-types: [minor, patch]
     open-pull-requests-limit: 5
 
+  - package-ecosystem: cargo
+    directory: /apps/chau7-next
+    schedule:
+      interval: weekly
+    groups:
+      coordinated-gpui-version-updates:
+        applies-to: version-updates
+        patterns: ["gpui*"]
+      coordinated-gpui-security-updates:
+        applies-to: security-updates
+        patterns: ["gpui*"]
+      compatible-updates:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
   - package-ecosystem: pip
     directory: /tools/pentagi-mcp
     schedule:

@@ -8,6 +8,10 @@
  *   - Push registration: stores APNs tokens per paired iOS device.
  *   - Push notifications: sends APNs alerts when iOS is offline.
  *   - Pending state: stores the approvals/prompts snapshot for offline iOS.
+ *   - Read-only viewers (Chau7 Next only, docs/remote-control/VIEWER-PROTOCOL.md):
+ *     routes the cleartext viewer frames (0x60 to 0x64) between the Mac and
+ *     its viewers, and, for a DO named `share:<code>`, records which device
+ *     shares that code.
  *
  * The Worker performs token authentication before any request reaches this DO;
  * the DO additionally enforces single-use nonces (replay defense), per-route
@@ -29,6 +33,7 @@ import { RateLimiter } from './ratelimit.js';
 import { parseToken, TOKEN_TTL_SECONDS } from './token.js';
 import { relayBackpressureAction } from './backpressure.js';
 import { isCredentialAdmissionAllowed, resolveAuthMode } from './auth.js';
+import { ViewerRouter, shareRegistryName } from './viewer.js';
 
 interface PushRegistration {
   pairedDeviceId: string;
@@ -57,6 +62,7 @@ interface PendingStatePayload {
 }
 
 interface Env {
+  SESSION?: DurableObjectNamespace;
   RELAY_AUTH_KEYS?: string;
   RELAY_REVOKED_DEVICES?: string;
   ENVIRONMENT?: string;
@@ -70,15 +76,36 @@ interface Env {
 const REGISTRATIONS_KEY = 'push_registrations';
 const PENDING_STATE_KEY = 'pending_state';
 const SEEN_NONCES_KEY = 'seen_nonces';
+/** Share code the Mac registered for read-only viewers (Chau7 Next). */
+const VIEWER_SHARE_KEY = 'viewer_share_code';
+/** In a `share:<code>` registry DO: the device id sharing the code. */
+const SHARE_DEVICE_KEY = 'share_device';
 export const PENDING_RETENTION_MS = 4 * 60 * 60 * 1000;
 export const REGISTRATION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Reject relayed frames larger than this (matches the platform WS message limit). */
 const MAX_FRAME_BYTES = 1024 * 1024;
+/** A viewer only sends small join/leave frames. */
+const MAX_VIEWER_MESSAGE_BYTES = 4 * 1024;
+/** Device id that registered the share code (for unregistering after close). */
+const SHARE_OWNER_KEY = 'viewer_share_owner';
 /** Upper bound on retained nonces; bounded anyway by TTL + rate limits. */
 const MAX_SEEN_NONCES = 2000;
 
 type Role = 'mac' | 'ios';
+
+interface ViewerEntry {
+  code: string;
+  viewerId: string | null;
+  closed: boolean;
+}
+
+interface SocketAttachment {
+  deviceId?: string;
+  keyId?: string;
+  role?: string;
+  viewer?: ViewerEntry;
+}
 
 export class SessionDO {
   private readonly state: DurableObjectState;
@@ -105,6 +132,17 @@ export class SessionDO {
 
     if (route === 'connect') {
       return this.handleConnect(request, url);
+    }
+    // Internal routes, reached only through the Worker's /view/<code>.
+    if (route === 'viewer' && parts.length === 2) {
+      return this.handleViewerConnect(request, parts[1]);
+    }
+    if (route === 'share' && parts.length === 2) {
+      return this.handleShareRegistry(request, parts[1]);
+    }
+    if (route === 'viewattempt') {
+      // The rate limit above is the whole check (one DO per client IP).
+      return new Response(null, { status: 204 });
     }
     if (route === 'push' && parts.length === 3) {
       if (request.method !== 'POST') {
@@ -203,6 +241,12 @@ export class SessionDO {
   }
 
   async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string): Promise<void> {
+    if (this.state.getTags(ws).includes('viewer')) {
+      if (typeof message !== 'string' && message.byteLength <= MAX_VIEWER_MESSAGE_BYTES) {
+        (await this.viewerRouter()).onViewerMessage(ws, message);
+      }
+      return;
+    }
     if (!this.socketIsAuthorized(ws)) return;
     const tags = this.state.getTags(ws);
     const role: Role | undefined = tags.includes('mac')
@@ -222,6 +266,19 @@ export class SessionDO {
         // Ignore close errors.
       }
       return;
+    }
+
+    if (role === 'mac') {
+      // Viewer frames (0x60 to 0x64) are for the relay and the viewers,
+      // never for the phone.
+      const router = await this.viewerRouter();
+      const viewerFrame = router.onMacFrame(message);
+      if (viewerFrame.handled) {
+        if (viewerFrame.share !== undefined) {
+          await this.applyShare(router, viewerFrame.share);
+        }
+        return;
+      }
     }
 
     const peerRole: Role = role === 'mac' ? 'ios' : 'mac';
@@ -257,6 +314,20 @@ export class SessionDO {
     _reason: string,
     _wasClean: boolean
   ): Promise<void> {
+    const tags = this.state.getTags(ws);
+    if (tags.includes('viewer')) {
+      (await this.viewerRouter()).onViewerClose(ws);
+    } else if (tags.includes('mac')) {
+      // Another Mac socket means this one was replaced: its viewers end, the
+      // share stays (the agent registers it again on the new connection).
+      const replaced = this.state.getWebSockets('mac').some((other) => other !== ws);
+      const router = await this.viewerRouter();
+      const code = router.macDisconnected({ keepShare: replaced });
+      if (code) {
+        await this.state.storage.delete(VIEWER_SHARE_KEY);
+        await this.updateShareRegistry('unregister', code);
+      }
+    }
     // Hibernatable sockets are removed from getWebSockets() automatically once
     // closed; explicitly closing the server side completes the handshake.
     try {
@@ -267,11 +338,171 @@ export class SessionDO {
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {
+    if (this.state.getTags(ws).includes('viewer')) {
+      (await this.viewerRouter()).onViewerClose(ws);
+    }
     try {
       ws.close(1011, 'WebSocket error');
     } catch {
       // Ignore close errors.
     }
+  }
+
+  // --- Read-only viewers (docs/remote-control/VIEWER-PROTOCOL.md) ----------
+
+  /**
+   * The viewer router over this DO's hibernatable viewer sockets. Its state
+   * lives in the socket attachments and in storage (the share code), so it
+   * is rebuilt on every use and survives eviction.
+   */
+  private async viewerRouter(): Promise<ViewerRouter> {
+    const shareCode = (await this.state.storage.get<string>(VIEWER_SHARE_KEY)) ?? null;
+    const store = {
+      list: () => this.state.getWebSockets('viewer'),
+      get: (socket: WebSocket): ViewerEntry | null => {
+        try {
+          const attachment = socket.deserializeAttachment() as SocketAttachment | null;
+          return attachment?.viewer ?? null;
+        } catch {
+          return null;
+        }
+      },
+      set: (socket: WebSocket, entry: ViewerEntry) => {
+        socket.serializeAttachment({ role: 'viewer', viewer: entry } satisfies SocketAttachment);
+      }
+    };
+    const sendToMac = (bytes: Uint8Array): boolean => {
+      for (const mac of this.state.getWebSockets('mac')) {
+        if (!this.socketIsAuthorized(mac)) continue;
+        try {
+          mac.send(bytes);
+          return true;
+        } catch {
+          // Try the next socket, if any.
+        }
+      }
+      return false;
+    };
+    return new ViewerRouter({ sendToMac, store, shareCode });
+  }
+
+  /** A viewer's WebSocket for share code `code` (routed here by the Worker). */
+  private async handleViewerConnect(request: Request, code: string): Promise<Response> {
+    if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+      return new Response('Expected WebSocket', { status: 426 });
+    }
+    const router = await this.viewerRouter();
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    this.state.acceptWebSocket(server, ['viewer']);
+    if (!router.acceptViewer(server, code)) {
+      // Rejected and closed by the router; keep it out of the viewer list.
+      server.serializeAttachment({
+        role: 'viewer',
+        viewer: { code: '', viewerId: null, closed: true }
+      } satisfies SocketAttachment);
+    }
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /** Applies VIEWER_SHARE from the Mac: storage, then the share registry. */
+  private async applyShare(router: ViewerRouter, code: string | null): Promise<void> {
+    const { unregister, register } = router.setShare(code);
+    if (router.shareCode) {
+      await this.state.storage.put(VIEWER_SHARE_KEY, router.shareCode);
+    } else {
+      await this.state.storage.delete(VIEWER_SHARE_KEY);
+    }
+    if (unregister) {
+      await this.updateShareRegistry('unregister', unregister);
+    }
+    if (register) {
+      await this.updateShareRegistry('register', register);
+    }
+  }
+
+  /** The Mac's device id (from its socket attachment). */
+  private macDeviceId(): string | undefined {
+    for (const mac of this.state.getWebSockets('mac')) {
+      try {
+        const attachment = mac.deserializeAttachment() as SocketAttachment | null;
+        if (attachment?.deviceId) return attachment.deviceId;
+      } catch {
+        // Ignore malformed attachments.
+      }
+    }
+    return undefined;
+  }
+
+  /** Tells the registry object of `code` (named `share:<code>`) about us. */
+  private async updateShareRegistry(
+    operation: 'register' | 'unregister',
+    code: string
+  ): Promise<void> {
+    const namespace = this.env.SESSION;
+    const deviceId = this.macDeviceId() ?? (await this.state.storage.get<string>(SHARE_OWNER_KEY));
+    if (!namespace || !deviceId) {
+      return;
+    }
+    if (operation === 'register') {
+      await this.state.storage.put(SHARE_OWNER_KEY, deviceId);
+    }
+    try {
+      const stub = namespace.get(namespace.idFromName(shareRegistryName(code)));
+      await stub.fetch(
+        new Request(`https://internal/share/${operation}`, {
+          method: 'POST',
+          body: JSON.stringify({ device_id: deviceId })
+        })
+      );
+    } catch (error) {
+      console.error('share registry error:', error);
+    }
+    if (operation === 'unregister' && !(await this.state.storage.get(VIEWER_SHARE_KEY))) {
+      await this.state.storage.delete(SHARE_OWNER_KEY);
+    }
+  }
+
+  /**
+   * The registry for one share code: which device shares it. The first
+   * device keeps the code until it unregisters it, so another Mac cannot
+   * take over a code that is in use.
+   */
+  private async handleShareRegistry(request: Request, operation: string): Promise<Response> {
+    if (operation === 'lookup') {
+      const device = await this.state.storage.get<string>(SHARE_DEVICE_KEY);
+      return device
+        ? Response.json({ device_id: device })
+        : new Response('Unknown share code', { status: 404 });
+    }
+    if (request.method !== 'POST') {
+      return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'POST' } });
+    }
+    let body: { device_id?: unknown };
+    try {
+      body = (await request.json()) as { device_id?: unknown };
+    } catch {
+      return new Response('Invalid JSON', { status: 400 });
+    }
+    if (typeof body.device_id !== 'string' || !body.device_id) {
+      return new Response('Missing device_id', { status: 400 });
+    }
+    const current = await this.state.storage.get<string>(SHARE_DEVICE_KEY);
+    if (operation === 'register') {
+      if (current && current !== body.device_id) {
+        return new Response('Share code in use', { status: 409 });
+      }
+      await this.state.storage.put(SHARE_DEVICE_KEY, body.device_id);
+      return new Response(null, { status: 204 });
+    }
+    if (operation === 'unregister') {
+      if (current === body.device_id) {
+        await this.state.storage.delete(SHARE_DEVICE_KEY);
+      }
+      return new Response(null, { status: 204 });
+    }
+    return new Response('Not Found', { status: 404 });
   }
 
   // --- Replay defense -------------------------------------------------------

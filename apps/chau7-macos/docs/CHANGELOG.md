@@ -7,11 +7,593 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Record screen safe areas in isolated fullscreen checks and distinguish forced
+  menu visibility from pointer-driven reveal, with explicit focus validation.
+
+- Refresh isolated restoration fixtures through the production scroll action
+  before checking cached styled history and print snapshots.
+
+- Preserve custom titlebar transparency in macOS fullscreen transitions so
+  revealing the system menu does not introduce an opaque native titlebar.
+- Add a guarded repeat update for existing Rust production installations, with
+  candidate verification, saved-state backups and retained rollback bundles.
+- Compile the repository history-search test helper only on its supported Unix
+  test targets, fixing the Windows warnings-as-errors check.
+
+- Focus and select the full tab title when opening Rename Tab or moving from
+  the color row to its name field, including with a native editor open; clicking
+  the title keeps keyboard input there.
+
+- Keep tab reordering in its source window when another window overlaps it;
+  resolve transfers against the visible frontmost window and native screen
+  coordinates, including multiple displays. Recognize vertical drags and keep
+  menu destinations stable when another window closes; cancel unavailable
+  destinations before removing any source tab.
+
+- Return keyboard focus from the native Markdown side panel to the terminal
+  when clicking another pane, including after the editor surface remounts.
+- Keep line breaks, indentation, terminal colors, emphasis and links when
+  copying terminal selections into the Markdown side panel; preserve rich
+  blocks when saving and reopening the document.
+- Collapse native editor fragments that contain only hidden terminal metadata,
+  including fragments containing just the wrapper line terminator.
+- Continue drag selection beyond terminal edges, retain the pointer column,
+  stop on release or focus loss, and accumulate scrolling TUI content without
+  including fixed headers or input footers. Preserve both endpoint characters
+  when a selection reverses direction.
+
+- Anchor Rust tab status outlines to the same bounds as their rounded backgrounds,
+  correcting the padding offset; align repository brackets and tab measurements too.
+
+- Group Rust idle tabs by repository with colored headings, section separators,
+  full-path tooltips, and a scrollable list above Close All Idle.
+- Add an opt-in Rust setting for numbered shortcuts to select only tabs in the
+  tab bar, preserving the existing all-tabs behavior by default.
+
+- Forward requested wheel events to full-screen terminal apps such as Codex,
+  even when click/drag reporting is off. Honor DEC 1007 alternate scrolling,
+  keep Shift/Ctrl and active text selection local, and expose numeric input
+  modes in performance snapshots.
+
+- Preserve fractional trackpad movement when scrolling terminal history.
+- Keep terminal drag selection active outside pane bounds, extend word/line
+  selections after double/triple click, and select the correct history rows
+  while scrolling. Preserve Option-drag copy suppression through mouse release.
+
+- Restore continuous repository group lines and pale repository-colored tab
+  backgrounds, and align waiting/status outlines with the tab's rounded edge.
+- Preserve focus in repository-panel inputs and restore terminal input focus
+  when switching panes; render split separators as one thin visual rule.
+- Keep terminal engine diagnostics opt-in during normal use while retaining
+  numeric performance measurements and warning/error logs.
+- Report the canonical Rust build channel and source revision in diagnostics.
+- Account for failed telemetry worker jobs and disconnected queues without
+  reporting an unavailable worker as healthy or leaving stale pending writes.
+
+- Preserve Swift synthetic AI tracking metadata and legacy command-block/preview
+  payloads as inert Rust restoration data through activation and later saves.
+- Distinguish preserved metadata from actual migration loss warnings, and keep
+  validated CLI resume commands separate from archived source commands.
+- Add a guarded local Rust upgrade script with verified backups, reusable build
+  receipts, explicit failure/success stages, and manual application launch.
+
+- Keep terminal folding compatible with strict Rust 1.99 Clippy checks.
+
+- Preserve iOS command drafts until WebSocket completion and retain uncertain
+  sends for an acknowledged manual retry; fence callbacks and pending-state
+  fetches across reconnects and pairing changes.
+- Clear approvals, queued decisions, drafts and telemetry when changing paired
+  Macs, and release in-flight approval state for same-host reconnects.
+- Preserve split UTF-8 characters and a bounded text fallback on iOS; map the
+  cursor and wide graphemes correctly when folding the Rust terminal grid.
+- Validate and confirm Swift SSH URL actions, keep queued input on the new tab,
+  and honor explicit SSH ports in both macOS apps.
+- Require shared tab identity before recovering legacy secondary windows from
+  a backup, preventing unrelated windows from being restored.
+- Bind asynchronous Git changes to their command UUID and completion order;
+  discard delayed diff requests after switching tabs so they cannot steal focus.
+- Target remote MCP approval context at the requested tab and evict discarded
+  protected inputs together with their pending approval cards.
+- Honor Xcode's selected simulator architectures in the iOS Rust build and
+  recheck nested Rust sources through Cargo on every build invocation.
+- Prevent CTO wrappers from recursively resolving themselves when HOME changes
+  or PATH contains symlink aliases; honor CARGO_HOME in the iOS Rust build.
+- Keep home-derived stores isolated in XCTest even when a test clears its
+  explicit override, and make test fixtures respect isolated homes and services.
+
+- Preserve user directory names when localizing Full Disk Access alerts,
+  using translated string slices for native prompt buttons.
+
+- Use the compiled app identity in production menus, windows, permission guidance,
+  notification warnings and localized resources while retaining Next beta labels.
+
+- Verify remote host labels and notification warnings against the compiled beta
+  or production app identity under strict Clippy checks.
+
+- Keep the Swift restore converter clean under strict Rust 1.99 Clippy checks.
+
+- Decode Swift restoration identifier and preview fields using their exact
+  persisted JSON names, and isolate URL handling by production or Next channel.
+
+- Refuse packaging into Applications, app-bundle symlinks, external existing
+  apps, or generated bundles with open files before invoking the compiler.
+
+- Keep the beta packaging receipt valid when the Cargo feature list is empty
+  under the system Bash shipped with macOS.
+
+- Convert Swift restore bundles and UserDefaults indexes without modifying the
+  source, retaining valid AI resume directories and dashboard repository roots.
+
+- Add a separately gated Rust production candidate workflow, explicit release
+  version metadata, and artifact reuse for Developer ID signing and notarization.
+
+- Add explicit, read-only Swift and Next restore imports with dry-run counts,
+  source-integrity checks, instance locking and atomic complete-bundle publication.
+
+- Prepare an explicit Rust production build channel with the stable app identity
+  and versioned writable storage, preserving Swift and Next data for rollback.
+
+- Start terminal windows immediately and show a splash only when no terminal
+  frame is painted after 200 ms. Dismiss it on the first terminal paint, suppress
+  late splash frames, and decode the logo before opening its window.
+
+- Preserve restore data when quitting during startup and expose numeric launch
+  milestones, including first terminal paint and prompt readiness.
+
+- Persist telemetry extraction provenance without overwriting live metadata,
+  and resolve Claude transcripts in project paths with spaces or punctuation.
+- Separate terminal input dispatch from CLI response time, measure output through
+  CPU paint completion, and prevent hidden output from inflating render latency.
+- Reduce empty PTY parser polling while retaining immediate output and shutdown
+  wakeups, and report PTY queue/send-call and autosave capture costs numerically.
+- Correlate AI telemetry with its owning tab and provider session, reject stale
+  or ambiguous folder matches, retain explicit fallback provenance, and retry
+  owned Claude start identities with bounded process-detection retries.
+- Refresh AppKit Workspace state between isolated native focus observations so
+  companion-to-fullscreen activation checks do not poll a stale foreground PID.
+- Anchor native fullscreen traffic lights in a small top-left host so AppKit
+  titlebar layout cannot move them to the bottom after resizing or focus loss.
+- Measure native control placement in screen coordinates and allow bounded
+  LaunchServices activation time through actual fullscreen Space transitions.
+- Borrow retained AppKit application handles in native focus timeout diagnostics.
+- Switch between two uniquely owned native fixture apps when checking inactive
+  fullscreen controls, and retain bounded focus diagnostics on timeout.
+- Preserve live cursor columns and meaningful blank cursor rows during restore,
+  and verify fullscreen reactivation through a separate owned LaunchServices stage.
+- Match native prompt markers after terminal row padding is stripped by text export.
+- Trim saved terminal viewport padding before replay, remove exact legacy startup
+  tip duplicates, and keep the live prompt after useful content across resizing.
+- Bound retries for transient Linux ETXTBSY failures when spawning isolated CTO
+  test wrappers and give each test fixture a unique temporary directory.
+- Reposition native fullscreen controls on focus loss as well as focus regain;
+  assert their top-edge placement and visible pixels across real app deactivation
+  and reactivation in the isolated fullscreen fixture.
+- Exercise the real main-thread AppKit green button to leave fullscreen in isolated acceptance,
+  and let SSH and text indicators shrink inside crowded tab chips.
+- Keep the new OpenCode logo inside the Rust app assets to avoid rebuilding the
+  Swift app when its icon changes, and finish native fullscreen observer cleanup.
+- Guard fullscreen control installation against missing content views and use
+  the pinned objc2 retained-object APIs.
+- Keep real AppKit traffic lights visible in Next fullscreen content and restore
+  their native titlebar placement on exit; exercise an actual fullscreen Space
+  and capture native control composition in isolated acceptance.
+- Show the OpenCode logo on Next tabs and validate canonical OpenCode resume
+  commands, including once-only restoration prefill through owned fake shells.
+- Detect live SSH descendants and show a host badge alongside the active tool
+  logo, clearing it when the SSH process exits and excluding query-only modes.
+
+- Match Settings and secondary-window titlebars to their content palette,
+  including title text and separators in light, dark and high-contrast modes.
+- Keep package installation and unrelated runner argument paths from being
+  mistaken for live AI tools while retaining supported launcher detection.
+- Reuse production window options in Next native restore and keyboard fixtures
+  so zoom and fullscreen control checks exercise the real custom titlebar.
+- Initialize the production terminal command guard in the isolated tab-zoom regression.
+- Delay Next shell loading indicators until 500 ms and avoid animation redraws
+  while the indicator is hidden.
+- Keep Next native window controls in their parent coordinate space after zoom
+  and retain custom titlebar controls in fullscreen presentation policy.
+- Preserve terminal top and side padding while removing the explicit bottom inset.
+- Detect OpenCode commands, live processes and supported package runners; compare
+  the Rust tool names and aliases with the current Swift registry in regression tests.
+- Avoid interpreting ordinary file arguments as running AI tools.
+- Preserve each Next tab's zoom when unrelated settings change, repaint updated
+  appearance, and use the same 8 pt minimum for default and interactive zoom.
+
+- Initialize the native editor layout system before editing so the line-number ruler cannot clear marked composition during its first repaint.
+- Capture bounded native AppKit call stacks when styled storage edits overlap marked text in the isolated editor acceptance fixture.
+- Await the production cached scrollback grid before native print
+  acceptance, retaining exact ANSI color checks and pixel diagnostics.
+- Start the production repository registry in isolated native Restore
+  acceptance and drain its writes before removing the fixture profile.
+- Validate restored split metadata through real branch changes in owned
+  synthetic repositories and report each grouping predicate on failure.
+- Trace attribute-only AppKit text-storage edits during the isolated native
+  composition fixture with a bounded call stack, preserving the strict
+  marked-text survival assertion.
+- Regroup both the old and new automatic repository groups when a middle tab
+  changes its primary repository or leaves it, preserving selection by tab identity.
+- Keep native print snapshot validation compatible with strict Rust 1.99 checks.
+- Print the Next terminal through its shared CPU grid painter, preserving ANSI
+  colors, graphemes, images and overlays in an owned PNG without replacing the
+  displayed frame cache.
+- Keep Next automatic repository groups attached to the first terminal in a
+  split, use the displayed terminal for manual grouping, and expose those roles
+  in read-only MCP diagnostics.
+- Restore explicit tab-bar refresh commands, retire native Services and image
+  drop registrations when windows close, and anchor the status popover to its
+  menu-bar button.
+- Resolve isolated Keychain service names once when replacing credentials.
+- Ship an opt-in CLI installer that works directly from the Next app bundle
+  without a source checkout or Rust toolchain.
+
+- Skip Next cursor-blink redraws for unfocused terminal views that already
+  paint a solid cursor, and show the cursor immediately when focus returns.
+
+- Show Analytics generation-rate measurement times and identify retained older
+  readings so historical throughput is not presented as a live measurement.
+
+- Open Next diagnostic files and folders through the native path API, preserving
+  spaces, Unicode and URL-reserved characters in profile paths.
+- Refresh the verified Next test-package download and document grouping settings,
+  performance access and the remaining physical acceptance checks.
+
+- Capture native LaunchServices fixture output in its private local bundle root
+  before archiving verified retired runs, avoiding external-volume spawn failures.
+
+- Accept every production language in the native Settings fixture, including
+  Hebrew, and check each language against Swift search metadata.
+
+- Validate native build-only mode before fixture locale selectors so invalid
+  build invocations report their mode error consistently.
+
+- Coordinate the owned native fixture's first ordered-front reveal through an
+  exact bundle/PID LaunchServices acknowledgement within its existing five-second
+  deadline; require both activation stages while retaining strict frame and focus checks.
+- Reuse a verified native fixture build across acceptance cases and retain
+  validation evidence in a caller-selected directory.
+- Document persistence and retention of captured token-rate performance readings.
+
+- Show localized rendering suspension status in Next hover cards, preserving
+  the status before preview prewarming and hiding it for reactivated tabs.
+- Match Unix helper shutdown with SIGTERM, SIGINT and final owned-child kill,
+  keeping remote reaping off the UI thread.
+- Export existing bounded per-tab generation-speed readings through performance
+  JSON and MCP with measurement source/timestamp and explicit missing values.
+- Synchronize the Swift atomic-file-write test with its monitor's startup queue
+  to remove a readiness race without extending its five-second deadline.
+
+- Fix the AppKit window type import for fixture-only editor diagnostics.
+- Request explicit foreground activation for the owned native Restore fixture and add bounded editor focus/window diagnostics; preserve strict native acceptance assertions.
+- Activate the owned AppKit accessibility adapter before native Restore frame measurements.
+
+- Strengthen native Restore acceptance to measure post-reopen frames and require final app/key-window focus; keep existing deadlines.
+
+### Build
+
+- Diagnostic Next builds bypass CTO output filtering so the full Cargo log
+  streams directly. Fast builds retain their existing output and profile.
+- Preserve Python MCP request stage, child status and bounded stderr on a
+  response timeout; upload quality logs on CI failure without changing deadlines.
+- Use modern AppKit activation and an exact owned-app handshake in the native
+  restore fixture, retaining strict focus, visibility and rendered-frame checks.
+- Corrected native accessibility fixture reads to use GPUI's direct entity
+  update return values. Native action and dashboard assertions are unchanged.
+- Locate the unique styled scrollback marker in the retained-history viewport
+  without assuming row zero; preserve exact cell and grapheme replay checks.
+- Refreshed compatible Rust lockfile resolutions, including `proptest` 1.12.0,
+  `sha2` 0.11.1, `schemars` 1.2.3 and `smallvec` 1.16.3. Retained the exact
+  upstream GPUI constraints on `cocoa`, `generic-array` and
+  `unicode-properties`.
+- Added cell-level ANSI replay and native retention checks for styled
+  scrollback, combining accents, CJK wide cells and VS16 emoji. The native
+  check covers in-process reload; application restart remains a separate check.
+- Corrected Chau7 Next diagnostic packaging to use Apple `dsymutil -o`, after
+  a real Xcode attempt on `37c51cc3` rejected `--out-file`. The source contracts
+  passed, including an executable fake that requires exit 2 and the expected
+  error for that rejected option, absent DWARF and UUID mismatch. Diagnostic
+  symbols remain beside the signed bundle; fast packaging performs no symbol
+  work. Real-tool integration evidence is recorded separately in PR #229.
+  Application Rust/Go source is unchanged.
+- Application checkpoint `4d8f55b1` passed all 21 isolated native cases, the
+  separate keyboard fixture, 3,023 Rust tests (two ignored), nine compiler
+  stages, ten separate quality gates and all six reported CI checks. These
+  passes do not establish a fix for the previous intermittent IME failure;
+  physical input-method and remaining Mac checklist acceptance stay open.
+
+### Fixed
+
+- Borrow blank and grapheme-cluster terminal text during painting to avoid
+  temporary allocations while preserving exact UTF-8 bytes and styling.
+- Expose bitmap and glyph cache reclaim wall time, cached bytes and entry counts
+  through the existing performance work profile. Cached bytes are not RSS freed.
+- Avoid restarting Next settings scroll animations for subpixel layout adjustments;
+  preserve the existing deadline and apply the exact final offset on a real frame.
+- Exposed the repository-group dashboard action as an accessible button in Next.
+  Native fixtures press the actual macOS control and verify the exact group
+  dashboard after a newer rendered frame.
+- Added an accessibility Click action to tab radio buttons, using the same selection and
+  focus path as the existing tab UI.
+  Native regression fixtures also check the advertised press action and the selected
+  values exported by macOS.
+- Scoped Chau7 Next's Services selection to the focused terminal and window,
+  refreshed it when selection changes, and cleared it when terminal input or
+  Clear Screen resets the selection. Swift does not advertise an NSServices
+  requestor.
+- Chau7 Next streamed token-rate details use the same provider display names
+  and optional model suffix as Swift, including Unknown and future providers.
+  Added pure mapping and IPC parser regression coverage.
+- Pre-commit review checks fresh live Codex state before sending or submitting
+  review input, rejecting stale terminal banners after the agent exits.
+- Deferred MCP terminal queries exclude saved layouts containing only editors;
+  unavailable PTY logs return empty snapshots as in current Swift.
+
+- Read-only MCP status and buffer queries now recognize restored tabs whose
+  terminal panes remain deferred. These queries report unavailable terminal
+  state without activating the pane; mutations still require a live session
+  and explicit MCP control.
+
+### Validation
+
+- Published source `e0cd62d9761e1d76580adb47aa92f6b2c7c78300` passed five
+  selected commit gates, five selected publication gates and a separate
+  ten-gate exact-head full-quality run (136.210 seconds, source clean before
+  and after). Its optional fixture-feature IME-diagnostic build failed with
+  E0277 at `native_markdown/fixture.rs:433`, where `?` was applied to a
+  `FixtureStorageObserver`. The build stopped before app launch, so no native
+  diagnostic result exists for e0cd62d. This is retained as a historical
+  pre-launch failure: on `4d8f55b1`, the corrected fixture compiled with
+  Cargo exit 0 and its focused diagnostic case passed. The original binary-only
+  DWARF failure remains preserved. The separate fast sequence passed all nine
+  compiler stages and all 21 isolated native cases. The later trace does not establish a cause or
+  production fix for the earlier composition failure. At the contemporaneous
+  PR read 1970, three parity checks had passed while the OS matrix and Quality
+  were still running.
+- Checkpoint `c8ede4d4662a3b38a25bfe6f4885978769454ab1` passed all nine
+  fast compiler/package stages, ten separate full-quality gates and 3,023
+  Rust tests (two ignored). The normal build took 50.614 seconds with a warm
+  cache. Software native acceptance passed 4/4; Auto with unavailable Metal
+  passed Restore, Settings and Cache but failed Editor composition (3/4).
+  The sequence stopped before locale and accessibility cases. The separate
+  keyboard fixture passed. No cause or production fix is established for the
+  composition loss between frame callbacks. All eight matrix apps retired.
+- On that same checkpoint, two-process deferred-tab MCP acceptance passed:
+  known parked terminals returned blocked read-only readiness and empty buffer
+  and PTY-log snapshots, without starting the target shell or granting control.
+  Saved tab/pane identity and styled scrollback persisted through two graceful
+  quits. Live emulator replay remains unverified. The normal package passed
+  exact 68-byte MCP input, active-child graceful quit, numeric validation of
+  1,868 values and 16 persisted performance rows, and all five synthetic
+  RunData checks. All owned test apps retired; no provider or device was contacted.
+
+- Source `7c7a3e0c9f78d0272f85c2c1ae8fb42edfc9938b` passed separate
+  ten-gate full quality and 3,023 Rust workspace tests (two ignored). Normal
+  and native-feature strict Clippy rejected two explicit early-return blocks
+  in the deferred MCP read paths. Formatting and build/installer contracts
+  passed; the sequence stopped before packaging or app launch. The follow-up
+  uses equivalent Option propagation without warning suppressions. Fresh
+  compiler and runtime validation remains pending.
+
+
+- Exact source `baf03cb83fdc6925849e82e9345a4c443929339f` passed all nine
+  compiler/package stages, separate ten-gate full quality, 3,019 workspace
+  tests (two ignored), all 21 isolated native outcomes, and the separate
+  keyboard fixture. Normal-package MCP input, numeric performance persistence,
+  active-child graceful quit, and all five synthetic RunData stages passed.
+  All seven PR checks passed. The normal optimized build took 39.319 seconds
+  with a warm cache; no cold-build or speed-gain claim is made.
+- An additional two-process normal-app test preserved its styled scrollback
+  sidecar unchanged after both graceful shutdowns. It exposed a read-only MCP
+  gap for existing deferred background tabs: lookup succeeded, but status and
+  buffer output required a live terminal session and reported a missing tab.
+  The follow-up recognizes those tabs without activating a shell or granting
+  control. Status preserves blocked caller readiness; buffer output is empty
+  until a terminal is attached, matching Swift. Fresh validation of this
+  correction is pending. Saved sidecar persistence does not prove second-process
+  live emulator replay. All owned test app processes have retired.
+- Source `d8a04d4944a36556bf3346390b497d11814bf402` passed five staged
+  commit gates, five publication gates, ten separate full-quality gates and
+  the exact optional keyboard-case unit test. Its fast workspace tests, normal
+  strict Clippy, formatting and build/installer contracts passed. Native-feature
+  Clippy rejected one redundant closure in the fixture-only input-context trace,
+  stopping the compiler sequence before any seal, package or app launch.
+  The follow-up correction uses the associated function directly, preserving
+  strict warnings; fresh compiler and runtime validation remains pending.
+
+- Follow-up source `0f40436372eb13684a09e9449e35b24aad8ad2eb` passed seven
+  staged commit gates, nine full-suite publication gates and four Python parser
+  tests. Its focused optional Rust unit-test compilation failed on two keyboard
+  fixture reads using `AsyncApp` where `App` is required; no app was launched or
+  nine-stage compiler sequence started. The follow-up correction uses the
+  existing `cx.update` path for both unchanged PTY-liveness assertions; its
+  exact unit test passed on d8a04d49.
+- On exact source `ab64761304b0339cdace38413bed241432e7e1a7`, all nine fast
+  compiler stages passed and the workspace reported 3,019 passed tests (two
+  ignored). The native Software matrix passed Restore, Settings and Cache; the
+  Editor case observed marked composition disappear between repaint frames
+  (3/4). The runner did not proceed to Auto, localized Settings or the optional
+  accessibility case.
+- GitHub workflow run `38313846802` reports macOS, Linux and Windows matrix
+  success for this exact source. Artifact metadata identifies `11776452820` at
+  29,556,237 bytes; it was not downloaded or locally verified. Quality run
+  `38313846806` and the three parity checks also passed. All seven expected
+  checks succeeded; the three cancelled jobs belong to the redundant matrix
+  run stopped by shared concurrency.
+- The separate signed normal package selected Software for its live windows,
+  delivered an exact 68-byte MCP input to a third tab and preserved earlier
+  tab input. The writer completed one accepted item with no failure or pending
+  work; the performance snapshot showed zero failed frames and 16 active
+  timers. An owned `/bin/cat` child was observed under the app before graceful
+  quit; the app and child were gone afterward without forced signals.
+- A separate isolated fake-CLI run persisted one completed assistant turn with
+  exit status 0 and a unique marker. All five run-data stages, ten shutdown
+  phases and read-only SQLite row/turn checks passed. It contacted no external
+  provider or device. These checks do not close the physical Mac checklist.
+
+### Diagnostics
+
+- Optional native fixtures add bounded elapsed times, numeric AppKit event
+  metadata, an exact text-storage edit observer and a capped first-observation
+  stack. The observer unregisters on drop. These diagnostics capture no source
+  text or key payload and change no acceptance assertion or production behavior.
+  A separate diagnostic build is planned; an observation stack alone cannot
+  identify the operation that cleared composition.
+
+- The follow-up fixture-only code extends the earlier 64-event AppKit trace
+  to a 96-event bound. It records input-context identities, native frame
+  geometry and attachment decisions, marked-state around existing frame
+  setters, and pending mirror/focus state around existing focus delivery. It
+  captures no source text and changes no production behavior, acceptance
+  assertions or deadlines. Compiler and runtime validation for this new source
+  batch are pending.
+- Earlier diagnostic: the fixture-only AppKit marked-composition trace added
+  four `native-parity-fixture`-gated callbacks: NSTextInputClient insertion and
+  marked-text updates, plus NSTextView single- and multi-range selection
+  updates. It records fixed event names, ranges and booleans within its then-
+  current 64-event cap; it captures no source text. Each callback invokes its
+  exact superclass selector once with unchanged arguments. Existing acceptance
+  assertions and deadlines are unchanged. The callbacks compile on ab647613;
+  that Editor case observed marked composition disappear between repaint
+  frames. The trace does not establish a production cause or fix.
+- Add an explicit-only native `keyboard` fixture using the production keymap,
+  app actions and native menus. Owned AppKit events exercise Cmd+C without
+  selection, Ctrl+Tab and Cmd+D against local fake-shell PTYs; the assertions
+  require the exact interruption byte, distinct split PTYs and new-leaf focus.
+  The original four-case default matrix and deadlines remain unchanged. This
+  fixture unit test passed on d8a04d49; native Clippy stopped the full sequence
+  before runtime validation. It does not prove physical input.
+
+### Maintenance
+
+- Group Chau7 Next push and PR-to-default-branch CI runs by their shared head
+  repository/branch and target base, preserving distinct fork, other-base and
+  manual runs. Add a context-model contract; actual CI behavior still requires
+  validation on the new revision.
+- Upgrade the Issues Worker to Wrangler 4.149.0 and Prettier 3.9.10 with the
+  corresponding locked runtime/tool cohort, completing the captured npm
+  direct-version delta. Its existing Sharp 0.35.5 override remains current.
+
+- Cover the Chau7 Next Cargo workspace with weekly Dependabot updates,
+  grouping coordinated GPUI version and security updates for review. Document
+  the manifest/vendor/provenance/lockfile coordination required by that family.
+- Key CI and release Go caches from both nested module lockfiles; add quality
+  contracts for the cache paths and both Cargo update entries. No build-speed
+  measurement is claimed by this configuration change.
+
+- Correct the four fixture-gated native editor `msg_send!` selector argument
+  separators reported by strict native Clippy, preserving selectors, argument
+  order and superclass dispatch. Exact-source native Clippy and the nine-stage
+  compiler sequence passed on ab647613; native Editor runtime acceptance still
+  fails as recorded above.
+- Make native Markdown layout reconciliation idempotent: skip equal scroll-frame
+  and visibility setters while still recomputing geometry and applying changes
+  on resize or detach/reattach. The fixture captures initial attached geometry
+  and defers its result until existing composition assertions finish; later
+  geometry checks use a fresh post-preview baseline for same-bounds setter
+  skips, one-pixel resize/restore and same-host reattachment. The code compiled
+  on ab647613, but the Editor case failed before those later layout assertions;
+  no performance gain or composition fix is claimed.
+
+- Keep fast Next app and embedded Rust helper artifacts in one private worktree target cache, and isolate symbol-rich diagnostic builds under `target/diagnostic` by default while preserving explicit cache overrides and artifact selection. Speed measurements remain pending.
+
+- Make optimized Next builds default to LTO off, 64 codegen units and local incremental caching, with an explicit diagnostic mode for symbols and verbose logs. Apply matching settings to the app and Rust helpers, verify all seven signed package artifacts and publish source/compiler/hash evidence. Select installed CLI binaries from actual Cargo artifacts to honor configured targets.
+
+- Install the official Rust LLVM tools component with both pinned toolchains and Next CI, so stripping native artifacts uses the compiler-matched LLVM runtime.
+
+- Replace Chau7 Next's legacy snippets event binding with current typed FSEvents and dispatch SDK bindings, preserving one recursive stream, bounded snapshots and background teardown. Release callback state after native delivery finishes; verify in-place changes, start failure and in-flight disposal with owned files.
+
+- Pin Chau7 Next and Rust helpers to Rust 1.99.0 and pin the Next CI actions to reviewed current releases. Native parity keeps its existing deadlines and requires the exact installed compiler.
+
+- Review and pin the new GPUI source inventory for duplication checks, retaining the 2% threshold and checks on modified or added files. Clarify initial rebase hashes versus the complete final modification ledger.
+
+- Upgrade Chau7 Next to GPUI Kit 0.7.3 and the matching GPUI 0.3.9 family, rebasing the complete Software window backend and native ownership fixes. Preserve verified fork provenance, historical patches and packaged license notices; full-app native acceptance of the upgraded engine remains in progress.
+- Use Base64 0.23 runtime-detected AVX2/NEON decoding for Kitty image payloads with scalar fallback, preserving padded STANDARD bytes, malformed-input rejection and existing image limits. No measured speedup is claimed.
+
+- Upgrade owned Chau7 Next SQLite, SHA-256, Base64 and TOML dependencies together with the four Rust helpers, preserving configuration serialization, canonical hashes, checked integer conversions and the terminal C header. Transfer pending PTY queues without collecting into a second vector; the GPUI family upgrade is coordinated separately.
+- Align local and CI quality tools with Node 26.11.1, Python 3.15, pnpm 12 and current formatter/audit releases. Retain the provenance-checked duplication gate and its 2% threshold; update local Swift helper comments for formatter compatibility.
+- Update the relay Workers, Vite and Vitest 5 cohort with explicit supported Node versions and a filesystem-cache compatibility setting for worktrees containing spaces. Refresh Go helper dependencies while retaining the SQLite driver's required libc version.
+
 ### Added
+
+- Add a separate optional native accessibility fixture for owned macOS
+  windows: verify localized tab labels/selection, the timeline slider and actual
+  AppKit press/increment/decrement actions. Preserve the original native matrix
+  and expose process-local locale selection for this fixture. The fixture
+  compiled on ab647613 but was not run because the earlier Editor case failed;
+  VoiceOver acceptance remains separate.
+
+- Record scoped PRF-002 acceptance for Chau7 Next's whole-window Software
+  backend and automatic unavailable-device fallback, including localized
+  Settings, signed normal-package MCP/performance/quit checks and isolated
+  synthetic-run persistence. Full-quality/CI results for the final docs-only
+  revision and the separate Mac hand-test checklist remain distinct.
+
+- Introduce Chau7 Next as an isolated Rust/GPUI macOS test app alongside Chau7, with its own bundle, data folders, helper ports and MCP bridge. Track parity against the current Swift sources in `docs/rust-port/`; full current parity remains in progress.
+- Expose Chau7 Next runtime identity and numeric performance snapshots through MCP and bounded JSON reports, including CPU, RSS, main-thread heartbeat, per-pane latency percentiles and feature timings.
 
 - Show selected-tab tokens per second in the overlay across proxied Anthropic, OpenAI, and Gemini streams, with Claude Code and Codex transcript rates for direct CLI sessions; estimated readings are marked and explain their source and timing. Keep transient rate readings in a bounded recent-tab cache.
 
 ### Fixed
+
+- Fix the optional native accessibility fixture's borrowed/owned error type
+  inference reported by native-feature Clippy, preserving the same messages
+  and native content-view behavior. The correction passed native-feature
+  Clippy in the ab647613 compiler sequence; its native runtime case was not
+  reached after the Editor failure.
+
+- Localize Chau7 Next tab accessibility labels and rename hints, timeline
+  command/status/playback labels and controls, and the dashboard Timeline title
+  through existing Swift catalog keys. Add five-language pure assertions for
+  the accessibility strings and actual command-status classification.
+
+- Correct the Debug Console shortcut in Swift and Next help to the current default (⌥⌘L), and document Chau7 Next’s AI Terminal Logs Command Palette access.
+
+
+- Preserve the native background-Warm predicate and deadline while recording actual memory, selection and window state on timeout to diagnose the remaining fallback acceptance failure.
+
+- Prepare native editor responder changes outside GPUI application borrows as well as dispatching the event outside them.
+
+- Exercise Chau7 Next native window reveals with a single owned key/front sequence before activation, preserving visibility, key-window and live-frame acceptance. Add immediate editor event diagnostics; full combined native acceptance remains pending.
+
+- Serialize only the five native vendor tests using private AppKit pasteboards and verify the image fixture starts empty, preserving existing clipboard assertions after an observed cross-test filenames result. Production clipboard behavior is unchanged; combined validation remains pending.
+
+- Register native Settings regional-format controls for actual hit testing and await the restored selected split's real PTY activation before asserting its pane state. Preserve existing selection, parked-tab, visibility and timing checks; combined native validation remains pending.
+
+- Move Swift recovery-helper comments inside the local function for current SwiftFormat compatibility, without changing recovery behavior.
+
+- Keep the GPUI Metal headless constructor implementation behind the same test and benchmark feature gates as its type, restoring ordinary builds without fixture features. Preserve the original vendor provenance and record the source hash transition.
+
+
+- Make the Swift resume-prefill readiness regression observe actual terminal input delivery instead of an unrelated timer, preserving the not-ready assertion, exact text and existing two-second deadline.
+
+
+- Pin the native Settings regional-format environment contract in ordinary unit tests, keeping fixture constants covered when optional native fixtures are disabled and retaining strict warnings-as-errors checks.
+
+
+- Display the restored-scrollback counter with the current OS number format, including localized zero, matching Swift without untranslated suffixes. Preserve configured values and stepper bounds.
+
+
+- Exercise Spanish Settings search and independently selected regional usage formats through visible controls in an owned native window, verifying persistence and summary values while retaining the animation deadline.
+
+
+- Make the short-lived PTY burst regression enforce its intended ten-second wall-clock ceiling under adaptive polling, retaining the complete output assertions and requiring observed closure before the deadline. Keep all interruption tests under strict helper lint checks.
+
+- Retry interrupted PTY reads within a bounded budget, then yield without closing the terminal. Preserve buffered HUP output and allow other terminals to progress; verify retry, yield and resume behavior with injected reads.
+
+- Verify automatic Next retention and compaction inside the admitted background worker, including ownership before UI publication. Preserve the real maintenance and fresh-install retention regressions.
+
+- Fence final telemetry panic and stale-generation test snapshots against cache refresh expiry, preserving closed-admission assertions even when CI runs slowly.
+
+- Reject native Settings animation observations at or beyond the existing 500ms deadline even when the late frame reports completion, retaining actual-frame and target visibility assertions.
+- Prepare the isolated native editor fixture's owned active/key window before awaiting visible deferred restoration, preserving its five-second wait and composition assertions. This setup correction awaits combined native acceptance.
+
+- Drain all accepted Chau7 Next quota, latency and maintenance operations independently of UI publication; foreground timer cancellation releases only its monitor lifetime guard without waiting for queued future destruction.
+
+- Admit Chau7 Next telemetry initialization and snapshot reads on the background executor before queuing UI publication, so graceful shutdown can drain accepted reads without requiring another foreground callback.
+
+- Record Chau7 Next shutdown phase timings and retain failed worker, history, restore and telemetry outcomes before writing a clean termination marker. Expose an explicit native observer completion policy while preserving GPUI's default timeout. Next opts into completion after the transitive telemetry admission correction; combined native acceptance remains pending.
+
+- Reconcile Chau7 Next repository tab groups after setting changes, paint complete grapheme clusters, recover file watches across replacement, and preserve runbook save/execute guards. Add Spanish, counted UI strings and selectable regional number formatting.
 
 - Preserve MCP socket ownership across server restarts, detect closed/replaced listeners, and honor the guarded rebuild quit deadline even when AppleScript stalls.
 - Update both Chau7 Go modules to 1.27.2 for upstream standard-library security fixes.

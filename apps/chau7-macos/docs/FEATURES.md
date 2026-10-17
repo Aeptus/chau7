@@ -433,6 +433,8 @@ The app still contains internal runtime orchestration used by dashboard and revi
 - Native macOS cut/copy/paste shortcuts are preserved inside split-pane text editors before terminal-specific fallbacks run.
 - Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
 - Idle tabs dropdown: tabs idle beyond a configurable threshold (default 10 min) are grouped into a compact chip in the tab bar.
+- In the Rust app, the idle dropdown groups tabs under colored repository headings with separators and full-path tooltips. Tabs without a repository appear last, and Close All Idle remains accessible below the scrollable list.
+- Rust numbered tab shortcuts can optionally target only tabs shown in the tab bar. Enable this under Settings > Tabs > Keyboard Navigation; the default preserves all-tabs numbering, and horizontal scrolling does not change tab numbers.
 - Repository tab grouping: group tabs by git repo (Off/Auto/Manual). Shows inline repo-name tag chip with connecting line. Suppresses redundant repo path in tab titles, and inherited group membership auto-detaches when a tab moves to a different repo, including tabs opened directly at another directory.
 - Repo-group tag healing: when a repository is moved or renamed on disk, a tab's stale repo-group tag reconciles to the live git root the next time the app regains focus, so grouped tabs don't keep pointing at a path that no longer exists.
 - Branch detection keeps one shared repository model per root and swaps models on shell-reported repo-root changes, preventing branch labels from one repo leaking into another after `cd`.

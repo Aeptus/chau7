@@ -8,5 +8,5 @@ import Chau7Core
 /// (`Chau7App.init`); nil in tests, where no remote stack exists.
 @MainActor
 protocol MCPApprovalForwarding: AnyObject {
-    func sendApprovalRequest(requestID: String, payload: ApprovalRequestPayload)
+    func sendApprovalRequest(requestID: String, payload: ApprovalRequestPayload, targetTabID: UUID?)
 }

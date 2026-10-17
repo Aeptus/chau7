@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from uuid import UUID
 from typing import Any
 
 DEFAULT_GATE = "advisory"
@@ -24,6 +25,10 @@ PROMPT_VALIDATION_TIMEOUT_MS = 5_000
 SUBMIT_START_TIMEOUT_MS = 5_000
 DEFAULT_OUTPUT_LINES = 4_000
 PROMPT_VALIDATION_LINES = 240
+CODEX_PROCESS_PROBE_TIMEOUT_SECONDS = 1.0
+CODEX_PROCESS_NAMES = {"codex"}
+CODEX_PROVIDER_NAMES = {"codex", "openai codex", "openai-codex"}
+CODEX_ACTIVE_STATES = {"running", "waitingforinput"}
 PROMPT_SENTINEL = "REVIEW TASK: PRE-COMMIT CODE REVIEW"
 REVIEW_JSON_BEGIN = "__CHAU7_REVIEW_JSON_BEGIN__"
 REVIEW_JSON_END = "__CHAU7_REVIEW_JSON_END__"
@@ -521,11 +526,97 @@ def is_prompt_ready(response: dict[str, Any]) -> bool:
     return bool(response.get("is_at_prompt")) and normalized_status(response) == "idle"
 
 
-def is_codex_prompt_ready(response: dict[str, Any], output_text: str, model: str) -> bool:
-    if not bool(response.get("is_at_prompt")):
+def _normalized_codex_name(value: Any, names: set[str]) -> bool:
+    if not isinstance(value, str):
         return False
-    status = normalized_status(response)
-    if status not in {"idle", "running"}:
+    return value.strip().lower() in names
+
+
+def codex_pid_from_status(response: dict[str, Any], expected_pid: int | None = None) -> int | None:
+    """Return the unique Codex PID reported by tab status, or fail closed."""
+    if not isinstance(response, dict):
+        return None
+    if response.get("is_at_prompt") is not True:
+        return None
+    if normalized_status(response) not in {"idle", "running"}:
+        return None
+    if not _normalized_codex_name(response.get("raw_active_app"), CODEX_PROVIDER_NAMES):
+        return None
+    raw_status = response.get("raw_status")
+    if not isinstance(raw_status, str) or raw_status.strip().lower() not in CODEX_ACTIVE_STATES:
+        return None
+    provider = response.get("ai_provider")
+    if provider is not None and not _normalized_codex_name(provider, CODEX_PROVIDER_NAMES):
+        return None
+
+    process_rows = response.get("processes")
+    if not isinstance(process_rows, list):
+        return None
+    codex_pids: set[int] = set()
+    for process in process_rows:
+        if not isinstance(process, dict):
+            continue
+        pid = process.get("pid")
+        name = process.get("name")
+        if type(pid) is not int or pid <= 0 or not isinstance(name, str):
+            continue
+        if Path(name.strip()).name.lower() in CODEX_PROCESS_NAMES:
+            codex_pids.add(pid)
+
+    if len(codex_pids) != 1:
+        return None
+    codex_pid = next(iter(codex_pids))
+    if expected_pid is not None and (
+        type(expected_pid) is not int or expected_pid <= 0 or expected_pid != codex_pid
+    ):
+        return None
+    return codex_pid
+
+
+def codex_process_is_live(pid: int) -> bool:
+    """Confirm the reported PID still has a Codex comm; never invoke a shell."""
+    if type(pid) is not int or pid <= 0:
+        return False
+    try:
+        result = subprocess.run(
+            ["/bin/ps", "-p", str(pid), "-o", "comm="],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=CODEX_PROCESS_PROBE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+    rows = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return len(rows) == 1 and Path(rows[0]).name.lower() in CODEX_PROCESS_NAMES
+
+
+def tab_ids_match(actual_tab_id: Any, requested_tab_id: str) -> bool:
+    if not isinstance(actual_tab_id, str) or not isinstance(requested_tab_id, str):
+        return False
+    try:
+        return UUID(actual_tab_id) == UUID(requested_tab_id)
+    except ValueError:
+        return actual_tab_id == requested_tab_id
+
+
+def has_live_codex_identity(tab_id: str, expected_pid: int) -> bool:
+    try:
+        response = get_tab(tab_id)
+    except (FileNotFoundError, OSError, TimeoutError, json.JSONDecodeError):
+        return False
+    if not isinstance(response, dict) or "error" in response:
+        return False
+    if not tab_ids_match(response.get("tab_id"), tab_id):
+        return False
+    pid = codex_pid_from_status(response, expected_pid)
+    return pid == expected_pid and codex_process_is_live(pid)
+
+
+def is_codex_prompt_ready(response: dict[str, Any], output_text: str, model: str) -> bool:
+    if codex_pid_from_status(response) is None:
         return False
 
     normalized_output = output_text.lower()
@@ -590,10 +681,12 @@ def wait_for_codex_prompt(tab_id: str, timeout_ms: int, model: str) -> tuple[dic
             last_status = status
             last_prompt = at_prompt
 
-        output_text = extract_output_text(tab_id, lines=800)
-        if is_codex_prompt_ready(response, output_text, model):
-            trace("codex readiness: prompt detected in terminal output")
-            return response, None
+        candidate_pid = codex_pid_from_status(response)
+        if candidate_pid is not None and codex_process_is_live(candidate_pid):
+            output_text = extract_output_text(tab_id, lines=800)
+            if is_codex_prompt_ready(response, output_text, model):
+                trace("codex readiness: live Codex process and prompt detected")
+                return response, None
         time.sleep(DEFAULT_STATUS_POLL_SECONDS)
 
     trace(f"codex readiness: timed out after {timeout_ms}ms")
@@ -771,26 +864,31 @@ def extract_output_text(
     return output if isinstance(output, str) else ""
 
 
-def validate_prompt_visible(tab_id: str, timeout_ms: int) -> bool:
+def validate_prompt_visible(tab_id: str, timeout_ms: int, expected_pid: int) -> bool:
     deadline = time.monotonic() + max(timeout_ms, 1) / 1000.0
     while time.monotonic() < deadline:
-        response = get_output(tab_id, PROMPT_VALIDATION_LINES, "buffer", wait_for_stable_ms=300)
-        if "error" not in response:
-            output = response.get("output")
-            if isinstance(output, str) and PROMPT_SENTINEL in output:
-                trace("prompt validation: sentinel found in composer output")
-                return True
+        if has_live_codex_identity(tab_id, expected_pid):
+            response = get_output(tab_id, PROMPT_VALIDATION_LINES, "buffer", wait_for_stable_ms=300)
+            if "error" not in response:
+                output = response.get("output")
+                if isinstance(output, str) and PROMPT_SENTINEL in output:
+                    if has_live_codex_identity(tab_id, expected_pid):
+                        trace("prompt validation: sentinel found while the same Codex process is live")
+                        return True
         time.sleep(DEFAULT_STATUS_POLL_SECONDS)
-    trace(f"prompt validation: sentinel not found after {timeout_ms}ms")
+    trace(f"prompt validation: sentinel/live Codex identity not confirmed after {timeout_ms}ms")
     return False
 
 
-def send_prompt_with_confirmation(tab_id: str, prompt: str) -> bool:
+def send_prompt_with_confirmation(tab_id: str, prompt: str, expected_pid: int) -> bool:
+    if not has_live_codex_identity(tab_id, expected_pid):
+        trace("send prompt: current Codex identity no longer matches; refusing input")
+        return False
     try:
         response = send_input(tab_id, prompt)
     except TimeoutError:
         trace("send prompt: send_input timed out, validating composer state before failing")
-        return validate_prompt_visible(tab_id, PROMPT_VALIDATION_TIMEOUT_MS)
+        return validate_prompt_visible(tab_id, PROMPT_VALIDATION_TIMEOUT_MS, expected_pid)
 
     if "error" in response:
         trace(f"send prompt: send_input returned error={response['error']}")
@@ -810,7 +908,10 @@ def wait_for_submission_start(tab_id: str, baseline_output: str, timeout_ms: int
     return False
 
 
-def submit_prompt_with_fallback(tab_id: str, baseline_output: str) -> bool:
+def submit_prompt_with_fallback(tab_id: str, baseline_output: str, expected_pid: int) -> bool:
+    if not has_live_codex_identity(tab_id, expected_pid):
+        trace("submit: current Codex identity no longer matches; refusing submit")
+        return False
     trace("submit: sending submit_prompt")
     try:
         response = submit_prompt(tab_id)
@@ -828,7 +929,10 @@ def submit_prompt_with_fallback(tab_id: str, baseline_output: str) -> bool:
         trace("submit: submission started via submit_prompt")
         return True
 
-    trace("submit: submit_prompt did not start execution, falling back to raw newline")
+    trace("submit: submit_prompt did not start execution, checking Codex identity before raw newline")
+    if not has_live_codex_identity(tab_id, expected_pid):
+        trace("submit: current Codex identity no longer matches; refusing raw newline")
+        return False
     newline_response = send_input(tab_id, "\n")
     if "error" in newline_response:
         trace(f"submit: raw newline fallback returned error={newline_response['error']}")
@@ -996,7 +1100,7 @@ def main() -> int:
 
         try:
             trace("step 4: wait for Codex interactive prompt")
-            _, codex_error = wait_for_codex_prompt(
+            codex_response, codex_error = wait_for_codex_prompt(
                 tab_id,
                 startup_timeout_ms,
                 launch_model,
@@ -1008,10 +1112,14 @@ def main() -> int:
         if codex_error:
             print_skip(f"Codex did not become interactive within {startup_timeout_ms}ms; skipping")
             return 0
+        expected_codex_pid = codex_pid_from_status(codex_response or {})
+        if expected_codex_pid is None or not has_live_codex_identity(tab_id, expected_codex_pid):
+            print_skip("Codex process identity could not be confirmed from current status; skipping")
+            return 0
 
         try:
             trace(f"step 5: send review prompt ({len(prompt.encode('utf-8'))} bytes)")
-            send_ok = send_prompt_with_confirmation(tab_id, prompt)
+            send_ok = send_prompt_with_confirmation(tab_id, prompt, expected_codex_pid)
         except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
             code, reason = describe_scripting_unavailable(exc)
             print_skip(reason, code)
@@ -1023,13 +1131,13 @@ def main() -> int:
 
         try:
             trace("step 6: validate prompt visible in Codex composer")
-            if not validate_prompt_visible(tab_id, PROMPT_VALIDATION_TIMEOUT_MS):
+            if not validate_prompt_visible(tab_id, PROMPT_VALIDATION_TIMEOUT_MS, expected_codex_pid):
                 print_skip("review prompt did not appear in the Codex composer before submission; skipping")
                 return 0
 
             trace("step 7: submit prompt")
             baseline_output = extract_output_text(tab_id)
-            if not submit_prompt_with_fallback(tab_id, baseline_output):
+            if not submit_prompt_with_fallback(tab_id, baseline_output, expected_codex_pid):
                 print_skip("unable to submit review prompt to Codex; skipping")
                 return 0
 

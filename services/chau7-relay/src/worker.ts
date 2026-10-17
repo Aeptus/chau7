@@ -8,6 +8,10 @@
  *   POST /push/notify/:deviceId     Forward a push notification (role=mac)
  *   GET  /pending/:deviceId         Read the pending approvals/prompts snapshot (role=ios)
  *   POST /pending/:deviceId         Replace the pending approvals/prompts snapshot (role=mac)
+ *   WS   /view/:shareCode           Read-only viewer of a shared terminal (Chau7 Next,
+ *                                   docs/remote-control/VIEWER-PROTOCOL.md). No relay
+ *                                   credential: the share code finds the Mac, whose owner
+ *                                   approves each viewer; attempts are rate limited per IP.
  *
  * Authentication: scoped, single-use HMAC-SHA256 bearer tokens (see token.js).
  * Tokens are accepted ONLY from the `Authorization: Bearer` header. The Worker
@@ -19,6 +23,7 @@ import { SessionDO } from './session';
 import { APNSTokenBrokerDO } from './apns-token-broker';
 import { resolveAuthMode, verifyCredentialToken } from './auth.js';
 import { relayRuntimeInfo } from './runtime.js';
+import { normalizeShareCode, shareRegistryName } from './viewer.js';
 
 export { APNSTokenBrokerDO, SessionDO };
 
@@ -165,6 +170,10 @@ export default {
       return forwardToSession(env, deviceId, request);
     }
 
+    if (action === 'view' && parts.length === 2) {
+      return handleViewerConnect(request, env, parts[1]);
+    }
+
     if (action === 'push' && parts.length === 3) {
       const operation = parts[1];
       if (operation !== 'register' && operation !== 'notify') {
@@ -197,3 +206,35 @@ export default {
     return new Response('Not Found', { status: 404 });
   }
 };
+
+/**
+ * A read-only viewer's WebSocket: checks the per-IP attempt budget, finds the
+ * device sharing `rawCode` in its `share:<code>` registry, and hands the
+ * upgrade to that device's SessionDO. The relay keyring is not involved, but
+ * a misconfigured relay still fails closed like every other route.
+ */
+async function handleViewerConnect(request: Request, env: Env, rawCode: string): Promise<Response> {
+  if (resolveAuthMode(env).mode === 'misconfigured') {
+    return new Response('Relay not configured', { status: 503 });
+  }
+  if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+    return new Response('Expected WebSocket', { status: 426 });
+  }
+  const code = normalizeShareCode(rawCode);
+  if (!code) {
+    return new Response('Invalid share code', { status: 400 });
+  }
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  const limiter = env.SESSION.get(env.SESSION.idFromName(`view-ip:${ip}`));
+  const check = await limiter.fetch(new Request('https://internal/viewattempt'));
+  if (check.status !== 204) {
+    return new Response('Too many attempts', { status: 429, headers: { 'Retry-After': '60' } });
+  }
+  const registry = env.SESSION.get(env.SESSION.idFromName(shareRegistryName(code)));
+  const lookup = await registry.fetch(new Request('https://internal/share/lookup'));
+  if (lookup.status !== 200) {
+    return new Response('Unknown share code', { status: 404 });
+  }
+  const { device_id: deviceId } = (await lookup.json()) as { device_id: string };
+  return forwardToSession(env, deviceId, new Request(`https://internal/viewer/${code}`, request));
+}

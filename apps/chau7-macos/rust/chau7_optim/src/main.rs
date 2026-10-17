@@ -855,11 +855,49 @@ fn main() {
     }
 }
 
-/// Remove the CTO wrapper dir (`~/.chau7/cto_bin`) from the process `PATH` so
-/// child processes the optimizer spawns resolve the real binary rather than the
-/// wrapper. Tolerant of a trailing slash on the PATH entry and of an unset
-/// `HOME` (falls back to `dirs::home_dir`) — a missed strip reintroduces the
-/// recursion loop for executable commands, so the match must not be brittle.
+/// Environment variable naming extra CTO wrapper folders (colon separated) to
+/// strip from `PATH`. Chau7 Next sets it to its own wrapper folder; the Swift
+/// app leaves it unset, so only `$HOME/.chau7/cto_bin` is stripped there.
+const CTO_BIN_DIR_ENV: &str = "CHAU7_CTO_BIN_DIR";
+
+/// Wrapper folders to remove from `PATH`: the Swift app's default folder (when
+/// the home folder is known) plus every non-empty entry of `extra`.
+fn cto_wrapper_dirs(home: Option<&std::path::Path>, extra: Option<&str>) -> Vec<String> {
+    let mut dirs = Vec::new();
+    if let Some(home) = home {
+        let cto_bin = home.join(".chau7").join("cto_bin");
+        dirs.push(cto_bin.to_string_lossy().trim_end_matches('/').to_string());
+    }
+    if let Some(extra) = extra {
+        dirs.extend(
+            extra
+                .split(':')
+                .map(|d| d.trim_end_matches('/'))
+                .filter(|d| !d.is_empty())
+                .map(String::from),
+        );
+    }
+    dirs
+}
+
+/// `path` without the entries equal to one of `dirs` (ignoring a trailing
+/// slash on the entry).
+fn strip_path_entries(path: &str, dirs: &[String]) -> String {
+    path.split(':')
+        .filter(|entry| {
+            let entry = entry.trim_end_matches('/');
+            !dirs.iter().any(|d| d == entry)
+        })
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
+/// Remove the CTO wrapper dirs (`~/.chau7/cto_bin`, plus `CHAU7_CTO_BIN_DIR`)
+/// from the process `PATH` so child processes the optimizer spawns resolve the
+/// real binary rather than the wrapper. Tolerant of a trailing slash on the
+/// PATH entry and of an unset `HOME` (falls back to `dirs::home_dir`): a
+/// missed strip reintroduces the recursion loop for executable commands, so
+/// the match must not be brittle.
 fn strip_cto_wrapper_dir_from_path() {
     let Ok(path) = std::env::var("PATH") else {
         return;
@@ -868,17 +906,12 @@ fn strip_cto_wrapper_dir_from_path() {
         .ok()
         .map(std::path::PathBuf::from)
         .or_else(dirs::home_dir);
-    let Some(home) = home else {
+    let extra = std::env::var(CTO_BIN_DIR_ENV).ok();
+    let dirs = cto_wrapper_dirs(home.as_deref(), extra.as_deref());
+    if dirs.is_empty() {
         return;
-    };
-    let cto_bin = home.join(".chau7").join("cto_bin");
-    let target = cto_bin.to_string_lossy();
-    let target = target.trim_end_matches('/');
-    let clean: Vec<&str> = path
-        .split(':')
-        .filter(|entry| entry.trim_end_matches('/') != target)
-        .collect();
-    std::env::set_var("PATH", clean.join(":"));
+    }
+    std::env::set_var("PATH", strip_path_entries(&path, &dirs));
 }
 
 fn run() -> Result<()> {
@@ -1539,6 +1572,46 @@ fn run() -> Result<()> {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[test]
+    fn test_default_wrapper_dir_is_swift_path() {
+        let dirs = cto_wrapper_dirs(Some(std::path::Path::new("/Users/me")), None);
+        assert_eq!(dirs, vec!["/Users/me/.chau7/cto_bin".to_string()]);
+        let path = "/Users/me/.chau7/cto_bin/:/usr/bin:/Users/me/.chau7-next/cto_bin";
+        assert_eq!(
+            strip_path_entries(path, &dirs),
+            "/usr/bin:/Users/me/.chau7-next/cto_bin"
+        );
+    }
+
+    #[test]
+    fn test_env_wrapper_dir_is_stripped_too() {
+        let dirs = cto_wrapper_dirs(
+            Some(std::path::Path::new("/Users/me")),
+            Some("/Users/me/.chau7-next/cto_bin"),
+        );
+        let path = "/Users/me/.chau7-next/cto_bin:/bin:/Users/me/.chau7/cto_bin:/usr/bin";
+        assert_eq!(strip_path_entries(path, &dirs), "/bin:/usr/bin");
+    }
+
+    #[test]
+    fn test_env_wrapper_dirs_accept_lists_and_ignore_empty() {
+        let dirs = cto_wrapper_dirs(None, Some("/a/cto_bin::/b/cto_bin/"));
+        assert_eq!(
+            dirs,
+            vec!["/a/cto_bin".to_string(), "/b/cto_bin".to_string()]
+        );
+        assert_eq!(strip_path_entries("/a/cto_bin:/x:/b/cto_bin", &dirs), "/x");
+    }
+
+    #[test]
+    fn test_strip_keeps_similar_entries() {
+        let dirs = cto_wrapper_dirs(Some(std::path::Path::new("/h")), None);
+        assert_eq!(
+            strip_path_entries("/h/.chau7/cto_bin2:/h/.chau7/cto_bin", &dirs),
+            "/h/.chau7/cto_bin2"
+        );
+    }
 
     #[test]
     fn test_git_commit_single_message() {
