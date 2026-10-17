@@ -235,3 +235,55 @@ checks passed. This is unresolved external-display capture evidence, not a
 validated rendering failure or a passing external-display test. Reduce Motion
 with an alpha-only transition without a geometry/occlusion notification has not
 been tested. Production Chau7 was never quit, replaced, or relaunched.
+
+
+## Offline recovery before installing the prepared update
+
+A blocked updater is not a completed installation procedure. Use
+`apps/chau7-next/scripts/recover-macos-production.py` to recover a preserved
+RustV1 snapshot without replacing the user's newer session with an older one.
+The helper loads the ordinary updater's validators from its sibling
+`update-macos-production.command`; distribute both files together.
+
+1. Run `python3 recover-macos-production.py --source <preserved-RustV1> --dry-run`.
+   This validates manifests, context hashes and referenced editor files and
+   reports counts without changing the profile or asking the app to quit.
+2. Run the same command with `--apply` from Terminal.app, outside Chau7. The
+   helper saves fresh current and source snapshots, and private copies of the
+   editor files, before asking for a normal Cmd+Q. It never sends a quit signal.
+3. After the app exits, recovery acquires the existing app lifetime lock, saves
+   the final state, and combines it with the pre-quit capture and preserved
+   source. Immutable contexts are synchronized before the current bundle, then
+   the matching index. A conflicting populated identity stops the operation.
+4. Keep Chau7 closed and run the ordinary production updater with `--apply`,
+   the verified app, receipt and full source SHA. Its normal history guard
+   validates the recovered session and records resolution. Only then reopen
+   Chau7. Recovery never writes an updater resolution marker itself.
+
+Recovery transactions live separately under
+`~/Library/Application Support/Chau7 Recovery Transactions`. No backup is
+removed. Current tab UUIDs, order, histories and content are retained. Missing
+original tabs are restored by UUID, with their original layouts and context
+references. Recreated tabs with new UUIDs are kept; matching names, directories
+or provider sessions are not enough to discard recent work.
+
+For the observed incident, the conservative union is three windows with
+10, 15 and 15 tabs. The last window contains the missing originals and five
+editor layouts. These layouts reference existing files; their saved file bytes
+can be backed up, but these manifests do not contain unsaved editor buffers.
+One original tab shares a provider session with a current tab: the loader's
+existing first-wins rule retains the current owner and restores the original
+with its history and inert archived metadata, without a second active resume.
+
+Do not reopen the app between recovery and the updater: loading legitimately
+normalizes duplicate resume metadata and launch-command hints. The updater
+needs to verify the complete recovered transaction before that normalization.
+
+Validation: 26 synthetic recovery tests pass, including loss-free current/source
+union, metadata conflicts, content hash failures, symlink rejection, normal-quit
+and lifetime-lock gates, a stale plan, and interruption after bundle publication.
+The 56 updater and 62 native-harness Python tests also pass. On a private copy
+of the observed session, merge, publication, re-read and full-payload comparisons
+pass with 40 tabs, 40 contexts and three windows. The ordinary updater's
+read-only history validator accepts this recovered copy for the original
+incident. The production app/profile were not modified by that verification.

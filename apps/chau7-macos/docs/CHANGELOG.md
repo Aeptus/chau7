@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add a guarded recovery helper for incomplete Rust restoration before an update.
+  Preserve current tabs and contexts, recover missing original windows and editor
+  layouts, retain private snapshots, and publish only after normal quit under the
+  app lifetime lock. Stop on ambiguous identity conflicts.
+
 - Read manual fullscreen evidence from the actual nested native surface report,
   avoiding a false failed result after successful pointer and geometry checks.
 
