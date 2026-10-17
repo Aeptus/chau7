@@ -297,10 +297,12 @@ export function resolveChangedFilesFromPrepush(input, root = repoRoot()) {
     if (isZeroSha(update.localSha)) continue;
     let base = update.remoteSha;
     if (isZeroSha(update.remoteSha)) {
+      const fallbackBase = resolveFallbackBase(root);
+      if (!fallbackBase) continue;
       try {
-        base = mergeBase(update.localSha, "origin/main", root);
+        base = mergeBase(update.localSha, fallbackBase, root);
       } catch {
-        base = resolveFallbackBase(root);
+        base = fallbackBase;
       }
     }
     if (!base) continue;

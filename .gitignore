@@ -11,6 +11,8 @@
 *.profraw
 *.dmg
 .build/
+# A local SwiftPM cache may be a symlink rather than a directory.
+/apps/chau7-macos/.build
 build/
 .claude/
 .seogeo-reports/

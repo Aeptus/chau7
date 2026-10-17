@@ -15,6 +15,9 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+const MULTIWINDOW_PHASE_ENV: &str = "CHAU7_NEXT_NATIVE_MULTIWINDOW_PHASE";
+const MULTIWINDOW_OWNER_TOKEN_ENV: &str = "CHAU7_NEXT_NATIVE_MULTIWINDOW_TOKEN";
+
 /// A real platform frame, never GPUI's deterministic test-frame helpers.
 pub(crate) async fn next_frame(window: AnyWindowHandle, cx: &mut AsyncApp) -> Result<(), String> {
     next_frame_with_timeout(window, cx, Duration::from_secs(5)).await
@@ -77,6 +80,7 @@ fn supported_native_case(requested: &str) -> bool {
             | "accessibility"
             | "keyboard"
             | "focus-companion"
+            | "multiwindow-restore"
     )
 }
 
@@ -244,11 +248,44 @@ pub(crate) fn run_if_requested() -> Option<i32> {
         eprintln!("--fixture-locale is limited to --native-parity-fixture accessibility");
         return Some(2);
     }
-    let home = match std::env::var_os(chau7_next_core::data_root::HOME_ROOT_ENV)
+    let (multiwindow_phase, multiwindow_token) = if requested == "multiwindow-restore" {
+        let phase = match std::env::var(MULTIWINDOW_PHASE_ENV).as_deref() {
+            Ok("save") => "save".to_owned(),
+            Ok("restore") => "restore".to_owned(),
+            _ => {
+                eprintln!("multiwindow fixture requires phase=save or phase=restore");
+                return Some(2);
+            }
+        };
+        let token = match std::env::var(MULTIWINDOW_OWNER_TOKEN_ENV) {
+            Ok(token) if crate::workspace::validate_native_multiwindow_token(&token).is_ok() => {
+                token
+            }
+            _ => {
+                eprintln!("multiwindow fixture requires a valid process-local owner token");
+                return Some(2);
+            }
+        };
+        (Some(phase), Some(token))
+    } else {
+        (None, None)
+    };
+    let multiwindow_case = requested == "multiwindow-restore";
+    let home_result = std::env::var_os(chau7_next_core::data_root::HOME_ROOT_ENV)
         .map(PathBuf::from)
         .ok_or_else(|| "fixture home missing".to_string())
-        .and_then(|p| fresh_home(&p))
-    {
+        .and_then(|path| {
+            if !multiwindow_case || multiwindow_phase.as_deref() == Some("save") {
+                fresh_home(&path)
+            } else {
+                crate::workspace::validate_native_multiwindow_owner(
+                    &path,
+                    multiwindow_token.as_deref().unwrap_or_default(),
+                )?;
+                path.canonicalize().map_err(|error| error.to_string())
+            }
+        });
+    let home = match home_result {
         Ok(home) => home,
         Err(error) => {
             eprintln!("{error}");
@@ -265,15 +302,18 @@ pub(crate) fn run_if_requested() -> Option<i32> {
     let root = DataRoot::with_home(home.clone(), true);
     if let Err(error) = root.ensure_dirs() {
         eprintln!("{error}");
-        let _ = std::fs::remove_dir_all(&home);
+        if !multiwindow_case {
+            let _ = std::fs::remove_dir_all(&home);
+        }
         return Some(2);
     }
     if let Err(error) = std::env::set_current_dir(&home) {
-        let code = report(
-            &requested,
-            &home,
-            Err(format!("owned fixture cwd: {error}")),
-        );
+        let message = format!("owned fixture cwd: {error}");
+        let code = if multiwindow_case {
+            report_preserving_profile(&requested, Err(message))
+        } else {
+            report(&requested, &home, Err(message))
+        };
         return Some(code);
     }
     let owned_home = home.clone();
@@ -287,10 +327,19 @@ pub(crate) fn run_if_requested() -> Option<i32> {
     let requested_renderer = selector.to_owned();
     let (platform, backend) = match crate::window_backend::create_fixture(selector) {
         Ok(value) => value,
-        Err(error) => return Some(report(&requested, &owned_home, Err(error))),
+        Err(error) => {
+            let code = if multiwindow_case {
+                report_preserving_profile(&requested, Err(error))
+            } else {
+                report(&requested, &owned_home, Err(error))
+            };
+            return Some(code);
+        }
     };
     let terminal_text_system = platform.text_system();
     let app = gpui::Application::with_platform(platform).with_assets(crate::assets::AppAssets);
+    let fixture_phase = multiwindow_phase.clone();
+    let fixture_token = multiwindow_token.clone();
     app.run(move |cx: &mut App| {
         crate::window_backend::init(backend, cx);
         crate::terminal::paint::init_cpu_text_system(terminal_text_system, cx);
@@ -323,6 +372,118 @@ pub(crate) fn run_if_requested() -> Option<i32> {
             crate::l10n::settings_applied(cx);
         }
         crate::observability::init(cx);
+        if case == "multiwindow-restore" {
+            crate::restore::writer::init(cx);
+            cx.set_shutdown_timeout(None);
+            cx.on_app_quit(move |cx| {
+                // Production request_quit submits the final snapshot before
+                // calling cx.quit. This fixture owns the normal writer drain.
+                let restore_worker = crate::restore::writer::shutdown(cx);
+                crate::terminal::session::terminate_all_for_quit();
+                cx.background_spawn(async move {
+                    if let Some(worker) = restore_worker
+                        && let Err(error) = worker.join()
+                    {
+                        log::error!("native multiwindow fixture restore writer join: {error:?}");
+                    }
+                })
+            })
+            .detach();
+
+            let phase = fixture_phase.as_deref().unwrap_or("save");
+            let token = fixture_token.as_deref().unwrap_or_default();
+            let restored_workspaces = if phase == "restore" {
+                crate::workspace::prepare_native_multiwindow_restore_relaunch(
+                    &owned_home,
+                    token,
+                    cx,
+                )
+                .map(Some)
+            } else {
+                crate::workspace::prepare_native_multiwindow_restore_fixture(
+                    &owned_home,
+                    token,
+                    cx,
+                )
+                .map(|()| None)
+            };
+            let restored_workspaces = match restored_workspaces {
+                Ok(workspaces) => workspaces,
+                Err(error) => {
+                let evidence = json!({
+                    "case": "multiwindow-restore",
+                    "pid": std::process::id(),
+                    "passed": false,
+                    "error": error,
+                    "phase": if phase == "restore" { "prepare_relaunch" } else { "prepare_save" },
+                    "profile_isolated": true,
+                    "owned_profile_removed": false,
+                });
+                println!("{evidence}");
+                let _ = std::io::stdout().flush();
+                completion.store(1, Ordering::Release);
+                cx.quit();
+                return;
+                }
+            };
+
+            let case = case.clone();
+            let completion = completion.clone();
+            if let Some(workspaces) = restored_workspaces {
+                let home = owned_home.clone();
+                cx.spawn(async move |cx| {
+                    if let Err(error) = crate::workspace::verify_native_multiwindow_relaunch_and_quit(
+                        cx,
+                        home,
+                        workspaces,
+                        completion.clone(),
+                    )
+                    .await
+                    {
+                        let evidence = json!({
+                            "case": case,
+                            "pid": std::process::id(),
+                            "passed": false,
+                            "error": error,
+                            "phase": "verify_relaunch",
+                            "profile_isolated": true,
+                            "owned_profile_removed": false,
+                        });
+                        println!("{evidence}");
+                        let _ = std::io::stdout().flush();
+                        completion.store(1, Ordering::Release);
+                        cx.update(|cx| cx.quit());
+                    }
+                })
+                .detach();
+            } else {
+                cx.spawn(async move |cx| {
+                    if let Err(error) =
+                        crate::workspace::add_latest_native_restore_tab_and_request_quit(
+                            cx,
+                            completion.clone(),
+                        )
+                        .await
+                    {
+                        let evidence = json!({
+                            "case": case,
+                            "pid": std::process::id(),
+                            "passed": false,
+                            "error": error,
+                            "phase": "dispatch_save",
+                            "profile_isolated": true,
+                            "owned_profile_removed": false,
+                        });
+                        println!("{evidence}");
+                        let _ = std::io::stdout().flush();
+                        completion.store(1, Ordering::Release);
+                        cx.update(|cx| cx.quit());
+                    }
+                })
+                .detach();
+            }
+            return;
+        }
         if case == "restore" {
             // Restore acceptance exercises the same repository cache/probe
             // service that normal app startup installs before any workspace.
@@ -524,6 +685,25 @@ fn report(case: &str, home: &Path, outcome: Result<Value, String>) -> i32 {
     code
 }
 
+fn report_preserving_profile(case: &str, outcome: Result<Value, String>) -> i32 {
+    let code = i32::from(outcome.is_err());
+    let evidence = match outcome {
+        Ok(details) => {
+            json!({"case":case,"pid":std::process::id(),"passed":code==0,
+                "details":details,"profile_isolated":true,"owned_profile_removed":false})
+        }
+        Err(error) => {
+            json!({"case":case,"pid":std::process::id(),"passed":false,
+                "error":error,"profile_isolated":true,"owned_profile_removed":false})
+        }
+    };
+    println!("{evidence}");
+    if std::io::stdout().flush().is_err() {
+        return 1;
+    }
+    code
+}
+
 #[cfg(test)]
 mod native_case_tests {
     use super::supported_native_case;
@@ -532,6 +712,7 @@ mod native_case_tests {
     fn keyboard_is_explicit_and_unknown_cases_are_rejected() {
         assert!(supported_native_case("keyboard"));
         assert!(supported_native_case("focus-companion"));
+        assert!(supported_native_case("multiwindow-restore"));
         assert!(supported_native_case("restore"));
         assert!(!supported_native_case("all"));
         assert!(!supported_native_case("unknown"));

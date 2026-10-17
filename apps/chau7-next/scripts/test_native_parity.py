@@ -58,11 +58,18 @@ class NativeParityArgumentTests(unittest.TestCase):
             "keyboard",
         )
 
+    def test_multiwindow_restore_is_opt_in_only(self):
+        self.assertEqual(NATIVE_PARITY.cases_for("multiwindow-restore"), ("multiwindow-restore",))
+        self.assertEqual(
+            NATIVE_PARITY.argument_parser().parse_args(["--case", "multiwindow-restore"]).case,
+            "multiwindow-restore",
+        )
+
     def test_only_restore_and_keyboard_use_launchservices(self):
         for case in ("restore", "keyboard"):
             with self.subTest(case=case):
                 self.assertTrue(NATIVE_PARITY.launch_services_for(case))
-        for case in ("settings", "editor", "cache", "accessibility"):
+        for case in ("settings", "editor", "cache", "accessibility", "multiwindow-restore"):
             with self.subTest(case=case):
                 self.assertFalse(NATIVE_PARITY.launch_services_for(case))
 
@@ -77,6 +84,109 @@ class NativeParityArgumentTests(unittest.TestCase):
             NATIVE_PARITY.fixture_locale_for("keyboard", ["fr"])
         with self.assertRaises(ValueError):
             NATIVE_PARITY.fixture_locale_for("accessibility", ["fr", "es"])
+
+
+class NativeFullscreenMenuPointerTests(unittest.TestCase):
+    def test_manual_pointer_mode_is_explicit_and_rejects_other_values(self):
+        self.assertEqual(NATIVE_PARITY.fullscreen_menu_stimulus_mode({}), "forced_programmatic")
+        self.assertEqual(
+            NATIVE_PARITY.fullscreen_menu_stimulus_mode({NATIVE_PARITY.MANUAL_MENU_POINTER_ENV: "1"}),
+            "manual_pointer",
+        )
+        with self.assertRaisesRegex(ValueError, "must be 0 or 1"):
+            NATIVE_PARITY.fullscreen_menu_stimulus_mode({NATIVE_PARITY.MANUAL_MENU_POINTER_ENV: "yes"})
+
+    def test_launchservices_forwards_pointer_opt_in_only_to_restore(self):
+        environment = {
+            "CHAU7_NEXT_NATIVE_PARITY_FIXTURE": "1",
+            "CHAU7_NEXT_ISOLATED_TEST_MODE": "1",
+            "CHAU7_NEXT_HOME_ROOT": "/private/tmp/fixture-home",
+            "HISTFILE": "",
+        }
+        self.assertNotIn(
+            NATIVE_PARITY.MANUAL_MENU_POINTER_ENV,
+            NATIVE_PARITY.launch_services_environment_names("restore", environment),
+        )
+        opted_in = {
+            **environment,
+            NATIVE_PARITY.MANUAL_MENU_POINTER_ENV: "1",
+        }
+        self.assertIn(
+            NATIVE_PARITY.MANUAL_MENU_POINTER_ENV,
+            NATIVE_PARITY.launch_services_environment_names("restore", opted_in),
+        )
+        with self.assertRaisesRegex(ValueError, "limited to --case restore"):
+            NATIVE_PARITY.launch_services_environment_names("keyboard", opted_in)
+
+    def test_manual_pointer_result_requires_actual_three_phase_hover_coverage(self):
+        phases = [
+            {
+                "phase": phase_number,
+                "expected_menu_bar_visible": visible,
+                "observed_menu_bar_visible": visible,
+                "app_active": True,
+                "window_visible": True,
+                "window_key": True,
+                "window_fullscreen": True,
+                "synthetic_pointer_events_posted": False,
+                "samples": 5,
+                "stable_for_ms": (500, 3000, 750)[phase_number - 1],
+                "pointer_near_screen_top": visible,
+            }
+            for phase_number, visible in ((1, False), (2, True), (3, False))
+        ]
+        stimulus = {
+            "mode": "manual_pointer",
+            "pointer_top_transition_observed": True,
+            "pointer_hover_causality_proven": False,
+            "synthetic_pointer_events_posted": False,
+            "menu_api_mutation_calls": 0,
+            "presentation_option_mutation_calls": 0,
+            "phases": phases,
+        }
+        outcome = {
+            "details": {
+                "surfaces": {
+                    "traffic_light_zoom_geometry": {
+                        "actual_fullscreen_cycle": {"fullscreen": {"menu_reveal_cycle": {"stimulus": stimulus}}}
+                    }
+                }
+            }
+        }
+        self.assertEqual(NATIVE_PARITY.extract_fullscreen_menu_stimulus(outcome), stimulus)
+
+        # The previous shallow shape was not emitted by the fixture and must fail closed.
+        stale_shape = {
+            "details": {
+                "traffic_light_zoom_geometry": {
+                    "actual_fullscreen_cycle": {"fullscreen": {"menu_reveal_cycle": {"stimulus": stimulus}}}
+                }
+            }
+        }
+        self.assertIsNone(NATIVE_PARITY.extract_fullscreen_menu_stimulus(stale_shape))
+        for malformed in (
+            {"details": {"surfaces": None}},
+            {"details": {"surfaces": []}},
+            {"details": {"surfaces": {"traffic_light_zoom_geometry": []}}},
+        ):
+            with self.subTest(malformed=type(malformed["details"].get("surfaces")).__name__):
+                self.assertIsNone(NATIVE_PARITY.extract_fullscreen_menu_stimulus(malformed))
+
+        record = {
+            "fullscreen_menu_stimulus_mode_requested": "manual_pointer",
+            "fullscreen_menu_stimulus": NATIVE_PARITY.extract_fullscreen_menu_stimulus(outcome),
+        }
+        self.assertTrue(NATIVE_PARITY.manual_pointer_coverage_matches(record))
+        self.assertFalse(
+            NATIVE_PARITY.manual_pointer_coverage_matches(
+                {
+                    "fullscreen_menu_stimulus_mode_requested": "manual_pointer",
+                    "fullscreen_menu_stimulus": NATIVE_PARITY.extract_fullscreen_menu_stimulus(stale_shape),
+                }
+            )
+        )
+        phases[1]["window_key"] = False
+        self.assertFalse(NATIVE_PARITY.manual_pointer_coverage_matches(record))
 
 
 class NativeArtifactModeTests(unittest.TestCase):
@@ -319,6 +429,80 @@ class NativeArtifactModeTests(unittest.TestCase):
                     log.write_text(json.dumps(invalid) + "\n")
                     with self.assertRaises(ValueError):
                         NATIVE_PARITY.cargo_binary_artifact(log, binary, "aarch64-apple-darwin")
+
+
+class MultiwindowRestoreManifestTests(unittest.TestCase):
+    def valid_session(self):
+        windows = []
+        for expected_tabs in NATIVE_PARITY.MULTIWINDOW_RESTORE_EXPECTED:
+            tabs = []
+            for expected in expected_tabs:
+                resume_id = expected["resume_id"]
+                pane_id = expected["pane_id"]
+                directory = f"/fixture/pane-{pane_id}"
+                layout = {
+                    "type": "terminal",
+                    "id": pane_id,
+                    "directory": directory,
+                }
+                if expected.get("editor"):
+                    layout = {
+                        "type": "split",
+                        "axis": "horizontal",
+                        "ratios": [0.62, 0.38],
+                        "children": [
+                            {
+                                "type": "terminal",
+                                "id": pane_id,
+                                "directory": directory,
+                            },
+                            {
+                                "type": "editor",
+                                "id": NATIVE_PARITY.MULTIWINDOW_EDITOR_ID,
+                                "path": "/fixture/pane-7303/fixture-editor.md",
+                            },
+                        ],
+                    }
+                tabs.append(
+                    {
+                        "uuid": expected["uuid"],
+                        "custom_title": expected["title"],
+                        "cwd": directory,
+                        "layout": layout,
+                        "panes": [
+                            {
+                                "id": pane_id,
+                                "directory": directory,
+                                "ai_provider": "codex",
+                                "ai_session_id": resume_id,
+                                "ai_resume_command": f"codex resume {resume_id}",
+                            }
+                        ],
+                    }
+                )
+            windows.append({"tabs": tabs})
+        return {"windows": windows}
+
+    def test_manifest_requires_both_windows_and_late_second_window_metadata(self):
+        session = self.valid_session()
+        self.assertTrue(NATIVE_PARITY.multiwindow_restore_manifest_matches(session))
+        session["windows"][1]["tabs"].pop()
+        self.assertFalse(NATIVE_PARITY.multiwindow_restore_manifest_matches(session))
+
+    def test_manifest_rejects_resume_metadata_mismatch(self):
+        session = self.valid_session()
+        session["windows"][1]["tabs"][1]["panes"][0]["ai_resume_command"] = "codex resume wrong"
+        self.assertFalse(NATIVE_PARITY.multiwindow_restore_manifest_matches(session))
+
+    def test_manifest_requires_editor_and_terminal_leaves_and_exact_cwd(self):
+        session = self.valid_session()
+        late_tab = session["windows"][1]["tabs"][1]
+        late_tab["layout"]["children"].pop()
+        self.assertFalse(NATIVE_PARITY.multiwindow_restore_manifest_matches(session))
+
+        session = self.valid_session()
+        session["windows"][1]["tabs"][1]["panes"][0]["directory"] = "/wrong"
+        self.assertFalse(NATIVE_PARITY.multiwindow_restore_manifest_matches(session))
 
 
 class FrontmostApplicationReaderTests(unittest.TestCase):

@@ -1010,6 +1010,25 @@ mod tests {
                     continue;
                 }
                 for needle in forbidden {
+                    // The production rebuild recognizes its own bundle identity
+                    // and validates that identity in generated receipts. Its
+                    // synthetic fixture mirrors only those exact identity fields.
+                    if needle == "com.chau7.app"
+                        && ((path.ends_with("scripts/rebuild-macos-production.py")
+                            && matches!(
+                                line.trim(),
+                                "if env.get(\"__CFBundleIdentifier\", \"\") in {\"com.chau7.app\", \"com.chau7.next\"}:"
+                                    | "\"bundleIdentifier\": \"com.chau7.app\","
+                            ))
+                            || (path.ends_with("scripts/test-production-rebuild.py")
+                                && matches!(
+                                    line.trim(),
+                                    "\"bundleIdentifier\": \"com.chau7.app\","
+                                        | "\"CFBundleIdentifier\": \"com.chau7.app\","
+                                )))
+                    {
+                        continue;
+                    }
                     // The packaging fixture asserts metadata for both channels.
                     if needle == "com.chau7.app"
                         && path.ends_with("scripts/test-build-mode.sh")

@@ -7,16 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Record screen safe areas in isolated fullscreen checks and distinguish forced
-  menu visibility from pointer-driven reveal, with explicit focus validation.
+- Preserve bounded native-control capture diagnostics before visual checks fail,
+  and continue the independent fullscreen menu test before reporting either
+  failure. Distinguish NSView-cache pixels from actual desktop composition;
+  physical hover acceptance of the current menu correction remains pending.
+
+- Keep the Rust fullscreen tab row below the revealed system menu on external
+  displays, reserving only the menu's actual overlap. Hide the complete owned
+  empty auxiliary content view and restore it on exit; reject menu overlap in
+  native regression checks instead of accepting renderer-only visibility.
+
+- Fix a Rust fullscreen crash caused by querying titlebar accessories on an
+  AppKit borderless auxiliary window. Guard titlebar state by window style and
+  check repeated native fullscreen entry/exit before visual acceptance.
+
+- Prepare suppression of the empty native fullscreen titlebar after relocating
+  the window controls into the Rust tab row. Preserve native toolbars and
+  restore AppKit settings on exit; strengthen fullscreen checks to reject the
+  extra top gutter. Physical-pointer and composited-pixel acceptance is pending.
+
+- Add a guarded recovery helper for incomplete Rust restoration before an update.
+  Preserve current tabs and contexts, recover missing original windows and editor
+  layouts, retain private snapshots, and publish only after normal quit under the
+  app lifetime lock. Stop on ambiguous identity conflicts.
+
+- Read manual fullscreen evidence from the actual nested native surface report,
+  avoiding a false failed result after successful pointer and geometry checks.
+
+- Accept physical menu hover anywhere inside the revealed system-menu band in
+  native fullscreen checks. Verify two-process window restoration with saved
+  provider identities and split editor content.
+
+
+- Keep failed restoration checks across production update retries, including
+  historical failures. Detect missing identities during a read-only dry run;
+  require verified recovery before asking the user to quit for an installation.
+- Extend the isolated multiwindow fixture to a second app process that reloads
+  both windows, provider resume identities and a split editor with saved content.
+- Measure the owned native fullscreen titlebar window and follow its actual
+  overlap with the renderer, including animation and return to the hidden state.
+  A real pointer reveal/hide cycle passes on the built-in Mac display, including
+  tab-bar hit testing and traffic-light alignment after focus changes.
+
+- Resolve zero-SHA pre-push diffs from the configured upstream branch, avoiding
+  full-history quality runs when a feature branch tracks a non-main base.
+
+- Activate the owned app and bring each window forward before waiting for native
+  frames in the two-window quit regression.
+- Preserve every Rust window when quitting from a tab action; defer final
+  capture until the active window is available and reject incomplete snapshots.
+  Leave the app running if its final capture cannot be queued.
+  Verify two-window persistence and latest resume identity in a native regression.
+  Add a native two-window quit regression checking the latest resume metadata.
+- Save Rust windows parked by Close Window in periodic and quit snapshots,
+  preserving their frames, split layouts, scrollback and provider identities;
+  keep their tabs queued if replacement window creation fails.
+- Track AppKit fullscreen content-layout changes and keep pointer, drag, text
+  input, VoiceOver and traffic-light geometry aligned with the renderer view.
+  Guard queued layout callbacks after a window closes. Follow-up native toolbar
+  overlap handling is verified in the multi-window restoration incident report.
+
+- Record screen safe areas in isolated fullscreen checks. Add an opt-in manual
+  pointer cycle with explicit focus, dwell-time, geometry and hit-test validation;
+  distinguish it from forced programmatic menu visibility. Keep manual pointer
+  display errors compatible with the native fixture error type.
 
 - Refresh isolated restoration fixtures through the production scroll action
   before checking cached styled history and print snapshots.
 
-- Preserve custom titlebar transparency in macOS fullscreen transitions so
-  revealing the system menu does not introduce an opaque native titlebar.
+- Preserve custom titlebar transparency in macOS fullscreen transitions.
 - Add a guarded repeat update for existing Rust production installations, with
   candidate verification, saved-state backups and retained rollback bundles.
+- Snapshot the Rust restore transaction before asking users to quit, then
+  refuse bundle replacement if shutdown loses windows, tabs or resume metadata.
 - Compile the repository history-search test helper only on its supported Unix
   test targets, fixing the Windows warnings-as-errors check.
 

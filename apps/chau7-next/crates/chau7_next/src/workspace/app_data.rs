@@ -12,10 +12,10 @@ use crate::pane::PaneTree;
 use crate::settings::Settings;
 use crate::tab_bar::TabId;
 
-/// A window that was closed with Close Window: the Swift app only hides it
-/// (`orderOut`), so its shells keep running. Chau7 Next removes the native
-/// window and keeps the tabs here until the Dock icon or a shortcut brings
-/// them back in a new window.
+/// A window closed with Close Window. Chau7 Next removes the native window
+/// but keeps its tabs and shells here until the Dock icon or a shortcut
+/// brings them back in a new window.
+#[derive(Clone)]
 pub struct ParkedWindow {
     pub tabs: Vec<(TabMeta, Entity<PaneTree>)>,
     pub selected: usize,

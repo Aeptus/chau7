@@ -150,13 +150,23 @@ pub(crate) fn active_workspace(cx: &App) -> Option<(AnyWindowHandle, Entity<Work
 /// new one (`showOverlay`).
 pub fn show_overlay(cx: &mut App) {
     if let Some(parked) = cx.global_mut::<AppData>().hidden.pop() {
-        crate::open_parked_window(parked, cx);
+        open_parked_window_or_requeue(parked, cx, crate::open_parked_window);
     } else if let Some((handle, _)) = active_workspace(cx) {
         let _ = handle.update(cx, |_, window, _| window.activate_window());
     } else {
         crate::open_workspace_window(None, cx);
     }
     cx.activate(true);
+}
+
+fn open_parked_window_or_requeue(
+    parked: ParkedWindow,
+    cx: &mut App,
+    open: impl FnOnce(ParkedWindow, &mut App) -> Result<(), ParkedWindow>,
+) {
+    if let Err(parked) = open(parked, cx) {
+        cx.global_mut::<AppData>().hidden.push(parked);
+    }
 }
 
 /// A terminal window to act on, created when none is open
@@ -292,6 +302,12 @@ pub fn running_process_names(cx: &App) -> Vec<String> {
 
 /// Cmd+Q: ask first when processes run in any tab, then save and quit.
 pub fn request_quit(cx: &mut App) {
+    // Resolve prompt targets only after the current action/window update has
+    // returned its active window to GPUI's handle map.
+    cx.defer(request_quit_after_window_update);
+}
+
+fn request_quit_after_window_update(cx: &mut App) {
     let Some((title, detail)) = app_shell::quit_confirmation_localized(
         &running_process_names(cx),
         chau7_next_core::l10n::current(),
@@ -326,7 +342,7 @@ pub fn request_quit(cx: &mut App) {
     });
     let Some(answer) = answer else {
         QUIT_PROMPT_OPEN.store(false, Ordering::SeqCst);
-        quit_now(cx);
+        log::warn!("Cannot show quit confirmation; leaving the app running");
         return;
     };
     cx.spawn(async move |cx| {
@@ -340,10 +356,18 @@ pub fn request_quit(cx: &mut App) {
 }
 
 fn quit_now(cx: &mut App) {
-    crate::save_session(cx, true);
-    crate::settings::sync::push_now(cx);
-    platform::power::end_latency_critical();
-    cx.quit();
+    // Quit can be dispatched while GPUI has temporarily taken the active
+    // window out of its handle map for a nested update. Run the final capture
+    // at the end of this effect cycle, after all stacked windows are restored.
+    cx.defer(|cx| {
+        if !crate::save_session(cx, true) {
+            log::warn!("Quit canceled because a complete restore snapshot could not be queued");
+            return;
+        }
+        crate::settings::sync::push_now(cx);
+        platform::power::end_latency_critical();
+        cx.quit();
+    });
 }
 
 // ----- URL scheme ----------------------------------------------------------
@@ -429,4 +453,400 @@ fn open_tab_with_command(command: String, cx: &mut App) {
         window.activate_window();
         workspace.update(cx, |ws, cx| ws.new_tab_with_command(command, window, cx));
     });
+}
+
+#[cfg(all(test, unix))]
+mod quit_tests {
+    use super::*;
+    use crate::{
+        pane::PaneTree,
+        session_store::{SavedPane, SavedSession, SavedTab, SavedWindow},
+        settings::Settings,
+        workspace::AppData,
+    };
+    use chau7_next_core::{
+        data_root::DataRoot,
+        session_restore::{SavedAxis, SavedSplitNode, models::ArchivedTabContext},
+        tabs_state::{TabColor, TabMeta},
+    };
+    use gpui::{App, AppContext, TestAppContext};
+
+    fn init(harness: &mut TestAppContext) -> DataRoot {
+        let root = DataRoot::with_home(
+            std::env::temp_dir().join(format!("chau7-quit-{}", uuid::Uuid::new_v4())),
+            true,
+        );
+        root.ensure_dirs().expect("create owned quit-test profile");
+        let fake_shell = root.home().join("quit-test-shell");
+        std::fs::write(
+            &fake_shell,
+            b"#!/bin/sh\nprintf started > quit-test-shell-started\nexec /bin/cat > quit-test-shell-input\n",
+        )
+        .expect("write owned quit-test shell");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake_shell, std::fs::Permissions::from_mode(0o700))
+                .expect("make owned quit-test shell executable");
+        }
+        harness.update(|cx| {
+            gpui_kit::init(cx);
+            let mut settings = Settings::default();
+            settings.general.full_disk_access_guard_enabled = false;
+            settings.terminal.shell = Some(fake_shell.to_string_lossy().into_owned());
+            cx.set_global(settings);
+            cx.set_global(AppData::new(root.clone()));
+            #[cfg(unix)]
+            cx.set_global(crate::terminal::session::ManuallyDrivenRestoreFixture);
+            crate::terminal::command_guard::init(cx);
+            crate::observability::init_for_test(cx);
+            crate::restore::writer::init(cx);
+        });
+        root
+    }
+
+    fn open_two_windows(
+        cx: &mut App,
+    ) -> (
+        AnyWindowHandle,
+        Entity<Workspace>,
+        AnyWindowHandle,
+        Entity<Workspace>,
+    ) {
+        open_two_windows_with_scrollback(cx, false)
+    }
+
+    fn open_two_windows_with_scrollback(
+        cx: &mut App,
+        has_scrollback: bool,
+    ) -> (
+        AnyWindowHandle,
+        Entity<Workspace>,
+        AnyWindowHandle,
+        Entity<Workspace>,
+    ) {
+        let (first_handle, first) = crate::open_window_for_transfer(cx).unwrap();
+        let first_panes = cx.new(|_| PaneTree::empty_for_test());
+        let mut first_meta = TabMeta::new(0, TabColor::Blue);
+        first_meta.custom_title = Some("first-window-live".into());
+        first.update(cx, |workspace, cx| {
+            workspace.adopt_tab_public(first_meta, first_panes, true, cx)
+        });
+
+        let (second_handle, second) = crate::open_window_for_transfer(cx).unwrap();
+        let second_tab_uuid = uuid::Uuid::new_v4();
+        let fresh_tab = SavedTab {
+            uuid: Some(second_tab_uuid),
+            layout: Some(SavedSplitNode::Split {
+                id: 8303,
+                axis: SavedAxis::Horizontal,
+                ratios: vec![0.65, 0.35],
+                children: vec![
+                    SavedSplitNode::Terminal {
+                        id: 8301,
+                        directory: Some("/tmp/quit-test".into()),
+                    },
+                    SavedSplitNode::Editor {
+                        id: 8302,
+                        path: Some("/tmp/quit-test.md".into()),
+                    },
+                ],
+            }),
+            focused_pane: Some(8302),
+            archived_context: Some(ArchivedTabContext {
+                command_blocks: Some(vec![serde_json::json!({
+                    "name": "latest codex session",
+                    "command": "codex resume thread-prequit-window-two"
+                })]),
+                preview_snapshot_png_data: Some("dGVzdC1jb250ZXh0".into()),
+            }),
+            panes: vec![SavedPane {
+                id: 8301,
+                scrollback: has_scrollback,
+                ai_provider: Some("codex".into()),
+                ai_session_id: Some("thread-prequit-window-two".into()),
+                ai_resume_command: Some("codex resume thread-prequit-window-two".into()),
+                last_exit_code: Some(73),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let second_panes = second_handle
+            .update(cx, |_, window, cx| {
+                cx.new(|cx| {
+                    PaneTree::from_saved_deferred_with_owner(
+                        Some(&fresh_tab),
+                        None,
+                        second_tab_uuid,
+                        window,
+                        cx,
+                    )
+                })
+            })
+            .unwrap();
+        let mut second_meta = TabMeta::new(0, TabColor::Blue);
+        second_meta.custom_title = Some("second-window-fresh-at-quit".into());
+        second.update(cx, |workspace, cx| {
+            workspace.adopt_tab_public(second_meta, second_panes, true, cx)
+        });
+        (first_handle, first, second_handle, second)
+    }
+
+    fn park_window(handle: AnyWindowHandle, workspace: Entity<Workspace>, cx: &mut App) {
+        let parked = handle
+            .update(cx, |_, window, cx| {
+                let parked = workspace.update(cx, |workspace, _| workspace.park_tabs(window));
+                window.remove_window();
+                parked
+            })
+            .expect("remove the native test window")
+            .expect("test window has a tab to park");
+        cx.global_mut::<AppData>().hidden.push(parked);
+    }
+
+    fn saved_after_writer_shutdown(harness: &mut TestAppContext, root: &DataRoot) -> SavedSession {
+        harness.run_until_parked();
+        let writer = harness
+            .update(crate::restore::writer::shutdown)
+            .expect("restore writer was initialized");
+        writer.join().expect("restore writer joins");
+        crate::session_store::load(root).expect("restore snapshot was saved")
+    }
+
+    fn previous_complete_session() -> SavedSession {
+        SavedSession {
+            version: 1,
+            windows: ["previous-window-one", "previous-window-two"]
+                .into_iter()
+                .map(|title| SavedWindow {
+                    tabs: vec![SavedTab {
+                        custom_title: Some(title.into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })
+                .collect(),
+        }
+    }
+
+    #[gpui::test]
+    fn failed_nested_window_capture_keeps_the_previous_complete_snapshot(
+        harness: &mut TestAppContext,
+    ) {
+        let root = init(harness);
+        let (first_window, _, second_window, _) = harness.update(open_two_windows);
+        let previous = previous_complete_session();
+        crate::session_store::save(&root, &previous).unwrap();
+
+        // During a nested update GPUI temporarily removes the current window
+        // from the handle map. A failed capture must not submit window one's
+        // successful snapshot by itself.
+        second_window
+            .update(harness, |_, _, cx| {
+                assert!(first_window.update(cx, |_, _, _| ()).is_ok());
+                assert!(second_window.update(cx, |_, _, _| ()).is_err());
+                assert!(!crate::save_session(cx, false));
+            })
+            .unwrap();
+        harness.run_until_parked();
+
+        let writer = harness
+            .update(crate::restore::writer::shutdown)
+            .expect("restore writer was initialized");
+        writer.join().expect("restore writer joins");
+        let saved = crate::session_store::load(&root).unwrap();
+        assert_eq!(saved.windows.len(), 2);
+        assert_eq!(
+            saved.windows[0].tabs[0].custom_title.as_deref(),
+            Some("previous-window-one")
+        );
+        assert_eq!(
+            saved.windows[1].tabs[0].custom_title.as_deref(),
+            Some("previous-window-two")
+        );
+        let _ = std::fs::remove_dir_all(root.home());
+    }
+
+    #[gpui::test]
+    fn cmd_q_from_second_window_saves_its_fresh_metadata_and_both_windows(
+        harness: &mut TestAppContext,
+    ) {
+        let root = init(harness);
+        let (_, _, second_window, _) = harness.update(open_two_windows);
+
+        // This is the normal Cmd+Q handler, invoked while window two is still
+        // on the Window::update stack. Its deferred capture must run after that
+        // stack has returned so the final restore manifest contains both.
+        second_window
+            .update(harness, |_, _, cx| request_quit(cx))
+            .unwrap();
+        harness.run_until_parked();
+
+        let writer = harness
+            .update(crate::restore::writer::shutdown)
+            .expect("restore writer was initialized");
+        writer.join().expect("restore writer joins");
+        let saved = crate::session_store::load(&root).unwrap();
+        assert_eq!(saved.windows.len(), 2);
+        assert_eq!(
+            saved.windows[0].tabs[0].custom_title.as_deref(),
+            Some("first-window-live")
+        );
+        let second_tab = &saved.windows[1].tabs[0];
+        assert_eq!(
+            second_tab.custom_title.as_deref(),
+            Some("second-window-fresh-at-quit")
+        );
+        let pane = &second_tab.panes[0];
+        assert_eq!(
+            pane.ai_session_id.as_deref(),
+            Some("thread-prequit-window-two")
+        );
+        assert_eq!(
+            pane.ai_resume_command.as_deref(),
+            Some("codex resume thread-prequit-window-two")
+        );
+        assert_eq!(pane.last_exit_code, Some(73));
+        let _ = std::fs::remove_dir_all(root.home());
+    }
+
+    #[gpui::test]
+    fn autosave_includes_parked_window_and_preserves_its_restore_context(
+        harness: &mut TestAppContext,
+    ) {
+        let root = init(harness);
+        let (_, _first_workspace, second_handle, second_workspace) =
+            harness.update(|cx| open_two_windows_with_scrollback(cx, true));
+        let scrollback = crate::restore::scrollback_file(&root, 8301);
+        std::fs::create_dir_all(scrollback.parent().unwrap()).expect("create scrollback folder");
+        std::fs::write(&scrollback, "parked terminal history").expect("write parked scrollback");
+
+        harness.update(|cx| park_window(second_handle, second_workspace, cx));
+        harness.run_until_parked();
+        harness.update(|cx| crate::save_session(cx, false));
+
+        let saved = saved_after_writer_shutdown(harness, &root);
+        assert_eq!(saved.windows.len(), 2);
+        assert_eq!(
+            saved.windows[0].tabs[0].custom_title.as_deref(),
+            Some("first-window-live")
+        );
+        let parked = &saved.windows[1];
+        assert_eq!(parked.selected, 0);
+        assert!(parked.width > 0.0 && parked.height > 0.0);
+        let tab = &parked.tabs[0];
+        assert_eq!(
+            tab.custom_title.as_deref(),
+            Some("second-window-fresh-at-quit")
+        );
+        assert_eq!(tab.focused_pane, Some(8302));
+        assert!(matches!(
+            tab.layout.as_ref(),
+            Some(SavedSplitNode::Split { .. })
+        ));
+        assert_eq!(
+            tab.archived_context
+                .as_ref()
+                .and_then(|context| context.preview_snapshot_png_data.as_deref()),
+            Some("dGVzdC1jb250ZXh0")
+        );
+        let pane = &tab.panes[0];
+        assert!(pane.scrollback);
+        assert_eq!(pane.ai_provider.as_deref(), Some("codex"));
+        assert_eq!(
+            pane.ai_session_id.as_deref(),
+            Some("thread-prequit-window-two")
+        );
+        assert_eq!(
+            pane.ai_resume_command.as_deref(),
+            Some("codex resume thread-prequit-window-two")
+        );
+        assert!(
+            scrollback.is_file(),
+            "parked scrollback must survive pruning"
+        );
+        let _ = std::fs::remove_dir_all(root.home());
+    }
+
+    #[gpui::test]
+    fn quit_with_every_window_parked_saves_the_latest_provider_identity(
+        harness: &mut TestAppContext,
+    ) {
+        let root = init(harness);
+        let (first_handle, first_workspace, second_handle, second_workspace) =
+            harness.update(open_two_windows);
+
+        harness.update(|cx| {
+            park_window(first_handle, first_workspace, cx);
+            park_window(second_handle, second_workspace, cx);
+        });
+        harness.run_until_parked();
+        harness.update(|cx| {
+            assert!(
+                AppData::live(cx).is_empty(),
+                "all terminal windows are parked"
+            );
+            crate::save_session(cx, true);
+        });
+
+        let saved = saved_after_writer_shutdown(harness, &root);
+        assert_eq!(saved.windows.len(), 2);
+        let parked = saved
+            .windows
+            .iter()
+            .flat_map(|window| &window.tabs)
+            .find(|tab| tab.custom_title.as_deref() == Some("second-window-fresh-at-quit"))
+            .expect("second parked tab is part of the quit snapshot");
+        assert!(matches!(
+            parked.layout.as_ref(),
+            Some(SavedSplitNode::Split { .. })
+        ));
+        assert_eq!(
+            parked.panes[0].ai_session_id.as_deref(),
+            Some("thread-prequit-window-two")
+        );
+        assert_eq!(
+            parked.panes[0].ai_resume_command.as_deref(),
+            Some("codex resume thread-prequit-window-two")
+        );
+        let _ = std::fs::remove_dir_all(root.home());
+    }
+
+    #[gpui::test]
+    fn failed_parked_window_creation_requeues_its_tabs(harness: &mut TestAppContext) {
+        let root = init(harness);
+        let (_, _, handle, workspace) = harness.update(open_two_windows);
+        harness.update(|cx| park_window(handle, workspace, cx));
+        harness.run_until_parked();
+
+        harness.update(|cx| {
+            let parked = cx
+                .global_mut::<AppData>()
+                .hidden
+                .pop()
+                .expect("window was parked");
+            open_parked_window_or_requeue(parked, cx, |parked, _| Err(parked));
+
+            let hidden = hidden_windows(cx);
+            assert_eq!(hidden.len(), 1);
+            assert_eq!(hidden[0].tabs.len(), 1);
+            assert_eq!(hidden[0].selected, 0);
+            assert_eq!(
+                hidden[0].tabs[0].0.custom_title.as_deref(),
+                Some("second-window-fresh-at-quit")
+            );
+            assert_eq!(
+                hidden[0].tabs[0].1.read(cx).deferred_saved().unwrap().panes[0]
+                    .ai_session_id
+                    .as_deref(),
+                Some("thread-prequit-window-two")
+            );
+        });
+
+        let writer = harness
+            .update(crate::restore::writer::shutdown)
+            .expect("restore writer was initialized");
+        writer.join().expect("restore writer joins");
+        let _ = std::fs::remove_dir_all(root.home());
+    }
 }

@@ -550,8 +550,9 @@ pub fn open_workspace_window(
 
 /// A window closed with Close Window comes back with its tabs, shells and
 /// frame.
-pub fn open_parked_window(parked: ParkedWindow, cx: &mut App) {
+pub fn open_parked_window(parked: ParkedWindow, cx: &mut App) -> Result<(), ParkedWindow> {
     let options = window_options(Some(parked.bounds), cx);
+    let backup = parked.clone();
     let ParkedWindow { tabs, selected, .. } = parked;
     let result = gpui_kit::open_window(options, cx, move |window, cx| {
         cx.new(|cx| {
@@ -574,8 +575,12 @@ pub fn open_parked_window(parked: ParkedWindow, cx: &mut App) {
             cx.global_mut::<AppData>()
                 .workspaces
                 .push((handle, workspace.downgrade()));
+            Ok(())
         }
-        Err(err) => log::error!("open window: {err}"),
+        Err(err) => {
+            log::error!("open parked window: {err}");
+            Err(backup)
+        }
     }
 }
 
@@ -602,27 +607,61 @@ pub fn open_window_for_transfer(
     }
 }
 
-/// Save the open windows. Hidden windows are not saved; at quit with no
-/// visible window the saved state is cleared (`saveAllWindowStates`).
-pub(crate) fn save_session(cx: &mut App, terminating: bool) {
-    let mut windows = Vec::new();
-    for (handle, ws) in AppData::live(cx) {
-        let snapshot = handle.update(cx, |_, window, cx| ws.read(cx).snapshot(window, cx));
-        if let Ok(mut snapshot) = snapshot {
-            session_store::apply_position_reset(&mut snapshot);
-            windows.push(snapshot);
-        }
-    }
-    // Closed tabs keep their scrollback for Reopen Closed Tab.
-    let closed_panes: Vec<_> = AppData::live(cx)
+/// Save live and parked terminal windows. A parked-only session remains
+/// restorable; an actually empty app clears its saved state at quit.
+pub(crate) fn save_session(cx: &mut App, terminating: bool) -> bool {
+    let workspaces = AppData::live(cx);
+    let parked_count = cx
+        .global::<AppData>()
+        .hidden
         .iter()
-        .flat_map(|(_, ws)| ws.read(cx).closed_scrollback_panes())
+        .filter(|parked| !parked.tabs.is_empty())
+        .count();
+    let mut windows = Vec::with_capacity(workspaces.len() + parked_count);
+    for (handle, workspace) in &workspaces {
+        let snapshot = handle.update(cx, |_, window, cx| workspace.read(cx).snapshot(window, cx));
+        let mut snapshot = match snapshot {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                // A failed window capture must not replace a complete prior
+                // session with a partial one. In particular, the current
+                // window can be temporarily unavailable inside a nested
+                // Window::update while a quit action is being dispatched.
+                log::warn!(
+                    "Cannot capture every session window; keeping the prior restore snapshot: {error}"
+                );
+                return false;
+            }
+        };
+        session_store::apply_position_reset(&mut snapshot);
+        windows.push(snapshot);
+    }
+    for parked in &cx.global::<AppData>().hidden {
+        if parked.tabs.is_empty() {
+            continue;
+        }
+        let mut snapshot = Workspace::snapshot_parked(parked, cx);
+        session_store::apply_position_reset(&mut snapshot);
+        windows.push(snapshot);
+    }
+    let tab_count = windows
+        .iter()
+        .map(|window| window.tabs.len())
+        .sum::<usize>();
+    log::debug!(
+        "Captured complete restore snapshot: windows={} tabs={tab_count} terminating={terminating}",
+        windows.len()
+    );
+    // Closed tabs keep their scrollback for Reopen Closed Tab.
+    let closed_panes: Vec<_> = workspaces
+        .iter()
+        .flat_map(|(_, workspace)| workspace.read(cx).closed_scrollback_panes())
         .collect();
     if windows.is_empty() {
         if terminating {
-            restore::writer::submit(None, closed_panes.into_iter().collect(), true, cx);
+            return restore::writer::submit(None, closed_panes.into_iter().collect(), true, cx);
         }
-        return;
+        return true;
     }
     // Scrollback files of panes that are gone are deleted after the save.
     let keep: std::collections::HashSet<_> = windows
@@ -641,7 +680,7 @@ pub(crate) fn save_session(cx: &mut App, terminating: bool) {
         keep,
         terminating,
         cx,
-    );
+    )
 }
 
 pub(crate) const DEFAULT_CONFIG: &str = r#"# Chau7 Next settings. Same format as the Chau7 config.toml.
