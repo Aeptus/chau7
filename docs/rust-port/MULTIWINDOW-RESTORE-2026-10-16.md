@@ -124,7 +124,7 @@ native fixture's error type and its changelog entry. The installed Go linter
 was replaced for this run only by an isolated official golangci-lint 2.14.0,
 which understands the repository's Go 1.27.2 export data.
 
-Fullscreen acceptance remains open. Hidden-state geometry and traffic-light
+At the earlier `c7f1887e` baseline, fullscreen acceptance remained open. Hidden-state geometry and traffic-light
 alignment passed, but the programmatic menu reveal was ignored by this macOS
 version. Subsequent isolated AppKit probes on the built-in and external displays did
 not record a real reveal either; the pointer stayed stationary during the
@@ -195,3 +195,43 @@ alone is insufficient. Convert the auxiliary screen frame into the content
 view's coordinates and account only for its visible intersection at the top
 edge. This measurement establishes the mechanism; corrected app acceptance still
 requires an actual reveal/hide cycle and hit testing against the final build.
+
+
+## Corrected native acceptance, 2026-10-17
+
+At `aff3c48f`, the owned native fixture completed a physical-pointer cycle on the
+built-in Mac display. No synthetic pointer or menu visibility setters were used.
+
+| State | Toolbar alpha | Visible overlap | Renderer height | Tabbar hit-test |
+| --- | --- | --- | --- | --- |
+| Hidden before | 0 | 0 pt | 949 pt | Owned window |
+| Revealed | 1 | 32 pt | 917 pt | Owned window |
+| Hidden after | 0 | 0 pt | 949 pt | Owned window |
+
+The renderer never intersected the visible auxiliary toolbar. Native traffic
+lights remained aligned during reveal, application deactivation, reactivation,
+and exit from fullscreen. The fixture then completed its remaining restoration,
+styled-history, resource cleanup and native surface checks successfully.
+
+The Python wrapper initially reported failure because its evidence extractor
+looked for `traffic_light_zoom_geometry` directly under `details`; the native
+report correctly nests it under `details.surfaces`. The original manifest is
+retained unchanged. The corrected extractor passes the 62-test Python suite.
+A separate post-hoc evaluation of a copy of the recorded result passes both
+manual-pointer coverage and the complete wrapper acceptance predicate; the
+original manifest hash remains unchanged. This is a corrected reading of the
+recorded native run, not a newly executed GUI run.
+
+Strict workspace Clippy passes. The consolidated Rust run passes 3,254 tests
+(753 app, 2,492 core, three CLI, six contracts), with two existing ignored tests.
+The two vendor geometry tests also pass through an exact-source temporary Rust
+harness using the already compiled Cocoa geometry types. Cargo cannot run that
+vendored package's own test target directly because it is outside the workspace
+and needs dev-dependencies; this result is limited to the extracted pure helpers.
+
+An external-display attempt stopped before menu reveal because the traffic-light
+pixel-capture helper found no minimize-button pixels, while its native geometry
+checks passed. This is unresolved external-display capture evidence, not a
+validated rendering failure or a passing external-display test. Reduce Motion
+with an alpha-only transition without a geometry/occlusion notification has not
+been tested. Production Chau7 was never quit, replaced, or relaunched.

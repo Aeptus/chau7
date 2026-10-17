@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Read manual fullscreen evidence from the actual nested native surface report,
+  avoiding a false failed result after successful pointer and geometry checks.
+
 - Accept physical menu hover anywhere inside the revealed system-menu band in
   native fullscreen checks. Verify two-process window restoration with saved
   provider identities and split editor content.
@@ -19,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both windows, provider resume identities and a split editor with saved content.
 - Measure the owned native fullscreen titlebar window and follow its actual
   overlap with the renderer, including animation and return to the hidden state.
-  Physical-pointer acceptance of the corrected build remains pending.
+  A real pointer reveal/hide cycle passes on the built-in Mac display, including
+  tab-bar hit testing and traffic-light alignment after focus changes.
 
 - Resolve zero-SHA pre-push diffs from the configured upstream branch, avoiding
   full-history quality runs when a feature branch tracks a non-main base.
@@ -36,8 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keep their tabs queued if replacement window creation fails.
 - Track AppKit fullscreen content-layout changes and keep pointer, drag, text
   input, VoiceOver and traffic-light geometry aligned with the renderer view.
-  Guard queued layout callbacks after a window closes. Actual system-menu hover
-  acceptance remains open; see the multi-window restoration incident report.
+  Guard queued layout callbacks after a window closes. Follow-up native toolbar
+  overlap handling is verified in the multi-window restoration incident report.
 
 - Record screen safe areas in isolated fullscreen checks. Add an opt-in manual
   pointer cycle with explicit focus, dwell-time, geometry and hit-test validation;
@@ -47,8 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refresh isolated restoration fixtures through the production scroll action
   before checking cached styled history and print snapshots.
 
-- Preserve custom titlebar transparency in macOS fullscreen transitions. This
-  alone does not resolve the reported system-menu occlusion.
+- Preserve custom titlebar transparency in macOS fullscreen transitions.
 - Add a guarded repeat update for existing Rust production installations, with
   candidate verification, saved-state backups and retained rollback bundles.
 - Snapshot the Rust restore transaction before asking users to quit, then

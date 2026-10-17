@@ -112,7 +112,8 @@ def launch_services_environment_names(case, environment):
 
 def extract_fullscreen_menu_stimulus(outcome):
     details = outcome.get("details") if isinstance(outcome, dict) else None
-    traffic = details.get("traffic_light_zoom_geometry") if isinstance(details, dict) else None
+    surfaces = details.get("surfaces") if isinstance(details, dict) else None
+    traffic = surfaces.get("traffic_light_zoom_geometry") if isinstance(surfaces, dict) else None
     fullscreen_cycle = traffic.get("actual_fullscreen_cycle") if isinstance(traffic, dict) else None
     fullscreen = fullscreen_cycle.get("fullscreen") if isinstance(fullscreen_cycle, dict) else None
     menu_cycle = fullscreen.get("menu_reveal_cycle") if isinstance(fullscreen, dict) else None

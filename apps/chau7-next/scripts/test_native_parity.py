@@ -146,17 +146,45 @@ class NativeFullscreenMenuPointerTests(unittest.TestCase):
         }
         outcome = {
             "details": {
+                "surfaces": {
+                    "traffic_light_zoom_geometry": {
+                        "actual_fullscreen_cycle": {"fullscreen": {"menu_reveal_cycle": {"stimulus": stimulus}}}
+                    }
+                }
+            }
+        }
+        self.assertEqual(NATIVE_PARITY.extract_fullscreen_menu_stimulus(outcome), stimulus)
+
+        # The previous shallow shape was not emitted by the fixture and must fail closed.
+        stale_shape = {
+            "details": {
                 "traffic_light_zoom_geometry": {
                     "actual_fullscreen_cycle": {"fullscreen": {"menu_reveal_cycle": {"stimulus": stimulus}}}
                 }
             }
         }
-        self.assertEqual(NATIVE_PARITY.extract_fullscreen_menu_stimulus(outcome), stimulus)
+        self.assertIsNone(NATIVE_PARITY.extract_fullscreen_menu_stimulus(stale_shape))
+        for malformed in (
+            {"details": {"surfaces": None}},
+            {"details": {"surfaces": []}},
+            {"details": {"surfaces": {"traffic_light_zoom_geometry": []}}},
+        ):
+            with self.subTest(malformed=type(malformed["details"].get("surfaces")).__name__):
+                self.assertIsNone(NATIVE_PARITY.extract_fullscreen_menu_stimulus(malformed))
+
         record = {
             "fullscreen_menu_stimulus_mode_requested": "manual_pointer",
-            "fullscreen_menu_stimulus": stimulus,
+            "fullscreen_menu_stimulus": NATIVE_PARITY.extract_fullscreen_menu_stimulus(outcome),
         }
         self.assertTrue(NATIVE_PARITY.manual_pointer_coverage_matches(record))
+        self.assertFalse(
+            NATIVE_PARITY.manual_pointer_coverage_matches(
+                {
+                    "fullscreen_menu_stimulus_mode_requested": "manual_pointer",
+                    "fullscreen_menu_stimulus": NATIVE_PARITY.extract_fullscreen_menu_stimulus(stale_shape),
+                }
+            )
+        )
         phases[1]["window_key"] = False
         self.assertFalse(NATIVE_PARITY.manual_pointer_coverage_matches(record))
 
