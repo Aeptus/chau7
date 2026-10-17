@@ -475,10 +475,7 @@ fn main() {
             })
             .detach();
             cx.on_window_closed(|cx, _| {
-                let native = cx.windows();
-                let data = cx.global_mut::<AppData>();
-                data.workspaces
-                    .retain(|(handle, w)| native.contains(handle) && w.upgrade().is_some());
+                save_after_terminal_window_close(cx);
                 if cx.windows().is_empty() && !cfg!(target_os = "macos") {
                     cx.quit();
                 }
@@ -610,6 +607,23 @@ pub fn open_window_for_transfer(
 /// Save the open windows. Hidden windows are not saved; at quit with no
 /// visible window the saved state is cleared (`saveAllWindowStates`).
 pub(crate) fn save_session(cx: &mut App, terminating: bool) {
+    capture_session(cx, terminating, false);
+}
+
+/// Commit an explicit terminal-window close, including closing the last one.
+/// Other auxiliary windows must not clear a previously saved terminal session.
+pub(crate) fn save_after_terminal_window_close(cx: &mut App) {
+    let native = cx.windows();
+    let data = cx.global_mut::<AppData>();
+    let previous = data.workspaces.len();
+    data.workspaces
+        .retain(|(handle, w)| native.contains(handle) && w.upgrade().is_some());
+    if data.workspaces.len() != previous {
+        capture_session(cx, false, true);
+    }
+}
+
+fn capture_session(cx: &mut App, terminating: bool, clear_empty: bool) {
     let mut windows = Vec::new();
     for (handle, ws) in AppData::live(cx) {
         let snapshot = handle.update(cx, |_, window, cx| ws.read(cx).snapshot(window, cx));
@@ -624,8 +638,8 @@ pub(crate) fn save_session(cx: &mut App, terminating: bool) {
         .flat_map(|(_, ws)| ws.read(cx).closed_scrollback_panes())
         .collect();
     if windows.is_empty() {
-        if terminating {
-            restore::writer::submit(None, closed_panes.into_iter().collect(), true, cx);
+        if terminating || clear_empty {
+            restore::writer::submit(None, closed_panes.into_iter().collect(), terminating, cx);
         }
         return;
     }

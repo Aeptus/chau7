@@ -107,9 +107,24 @@ fn closed_destination_preserves_source_and_its_panes(harness: &mut TestAppContex
         target_handle
             .update(cx, |_, window, _| window.remove_window())
             .unwrap();
-        // Keep the entity alive, reproducing a registered workspace whose
-        // native/GPUI handle is no longer usable.
-        assert_eq!(AppData::live(cx)[1].1.entity_id(), target.entity_id());
+        // Keep the registered entity alive after its native window closes.
+        // A retained entity must neither count as live nor accept a transfer.
+        assert!(
+            cx.global::<AppData>()
+                .workspaces
+                .iter()
+                .any(|(_, workspace)| {
+                    workspace
+                        .upgrade()
+                        .is_some_and(|workspace| workspace.entity_id() == target.entity_id())
+                })
+        );
+        let live_ids: Vec<_> = AppData::live(cx)
+            .into_iter()
+            .map(|(_, workspace)| workspace.entity_id())
+            .collect();
+        assert_eq!(live_ids, [source.entity_id()]);
+        assert!(target_handle.update(cx, |_, _, _| ()).is_err());
         move_tabs_to(source.clone(), vec![id], Some(target.entity_id()), cx);
         assert_eq!(source.read(cx).state.get(id).unwrap().uuid, uuid);
         assert_eq!(
@@ -276,5 +291,47 @@ fn new_window_transfer_prepares_destination_and_keeps_panes(harness: &mut TestAp
             pane_id
         );
         close_windows(cx);
+    });
+}
+
+#[gpui::test]
+fn closing_windows_commits_remaining_tabs_and_clears_the_last_saved_window(
+    harness: &mut TestAppContext,
+) {
+    init(harness);
+    let (source_handle, source, target_handle, target, source_uuid) = harness.update(|cx| {
+        crate::restore::writer::init(cx);
+        let (source_handle, source) = crate::open_window_for_transfer(cx).unwrap();
+        let (target_handle, target) = crate::open_window_for_transfer(cx).unwrap();
+        let (_, _, source_uuid) = seed_tab(&source, cx);
+        seed_tab(&target, cx);
+        crate::save_session(cx, false);
+        (source_handle, source, target_handle, target, source_uuid)
+    });
+    harness.update(|cx| {
+        target_handle
+            .update(cx, |_, window, _| window.remove_window())
+            .unwrap();
+        crate::save_after_terminal_window_close(cx);
+        assert!(target.downgrade().upgrade().is_some());
+    });
+    let worker = harness.update(crate::restore::writer::shutdown).unwrap();
+    assert_eq!(worker.join().unwrap().failed, 0);
+    harness.update(|cx| {
+        let root = &cx.global::<AppData>().root;
+        let restored = crate::session_store::load(root).unwrap();
+        assert_eq!(restored.windows.len(), 1);
+        assert_eq!(restored.windows[0].tabs[0].uuid, Some(source_uuid));
+        crate::restore::writer::init(cx);
+        source_handle
+            .update(cx, |_, window, _| window.remove_window())
+            .unwrap();
+        crate::save_after_terminal_window_close(cx);
+        assert!(source.downgrade().upgrade().is_some());
+    });
+    let worker = harness.update(crate::restore::writer::shutdown).unwrap();
+    assert_eq!(worker.join().unwrap().failed, 0);
+    harness.update(|cx| {
+        assert!(crate::session_store::load(&cx.global::<AppData>().root).is_none());
     });
 }
