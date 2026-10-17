@@ -410,13 +410,41 @@ class MultiwindowRestoreManifestTests(unittest.TestCase):
             tabs = []
             for expected in expected_tabs:
                 resume_id = expected["resume_id"]
+                pane_id = expected["pane_id"]
+                directory = f"/fixture/pane-{pane_id}"
+                layout = {
+                    "type": "terminal",
+                    "id": pane_id,
+                    "directory": directory,
+                }
+                if expected.get("editor"):
+                    layout = {
+                        "type": "split",
+                        "axis": "horizontal",
+                        "ratios": [0.62, 0.38],
+                        "children": [
+                            {
+                                "type": "terminal",
+                                "id": pane_id,
+                                "directory": directory,
+                            },
+                            {
+                                "type": "editor",
+                                "id": NATIVE_PARITY.MULTIWINDOW_EDITOR_ID,
+                                "path": "/fixture/pane-7303/fixture-editor.md",
+                            },
+                        ],
+                    }
                 tabs.append(
                     {
                         "uuid": expected["uuid"],
                         "custom_title": expected["title"],
+                        "cwd": directory,
+                        "layout": layout,
                         "panes": [
                             {
-                                "id": expected["pane_id"],
+                                "id": pane_id,
+                                "directory": directory,
                                 "ai_provider": "codex",
                                 "ai_session_id": resume_id,
                                 "ai_resume_command": f"codex resume {resume_id}",
@@ -436,6 +464,16 @@ class MultiwindowRestoreManifestTests(unittest.TestCase):
     def test_manifest_rejects_resume_metadata_mismatch(self):
         session = self.valid_session()
         session["windows"][1]["tabs"][1]["panes"][0]["ai_resume_command"] = "codex resume wrong"
+        self.assertFalse(NATIVE_PARITY.multiwindow_restore_manifest_matches(session))
+
+    def test_manifest_requires_editor_and_terminal_leaves_and_exact_cwd(self):
+        session = self.valid_session()
+        late_tab = session["windows"][1]["tabs"][1]
+        late_tab["layout"]["children"].pop()
+        self.assertFalse(NATIVE_PARITY.multiwindow_restore_manifest_matches(session))
+
+        session = self.valid_session()
+        session["windows"][1]["tabs"][1]["panes"][0]["directory"] = "/wrong"
         self.assertFalse(NATIVE_PARITY.multiwindow_restore_manifest_matches(session))
 
 

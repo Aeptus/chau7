@@ -61,6 +61,10 @@ pub(crate) use native_accessibility_fixture::verify as verify_native_accessibili
 pub(crate) use native_multiwindow_restore_fixture::{
     add_latest_tab_and_request_quit as add_latest_native_restore_tab_and_request_quit,
     prepare as prepare_native_multiwindow_restore_fixture,
+    prepare_relaunch as prepare_native_multiwindow_restore_relaunch,
+    validate_owned_home_receipt as validate_native_multiwindow_owner,
+    validate_token as validate_native_multiwindow_token,
+    verify_relaunch_and_request_quit as verify_native_multiwindow_relaunch_and_quit,
 };
 #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
 pub(crate) use native_restore_fixture::{

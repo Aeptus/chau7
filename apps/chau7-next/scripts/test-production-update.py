@@ -174,6 +174,32 @@ class ProductionUpdaterTests(unittest.TestCase):
         backup.mkdir(mode=0o700)
         return backup
 
+    def new_historical_backup(self, run_id):
+        parent = self.root / CORE.UPDATE_BACKUP_RELATIVE
+        parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        backup = parent / run_id
+        backup.mkdir(mode=0o700)
+        return backup
+
+    def write_historical_run(self, run_id, pre_windows, post_windows=None, previous=False):
+        state, _, _ = self.write_restore_state(pre_windows, str(uuid.uuid4()))
+        backup = self.new_historical_backup(run_id)
+        CORE.capture_prequit_restore(state, backup, self.root)
+        if post_windows is not None:
+            self.write_restore_state(post_windows, str(uuid.uuid4()))
+            CORE.snapshot_state([state], backup, self.root)
+        if previous:
+            previous_bundle = backup / "previous" / "Chau7.app"
+            previous_bundle.parent.mkdir(mode=0o700)
+            shutil.copytree(self.app, previous_bundle)
+        return backup
+
+    def capture_current_run(self, run_id):
+        state = self.root / CORE.STATE_RELATIVES[0]
+        backup = self.new_historical_backup(run_id)
+        current = CORE.capture_prequit_restore(state, backup, self.root)
+        return backup, current
+
     @staticmethod
     def saved_split(*pane_ids):
         return {
@@ -379,6 +405,54 @@ class ProductionUpdaterTests(unittest.TestCase):
         CORE.snapshot_state([state], backup, self.root)
         postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
         CORE.compare_restore_states(prequit, postquit, backup)
+
+    def test_prequit_snapshot_syncs_staging_before_rename_and_backup_after(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000003", 13, "sync-session", True)
+        state, _, _ = self.write_restore_state(
+            [self.saved_window(tab)], str(uuid.uuid4()), contexts={13: b"durable context\n"}
+        )
+        backup = self.new_run_backup()
+        events = []
+        real_rename = CORE.os.rename
+
+        def record_sync(directory, label):
+            events.append(("sync", Path(directory), label))
+
+        def record_rename(source, destination):
+            events.append(("rename", Path(source), Path(destination)))
+            real_rename(source, destination)
+
+        with (
+            mock.patch.object(CORE, "_fsync_directory", side_effect=record_sync),
+            mock.patch.object(CORE.os, "rename", side_effect=record_rename),
+        ):
+            CORE.capture_prequit_restore(state, backup, self.root)
+
+        rename_index = next(index for index, event in enumerate(events) if event[0] == "rename")
+        staging = events[rename_index][1]
+        self.assertGreater(rename_index, 0)
+        self.assertTrue(all(event[0] == "sync" for event in events[:rename_index]))
+        self.assertTrue(all(event[1] == staging or staging in event[1].parents for event in events[:rename_index]))
+        self.assertTrue(any(event[1] == staging for event in events[:rename_index]))
+        self.assertEqual(events[-1], ("sync", backup, "pre-quit snapshot parent"))
+
+    def test_prequit_directory_sync_failure_stops_before_quit(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000004", 14, "sync-session")
+        self.write_restore_state([self.saved_window(tab)], str(uuid.uuid4()))
+        ask = mock.Mock()
+        rename = mock.Mock()
+
+        with (
+            mock.patch.object(CORE, "require_terminal"),
+            mock.patch.object(CORE, "ask_for_normal_quit", ask),
+            mock.patch.object(CORE, "_fsync_directory", side_effect=CORE.UpdateError("directory sync failed")),
+            mock.patch.object(CORE.os, "rename", rename),
+            self.assertRaisesRegex(CORE.UpdateError, "No quit was requested"),
+        ):
+            CORE.apply_update(self.app, self.root / "receipt.json", REVISION, 30, {}, self.root.resolve())
+
+        ask.assert_not_called()
+        rename.assert_not_called()
 
     def test_postquit_snapshot_rejects_a_dropped_window_and_keeps_recovery_paths(self):
         first = self.saved_tab("00000000-0000-0000-0000-000000000011", 11, "claude-a")
@@ -728,6 +802,255 @@ class ProductionUpdaterTests(unittest.TestCase):
         self.assertEqual(len(backups), 1)
         self.assertTrue((backups[0] / "pre-quit/restore-guard.json").is_file())
         self.assertTrue((backups[0] / "previous/Chau7.app").is_dir())
+        self.assertTrue((backups[0] / CORE.UPDATE_COMPLETE_MARKER).is_file())
+        marker, _ = CORE._read_update_marker(backups[0], CORE.UPDATE_COMPLETE_MARKER)
+        CORE._validate_completed_update(backups[0], backups[0].name, marker)
+
+    def test_apply_blocks_retry_after_historical_window_loss_without_quitting(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000101", 101, "first-session")
+        second = self.saved_tab("00000000-0000-0000-0000-000000000102", 102, "second-session")
+        incident = self.write_historical_run(
+            "20261017-100001-123-01234567",
+            [self.saved_window(first), self.saved_window(second)],
+            [self.saved_window(second)],
+        )
+        state = self.root / CORE.STATE_RELATIVES[0]
+        before = CORE.tree_manifest(state)
+        ask = mock.Mock()
+
+        with (
+            mock.patch.object(CORE, "require_terminal"),
+            mock.patch.object(CORE, "ask_for_normal_quit", ask),
+            self.assertRaisesRegex(CORE.UpdateError, "earlier update has unresolved restore loss"),
+        ):
+            CORE.apply_update(self.app, self.root / "receipt.json", REVISION, 30, {}, self.root.resolve())
+
+        ask.assert_not_called()
+        self.assertEqual(CORE.tree_manifest(state), before)
+        unresolved_path = incident / CORE.RESTORE_LOSS_MARKER
+        marker, _ = CORE._read_update_marker(incident, CORE.RESTORE_LOSS_MARKER)
+        self.assertEqual(marker["kind"], "postquit-restore-loss")
+        self.assertTrue(unresolved_path.is_file())
+        current_backup = next(path for path in (self.root / CORE.UPDATE_BACKUP_RELATIVE).iterdir() if path != incident)
+        blocked, _ = CORE._read_update_marker(current_backup, CORE.RESTORE_GUARD_BLOCKED_MARKER)
+        self.assertEqual(blocked["status"], "blocked-before-quit")
+
+    def test_verified_recovery_resolves_incident_and_later_tab_closing_is_allowed(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000103", 103, "first-session")
+        second = self.saved_tab("00000000-0000-0000-0000-000000000104", 104, "second-session")
+        incident = self.write_historical_run(
+            "20261017-100002-123-01234568",
+            [self.saved_window(first), self.saved_window(second)],
+            [self.saved_window(second)],
+        )
+
+        self.write_restore_state([self.saved_window(first), self.saved_window(second)], str(uuid.uuid4()))
+        recovery_backup, recovered = self.capture_current_run("20261017-100003-123-01234569")
+        CORE.require_prior_restore_losses_resolved(self.root, recovered, recovery_backup)
+        state = self.root / CORE.STATE_RELATIVES[0]
+        CORE.snapshot_state([state], recovery_backup, self.root)
+        postquit = CORE.read_restore_state(recovery_backup / "state" / CORE.STATE_RELATIVES[0])
+        CORE._write_update_complete_marker(
+            recovery_backup,
+            recovery_backup.name,
+            recovered,
+            postquit,
+            {"buildNumber": BUILD, "sourceRevision": REVISION},
+        )
+
+        self.write_restore_state([self.saved_window(second)], str(uuid.uuid4()))
+        later_backup, later = self.capture_current_run("20261017-100004-123-01234570")
+        CORE.require_prior_restore_losses_resolved(self.root, later, later_backup)
+
+        resolution, _ = CORE._read_update_marker(incident, CORE.RESTORE_LOSS_RESOLVED_MARKER)
+        self.assertEqual(resolution["recovery_run_id"], recovery_backup.name)
+        self.assertTrue((recovery_backup / CORE.UPDATE_COMPLETE_MARKER).is_file())
+        self.assertEqual(later["identity"]["tab_count"], 1)
+
+    def test_timeout_then_late_quit_loss_blocks_retry_as_ambiguous(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000113", 113, "first-session")
+        second = self.saved_tab("00000000-0000-0000-0000-000000000114", 114, "second-session")
+        full_windows = [self.saved_window(first), self.saved_window(second)]
+        self.write_restore_state(full_windows, str(uuid.uuid4()))
+
+        with (
+            mock.patch.object(CORE, "require_terminal"),
+            mock.patch.object(
+                CORE,
+                "ask_for_normal_quit",
+                side_effect=CORE.UpdateError("normal quit wait timed out"),
+            ),
+            self.assertRaisesRegex(CORE.UpdateError, "Quit timing is ambiguous"),
+        ):
+            CORE.apply_update(self.app, self.root / "receipt.json", REVISION, 30, {}, self.root.resolve())
+
+        backup_parent = self.root / CORE.UPDATE_BACKUP_RELATIVE
+        timeout_backup = next(backup_parent.iterdir())
+        marker, _ = CORE._read_update_marker(timeout_backup, CORE.RESTORE_LOSS_MARKER)
+        self.assertEqual(marker["kind"], "ambiguous-postquit")
+
+        # Model the app completing its save after the updater's wait already timed out.
+        state = self.root / CORE.STATE_RELATIVES[0]
+        self.write_restore_state([self.saved_window(second)], str(uuid.uuid4()))
+        before_retry = CORE.tree_manifest(state)
+        ask = mock.Mock()
+
+        with (
+            mock.patch.object(CORE, "require_terminal"),
+            mock.patch.object(CORE, "ask_for_normal_quit", ask),
+            self.assertRaisesRegex(CORE.UpdateError, "timed out.*restore loss is unverified"),
+        ):
+            CORE.apply_update(self.app, self.root / "receipt.json", REVISION, 30, {}, self.root.resolve())
+
+        ask.assert_not_called()
+        self.assertEqual(CORE.tree_manifest(state), before_retry)
+
+    def test_legacy_previous_bundle_cannot_hide_contradictory_restore_snapshots(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000115", 115, "first-session")
+        second = self.saved_tab("00000000-0000-0000-0000-000000000116", 116, "second-session")
+        contradictory = self.write_historical_run(
+            "20261017-100013-123-01234580",
+            [self.saved_window(first), self.saved_window(second)],
+            [self.saved_window(second)],
+            previous=True,
+        )
+
+        with self.assertRaisesRegex(CORE.UpdateError, "legacy previous app backup conflicts"):
+            CORE._legacy_previous_bundle(contradictory)
+
+    def test_legacy_quit_not_observed_marker_is_migrated_to_ambiguous_incident(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000117", 117, "first-session")
+        second = self.saved_tab("00000000-0000-0000-0000-000000000118", 118, "second-session")
+        self.write_restore_state([self.saved_window(first), self.saved_window(second)], str(uuid.uuid4()))
+        timeout_backup = self.new_historical_backup("20261017-100014-123-01234581")
+        state = self.root / CORE.STATE_RELATIVES[0]
+        prequit = CORE.capture_prequit_restore(state, timeout_backup, self.root)
+        CORE._record_blocked_before_quit(timeout_backup, timeout_backup.name, prequit, status="quit-not-observed")
+
+        self.write_restore_state([self.saved_window(second)], str(uuid.uuid4()))
+        current_backup, current = self.capture_current_run("20261017-100015-123-01234582")
+        with self.assertRaisesRegex(CORE.UpdateError, "timed out.*restore loss is unverified"):
+            CORE.require_prior_restore_losses_resolved(self.root, current, current_backup)
+
+        marker, _ = CORE._read_update_marker(timeout_backup, CORE.RESTORE_LOSS_MARKER)
+        self.assertEqual(marker["kind"], "ambiguous-postquit")
+
+    def test_validated_legacy_previous_bundle_allows_later_intentional_closing(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000105", 105, "first-session")
+        second = self.saved_tab("00000000-0000-0000-0000-000000000106", 106, "second-session")
+        completed = self.write_historical_run(
+            "20261017-100005-123-01234571",
+            [self.saved_window(first), self.saved_window(second)],
+            [self.saved_window(first), self.saved_window(second)],
+            previous=True,
+        )
+        self.write_restore_state([self.saved_window(second)], str(uuid.uuid4()))
+        current_backup, current = self.capture_current_run("20261017-100006-123-01234572")
+
+        CORE.require_prior_restore_losses_resolved(self.root, current, current_backup)
+
+        self.assertFalse((completed / CORE.RESTORE_LOSS_MARKER).exists())
+
+    def test_dry_run_history_check_reports_loss_without_writing_markers(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000107", 107, "first-session")
+        second = self.saved_tab("00000000-0000-0000-0000-000000000108", 108, "second-session")
+        incident = self.write_historical_run(
+            "20261017-100007-123-01234573",
+            [self.saved_window(first), self.saved_window(second)],
+            [self.saved_window(second)],
+        )
+        state = self.root / CORE.STATE_RELATIVES[0]
+        live = CORE.read_restore_state(state)
+        live["snapshot_root"] = state
+        before = CORE.tree_manifest(state)
+
+        with self.assertRaisesRegex(CORE.UpdateError, "(?i)restore recovery is still required"):
+            CORE.inspect_prior_restore_losses(self.root, live)
+
+        self.assertFalse((incident / CORE.RESTORE_LOSS_MARKER).exists())
+        self.assertEqual(CORE.tree_manifest(state), before)
+
+    def test_missing_postquit_evidence_is_sticky_and_symlink_history_fails_closed(self):
+        first = self.saved_tab("00000000-0000-0000-0000-000000000109", 109, "first-session")
+        second = self.saved_tab("00000000-0000-0000-0000-000000000110", 110, "second-session")
+        ambiguous = self.write_historical_run(
+            "20261017-100008-123-01234574",
+            [self.saved_window(first), self.saved_window(second)],
+        )
+        self.write_restore_state([self.saved_window(second)], str(uuid.uuid4()))
+        current_backup, current = self.capture_current_run("20261017-100009-123-01234575")
+        with self.assertRaisesRegex(CORE.UpdateError, "timed out.*restore loss is unverified"):
+            CORE.require_prior_restore_losses_resolved(self.root, current, current_backup)
+        marker, _ = CORE._read_update_marker(ambiguous, CORE.RESTORE_LOSS_MARKER)
+        self.assertEqual(marker["kind"], "ambiguous-postquit")
+
+    def test_postquit_rejects_lost_tab_working_directory(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000119", 119, "cwd-session")
+        state, _, _ = self.write_restore_state([self.saved_window(tab)], str(uuid.uuid4()))
+        backup = self.new_run_backup()
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+
+        post_tab = json.loads(json.dumps(tab))
+        post_tab["cwd"] = None
+        self.write_restore_state([self.saved_window(post_tab)], str(uuid.uuid4()))
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+
+        with self.assertRaisesRegex(CORE.UpdateError, "tab working directory is missing"):
+            CORE.compare_restore_states(prequit, postquit, backup)
+
+    def test_postquit_rejects_lost_pane_working_directory(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000120", 120, "cwd-session")
+        state, _, _ = self.write_restore_state([self.saved_window(tab)], str(uuid.uuid4()))
+        backup = self.new_run_backup()
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+
+        post_tab = json.loads(json.dumps(tab))
+        post_tab["panes"][0]["directory"] = None
+        self.write_restore_state([self.saved_window(post_tab)], str(uuid.uuid4()))
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+
+        with self.assertRaisesRegex(CORE.UpdateError, "pane working directory is missing"):
+            CORE.compare_restore_states(prequit, postquit, backup)
+
+    def test_postquit_allows_changed_nonempty_working_directories(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000121", 121, "cwd-session")
+        state, _, _ = self.write_restore_state([self.saved_window(tab)], str(uuid.uuid4()))
+        backup = self.new_run_backup()
+        prequit = CORE.capture_prequit_restore(state, backup, self.root)
+
+        post_tab = json.loads(json.dumps(tab))
+        post_tab["cwd"] = "/repo/subdirectory"
+        post_tab["panes"][0]["directory"] = "/repo/subdirectory"
+        self.write_restore_state([self.saved_window(post_tab)], str(uuid.uuid4()))
+        CORE.snapshot_state([state], backup, self.root)
+        postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
+
+        CORE.compare_restore_states(prequit, postquit, backup)
+
+    def test_symlink_history_fails_closed(self):
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000111", 111, "session")
+        malformed = self.new_historical_backup("20261017-100010-123-01234576")
+        (malformed / "pre-quit").symlink_to(self.root, target_is_directory=True)
+        self.write_restore_state([self.saved_window(tab)], str(uuid.uuid4()))
+        current_backup, current = self.capture_current_run("20261017-100011-123-01234577")
+
+        with self.assertRaisesRegex(CORE.UpdateError, "uses a symlink"):
+            CORE.require_prior_restore_losses_resolved(self.root, current, current_backup)
+
+    def test_historical_update_scan_is_bounded_and_rejects_unknown_entries(self):
+        parent = self.root / CORE.UPDATE_BACKUP_RELATIVE
+        parent.mkdir(parents=True)
+        (parent / "unknown-run-name").mkdir()
+        with self.assertRaisesRegex(CORE.UpdateError, "unrecognized or ambiguous"):
+            CORE._update_backup_runs(self.root)
+
+        (parent / "unknown-run-name").rmdir()
+        for index in range(CORE.MAX_UPDATE_BACKUP_ENTRIES + 1):
+            (parent / f"20261017-100012-123-{index:08x}").mkdir()
+        with self.assertRaisesRegex(CORE.UpdateError, "verification bound"):
+            CORE._update_backup_runs(self.root)
 
     def test_postquit_rejects_terminal_removed_from_layout_even_when_record_remains(self):
         tab = self.saved_tab("00000000-0000-0000-0000-000000000091", 91, "layout-session")

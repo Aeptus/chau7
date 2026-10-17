@@ -2242,7 +2242,18 @@ async fn wait_for_manual_pointer_menu_phase(
                 } else {
                     !near_top
                 };
-            let state_matches = menu_visible == expected_menu_visible && pointer_position_matches;
+            let toolbar = gpui_macos::fullscreen_toolbar_reveal_observation(native)
+                .ok_or("owned fullscreen fixture has no GPUI toolbar observation")?;
+            let toolbar_state_matches = if expected_menu_visible {
+                toolbar.toolbar_window_present
+                    && toolbar.toolbar_occlusion_height > 0.5
+            } else {
+                toolbar.toolbar_occlusion_height.abs() <= 0.5
+            };
+            let state_matches = menu_visible == expected_menu_visible
+                && pointer_position_matches
+                && toolbar_state_matches
+                && native_rects_match(toolbar.renderer_frame, toolbar.expected_renderer_frame);
             samples += 1;
 
             if state_matches {
@@ -2253,6 +2264,9 @@ async fn wait_for_manual_pointer_menu_phase(
                         "prompt": prompt,
                         "expected_menu_bar_visible": expected_menu_visible,
                         "observed_menu_bar_visible": menu_visible,
+                        "toolbar_occlusion_height": toolbar.toolbar_occlusion_height,
+                        "renderer_tracks_toolbar": native_rects_match(
+                            toolbar.renderer_frame, toolbar.expected_renderer_frame),
                         "app_active": application.isActive(),
                         "window_visible": native.isVisible(),
                         "window_key": native.isKeyWindow(),
@@ -2441,7 +2455,26 @@ fn fullscreen_menu_snapshot(
         .ok_or("owned fullscreen window has no content view")?;
     let geometry = FullscreenMenuGeometry::capture(native, application, &content_view, &renderer)?;
     let layout_in_content = content_view.convertRect_fromView(native.contentLayoutRect(), None);
-    let renderer_tracks_layout = native_rects_match(renderer.frame(), layout_in_content);
+    let toolbar = gpui_macos::fullscreen_toolbar_reveal_observation(native)
+        .ok_or("owned fullscreen fixture has no GPUI toolbar observation")?;
+    let renderer_tracks_layout =
+        native_rects_match(renderer.frame(), toolbar.expected_renderer_frame);
+    let toolbar_overlaps_renderer = toolbar.toolbar_is_visible
+        && toolbar.toolbar_alpha_value.is_some_and(|alpha| alpha > 0.0)
+        && toolbar
+            .toolbar_frame_in_content_view
+            .is_some_and(|frame| native_rects_intersect(frame, renderer.frame()));
+    let toolbar_evidence = serde_json::json!({
+        "window_present": toolbar.toolbar_window_present,
+        "visible": toolbar.toolbar_is_visible,
+        "alpha": toolbar.toolbar_alpha_value,
+        "occlusion_state_visible": toolbar.toolbar_occlusion_state_visible,
+        "frame_in_content_view": toolbar.toolbar_frame_in_content_view.map(native_rect_values),
+        "expected_renderer_frame": native_rect_values(toolbar.expected_renderer_frame),
+        "measured_occlusion_height": toolbar.toolbar_occlusion_height,
+        "overlaps_renderer": toolbar_overlaps_renderer,
+        "renderer_tracks_unobscured_frame": renderer_tracks_layout,
+    });
     let renderer_bounds = renderer.bounds();
     let renderer_visible_rect = renderer.visibleRect();
     let renderer_bounds_finite = [
@@ -2521,7 +2554,8 @@ fn fullscreen_menu_snapshot(
             "renderer_bounds": native_rect_values(geometry.renderer_bounds),
             "renderer_rect_in_content_view": native_rect_values(renderer_rect_in_content),
             "layout_rect_in_content_view": native_rect_values(layout_in_content),
-            "renderer_tracks_content_layout": renderer_tracks_layout,
+            "renderer_tracks_content_layout": native_rects_match(renderer.frame(), layout_in_content),
+            "fullscreen_toolbar": toolbar_evidence,
             "traffic_light_host_rect_in_content_view": native_rect_values(controls_in_content),
             "traffic_light_host_top_delta_from_renderer": controls_top_delta,
             "presentation_options": application.presentationOptions().0,
@@ -2588,13 +2622,27 @@ fn fullscreen_menu_snapshot(
 
     ensure(
         renderer_tracks_layout,
-        "fullscreen renderer did not follow AppKit's unobscured content layout",
+        "fullscreen renderer did not follow AppKit's content layout and actual toolbar overlap",
     )?;
+    ensure(
+        !toolbar_overlaps_renderer,
+        "native fullscreen toolbar still overlaps the GPUI renderer",
+    )?;
+    if expected_menu_visible && manual_menu_pointer_requested()? {
+        ensure(
+            toolbar.toolbar_window_present && toolbar.toolbar_occlusion_height > 0.5,
+            "manual reveal did not produce a measured native toolbar overlap",
+        )?;
+    }
     ensure(
         controls_top_delta.is_finite() && controls_top_delta.abs() <= 0.5,
         "fullscreen traffic lights did not follow the renderer's top edge",
     )?;
     if !expected_menu_visible {
+        ensure(
+            toolbar.toolbar_occlusion_height.abs() <= 0.5,
+            "native fullscreen toolbar overlap did not return to zero after hiding",
+        )?;
         ensure(
             native_rects_match(renderer.frame(), content_view.bounds()),
             "hidden fullscreen menu left an empty gutter above the GPUI content",
@@ -2825,6 +2873,7 @@ fn fullscreen_menu_snapshot(
         },
         "renderer_is_flipped": renderer.isFlipped(),
         "renderer_backend": renderer_backend,
+        "fullscreen_toolbar": toolbar_evidence,
         "tabbar_crop_in_renderer_bounds": crop_in_bounds,
         "tabbar_crop_in_renderer_visible_rect": crop_visible,
         "tabbar_hit_test": {

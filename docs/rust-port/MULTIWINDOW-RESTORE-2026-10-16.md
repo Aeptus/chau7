@@ -132,3 +132,62 @@ external-display run.
 Neither result proves that the hover-triggered system overlay clears the tabbar.
 The native fixture must record an actual hidden/revealed/hidden pointer cycle
 and enforce the geometry and hit-testing assertions before this issue is closed.
+
+## 2026-10-17 recurrence: an update retry accepted reduced state
+
+The installed and running production app was confirmed as build `202610170939`,
+source `c7f1887e4d8df582614d5a6c47ad345dd87492d4`. The termination save was
+written by the previous build `202610161917`, before the replacement launched.
+This distinction matters: the new process loaded an already incomplete source.
+
+The first updater run retained a verified pre-quit transaction with two windows
+of 15 and 9 tabs, including all 24 referenced contexts. Its post-quit transaction
+contained only the original nine-tab window. A later updater run captured that
+same nine-tab state before and after its wait, so the per-invocation comparison
+accepted it. The archive sequence independently confirms the loss: a periodic
+snapshot at 07:35:35 UTC has both windows; the 07:38:56 termination snapshot and
+07:40:36 restore-source snapshot contain only the nine-tab window.
+
+A failed comparison must remain an unresolved recovery incident across updater
+invocations. Taking another backup of the reduced state does not resolve the
+incident. Prior complete snapshots must remain authoritative until recovery is
+verified, including pane layouts, provider identity and context references.
+Historical failed runs without an incident marker also need detection.
+
+The updater now checks this history during a read-only dry run and before a new
+quit prompt. It records unresolved loss until a complete saved identity set is
+verified, including previously populated working directories. A quit wait timeout
+is treated as uncertain because the user can quit just after it expires. Snapshot
+files and their containing directories are synchronized before the quit prompt.
+The synthetic updater suite passes 56 tests; the native harness suite passes 62.
+These tests do not establish that a real application relaunch succeeds.
+
+The missing window's full source and contexts were preserved in another private
+backup. One of its provider sessions was already open in the surviving window.
+Fourteen missing tabs were recreated in the user's new empty window, with their
+working directories, custom titles and validated resume commands prefilled
+without Enter. The ten existing tabs were unchanged. The resulting autosave has
+windows of 10 and 15 tabs, including the user's empty placeholder. Five editor
+split leaves remain in the private source snapshot; the current live MCP API
+cannot import their layout. This is partial live recovery, not proof that the
+original provider identities and notes are durably restored in the running app.
+
+The native regression is being extended to a second isolated process loading
+and opening the saved windows. Until it passes, the earlier native result proves
+final persistence only.
+
+## 2026-10-17 physical fullscreen measurement
+
+A 25-second owned AppKit probe recorded real physical pointer reveals and hides,
+with no menu setters or synthetic input. On the built-in display, the fullscreen
+main content height was 949 points. Its `contentLayoutRect` stayed unchanged
+while a separate, owned fullscreen titlebar window moved over its top edge.
+That auxiliary window was 32 points high and emitted public
+`NSWindowDidMoveNotification` events throughout the animation.
+
+The titlebar window's actual overlap is the relevant occlusion. Menu visibility
+changed before the auxiliary window finished hiding, so the menu visibility flag
+alone is insufficient. Convert the auxiliary screen frame into the content
+view's coordinates and account only for its visible intersection at the top
+edge. This measurement establishes the mechanism; corrected app acceptance still
+requires an actual reveal/hide cycle and hit testing against the final build.

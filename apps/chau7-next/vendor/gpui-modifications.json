@@ -95,9 +95,15 @@
           "before_sha256": "7e94f1c8354fb955bad10c0e0086562025bb82f460e9cc0894900e8e62c0f2ef",
           "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
           "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Expose a test-support-only observation of actual fullscreen auxiliary-toolbar geometry and the expected GPUI renderer frame for native reveal fixtures.",
+          "before_sha256": "c3258637e0143241c75150a731f9b0c4fa769c16dfbad240e31a559c4237e16f",
+          "after_sha256": "fa8741027b5d2d635c3956ff5aee837e50485bd96b8dda0bbd08d3cd65d67dee"
         }
       ],
-      "current_sha256": "c3258637e0143241c75150a731f9b0c4fa769c16dfbad240e31a559c4237e16f",
+      "current_sha256": "fa8741027b5d2d635c3956ff5aee837e50485bd96b8dda0bbd08d3cd65d67dee",
       "original_sha256": "7e94f1c8354fb955bad10c0e0086562025bb82f460e9cc0894900e8e62c0f2ef",
       "package": "gpui-pre-macos",
       "path": "src/gpui_macos.rs"
@@ -407,9 +413,15 @@
           "description": "Anchor AccessKit to the inset GPUI renderer view and keep custom fullscreen traffic lights aligned with its frame as contentLayoutRect changes; format with Rust 1.99",
           "before_sha256": "c9195382c1519aea2836c0274ecad0efef563732a7f0f4b613abbd2d1ab6b00f",
           "after_sha256": "1c4e6b71bd963a6fbe6a1b6807f1ede597ad885c84d8e31c178433414330ed81"
+        },
+        {
+          "kind": "semantic",
+          "description": "Measure the AppKit-owned fullscreen toolbar window's visible top overlap and inset the GPUI renderer and traffic lights only while it covers the tab row; coalesce move, resize, occlusion, and close notifications, detach observers and clear pending callbacks on close, expose live geometry to test-support, and add orientation/hidden-restore geometry regressions. Visibility and alpha are sampled on public notifications; alpha-only Reduce Motion transitions without a corresponding notification remain unverified.",
+          "before_sha256": "1c4e6b71bd963a6fbe6a1b6807f1ede597ad885c84d8e31c178433414330ed81",
+          "after_sha256": "d5789b5ca9661c39d4ba9c90922453556376e845dbfdcea333279bceab6d9138"
         }
       ],
-      "current_sha256": "1c4e6b71bd963a6fbe6a1b6807f1ede597ad885c84d8e31c178433414330ed81",
+      "current_sha256": "d5789b5ca9661c39d4ba9c90922453556376e845dbfdcea333279bceab6d9138",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"

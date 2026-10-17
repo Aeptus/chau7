@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+- Keep failed restoration checks across production update retries, including
+  historical failures. Detect missing identities during a read-only dry run;
+  require verified recovery before asking the user to quit for an installation.
+- Extend the isolated multiwindow fixture to a second app process that reloads
+  both windows, provider resume identities and a split editor with saved content.
+- Measure the owned native fullscreen titlebar window and follow its actual
+  overlap with the renderer, including animation and return to the hidden state.
+  Physical-pointer acceptance of the corrected build remains pending.
+
 - Resolve zero-SHA pre-push diffs from the configured upstream branch, avoiding
   full-history quality runs when a feature branch tracks a non-main base.
 

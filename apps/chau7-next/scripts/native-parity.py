@@ -1248,15 +1248,23 @@ MULTIWINDOW_RESTORE_EXPECTED = (
             "title": "second-window-latest-at-quit",
             "pane_id": 7303,
             "resume_id": "fixture-second-window-latest",
+            "editor": True,
         },
     ),
 )
+MULTIWINDOW_PHASE_ENV = "CHAU7_NEXT_NATIVE_MULTIWINDOW_PHASE"
+MULTIWINDOW_OWNER_TOKEN_ENV = "CHAU7_NEXT_NATIVE_MULTIWINDOW_TOKEN"
+MULTIWINDOW_OWNER_RECEIPT_NAME = "native-multiwindow-owner"
+MULTIWINDOW_EDITOR_RELATIVE_PATH = Path("pane-7303/fixture-editor.md")
+MULTIWINDOW_EDITOR_ID = 7304
+MULTIWINDOW_EDITOR_CONTENT = b"Native multiwindow fixture editor panel\nContent survives a two-process restore.\n"
 
 
-def multiwindow_restore_manifest_matches(session):
+def multiwindow_restore_manifest_matches(session, home=None):
     windows = session.get("windows") if isinstance(session, dict) else None
     if not isinstance(windows, list) or len(windows) != len(MULTIWINDOW_RESTORE_EXPECTED):
         return False
+    home = Path(home) if home is not None else None
     seen_tabs = set()
     seen_resume_ids = set()
     for window, expected_tabs in zip(windows, MULTIWINDOW_RESTORE_EXPECTED, strict=True):
@@ -1276,62 +1284,236 @@ def multiwindow_restore_manifest_matches(session):
                 return False
             pane = panes[0]
             resume_id = expected["resume_id"]
+            expected_cwd = home / f"pane-{expected['pane_id']}" if home is not None else None
             if (
                 not isinstance(pane, dict)
                 or pane.get("id") != expected["pane_id"]
+                or (expected_cwd is not None and pane.get("directory") != str(expected_cwd))
                 or pane.get("ai_provider") != "codex"
                 or pane.get("ai_session_id") != resume_id
                 or pane.get("ai_resume_command") != f"codex resume {resume_id}"
                 or resume_id in seen_resume_ids
             ):
                 return False
+            layout = tab.get("layout")
+            if expected.get("editor"):
+                expected_editor_path = home / MULTIWINDOW_EDITOR_RELATIVE_PATH if home is not None else None
+                children = layout.get("children") if isinstance(layout, dict) else None
+                if not (
+                    isinstance(layout, dict)
+                    and layout.get("type") == "split"
+                    and layout.get("axis") == "horizontal"
+                    and isinstance(layout.get("ratios"), list)
+                    and len(layout["ratios"]) == 2
+                    and all(isinstance(ratio, (int, float)) and ratio > 0 for ratio in layout["ratios"])
+                    and abs(sum(layout["ratios"]) - 1.0) < 0.01
+                    and isinstance(children, list)
+                    and len(children) == 2
+                    and isinstance(children[0], dict)
+                    and children[0].get("type") == "terminal"
+                    and children[0].get("id") == expected["pane_id"]
+                    and children[0].get("directory")
+                    == (str(expected_cwd) if expected_cwd is not None else pane.get("directory"))
+                    and isinstance(children[1], dict)
+                    and children[1].get("type") == "editor"
+                    and children[1].get("id") == MULTIWINDOW_EDITOR_ID
+                    and isinstance(children[1].get("path"), str)
+                    and (
+                        children[1]["path"] == str(expected_editor_path)
+                        if expected_editor_path is not None
+                        else Path(children[1]["path"]).name == MULTIWINDOW_EDITOR_RELATIVE_PATH.name
+                    )
+                ):
+                    return False
+            else:
+                expected_terminal_path = str(expected_cwd) if expected_cwd is not None else pane.get("directory")
+                if not (
+                    isinstance(layout, dict)
+                    and layout.get("type") == "terminal"
+                    and layout.get("id") == expected["pane_id"]
+                    and layout.get("directory") == expected_terminal_path
+                ):
+                    return False
             seen_resume_ids.add(resume_id)
     return len(seen_tabs) == 3 and len(seen_resume_ids) == 3
 
 
-def read_owned_multiwindow_restore_manifest(home):
+def validate_owned_multiwindow_home(home, token):
     root = Path(home)
     temporary = Path(tempfile.gettempdir()).resolve(strict=True)
+    if (
+        not isinstance(token, str)
+        or len(token) != 32
+        or any(character not in "0123456789abcdef" for character in token)
+    ):
+        raise ValueError("multiwindow fixture owner token is malformed")
     if root.is_symlink() or root.parent != temporary or not root.name.startswith("chau7-native-fixture-"):
         raise ValueError("multiwindow fixture home is outside its exact owned temporary profile")
     root_info = root.lstat()
     resolved = root.resolve(strict=True)
-    if not stat.S_ISDIR(root_info.st_mode) or resolved != root:
+    if not stat.S_ISDIR(root_info.st_mode) or resolved != root or root_info.st_uid != os.getuid():
         raise ValueError("multiwindow fixture home is not its exact real directory")
+    receipt = root / MULTIWINDOW_OWNER_RECEIPT_NAME
+    if receipt.is_symlink():
+        raise ValueError("multiwindow fixture owner receipt must not be a symlink")
+    receipt_info = receipt.lstat()
+    if (
+        not stat.S_ISREG(receipt_info.st_mode)
+        or receipt_info.st_nlink != 1
+        or receipt_info.st_uid != os.getuid()
+        or stat.S_IMODE(receipt_info.st_mode) != 0o600
+        or receipt_info.st_size != len(token)
+        or receipt.read_bytes() != token.encode("ascii")
+    ):
+        raise ValueError("multiwindow fixture owner receipt does not prove ownership by this run")
+    return root
+
+
+def remove_owned_multiwindow_home(home, token):
+    root = validate_owned_multiwindow_home(home, token)
+    shutil.rmtree(root)
+    if root.exists():
+        raise ValueError("owned multiwindow fixture profile was not removed")
+
+
+def read_owned_multiwindow_restore_manifest(home, token):
+    root = validate_owned_multiwindow_home(home, token)
     state_dir = root / ".chau7-next-state"
     session_path = state_dir / "session.json"
     if state_dir.is_symlink() or session_path.is_symlink():
         raise ValueError("multiwindow fixture restore state must not contain symlink paths")
     state_info = state_dir.lstat()
     session_info = session_path.lstat()
-    if not stat.S_ISDIR(state_info.st_mode) or not stat.S_ISREG(session_info.st_mode):
+    if (
+        not stat.S_ISDIR(state_info.st_mode)
+        or state_info.st_uid != os.getuid()
+        or state_dir.resolve(strict=True) != state_dir
+        or not stat.S_ISREG(session_info.st_mode)
+        or session_info.st_uid != os.getuid()
+    ):
         raise ValueError("multiwindow fixture restore manifest is not a regular owned file")
     if session_info.st_size > 16 * 1024 * 1024 or session_info.st_nlink != 1:
         raise ValueError("multiwindow fixture restore manifest exceeds its owned file bounds")
     with session_path.open("r", encoding="utf-8") as manifest_file:
         session = json.load(manifest_file)
-    if not multiwindow_restore_manifest_matches(session):
+    if not multiwindow_restore_manifest_matches(session, root):
         raise ValueError(
-            "post-quit restore manifest did not retain both windows and the latest second-window resume metadata"
+            "restore manifest did not retain both windows, the split editor leaf, its CWD, and all resume metadata"
         )
+    for pane_id in (7301, 7302, 7303):
+        pane_directory = root / f"pane-{pane_id}"
+        pane_info = pane_directory.lstat()
+        if (
+            not stat.S_ISDIR(pane_info.st_mode)
+            or pane_info.st_uid != os.getuid()
+            or pane_directory.resolve(strict=True) != pane_directory
+        ):
+            raise ValueError("multiwindow fixture pane working directory is not an owned real directory")
+    editor_path = root / MULTIWINDOW_EDITOR_RELATIVE_PATH
+    if editor_path.is_symlink():
+        raise ValueError("multiwindow fixture editor panel file must not be a symlink")
+    editor_info = editor_path.lstat()
+    if (
+        not stat.S_ISREG(editor_info.st_mode)
+        or editor_info.st_nlink != 1
+        or editor_info.st_uid != os.getuid()
+        or editor_info.st_size > 4096
+        or editor_path.read_bytes() != MULTIWINDOW_EDITOR_CONTENT
+    ):
+        raise ValueError("multiwindow fixture editor panel content was not retained")
     return {
         "path": str(session_path),
         "window_count": 2,
         "tab_counts": [1, 2],
         "latest_second_window_tab_uuid": MULTIWINDOW_RESTORE_EXPECTED[1][1]["uuid"],
         "latest_second_window_resume_id": MULTIWINDOW_RESTORE_EXPECTED[1][1]["resume_id"],
+        "editor_split_leaf_verified": True,
+        "editor_panel_content_verified": True,
     }
+
+
+def launch_multiwindow_relaunch(binary, case, renderer, home, token, environment, evidence):
+    child_environment = dict(environment)
+    child_environment[MULTIWINDOW_PHASE_ENV] = "restore"
+    child_environment[MULTIWINDOW_OWNER_TOKEN_ENV] = token
+    command = [
+        str(binary),
+        "--native-parity-fixture",
+        case,
+        "--window-renderer",
+        renderer,
+    ]
+    stdout_path = evidence / f"{case}.relaunch.stdout"
+    stderr_path = evidence / f"{case}.relaunch.stderr"
+    result = {
+        "phase": "restore",
+        "command": command,
+        "stdout_path": str(stdout_path),
+        "stderr_path": str(stderr_path),
+        "exit_code": None,
+        "timed_out": False,
+        "outcome": None,
+        "application_pid": None,
+        "application_pid_verified": False,
+        "application_process_gone": False,
+        "passed": False,
+    }
+    with stdout_path.open("x") as stdout, stderr_path.open("x") as stderr:
+        process = subprocess.Popen(
+            command,
+            cwd=Path(tempfile.gettempdir()).resolve(),
+            env=child_environment,
+            stdout=stdout,
+            stderr=stderr,
+        )
+        result["process_id"] = process.pid
+        try:
+            result["exit_code"] = process.wait(timeout=75)
+        except subprocess.TimeoutExpired:
+            # Preserve uncertain fixture state; never terminate an acceptance process.
+            result["timed_out"] = True
+            return result
+    outcome = fixture_outcome(stdout_path, case)
+    result["outcome"] = outcome
+    outcome_pid = (outcome or {}).get("pid")
+    result["application_pid"] = outcome_pid
+    result["application_pid_verified"] = valid_pid(outcome_pid) and outcome_pid == result["process_id"]
+    if result["application_pid_verified"]:
+        deadline = time.monotonic() + 5
+        while True:
+            result["application_process_gone"] = application_gone(outcome_pid)
+            if result["application_process_gone"] or time.monotonic() >= deadline:
+                break
+            time.sleep(0.05)
+    result["passed"] = (
+        result["exit_code"] == 0
+        and outcome is not None
+        and outcome.get("passed") is True
+        and outcome.get("phase") == "restored_after_relaunch"
+        and outcome.get("restored_windows") == 2
+        and outcome.get("restored_tabs_per_window") == [1, 2]
+        and outcome.get("resume_identity_count") == 3
+        and outcome.get("editor_split_leaf_loaded") is True
+        and outcome.get("editor_content_verified") is True
+        and result["application_pid_verified"]
+        and result["application_process_gone"]
+    )
+    return result
 
 
 def case_passed(record):
     outcome = record.get("outcome") or {}
     if record.get("case") == "multiwindow-restore":
+        relaunch = record.get("relaunch") or {}
         return (
             not record.get("timed_out", False)
             and record.get("exit_code") == 0
             and outcome.get("passed") is True
+            and outcome.get("phase") == "late_second_window_tab_prepared"
             and record.get("application_pid_verified") is True
             and record.get("application_process_gone") is True
+            and record.get("save_manifest_verified") is True
+            and relaunch.get("passed") is True
             and record.get("restore_manifest_verified") is True
             and record.get("owned_home_removed") is True
         )
@@ -2001,6 +2183,11 @@ def main():
                 "HISTFILE": "",
             }
         )
+        multiwindow_token = None
+        if case == "multiwindow-restore":
+            multiwindow_token = uuid.uuid4().hex
+            child_environment[MULTIWINDOW_PHASE_ENV] = "save"
+            child_environment[MULTIWINDOW_OWNER_TOKEN_ENV] = multiwindow_token
         if case == "settings" and args.settings_locale:
             child_environment["CHAU7_NEXT_NATIVE_SETTINGS_LANGUAGE"] = args.settings_locale
         if case == "keyboard":
@@ -2177,14 +2364,52 @@ def main():
                         break
                     time.sleep(0.05)
             record["application_process_gone"] = gone
-            if case == "multiwindow-restore" and gone and not record["timed_out"]:
-                try:
-                    record["restore_manifest"] = read_owned_multiwindow_restore_manifest(home)
-                    record["restore_manifest_verified"] = True
-                    shutil.rmtree(home)
-                except (OSError, ValueError, json.JSONDecodeError) as error:
-                    record["restore_manifest_verified"] = False
-                    record["restore_manifest_error"] = str(error)
+            if case == "multiwindow-restore":
+                record["save_manifest_verified"] = False
+                record["restore_manifest_verified"] = False
+                if (
+                    gone
+                    and not record["timed_out"]
+                    and record["application_pid_verified"]
+                    and record["exit_code"] == 0
+                    and (record["outcome"] or {}).get("passed") is True
+                    and (record["outcome"] or {}).get("phase") == "late_second_window_tab_prepared"
+                ):
+                    try:
+                        save_manifest = read_owned_multiwindow_restore_manifest(home, multiwindow_token)
+                        record["save_manifest"] = save_manifest
+                        record["save_manifest_verified"] = True
+                        relaunch = launch_multiwindow_relaunch(
+                            binary,
+                            case,
+                            args.window_renderer,
+                            home,
+                            multiwindow_token,
+                            child_environment,
+                            evidence,
+                        )
+                        record["relaunch"] = relaunch
+                        if relaunch["timed_out"]:
+                            record["timed_out"] = True
+                        if relaunch["passed"]:
+                            restored_manifest = read_owned_multiwindow_restore_manifest(
+                                home,
+                                multiwindow_token,
+                            )
+                            record["restore_manifest"] = restored_manifest
+                            record["restore_manifest_verified"] = restored_manifest == save_manifest
+                            if not record["restore_manifest_verified"]:
+                                record["restore_manifest_error"] = (
+                                    "post-relaunch quit snapshot changed the restored window, pane, or resume identity set"
+                                )
+                            else:
+                                remove_owned_multiwindow_home(home, multiwindow_token)
+                        else:
+                            record["restore_manifest_error"] = (
+                                "second-process relaunch did not verify the restored workspace state and production quit"
+                            )
+                    except (OSError, ValueError, json.JSONDecodeError) as error:
+                        record["restore_manifest_error"] = str(error)
             record["owned_home_removed"] = not home.exists()
             if bundle_root is not None and gone and not record["timed_out"]:
                 archive_and_remove_owned_restore_bundle(record, bundle_root, evidence)
