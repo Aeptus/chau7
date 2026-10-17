@@ -327,3 +327,41 @@ probe is prepared for two real pointer reveal/hide cycles and actual tab-row
 clicks. Settings readback and renderer-only pixels do not establish that AppKit
 has stopped painting the empty row. The PR remains a draft. No current
 production app or restoration state has been changed by this investigation.
+
+
+## Fullscreen crash regression, 2026-10-17
+
+The installed `89a64954` candidate aborted on fullscreen entry. Both native
+crash reports show `NSInternalInconsistencyException` in
+`-[NSWindow titlebarAccessoryViewControllers]`; the system log states that the
+property is unsupported for the window style. The empty-chrome eligibility
+check queried it on AppKit's borderless auxiliary window. The selector exists
+on that window, so selector availability cannot prevent this exception.
+
+Accessory lookup now runs lazily only on titled windows without a native
+toolbar. A toolbar, a nonempty accessory array, or an unknown accessory result
+continues to prevent suppression. The auxiliary snapshot reads and changes
+titlebar transparency only for a currently titled window, and main-window
+title/subtitle checks follow a titled/full-size-content eligibility gate.
+Generic window appearance and original-container restoration remain intact.
+
+Three pure regressions cover the lazy borderless path, toolbar refusal, and
+empty/nonempty/unknown titled accessory arrays. The native restore fixture now
+runs two owned fullscreen enter/exit cycles before its separate geometry and
+composited-pixel checks. It records actual AppKit completion notifications,
+cycle count, app survival, and bounded cleanup evidence.
+
+A hidden-window Objective-C probe on macOS 27.2 reproduced the original
+exception inside `@try/@catch`. The guarded titled read, toolbar refusal,
+borderless skip, generic appearance setters, and guarded transparency
+round-trip passed. All probe windows remained invisible. This establishes the
+AppKit precondition; it does not establish complete GPUI fullscreen or physical
+menu-hover acceptance. Validation of the complete candidate is recorded
+separately after the exact-revision native run.
+
+The complete Rust workspace passes 3,254 tests with two existing ignored tests;
+strict Clippy with all targets and the native fixture passes. Five exact-source
+vendor tests pass, and all 35 vendor hash chains match. The first workspace run
+also exposed the prior production rebuild helper's four intentional bundle-ID
+references in the isolation scan. The scan now permits only those exact file
+and metadata lines; all forbidden data paths remain checked.

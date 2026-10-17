@@ -425,9 +425,15 @@
           "description": "Suppress only owned empty fullscreen titlebar chrome after native controls move to the main content host; restore public AppKit settings on exit, keep occlusion avoidance as fallback, and report independent renderer top-gap evidence",
           "before_sha256": "d5789b5ca9661c39d4ba9c90922453556376e845dbfdcea333279bceab6d9138",
           "after_sha256": "c6babb5789ee317b1f00fcaad0658ca67b68e8cab45e51e2c2a7519ee6139d3e"
+        },
+        {
+          "kind": "semantic",
+          "description": "Guard titlebar access by the titled window style to prevent AppKit exceptions on borderless fullscreen auxiliary windows; preserve toolbar and accessory eligibility conservatively and lazily",
+          "before_sha256": "c6babb5789ee317b1f00fcaad0658ca67b68e8cab45e51e2c2a7519ee6139d3e",
+          "after_sha256": "a3e810b2253aa7e999c7924efce622ad947ccfce2c5fa5b2323526f7ee8be2d7"
         }
       ],
-      "current_sha256": "c6babb5789ee317b1f00fcaad0658ca67b68e8cab45e51e2c2a7519ee6139d3e",
+      "current_sha256": "a3e810b2253aa7e999c7924efce622ad947ccfce2c5fa5b2323526f7ee8be2d7",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"

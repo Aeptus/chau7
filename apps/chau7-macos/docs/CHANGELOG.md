@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fix a Rust fullscreen crash caused by querying titlebar accessories on an
+  AppKit borderless auxiliary window. Guard titlebar state by window style and
+  check repeated native fullscreen entry/exit before visual acceptance.
+
 - Prepare suppression of the empty native fullscreen titlebar after relocating
   the window controls into the Rust tab row. Preserve native toolbars and
   restore AppKit settings on exit; strengthen fullscreen checks to reject the

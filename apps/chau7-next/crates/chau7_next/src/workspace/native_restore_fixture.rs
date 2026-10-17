@@ -3914,6 +3914,121 @@ async fn wait_for_native_window_geometry(
     .await
 }
 
+async fn toggle_fullscreen_and_wait(
+    handle: WindowHandle<Root>,
+    native: &NSWindow,
+    cx: &mut AsyncApp,
+    entering: bool,
+    stage: &'static str,
+) -> Result<bool, String> {
+    let notification = if entering {
+        unsafe { objc2_app_kit::NSWindowDidEnterFullScreenNotification }
+    } else {
+        unsafe { objc2_app_kit::NSWindowDidExitFullScreenNotification }
+    };
+    let completion = FullscreenCompletion::new(native, notification);
+    native_mutation(|| native.toggleFullScreen(None))?;
+    wait_until_deadline(cx, stage, Instant::now() + Duration::from_secs(12), |_| {
+        completion.completed()
+            && native.styleMask().contains(NSWindowStyleMask::FullScreen) == entering
+    })
+    .await?;
+    settle(handle, cx).await?;
+    pause(cx, Duration::from_millis(100)).await;
+    Ok(completion.completed())
+}
+
+async fn verify_fullscreen_transition_regression(
+    handle: WindowHandle<Root>,
+    native: &NSWindow,
+    cx: &mut AsyncApp,
+) -> Result<serde_json::Value, String> {
+    let application = NSApplication::sharedApplication(
+        MainThreadMarker::new().ok_or("fullscreen transition fixture is not on main thread")?,
+    );
+    ensure(
+        !native.styleMask().contains(NSWindowStyleMask::FullScreen),
+        "fullscreen transition regression must start windowed",
+    )?;
+
+    let mut completed_cycles = Vec::new();
+    let transition_result = async {
+        for cycle in 1..=2 {
+            let enter_notification = toggle_fullscreen_and_wait(
+                handle,
+                native,
+                cx,
+                true,
+                "fullscreen transition regression enter",
+            )
+            .await?;
+            let exit_notification = toggle_fullscreen_and_wait(
+                handle,
+                native,
+                cx,
+                false,
+                "fullscreen transition regression exit",
+            )
+            .await?;
+
+            completed_cycles.push(serde_json::json!({
+                "cycle": cycle,
+                "enter_notification": enter_notification,
+                "exit_notification": exit_notification,
+                "app_alive": application.isRunning(),
+            }));
+            ensure(
+                application.isRunning(),
+                "owned app stopped during fullscreen transition regression",
+            )?;
+        }
+        Ok::<_, String>(())
+    }
+    .await;
+
+    let mut cleanup_exit_notification = None;
+    let cleanup_result = if native.styleMask().contains(NSWindowStyleMask::FullScreen) {
+        let result = toggle_fullscreen_and_wait(
+            handle,
+            native,
+            cx,
+            false,
+            "cleanup fullscreen transition regression",
+        )
+        .await;
+        cleanup_exit_notification = Some(result.is_ok());
+        result.map(|_| ())
+    } else {
+        Ok(())
+    };
+
+    let app_alive = application.isRunning();
+    let evidence = serde_json::json!({
+        "requested_cycles": 2,
+        "cycle_count": completed_cycles.len(),
+        "cycles": completed_cycles,
+        "app_alive": app_alive,
+        "window_fullscreen_after_cleanup": native.styleMask().contains(NSWindowStyleMask::FullScreen),
+        "cleanup_exit_notification": cleanup_exit_notification,
+        "transition_error": transition_result.as_ref().err(),
+        "cleanup_error": cleanup_result.as_ref().err(),
+    });
+    eprintln!("native_fullscreen_transition_regression={evidence}");
+
+    if let Err(transition_error) = transition_result {
+        if let Err(cleanup_error) = cleanup_result {
+            return Err(format!("{transition_error}; {cleanup_error}"));
+        }
+        return Err(transition_error);
+    }
+    cleanup_result?;
+    ensure(
+        app_alive && !native.styleMask().contains(NSWindowStyleMask::FullScreen),
+        "fullscreen transition regression did not leave the owned app alive and windowed",
+    )?;
+    Ok(evidence)
+}
+
 async fn verify_traffic_lights_after_window_zoom(
     handle: WindowHandle<Root>,
     native: &NSWindow,
@@ -3921,6 +4036,7 @@ async fn verify_traffic_lights_after_window_zoom(
     fullscreen_focus_yield_ack_path: &Path,
     fullscreen_reactivation_ack_path: &Path,
 ) -> Result<serde_json::Value, String> {
+    let transition_regression = verify_fullscreen_transition_regression(handle, native, cx).await?;
     let fullscreen_options = verify_custom_titlebar_fullscreen_options(native)?;
     let initial_frame = native.frame();
     let initial_controls = traffic_light_geometry(native, "before ordinary zoom")?;
@@ -3954,6 +4070,7 @@ async fn verify_traffic_lights_after_window_zoom(
     )
     .await?;
     Ok(serde_json::json!({
+        "fullscreen_transition_regression": transition_regression,
         "windowed_frame_before": native_rect_values(initial_frame),
         "zoomed_frame": native_rect_values(zoomed_frame),
         "windowed_frame_after": native_rect_values(restored_frame),

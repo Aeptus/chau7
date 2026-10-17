@@ -63,7 +63,7 @@ use objc2_app_kit::{
     NSColor as Objc2NSColor, NSDraggingImageComponent, NSDraggingImageComponentIconKey,
     NSDraggingItem, NSPasteboardWriting, NSTrackingArea, NSTrackingAreaOptions,
     NSView as Objc2NSView, NSWindow as Objc2NSWindow, NSWindowButton as Objc2NSWindowButton,
-    NSWorkspace,
+    NSWindowStyleMask as Objc2NSWindowStyleMask, NSWorkspace,
 };
 use objc2_foundation::{
     NSPoint as Objc2NSPoint, NSRect as Objc2NSRect, NSSize as Objc2NSSize, NSURL,
@@ -603,7 +603,7 @@ struct FullscreenAuxiliaryChromeSnapshot {
     titlebar_container: Retained<Objc2NSView>,
     is_opaque: bool,
     background_color: Retained<Objc2NSColor>,
-    titlebar_appears_transparent: bool,
+    titlebar_appears_transparent: Option<bool>,
     has_shadow: bool,
     ignores_mouse_events: bool,
     titlebar_container_is_hidden: bool,
@@ -617,7 +617,12 @@ impl FullscreenAuxiliaryChromeSnapshot {
         Self {
             is_opaque: window.isOpaque(),
             background_color: window.backgroundColor(),
-            titlebar_appears_transparent: window.titlebarAppearsTransparent(),
+            // AppKit's fullscreen auxiliary window can be borderless. Only
+            // titled windows support titlebar-specific state.
+            titlebar_appears_transparent: window
+                .styleMask()
+                .contains(Objc2NSWindowStyleMask::Titled)
+                .then(|| window.titlebarAppearsTransparent()),
             has_shadow: window.hasShadow(),
             ignores_mouse_events: window.ignoresMouseEvents(),
             titlebar_container_is_hidden: titlebar_container.isHidden(),
@@ -638,7 +643,10 @@ impl FullscreenAuxiliaryChromeSnapshot {
         if self.window.backgroundColor() != clear {
             self.window.setBackgroundColor(Some(&clear));
         }
-        if !self.window.titlebarAppearsTransparent() {
+        if self.titlebar_appears_transparent.is_some()
+            && self.window.styleMask().contains(Objc2NSWindowStyleMask::Titled)
+            && !self.window.titlebarAppearsTransparent()
+        {
             self.window.setTitlebarAppearsTransparent(true);
         }
         if self.window.hasShadow() {
@@ -656,7 +664,9 @@ impl FullscreenAuxiliaryChromeSnapshot {
     fn is_applied(&self) -> bool {
         !self.window.isOpaque()
             && self.window.backgroundColor() == Objc2NSColor::clearColor()
-            && self.window.titlebarAppearsTransparent()
+            && (self.titlebar_appears_transparent.is_none()
+                || !self.window.styleMask().contains(Objc2NSWindowStyleMask::Titled)
+                || self.window.titlebarAppearsTransparent())
             && !self.window.hasShadow()
             && self.window.ignoresMouseEvents()
             && self.titlebar_container.isHidden()
@@ -665,8 +675,11 @@ impl FullscreenAuxiliaryChromeSnapshot {
     fn restore(&self) {
         self.window
             .setBackgroundColor(Some(&self.background_color));
-        self.window
-            .setTitlebarAppearsTransparent(self.titlebar_appears_transparent);
+        if let Some(transparent) = self.titlebar_appears_transparent
+            && self.window.styleMask().contains(Objc2NSWindowStyleMask::Titled)
+        {
+            self.window.setTitlebarAppearsTransparent(transparent);
+        }
         self.window.setOpaque(self.is_opaque);
         self.window.setHasShadow(self.has_shadow);
         self.window
@@ -1584,7 +1597,12 @@ impl MacWindowState {
         let style_mask: NSWindowStyleMask = unsafe { msg_send![main_window_id, styleMask] };
         let custom_transparent_fullsize_titlebar = self.traffic_light_position.is_some()
             && self.transparent_titlebar
+            && style_mask.contains(NSWindowStyleMask::NSTitledWindowMask)
             && style_mask.contains(NSWindowStyleMask::NSFullSizeContentViewWindowMask);
+        // Do not query titlebar properties on unsupported main-window styles.
+        if !custom_transparent_fullsize_titlebar {
+            return false;
+        }
         let no_native_toolbar_or_accessories = unsafe {
             !window_has_native_toolbar_or_accessories(main_window_id)
                 && !window_has_native_toolbar_or_accessories(candidate_id)
@@ -4469,15 +4487,33 @@ fn fullscreen_renderer_top_gap(base_frame: NSRect, renderer_frame: NSRect, flipp
     }
 }
 
+fn native_toolbar_or_titlebar_accessories_present(
+    has_toolbar: bool,
+    supports_titlebar: bool,
+    accessory_count: impl FnOnce() -> Option<usize>,
+) -> bool {
+    has_toolbar || (supports_titlebar && accessory_count().is_none_or(|count| count > 0))
+}
+
 unsafe fn window_has_native_toolbar_or_accessories(window: id) -> bool {
     unsafe {
         let toolbar: id = msg_send![window, toolbar];
-        let accessories: id = msg_send![window, titlebarAccessoryViewControllers];
-        if !toolbar.is_null() || accessories.is_null() {
-            return true;
-        }
-        let accessory_count: NSUInteger = msg_send![accessories, count];
-        accessory_count > 0
+        let style_mask: NSWindowStyleMask = msg_send![window, styleMask];
+        native_toolbar_or_titlebar_accessories_present(
+            !toolbar.is_null(),
+            style_mask.contains(NSWindowStyleMask::NSTitledWindowMask),
+            || {
+                // The selector exists on borderless NSWindow too, but invoking
+                // it raises an Objective-C exception. Check the style first.
+                let accessories: id = msg_send![window, titlebarAccessoryViewControllers];
+                if accessories.is_null() {
+                    None
+                } else {
+                    let count: NSUInteger = msg_send![accessories, count];
+                    Some(count as usize)
+                }
+            },
+        )
     }
 }
 
@@ -5639,6 +5675,29 @@ mod tests {
         let missing_toolbar =
             fullscreen_content_view_frame_avoiding_toolbar(content, false, None, true, 1.0);
         assert_native_rect_eq(missing_toolbar, content);
+    }
+
+    #[test]
+    fn borderless_auxiliary_window_never_queries_titlebar_accessories() {
+        assert!(!native_toolbar_or_titlebar_accessories_present(false, false, || {
+            panic!("borderless AppKit windows reject titlebar accessory queries")
+        }));
+    }
+
+    #[test]
+    fn native_toolbar_blocks_suppression_without_querying_accessories() {
+        for supports_titlebar in [false, true] {
+            assert!(native_toolbar_or_titlebar_accessories_present(true, supports_titlebar, || {
+                panic!("a toolbar already prevents empty chrome suppression")
+            }));
+        }
+    }
+
+    #[test]
+    fn titled_window_accessories_preserve_nonempty_and_unknown_chrome() {
+        assert!(!native_toolbar_or_titlebar_accessories_present(false, true, || Some(0)));
+        assert!(native_toolbar_or_titlebar_accessories_present(false, true, || Some(1)));
+        assert!(native_toolbar_or_titlebar_accessories_present(false, true, || None));
     }
 
     #[test]
