@@ -46,7 +46,7 @@ jobs:
           persist-credentials: false
       - name: Select Xcode 26.6
         run: sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26.11.1
       - name: Enable pnpm
@@ -84,7 +84,7 @@ jobs:
         run: swift test
       - name: Preserve built artifacts
         run: tar -cf "$RUNNER_TEMP/release-artifacts.tar" -C apps/chau7-macos dist
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-artifacts
           path: ${{ runner.temp }}/release-artifacts.tar
@@ -107,7 +107,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-artifacts
           path: ${{ runner.temp }}
@@ -297,7 +297,7 @@ jobs:
         run: ./scripts/bundle-macos.sh
       - name: Preserve unsigned candidate for the signing job
         run: tar -cf "$RUNNER_TEMP/rust-production-candidate.tar" -C "$RUNNER_TEMP" rust-production-candidate
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rust-production-candidate-unsigned
           path: ${{ runner.temp }}/rust-production-candidate.tar
@@ -318,7 +318,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rust-production-candidate-unsigned
           path: ${{ runner.temp }}
@@ -379,7 +379,7 @@ jobs:
             ${{ runner.temp }}/rust-production-rc/SHA256SUMS.txt
       - name: Explain artifact visibility
         run: echo 'This is a gated CI RC artifact only; it does not create a tag, GitHub Release, or Homebrew update.' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rust-production-rc-${{ github.run_number }}
           path: ${{ runner.temp }}/rust-production-rc
