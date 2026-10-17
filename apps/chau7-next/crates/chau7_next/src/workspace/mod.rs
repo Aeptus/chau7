@@ -212,7 +212,7 @@ impl Workspace {
         state.group_idle_tabs = settings.tabs.group_idle_tabs;
         state.auto_repo_grouping = settings.tabs.auto_repo_grouping();
         // Refresh idle state and the window title once a second.
-        Self::hide_on_close(window, cx);
+        Self::confirm_on_close(window, cx);
         cx.observe_window_activation(window, |this, window, cx| {
             this.sync_restore_surfaces(window, cx);
             if window.is_window_active() {
@@ -723,9 +723,8 @@ impl Workspace {
         );
     }
 
-    /// Take every tab out of this window so its shells keep running while the
-    /// window is closed (Close Window only hides the window in Swift).
-    pub fn park_tabs(&mut self, window: &Window) -> Option<ParkedWindow> {
+    /// Transfer ownership of every tab out of this window for explicit cleanup.
+    pub fn take_window_tabs(&mut self, window: &Window) -> Option<ParkedWindow> {
         if self.state.is_empty() {
             return None;
         }

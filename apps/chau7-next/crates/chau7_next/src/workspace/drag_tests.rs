@@ -335,3 +335,67 @@ fn closing_windows_commits_remaining_tabs_and_clears_the_last_saved_window(
         assert!(crate::session_store::load(&cx.global::<AppData>().root).is_none());
     });
 }
+
+fn exercise_window_close_confirmation(harness: &mut TestAppContext, native: bool) {
+    init(harness);
+    let (handle, workspace, first_uuid) = harness.update(|cx| {
+        cx.global_mut::<Settings>().tabs.confirm_close = true;
+        let (handle, workspace) = crate::open_window_for_transfer(cx).unwrap();
+        let (_, _, uuid) = seed_tab(&workspace, cx);
+        (handle, workspace, uuid)
+    });
+    let request = |harness: &mut TestAppContext| {
+        if native {
+            let mut visual = gpui::VisualTestContext::from_window(handle, harness);
+            assert!(!visual.simulate_close());
+        } else {
+            harness.update(|cx| {
+                handle
+                    .update(cx, |_, window, cx| {
+                        workspace.update(cx, |workspace, cx| workspace.close_window(window, cx));
+                    })
+                    .unwrap();
+            });
+        }
+    };
+    request(harness);
+    assert!(harness.has_pending_prompt());
+    harness.simulate_prompt_answer("Cancel");
+    harness.run_until_parked();
+    harness.update(|cx| {
+        assert_eq!(workspace.read(cx).state.tabs()[0].uuid, first_uuid);
+        assert!(cx.global::<AppData>().hidden.is_empty());
+    });
+
+    request(harness);
+    // A new tab while the dialog is open invalidates that approval.
+    harness.update(|cx| {
+        seed_tab(&workspace, cx);
+    });
+    harness.simulate_prompt_answer("Close Window");
+    harness.run_until_parked();
+    harness.update(|cx| {
+        assert_eq!(workspace.read(cx).state.len(), 2);
+        assert!(handle.update(cx, |_, _, _| ()).is_ok());
+    });
+
+    request(harness);
+    harness.simulate_prompt_answer("Close Window");
+    harness.run_until_parked();
+    harness.update(|cx| {
+        assert!(workspace.read(cx).state.is_empty());
+        assert!(workspace.read(cx).entries.is_empty());
+        assert!(cx.global::<AppData>().hidden.is_empty());
+        assert!(handle.update(cx, |_, _, _| ()).is_err());
+    });
+}
+
+#[gpui::test]
+fn close_window_action_cancels_fences_and_permanently_closes_tabs(harness: &mut TestAppContext) {
+    exercise_window_close_confirmation(harness, false);
+}
+
+#[gpui::test]
+fn native_close_cancels_fences_and_permanently_closes_tabs(harness: &mut TestAppContext) {
+    exercise_window_close_confirmation(harness, true);
+}

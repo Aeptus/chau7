@@ -39,23 +39,79 @@ pub(crate) fn lifecycle(handle: gpui::AnyWindowHandle, phase: &'static str, cx: 
 }
 
 impl Workspace {
-    /// Close Window: the tabs and their shells are kept (macOS), the window
-    /// comes back from the Dock or the next shortcut.
+    /// Close the window and its sessions after any required confirmation.
     pub(super) fn close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         lifecycle(window.window_handle(), "close_action", cx);
-        self.hide_tabs(window, cx);
-        window.remove_window();
+        if self.window_close_allowed(window, cx) {
+            self.finish_window_close(window, cx);
+            window.remove_window();
+        }
     }
 
-    /// Park the tabs in `AppData` so closing the window does not end them.
-    pub(super) fn hide_tabs(&mut self, window: &Window, cx: &mut Context<Self>) {
+    fn window_close_fence(&self, cx: &App) -> Vec<(super::TabId, super::TabCloseFence)> {
+        self.state
+            .tabs()
+            .iter()
+            .filter_map(|tab| {
+                self.tab_close_fence(tab.id, cx)
+                    .map(|fence| (tab.id, fence))
+            })
+            .collect()
+    }
+
+    fn window_close_allowed(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.last_tab_prompt {
+            return false;
+        }
+        let fence = self.window_close_fence(cx);
+        let running: usize = fence.iter().map(|(_, tab)| tab.busy_panes).sum();
+        let settings = &Settings::get(cx).tabs;
+        if !settings.confirm_close && !(settings.warn_on_close_running && running > 0) {
+            return true;
+        }
+        self.last_tab_prompt = true;
+        let detail = if running > 0 {
+            format!(
+                "Closing this window will end all its tabs, including {running} active terminal session(s)."
+            )
+        } else {
+            "Closing this window will end all its tabs and sessions.".into()
+        };
+        let answer = crate::l10n::prompt(
+            window,
+            gpui::PromptLevel::Warning,
+            "Close this window?",
+            Some(&detail),
+            &["Close Window", "Cancel"],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let answer = answer.await.ok();
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.last_tab_prompt = false;
+                if answer != Some(0)
+                    || !window_close_fence_admits(&fence, &this.window_close_fence(cx))
+                {
+                    return;
+                }
+                this.finish_window_close(window, cx);
+                window.remove_window();
+            });
+        })
+        .detach();
+        false
+    }
+
+    fn finish_window_close(&mut self, window: &Window, cx: &mut Context<Self>) {
         lifecycle(window.window_handle(), "retiring", cx);
         Self::retire_native_window(window);
-        if !cfg!(target_os = "macos") {
-            return;
-        }
-        if let Some(parked) = self.park_tabs(window) {
-            cx.global_mut::<super::AppData>().hidden.push(parked);
+        if let Some(closed) = self.take_window_tabs(window) {
+            for (meta, panes) in closed.tabs {
+                crate::mcp::control::forget_closed_tab(&meta.uuid.to_string());
+                for (_, session) in panes.read(cx).pane_sessions(cx) {
+                    session.update(cx, |session, _| session.close());
+                }
+            }
         }
     }
 
@@ -67,17 +123,34 @@ impl Workspace {
         crate::platform::drop_image::uninstall(window);
     }
 
-    /// Closing with the window's close button hides the window too.
-    pub(super) fn hide_on_close(window: &mut Window, cx: &mut Context<Self>) {
+    /// The native close button follows the same confirmation and cleanup path.
+    pub(super) fn confirm_on_close(window: &mut Window, cx: &mut Context<Self>) {
         let workspace = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
-            if let Some(workspace) = workspace.upgrade() {
-                lifecycle(window.window_handle(), "native_close", cx);
-                workspace.update(cx, |ws, cx| ws.hide_tabs(window, cx));
-            }
-            true
+            workspace.upgrade().is_none_or(|workspace| {
+                workspace.update(cx, |ws, cx| {
+                    lifecycle(window.window_handle(), "native_close", cx);
+                    if ws.window_close_allowed(window, cx) {
+                        ws.finish_window_close(window, cx);
+                        true
+                    } else {
+                        false
+                    }
+                })
+            })
         });
     }
+}
+
+fn window_close_fence_admits(
+    captured: &[(super::TabId, super::TabCloseFence)],
+    current: &[(super::TabId, super::TabCloseFence)],
+) -> bool {
+    captured.len() == current.len()
+        && captured
+            .iter()
+            .zip(current)
+            .all(|((id, before), (current_id, after))| id == current_id && before.admits(after))
 }
 
 /// Window frame in one coordinate space shared by every window. On macOS,
