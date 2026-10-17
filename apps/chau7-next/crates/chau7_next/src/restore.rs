@@ -77,7 +77,11 @@ pub fn capture_tab(
                     pending.ai_provider.as_deref().unwrap_or_default()
                 ));
             }
-            saved.push(pending.clone());
+            let mut pending = pending.clone();
+            // Typing can begin before scrollback/resume replay finishes.
+            // Preserve the current pane's history even on this early save path.
+            pending.input_history = session.read(cx).input_history.clone();
+            saved.push(pending);
             continue;
         }
         let session = session.read(cx);
@@ -163,6 +167,7 @@ pub fn capture_tab(
             id,
             directory,
             scrollback: has_file,
+            input_history: session.input_history.clone(),
             ai_resume_command: build_ai_resume_command(
                 meta.as_ref().map(|m| m.0.as_str()),
                 meta.as_ref().map(|m| m.1.as_str()),

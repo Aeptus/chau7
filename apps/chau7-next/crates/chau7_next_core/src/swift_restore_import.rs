@@ -881,6 +881,7 @@ impl Converter {
                 id: *id,
                 directory,
                 scrollback: self.scrollback.contains_key(id),
+                input_history: Default::default(),
                 ai_provider: safe_resume
                     .as_ref()
                     .and_then(|_| metadata.as_ref().map(|meta| meta.provider.clone())),
