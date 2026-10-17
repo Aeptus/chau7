@@ -1,5 +1,5 @@
 {
-  "reason": "Makes the native fixture’s first synthetic IME replacement deterministic at its verified UTF-16 target; product behavior is unchanged. Also restores existing Rust tab-close safety without adding capabilities or settings; the focused pull request documents this regression fix and validation. Also hardens existing prompt history ownership, navigation and restoration; the focused PR records behavior and validation without rebuilding the running app. App-level recall also preserves drafts changed by shell-side completion or history editing instead of restoring guessed text.",
+  "reason": "Makes the native fixture’s first synthetic IME replacement deterministic at its verified UTF-16 target; product behavior is unchanged. Also restores existing Rust tab-close safety without adding capabilities or settings; the focused pull request documents this regression fix and validation. Also hardens existing prompt history ownership, navigation and restoration; the focused PR records behavior and validation without rebuilding the running app. App-level recall also preserves drafts changed by shell-side completion or history editing instead of restoring guessed text. Also repairs existing terminal file-link detection for spaced paths and local file URIs; the focused PR documents regressions and validation without changing capabilities or settings.",
   "paths": [
     "apps/chau7-next/crates/chau7_next/src/panes/editor/native_markdown/fixture.rs",
     "apps/chau7-next/crates/chau7_next/src/pane.rs",
@@ -9,6 +9,8 @@
     "apps/chau7-next/crates/chau7_next/src/terminal/input.rs",
     "apps/chau7-next/crates/chau7_next/src/terminal/session.rs",
     "apps/chau7-next/crates/chau7_next/src/restore.rs",
-    "apps/chau7-next/crates/chau7_next_core/src/swift_restore_import.rs"
+    "apps/chau7-next/crates/chau7_next_core/src/swift_restore_import.rs",
+    "apps/chau7-next/crates/chau7_next_core/src/link_detect.rs",
+    "apps/chau7-next/crates/chau7_next/src/terminal/links.rs"
   ]
 }

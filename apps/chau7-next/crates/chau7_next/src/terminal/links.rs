@@ -42,7 +42,9 @@ pub fn target_at(
     // OSC 8 hyperlinks always open; plain URLs follow "Clickable URLs"
     // (Display) and paths follow "Cmd-click paths" (`feature.cmdClickPaths`).
     if cell.link_id != 0 {
-        return session.link_url(cell.link_id).map(Target::Url);
+        return session
+            .link_url(cell.link_id)
+            .map(|url| url_target(url, session.cwd.as_deref()));
     }
     if !urls && !paths {
         return None;
@@ -51,13 +53,24 @@ pub fn target_at(
     let (text, utf16) = session.logical_line_hit(line, col as usize)?;
     let index = utf16_to_char_index(&text, utf16);
     match link_detect::target_at(&text, index)? {
-        LinkTarget::Url(url) => urls.then_some(Target::Url(url.url)),
+        LinkTarget::Url(url) => urls.then(|| url_target(url.url, session.cwd.as_deref())),
         LinkTarget::Path(path) if paths => {
             let resolved = resolve(&path.path, session.cwd.as_deref());
             resolved.exists().then_some(Target::Path(path))
         }
         LinkTarget::Path(_) => None,
     }
+}
+
+/// OSC 8 and detected file URIs must take the same editor route as file paths.
+/// Preserve the original URL when it is remote, malformed or unavailable locally.
+fn url_target(url: String, cwd: Option<&Path>) -> Target {
+    if let Some(path) = link_detect::hyperlink_path(&url)
+        && resolve(&path.path, cwd).is_file()
+    {
+        return Target::Path(path);
+    }
+    Target::Url(url)
 }
 
 /// The logical-line hit counts UTF-16 units; the matcher counts characters.
@@ -137,7 +150,7 @@ pub fn activate(session: &Entity<TerminalSession>, target: Target, cx: &mut App)
 
 fn open_url(url: &str, cx: &mut App) {
     let handler = Settings::get(cx).productivity.url_handler;
-    // File and ssh URLs always go to the system.
+    // Remaining URLs (including remote file and ssh URLs) go to the system.
     let is_web = url.starts_with("http://") || url.starts_with("https://");
     if is_web
         && let Some(bundle) = handler.bundle_identifier()
@@ -190,6 +203,18 @@ fn open_path(path: &PathMatch, cwd: Option<&Path>, cx: &mut App) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_uri_routes_to_the_same_path_target_as_plain_text() {
+        let fixture = std::env::temp_dir().join(format!("chau7 link {}.md", uuid::Uuid::new_v4()));
+        std::fs::write(&fixture, "# fixture").unwrap();
+        let url = format!("file://{}", percent_encode_path(&fixture.to_string_lossy()));
+        let target = url_target(url, None);
+        std::fs::remove_file(&fixture).unwrap();
+        assert!(matches!(target, Target::Path(p) if Path::new(&p.path) == fixture));
+        let remote = "file://remote/fixture/Notes.md".to_string();
+        assert_eq!(url_target(remote.clone(), None), Target::Url(remote));
+    }
 
     #[test]
     fn utf16_offsets_map_to_chars() {

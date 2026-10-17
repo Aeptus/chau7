@@ -56,9 +56,39 @@ fn char_index(text: &str, byte: usize) -> usize {
     text[..byte].chars().count()
 }
 
+/// Explicit boundaries let filenames contain spaces without consuming prose.
+fn delimited_targets(text: &str) -> impl Iterator<Item = regex::Match<'_>> {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r#""([^"\r\n]+)"|'([^'\r\n]+)'|`([^`\r\n]+)`|<([^<>\r\n]+)>|\]\(([^()<>\r\n]+)\)"#,
+        )
+        .expect("valid regex")
+    })
+    .captures_iter(text)
+    .filter_map(|caps| (1..=5).find_map(|i| caps.get(i)))
+}
+
 pub fn find_urls(text: &str) -> Vec<UrlMatch> {
-    url_regex()
-        .find_iter(text)
+    let mut matches: Vec<_> = delimited_targets(text)
+        .filter(|m| {
+            url_regex().find(m.as_str()).is_some_and(|u| u.start() == 0)
+                && m.as_str()
+                    .get(..7)
+                    .is_some_and(|s| s.eq_ignore_ascii_case("file://"))
+        })
+        .collect();
+    for m in url_regex().find_iter(text) {
+        if !matches
+            .iter()
+            .any(|whole| whole.start() <= m.start() && m.start() < whole.end())
+        {
+            matches.push(m);
+        }
+    }
+    matches.sort_by_key(|m| m.start());
+    matches
+        .into_iter()
         .map(|m| UrlMatch {
             url: m.as_str().to_string(),
             start: char_index(text, m.start()),
@@ -67,20 +97,133 @@ pub fn find_urls(text: &str) -> Vec<UrlMatch> {
         .collect()
 }
 
+fn full_path_regex() -> &'static Regex {
+    static FULL: OnceLock<Regex> = OnceLock::new();
+    FULL.get_or_init(|| {
+        Regex::new(r"^([^\r\n<>|\x00]+\.\w+)(?::(\d+))?(?::(\d+))?$").expect("valid regex")
+    })
+}
+
 pub fn find_paths(text: &str) -> Vec<PathMatch> {
-    path_regex()
-        .captures_iter(text)
-        .filter_map(|caps| {
-            let path = caps.get(1)?;
-            Some(PathMatch {
-                path: path.as_str().to_string(),
+    let mut paths = Vec::new();
+    for m in delimited_targets(text) {
+        // URI escapes belong to URLs; literal paths retain literal '%' and '+'.
+        if m.as_str().contains("://") {
+            continue;
+        }
+        if let Some(caps) = full_path_regex().captures(m.as_str()) {
+            let path = caps.get(1).unwrap();
+            paths.push(PathMatch {
+                path: path.as_str().into(),
                 line: caps.get(2).and_then(|m| m.as_str().parse().ok()),
                 column: caps.get(3).and_then(|m| m.as_str().parse().ok()),
-                start: char_index(text, path.start()),
-                end: char_index(text, path.end()),
-            })
-        })
-        .collect()
+                start: char_index(text, m.start()),
+                end: char_index(text, m.start() + path.end()),
+            });
+        }
+    }
+    // A directory prefix bounds an unquoted path's start. Stop at the first
+    // extension followed by a delimiter, then let the caller check existence.
+    static SPACED: OnceLock<Regex> = OnceLock::new();
+    let spaced = SPACED.get_or_init(|| {
+        Regex::new(r#"(?:^|[\s"'`({\[])((?:~?/|\.\.?/|[\w.-]+/)[^\r\n<>|`"'\[\]()]*?\.\w+)(?::(\d+))?(?::(\d+))?(?:$|[\s)\]},;])"#)
+            .expect("valid regex")
+    });
+    let mut offset = 0;
+    while let Some(caps) = spaced.captures_at(text, offset) {
+        let path = caps.get(1).unwrap();
+        offset = caps.get(3).or_else(|| caps.get(2)).unwrap_or(path).end();
+        let start = char_index(text, path.start());
+        if paths.iter().any(|p| (p.start..p.end).contains(&start)) {
+            continue;
+        }
+        paths.push(PathMatch {
+            path: path.as_str().into(),
+            line: caps.get(2).and_then(|m| m.as_str().parse().ok()),
+            column: caps.get(3).and_then(|m| m.as_str().parse().ok()),
+            start,
+            end: char_index(text, path.end()),
+        });
+    }
+    for caps in path_regex().captures_iter(text) {
+        let Some(path) = caps.get(1) else {
+            continue;
+        };
+        let start = char_index(text, path.start());
+        if paths.iter().any(|p| (p.start..p.end).contains(&start)) {
+            continue;
+        }
+        paths.push(PathMatch {
+            path: path.as_str().to_string(),
+            line: caps.get(2).and_then(|m| m.as_str().parse().ok()),
+            column: caps.get(3).and_then(|m| m.as_str().parse().ok()),
+            start,
+            end: char_index(text, path.end()),
+        });
+    }
+    paths.sort_by_key(|p| p.start);
+    paths
+}
+
+/// OSC 8 carries the entire destination, so an absolute path needs no quoting.
+pub fn hyperlink_path(href: &str) -> Option<PathMatch> {
+    if href.starts_with('/') && !href.starts_with("//") && !href.chars().any(char::is_control) {
+        let caps = full_path_regex().captures(href)?;
+        let path = caps.get(1)?;
+        return Some(PathMatch {
+            path: path.as_str().into(),
+            line: caps.get(2).and_then(|m| m.as_str().parse().ok()),
+            column: caps.get(3).and_then(|m| m.as_str().parse().ok()),
+            start: 0,
+            end: path.as_str().chars().count(),
+        });
+    }
+    local_file_path(href)
+}
+
+/// Decode a local file URI exactly once. Remote authorities stay system URLs.
+/// This also accepts raw spaces in OSC 8 targets, whose boundaries are explicit.
+pub fn local_file_path(uri: &str) -> Option<PathMatch> {
+    if !uri.get(..7)?.eq_ignore_ascii_case("file://") {
+        return None;
+    }
+    let rest = &uri[7..];
+    let slash = rest.find('/')?;
+    let authority = &rest[..slash];
+    if !authority.is_empty() && !authority.eq_ignore_ascii_case("localhost") {
+        return None;
+    }
+    let path_and_query = &rest[slash..];
+    let (path_and_query, fragment) = path_and_query
+        .split_once('#')
+        .map_or((path_and_query, None), |(p, f)| (p, Some(f)));
+    let encoded = path_and_query.split('?').next()?;
+    let mut bytes = Vec::with_capacity(encoded.len());
+    let mut iter = encoded.bytes();
+    while let Some(b) = iter.next() {
+        bytes.push(if b == b'%' {
+            let hi = (iter.next()? as char).to_digit(16)?;
+            let lo = (iter.next()? as char).to_digit(16)?;
+            ((hi << 4) | lo) as u8
+        } else {
+            b
+        });
+    }
+    let path = String::from_utf8(bytes).ok()?;
+    if path.chars().any(char::is_control) || path.starts_with("//") {
+        return None;
+    }
+    let line = fragment
+        .and_then(|f| f.strip_prefix('L'))
+        .and_then(|n| n.parse::<u32>().ok())
+        .filter(|n| *n > 0);
+    Some(PathMatch {
+        path,
+        line,
+        column: None,
+        start: 0,
+        end: uri.chars().count(),
+    })
 }
 
 /// The URL, else the path, under character `index` (URLs win, like Swift).
@@ -182,6 +325,144 @@ pub fn editor_launch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spaced_paths_preserve_the_whole_target_at_every_character() {
+        for (text, expected, line) in [
+            (
+                "See /fixture/Project Notes/design.md next",
+                "/fixture/Project Notes/design.md",
+                None,
+            ),
+            (
+                "See docs/Release Notes.md next",
+                "docs/Release Notes.md",
+                None,
+            ),
+            (
+                "See `Project Notes/design.md:12:4` next",
+                "Project Notes/design.md",
+                Some(12),
+            ),
+            (
+                "See \"Project Notes/design.md\" next",
+                "Project Notes/design.md",
+                None,
+            ),
+            (
+                "See [notes](</fixture/Project Notes/design.md>)",
+                "/fixture/Project Notes/design.md",
+                None,
+            ),
+            (
+                "See [notes](/fixture/Project Notes/design.md)",
+                "/fixture/Project Notes/design.md",
+                None,
+            ),
+            (
+                "é /fixture/Café Notes/é.md",
+                "/fixture/Café Notes/é.md",
+                None,
+            ),
+        ] {
+            let start = char_index(text, text.find(expected).unwrap());
+            for i in start..start + expected.chars().count() {
+                let Some(LinkTarget::Path(p)) = target_at(text, i) else {
+                    panic!("missing {text} at {i}");
+                };
+                assert_eq!(p.path, expected, "{text} at {i}");
+                assert_eq!(p.line, line);
+            }
+        }
+    }
+
+    #[test]
+    fn separate_spaced_paths_do_not_consume_each_other_or_prose() {
+        let text = "/fixture/One Note.md /fixture/Two Notes.md and prose";
+        let paths = find_paths(text);
+        assert_eq!(
+            paths.iter().map(|p| p.path.as_str()).collect::<Vec<_>>(),
+            ["/fixture/One Note.md", "/fixture/Two Notes.md"]
+        );
+        assert_eq!(target_at(text, text.find("and prose").unwrap()), None);
+        assert_eq!(target_at("ordinary words without a file", 10), None);
+    }
+
+    #[test]
+    fn delimited_file_urls_keep_spaces_and_character_ranges() {
+        let text = "é [notes](<file:///fixture/Café Notes/a.md#L12>) next";
+        let urls = find_urls(text);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "file:///fixture/Café Notes/a.md#L12");
+        let p = local_file_path(&urls[0].url).unwrap();
+        assert_eq!(p.path, "/fixture/Café Notes/a.md");
+        assert_eq!(p.line, Some(12));
+        assert!(matches!(
+            target_at(text, urls[0].end - 1),
+            Some(LinkTarget::Url(_))
+        ));
+    }
+
+    #[test]
+    fn osc8_absolute_paths_preserve_spaces_and_source_positions() {
+        let p = hyperlink_path("/fixture/Project Notes/Café.md:12:4").unwrap();
+        assert_eq!(p.path, "/fixture/Project Notes/Café.md");
+        assert_eq!((p.line, p.column), (Some(12), Some(4)));
+        assert_eq!(hyperlink_path("https://example.test/a.md"), None);
+        assert_eq!(hyperlink_path("//remote/fixture/a.md"), None);
+        assert_eq!(hyperlink_path("/fixture/a\n.md"), None);
+        assert_eq!(
+            hyperlink_path("file:///fixture/Project%20Notes/a.md")
+                .unwrap()
+                .path,
+            "/fixture/Project Notes/a.md"
+        );
+    }
+
+    #[test]
+    fn local_file_uris_decode_once_and_preserve_literal_paths() {
+        for (uri, expected) in [
+            ("file:///fixture/My%20Notes.md", "/fixture/My Notes.md"),
+            (
+                "FILE://LOCALHOST/fixture/Caf%C3%A9%20Notes.md",
+                "/fixture/Café Notes.md",
+            ),
+            ("file:///fixture/My Notes.md", "/fixture/My Notes.md"),
+            (
+                "file:///fixture/a%2520b+%23.md?download=1#L9",
+                "/fixture/a%20b+#.md",
+            ),
+        ] {
+            assert_eq!(local_file_path(uri).unwrap().path, expected);
+        }
+        assert_eq!(
+            local_file_path("file:///fixture/a.md#L9").unwrap().line,
+            Some(9)
+        );
+        let p = find_paths("`docs/a%20b+.md`");
+        assert_eq!(p[0].path, "docs/a%20b+.md");
+    }
+
+    #[test]
+    fn remote_and_malformed_file_uris_are_not_local_paths() {
+        for uri in [
+            "https://example.test/a.md",
+            "file://remote/fixture/a.md",
+            "file://user@localhost/a.md",
+            "file:///fixture/a%00.md",
+            "file:///fixture/a%0A.md",
+            "file:///fixture/%FF.md",
+            "file:///fixture/a%.md",
+            "file:///fixture/a%zz.md",
+            "file:////remote/a.md",
+        ] {
+            assert_eq!(local_file_path(uri), None, "{uri}");
+        }
+        assert_eq!(
+            find_urls("https://example.test/a.md more words")[0].url,
+            "https://example.test/a.md"
+        );
+    }
 
     // Ported from PathClickHandlerTests.swift.
     #[test]
