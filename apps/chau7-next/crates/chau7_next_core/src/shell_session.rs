@@ -255,6 +255,8 @@ pub struct ShellSession {
     pub runtime_owns_tab: bool,
     pending_feedback_approval: bool,
     pending_feedback_input: bool,
+    last_feedback_at: Option<f64>,
+    agent_turn_started_at: Option<f64>,
     pub provider_has_authoritative_notifications: bool,
     current_directory: String,
     osc7: Osc7Scanner,
@@ -297,6 +299,8 @@ impl ShellSession {
             runtime_owns_tab: false,
             pending_feedback_approval: false,
             pending_feedback_input: false,
+            last_feedback_at: None,
+            agent_turn_started_at: None,
             provider_has_authoritative_notifications: false,
             current_directory: directory.to_string(),
             osc7: Osc7Scanner::new(),
@@ -733,6 +737,8 @@ impl ShellSession {
             self.pending_feedback_approval = false;
             self.pending_feedback_input = false;
             self.provider_has_authoritative_notifications = false;
+            self.last_feedback_at = None;
+            self.agent_turn_started_at = None;
         }
     }
 
@@ -833,6 +839,11 @@ impl ShellSession {
         }
     }
 
+    /// Start of the current observed provider turn, never inferred from PTY silence.
+    pub fn agent_turn_started_at(&self) -> Option<f64> {
+        self.agent_turn_started_at
+    }
+
     /// Apply authoritative feedback only to the current provider/native session and command generation.
     pub fn apply_agent_feedback(
         &mut self,
@@ -844,6 +855,7 @@ impl ShellSession {
         if self.status == CommandStatus::Exited
             || !observed_at.is_finite()
             || observed_at < self.last_input_at
+            || self.last_feedback_at.is_some_and(|at| observed_at < at)
         {
             return false;
         }
@@ -857,6 +869,15 @@ impl ShellSession {
             return false;
         }
         match kind {
+            "turn_started" | "user_prompt" => {
+                self.pending_feedback_approval = false;
+                self.pending_feedback_input = false;
+                self.agent_turn_started_at = Some(observed_at);
+            }
+            // PreToolUse can precede an approval prompt. Only completion proves
+            // that the tool passed that prompt; unrelated input stays pending.
+            "tool_start" => {}
+            "tool_complete" | "tool_failed" => self.pending_feedback_approval = false,
             "approval_requested" | "permission" => self.pending_feedback_approval = true,
             "user_input_requested" | "waiting_input" => self.pending_feedback_input = true,
             "approval_resolved" | "permission_resolved" => self.pending_feedback_approval = false,
@@ -865,12 +886,14 @@ impl ShellSession {
                 self.pending_feedback_approval = false;
                 self.pending_feedback_input = false;
                 self.provider_has_authoritative_notifications = true;
+                self.last_feedback_at = Some(observed_at);
                 self.set_status(CommandStatus::Done);
                 return true;
             }
             _ => return false,
         }
         self.provider_has_authoritative_notifications = true;
+        self.last_feedback_at = Some(observed_at);
         self.set_status(if self.pending_feedback_approval {
             CommandStatus::ApprovalRequired
         } else if self.pending_feedback_input {
@@ -1041,6 +1064,11 @@ impl ShellSession {
     /// Once a second (`markIdleIfNeeded`): stuck, fallback completion, idle.
     pub fn tick(&mut self, now: f64) {
         if !matches!(self.status, CommandStatus::Running | CommandStatus::Stuck) {
+            return;
+        }
+        // A provider can spend minutes thinking or running a tool silently.
+        // Its ordered lifecycle owns completion while the CLI is still live.
+        if self.last_feedback_at.is_some() && self.is_ai_running() {
             return;
         }
         if !self.has_pending_command {
@@ -1682,6 +1710,38 @@ mod tests {
         ] {
             s.set_status(status);
             assert!(s.requires_process_close_warning(false));
+        }
+    }
+
+    #[test]
+    fn provider_lifecycle_survives_silence_and_rejects_reordered_completion() {
+        for provider in ["codex", "claude"] {
+            let mut s = session();
+            s.handle_input(&format!("{provider}\r"), false, &Ctx, 1.0);
+            s.restore_ai_metadata(Some(provider), Some("thread-1"));
+            s.update_live_agent(Some(if provider == "codex" {
+                "Codex"
+            } else {
+                "Claude"
+            }));
+            assert!(s.apply_agent_feedback("turn_started", provider, Some("thread-1"), 2.0));
+            assert_eq!(s.agent_turn_started_at(), Some(2.0));
+            s.tick(602.0);
+            assert_eq!(s.status(), CommandStatus::Running);
+            s.apply_agent_feedback("permission", provider, Some("thread-1"), 603.0);
+            s.apply_agent_feedback("tool_start", provider, Some("thread-1"), 604.0);
+            assert_eq!(s.status(), CommandStatus::ApprovalRequired);
+            s.apply_agent_feedback("tool_complete", provider, Some("thread-1"), 605.0);
+            assert_eq!(s.status(), CommandStatus::Running);
+            s.apply_agent_feedback("turn_completed", provider, Some("thread-1"), 606.0);
+            assert_eq!(s.status(), CommandStatus::Done);
+            s.apply_agent_feedback("user_prompt", provider, Some("thread-1"), 607.0);
+            assert_eq!(s.status(), CommandStatus::Running);
+            assert_eq!(s.agent_turn_started_at(), Some(607.0));
+            assert!(!s.apply_agent_feedback("turn_completed", provider, Some("thread-1"), 606.5));
+            assert_eq!(s.status(), CommandStatus::Running);
+            s.restore_ai_metadata(Some(provider), Some("thread-2"));
+            assert_eq!(s.agent_turn_started_at(), None);
         }
     }
 

@@ -188,16 +188,20 @@ pub fn record_token_rate(
     cx: &App,
 ) {
     let previous = token_rate(tab, cx);
+    let Some(run) = recorder(cx).and_then(|r| r.active_run_for_tab(tab)) else {
+        return;
+    };
+    if reading.updated_at < run.started_at
+        || chau7_next_core::ai::resume::normalize_provider_name(&reading.provider)
+            != chau7_next_core::ai::resume::normalize_provider_name(&run.provider)
+    {
+        return;
+    }
     if let Some(store) = cx.try_global::<TokenRates>() {
-        store.0.lock().record_rate(
-            tab,
-            &reading.provider,
-            reading.tokens_per_second,
-            reading.output_tokens,
-            reading.duration_ms,
-            reading.source,
-            reading.updated_at,
-        );
+        store
+            .0
+            .lock()
+            .record_owned(tab, &rate_owner(&run), reading.clone());
     }
     if previous.as_ref() != Some(&reading) {
         log::debug!(
@@ -278,7 +282,7 @@ pub fn init(cx: &mut App) {
         let claude = chau7_next_core::telemetry::providers::ClaudeCodeContentProvider::new(&home);
         let codex = chau7_next_core::telemetry::providers::CodexContentProvider::new(&home);
         let mut files: std::collections::HashMap<
-            (String, PathBuf),
+            (String, String, PathBuf),
             (JsonlTail, TranscriptRateState),
         > = std::collections::HashMap::new();
         let mut paths_cache: std::collections::HashMap<
@@ -297,11 +301,14 @@ pub fn init(cx: &mut App) {
             let runs = recorder.all_active_runs();
             callback.items(runs.len());
             callback.idle(runs.is_empty() && files.is_empty() && paths_cache.is_empty());
-            let active: std::collections::HashSet<_> =
-                runs.iter().filter_map(|r| r.tab_id.clone()).collect();
-            files.retain(|(tab, _), _| active.contains(tab));
-            paths_cache.retain(|tab, _| active.contains(tab));
+            let active: std::collections::HashSet<_> = runs
+                .iter()
+                .filter_map(|r| Some((r.tab_id.clone()?, rate_owner(r))))
+                .collect();
+            files.retain(|(tab, owner, _), _| active.contains(&(tab.clone(), owner.clone())));
+            paths_cache.retain(|tab, _| active.iter().any(|(id, _)| id == tab));
             for run in runs {
+                let owner = rate_owner(&run);
                 let (Some(tab), Some(session)) = (run.tab_id, run.session_id) else {
                     continue;
                 };
@@ -335,21 +342,15 @@ pub fn init(cx: &mut App) {
                     discovered
                 };
                 for path in paths {
-                    let state = files.entry((tab.clone(), path.clone())).or_default();
+                    let state = files
+                        .entry((tab.clone(), owner.clone(), path.clone()))
+                        .or_default();
                     if let Ok(text) = state.0.read(&path) {
                         for line in text.lines() {
-                            if let Some(r) = state.1.consume(&run.provider, line)
-                                && r.updated_at >= run.started_at
-                            {
-                                rates.lock().record_rate(
-                                    &tab,
-                                    &r.provider,
-                                    r.tokens_per_second,
-                                    r.output_tokens,
-                                    r.duration_ms,
-                                    r.source,
-                                    r.updated_at,
-                                );
+                            if let Some(r) = state.1.consume(&run.provider, line) {
+                                // Exact-session history can seed a last reading after
+                                // restoration. Display state keeps it historical.
+                                rates.lock().record_owned(&tab, &owner, r);
                             }
                         }
                     }
@@ -615,6 +616,21 @@ pub fn note_output(tab: &str, bytes: &[u8], cx: &App) {
     }
 }
 
+fn rate_owner(run: &TelemetryRun) -> String {
+    format!(
+        "{}:{}",
+        run.id,
+        run.session_id.as_deref().unwrap_or_default()
+    )
+}
+fn bind_token_rate(tab: &str, cx: &App) {
+    if let Some(run) = recorder(cx).and_then(|r| r.active_run_for_tab(tab))
+        && let Some(rates) = cx.try_global::<TokenRates>()
+    {
+        rates.0.lock().bind(tab, &rate_owner(&run));
+    }
+}
+
 /// TEL-001: an AI CLI was detected in a terminal session.
 pub fn run_started(
     tab_id: &str,
@@ -634,6 +650,7 @@ pub fn run_started(
     if let Err(error) = recorder.run_started(tab_id, &provider, cwd, repo_path, session_id) {
         log::warn!("Telemetry run admission rejected: {error}");
     }
+    bind_token_rate(tab_id, cx);
 }
 
 /// TEL-002, TEL-006: the AI CLI exited. The transcript is read on a
@@ -664,6 +681,9 @@ pub fn run_ended(
     let Some(run) = recorder.run_ended(tab_id, exit_status.map(i64::from)) else {
         return;
     };
+    if let Some(rates) = cx.try_global::<TokenRates>() {
+        rates.0.lock().unbind(tab_id);
+    }
     // The owned writer captures this completion before returning. Its drain
     // includes the off-UI PTY delay, transcript read and final transaction.
     if let Err(error) = recorder.enqueue_completion(run, buffer, pty_log) {
@@ -684,6 +704,7 @@ pub fn update_session_id(tab_id: &str, session_id: &str, cx: &App) {
     {
         log::warn!("Telemetry session update rejected: {error}");
     }
+    bind_token_rate(tab_id, cx);
 }
 
 /// The AI session row of a tab's hover card (TEL-011, OVL-060): the run in
