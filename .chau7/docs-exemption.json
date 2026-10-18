@@ -1,5 +1,5 @@
 {
-  "reason": "Improves existing provider lifecycle status and token-rate accuracy/visibility without adding capabilities or settings. The focused PR records ordered identity-fenced lifecycle handling, duplicate-token and tool-time regressions, historical restored readings and validation; the running app is not rebuilt or restarted.",
+  "reason": "Improves existing provider lifecycle status and token-rate accuracy/visibility without adding capabilities or settings. The focused PR records ordered identity-fenced lifecycle handling, duplicate-token and tool-time regressions, historical restored readings and validation; the running app is not rebuilt or restarted. A late background-tool completion also cannot reopen an already completed provider turn; the lifecycle regression covers this boundary.",
   "paths": [
     "apps/chau7-next/crates/chau7_next/src/panes/editor/native_markdown/fixture.rs",
     "apps/chau7-next/crates/chau7_next/src/pane.rs",

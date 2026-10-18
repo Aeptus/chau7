@@ -452,7 +452,8 @@ mod tests {
             t,
         );
         let r = store.reading("tab").unwrap();
-        let started = Some(t.timestamp_millis() as f64 / 1000. - 1.);
+        let started_at = t.timestamp_millis() as f64 / 1000. - 1.;
+        let started = Some(started_at);
         assert!(r.is_current_for(
             CommandStatus::Running,
             started,
@@ -467,7 +468,7 @@ mod tests {
         ] {
             assert!(!r.is_current_for(status, started, &t));
         }
-        assert!(!r.is_current_for(CommandStatus::Running, Some(started.unwrap() + 2.), &t));
+        assert!(!r.is_current_for(CommandStatus::Running, Some(started_at + 2.), &t));
         assert!(!r.is_current_for(CommandStatus::Running, None, &t));
         assert!(!r.is_current_for(
             CommandStatus::Running,

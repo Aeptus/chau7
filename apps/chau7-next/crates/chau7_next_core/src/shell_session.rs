@@ -874,10 +874,17 @@ impl ShellSession {
                 self.pending_feedback_input = false;
                 self.agent_turn_started_at = Some(observed_at);
             }
-            // PreToolUse can precede an approval prompt. Only completion proves
-            // that the tool passed that prompt; unrelated input stays pending.
-            "tool_start" => {}
-            "tool_complete" | "tool_failed" => self.pending_feedback_approval = false,
+            // Background tools can finish after the main turn. Only a new
+            // turn start can reopen an authoritatively completed turn.
+            "tool_start" | "tool_complete" | "tool_failed" => {
+                if self.status == CommandStatus::Done && self.last_feedback_at.is_some() {
+                    return false;
+                }
+                // PreToolUse can precede approval; completion proves the tool ran.
+                if kind != "tool_start" {
+                    self.pending_feedback_approval = false;
+                }
+            }
             "approval_requested" | "permission" => self.pending_feedback_approval = true,
             "user_input_requested" | "waiting_input" => self.pending_feedback_input = true,
             "approval_resolved" | "permission_resolved" => self.pending_feedback_approval = false,
@@ -1734,6 +1741,8 @@ mod tests {
             s.apply_agent_feedback("tool_complete", provider, Some("thread-1"), 605.0);
             assert_eq!(s.status(), CommandStatus::Running);
             s.apply_agent_feedback("turn_completed", provider, Some("thread-1"), 606.0);
+            assert_eq!(s.status(), CommandStatus::Done);
+            assert!(!s.apply_agent_feedback("tool_complete", provider, Some("thread-1"), 606.5));
             assert_eq!(s.status(), CommandStatus::Done);
             s.apply_agent_feedback("user_prompt", provider, Some("thread-1"), 607.0);
             assert_eq!(s.status(), CommandStatus::Running);
