@@ -216,6 +216,16 @@ pub fn start(cx: &mut App) {
                                 &record,
                                 &mut AppHost { cx },
                             );
+                            if matches!(record, Record::Started(_)) {
+                                publish(
+                                    &binding,
+                                    "turn_started",
+                                    "Codex turn started",
+                                    "codex_rollout_feedback",
+                                    false,
+                                    cx,
+                                );
+                            }
                             if matches!(record, Record::TurnCompleted(_)) {
                                 publish(
                                     &binding,

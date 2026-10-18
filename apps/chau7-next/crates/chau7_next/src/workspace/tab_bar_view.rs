@@ -832,12 +832,33 @@ impl Workspace {
             .then(|| raw_path.clone())
             .flatten();
         let badge = (!minimal).then(|| self.command_badge(id, cx)).flatten();
-        let token_rate = (!minimal && info.ai_running)
+        let token_rate = (!minimal)
             .then(|| {
                 let session = self.entries.get(&id)?.panes.read(cx).focused_session(cx)?;
-                let reading = crate::telemetry::token_rate(&session.read(cx).tab_identifier, cx)?;
-                // A finished response's old speed must not look like current output.
-                reading.is_fresh_at(&chrono::Utc::now()).then_some(reading)
+                let session = session.read(cx);
+                let reading = crate::telemetry::token_rate(&session.tab_identifier, cx)?;
+                let current = session.is_ai_running()
+                    && reading.is_current_for(
+                        session.status(),
+                        session.shell().agent_turn_started_at(),
+                        &chrono::Utc::now(),
+                    );
+                let label = if current {
+                    reading.formatted()
+                } else {
+                    format!("last {}", reading.formatted())
+                };
+                let detail = format!(
+                    "{} {}. {}",
+                    if current {
+                        "Recent measurement."
+                    } else {
+                        "Last measured rate."
+                    },
+                    session.status().label(),
+                    reading.detail()
+                );
+                Some((reading, label, detail))
             })
             .flatten();
         let broadcast_included = self.broadcast && !self.broadcast_excluded.contains(&id);
@@ -1072,8 +1093,7 @@ impl Workspace {
                         .child(badge),
                 )
             })
-            .when_some(token_rate, |d, reading| {
-                let detail = reading.detail();
+            .when_some(token_rate, |d, (reading, label, detail)| {
                 d.child(
                     div()
                         .id(("token-rate", id as usize))
@@ -1094,7 +1114,7 @@ impl Workspace {
                             },
                             text_primary,
                         ))
-                        .child(reading.formatted())
+                        .child(label)
                         .tooltip(move |window, cx| {
                             gpui_kit::component::tooltip::Tooltip::new(detail.clone())
                                 .build(window, cx)

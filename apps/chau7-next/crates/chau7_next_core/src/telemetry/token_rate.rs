@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 
-pub const TOKEN_RATE_FRESHNESS_SECONDS: i64 = 15;
+// Aging changes the label, never whether a measured rate is displayed.
+pub const TOKEN_RATE_FRESHNESS_SECONDS: i64 = 60;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TokenRateSource {
@@ -33,7 +34,7 @@ impl TokenRateSource {
             }
             Self::ProxyEstimatedUsage => "Estimated output tokens divided by generation time.",
             Self::ClaudeTranscript | Self::CodexTranscript => {
-                "Transcript usage and timestamps; includes response and tool delays."
+                "Transcript usage and request timing; may include reasoning or unobserved tool delays."
             }
         }
     }
@@ -58,6 +59,19 @@ impl TokenRateReading {
     pub fn is_stale_at(&self, now: &DateTime<Utc>) -> bool {
         self.age_seconds_at(now) > TOKEN_RATE_FRESHNESS_SECONDS
     }
+    /// A running CLI alone does not make a previous turn's reading current.
+    pub fn is_current_for(
+        &self,
+        status: crate::shell_session::CommandStatus,
+        turn_started_at: Option<f64>,
+        now: &DateTime<Utc>,
+    ) -> bool {
+        status == crate::shell_session::CommandStatus::Running
+            && self.is_fresh_at(now)
+            && turn_started_at.is_some_and(|at| {
+                at.is_finite() && self.updated_at.timestamp_millis() as f64 / 1000. >= at
+            })
+    }
     pub fn formatted(&self) -> String {
         format!(
             "{}{:.0} t/s",
@@ -78,8 +92,34 @@ impl TokenRateReading {
 #[derive(Default)]
 pub struct TokenRateStore {
     readings: HashMap<String, TokenRateReading>,
+    owners: HashMap<String, String>,
 }
 impl TokenRateStore {
+    /// Fence asynchronous transcript reads to the exact telemetry run/native session.
+    pub fn bind(&mut self, tab: &str, owner: &str) {
+        if self.owners.get(tab).is_none_or(|old| old != owner) {
+            self.readings.remove(tab);
+            self.owners.insert(tab.to_owned(), owner.to_owned());
+        }
+    }
+    pub fn record_owned(&mut self, tab: &str, owner: &str, reading: TokenRateReading) -> bool {
+        if self.owners.get(tab).is_none_or(|current| current != owner) {
+            return false;
+        }
+        self.record_rate(
+            tab,
+            &reading.provider,
+            reading.tokens_per_second,
+            reading.output_tokens,
+            reading.duration_ms,
+            reading.source,
+            reading.updated_at,
+        )
+    }
+    /// Stop asynchronous writes while retaining the last measurement for display.
+    pub fn unbind(&mut self, tab: &str) {
+        self.owners.remove(tab);
+    }
     pub fn reading(&self, tab: &str) -> Option<&TokenRateReading> {
         self.readings.get(tab)
     }
@@ -88,6 +128,7 @@ impl TokenRateStore {
     }
     pub fn remove(&mut self, tab: &str) {
         self.readings.remove(tab);
+        self.owners.remove(tab);
     }
     pub fn record(
         &mut self,
@@ -169,6 +210,8 @@ pub struct TranscriptRateState {
     last_assistant: Option<DateTime<Utc>>,
     turn_started: Option<DateTime<Utc>>,
     last_codex: Option<DateTime<Utc>>,
+    codex_total_output: Option<i64>,
+    codex_turn_closed: bool,
     seen: HashSet<String>,
     order: VecDeque<String>,
     pub model: Option<String>,
@@ -233,13 +276,46 @@ impl TranscriptRateState {
             if v.get("type").and_then(Value::as_str) == Some("turn_context") {
                 self.turn_started = Some(at);
                 self.last_codex = None;
+                self.codex_turn_closed = false;
                 self.model = payload
                     .get("model")
                     .and_then(Value::as_str)
                     .map(str::to_owned);
                 return None;
             }
-            if v.get("type").and_then(Value::as_str) != Some("event_msg")
+            let kind = payload.get("type").and_then(Value::as_str);
+            if !self.codex_turn_closed
+                && v.get("type").and_then(Value::as_str) == Some("response_item")
+                && matches!(
+                    kind,
+                    Some("function_call_output" | "custom_tool_call_output")
+                )
+            {
+                // The next request begins after the tool returns, not before
+                // its potentially long execution or approval wait.
+                self.turn_started = Some(at);
+                self.last_codex = None;
+                return None;
+            }
+            if v.get("type").and_then(Value::as_str) == Some("event_msg") {
+                match kind {
+                    Some("task_started") => {
+                        self.codex_turn_closed = false;
+                        self.turn_started = Some(at);
+                        self.last_codex = None;
+                        return None;
+                    }
+                    Some("task_complete" | "turn_aborted") => {
+                        self.codex_turn_closed = true;
+                        self.turn_started = None;
+                        self.last_codex = None;
+                        return None;
+                    }
+                    _ => {}
+                }
+            }
+            if self.codex_turn_closed
+                || v.get("type").and_then(Value::as_str) != Some("event_msg")
                 || payload.get("type").and_then(Value::as_str) != Some("token_count")
             {
                 return None;
@@ -248,6 +324,17 @@ impl TranscriptRateState {
                 .pointer("/info/last_token_usage/output_tokens")
                 .and_then(Value::as_i64)
                 .unwrap_or(0);
+            let total = payload
+                .pointer("/info/total_token_usage/output_tokens")
+                .and_then(Value::as_i64);
+            // Codex repeats token_count for context/rate-limit refreshes. A
+            // different timestamp does not establish newly generated tokens.
+            if let Some(total) = total {
+                if self.codex_total_output.is_some_and(|old| total <= old) {
+                    return None;
+                }
+                self.codex_total_output = Some(total);
+            }
             if output <= 0 || !self.remember(format!("{at}|{output}")) {
                 return None;
             }
@@ -258,7 +345,7 @@ impl TranscriptRateState {
             return None;
         };
         let duration = at.signed_duration_since(start?).num_milliseconds();
-        if !(250..=300_000).contains(&duration) {
+        if !(250..=3_600_000).contains(&duration) {
             return None;
         }
         Some(TokenRateReading {
@@ -276,7 +363,7 @@ mod tests {
     use super::*;
     use chrono::Duration;
     #[test]
-    fn freshness_uses_the_shared_fifteen_second_window() {
+    fn freshness_uses_the_shared_measurement_aging_window() {
         let measured_at = Utc::now();
         let reading = TokenRateReading {
             provider: "claude".into(),
@@ -342,6 +429,154 @@ mod tests {
         assert_eq!(s.reading("a").unwrap().formatted(), "~30 t/s");
         assert!(!s.record("a", "claude", 30, 1000, TokenRateSource::ProxyUsage, t));
     }
+    fn codex_line(seconds: i64, kind: &str, extra: serde_json::Value) -> String {
+        let mut payload = extra.as_object().cloned().unwrap_or_default();
+        payload.insert("type".into(), kind.into());
+        serde_json::json!({"timestamp":(DateTime::from_timestamp(1_760_184_000, 0).unwrap() + Duration::seconds(seconds)).to_rfc3339(),
+            "type":"event_msg", "payload":payload})
+        .to_string()
+    }
+
+    #[test]
+    fn lifecycle_changes_label_without_discarding_old_readings() {
+        use crate::shell_session::CommandStatus;
+        let t = Utc::now();
+        let mut store = TokenRateStore::default();
+        store.bind("tab", "run:session");
+        store.record(
+            "tab",
+            "codex",
+            100,
+            2000,
+            TokenRateSource::CodexTranscript,
+            t,
+        );
+        let r = store.reading("tab").unwrap();
+        let started_at = t.timestamp_millis() as f64 / 1000. - 1.;
+        let started = Some(started_at);
+        assert!(r.is_current_for(
+            CommandStatus::Running,
+            started,
+            &(t + Duration::seconds(30))
+        ));
+        for status in [
+            CommandStatus::Done,
+            CommandStatus::ApprovalRequired,
+            CommandStatus::WaitingForInput,
+            CommandStatus::Idle,
+            CommandStatus::Exited,
+        ] {
+            assert!(!r.is_current_for(status, started, &t));
+        }
+        assert!(!r.is_current_for(CommandStatus::Running, Some(started_at + 2.), &t));
+        assert!(!r.is_current_for(CommandStatus::Running, None, &t));
+        assert!(!r.is_current_for(
+            CommandStatus::Running,
+            started,
+            &(t + Duration::minutes(10))
+        ));
+        assert!(store.reading("tab").is_some());
+    }
+
+    #[test]
+    fn session_rebinding_fences_late_readings_without_touching_other_tabs() {
+        let mut s = TokenRateStore::default();
+        let t = Utc::now();
+        let reading = TokenRateReading {
+            provider: "codex".into(),
+            tokens_per_second: 20.,
+            output_tokens: 20,
+            duration_ms: 1000,
+            source: TokenRateSource::CodexTranscript,
+            updated_at: t,
+        };
+        s.bind("a", "run-1:session-1");
+        s.bind("b", "run-2:session-2");
+        assert!(s.record_owned("a", "run-1:session-1", reading.clone()));
+        assert!(s.record_owned("b", "run-2:session-2", reading.clone()));
+        s.bind("a", "run-3:session-3");
+        assert!(s.reading("a").is_none());
+        assert!(!s.record_owned("a", "run-1:session-1", reading.clone()));
+        assert!(s.reading("b").is_some());
+        assert!(s.record_owned("a", "run-3:session-3", reading.clone()));
+        s.unbind("a");
+        assert!(s.reading("a").is_some());
+        assert!(!s.record_owned("a", "run-3:session-3", reading));
+    }
+
+    #[test]
+    fn codex_repeated_usage_does_not_create_speed_and_tool_time_is_excluded() {
+        let mut s = TranscriptRateState::default();
+        s.consume(
+            "codex",
+            &codex_line(0, "task_started", serde_json::json!({})),
+        );
+        let usage = |total| {
+            serde_json::json!({"info":{"last_token_usage":{"output_tokens":20},
+            "total_token_usage":{"output_tokens":total}}})
+        };
+        let first = s
+            .consume("codex", &codex_line(1, "token_count", usage(20)))
+            .unwrap();
+        assert!(first.tokens_per_second > 19. && first.tokens_per_second < 21.);
+        assert!(
+            s.consume("codex", &codex_line(5, "token_count", usage(20)))
+                .is_none()
+        );
+        let tool_result = serde_json::json!({"type":"response_item", "timestamp":
+            (DateTime::from_timestamp(1_760_184_000, 0).unwrap()+Duration::seconds(301)).to_rfc3339(),
+            "payload":{"type":"function_call_output", "call_id":"tool"}})
+        .to_string();
+        s.consume("codex", &tool_result);
+        let after_tool = s
+            .consume("codex", &codex_line(302, "token_count", usage(40)))
+            .unwrap();
+        assert!(after_tool.duration_ms >= 999 && after_tool.duration_ms <= 1001);
+        assert!(after_tool.tokens_per_second > 19. && after_tool.tokens_per_second < 21.);
+        s.consume(
+            "codex",
+            &codex_line(303, "task_complete", serde_json::json!({})),
+        );
+        s.consume("codex", &tool_result);
+        assert!(
+            s.consume("codex", &codex_line(304, "token_count", usage(60)))
+                .is_none()
+        );
+        s.consume(
+            "codex",
+            &codex_line(305, "task_started", serde_json::json!({})),
+        );
+        let next = s
+            .consume("codex", &codex_line(306, "token_count", usage(80)))
+            .unwrap();
+        assert!(next.tokens_per_second > 19. && next.tokens_per_second < 21.);
+    }
+
+    #[test]
+    fn long_provider_turn_still_produces_an_estimated_rate() {
+        let mut s = TranscriptRateState::default();
+        s.consume(
+            "codex",
+            &codex_line(0, "task_started", serde_json::json!({})),
+        );
+        let reading = s
+            .consume(
+                "codex",
+                &codex_line(
+                    600,
+                    "token_count",
+                    serde_json::json!({
+                        "info":{"last_token_usage":{"output_tokens":600},
+                                "total_token_usage":{"output_tokens":600}}
+                    }),
+                ),
+            )
+            .unwrap();
+        assert_eq!(reading.duration_ms, 600_000);
+        assert_eq!(reading.tokens_per_second, 1.);
+        assert!(reading.source.estimated());
+    }
+
     #[test]
     fn transcript_timing_dedup_and_bounds() {
         let mut s = TranscriptRateState::default();

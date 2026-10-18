@@ -1,5 +1,5 @@
 {
-  "reason": "Makes the native fixture’s first synthetic IME replacement deterministic at its verified UTF-16 target; product behavior is unchanged. Also restores existing Rust tab-close safety without adding capabilities or settings; the focused pull request documents this regression fix and validation. Also hardens existing prompt history ownership, navigation and restoration; the focused PR records behavior and validation without rebuilding the running app. App-level recall also preserves drafts changed by shell-side completion or history editing instead of restoring guessed text. Also repairs existing terminal file-link detection for spaced paths and local file URIs; the focused PR documents regressions and validation without changing capabilities or settings. Also implements bounded hang phase evidence and faster sampling, repository-isolated delivery retries, window lifecycle diagnostics and portable file URIs. The integration PR documents behavior, tests and the no-app-rebuild constraint. Also prevents restored tab/session mismatches by keeping explicit identities authoritative and refusing directory/activity guesses; the integration PR records regression coverage and deferred live recovery. Also updates the closed-window transfer regression to assert retained entities are excluded from live windows while preserving the source tab and panes. Explicit terminal-window closure now immediately commits remaining windows, or an empty-state tombstone after the last closes, with a disk round-trip regression; auxiliary windows cannot erase terminal restoration. Per the requested close semantics, native and action-based window closure now ends all owned tabs and sessions after a fenced process confirmation rather than parking them. The explicit-clear regression verifies a valid empty restore transaction, matching the production tombstone contract rather than expecting absent state.",
+  "reason": "Improves existing provider lifecycle status and token-rate accuracy/visibility without adding capabilities or settings. The focused PR records ordered identity-fenced lifecycle handling, duplicate-token and tool-time regressions, historical restored readings and validation; the running app is not rebuilt or restarted. A late background-tool completion also cannot reopen an already completed provider turn; the lifecycle regression covers this boundary.",
   "paths": [
     "apps/chau7-next/crates/chau7_next/src/panes/editor/native_markdown/fixture.rs",
     "apps/chau7-next/crates/chau7_next/src/pane.rs",
@@ -27,6 +27,10 @@
     "apps/chau7-next/crates/chau7_next/src/ai/hub.rs",
     "apps/chau7-next/crates/chau7_next_core/src/session_restore.rs",
     "apps/chau7-next/crates/chau7_next_core/src/session_restore/preparation.rs",
-    "apps/chau7-next/crates/chau7_next/src/workspace/drag_tests.rs"
+    "apps/chau7-next/crates/chau7_next/src/workspace/drag_tests.rs",
+    "apps/chau7-next/crates/chau7_next/src/runtime/codex_feedback.rs",
+    "apps/chau7-next/crates/chau7_next_core/src/telemetry/token_rate.rs",
+    "apps/chau7-next/crates/chau7_next/src/telemetry.rs",
+    "apps/chau7-next/crates/chau7_next/src/workspace/tab_bar_view.rs"
   ]
 }

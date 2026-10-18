@@ -2939,7 +2939,12 @@ fn feedback_kind(event: &AiEvent) -> Option<&str> {
     Some(match event.event_type.as_str() {
         "permission_request" => "permission",
         "response_complete" => "turn_completed",
-        "approval_requested"
+        "turn_started"
+        | "user_prompt"
+        | "tool_start"
+        | "tool_complete"
+        | "tool_failed"
+        | "approval_requested"
         | "permission"
         | "user_input_requested"
         | "waiting_input"
@@ -3114,6 +3119,11 @@ mod feedback_owner_tests {
             assert!(feedback_owner_accepts_kind(kind, false), "{kind}");
         }
         for kind in [
+            "turn_started",
+            "user_prompt",
+            "tool_start",
+            "tool_complete",
+            "tool_failed",
             "approval_requested",
             "permission",
             "user_input_requested",
@@ -3122,6 +3132,14 @@ mod feedback_owner_tests {
             "permission_resolved",
             "user_input_resolved",
         ] {
+            let event = AiEvent::new(
+                chau7_next_core::ai::event::AiEventSource("codex".into()),
+                kind,
+                "codex",
+                "",
+                "2026-10-11T12:00:00Z",
+            );
+            assert_eq!(feedback_kind(&event), Some(kind));
             assert!(!feedback_owner_accepts_kind(kind, false), "{kind}");
             assert!(feedback_owner_accepts_kind(kind, true), "{kind}");
         }
