@@ -10,6 +10,7 @@
 
 use std::collections::HashSet;
 use std::hash::Hash;
+use std::ops::Range;
 
 // MARK: - Geometry
 
@@ -91,6 +92,32 @@ impl Rect {
 }
 
 // MARK: - TabBarLayout
+
+/// Reveal a tab with the smallest horizontal scroll, preserving the offset
+/// when it is already visible. Both ranges are in the same window coordinates;
+/// scroll offsets are non-positive, as in GPUI. A tab wider than the viewport
+/// stays put while it covers the viewport, avoiding alternating edge alignment.
+pub fn scroll_offset_to_reveal_tab(
+    current_offset: f32,
+    max_offset: f32,
+    tab: Range<f32>,
+    viewport: Range<f32>,
+) -> f32 {
+    let max_offset = max_offset.max(0.0);
+    let current_offset = current_offset.clamp(-max_offset, 0.0);
+    if tab.is_empty() || viewport.is_empty() {
+        return current_offset;
+    }
+    let leading_delta = tab.start - viewport.start;
+    let trailing_delta = tab.end - viewport.end;
+    // Zero is allowed when either range contains the other. Otherwise choose
+    // the nearest edge instead of centering the tab on every selection.
+    let delta = 0.0_f32.clamp(
+        leading_delta.min(trailing_delta),
+        leading_delta.max(trailing_delta),
+    );
+    (current_offset - delta).clamp(-max_offset, 0.0)
+}
 
 /// A tab as seen by the tab bar layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -361,6 +388,100 @@ mod tests {
     // OverlayWindowDropResolverTests.swift. No tests skipped. UUIDs are
     // replaced with distinct u64 ids.
     use super::*;
+
+    #[test]
+    fn selecting_visible_tabs_preserves_the_viewport() {
+        for tab in [100.0..180.0, 310.0..490.0, 520.0..600.0, 100.0..600.0] {
+            assert_eq!(
+                scroll_offset_to_reveal_tab(-450.0, 1200.0, tab, 100.0..600.0),
+                -450.0
+            );
+        }
+    }
+
+    #[test]
+    fn clipped_tabs_reveal_only_the_missing_edge() {
+        for (tab, expected) in [
+            (60.0..240.0, -410.0),
+            (460.0..640.0, -490.0),
+            (-200.0..-20.0, -150.0),
+            (720.0..900.0, -750.0),
+        ] {
+            assert_eq!(
+                scroll_offset_to_reveal_tab(-450.0, 1200.0, tab, 100.0..600.0),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn switching_tabs_after_a_reveal_does_not_recenter_the_row() {
+        let viewport = 100.0..600.0;
+        let mut offset = -450.0;
+        // Content positions stay fixed while selection changes. Measure each
+        // tab at the current scroll offset, as the rendered bar does.
+        for (content, expected) in [
+            (620.0..720.0, -450.0),
+            (1000.0..1120.0, -520.0),
+            (760.0..880.0, -520.0),
+            (400.0..520.0, -300.0),
+            (760.0..880.0, -300.0),
+        ] {
+            offset = scroll_offset_to_reveal_tab(
+                offset,
+                1200.0,
+                content.start + offset..content.end + offset,
+                viewport.clone(),
+            );
+            assert_eq!(offset, expected);
+        }
+    }
+
+    #[test]
+    fn oversized_tabs_use_the_nearest_edge_and_do_not_oscillate() {
+        for (tab, expected) in [
+            (80.0..640.0, -450.0),
+            (120.0..680.0, -470.0),
+            (20.0..580.0, -430.0),
+        ] {
+            let offset = scroll_offset_to_reveal_tab(-450.0, 1200.0, tab.clone(), 100.0..600.0);
+            assert_eq!(offset, expected);
+            let movement = offset + 450.0;
+            assert_eq!(
+                scroll_offset_to_reveal_tab(
+                    offset,
+                    1200.0,
+                    tab.start + movement..tab.end + movement,
+                    100.0..600.0,
+                ),
+                offset
+            );
+        }
+    }
+
+    #[test]
+    fn revealing_tabs_respects_scroll_limits_and_unmeasured_layout() {
+        assert_eq!(
+            scroll_offset_to_reveal_tab(-20.0, 600.0, 0.0..180.0, 100.0..600.0),
+            0.0
+        );
+        assert_eq!(
+            scroll_offset_to_reveal_tab(-580.0, 600.0, 500.0..680.0, 100.0..600.0),
+            -600.0
+        );
+        assert_eq!(
+            scroll_offset_to_reveal_tab(0.0, 0.0, 100.0..280.0, 100.0..600.0),
+            0.0
+        );
+        assert_eq!(
+            scroll_offset_to_reveal_tab(-450.0, 1200.0, 0.0..0.0, 100.0..600.0),
+            -450.0
+        );
+        assert_eq!(
+            scroll_offset_to_reveal_tab(-450.0, 1200.0, 100.0..280.0, 0.0..0.0),
+            -450.0
+        );
+    }
 
     fn tab(id: u64, repo: Option<&str>) -> TabBarLayoutTab<u64> {
         TabBarLayoutTab::new(id, repo.map(str::to_string), None)

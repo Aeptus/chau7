@@ -8,7 +8,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use chau7_next_core::l10n::{self, Lang};
-use chau7_next_core::tab_bar_layout::TabBarLayoutItem;
+use chau7_next_core::tab_bar_layout::{TabBarLayoutItem, scroll_offset_to_reveal_tab};
 use chau7_next_core::tab_bar_text::{command_badge, idle_duration, truncate_middle};
 use chau7_next_core::tabs_state::{TabColor, repo_group_color, repo_group_name};
 use gpui::{
@@ -499,7 +499,7 @@ fn idle_repo_identity(repo_group_id: Option<&str>, git_root: Option<&str>) -> Op
         .map(str::to_string)
 }
 
-/// Scroll animation of the tab row (selected tab centered, 0.25 s ease).
+/// Scroll animation of the tab row (reveal clipped tabs, 0.25 s ease).
 pub(super) struct TabScroll {
     pub(super) handle: ScrollHandle,
     /// Tab to bring into view once its frame is known.
@@ -514,6 +514,51 @@ impl Default for TabScroll {
             pending: None,
             anim: None,
         }
+    }
+}
+
+impl TabScroll {
+    fn cancel(&mut self) {
+        self.pending = None;
+        self.anim = None;
+    }
+
+    fn reveal(&mut self, tab: Option<TabId>) {
+        // A visible new selection must also stop an older animation, even
+        // when its own visibility check requires no movement.
+        self.cancel();
+        self.pending = tab;
+    }
+}
+
+#[cfg(test)]
+mod tab_scroll_tests {
+    use super::*;
+
+    #[test]
+    fn selecting_another_tab_cancels_the_previous_animation() {
+        let mut scroll = TabScroll {
+            anim: Some((-100.0, -500.0, Instant::now())),
+            pending: Some(1),
+            ..Default::default()
+        };
+        scroll.reveal(Some(2));
+        assert!(scroll.anim.is_none());
+        assert_eq!(scroll.pending, Some(2));
+        scroll.reveal(Some(3));
+        assert_eq!(scroll.pending, Some(3));
+    }
+
+    #[test]
+    fn manual_scrolling_cancels_pending_and_running_reveals() {
+        let mut scroll = TabScroll {
+            pending: Some(1),
+            anim: Some((-100.0, -500.0, Instant::now())),
+            ..Default::default()
+        };
+        scroll.cancel();
+        assert!(scroll.pending.is_none());
+        assert!(scroll.anim.is_none());
     }
 }
 
@@ -757,10 +802,10 @@ impl Workspace {
 
     // ----- scrolling ----------------------------------------------------
 
-    /// Center the selected tab in the bar (`proxy.scrollTo(.center)`), on the
-    /// next frame once its frame is known.
+    /// Reveal the selected tab only when clipped, on the next frame once its
+    /// frame is known. Already visible tabs keep their position in the bar.
     pub(super) fn scroll_to_selected(&mut self) {
-        self.scroll.pending = self.state.selected();
+        self.scroll.reveal(self.state.selected());
     }
 
     /// Advance the scroll animation; true while it runs.
@@ -771,8 +816,12 @@ impl Workspace {
                 (Some(tab), Some(bar)) => {
                     let current = f32::from(self.scroll.handle.offset().x);
                     let max = f32::from(self.scroll.handle.max_offset().x);
-                    let delta = f32::from(tab.center().x - bar.center().x);
-                    let target = (current - delta).clamp(-max, 0.0);
+                    let target = scroll_offset_to_reveal_tab(
+                        current,
+                        max,
+                        f32::from(tab.left())..f32::from(tab.right()),
+                        f32::from(bar.left())..f32::from(bar.right()),
+                    );
                     if (target - current).abs() > 0.5 {
                         self.scroll.anim = Some((current, target, Instant::now()));
                     }
@@ -1251,6 +1300,7 @@ impl Workspace {
             .min_w_0()
             .overflow_x_scroll()
             .track_scroll(&self.scroll.handle)
+            .on_scroll_wheel(cx.listener(|this, _, _, _| this.scroll.cancel()))
             .pr_2();
         let mut index = 0;
         while index < items.len() {

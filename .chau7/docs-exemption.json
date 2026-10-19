@@ -1,5 +1,5 @@
 {
-  "reason": "Improves existing provider lifecycle status and token-rate accuracy/visibility without adding capabilities or settings. The focused PR records ordered identity-fenced lifecycle handling, duplicate-token and tool-time regressions, historical restored readings and validation; the running app is not rebuilt or restarted. A late background-tool completion also cannot reopen an already completed provider turn; the lifecycle regression covers this boundary.",
+  "reason": "Fixes tab-bar viewport jumps when selecting an already visible tab: preserve its position, reveal clipped tabs by the minimum distance, cancel obsolete selection animations, and let manual scrolling take over. This repairs existing behavior without adding features or settings. Core geometry and regression checks run separately; the requested patch-only workflow does not rebuild, install, stop or restart the app. Native scroll-state tests remain covered by normal CI.",
   "paths": [
     "apps/chau7-next/crates/chau7_next/src/panes/editor/native_markdown/fixture.rs",
     "apps/chau7-next/crates/chau7_next/src/pane.rs",
@@ -31,6 +31,7 @@
     "apps/chau7-next/crates/chau7_next/src/runtime/codex_feedback.rs",
     "apps/chau7-next/crates/chau7_next_core/src/telemetry/token_rate.rs",
     "apps/chau7-next/crates/chau7_next/src/telemetry.rs",
-    "apps/chau7-next/crates/chau7_next/src/workspace/tab_bar_view.rs"
+    "apps/chau7-next/crates/chau7_next/src/workspace/tab_bar_view.rs",
+    "apps/chau7-next/crates/chau7_next_core/src/tab_bar_layout.rs"
   ]
 }
