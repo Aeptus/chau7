@@ -322,6 +322,7 @@ assert_fake_tools_selected
 mkdir -p \
   "$FIXTURE_APP/scripts" \
   "$FIXTURE_APP/resources/skills/chau7-next-build" \
+  "$FIXTURE_APP/resources/licenses/ondine" \
   "$FIXTURE_APP/vendor/history/0.3.8" \
   "$FIXTURE_ROOT/apps/chau7-macos/Resources" \
   "$FIXTURE_ROOT/apps/chau7-macos/chau7-proxy" \
@@ -333,6 +334,7 @@ cp "$APP_ROOT/scripts/build-mode.sh" "$FIXTURE_APP/scripts/build-mode.sh"
 cp "$APP_ROOT/scripts/install-chau7-next-cli.sh" "$FIXTURE_APP/scripts/install-chau7-next-cli.sh"
 printf 'version = "0.1.0"\n' > "$FIXTURE_APP/Cargo.toml"
 printf 'fixture skill\n' > "$FIXTURE_APP/resources/skills/chau7-next-build/SKILL.md"
+cp "$APP_ROOT/resources/licenses/ondine/"* "$FIXTURE_APP/resources/licenses/ondine/"
 printf 'icon\n' > "$FIXTURE_ROOT/apps/chau7-macos/Resources/AppDockIcon.icns"
 printf 'history\n' > "$FIXTURE_APP/vendor/history/0.3.8/README.md"
 for audit in README.md gpui-provenance.json gpui-modifications.json gpui-rebase-0.3.8-to-0.3.9.json; do
@@ -387,6 +389,13 @@ run_fake_bundle() {
       return 1
     fi
   ) || return $?
+  # Bundling must preserve both upstream license notices and their provenance.
+  local notice
+  for notice in LICENSE-ONDINE LICENSE-PELE UPSTREAM.md; do
+    cmp "$APP_ROOT/resources/licenses/ondine/$notice" \
+      "$output_dir/$app_name.app/Contents/Resources/licenses/ondine/$notice" \
+      || fail "bundled Ondine notice differs: $notice"
+  done
   printf '%s\n' "$output_dir/$app_name.app" "$output_dir/$metadata_stem-aarch64-apple-darwin-${mode/default/fast}.json"
 }
 
