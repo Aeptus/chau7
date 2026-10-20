@@ -2,7 +2,7 @@
 
 Markdown preview renders fenced `mermaid` blocks as diagrams. Open a Markdown file and use Source/Runbook (Cmd+Shift+P on macOS). Other fences keep their existing behaviour. Mermaid blocks are display-only and excluded from Run All.
 
-The toolbar provides Fit, 100%, zoom from 10% to 400%, Expand/Collapse, Source/Diagram, and Copy SVG. Scroll the viewport to inspect large diagrams. Source direction is preserved during resizing. Errors show an inline message and the original source.
+The default view keeps base text at least 12 px tall and allows scrolling when a chart is wide. The toolbar provides Fit, 100%, zoom from 10% to 400%, Expand/Collapse, Source/Diagram, and Copy SVG. Scroll the viewport to inspect large diagrams. Source direction is preserved during resizing. Errors show an inline message and the original source.
 
 ## Implementation
 

@@ -14,8 +14,19 @@ use crate::theme::Chrome;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Zoom {
+    Readable,
     Fit,
     Scale(f32),
+}
+
+impl Zoom {
+    fn scale(self, available: f32, natural: f32) -> f32 {
+        match self {
+            Self::Readable => (available / natural).clamp(0.75, 1.0),
+            Self::Fit => (available / natural).min(1.0),
+            Self::Scale(scale) => scale,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -75,7 +86,7 @@ impl MermaidView {
         let mut view = Self {
             request: Request::new(source, 640.0, theme, now_ms()),
             width: 640.0,
-            zoom: Zoom::Fit,
+            zoom: Zoom::Readable,
             expanded: false,
             source_visible: false,
             pending: false,
@@ -97,7 +108,7 @@ impl MermaidView {
         // Reusing a block position must never display the previous block or file's diagram.
         if request.source != self.request.source {
             self.ready = None;
-            self.zoom = Zoom::Fit;
+            self.zoom = Zoom::Readable;
             self.source_visible = false;
             self.scroll.set_offset(point(px(0.0), px(0.0)));
         }
@@ -115,7 +126,7 @@ impl MermaidView {
             return;
         }
         self.width = width;
-        if request != self.request || self.zoom == Zoom::Fit {
+        if request != self.request || matches!(self.zoom, Zoom::Fit | Zoom::Readable) {
             self.request = request;
             self.schedule(cx);
         }
@@ -139,10 +150,7 @@ impl MermaidView {
                 .background_executor()
                 .spawn(async move {
                     let diagram = mermaid::compile(&request)?;
-                    let scale = match zoom {
-                        Zoom::Fit => (width / diagram.width).min(1.0),
-                        Zoom::Scale(scale) => scale,
-                    };
+                    let scale = zoom.scale(width, diagram.width);
                     // GPUI renders SVG at 2x. Bound both dimensions and total raster memory.
                     let raster_scale = scale
                         .min(2048.0 / diagram.width.max(diagram.height))
@@ -190,7 +198,7 @@ impl MermaidView {
             Action::In | Action::Out => {
                 let current = match self.zoom {
                     Zoom::Scale(scale) => scale,
-                    Zoom::Fit => self.ready.as_ref().map_or(1.0, |r| r.scale),
+                    Zoom::Fit | Zoom::Readable => self.ready.as_ref().map_or(1.0, |r| r.scale),
                 };
                 let factor = if matches!(action, Action::In) {
                     1.25
@@ -340,6 +348,14 @@ mod tests {
     use super::*;
     use gpui::TestAppContext;
 
+    #[test]
+    fn wide_charts_keep_default_text_readable_and_fit_remains_explicit() {
+        assert_eq!(Zoom::Readable.scale(320.0, 1600.0), 0.75);
+        assert_eq!(Zoom::Fit.scale(320.0, 1600.0), 0.2);
+        assert_eq!(Zoom::Readable.scale(640.0, 320.0), 1.0);
+        assert_eq!(Zoom::Scale(2.0).scale(320.0, 1600.0), 2.0);
+    }
+
     #[gpui::test]
     fn source_changes_reset_zoom_and_invalidate_pending_work(cx: &mut TestAppContext) {
         let colours = Theme {
@@ -356,7 +372,7 @@ mod tests {
             view.source_visible = true;
             assert!(view.generation > generation);
             view.configure("flowchart LR\n A --> C", colours, cx);
-            assert_eq!(view.zoom, Zoom::Fit);
+            assert_eq!(view.zoom, Zoom::Readable);
             assert!(!view.source_visible);
             assert!(view.ready.is_none());
             assert!(view.pending);

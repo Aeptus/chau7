@@ -1433,8 +1433,10 @@ impl Render for EditorPane {
                 .retain(|index, _| diagram_indices.contains(index));
             super::runbook::render(
                 sections,
-                &self.mermaid_views,
-                &self.run_states,
+                super::runbook::Blocks {
+                    diagrams: &self.mermaid_views,
+                    states: &self.run_states,
+                },
                 chrome,
                 super::text_background(palette, cx),
                 super::mono_family(window, cx),

@@ -379,7 +379,10 @@ mod tests {
         .unwrap();
         assert!(diagram.svg.contains("var(--_fg)"));
         assert!(diagram.svg.contains("&amp;"));
-        assert!(diagram.svg.contains("&lt;text&gt;"));
+        // Mermaid treats raw HTML-like tags as markup. Verify XML preservation at
+        // the adapter boundary independently of the compiler's label semantics.
+        let svg = native_svg(r#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><text>var(--_fg) &amp; &lt;text&gt;</text></svg>"#, theme()).unwrap();
+        assert!(svg.contains("var(--_fg) &amp; &lt;text&gt;"));
         assert!(diagram.svg.contains("#e6e6eb"));
     }
 

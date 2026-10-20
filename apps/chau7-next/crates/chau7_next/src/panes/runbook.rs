@@ -23,10 +23,14 @@ use crate::theme::Chrome;
 
 type RunHandler = Rc<dyn Fn(&(usize, String), &mut Window, &mut App)>;
 
+pub(super) struct Blocks<'a> {
+    pub diagrams: &'a HashMap<usize, gpui::Entity<super::mermaid::MermaidView>>,
+    pub states: &'a HashMap<(usize, String), BlockStatus>,
+}
+
 pub(super) fn render(
     sections: Vec<MarkdownSection>,
-    diagrams: &HashMap<usize, gpui::Entity<super::mermaid::MermaidView>>,
-    states: &HashMap<(usize, String), BlockStatus>,
+    blocks: Blocks<'_>,
     chrome: Chrome,
     background: Hsla,
     mono: SharedString,
@@ -37,6 +41,10 @@ pub(super) fn render(
     let on_toggle = Rc::new(on_toggle);
     let mut column = div().w_full().min_w_0().flex().flex_col().gap_3().p_4();
     for (index, section) in sections.into_iter().enumerate() {
+        if let Some(diagram) = blocks.diagrams.get(&index) {
+            column = column.child(diagram.clone());
+            continue;
+        }
         column = column.child(match section {
             MarkdownSection::Heading { level, text } => {
                 let (size, weight) = match level {
@@ -94,11 +102,7 @@ pub(super) fn render(
                 terminal_selection(index, runs, chrome, mono.clone()).into_any_element()
             }
             MarkdownSection::CodeBlock { language, code } => {
-                if let Some(diagram) = diagrams.get(&index) {
-                    column = column.child(diagram.clone());
-                    continue;
-                }
-                let status = states.get(&(index, code.clone())).copied();
+                let status = blocks.states.get(&(index, code.clone())).copied();
                 code_block(
                     index,
                     language,
