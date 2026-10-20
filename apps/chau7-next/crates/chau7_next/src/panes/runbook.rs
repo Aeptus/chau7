@@ -12,7 +12,7 @@ pub(super) enum BlockStatus {
     Failed,
 }
 
-use chau7_next_core::editor::markdown::{MarkdownSection, parse_inline, parse_markdown};
+use chau7_next_core::editor::markdown::{MarkdownSection, parse_inline};
 use gpui::{
     App, ElementId, FontStyle, FontWeight, HighlightStyle, Hsla, InteractiveText, SharedString,
     StrikethroughStyle, StyledText, UnderlineStyle, Window, div, prelude::*, px,
@@ -23,9 +23,14 @@ use crate::theme::Chrome;
 
 type RunHandler = Rc<dyn Fn(&(usize, String), &mut Window, &mut App)>;
 
+pub(super) struct Blocks<'a> {
+    pub diagrams: &'a HashMap<usize, gpui::Entity<super::mermaid::MermaidView>>,
+    pub states: &'a HashMap<(usize, String), BlockStatus>,
+}
+
 pub(super) fn render(
-    content: &str,
-    states: &HashMap<(usize, String), BlockStatus>,
+    sections: Vec<MarkdownSection>,
+    blocks: Blocks<'_>,
     chrome: Chrome,
     background: Hsla,
     mono: SharedString,
@@ -34,8 +39,12 @@ pub(super) fn render(
 ) -> impl IntoElement {
     let on_run: RunHandler = Rc::new(on_run);
     let on_toggle = Rc::new(on_toggle);
-    let mut column = div().flex().flex_col().gap_3().p_4();
-    for (index, section) in parse_markdown(content).into_iter().enumerate() {
+    let mut column = div().w_full().min_w_0().flex().flex_col().gap_3().p_4();
+    for (index, section) in sections.into_iter().enumerate() {
+        if let Some(diagram) = blocks.diagrams.get(&index) {
+            column = column.child(diagram.clone());
+            continue;
+        }
         column = column.child(match section {
             MarkdownSection::Heading { level, text } => {
                 let (size, weight) = match level {
@@ -93,7 +102,7 @@ pub(super) fn render(
                 terminal_selection(index, runs, chrome, mono.clone()).into_any_element()
             }
             MarkdownSection::CodeBlock { language, code } => {
-                let status = states.get(&(index, code.clone())).copied();
+                let status = blocks.states.get(&(index, code.clone())).copied();
                 code_block(
                     index,
                     language,

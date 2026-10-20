@@ -126,6 +126,7 @@ pub struct EditorPane {
     terminal_provider: Option<TerminalProvider>,
     run_task: Option<Task<()>>,
     run_generation: u64,
+    mermaid_views: HashMap<usize, Entity<super::mermaid::MermaidView>>,
     run_states: HashMap<(usize, String), super::runbook::BlockStatus>,
     note_attachment_pending: Option<PathBuf>,
 }
@@ -228,6 +229,7 @@ impl EditorPane {
             terminal_provider: None,
             run_task: None,
             run_generation: 0,
+            mermaid_views: HashMap::new(),
             run_states: HashMap::new(),
             note_attachment_pending: None,
         }
@@ -527,6 +529,7 @@ impl EditorPane {
         self.native_pending.borrow_mut().clear_for_load();
         self.error = None;
         if different_file {
+            self.mermaid_views.clear();
             let root = chau7_next_core::data_root::DataRoot::from_env();
             self.autosave = edtext::default_autosave(&path, root.config_dir())
                 || edtext::default_autosave(&path, root.state_dir());
@@ -1409,9 +1412,31 @@ impl Render for EditorPane {
             placeholder(IconName::TriangleAlert, None, error, None, chrome).into_any_element()
         } else if self.markdown_mode && self.is_markdown_file() {
             let content = self.content(cx);
+            let diagram_theme = super::mermaid::theme(chrome, super::text_background(palette, cx));
+            let sections = markdown::parse_markdown(&content);
+            let mut diagram_indices = HashSet::new();
+            for (index, section) in sections.iter().enumerate() {
+                if let markdown::MarkdownSection::CodeBlock { language, code } = section
+                    && chau7_next_core::editor::mermaid::is_mermaid(language.as_deref())
+                {
+                    diagram_indices.insert(index);
+                    if let Some(view) = self.mermaid_views.get(&index) {
+                        view.update(cx, |view, cx| view.configure(code, diagram_theme, cx));
+                    } else {
+                        let view =
+                            cx.new(|cx| super::mermaid::MermaidView::new(code, diagram_theme, cx));
+                        self.mermaid_views.insert(index, view);
+                    }
+                }
+            }
+            self.mermaid_views
+                .retain(|index, _| diagram_indices.contains(index));
             super::runbook::render(
-                &content,
-                &self.run_states,
+                sections,
+                super::runbook::Blocks {
+                    diagrams: &self.mermaid_views,
+                    states: &self.run_states,
+                },
                 chrome,
                 super::text_background(palette, cx),
                 super::mono_family(window, cx),

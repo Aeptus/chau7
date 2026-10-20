@@ -9,6 +9,8 @@ license.workspace = true
 production = []
 
 [dependencies]
+ondine = { package = "compiler", git = "https://github.com/wevm/ondine", rev = "6a1586e5af980e67c104239593ae931837157b8b" }
+quick-xml = "0.42"
 serde.workspace = true
 serde_json.workspace = true
 regex.workspace = true
@@ -27,3 +29,6 @@ libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[dev-dependencies]
+resvg = "=0.46.0"
