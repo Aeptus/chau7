@@ -1,5 +1,5 @@
 {
-  "reason": "Adds native Ondine Mermaid previews, documented in docs/rust-port/MERMAID.md. This Rust-only feature uses native documentation rather than the legacy Swift changelog. The patch-only workflow runs isolated core tests and native type checking without building, installing, stopping or restarting the app.",
+  "reason": "Adds native Ondine Mermaid previews, documented in docs/rust-port/MERMAID.md. This Rust-only feature uses native documentation rather than the legacy Swift changelog. Follow-up review removes redundant UI imports and borrows and checks drawable native label paths. The patch-only workflow runs isolated core tests and native type checking without building, installing, stopping or restarting the app.",
   "paths": [
     "apps/chau7-next/crates/chau7_next/src/panes/editor.rs",
     "apps/chau7-next/crates/chau7_next/src/panes/mod.rs",

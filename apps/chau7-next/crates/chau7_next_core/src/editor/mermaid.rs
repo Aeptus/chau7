@@ -478,9 +478,20 @@ mod tests {
                 ..Default::default()
             };
             let tree = usvg::Tree::from_str(&diagram.svg, &options).unwrap();
+            fn glyph_paths(group: &usvg::Group) -> usize {
+                group
+                    .children()
+                    .iter()
+                    .map(|node| match node {
+                        usvg::Node::Text(text) => text.flattened().children().len(),
+                        usvg::Node::Group(group) => glyph_paths(group),
+                        _ => 0,
+                    })
+                    .sum()
+            }
             assert!(
-                tree.has_text_nodes(),
-                "Labels must survive native SVG parsing"
+                glyph_paths(tree.root()) > 0,
+                "Native labels must contain drawable glyph paths"
             );
             let mut pixmap = tiny_skia::Pixmap::new(
                 tree.size().width().ceil() as u32,

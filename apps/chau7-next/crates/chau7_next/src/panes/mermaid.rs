@@ -6,8 +6,8 @@ use std::{
 
 use chau7_next_core::editor::mermaid::{self, Diagram, Request, Theme};
 use gpui::{
-    App, ClipboardItem, Context, IntoElement, Render, RenderImage, ScrollHandle, Task, Window,
-    canvas, div, img, point, prelude::*, px,
+    ClipboardItem, Context, IntoElement, Render, RenderImage, ScrollHandle, Task, Window, canvas,
+    div, img, point, prelude::*, px,
 };
 
 use crate::theme::Chrome;

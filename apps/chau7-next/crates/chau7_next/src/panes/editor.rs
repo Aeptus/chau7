@@ -1421,10 +1421,10 @@ impl Render for EditorPane {
                 {
                     diagram_indices.insert(index);
                     if let Some(view) = self.mermaid_views.get(&index) {
-                        view.update(cx, |view, cx| view.configure(&code, diagram_theme, cx));
+                        view.update(cx, |view, cx| view.configure(code, diagram_theme, cx));
                     } else {
                         let view =
-                            cx.new(|cx| super::mermaid::MermaidView::new(&code, diagram_theme, cx));
+                            cx.new(|cx| super::mermaid::MermaidView::new(code, diagram_theme, cx));
                         self.mermaid_views.insert(index, view);
                     }
                 }
