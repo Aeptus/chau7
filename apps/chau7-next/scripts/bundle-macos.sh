@@ -161,6 +161,10 @@ for package in gpui-pre gpui-pre-macos gpui-pre-apple; do
   cp "$ROOT/vendor/$package/LICENSE-APACHE" "$GPUI_LICENSES/$package/LICENSE-APACHE"
 done
 
+# Ondine includes Pele-derived MIT code; ship both preserved upstream notices.
+mkdir -p "$APP/Contents/Resources/licenses/ondine"
+cp "$ROOT/resources/licenses/ondine/"* "$APP/Contents/Resources/licenses/ondine/"
+
 # Token optimizer and markdown renderer (the apps/chau7-macos/rust
 # workspace), next to the app binary. The app installs them into
 # ~/.chau7-next/bin; the wrappers pass CHAU7_CTO_BIN_DIR so chau7-optim also

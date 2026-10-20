@@ -13,6 +13,7 @@ pub mod dashboard;
 pub mod diff;
 pub mod editor;
 pub mod highlight;
+mod mermaid;
 pub mod preview;
 pub mod repository;
 mod runbook;

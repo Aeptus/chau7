@@ -31,3 +31,9 @@ No upstream `NOTICE` file was found in RTK during this review. If that changes u
 ### Distribution Guidance
 
 If you distribute Chau7 source archives, binaries, or app bundles that include `chau7_optim`, include this file and the RTK license files above in the distributed package or legal notices bundle.
+
+### Ondine / native Mermaid previews
+
+Chau7 Next links the MIT-licensed Rust compiler from <https://github.com/wevm/ondine>, pinned to commit `6a1586e5af980e67c104239593ae931837157b8b`. Ondine contains MIT-licensed code derived from Pele by kepano (<https://github.com/obsidianmd/pele>).
+
+The upstream licenses and revision record are preserved in `apps/chau7-next/resources/licenses/ondine/` and copied to `Contents/Resources/licenses/ondine/` when packaging the native app. No JavaScript renderer is bundled.

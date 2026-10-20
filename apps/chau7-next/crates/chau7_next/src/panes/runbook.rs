@@ -12,7 +12,7 @@ pub(super) enum BlockStatus {
     Failed,
 }
 
-use chau7_next_core::editor::markdown::{MarkdownSection, parse_inline, parse_markdown};
+use chau7_next_core::editor::markdown::{MarkdownSection, parse_inline};
 use gpui::{
     App, ElementId, FontStyle, FontWeight, HighlightStyle, Hsla, InteractiveText, SharedString,
     StrikethroughStyle, StyledText, UnderlineStyle, Window, div, prelude::*, px,
@@ -24,7 +24,8 @@ use crate::theme::Chrome;
 type RunHandler = Rc<dyn Fn(&(usize, String), &mut Window, &mut App)>;
 
 pub(super) fn render(
-    content: &str,
+    sections: Vec<MarkdownSection>,
+    diagrams: &HashMap<usize, gpui::Entity<super::mermaid::MermaidView>>,
     states: &HashMap<(usize, String), BlockStatus>,
     chrome: Chrome,
     background: Hsla,
@@ -34,8 +35,8 @@ pub(super) fn render(
 ) -> impl IntoElement {
     let on_run: RunHandler = Rc::new(on_run);
     let on_toggle = Rc::new(on_toggle);
-    let mut column = div().flex().flex_col().gap_3().p_4();
-    for (index, section) in parse_markdown(content).into_iter().enumerate() {
+    let mut column = div().w_full().min_w_0().flex().flex_col().gap_3().p_4();
+    for (index, section) in sections.into_iter().enumerate() {
         column = column.child(match section {
             MarkdownSection::Heading { level, text } => {
                 let (size, weight) = match level {
@@ -93,6 +94,10 @@ pub(super) fn render(
                 terminal_selection(index, runs, chrome, mono.clone()).into_any_element()
             }
             MarkdownSection::CodeBlock { language, code } => {
+                if let Some(diagram) = diagrams.get(&index) {
+                    column = column.child(diagram.clone());
+                    continue;
+                }
                 let status = states.get(&(index, code.clone())).copied();
                 code_block(
                     index,
