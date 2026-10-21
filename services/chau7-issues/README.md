@@ -28,6 +28,7 @@ the `issues` scope and are single-use. Browser preflights are rejected.
 
 ```bash
 npm install
+npm test
 npm run build
 npm run deploy
 ```
