@@ -1,7 +1,7 @@
 # Bump intentionally with native CI; Rust also has its workspace rust-toolchain.toml.
 [tools]
 node = "26.11.1"
-go = "1.27.2"
+go = "1.27.3"
 python = "3.15.0"
 rust = "1.99.0"
 "npm:pnpm" = "12.11.2"

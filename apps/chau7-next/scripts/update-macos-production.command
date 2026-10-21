@@ -16,6 +16,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 import plistlib
 import platform
@@ -55,6 +56,23 @@ ARTIFACTS = {
     "chau7-proxy": "Contents/MacOS/chau7-proxy",
 }
 SHA_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
+RESTORE_SHA_RE = re.compile(r"^[0-9a-f]{64}$")
+MAX_RESTORE_MANIFEST_BYTES = 16 * 1024 * 1024
+MAX_RESTORE_CONTEXT_BYTES = 500_000
+MAX_RESTORE_ARCHIVE_FILES = 120
+RESTORE_INDEX_RELATIVE = Path("session.json")
+RESTORE_CURRENT_RELATIVE = Path("TabRestoreBundles/current.json")
+RESTORE_CONTEXTS_RELATIVE = Path("TabRestoreBundles/contexts")
+RESTORE_LATEST_RELATIVE = Path("TabStateBackups/latest.json")
+RESTORE_ARCHIVE_RELATIVE = Path("TabStateBackups/archive")
+UPDATE_BACKUP_RELATIVE = Path("Library/Application Support/Chau7 Production Update Backups")
+UPDATE_COMPLETE_MARKER = "update-complete.json"
+RESTORE_LOSS_MARKER = "restore-loss-unresolved.json"
+RESTORE_LOSS_RESOLVED_MARKER = "restore-loss-resolved.json"
+RESTORE_GUARD_BLOCKED_MARKER = "restore-guard-blocked-before-quit.json"
+MAX_UPDATE_BACKUP_ENTRIES = 512
+UPDATE_RUN_ID_RE = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9]+-[0-9a-f]{8}$")
+MAX_UPDATE_MARKER_BYTES = 64 * 1024
 
 
 class UpdateError(RuntimeError):
@@ -381,7 +399,7 @@ def move_with_sudo(source, destination):
 
 
 def create_backup_directory(home, run_id):
-    parent = plain_path(home / "Library/Application Support/Chau7 Production Update Backups",
+    parent = plain_path(home / UPDATE_BACKUP_RELATIVE,
                         "backup parent", must_exist=False)
     if not parent.exists():
         parent.mkdir(parents=True, mode=0o700)
@@ -439,6 +457,1075 @@ def snapshot_state(roots, backup, home):
     return before
 
 
+def _read_restore_file(path, maximum, label):
+    """Read one regular restore file without following a replaced symlink."""
+    path = plain_path(path, label)
+    try:
+        path_info = path.lstat()
+        require(stat.S_ISREG(path_info.st_mode), f"{label} is not a regular file: {path}")
+        require(path_info.st_size <= maximum, f"{label} exceeds its byte bound: {path}")
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        opened_info = os.fstat(descriptor)
+        require(stat.S_ISREG(opened_info.st_mode)
+                and (opened_info.st_dev, opened_info.st_ino)
+                == (path_info.st_dev, path_info.st_ino),
+                f"{label} changed while being opened: {path}")
+        with os.fdopen(descriptor, "rb", closefd=True) as source:
+            descriptor = -1
+            payload = source.read(maximum + 1)
+            final_info = os.fstat(source.fileno())
+        require(len(payload) <= maximum and len(payload) == opened_info.st_size,
+                f"{label} changed or exceeds its byte bound: {path}")
+        require((final_info.st_dev, final_info.st_ino, final_info.st_size)
+                == (opened_info.st_dev, opened_info.st_ino, opened_info.st_size),
+                f"{label} changed while being read: {path}")
+        return payload
+    except UpdateError:
+        raise
+    except OSError as error:
+        raise UpdateError(f"cannot safely read {label} at {path}: {error}") from error
+    finally:
+        if "descriptor" in locals() and descriptor >= 0:
+            os.close(descriptor)
+
+
+def _read_optional_restore_file(root, relative, maximum, label):
+    path = root / relative
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise UpdateError(f"cannot inspect {label} at {path}: {error}") from error
+    return _read_restore_file(path, maximum, label)
+
+
+def _decode_restore_object(payload, label):
+    def unique_keys(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise UpdateError(f"{label} contains duplicate JSON keys; restore state is ambiguous")
+            value[key] = item
+        return value
+
+    def reject_constant(value):
+        raise UpdateError(f"{label} contains unsupported JSON number {value!r}")
+
+    try:
+        value = json.loads(payload, object_pairs_hook=unique_keys, parse_constant=reject_constant)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise UpdateError(f"{label} is not valid JSON; restore state is ambiguous") from error
+    require(isinstance(value, dict), f"{label} must be a JSON object; restore state is ambiguous")
+    return value
+
+
+def _valid_restore_token(value, label):
+    require(isinstance(value, str), f"{label} is missing; restore state is ambiguous")
+    try:
+        parsed = uuid.UUID(value)
+    except (ValueError, AttributeError) as error:
+        raise UpdateError(f"{label} is invalid; restore state is ambiguous") from error
+    require(str(parsed) == value.lower(), f"{label} is invalid; restore state is ambiguous")
+    return value
+
+
+def _has_saved_identity(value):
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value)
+    if isinstance(value, (dict, list)):
+        return bool(value)
+    return True
+
+
+def _preserves_saved_identity(previous, current):
+    """Require every previously populated resume field to remain verbatim."""
+    if not _has_saved_identity(previous):
+        return True
+    if isinstance(previous, dict):
+        if not isinstance(current, dict):
+            return False
+        return all(key in current and _preserves_saved_identity(value, current[key])
+                   for key, value in previous.items())
+    if isinstance(previous, list):
+        if not isinstance(current, list) or len(current) < len(previous):
+            return False
+        return all(_preserves_saved_identity(value, current[index])
+                   for index, value in enumerate(previous))
+    return previous == current
+
+
+def _saved_layout_leaf_ids(layout, label):
+    """Return saved pane leaf identities as PaneTree will restore them; None means legacy fallback."""
+    if layout is None:
+        return None
+
+    leaf_ids = set()
+    leaves = []
+
+    def require_id(value, kind):
+        require(isinstance(value, int) and not isinstance(value, bool)
+                and 0 <= value <= 0xFFFFFFFFFFFFFFFF,
+                f"{label} contains an invalid saved layout {kind} ID")
+        return value
+
+    def visit(node):
+        require(isinstance(node, dict), f"{label} contains an invalid saved pane layout")
+        node_type = node.get("type")
+        if node_type == "split":
+            require_id(node.get("id"), "split")
+            require(node.get("axis") in ("horizontal", "vertical"),
+                    f"{label} contains an invalid saved split axis")
+            ratios = node.get("ratios")
+            children = node.get("children")
+            require(isinstance(ratios, list) and isinstance(children, list),
+                    f"{label} contains an invalid saved split")
+            require(all(isinstance(ratio, (int, float)) and not isinstance(ratio, bool)
+                        and math.isfinite(ratio) for ratio in ratios),
+                    f"{label} contains an invalid saved split ratio")
+            for child in children:
+                visit(child)
+            return
+
+        require(node_type in (
+            "terminal", "editor", "preview", "diff", "dashboard", "repository",
+        ), f"{label} contains an unknown saved pane type")
+        pane_id = require_id(node.get("id"), "pane")
+        require(pane_id not in leaf_ids,
+                f"{label} contains duplicate saved layout pane IDs")
+        leaf_ids.add(pane_id)
+        leaves.append((node_type, pane_id))
+
+    visit(layout)
+    return tuple(leaves)
+
+
+def _restore_session_identity(session, label):
+    require(isinstance(session, dict), f"{label} has no saved session; restore state is ambiguous")
+    version = session.get("version")
+    require(isinstance(version, int) and not isinstance(version, bool) and 0 <= version <= 0xFFFFFFFF,
+            f"{label} has an invalid session version")
+    windows = session.get("windows")
+    require(isinstance(windows, list), f"{label} has no saved windows list; restore state is ambiguous")
+
+    tab_ids = set()
+    pane_by_id = {}
+    tabs = {}
+    window_signatures = {}
+    for window in windows:
+        require(isinstance(window, dict), f"{label} contains an invalid window")
+        for field in ("x", "y", "width", "height"):
+            coordinate = window.get(field)
+            require(isinstance(coordinate, (int, float)) and not isinstance(coordinate, bool)
+                    and math.isfinite(coordinate),
+                    f"{label} contains an invalid window {field}")
+        saved_tabs = window.get("tabs")
+        selected = window.get("selected")
+        require(isinstance(saved_tabs, list), f"{label} contains a window without a tab list")
+        require(isinstance(selected, int) and not isinstance(selected, bool),
+                f"{label} contains an invalid selected-tab index")
+        require(not saved_tabs or 0 <= selected < len(saved_tabs),
+                f"{label} contains an out-of-range selected-tab index")
+
+        ordered_tab_ids = []
+        for tab in saved_tabs:
+            require(isinstance(tab, dict), f"{label} contains an invalid tab")
+            raw_uuid = tab.get("uuid")
+            require(isinstance(raw_uuid, str),
+                    f"{label} contains a tab without a stable UUID; refusing an ambiguous comparison")
+            try:
+                tab_uuid = str(uuid.UUID(raw_uuid))
+            except (ValueError, AttributeError) as error:
+                raise UpdateError(f"{label} contains an invalid tab UUID") from error
+            require(tab_uuid == raw_uuid.lower(), f"{label} contains a non-canonical tab UUID")
+            require(tab_uuid not in tab_ids, f"{label} contains duplicate tab UUIDs")
+            tab_ids.add(tab_uuid)
+            ordered_tab_ids.append(tab_uuid)
+
+            panes = tab.get("panes")
+            require(isinstance(panes, list), f"{label} contains a tab without a pane list")
+            pane_ids = set()
+            pane_order = []
+            pane_summaries = {}
+            for pane in panes:
+                require(isinstance(pane, dict), f"{label} contains an invalid terminal pane")
+                pane_id = pane.get("id")
+                require(isinstance(pane_id, int) and not isinstance(pane_id, bool) and pane_id >= 0,
+                        f"{label} contains an invalid pane ID")
+                require(pane_id not in pane_ids and pane_id not in pane_by_id,
+                        f"{label} contains duplicate pane IDs")
+                pane_ids.add(pane_id)
+                pane_order.append(pane_id)
+                scrollback = pane.get("scrollback", False)
+                require(isinstance(scrollback, bool), f"{label} contains an invalid scrollback flag")
+                pane_by_id[pane_id] = pane
+                pane_summaries[pane_id] = {
+                    key: pane.get(key)
+                    for key in (
+                        "input_history",
+                        "ai_provider", "ai_session_id", "ai_session_id_source",
+                        "ai_resume_command", "archived_ai_resume", "agent_launch_command",
+                    )
+                }
+                pane_summaries[pane_id]["has_directory"] = _has_saved_identity(
+                    pane.get("directory")
+                )
+            layout_leaves = _saved_layout_leaf_ids(tab.get("layout"), label)
+            restored_layout_leaves = (
+                (("terminal", pane_order[0]),) if layout_leaves is None and pane_order
+                else (() if layout_leaves is None else layout_leaves)
+            )
+            tabs[tab_uuid] = {
+                "panes": pane_summaries,
+                "has_cwd": _has_saved_identity(tab.get("cwd")),
+                "restored_layout_leaves": restored_layout_leaves,
+            }
+
+        if ordered_tab_ids:
+            signature = tuple(sorted(ordered_tab_ids))
+            require(signature not in window_signatures,
+                    f"{label} contains ambiguous window identities")
+            window_signatures[signature] = frozenset(ordered_tab_ids)
+
+    return {
+        "has_tabs": bool(tab_ids),
+        "tab_count": len(tab_ids),
+        "window_count": len(window_signatures),
+        "windows": window_signatures,
+        "tabs": tabs,
+        "panes": pane_by_id,
+    }
+
+def _validated_restore_bundle(root, bundle_bytes, index_bytes, label):
+    bundle = _decode_restore_object(bundle_bytes, label)
+    schema_version = bundle.get("schema_version")
+    require(isinstance(schema_version, int) and not isinstance(schema_version, bool)
+            and schema_version == 1, f"{label} has an unsupported schema")
+    save_token = _valid_restore_token(bundle.get("save_token"), f"{label} save_token")
+    previous_token = bundle.get("previous_index_token")
+    if previous_token is not None:
+        _valid_restore_token(previous_token, f"{label} previous_index_token")
+    explicit_clear = bundle.get("explicit_clear")
+    require(isinstance(explicit_clear, bool), f"{label} has an invalid explicit_clear marker")
+    session = bundle.get("session")
+    identity = _restore_session_identity(session, label)
+    require(explicit_clear or identity["has_tabs"],
+            f"{label} is empty without an explicit clear marker")
+
+    index = None
+    if index_bytes is not None:
+        index = _decode_restore_object(index_bytes, "Rust restore index session.json")
+        index_token = index.get("save_token")
+        if index_token is not None:
+            _valid_restore_token(index_token, "Rust restore index save_token")
+        if index_token is not None and save_token != index_token and previous_token != index_token:
+            raise UpdateError(
+                "the current restore bundle and session.json do not form a verified save transaction"
+            )
+        if "explicit_clear" in index:
+            require(isinstance(index["explicit_clear"], bool),
+                    "Rust restore index has an invalid explicit_clear marker")
+        index_identity = _restore_session_identity(index, "Rust restore index session.json")
+        if index_token is not None and index_token == save_token:
+            require(index_identity["windows"] == identity["windows"]
+                    and index_identity["tabs"] == identity["tabs"],
+                    "current restore bundle and session.json share a save_token but differ")
+
+    contexts = bundle.get("contexts")
+    require(isinstance(contexts, dict), f"{label} has no contexts map")
+    referenced_contexts = {}
+    context_bytes = {}
+    for raw_pane_id, reference in contexts.items():
+        require(isinstance(raw_pane_id, str) and raw_pane_id.isdigit(),
+                f"{label} contains an invalid context pane key")
+        pane_id = int(raw_pane_id)
+        require(pane_id not in referenced_contexts,
+                f"{label} contains duplicate context pane IDs")
+        pane = identity["panes"].get(pane_id)
+        require(pane is not None and pane.get("scrollback") is True,
+                f"{label} contains an unreferenced context")
+        require(isinstance(reference, dict), f"{label} contains an invalid context reference")
+        digest = reference.get("sha256")
+        byte_count = reference.get("byte_count")
+        require(isinstance(digest, str) and RESTORE_SHA_RE.fullmatch(digest) is not None,
+                f"{label} contains an invalid context hash")
+        require(isinstance(byte_count, int) and not isinstance(byte_count, bool)
+                and 0 <= byte_count <= MAX_RESTORE_CONTEXT_BYTES,
+                f"{label} contains an invalid context byte count")
+        context_path = root / RESTORE_CONTEXTS_RELATIVE / f"{digest}.txt"
+        payload = _read_restore_file(context_path, MAX_RESTORE_CONTEXT_BYTES,
+                                     f"restore context {digest}.txt")
+        require(len(payload) == byte_count and hashlib.sha256(payload).hexdigest() == digest,
+                f"{label} context hash or byte count does not verify: {context_path}")
+        referenced_contexts[pane_id] = digest
+        context_bytes.setdefault(digest, payload)
+
+    for pane_id, pane in identity["panes"].items():
+        if pane.get("scrollback") is True:
+            require(pane_id in referenced_contexts,
+                    f"{label} is missing the context for pane {pane_id}")
+    identity["contexts"] = referenced_contexts
+    return {
+        "mode": "explicit-clear" if explicit_clear and not identity["has_tabs"] else "current",
+        "save_token": save_token,
+        "explicit_clear": explicit_clear,
+        "identity": identity,
+        "bundle_bytes": bundle_bytes,
+        "index_bytes": index_bytes,
+        "context_bytes": context_bytes,
+    }
+
+
+def _read_fallback_state(root, relative, label):
+    payload = _read_optional_restore_file(root, relative, MAX_RESTORE_MANIFEST_BYTES, label)
+    if payload is None:
+        return None, None
+    value = _decode_restore_object(payload, label)
+    session = value.get("session") if isinstance(value.get("session"), dict) else value
+    identity = _restore_session_identity(session, label)
+    explicit_clear = value.get("explicit_clear", False)
+    require(isinstance(explicit_clear, bool), f"{label} has an invalid explicit_clear marker")
+    return payload, {"identity": identity, "explicit_clear": explicit_clear}
+
+
+def _fallback_restore_paths(root):
+    paths = [RESTORE_LATEST_RELATIVE]
+    archive = root / RESTORE_ARCHIVE_RELATIVE
+    try:
+        archive_info = archive.lstat()
+    except FileNotFoundError:
+        return paths
+    except OSError as error:
+        raise UpdateError(f"cannot inspect Rust restore archive at {archive}: {error}") from error
+    require(stat.S_ISDIR(archive_info.st_mode),
+            f"Rust restore archive is not a directory: {archive}")
+    try:
+        entries = sorted((entry for entry in archive.iterdir() if entry.suffix == ".json"),
+                         key=lambda item: item.name, reverse=True)
+    except OSError as error:
+        raise UpdateError(f"cannot list Rust restore archive at {archive}: {error}") from error
+    require(len(entries) <= MAX_RESTORE_ARCHIVE_FILES,
+            f"Rust restore archive has too many entries to verify safely: {archive}")
+    paths.extend(path.relative_to(root) for path in entries)
+    return paths
+
+
+def _empty_restore_state(root, index_bytes, label):
+    if index_bytes is not None:
+        index = _decode_restore_object(index_bytes, "Rust restore index session.json")
+        index_identity = _restore_session_identity(index, "Rust restore index session.json")
+        index_clear = index.get("explicit_clear", False)
+        require(isinstance(index_clear, bool), "Rust restore index has an invalid explicit_clear marker")
+        index_token = index.get("save_token")
+        if index_token is not None:
+            _valid_restore_token(index_token, "Rust restore index save_token")
+        if index_clear:
+            require(not index_identity["has_tabs"],
+                    "Rust restore index marks a populated session as explicitly cleared")
+            return {"mode": "explicit-clear", "identity": index_identity, "index_bytes": index_bytes}
+        if index_identity["has_tabs"]:
+            raise UpdateError(
+                f"{label} is missing, but session.json contains restorable tabs; refusing to ask you to quit"
+            )
+
+    fallback_paths = _fallback_restore_paths(root)
+    fallback_payloads = {}
+    for relative in fallback_paths:
+        payload, value = _read_fallback_state(root, relative, f"Rust restore fallback {relative}")
+        if payload is None:
+            continue
+        fallback_payloads[relative] = payload
+        if value["identity"]["has_tabs"]:
+            raise UpdateError(
+                f"{label} is missing, but {relative} contains restorable tabs; "
+                "refusing to ask you to quit without a valid current transaction"
+            )
+    return {
+        "mode": "unused",
+        "identity": {"has_tabs": False, "tab_count": 0, "window_count": 0,
+                     "windows": {}, "tabs": {}, "panes": {}, "contexts": {}},
+        "index_bytes": index_bytes,
+        "fallback_paths": fallback_paths,
+        "fallback_payloads": fallback_payloads,
+    }
+
+
+def read_restore_state(root, label="Rust restore state"):
+    """Read the app-selected current transaction or prove the profile is empty."""
+    root = plain_path(root, "RustV1 state root", must_exist=False)
+    if not root.exists():
+        return {
+            "mode": "unused",
+            "identity": {"has_tabs": False, "tab_count": 0, "window_count": 0,
+                         "windows": {}, "tabs": {}, "panes": {}, "contexts": {}},
+            "index_bytes": None,
+            "fallback_paths": [],
+            "fallback_payloads": {},
+        }
+    require(root.is_dir(), f"RustV1 state root is not a directory: {root}")
+    current_relative = RESTORE_CURRENT_RELATIVE
+    current_path = root / current_relative
+    current_bytes = _read_optional_restore_file(
+        root, current_relative, MAX_RESTORE_MANIFEST_BYTES, f"{label} current bundle"
+    )
+    index_bytes = _read_optional_restore_file(
+        root, RESTORE_INDEX_RELATIVE, MAX_RESTORE_MANIFEST_BYTES, f"{label} index session.json"
+    )
+    if current_bytes is None:
+        empty = _empty_restore_state(root, index_bytes, label)
+        current_after = _read_optional_restore_file(
+            root, current_relative, MAX_RESTORE_MANIFEST_BYTES, f"{label} current bundle"
+        )
+        index_after = _read_optional_restore_file(
+            root, RESTORE_INDEX_RELATIVE, MAX_RESTORE_MANIFEST_BYTES, f"{label} index session.json"
+        )
+        require(current_after is None and index_after == index_bytes,
+                f"{label} changed while being checked; refusing an ambiguous snapshot")
+        if empty["mode"] == "unused":
+            fallback_paths_after = _fallback_restore_paths(root)
+            require(fallback_paths_after == empty["fallback_paths"],
+                    f"{label} fallback membership changed while being checked")
+            for relative in empty["fallback_paths"]:
+                fallback_after = _read_optional_restore_file(
+                    root, relative, MAX_RESTORE_MANIFEST_BYTES,
+                    f"{label} fallback {relative}",
+                )
+                require(fallback_after == empty["fallback_payloads"].get(relative),
+                        f"{label} fallback changed while being checked: {relative}")
+        return empty
+
+    snapshot = _validated_restore_bundle(root, current_bytes, index_bytes,
+                                         f"{label} current bundle")
+    # Content-addressed contexts are immutable. Re-read every referenced file,
+    # then the transaction markers, to prove the pre-quit copy is one generation.
+    for digest, payload in snapshot["context_bytes"].items():
+        path = root / RESTORE_CONTEXTS_RELATIVE / f"{digest}.txt"
+        require(_read_restore_file(path, MAX_RESTORE_CONTEXT_BYTES,
+                                   f"restore context {digest}.txt") == payload,
+                f"{label} context changed while being checked: {path}")
+    current_after = _read_optional_restore_file(
+        root, current_relative, MAX_RESTORE_MANIFEST_BYTES, f"{label} current bundle"
+    )
+    index_after = _read_optional_restore_file(
+        root, RESTORE_INDEX_RELATIVE, MAX_RESTORE_MANIFEST_BYTES, f"{label} index session.json"
+    )
+    require(current_after == current_bytes and index_after == index_bytes,
+            f"{label} save_token or index changed while being checked; retry before quitting")
+    snapshot["bundle_path"] = current_path
+    return snapshot
+
+def _write_snapshot_file(source_bytes, destination, label):
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    require(not destination.exists() and not destination.is_symlink(),
+            f"pre-quit snapshot path already exists: {destination}")
+    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb", closefd=True) as output:
+            descriptor = -1
+            output.write(source_bytes)
+            output.flush()
+            os.fsync(output.fileno())
+    except OSError as error:
+        raise UpdateError(f"cannot write {label} to {destination}: {error}") from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _fsync_directory(directory, label):
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise UpdateError(f"cannot sync {label} directory: {error}") from error
+
+
+def capture_prequit_restore(state_root, backup, home):
+    """Atomically publish a verified restore transaction before asking the user to quit."""
+    home = plain_path(home, "home directory")
+    state_root = plain_path(state_root, "RustV1 state root", must_exist=False)
+    try:
+        state_relative = state_root.relative_to(home)
+    except ValueError as error:
+        raise UpdateError(f"RustV1 state root is outside the home directory: {state_root}") from error
+
+    backup = plain_path(backup, "update backup directory")
+    staging = backup / f".pre-quit-stage-{uuid.uuid4().hex}"
+    published = backup / "pre-quit"
+    require(not published.exists() and not published.is_symlink(),
+            f"pre-quit snapshot already exists: {published}")
+    staging.mkdir(mode=0o700)
+    try:
+        staged_state_root = staging / state_relative
+        staged_state_root.mkdir(parents=True, mode=0o700)
+        state = read_restore_state(state_root, "pre-quit Rust restore state")
+        if state.get("bundle_bytes") is not None:
+            _write_snapshot_file(state["bundle_bytes"],
+                                 staged_state_root / RESTORE_CURRENT_RELATIVE,
+                                 "pre-quit current restore bundle")
+            for digest, payload in state["context_bytes"].items():
+                _write_snapshot_file(
+                    payload,
+                    staged_state_root / RESTORE_CONTEXTS_RELATIVE / f"{digest}.txt",
+                    "pre-quit restore context",
+                )
+        if state.get("index_bytes") is not None:
+            _write_snapshot_file(state["index_bytes"],
+                                 staged_state_root / RESTORE_INDEX_RELATIVE,
+                                 "pre-quit restore index")
+        marker = {
+            "schema_version": 1,
+            "mode": state["mode"],
+            "save_token": state.get("save_token"),
+            "window_count": state["identity"]["window_count"],
+            "tab_count": state["identity"]["tab_count"],
+        }
+        _write_snapshot_file(
+            json.dumps(marker, sort_keys=True, indent=2).encode("utf-8") + b"\n",
+            staging / "restore-guard.json",
+            "pre-quit restore guard manifest",
+        )
+
+        staged_state = read_restore_state(staged_state_root, "staged pre-quit Rust restore state")
+        require(staged_state["mode"] == state["mode"]
+                and staged_state.get("save_token") == state.get("save_token")
+                and staged_state.get("index_bytes") == state.get("index_bytes"),
+                "staged pre-quit restore snapshot failed verification")
+        if state.get("bundle_bytes") is not None:
+            require(staged_state.get("bundle_bytes") == state["bundle_bytes"]
+                    and staged_state.get("context_bytes") == state["context_bytes"],
+                    "staged pre-quit restore bundle or contexts differ from the verified source")
+        directories = [staging]
+        for path in staging.rglob("*"):
+            require(not path.is_symlink(),
+                    f"pre-quit staging snapshot contains an unexpected symlink: {path}")
+            if path.is_dir():
+                directories.append(path)
+        for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True):
+            _fsync_directory(directory, f"pre-quit staging {directory.relative_to(staging) or '.'}")
+        os.rename(staging, published)
+        _fsync_directory(backup, "pre-quit snapshot parent")
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    state["prequit_root"] = published / state_relative
+    state["snapshot_root"] = state["prequit_root"]
+    state["prequit_manifest"] = published / "restore-guard.json"
+    return state
+
+
+def compare_restore_states(prequit, postquit, backup, post_path=None):
+    """Reject shutdown saves that omit pre-existing windows, tabs, panes or resumes."""
+    pre_identity = prequit["identity"]
+    post_identity = postquit["identity"]
+    reason = None
+
+    if pre_identity["has_tabs"]:
+        pre_windows = list(pre_identity["windows"].values())
+        post_windows = list(post_identity["windows"].values())
+        used_post_windows = set()
+        for pre_window in pre_windows:
+            overlaps = [
+                index for index, post_window in enumerate(post_windows)
+                if pre_window.intersection(post_window)
+            ]
+            if (len(overlaps) != 1
+                    or not pre_window.issubset(post_windows[overlaps[0]])
+                    or overlaps[0] in used_post_windows):
+                reason = "the saved window or tab identities changed"
+                break
+            used_post_windows.add(overlaps[0])
+
+        if reason is None:
+            for tab_uuid, previous_tab in pre_identity["tabs"].items():
+                current_tab = post_identity["tabs"].get(tab_uuid)
+                if current_tab is None:
+                    reason = "the saved window or tab identities changed"
+                    break
+                if previous_tab["has_cwd"] and not current_tab["has_cwd"]:
+                    reason = "a previously saved tab working directory is missing"
+                    break
+                previous_panes = previous_tab["panes"]
+                current_panes = current_tab["panes"]
+                if not set(previous_panes).issubset(current_panes):
+                    reason = "the saved window or tab identities changed"
+                    break
+                missing_layout_leaves = (
+                    set(previous_tab["restored_layout_leaves"])
+                    - set(current_tab["restored_layout_leaves"])
+                )
+                if missing_layout_leaves:
+                    if any(node_type == "terminal" for node_type, _ in missing_layout_leaves):
+                        reason = "a previously saved terminal pane is missing from the restored layout"
+                    else:
+                        reason = "a previously saved layout pane is missing from the restored layout"
+                    break
+                for pane_id, previous_pane in previous_panes.items():
+                    current_pane = current_panes[pane_id]
+                    if previous_pane["has_directory"] and not current_pane["has_directory"]:
+                        reason = "a previously saved pane working directory is missing"
+                        break
+                    for field, previous_value in previous_pane.items():
+                        if field == "has_directory":
+                            continue
+                        if (_has_saved_identity(previous_value)
+                                and not _preserves_saved_identity(
+                                    previous_value, current_pane.get(field)
+                                )):
+                            reason = (
+                                "saved command history changed"
+                                if field == "input_history"
+                                else "provider resume identity changed"
+                            )
+                            break
+                    if reason is not None:
+                        break
+                if reason is not None:
+                    break
+
+        if reason is None and any(
+                pane_id not in post_identity["contexts"]
+                for pane_id in pre_identity["contexts"]):
+            reason = "a previously saved terminal context is missing"
+
+    if reason:
+        pre_path = prequit["prequit_root"]
+        post_path = post_path or backup / "state" / STATE_RELATIVES[0]
+        raise UpdateError(
+            f"{reason} after Chau7 quit; the installed app was not changed. Keep both backups. "
+            f"Pre-quit restore snapshot: {pre_path}. Post-quit state snapshot: {post_path}. "
+            "If recovery is needed, keep Chau7 closed and restore the pre-quit "
+            "TabRestoreBundles/current.json, its matching contexts/ files and the captured "
+            "session.json index from that snapshot; do not restore state while Chau7 is running."
+        )
+
+
+def _restore_snapshot_fingerprint(state):
+    parts = [str(state.get("mode")), str(state.get("save_token"))]
+    for name in ("bundle_bytes", "index_bytes"):
+        payload = state.get(name)
+        parts.append(hashlib.sha256(payload).hexdigest() if payload is not None else "missing")
+    for digest, payload in sorted(state.get("context_bytes", {}).items()):
+        parts.append(digest + ":" + hashlib.sha256(payload).hexdigest())
+    return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
+
+
+def _update_marker_bytes(record):
+    return json.dumps(record, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+
+
+def _write_update_marker(path, record, label):
+    path = plain_path(path, label, must_exist=False)
+    parent = plain_path(path.parent, f"{label} parent")
+    require(parent.is_dir(), f"{label} parent is not a directory: {parent}")
+    payload = _update_marker_bytes(record)
+    require(len(payload) <= MAX_UPDATE_MARKER_BYTES, f"{label} is too large")
+    if path.exists():
+        existing = _read_restore_file(path, MAX_UPDATE_MARKER_BYTES, label)
+        require(existing == payload, f"{label} already exists with different contents: {path}")
+        return hashlib.sha256(payload).hexdigest()
+
+    temporary = parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
+    try:
+        _write_snapshot_file(payload, temporary, label)
+        try:
+            os.link(temporary, path, follow_symlinks=False)
+        except FileExistsError:
+            existing = _read_restore_file(path, MAX_UPDATE_MARKER_BYTES, label)
+            require(existing == payload, f"{label} already exists with different contents: {path}")
+    except (OSError, UpdateError) as error:
+        if isinstance(error, UpdateError):
+            raise
+        raise UpdateError(f"cannot publish {label}: {error}") from error
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            raise UpdateError(f"cannot remove temporary {label}: {error}") from error
+    try:
+        descriptor = os.open(parent, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise UpdateError(f"cannot sync {label} directory: {error}") from error
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _read_update_marker(backup, name):
+    path = plain_path(backup / name, f"update marker {name}", must_exist=False)
+    if not path.exists():
+        return None, None
+    payload = _read_restore_file(path, MAX_UPDATE_MARKER_BYTES, f"update marker {name}")
+    return _decode_restore_object(payload, f"update marker {name}"), payload
+
+
+def _backup_restore_state(backup, phase, required=False):
+    phase_root = plain_path(backup / phase, f"{phase} restore snapshot", must_exist=False)
+    if not phase_root.exists():
+        if required:
+            raise UpdateError(f"{phase} restore snapshot is missing from update backup: {backup}")
+        return None
+    require(phase_root.is_dir(), f"{phase} restore snapshot is not a directory: {phase_root}")
+    state_root = plain_path(
+        phase_root / STATE_RELATIVES[0], f"{phase} Rust restore state", must_exist=False
+    )
+    require(state_root.exists() and state_root.is_dir(),
+            f"{phase} restore snapshot is incomplete or ambiguous: {state_root}")
+    state = read_restore_state(state_root, f"{phase} Rust restore state")
+    state["snapshot_root"] = state_root
+    if phase == "pre-quit":
+        state["prequit_root"] = state_root
+    return state
+
+
+def _update_backup_runs(home, exclude_run_id=None):
+    parent = plain_path(home / UPDATE_BACKUP_RELATIVE, "update backup parent", must_exist=False)
+    if not parent.exists():
+        return []
+    require(parent.is_dir(), f"update backup parent is not a directory: {parent}")
+    try:
+        entries = sorted(parent.iterdir(), key=lambda path: path.name)
+    except OSError as error:
+        raise UpdateError(f"cannot inspect update backup history at {parent}: {error}") from error
+    require(len(entries) <= MAX_UPDATE_BACKUP_ENTRIES,
+            f"update backup history exceeds its verification bound: {parent}")
+
+    runs = []
+    for entry in entries:
+        path = plain_path(entry, "historical update backup")
+        if entry.name == ".DS_Store" and path.is_file():
+            continue
+        require(UPDATE_RUN_ID_RE.fullmatch(entry.name) is not None,
+                f"unrecognized or ambiguous update backup entry: {entry}")
+        require(path.is_dir(), f"historical update backup is not a directory: {path}")
+        if entry.name != exclude_run_id:
+            runs.append((entry.name, path))
+    return runs
+
+
+def _legacy_previous_bundle(backup):
+    previous = plain_path(backup / "previous" / "Chau7.app",
+                          "historical previous app backup", must_exist=False)
+    if not previous.exists():
+        return False
+    require(previous.is_dir(), f"historical previous app backup is not a directory: {previous}")
+    validate_installed_production(previous, verify_signature=False)
+    prequit = _backup_restore_state(backup, "pre-quit", required=False)
+    postquit = _backup_restore_state(backup, "state", required=False)
+    if prequit is not None and postquit is not None:
+        try:
+            compare_restore_states(prequit, postquit, backup)
+        except UpdateError as error:
+            raise UpdateError(
+                f"legacy previous app backup conflicts with failed restore guard snapshots: "
+                f"{backup}: {error}"
+            ) from error
+    return True
+
+
+def _validate_marker(marker, run_id, status, label):
+    require(isinstance(marker.get("schema_version"), int)
+            and not isinstance(marker.get("schema_version"), bool)
+            and marker.get("schema_version") == 1
+            and marker.get("run_id") == run_id
+            and marker.get("status") == status,
+            f"{label} is invalid or ambiguous for update run {run_id}")
+
+
+def _marked_restore_state(backup, run_id, marker, phase):
+    state = _backup_restore_state(backup, phase, required=True)
+    prefix = "prequit" if phase == "pre-quit" else "postquit"
+    require(marker.get(f"{prefix}_sha256") == _restore_snapshot_fingerprint(state),
+            f"restore marker does not match the {phase} snapshot in {backup}")
+    if phase == "pre-quit":
+        require(marker.get("run_id") == run_id,
+                f"restore marker run ID differs from backup directory {backup}")
+    return state
+
+
+def _write_restore_loss_marker(backup, run_id, prequit, postquit=None):
+    record = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "status": "unresolved",
+        "kind": "postquit-restore-loss" if postquit is not None else "ambiguous-postquit",
+        "prequit_sha256": _restore_snapshot_fingerprint(prequit),
+        "postquit_sha256": (
+            _restore_snapshot_fingerprint(postquit) if postquit is not None else None
+        ),
+    }
+    marker_hash = _write_update_marker(
+        backup / RESTORE_LOSS_MARKER, record, "unresolved restore-loss marker"
+    )
+    return record, marker_hash
+
+
+def _validate_restore_loss_marker(backup, run_id, marker):
+    _validate_marker(marker, run_id, "unresolved", "restore-loss marker")
+    prequit = _marked_restore_state(backup, run_id, marker, "pre-quit")
+    if marker.get("kind") == "ambiguous-postquit":
+        require(marker.get("postquit_sha256") is None
+                and _backup_restore_state(backup, "state", required=False) is None,
+                f"ambiguous restore-loss marker conflicts with post-quit evidence: {backup}")
+        return prequit, None
+    require(marker.get("kind") == "postquit-restore-loss",
+            f"restore-loss marker kind is invalid: {backup}")
+    postquit = _marked_restore_state(backup, run_id, marker, "state")
+    try:
+        compare_restore_states(prequit, postquit, backup)
+    except UpdateError:
+        return prequit, postquit
+    raise UpdateError(f"restore-loss marker no longer matches its snapshots: {backup}")
+
+
+def _write_restore_loss_resolution(incident, marker_bytes, recovery_backup, recovery_state):
+    record = {
+        "schema_version": 1,
+        "run_id": incident["run_id"],
+        "status": "resolved-by-verified-session",
+        "incident_sha256": hashlib.sha256(marker_bytes).hexdigest(),
+        "recovery_run_id": recovery_backup.name,
+        "recovery_sha256": _restore_snapshot_fingerprint(recovery_state),
+    }
+    _write_update_marker(
+        incident["backup"] / RESTORE_LOSS_RESOLVED_MARKER,
+        record,
+        "restore-loss resolution marker",
+    )
+
+
+def _validate_restore_loss_resolution(incident, marker_bytes, resolution, runs_by_id):
+    run_id = incident["run_id"]
+    _validate_marker(resolution, run_id, "resolved-by-verified-session",
+                     "restore-loss resolution marker")
+    require(resolution.get("incident_sha256") == hashlib.sha256(marker_bytes).hexdigest(),
+            f"restore-loss resolution does not match its incident: {incident['backup']}")
+    recovery_id = resolution.get("recovery_run_id")
+    require(isinstance(recovery_id, str) and UPDATE_RUN_ID_RE.fullmatch(recovery_id),
+            f"restore-loss resolution has an invalid recovery run ID: {incident['backup']}")
+    recovery_backup = runs_by_id.get(recovery_id)
+    require(recovery_backup is not None and recovery_backup != incident["backup"],
+            f"restore-loss resolution references missing evidence: {incident['backup']}")
+    recovery_state = _backup_restore_state(recovery_backup, "pre-quit", required=True)
+    require(resolution.get("recovery_sha256") == _restore_snapshot_fingerprint(recovery_state),
+            f"restore-loss recovery snapshot changed: {recovery_backup}")
+    try:
+        compare_restore_states(incident["prequit"], recovery_state, incident["backup"],
+                               post_path=recovery_state["snapshot_root"])
+    except UpdateError as error:
+        raise UpdateError(
+            f"restore-loss resolution no longer proves recovery from {incident['backup']}: {error}"
+        ) from error
+
+
+def _validate_completed_update(backup, run_id, marker):
+    _validate_marker(marker, run_id, "installed", "update completion marker")
+    require(marker.get("restore_guard") == "passed",
+            f"update completion marker does not confirm its restore guard: {backup}")
+    require(isinstance(marker.get("build_number"), str) and marker.get("build_number")
+            and isinstance(marker.get("source_revision"), str)
+            and SHA_RE.fullmatch(marker["source_revision"]) is not None,
+            f"update completion marker is missing verified install identity: {backup}")
+    prequit = _marked_restore_state(backup, run_id, marker, "pre-quit")
+    postquit = _marked_restore_state(backup, run_id, marker, "state")
+    try:
+        compare_restore_states(prequit, postquit, backup)
+    except UpdateError as error:
+        raise UpdateError(f"completed update marker has a failed restore guard: {backup}: {error}") from error
+
+
+def _write_update_complete_marker(backup, run_id, prequit, postquit, installed_result):
+    record = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "status": "installed",
+        "restore_guard": "passed",
+        "prequit_sha256": _restore_snapshot_fingerprint(prequit),
+        "postquit_sha256": _restore_snapshot_fingerprint(postquit),
+        "build_number": str(installed_result["buildNumber"]),
+        "source_revision": str(installed_result["sourceRevision"]),
+    }
+    _write_update_marker(backup / UPDATE_COMPLETE_MARKER, record, "update completion marker")
+
+
+def _discover_restore_loss_incidents(home, exclude_run_id=None, persist_markers=True):
+    runs = _update_backup_runs(home, exclude_run_id)
+    runs_by_id = dict(runs)
+    incidents = []
+
+    for run_id, backup in runs:
+        complete, _ = _read_update_marker(backup, UPDATE_COMPLETE_MARKER)
+        unresolved, unresolved_bytes = _read_update_marker(backup, RESTORE_LOSS_MARKER)
+        resolution, _ = _read_update_marker(backup, RESTORE_LOSS_RESOLVED_MARKER)
+        blocked, _ = _read_update_marker(backup, RESTORE_GUARD_BLOCKED_MARKER)
+
+        if complete is not None:
+            _validate_completed_update(backup, run_id, complete)
+            require(unresolved is None and resolution is None and blocked is None,
+                    f"completed update has conflicting guard markers: {backup}")
+            continue
+        if blocked is not None:
+            status = blocked.get("status")
+            require(status in ("blocked-before-quit", "quit-not-observed"),
+                    f"pre-quit blocked marker status is invalid: {backup}")
+            _validate_marker(blocked, run_id, status, "pre-quit blocked marker")
+            prequit = _marked_restore_state(backup, run_id, blocked, "pre-quit")
+            if status == "blocked-before-quit":
+                require(unresolved is None and resolution is None,
+                        f"pre-quit blocked update has conflicting restore-loss markers: {backup}")
+                require(not _legacy_previous_bundle(backup),
+                        f"pre-quit blocked update conflicts with previous app backup: {backup}")
+                postquit = _backup_restore_state(backup, "state", required=False)
+                require(postquit is None,
+                        f"pre-quit blocked update unexpectedly has post-quit state: {backup}")
+                continue
+
+            # Older updater releases marked a timeout as if quit had not happened.
+            # A user can quit just after that timeout, so keep it as ambiguous evidence.
+            if unresolved is None:
+                require(resolution is None,
+                        f"restore-loss resolution exists without an incident marker: {backup}")
+                require(not _legacy_previous_bundle(backup),
+                        f"timed-out quit marker conflicts with previous app backup: {backup}")
+                postquit = _backup_restore_state(backup, "state", required=False)
+                if postquit is not None:
+                    try:
+                        compare_restore_states(prequit, postquit, backup)
+                        continue
+                    except UpdateError:
+                        pass
+                if persist_markers:
+                    unresolved, _ = _write_restore_loss_marker(backup, run_id, prequit, postquit)
+                    unresolved_bytes = _update_marker_bytes(unresolved)
+                else:
+                    incidents.append({
+                        "run_id": run_id,
+                        "backup": backup,
+                        "prequit": prequit,
+                        "postquit": postquit,
+                        "marker_bytes": None,
+                    })
+                    continue
+        if unresolved is not None:
+            require(not _legacy_previous_bundle(backup),
+                    f"unresolved restore-loss marker conflicts with previous app backup: {backup}")
+            prequit, postquit = _validate_restore_loss_marker(backup, run_id, unresolved)
+            incident = {"run_id": run_id, "backup": backup, "prequit": prequit,
+                        "postquit": postquit, "marker_bytes": unresolved_bytes}
+            if resolution is not None:
+                _validate_restore_loss_resolution(incident, unresolved_bytes, resolution, runs_by_id)
+                continue
+            incidents.append(incident)
+            continue
+        require(resolution is None,
+                f"restore-loss resolution exists without an incident marker: {backup}")
+        if _legacy_previous_bundle(backup):
+            continue
+
+        prequit = _backup_restore_state(backup, "pre-quit", required=False)
+        postquit = _backup_restore_state(backup, "state", required=False)
+        if prequit is None:
+            require(postquit is None,
+                    f"post-quit state exists without a pre-quit snapshot: {backup}")
+            continue
+        try:
+            if postquit is not None:
+                compare_restore_states(prequit, postquit, backup)
+                continue
+        except UpdateError:
+            pass
+        if persist_markers:
+            record, _ = _write_restore_loss_marker(backup, run_id, prequit, postquit)
+        else:
+            record = {
+                "schema_version": 1,
+                "run_id": run_id,
+                "status": "unresolved",
+                "kind": "postquit-restore-loss" if postquit is not None else "ambiguous-postquit",
+            }
+        marker_bytes = _update_marker_bytes(record) if persist_markers else None
+        incidents.append({"run_id": run_id, "backup": backup, "prequit": prequit,
+                          "postquit": postquit, "marker_bytes": marker_bytes})
+    return incidents, runs_by_id
+
+
+def _prior_restore_loss_error(incident):
+    post_path = incident["backup"] / "state" / STATE_RELATIVES[0]
+    ambiguous = incident["postquit"] is None
+    headline = (
+        f"An earlier update timed out before it observed Chau7 quit (run {incident['run_id']}); "
+        "a later shutdown may or may not have completed, so restore loss is unverified."
+        if ambiguous
+        else f"An earlier update has unresolved restore loss (run {incident['run_id']})."
+    )
+    post_detail = (
+        f"No complete post-quit snapshot was retained; expected path: {post_path}."
+        if ambiguous
+        else f"The post-quit evidence at {post_path} remains preserved."
+    )
+    return UpdateError(
+        f"{headline} Restore recovery is still required before install. The current saved session does not "
+        f"contain that complete snapshot. Candidate verification alone does not make the "
+        f"session safe to install. No quit was requested and no app "
+        f"replacement occurred. Restore from the preserved pre-quit snapshot at "
+        f"{incident['prequit']['prequit_root']} while Chau7 is closed, including its matching "
+        f"TabRestoreBundles/contexts files and session.json index. {post_detail} "
+        f"Tab counts alone do not resolve this guard; wait for the "
+        f"recovered saved identities to appear in the live "
+        f"current.json, then rerun --dry-run. Do not copy profile files while Chau7 is running."
+    )
+
+
+def require_prior_restore_losses_resolved(home, current_state, current_backup):
+    incidents, _ = _discover_restore_loss_incidents(home, current_backup.name)
+    for incident in incidents:
+        try:
+            compare_restore_states(incident["prequit"], current_state, incident["backup"],
+                                   post_path=current_state["snapshot_root"])
+        except UpdateError as error:
+            raise _prior_restore_loss_error(incident) from error
+    for incident in incidents:
+        if incident["marker_bytes"] is None:
+            raise UpdateError(f"restore-loss marker could not be retained: {incident['backup']}")
+        _write_restore_loss_resolution(
+            incident, incident["marker_bytes"], current_backup, current_state
+        )
+
+
+def inspect_prior_restore_losses(home, current_state):
+    """Read-only dry-run check for historical losses; it never writes a marker."""
+    incidents, _ = _discover_restore_loss_incidents(home, persist_markers=False)
+    for incident in incidents:
+        try:
+            compare_restore_states(incident["prequit"], current_state, incident["backup"],
+                                   post_path=current_state["snapshot_root"])
+        except UpdateError as error:
+            raise _prior_restore_loss_error(incident) from error
+    return len(incidents)
+
+
+def _record_blocked_before_quit(backup, run_id, current_state, status="blocked-before-quit"):
+    record = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "status": status,
+        "prequit_sha256": _restore_snapshot_fingerprint(current_state),
+    }
+    _write_update_marker(
+        backup / RESTORE_GUARD_BLOCKED_MARKER, record, "pre-quit blocked marker"
+    )
+
+
 def ensure_profiles_unchanged(before, home):
     for source, manifest in before.items():
         allowed = state_socket_paths(source, home)
@@ -446,10 +1533,11 @@ def ensure_profiles_unchanged(before, home):
                 f"RustV1 profile changed during the update: {source}")
 
 
-def ask_for_normal_quit(wait_seconds):
+def ask_for_normal_quit(wait_seconds, prequit_snapshot):
     print(
         f"Quit Chau7 normally with Cmd+Q. This updater will wait up to {wait_seconds} "
-        "seconds and will never send a quit or process signal.",
+        "seconds and will never send a quit or process signal. The pre-quit restore "
+        f"snapshot is retained at {prequit_snapshot}.",
         flush=True,
     )
     deadline = time.monotonic() + wait_seconds
@@ -461,7 +1549,7 @@ def ask_for_normal_quit(wait_seconds):
         if remaining <= 0:
             raise UpdateError(
                 f"Chau7 is still running (PID {', '.join(map(str, pids))}); "
-                "no backup or app change was made."
+                f"no app change was made. Pre-quit restore snapshot: {prequit_snapshot}."
             )
         print(f"Waiting for normal quit; active Chau7 PID(s): {', '.join(map(str, pids))}", flush=True)
         time.sleep(min(2.0, remaining))
@@ -572,17 +1660,71 @@ def require_terminal():
 
 def apply_update(candidate, receipt_path, expected_sha, wait_seconds, info, home):
     require_terminal()
-    ask_for_normal_quit(wait_seconds)
-    lock_file = acquire_instance_lock(home)
+    roots = state_roots(home)
+    run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + str(os.getpid()) + "-" + uuid.uuid4().hex[:8]
+    backup = create_backup_directory(home, run_id)
+    try:
+        canonical_restore_root = plain_path(
+            home / STATE_RELATIVES[0], "RustV1 restore state root", must_exist=False
+        )
+        require(canonical_restore_root.is_dir(),
+                f"canonical RustV1 restore state root is missing; no quit was requested: "
+                f"{canonical_restore_root}")
+        prequit = capture_prequit_restore(canonical_restore_root, backup, home)
+    except UpdateError as error:
+        raise UpdateError(
+            f"{error}. No quit was requested. The updater backup directory is retained at {backup}."
+        ) from error
+    try:
+        require_prior_restore_losses_resolved(home, prequit, backup)
+    except UpdateError as error:
+        try:
+            _record_blocked_before_quit(backup, run_id, prequit)
+        except UpdateError as marker_error:
+            raise UpdateError(
+                f"{error} No quit was requested. The current pre-quit capture remains at "
+                f"{prequit['prequit_root']}; recording its blocked status also failed: "
+                f"{marker_error}."
+            ) from error
+        raise UpdateError(
+            f"{error} No quit was requested. Current pre-quit capture retained at "
+            f"{prequit['prequit_root']}."
+        ) from error
+    print(f"Pre-quit restore snapshot: {prequit['prequit_root']}", flush=True)
+    print(f"Pre-quit restore guard: {prequit['prequit_manifest']}", flush=True)
+    try:
+        ask_for_normal_quit(wait_seconds, prequit["prequit_root"])
+    except UpdateError as error:
+        try:
+            _write_restore_loss_marker(backup, run_id, prequit)
+        except UpdateError as marker_error:
+            raise UpdateError(
+                f"{error} Quit timing is ambiguous because a normal shutdown could complete "
+                f"after timeout. Pre-quit snapshot: {prequit['prequit_root']}; recording "
+                f"ambiguous status failed: {marker_error}."
+            ) from error
+        raise UpdateError(
+            f"{error} Quit timing is ambiguous because a normal shutdown could complete after "
+            f"timeout. The updater retained an unresolved restore check at {backup}; any retry "
+            f"will compare the current saved session with the pre-quit snapshot at "
+            f"{prequit['prequit_root']}. No app replacement occurred."
+        ) from error
+    try:
+        lock_file = acquire_instance_lock(home)
+    except UpdateError as error:
+        raise UpdateError(
+            f"{error} Pre-quit restore snapshot is retained at {prequit['prequit_root']}."
+        ) from error
     try:
         require(not active_application_pids(),
-                "Chau7 reopened after quit; no backup or app change was made.")
-        perform_update_locked(candidate, receipt_path, expected_sha, info, home)
+                f"Chau7 reopened after quit; no app replacement occurred. "
+                f"Pre-quit restore snapshot: {prequit['prequit_root']}.")
+        perform_update_locked(candidate, receipt_path, expected_sha, info, home, backup, prequit, run_id)
     finally:
         lock_file.close()
 
 
-def perform_update_locked(candidate, receipt_path, expected_sha, info, home):
+def perform_update_locked(candidate, receipt_path, expected_sha, info, home, backup, prequit, run_id):
     # The Rust lifetime flock stays held through verification and replacement.
     # Revalidate every source and target after the wait, before creating backups.
     candidate = plain_path(candidate, "candidate app")
@@ -592,11 +1734,29 @@ def perform_update_locked(candidate, receipt_path, expected_sha, info, home):
     installed_info = validate_installed_production(APP_DESTINATION)
     roots = state_roots(home)
     require(not active_application_pids(),
-            "Chau7 reopened after quit; no backup or app change was made.")
+            "Chau7 reopened after quit; no app replacement occurred.")
 
-    run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + str(os.getpid()) + "-" + uuid.uuid4().hex[:8]
-    backup = create_backup_directory(home, run_id)
     state_before = snapshot_state(roots, backup, home)
+    postquit = read_restore_state(
+        backup / "state" / STATE_RELATIVES[0], "post-quit Rust restore state"
+    )
+    try:
+        compare_restore_states(prequit, postquit, backup)
+    except UpdateError as error:
+        try:
+            _, marker_hash = _write_restore_loss_marker(
+                backup, run_id, prequit, postquit
+            )
+        except UpdateError as marker_error:
+            raise UpdateError(
+                f"{error} Could not publish the sticky retry guard ({marker_error}); the "
+                f"complete pre/post snapshots remain in {backup} for historical discovery."
+            ) from error
+        raise UpdateError(
+            f"{error} Sticky unresolved-loss record: {backup / RESTORE_LOSS_MARKER} "
+            f"(sha256 {marker_hash}). A later update will remain blocked until a verified "
+            "saved session contains this complete pre-quit snapshot."
+        ) from error
 
     previous_copy = backup / "previous" / "Chau7.app"
     previous_copy.parent.mkdir(mode=0o700)
@@ -634,11 +1794,24 @@ def perform_update_locked(candidate, receipt_path, expected_sha, info, home):
         verify_new_bundle, validate_installed_production,
     )
 
+    try:
+        _write_update_complete_marker(backup, run_id, prequit, postquit, installed_result)
+    except UpdateError as error:
+        # The validated previous bundle is legacy evidence that restore comparison
+        # passed, so a marker-write failure cannot turn this successful install into
+        # a future false-positive data-loss incident.
+        print(
+            f"warning: update installed, but its completion marker could not be written: {error}",
+            file=sys.stderr,
+            flush=True,
+        )
+
     print(f"Installed production Rust build {installed_result['buildNumber']} "
           f"from {installed_result['sourceRevision']}.")
     print(f"Previous app backup: {previous_copy}")
     print(f"Rollback app retained: {rollback}")
     print(f"RustV1 profile snapshots: {backup / 'state'}")
+    print(f"Pre-quit restore snapshot: {prequit['prequit_root']}")
     for source_path, manifest in state_before.items():
         for relative in state_socket_paths(source_path, home):
             entry = manifest.get(relative.as_posix())
@@ -691,7 +1864,7 @@ def make_parser():
     parser.add_argument("--expected-sha", required=True, help="full clean source commit SHA")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="validate and report without writing")
-    mode.add_argument("--apply", action="store_true", help="wait for normal quit, back up, and install")
+    mode.add_argument("--apply", action="store_true", help="snapshot restore state, wait for normal quit, verify and install")
     parser.add_argument("--wait-seconds", type=int, default=600,
                         help="maximum normal-quit wait (1-3600, default 600)")
     return parser
@@ -730,6 +1903,25 @@ def main(argv=None):
             print(f"  {root}")
         print("Active Chau7 PID(s): " + (", ".join(map(str, active_pids)) if active_pids else "none"))
         if args.dry_run:
+            state_root = plain_path(
+                home / STATE_RELATIVES[0], "RustV1 restore state root", must_exist=False
+            )
+            current_state = read_restore_state(state_root, "live Rust restore state")
+            current_state["snapshot_root"] = state_root
+            try:
+                recovered_count = inspect_prior_restore_losses(home, current_state)
+            except UpdateError:
+                print("Candidate status: verified; restore recovery is still required.",
+                      file=sys.stderr)
+                raise
+            if recovered_count:
+                print(
+                    f"Read-only restore check: the current saved session contains "
+                    f"{recovered_count} previously lost snapshot(s); --apply will record "
+                    "that recovery before requesting a normal quit."
+                )
+            else:
+                print("Read-only restore check: no unresolved historical save loss was found.")
             print("Dry run only: no files or app state were changed.")
             print("For installation, run this command in Terminal with --apply.")
             return 0

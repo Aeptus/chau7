@@ -1,6 +1,6 @@
 module github.com/chau7/chau7-remote
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/coder/websocket v1.8.15
