@@ -6,6 +6,7 @@
   },
   "type": "module",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "format:check": "prettier --check 'src/**/*.{js,json}'",
     "format:write": "prettier --write 'src/**/*.{js,json}'",
     "build": "wrangler deploy --dry-run",
