@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Coalesce toolbar sizing after window resize bursts and skip unchanged AppKit
+  constraint updates.
+
 - Defer the Rust app's final restore capture until the active window update has
   unwound, and keep the app running when a complete snapshot cannot be queued.
 - Snapshot and compare restore state around production updates, retain unresolved

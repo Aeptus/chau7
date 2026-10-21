@@ -43,6 +43,17 @@ enum OverlayLayout {
 /// records the thread it already runs on.
 @MainActor
 final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
+    private struct AppliedToolbarSizing {
+        let itemID: ObjectIdentifier
+        let minSize: NSSize
+        let maxSize: NSSize
+    }
+
+    private struct PendingSizingUpdate {
+        let generation: UUID
+        let workItem: DispatchWorkItem
+    }
+
     static let shared = TabBarToolbarDelegate()
 
     private static let tabBarItemIdentifier = NSToolbarItem.Identifier("TabBarItem")
@@ -54,6 +65,10 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
     /// Cached hosting views to prevent recreation on toolbar reload.
     /// This is critical for stability - macOS may request toolbar items multiple times.
     private var cachedHostingViews: [NSToolbar.Identifier: TabBarHostingView] = [:]
+    private var appliedSizingByToolbar: [NSToolbar.Identifier: AppliedToolbarSizing] = [:]
+    /// Resize notifications arrive during AppKit layout. Keep only the latest
+    /// metrics and apply them after the resize burst settles.
+    private var pendingSizingUpdates: [NSToolbar.Identifier: PendingSizingUpdate] = [:]
 
     override private init() {
         super.init()
@@ -63,6 +78,8 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         tabsModels[toolbarIdentifier] = model
         // Invalidate cached view when model changes
         cachedHostingViews.removeValue(forKey: toolbarIdentifier)
+        appliedSizingByToolbar.removeValue(forKey: toolbarIdentifier)
+        pendingSizingUpdates.removeValue(forKey: toolbarIdentifier)?.workItem.cancel()
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
@@ -78,7 +95,7 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         if let cachedView = cachedHostingViews[toolbar.identifier] {
             Log.info("TabBarToolbarDelegate: reusing cached hosting view for \(toolbar.identifier)")
             item.view = cachedView
-            applySizing(to: item, model: tabsModel)
+            applySizing(to: item, model: tabsModel, toolbarIdentifier: toolbar.identifier)
             return item
         }
 
@@ -97,7 +114,7 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         // Cache for future requests
         cachedHostingViews[toolbar.identifier] = hostingView
         item.view = hostingView
-        applySizing(to: item, model: tabsModel)
+        applySizing(to: item, model: tabsModel, toolbarIdentifier: toolbar.identifier)
 
         return item
     }
@@ -133,6 +150,8 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         window.toolbar = nil
         cachedHostingViews.removeValue(forKey: toolbarID)
         toolbarItems.removeValue(forKey: toolbarID)
+        appliedSizingByToolbar.removeValue(forKey: toolbarID)
+        pendingSizingUpdates.removeValue(forKey: toolbarID)?.workItem.cancel()
 
         // 2. Create a fresh toolbar - macOS will call our delegate to make a new NSHostingView
         let newToolbar = NSToolbar(identifier: toolbarID)
@@ -153,9 +172,24 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
     func updateToolbarItemSizing(for window: NSWindow) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let toolbar = window.toolbar else { return }
-        guard let item = toolbarItems[toolbar.identifier] else { return }
-        let model = tabsModels[toolbar.identifier]
-        applySizing(to: item, model: model)
+        let identifier = toolbar.identifier
+        guard toolbarItems[identifier] != nil else { return }
+
+        let generation = UUID()
+        let workItem = DispatchWorkItem { [weak self, weak window] in
+            guard let self,
+                  pendingSizingUpdates[identifier]?.generation == generation else { return }
+            pendingSizingUpdates.removeValue(forKey: identifier)
+            guard let window,
+                  let currentToolbar = window.toolbar,
+                  currentToolbar.identifier == identifier,
+                  let item = toolbarItems[identifier] else { return }
+            applySizing(to: item, model: tabsModels[identifier], toolbarIdentifier: identifier)
+        }
+
+        pendingSizingUpdates[identifier]?.workItem.cancel()
+        pendingSizingUpdates[identifier] = PendingSizingUpdate(generation: generation, workItem: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: workItem)
     }
 
     /// Checks if the hosting view has a valid visible frame. Calls `onCollapsed` if the
@@ -171,7 +205,11 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         }
     }
 
-    private func applySizing(to item: NSToolbarItem, model: OverlayTabsModel?) {
+    private func applySizing(
+        to item: NSToolbarItem,
+        model: OverlayTabsModel?,
+        toolbarIdentifier: NSToolbar.Identifier
+    ) {
         let minWidth = max(180, CGFloat(model?.tabs.count ?? 1) * 30)
         let maxWidth: CGFloat
         let height: CGFloat
@@ -189,11 +227,13 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
             maxWidth = max(800, minWidth)
             height = OverlayLayout.tabBarHeight
         }
-        if !maxWidth.isFinite || !height.isFinite || maxWidth <= 0 || height <= 0 {
+        guard minWidth.isFinite, maxWidth.isFinite, height.isFinite,
+              minWidth > 0, maxWidth >= minWidth, height > 0 else {
             Log
                 .warn(
                     "TabBarToolbarDelegate.applySizing: invalid toolbar metrics. model=\(model != nil ? "present" : "nil"), minWidth=\(Int(minWidth)), maxWidth=\(Int(maxWidth)), height=\(Int(height))"
                 )
+            return
         }
 
         // NSToolbarItem allocates space for a custom view from minSize/maxSize.
@@ -212,26 +252,59 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         // back, because the watchdog's only remedy is the recreate that caused
         // it. Set these before the view guard so the item is sized even when
         // the view is missing or of an unexpected type.
-        item.setValue(NSValue(size: NSSize(width: minWidth, height: height)), forKey: "minSize")
-        item.setValue(NSValue(size: NSSize(width: maxWidth, height: height)), forKey: "maxSize")
+        var sizingChanged = false
+        let minSize = NSSize(width: minWidth, height: height)
+        let maxSize = NSSize(width: maxWidth, height: height)
+        let itemID = ObjectIdentifier(item)
+        let previouslyApplied = appliedSizingByToolbar[toolbarIdentifier]
+        let isSameItem = previouslyApplied?.itemID == itemID
+        if !isSameItem || previouslyApplied?.minSize != minSize {
+            item.setValue(NSValue(size: minSize), forKey: "minSize")
+            sizingChanged = true
+        }
+        if !isSameItem || previouslyApplied?.maxSize != maxSize {
+            item.setValue(NSValue(size: maxSize), forKey: "maxSize")
+            sizingChanged = true
+        }
+        appliedSizingByToolbar[toolbarIdentifier] = AppliedToolbarSizing(
+            itemID: itemID,
+            minSize: minSize,
+            maxSize: maxSize
+        )
 
         guard let view = item.view as? TabBarHostingView else { return }
-        view.desiredSize = NSSize(width: maxWidth, height: height)
+        let desiredSize = NSSize(width: maxWidth, height: height)
+        if view.desiredSize != desiredSize {
+            view.desiredSize = desiredSize
+            sizingChanged = true
+        }
 
         if view.translatesAutoresizingMaskIntoConstraints {
             view.translatesAutoresizingMaskIntoConstraints = false
+            sizingChanged = true
         }
 
         if let minConstraint = view.minWidthConstraint,
            let maxConstraint = view.maxWidthConstraint,
            let heightConstraint = view.heightConstraint {
-            minConstraint.constant = minWidth
-            maxConstraint.constant = maxWidth
-            heightConstraint.constant = height
-            logAndScheduleSizingDiagnostic(
-                window: model?.overlayWindow, view: view,
-                minWidth: minWidth, maxWidth: maxWidth, height: height
-            )
+            if minConstraint.constant != minWidth {
+                minConstraint.constant = minWidth
+                sizingChanged = true
+            }
+            if maxConstraint.constant != maxWidth {
+                maxConstraint.constant = maxWidth
+                sizingChanged = true
+            }
+            if heightConstraint.constant != height {
+                heightConstraint.constant = height
+                sizingChanged = true
+            }
+            if sizingChanged {
+                logAndScheduleSizingDiagnostic(
+                    window: model?.overlayWindow, view: view,
+                    minWidth: minWidth, maxWidth: maxWidth, height: height
+                )
+            }
             return
         }
 
@@ -243,28 +316,22 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         view.heightConstraint = heightConstraint
         NSLayoutConstraint.activate([minConstraint, maxConstraint, heightConstraint])
 
-        logAndScheduleSizingDiagnostic(
-            window: model?.overlayWindow, view: view,
-            minWidth: minWidth, maxWidth: maxWidth, height: height
-        )
+        if sizingChanged {
+            logAndScheduleSizingDiagnostic(
+                window: model?.overlayWindow, view: view,
+                minWidth: minWidth, maxWidth: maxWidth, height: height
+            )
+        }
     }
 
     private func logAndScheduleSizingDiagnostic(
         window: NSWindow?, view: TabBarHostingView,
         minWidth: CGFloat, maxWidth: CGFloat, height: CGFloat
     ) {
-        logSizingDiagnostic(
-            window: window, view: view,
-            minWidth: minWidth, maxWidth: maxWidth, height: height,
-            phase: "sync"
-        )
         let now = CFAbsoluteTimeGetCurrent()
         guard now - lastSizingDiagnosticScheduleAt >= 0.5 else { return }
         lastSizingDiagnosticScheduleAt = now
-        // Re-sample after AppKit has had a chance to lay out the toolbar.
-        // The synchronous log above captures the pre-layout state (viewFrame
-        // is whatever AppKit had before our constraint changes settled);
-        // this delayed sample shows what the hosting view actually became.
+        // Sample only after AppKit has completed its current layout pass.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak view, weak window] in
             guard let view else { return }
             self.logSizingDiagnostic(
