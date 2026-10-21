@@ -63,31 +63,38 @@ pub(crate) fn submit(
     keep: HashSet<u64>,
     terminating: bool,
     cx: &App,
-) {
+) -> bool {
     let Some(service) = cx.try_global::<Service>() else {
-        return;
+        log::warn!("Cannot queue restore capture: restore writer is unavailable");
+        return false;
     };
     let Some(queue) = &service.queue else {
-        return;
+        log::warn!("Cannot queue restore capture: restore writer did not start");
+        return false;
     };
     let contexts = service
         .buffers
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .snapshot();
-    if matches!(
-        queue.submit(
-            Request {
-                session,
-                contexts,
-                keep,
-                terminating
-            },
-            terminating
-        ),
-        SubmitResult::Closed | SubmitResult::FinalAlreadyQueued
+    match queue.submit(
+        Request {
+            session,
+            contexts,
+            keep,
+            terminating,
+        },
+        terminating,
     ) {
-        log::warn!("Restore capture rejected after final shutdown capture");
+        SubmitResult::Queued | SubmitResult::Coalesced => true,
+        SubmitResult::Closed => {
+            log::warn!("Restore capture rejected because the writer is closed");
+            false
+        }
+        SubmitResult::FinalAlreadyQueued => {
+            log::debug!("Restore final capture was already queued");
+            false
+        }
     }
 }
 pub(crate) fn shutdown(cx: &mut App) -> Option<JoinHandle<WriterStats>> {
