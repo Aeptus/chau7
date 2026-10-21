@@ -490,17 +490,13 @@ class ProductionUpdaterTests(unittest.TestCase):
         tab_uuid = "00000000-0000-0000-0000-000000000013"
         original = self.saved_tab(tab_uuid, 23, "history-session")
         original["panes"][0]["input_history"] = ["pwd", "git status"]
-        state, _, _ = self.write_restore_state(
-            [self.saved_window(original)], "10000000-0000-0000-0000-000000000023"
-        )
+        state, _, _ = self.write_restore_state([self.saved_window(original)], "10000000-0000-0000-0000-000000000023")
         backup = self.new_run_backup()
         prequit = CORE.capture_prequit_restore(state, backup, self.root)
 
         after_quit = self.saved_tab(tab_uuid, 23, "history-session")
         after_quit["panes"][0]["input_history"] = ["pwd"]
-        self.write_restore_state(
-            [self.saved_window(after_quit)], "10000000-0000-0000-0000-000000000024"
-        )
+        self.write_restore_state([self.saved_window(after_quit)], "10000000-0000-0000-0000-000000000024")
         CORE.snapshot_state([state], backup, self.root)
         postquit = CORE.read_restore_state(backup / "state" / CORE.STATE_RELATIVES[0])
 

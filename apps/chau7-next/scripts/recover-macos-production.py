@@ -541,8 +541,7 @@ def _compare_preserved_object(original, actual, fill_fields, ignored_fields, lab
                     f"{label} has invalid command history",
                 )
                 CORE.require(
-                    len(old_history) <= len(new_history)
-                    and new_history[: len(old_history)] == old_history,
+                    len(old_history) <= len(new_history) and new_history[: len(old_history)] == old_history,
                     f"{label} command history changed during recovery",
                 )
                 continue
