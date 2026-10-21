@@ -113,23 +113,55 @@ final class TabBarToolbarSizingTests: XCTestCase {
     }
 
     /// Sizing is applied before the hosting-view guard, so an item whose view
-    /// is missing or of an unexpected type still gets a usable allocation
-    /// rather than collapsing the bar.
-    func testSizingIsAppliedIndependentlyOfTheHostedView() throws {
+    /// is unexpected still gets an allocation after a resize settles.
+    func testSizingIsAppliedIndependentlyOfTheHostedViewAfterResizeSettles() async throws {
         let item = try makeTabBarItem()
         item.view = NSView(frame: .zero)
-        // Clear the allocation so the assertion below can only pass if this
-        // sizing pass rewrote it, not because item creation had already.
-        item.setValue(NSValue(size: .zero), forKey: "minSize")
-        item.setValue(NSValue(size: .zero), forKey: "maxSize")
 
-        let window = NSWindow()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 600),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        tabsModel.overlayWindow = window
         window.toolbar = toolbar
         TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
 
         XCTAssertEqual(
-            size(of: item, forKey: "minSize"),
-            NSSize(width: 180, height: OverlayLayout.tabBarHeight)
+            size(of: item, forKey: "maxSize")?.width,
+            800,
+            "Resize sizing must wait until AppKit's layout pass settles"
         )
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(window.contentLayoutRect.width, 1000)
+        XCTAssertEqual(size(of: item, forKey: "maxSize")?.width, 1000)
+    }
+
+    func testResizeSizingIsCoalescedAndUsesLatestWindowMetrics() async throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 600),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        tabsModel.overlayWindow = window
+        let item = try makeTabBarItem()
+        window.toolbar = toolbar
+
+        window.setFrame(NSRect(x: 0, y: 0, width: 1200, height: 600), display: false)
+        TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
+        window.setFrame(NSRect(x: 0, y: 0, width: 1600, height: 600), display: false)
+        TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
+        XCTAssertEqual(
+            size(of: item, forKey: "maxSize")?.width,
+            1000,
+            "Resize callbacks should not synchronously mutate toolbar sizing"
+        )
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(window.contentLayoutRect.width, 1600)
+        XCTAssertEqual(tabsModel.overlayWindow?.contentLayoutRect.width, 1600)
+        XCTAssertEqual(size(of: item, forKey: "minSize")?.width, 180)
+        XCTAssertEqual(size(of: item, forKey: "maxSize")?.width, 1600)
     }
 }
