@@ -606,8 +606,8 @@ pub fn open_window_for_transfer(
 
 /// Save the open windows. Hidden windows are not saved; at quit with no
 /// visible window the saved state is cleared (`saveAllWindowStates`).
-pub(crate) fn save_session(cx: &mut App, terminating: bool) {
-    capture_session(cx, terminating, false);
+pub(crate) fn save_session(cx: &mut App, terminating: bool) -> bool {
+    capture_session(cx, terminating, false)
 }
 
 /// Commit an explicit terminal-window close, including closing the last one.
@@ -623,25 +623,51 @@ pub(crate) fn save_after_terminal_window_close(cx: &mut App) {
     }
 }
 
-fn capture_session(cx: &mut App, terminating: bool, clear_empty: bool) {
+fn capture_session(cx: &mut App, terminating: bool, clear_empty: bool) -> bool {
+    let known_workspaces = cx
+        .global::<AppData>()
+        .workspaces
+        .iter()
+        .filter(|(_, workspace)| workspace.upgrade().is_some())
+        .count();
+    let workspaces = AppData::live(cx);
+    if workspaces.len() != known_workspaces {
+        log::warn!("Cannot capture every session window; keeping the prior restore snapshot");
+        return false;
+    }
+
     let mut windows = Vec::new();
-    for (handle, ws) in AppData::live(cx) {
-        let snapshot = handle.update(cx, |_, window, cx| ws.read(cx).snapshot(window, cx));
-        if let Ok(mut snapshot) = snapshot {
-            session_store::apply_position_reset(&mut snapshot);
-            windows.push(snapshot);
-        }
+    for (handle, workspace) in &workspaces {
+        let snapshot = match handle
+            .update(cx, |_, window, cx| workspace.read(cx).snapshot(window, cx))
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                log::warn!(
+                    "Cannot capture every session window; keeping the prior restore snapshot: {error}"
+                );
+                return false;
+            }
+        };
+        let mut snapshot = snapshot;
+        session_store::apply_position_reset(&mut snapshot);
+        windows.push(snapshot);
     }
     // Closed tabs keep their scrollback for Reopen Closed Tab.
-    let closed_panes: Vec<_> = AppData::live(cx)
+    let closed_panes: Vec<_> = workspaces
         .iter()
-        .flat_map(|(_, ws)| ws.read(cx).closed_scrollback_panes())
+        .flat_map(|(_, workspace)| workspace.read(cx).closed_scrollback_panes())
         .collect();
     if windows.is_empty() {
         if terminating || clear_empty {
-            restore::writer::submit(None, closed_panes.into_iter().collect(), terminating, cx);
+            return restore::writer::submit(
+                None,
+                closed_panes.into_iter().collect(),
+                terminating,
+                cx,
+            );
         }
-        return;
+        return true;
     }
     // Scrollback files of panes that are gone are deleted after the save.
     let keep: std::collections::HashSet<_> = windows
@@ -660,7 +686,7 @@ fn capture_session(cx: &mut App, terminating: bool, clear_empty: bool) {
         keep,
         terminating,
         cx,
-    );
+    )
 }
 
 pub(crate) const DEFAULT_CONFIG: &str = r#"# Chau7 Next settings. Same format as the Chau7 config.toml.

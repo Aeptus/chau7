@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Defer the Rust app's final restore capture until the active window update has
+  unwound, and keep the app running when a complete snapshot cannot be queued.
+- Snapshot and compare restore state around production updates, retain unresolved
+  restore-loss incidents, and add an offline recovery helper for preserved tabs.
+
 - Record screen safe areas in isolated fullscreen checks and distinguish forced
   menu visibility from pointer-driven reveal, with explicit focus validation.
 
