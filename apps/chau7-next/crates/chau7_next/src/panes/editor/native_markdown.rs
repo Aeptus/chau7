@@ -673,7 +673,7 @@ define_class!(
             #[cfg(feature = "native-parity-fixture")]
             {
                 // A fixture may inject only its owned private board. Read the
-                // same public plain-text flavor the Swift editor accepts.
+                // same public plain-text flavor used for terminal selections.
                 let pasteboard = self.ivars().fixture_pasteboard.borrow().clone();
                 if let Some(pasteboard) = pasteboard
                     && let Some(text) = pasteboard.stringForType(
@@ -953,7 +953,7 @@ impl SourceTextView {
         else {
             return false;
         };
-        // Match the Swift side-panel editor: terminal selections paste as
+        // Terminal selections paste as
         // literal text, without adding a Markdown wrapper or boundary lines.
         self.insert(&selection.plain_text, self.selectedRange());
         true

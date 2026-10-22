@@ -984,7 +984,7 @@ fn verify_private_terminal_pasteboard(
 
         // Replace a two-unit emoji between surrounding text. The source view's
         // paste: selector reads only its injected public plain-text flavor, so
-        // the result matches the Swift side-panel editor without added fences.
+        // the result preserves selection text without injected Markdown fences.
         let original_document = "A🙂B";
         let selection_bytes = 1..5;
         let expected_document = format!(
