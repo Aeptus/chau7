@@ -672,15 +672,17 @@ define_class!(
 
             #[cfg(feature = "native-parity-fixture")]
             {
-                // A fixture may inject only its owned private board. Read the
-                // same public plain-text flavor used for terminal selections.
+                // A fixture may inject only its owned private board. Decode
+                // the same private selection flavor used by the production
+                // paste path.
                 let pasteboard = self.ivars().fixture_pasteboard.borrow().clone();
                 if let Some(pasteboard) = pasteboard
-                    && let Some(text) = pasteboard.stringForType(
-                        &crate::platform::rich_clipboard::fixture_plain_text_type(),
-                    )
+                    && let Some(json) =
+                        crate::platform::rich_clipboard::read_terminal_selection_from_fixture_pasteboard(
+                            &pasteboard,
+                        )
+                    && self.paste_terminal_plain_text_json(&json)
                 {
-                    self.insert(&text.to_string(), self.selectedRange());
                     return;
                 }
             }
