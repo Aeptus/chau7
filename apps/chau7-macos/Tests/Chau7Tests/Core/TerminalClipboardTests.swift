@@ -5,43 +5,50 @@ final class TerminalClipboardTests: XCTestCase {
     func testNormalCopyPreservesMultilineTextExactly() {
         let text = "  echo hello\r\n    --flag  value\n"
         XCTAssertEqual(TerminalClipboard.copiedText(text, fromTUI: false), text)
-        XCTAssertEqual(TerminalClipboard.copiedText(text, fromTUI: true), "echo hello --flag  value")
+        XCTAssertEqual(TerminalClipboard.copiedText(text, fromTUI: true), text)
     }
 
-    func testHardWrappedCommandLosesScreenIndentation() {
-        XCTAssertEqual(TerminalClipboard.singleLine("echo hello-world\n    --flag value"), "echo hello-world --flag value")
+    func testHardWrappedCommandPreservesExplicitLineBreaks() {
+        let text = "echo hello-world\n    --flag value"
+        XCTAssertEqual(TerminalClipboard.copiedText(text, fromTUI: true), text)
     }
 
-    func testCRLFAndBlankDisplayRowsBecomeOneSeparator() {
-        XCTAssertEqual(TerminalClipboard.singleLine("  git status\r\n\r\n  --short  "), "git status --short")
+    func testCRLFAndBlankDisplayRowsArePreserved() {
+        let text = "  git status\r\n\r\n  --short  "
+        XCTAssertEqual(TerminalClipboard.copiedText(text, fromTUI: true), text)
     }
 
     func testQuotedAndInteriorWhitespaceIsPreserved() {
-        XCTAssertEqual(TerminalClipboard.singleLine("printf 'a  b'\n    --flag  value"), "printf 'a  b' --flag  value")
-        XCTAssertEqual(TerminalClipboard.singleLine("echo '\tvalue'"), "echo '\tvalue'")
+        let text = "printf 'a  b'\n    --flag  value"
+        XCTAssertEqual(TerminalClipboard.copiedText(text, fromTUI: true), text)
+        XCTAssertEqual(TerminalClipboard.copiedText("echo '\tvalue'", fromTUI: true), "echo '\tvalue'")
     }
 
-    func testUnicodeAndEmptySelections() {
-        XCTAssertEqual(TerminalClipboard.singleLine("echo café\u{2028}    😀"), "echo café 😀")
-        XCTAssertEqual(TerminalClipboard.singleLine("\r\n  \t"), "")
+    func testUnicodeAndEmptySelectionsArePreserved() {
+        let text = "echo café\u{2028}    😀"
+        XCTAssertEqual(TerminalClipboard.copiedText(text, fromTUI: true), text)
+        XCTAssertEqual(TerminalClipboard.copiedText("\r\n  \t", fromTUI: true), "\r\n  \t")
     }
 
-    func testHardWrapInsideLongTokenDoesNotInsertSpace() {
+    func testHardWrapInsideLongTokenPreservesSelectionBytes() {
         for separator in ["\n", "\r\n", "\r", "\u{2028}"] {
-            XCTAssertEqual(TerminalClipboard.singleLine("cat /tmp/verylongpa" + separator + "th/file.md"), "cat /tmp/verylongpath/file.md")
-            XCTAssertEqual(TerminalClipboard.singleLine("curl https://example.com/verylong" + separator + "path"), "curl https://example.com/verylongpath")
+            let path = "cat /tmp/verylongpa" + separator + "th/file.md"
+            let url = "curl https://example.com/verylong" + separator + "path"
+            XCTAssertEqual(TerminalClipboard.copiedText(path, fromTUI: true), path)
+            XCTAssertEqual(TerminalClipboard.copiedText(url, fromTUI: true), url)
         }
     }
 
-    func testWhitespaceAtEitherBoundarySeparatesArguments() {
-        XCTAssertEqual(TerminalClipboard.singleLine("echo hello \nworld"), "echo hello world")
-        XCTAssertEqual(TerminalClipboard.singleLine("echo hello\n    world"), "echo hello world")
-        XCTAssertEqual(TerminalClipboard.singleLine("echo hello\t\nworld"), "echo hello world")
+    func testWhitespaceAtEitherBoundaryIsPreserved() {
+        for text in ["echo hello \nworld", "echo hello\n    world", "echo hello\t\nworld"] {
+            XCTAssertEqual(TerminalClipboard.copiedText(text, fromTUI: true), text)
+        }
     }
 
-    func testBlankRowsSeparateContentWhileAdjacentTokenRowsJoin() {
-        XCTAssertEqual(TerminalClipboard.singleLine("first\n\nsecond"), "first second")
-        XCTAssertEqual(TerminalClipboard.singleLine("first\r\nsecond"), "firstsecond")
+    func testBlankRowsDoNotJoinAdjacentText() {
+        for text in ["first\n\nsecond", "first\r\nsecond"] {
+            XCTAssertEqual(TerminalClipboard.copiedText(text, fromTUI: true), text)
+        }
     }
 
     func testGridCopyPreservesIndentationAndHardLineBreaks() {

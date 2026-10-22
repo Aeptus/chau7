@@ -665,22 +665,22 @@ define_class!(
         fn paste(&self, sender: Option<&AnyObject>) {
             #[cfg(not(any(test, feature = "native-parity-fixture")))]
             if let Some(json) = crate::platform::rich_clipboard::read_terminal_selection_json()
-                && self.paste_styled_terminal_json(&json)
+                && self.paste_terminal_plain_text_json(&json)
             {
                 return;
             }
 
             #[cfg(feature = "native-parity-fixture")]
             {
-                // A fixture may inject only its owned private board. If none is
-                // present, this selector is deliberately a no-op: it never
-                // falls back to the user's general clipboard.
+                // A fixture may inject only its owned private board. Read the
+                // same public plain-text flavor the Swift editor accepts.
                 let pasteboard = self.ivars().fixture_pasteboard.borrow().clone();
                 if let Some(pasteboard) = pasteboard
-                    && let Some(json) = crate::platform::rich_clipboard::
-                        read_terminal_selection_from_fixture_pasteboard(&pasteboard)
-                    && self.paste_styled_terminal_json(&json)
+                    && let Some(text) = pasteboard.stringForType(
+                        &crate::platform::rich_clipboard::fixture_plain_text_type(),
+                    )
                 {
+                    self.insert(&text.to_string(), self.selectedRange());
                     return;
                 }
             }
@@ -947,28 +947,15 @@ impl SourceTextView {
         }
     }
     #[cfg(any(not(test), feature = "native-parity-fixture"))]
-    fn paste_styled_terminal_json(&self, json: &str) -> bool {
+    fn paste_terminal_plain_text_json(&self, json: &str) -> bool {
         let Some(selection) =
             chau7_next_core::terminal_clipboard::StyledClipboardSelection::decode_json(json)
         else {
             return false;
         };
-        let Some(source) = selection.markdown_source() else {
-            return false;
-        };
-        let document = self.string().to_string();
-        let selected = self.selectedRange();
-        let start = utf16_to_byte(&document, selected.location);
-        let end = utf16_to_byte(&document, selected.location + selected.length);
-        let Some(insertion) = chau7_next_core::terminal_clipboard::place_markdown_block(
-            &document,
-            start..end,
-            &source,
-        ) else {
-            return false;
-        };
-        // One native replacement preserves undo and text-input behavior.
-        self.insert(&insertion, selected);
+        // Match the Swift side-panel editor: terminal selections paste as
+        // literal text, without adding a Markdown wrapper or boundary lines.
+        self.insert(&selection.plain_text, self.selectedRange());
         true
     }
 
