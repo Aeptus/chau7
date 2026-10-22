@@ -327,7 +327,7 @@ fn click_gpui_terminal_immediately(
     })
     .map_err(error)
 }
-fn verify_rich_terminal_source(
+fn verify_legacy_terminal_source(
     native: &NativeMarkdown,
     expected_source: &str,
     expected_block: &str,
@@ -336,27 +336,27 @@ fn verify_rich_terminal_source(
     let source = native.text.string().to_string();
     ensure(
         source == expected_source,
-        "native rich Markdown insertion changed the literal source",
+        "native legacy terminal block changed the literal source",
     )?;
     let document = native.shared.document.borrow();
     let block_start = source
         .find(expected_block)
-        .ok_or("native rich Markdown block was not found in the surrounding document")?;
+        .ok_or("native legacy terminal block was not found in the source")?;
     ensure(
         source[block_start + expected_block.len()..]
             .find(expected_block)
             .is_none(),
-        "native rich Markdown block appeared more than once",
+        "native legacy terminal block appeared more than once",
     )?;
     let block = chau7_next_core::terminal_clipboard::parse_markdown_block(&source, block_start)
-        .ok_or("native rich Markdown block did not parse")?;
+        .ok_or("native legacy terminal block did not parse")?;
     ensure(
         &source[block.body_range.clone()] == expected_literal,
-        "native rich Markdown body did not preserve its exact literal characters",
+        "native legacy terminal block did not preserve its exact literal characters",
     )?;
     ensure(
         document.hidden_terminal_ranges().len() == 2,
-        "native rich Markdown did not identify its two wrapper lines",
+        "native legacy terminal block did not identify its two wrapper lines",
     )?;
 
     let layout =
@@ -929,9 +929,6 @@ fn verify_private_terminal_pasteboard(
     let pasteboard = NSPasteboard::pasteboardWithUniqueName();
     let mut undo_for_cleanup = None;
     let result: Result<String, String> = (|| {
-        let rich_source = selection
-            .markdown_source()
-            .ok_or("native paste fixture could not create a rich Markdown block")?;
         let undo = native
             .undoManager()
             .ok_or("native paste fixture has no undo manager")?;
@@ -986,21 +983,14 @@ fn verify_private_terminal_pasteboard(
         )?;
 
         // Replace a two-unit emoji between surrounding text. The source view's
-        // actual paste: selector reads only its injected private board and runs
-        // the same JSON parser, block placement and NSTextView input API as the
-        // production path.
+        // paste: selector reads only its injected public plain-text flavor, so
+        // the result preserves selection text without injected Markdown fences.
         let original_document = "A🙂B";
         let selection_bytes = 1..5;
-        let insertion = chau7_next_core::terminal_clipboard::place_markdown_block(
-            original_document,
-            selection_bytes.clone(),
-            &rich_source,
-        )
-        .ok_or("native paste fixture could not place the rich Markdown block")?;
         let expected_document = format!(
             "{}{}{}",
             &original_document[..selection_bytes.start],
-            insertion,
+            selection.plain_text,
             &original_document[selection_bytes.end..],
         );
         native.setString(&NSString::from_str(original_document));
@@ -1019,23 +1009,23 @@ fn verify_private_terminal_pasteboard(
             }
             ensure(
                 native.string().to_string() == expected_document,
-                "paste: selector did not replace the Unicode range with exact rich Markdown",
+                "paste: selector did not replace the Unicode range with exact plain text",
             )
         };
         native.set_fixture_pasteboard(None);
         undo.endUndoGrouping();
         dispatch_result?;
-        ensure(undo.canUndo(), "rich native paste did not register undo")?;
+        ensure(undo.canUndo(), "plain native paste did not register undo")?;
         undo.undo();
         ensure(
             native.string().to_string() == original_document,
             "undo did not restore the replaced Unicode selection",
         )?;
-        ensure(undo.canRedo(), "rich native paste did not register redo")?;
+        ensure(undo.canRedo(), "plain native paste did not register redo")?;
         undo.redo();
         ensure(
             native.string().to_string() == expected_document,
-            "redo did not restore the exact rich Markdown source",
+            "redo did not restore the exact plain-text source",
         )?;
         Ok(expected_document)
     })();
@@ -1906,10 +1896,17 @@ pub(in crate::panes::editor) async fn verify(
     .ok_or("native glyph fixture selection was invalid")?;
     let rich_block = selection
         .markdown_source()
-        .ok_or("native paste fixture could not create the rich Markdown block")?;
+        .ok_or("native Markdown renderer fixture could not create a legacy styled block")?;
     let pasted_document = verify_private_terminal_pasteboard(&native.text, &selection)?;
     settle(handle, cx).await?;
-    verify_rich_terminal_source(&native, &pasted_document, &rich_block, literal)?;
+    ensure(
+        pasted_document == format!("A{}B", literal),
+        "native terminal paste added non-text source data or spacing",
+    )?;
+    native.text.setString(&NSString::from_str(&rich_block));
+    native.shared.changed(&native.text, true);
+    settle(handle, cx).await?;
+    verify_legacy_terminal_source(&native, &rich_block, &rich_block, literal)?;
     let native_drop_window_hits =
         verify_native_drop_window_hits(handle, &native_window, cx).await?;
 

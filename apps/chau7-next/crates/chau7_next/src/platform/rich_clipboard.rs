@@ -1,8 +1,9 @@
 //! Rich terminal selection flavors on the macOS general pasteboard.
 //!
-//! GPUI's clipboard item is plain text only. This small AppKit adapter writes
-//! that same text alongside standard HTML and a private, validated JSON flavor
-//! that the Markdown source editor can turn into durable Markdown.
+//! GPUI's clipboard item is plain text only. This AppKit adapter writes that
+//! text alongside standard HTML and a private, validated JSON flavor. Rich
+//! targets can use HTML; Chau7's Markdown editor reads only the JSON's exact
+//! plain text, matching the Swift editor's paste behavior.
 
 use chau7_next_core::terminal_clipboard::StyledClipboardSelection;
 

@@ -40,9 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Return keyboard focus from the native Markdown side panel to the terminal
   when clicking another pane, including after the editor surface remounts.
-- Keep line breaks, indentation, terminal colors, emphasis and links when
-  copying terminal selections into the Markdown side panel; preserve rich
-  blocks when saving and reopening the document.
+- Paste terminal selections into the Rust Markdown side panel as exact plain
+  text, preserving line breaks and indentation without injected Markdown
+  wrappers or boundary whitespace. Keep rich clipboard flavors available to
+  other consumers and continue rendering existing styled Markdown blocks.
 - Collapse native editor fragments that contain only hidden terminal metadata,
   including fragments containing just the wrapper line terminator.
 - Continue drag selection beyond terminal edges, retain the pointer column,
