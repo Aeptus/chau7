@@ -786,10 +786,15 @@ fn prune_archive(dir: &Path, now: SystemTime) {
                     .fold(meta.len(), |n, r| n.saturating_add(r.byte_count as u64))
             })
             .unwrap_or(meta.len());
-        if index >= ARCHIVE_KEEP
-            || old
-            || effective_bytes > MAX_MANIFEST_BYTES
-            || total.saturating_add(effective_bytes) > MAX_ARCHIVE_BYTES
+        // The newest archive is the last resort of restore: always kept.
+        // The per-file bound is Swift's `maximumArchiveFileBytes` and applies
+        // to the manifest; its scrollback sidecars only count toward the
+        // folder's total, or a large scrollback would delete every archive.
+        if index > 0
+            && (index >= ARCHIVE_KEEP
+                || old
+                || meta.len() > MAX_MANIFEST_BYTES
+                || total.saturating_add(effective_bytes) > MAX_ARCHIVE_BYTES)
         {
             let _ = std::fs::remove_file(path);
         } else {
@@ -1179,11 +1184,7 @@ mod tests {
         recover_resume_metadata(&mut base, &[backup], true);
         assert!(base.windows[0].tabs[0].panes[0].ai_provider.is_none());
     }
-    #[test]
-    fn oversized_archive_is_pruned_by_effective_context_bytes() {
-        let root = isolated_root();
-        let dir = root.tab_state_backups_dir().join("archive");
-        std::fs::create_dir_all(&dir).unwrap();
+    fn write_archive(dir: &Path, name: &str, context_bytes: u64) {
         let bundle = RestoreBundle {
             schema_version: 1,
             save_token: "x".into(),
@@ -1194,22 +1195,44 @@ mod tests {
                 1,
                 ContextRef {
                     sha256: "a".repeat(64),
-                    byte_count: MAX_MANIFEST_BYTES as usize + 1,
+                    byte_count: context_bytes as usize,
                 },
             )]
             .into_iter()
             .collect(),
         };
-        std::fs::write(
-            dir.join("9999999999999.json"),
-            serde_json::to_vec(&bundle).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(dir.join(name), serde_json::to_vec(&bundle).unwrap()).unwrap();
+    }
+    #[test]
+    fn archive_budget_counts_contexts_but_keeps_large_scrollback_archives() {
+        let root = isolated_root();
+        let dir = root.tab_state_backups_dir().join("archive");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Scrollback beyond the 16 MiB manifest bound is not a reason to
+        // drop an archive; only the 128 MiB folder budget is.
+        let large = MAX_MANIFEST_BYTES + 1;
+        write_archive(&dir, "0000000000003.json", large);
+        write_archive(&dir, "0000000000002.json", large);
+        write_archive(&dir, "0000000000001.json", MAX_ARCHIVE_BYTES - large);
         prune_archive(&dir, SystemTime::now());
-        assert!(archive_files(&dir).is_empty());
+        let names: Vec<_> = archive_files(&dir)
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["0000000000003.json", "0000000000002.json"]);
         std::fs::remove_dir_all(root.home()).unwrap();
     }
-
+    #[test]
+    fn the_newest_archive_is_always_kept() {
+        let root = isolated_root();
+        let dir = root.tab_state_backups_dir().join("archive");
+        std::fs::create_dir_all(&dir).unwrap();
+        write_archive(&dir, "0000000000002.json", MAX_ARCHIVE_BYTES + 1);
+        write_archive(&dir, "0000000000001.json", 1);
+        prune_archive(&dir, SystemTime::now());
+        assert_eq!(archive_files(&dir), vec![dir.join("0000000000002.json")]);
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
     #[test]
     fn writers_are_serialized_by_the_store_lock() {
         let root = isolated_root();
