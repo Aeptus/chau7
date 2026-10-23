@@ -202,19 +202,33 @@ pub fn option_types_text(key: &str, key_char: Option<&str>, mods: KeyMods) -> bo
 /// line endings the way terminals do (`\r\n` and `\n` become `\r`).
 pub fn encode_paste(text: &str, bracketed: bool) -> Vec<u8> {
     let normalized = text.replace("\r\n", "\r").replace('\n', "\r");
-    // Strip the end marker so pasted content cannot leave paste mode early.
-    let normalized = if bracketed {
-        normalized.replace("\x1b[201~", "")
-    } else {
-        normalized
-    };
     let mut out = Vec::with_capacity(normalized.len() + 12);
     if bracketed {
         out.extend_from_slice(b"\x1b[200~");
-    }
-    out.extend_from_slice(normalized.as_bytes());
-    if bracketed {
+        // Strip the end marker so pasted content cannot leave paste mode
+        // early, including markers that only form once an inner one is
+        // removed.
+        out.extend_from_slice(&strip_paste_end_markers(normalized.as_bytes()));
         out.extend_from_slice(b"\x1b[201~");
+    } else {
+        out.extend_from_slice(normalized.as_bytes());
+    }
+    out
+}
+
+/// Remove every bracketed paste end marker (`ESC [ 201 ~`) from `bytes`,
+/// including markers formed by the bytes around a removed one. A marker can
+/// only form at the end of the output as bytes are appended, so checking the
+/// tail after each byte leaves none behind in a single linear pass. The
+/// marker is ASCII, so truncating it keeps UTF-8 text valid.
+fn strip_paste_end_markers(bytes: &[u8]) -> Vec<u8> {
+    const END_MARKER: &[u8] = b"\x1b[201~";
+    let mut out = Vec::with_capacity(bytes.len());
+    for &byte in bytes {
+        out.push(byte);
+        if out.ends_with(END_MARKER) {
+            out.truncate(out.len() - END_MARKER.len());
+        }
     }
     out
 }
@@ -361,6 +375,30 @@ mod tests {
         assert_eq!(
             encode_paste("x\x1b[201~y", true),
             b"\x1b[200~xy\x1b[201~".to_vec()
+        );
+    }
+
+    #[test]
+    fn paste_cannot_reform_end_marker_from_nested_markers() {
+        let payload = "\x1b[2\x1b[201~01~; rm -rf ~\r";
+        assert_eq!(
+            encode_paste(payload, true),
+            b"\x1b[200~; rm -rf ~\r\x1b[201~".to_vec()
+        );
+        let deep = "\x1b[2\x1b[2\x1b[201~01~01~tail";
+        assert_eq!(
+            encode_paste(deep, true),
+            b"\x1b[200~tail\x1b[201~".to_vec()
+        );
+        // Escape sequences that are not the end marker survive.
+        assert_eq!(
+            encode_paste("\x1b[31mred\x1b[0m", true),
+            b"\x1b[200~\x1b[31mred\x1b[0m\x1b[201~".to_vec()
+        );
+        // Unbracketed paste is passed through untouched apart from newlines.
+        assert_eq!(
+            encode_paste("a\x1b[201~b", false),
+            b"a\x1b[201~b".to_vec()
         );
     }
 }
