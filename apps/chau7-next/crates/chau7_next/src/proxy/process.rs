@@ -7,7 +7,6 @@
 //! (`chau7_next_core::proxy::proxy_env`), so it never touches the Swift
 //! app's proxy.
 
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
@@ -178,13 +177,13 @@ fn forward_lines(stream: impl std::io::Read + Send + 'static, is_stderr: bool) {
     let _ = std::thread::Builder::new()
         .name("proxy-log".into())
         .spawn(move || {
-            for line in BufReader::new(stream).lines().map_while(Result::ok) {
-                crate::incidents::proxy_output(&line);
+            chau7_next_core::subprocess::for_each_output_line(stream, |line| {
+                crate::incidents::proxy_output(line);
                 if is_stderr {
                     log::warn!("Proxy stderr: {line}");
                 } else {
                     log::debug!("Proxy stdout: {line}");
                 }
-            }
+            });
         });
 }
