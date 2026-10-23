@@ -259,6 +259,14 @@ enum RemoteConnectionStartPolicy {
     ) -> Bool {
         !hasScheduledReconnect && shouldReconnect && hasRemainingAttempts
     }
+
+    /// A silent push also arrives while the app is on screen. Only a push that
+    /// reaches a backgrounded app may drop the stream to approvals-only and
+    /// take background time; doing so in the foreground froze the terminal the
+    /// user was looking at until the next inactive/active cycle.
+    static func pushWakeEntersBackground(applicationIsActive: Bool) -> Bool {
+        !applicationIsActive
+    }
 }
 
 enum RemoteConnectionFailureClassifier {

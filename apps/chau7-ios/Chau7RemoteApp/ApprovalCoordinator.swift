@@ -72,9 +72,17 @@ final class ApprovalCoordinator {
     /// A socket generation ended while responses were in flight. Keep the
     /// user's queued answers, but make them eligible for the replacement
     /// session. Completions from the old generation are fenced by
-    /// `RemoteClient.send` and must not resolve these entries.
-    func resetInFlight() {
+    /// `RemoteClient.send` and must not resolve these entries, so the caller
+    /// uses the returned answers to move their cards from "sending" back to
+    /// "queued"; otherwise a card whose socket closed mid-send keeps claiming
+    /// a send is in progress when nothing is on the wire.
+    @discardableResult
+    func resetInFlight() -> [(requestID: String, approved: Bool)] {
+        let released = inFlight.compactMap { requestID in
+            queuedResponses[requestID].map { (requestID, $0) }
+        }
         inFlight.removeAll(keepingCapacity: true)
+        return released
     }
 
     func reset() {

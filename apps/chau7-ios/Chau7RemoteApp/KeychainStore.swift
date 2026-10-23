@@ -29,7 +29,23 @@ enum KeychainStore {
         return status == errSecSuccess
     }
 
+    /// Outcome of a Keychain read. `unavailable` is distinct from `notFound`:
+    /// before the first unlock after a reboot (a push-wake launch) every read
+    /// fails with `errSecInteractionNotAllowed` even though the item exists.
+    enum ReadResult: Equatable {
+        case found(Data)
+        case notFound
+        case unavailable(OSStatus)
+    }
+
     static func load(key: String) -> Data? {
+        if case let .found(data) = read(key: key) {
+            return data
+        }
+        return nil
+    }
+
+    static func read(key: String) -> ReadResult {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -39,8 +55,15 @@ enum KeychainStore {
         ]
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess else { return nil }
-        return item as? Data
+        switch status {
+        case errSecSuccess:
+            guard let data = item as? Data else { return .unavailable(errSecDecode) }
+            return .found(data)
+        case errSecItemNotFound:
+            return .notFound
+        default:
+            return .unavailable(status)
+        }
     }
 
     @discardableResult

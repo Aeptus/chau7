@@ -89,8 +89,10 @@ final class RemoteClient {
 
     var pairingInfo: PairingInfo? {
         didSet {
-            RemotePairingStore.savePairing(pairingInfo)
             if oldValue != pairingInfo {
+                // Every connect attempt reassigns the same pairing; only a
+                // real change is worth a Keychain write.
+                RemotePairingStore.savePairing(pairingInfo)
                 // Pending approvals and notification decisions belong to a
                 // specific paired Mac. Drop them before the new pairing can
                 // open a socket or fetch /pending.
@@ -127,7 +129,11 @@ final class RemoteClient {
     @ObservationIgnored private let transport = RemoteTransport()
     /// Crypto-session state machine: key material, handshake nonces, seq
     /// counter, replay guard (C6 extraction from this class).
-    @ObservationIgnored private let session: RemoteSessionController
+    @ObservationIgnored private var session: RemoteSessionController
+    /// Set when the device key could not be read at launch because the
+    /// Keychain was still locked (a push wake before the first unlock). The
+    /// client stays unpaired with a throwaway key until it reloads.
+    @ObservationIgnored private var keychainReloadPending = false
     /// Approval-response ledger: queued answers, in-flight sends, and send
     /// outcomes (C7 extraction from this class).
     @ObservationIgnored private let approvalCoordinator = ApprovalCoordinator()
@@ -230,8 +236,13 @@ final class RemoteClient {
     // MARK: - Init
 
     init() {
-        self.session = RemoteSessionController(iosKey: RemotePairingStore.loadOrCreateIOSKey())
-        self.pairingInfo = RemotePairingStore.loadPairing()
+        if let iosKey = RemotePairingStore.loadOrCreateIOSKey() {
+            self.session = RemoteSessionController(iosKey: iosKey)
+            self.pairingInfo = RemotePairingStore.loadPairing()
+        } else {
+            self.session = RemoteSessionController(iosKey: Curve25519.KeyAgreement.PrivateKey())
+            self.keychainReloadPending = true
+        }
 
         backgroundKeepalive.onExpire = { [weak self] in
             self?.handleBackgroundTaskExpiration()
@@ -405,6 +416,7 @@ final class RemoteClient {
         DiagnosticsLog.shared.info(.lifecycle, "Scene phase changed", ["phase": String(describing: scenePhase)])
         switch scenePhase {
         case .active:
+            reloadKeychainStateIfNeeded()
             DiagnosticsLog.shared.markForegroundActive()
             DiagnosticsLog.shared.capturePerformanceSnapshot(reason: "scene_active")
             // Foregrounded: no background delivery is outstanding, so release
@@ -474,7 +486,19 @@ final class RemoteClient {
         sendClientStateIfPossible()
     }
 
-    func handlePushWake(userInfo: [AnyHashable: Any]) {
+    /// Retries the launch-time Keychain read that failed while the device was
+    /// locked, so a push-wake launch does not leave the app unpaired for the
+    /// rest of the process.
+    private func reloadKeychainStateIfNeeded() {
+        guard keychainReloadPending, let iosKey = RemotePairingStore.loadOrCreateIOSKey() else { return }
+        keychainReloadPending = false
+        session = RemoteSessionController(iosKey: iosKey)
+        pairingInfo = RemotePairingStore.loadPairing()
+        DiagnosticsLog.shared.info(.lifecycle, "Keychain state reloaded after unlock")
+    }
+
+    func handlePushWake(userInfo: [AnyHashable: Any], applicationIsActive: Bool) {
+        reloadKeychainStateIfNeeded()
         // The push payload names exactly what it delivered — skip local
         // notifications for those IDs only (deterministic, not time-based).
         if let requestID = userInfo[RemoteNotificationID.UserInfoKey.requestID] as? String {
@@ -483,9 +507,11 @@ final class RemoteClient {
         if let promptID = userInfo[RemoteNotificationID.UserInfoKey.promptID] as? String {
             recordPushDeliveredID(promptID)
         }
-        backgroundKeepalive.begin()
-        currentAppState = .background
-        desiredStreamMode = .approvalsOnly
+        if RemoteConnectionStartPolicy.pushWakeEntersBackground(applicationIsActive: applicationIsActive) {
+            backgroundKeepalive.begin()
+            currentAppState = .background
+            desiredStreamMode = .approvalsOnly
+        }
         if !transport.isOpen, pairingInfo != nil {
             connectIfNeeded(trigger: .pushWake)
         } else {
@@ -495,8 +521,15 @@ final class RemoteClient {
         emitTelemetry(
             type: .notificationOpened,
             status: "push_wake",
-            metadata: userInfo.reduce(into: [String: String]()) { partial, entry in
-                partial[String(describing: entry.key)] = String(describing: entry.value)
+            // Only the delivery identifiers: the rest of the push payload can
+            // carry command or notification text.
+            metadata: [
+                RemoteNotificationID.UserInfoKey.requestID,
+                RemoteNotificationID.UserInfoKey.promptID
+            ].reduce(into: [String: String]()) { partial, key in
+                if let value = userInfo[key] as? String {
+                    partial[key] = value
+                }
             }
         )
     }
@@ -533,7 +566,7 @@ final class RemoteClient {
         reconnectTask = nil
         cancelHandshakeTasks()
         transport.close()
-        approvalCoordinator.resetInFlight()
+        releaseInFlightApprovals()
         cancelPendingStateFetch()
         isConnected = false
         status = .disconnected
@@ -918,7 +951,7 @@ final class RemoteClient {
         // mutate approval state and makes ordinary connect-if-needed callers
         // mistake a failed socket for a live one.
         transport.close()
-        approvalCoordinator.resetInFlight()
+        releaseInFlightApprovals()
         cancelPendingStateFetch()
         isConnected = false
         status = .disconnected
@@ -1309,8 +1342,8 @@ private func handlePairAccept(_ data: Data) {
               expectedMacKey == keyData else {
             log.error("handlePairAccept: Mac public key does not match pairing identity")
             DiagnosticsLog.shared.error(.connection, "Pair accept identity mismatch")
+            endHandshakeForBrokenPairing()
             reportConnectionFailure(.macIdentityChanged, status: .error)
-            shouldReconnect = false
             return
         }
         guard session.adoptMacPublicKey(keyData) else {
@@ -1334,8 +1367,23 @@ private func handlePairAccept(_ data: Data) {
 
     private func handlePairReject(_ data: Data) {
         let reason = (try? RemoteJSON.decoder.decode(PairRejectPayload.self, from: data))?.reason
+        endHandshakeForBrokenPairing()
         reportConnectionFailure(.pairingRejected(reason: reason), status: .pairingRejected)
+    }
+
+    /// A rejected pairing or a changed Mac identity cannot be fixed by
+    /// retrying. Stop the HELLO/PAIR_REQUEST loop (which would keep sending
+    /// the pairing code to that peer) and close the socket, so the handshake
+    /// timeout cannot later replace the Re-pair error with a retryable one.
+    private func endHandshakeForBrokenPairing() {
         shouldReconnect = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        cancelHandshakeTasks()
+        transport.close()
+        releaseInFlightApprovals()
+        isConnected = false
+        session.invalidateSession(clearHandshakeMaterial: false)
     }
 
     /// Records a connection failure's message and recovery together so the
@@ -1799,6 +1847,14 @@ private func handlePairAccept(_ data: Data) {
 
     private func approvalRequest(for requestID: String) -> ApprovalRequest? {
         pendingApprovals.first(where: { $0.requestID == requestID })
+    }
+
+    /// A socket generation ended: answers that were mid-send go back to
+    /// "queued", matching what the next session will resend.
+    private func releaseInFlightApprovals() {
+        for (requestID, approved) in approvalCoordinator.resetInFlight() {
+            updateApprovalResponseState(requestID: requestID) { _ in .queued(approved) }
+        }
     }
 
     private func updateApprovalResponseState(

@@ -202,7 +202,9 @@ final class ApprovalCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.takeSendable { _ in true }.count, 1)
         XCTAssertTrue(coordinator.takeSendable { _ in true }.isEmpty)
 
-        coordinator.resetInFlight()
+        let released = coordinator.resetInFlight()
+        XCTAssertEqual(released.map(\.requestID), ["r1"])
+        XCTAssertEqual(released.map(\.approved), [true])
 
         XCTAssertEqual(
             coordinator.takeSendable { _ in true }.map(\.requestID),
@@ -210,6 +212,17 @@ final class ApprovalCoordinatorTests: XCTestCase {
             "the replacement session must be able to flush a response whose old socket completion was fenced"
         )
         XCTAssertEqual(coordinator.queuedResponses["r1"], true)
+    }
+
+    func testResetInFlightReleasesOnlyAnswersStillQueued() {
+        let coordinator = ApprovalCoordinator()
+        coordinator.queue(requestID: "sent", approved: false)
+        coordinator.queue(requestID: "idle", approved: true)
+        _ = coordinator.takeSendable { $0 == "sent" || $0 == "idle" }
+        coordinator.forget(requestID: "idle")
+
+        XCTAssertEqual(coordinator.resetInFlight().map(\.requestID), ["sent"])
+        XCTAssertTrue(coordinator.resetInFlight().isEmpty, "a second reset has nothing in flight")
     }
 }
 
@@ -630,6 +643,11 @@ final class RemoteTerminalScrollPolicyTests: XCTestCase {
 }
 
 final class RemoteConnectionStartPolicyTests: XCTestCase {
+    func testPushWakeKeepsForegroundStreamingWhenAppIsActive() {
+        XCTAssertFalse(RemoteConnectionStartPolicy.pushWakeEntersBackground(applicationIsActive: true))
+        XCTAssertTrue(RemoteConnectionStartPolicy.pushWakeEntersBackground(applicationIsActive: false))
+    }
+
     func testAutomaticConnectionCoalescesBehindOpenTransport() {
         XCTAssertFalse(RemoteConnectionStartPolicy.shouldStartConnection(
             transportIsOpen: true,
@@ -1552,5 +1570,24 @@ final class RemoteInboundQueueEvictionTests: XCTestCase {
         XCTAssertEqual(queue.evictedOutputFrames, 0)
         XCTAssertEqual(queue.bufferedBytes, 0)
         XCTAssertEqual(queue.takeShedCounts(), QueueShedCounts.none)
+    }
+}
+
+final class RemotePairingStoreDeviceKeyTests: XCTestCase {
+    func testStoredKeyIsReused() {
+        let stored = Curve25519.KeyAgreement.PrivateKey().rawRepresentation
+        XCTAssertEqual(RemotePairingStore.deviceKeyDecision(for: .found(stored)), .use(stored))
+    }
+
+    func testMissingOrCorruptKeyIsMinted() {
+        XCTAssertEqual(RemotePairingStore.deviceKeyDecision(for: .notFound), .mint)
+        XCTAssertEqual(RemotePairingStore.deviceKeyDecision(for: .found(Data([1, 2, 3]))), .mint)
+    }
+
+    func testLockedKeychainNeverMintsAReplacementIdentity() {
+        XCTAssertEqual(
+            RemotePairingStore.deviceKeyDecision(for: .unavailable(errSecInteractionNotAllowed)),
+            .retryLater
+        )
     }
 }

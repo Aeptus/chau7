@@ -129,8 +129,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
+        let applicationIsActive = application.applicationState == .active
         Task { @MainActor in
-            RemoteClient.shared.handlePushWake(userInfo: userInfo)
+            RemoteClient.shared.handlePushWake(userInfo: userInfo, applicationIsActive: applicationIsActive)
             completionHandler(.newData)
         }
     }

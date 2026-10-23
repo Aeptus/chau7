@@ -1,6 +1,9 @@
 import Chau7Core
 import CryptoKit
 import Foundation
+import os
+
+private let log = Logger(subsystem: "ch7", category: "RemotePairingStore")
 
 /// Keychain-backed persistence for pairing material: the device's long-lived
 /// Curve25519 private key, the paired Mac's public key, the pairing payload, and
@@ -19,14 +22,48 @@ enum RemotePairingStore {
 
     // MARK: - Device key
 
-    static func loadOrCreateIOSKey() -> Curve25519.KeyAgreement.PrivateKey {
-        if let data = KeychainStore.load(key: Key.iosPrivateKey),
-           let key = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: data) {
-            return key
+    enum DeviceKeyDecision: Equatable {
+        case use(Data)
+        case mint
+        /// The Keychain cannot be read yet; the stored key may well exist.
+        /// Minting now would replace this device's identity and break every
+        /// pairing, so the caller must retry once protected data is available.
+        case retryLater
+    }
+
+    static func deviceKeyDecision(for result: KeychainStore.ReadResult) -> DeviceKeyDecision {
+        switch result {
+        case let .found(data) where (try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: data)) != nil:
+            .use(data)
+        case .found, .notFound:
+            .mint
+        case .unavailable:
+            .retryLater
         }
-        let key = Curve25519.KeyAgreement.PrivateKey()
-        _ = KeychainStore.save(key: Key.iosPrivateKey, data: key.rawRepresentation)
-        return key
+    }
+
+    /// The persisted device key, minting and storing one on first launch.
+    /// Returns nil while the Keychain is locked.
+    static func loadOrCreateIOSKey() -> Curve25519.KeyAgreement.PrivateKey? {
+        switch deviceKeyDecision(for: KeychainStore.read(key: Key.iosPrivateKey)) {
+        case let .use(data):
+            return try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: data)
+        case .mint:
+            let key = Curve25519.KeyAgreement.PrivateKey()
+            guard KeychainStore.save(key: Key.iosPrivateKey, data: key.rawRepresentation) else {
+                log.error("Could not persist the device key; retrying on next foreground")
+                return nil
+            }
+            return key
+        case .retryLater:
+            return nil
+        }
+    }
+
+    private static func persist(key: String, data: Data, label: String) {
+        if !KeychainStore.save(key: key, data: data) {
+            log.error("Could not persist the \(label, privacy: .public) to the Keychain")
+        }
     }
 
     // MARK: - Mac public key
@@ -37,7 +74,7 @@ enum RemotePairingStore {
     }
 
     static func saveMacPublicKey(_ data: Data) {
-        _ = KeychainStore.save(key: Key.macPublicKey, data: data)
+        persist(key: Key.macPublicKey, data: data, label: "Mac public key")
     }
 
     // MARK: - Pairing payload
@@ -55,7 +92,7 @@ enum RemotePairingStore {
             _ = KeychainStore.delete(key: Key.trustedIdentity)
             return
         }
-        _ = KeychainStore.save(key: Key.pairingPayload, data: data)
+        persist(key: Key.pairingPayload, data: data, label: "pairing payload")
     }
 
     // MARK: - Trusted identity
@@ -67,6 +104,6 @@ enum RemotePairingStore {
 
     static func saveTrustedIdentity(_ identity: TrustedPairingIdentity) {
         guard let data = try? RemoteJSON.encoder.encode(identity) else { return }
-        _ = KeychainStore.save(key: Key.trustedIdentity, data: data)
+        persist(key: Key.trustedIdentity, data: data, label: "trusted identity")
     }
 }
