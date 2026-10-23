@@ -1616,3 +1616,39 @@ final class ApprovalsNavigationRequestTests: XCTestCase {
         )
     }
 }
+
+final class PairingPayloadValidatorTests: XCTestCase {
+    private let now = ISO8601DateFormatter().date(from: "2026-10-23T12:00:00Z")!
+
+    private func payload(expiresAt: String) -> String {
+        let secret = Data(repeating: 7, count: 32).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return """
+        {"relay_url":"wss://relay.example","device_id":"device-1","mac_pub":"AAAA",\
+        "pairing_code":"123456","expires_at":"\(expiresAt)",\
+        "relay_secret":"\(secret)","relay_key_id":"key1"}
+        """
+    }
+
+    func testFreshPayloadIsAccepted() {
+        guard case .success = PairingPayloadValidator.validate(payload(expiresAt: "2026-10-23T12:10:00Z"), now: now) else {
+            return XCTFail("a fresh, provisioned payload must validate")
+        }
+    }
+
+    func testExpiredPayloadIsRejected() {
+        guard case let .failure(message) = PairingPayloadValidator.validate(payload(expiresAt: "2026-10-23T11:00:00Z"), now: now) else {
+            return XCTFail("an expired payload must not validate")
+        }
+        XCTAssertTrue(message.contains("expired"))
+    }
+
+    func testUnreadableExpiryFailsClosed() {
+        guard case let .failure(message) = PairingPayloadValidator.validate(payload(expiresAt: "next tuesday"), now: now) else {
+            return XCTFail("an unparseable expiry must not validate")
+        }
+        XCTAssertTrue(message.contains("expiry couldn't be read"))
+    }
+}

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- iOS: keep the diagnostics log out of device backups, clear old diagnostic exports before each new one, stop pre-filling the pairing secret in the Re-pair sheet, reject pairing codes whose expiry cannot be read, and always stop the camera when the QR scanner closes.
 - iOS: the Live Activity's Approve and Deny buttons are replaced by Review, which opens the approval in the app instead of answering it from a link.
 - iOS: update a stale Live Activity in place instead of adding a duplicate, and end it on Disconnect or when the pairing changes.
 - iOS: a notification tap on a cold launch now opens the Approvals tab on the matching card.

@@ -107,3 +107,66 @@ enum RemotePairingStore {
         persist(key: Key.trustedIdentity, data: data, label: "trusted identity")
     }
 }
+
+// MARK: - Payload validation
+
+/// Outcome of validating a pairing payload: a decoded `PairingInfo` or a
+/// specific, human-readable problem. A dedicated enum (rather than `Result`)
+/// avoids conforming `String` to `Error` just to carry the message.
+enum PairingValidationResult {
+    case success(PairingInfo)
+    case failure(String)
+}
+
+/// Validates a pasted/scanned pairing payload and reports specific problems.
+enum PairingPayloadValidator {
+    static func validate(_ raw: String, now: Date = Date()) -> PairingValidationResult {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .failure("Nothing to pair with. Paste or scan the pairing code from your Mac.")
+        }
+        guard let data = trimmed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return .failure("That doesn't look like a Chau7 pairing code. Scan a fresh secure QR from the Remote panel on your Mac.")
+        }
+
+        let requiredFields: [(key: String, label: String)] = [
+            ("relay_url", "relay URL"),
+            ("device_id", "device ID"),
+            ("mac_pub", "Mac key"),
+            ("pairing_code", "pairing code"),
+            ("expires_at", "expiry")
+        ]
+        for field in requiredFields where (object[field.key] as? String)?.isEmpty ?? true {
+            return .failure("The pairing code is missing its \(field.label). Generate a fresh code on your Mac.")
+        }
+
+        guard let info = try? JSONDecoder().decode(PairingInfo.self, from: data) else {
+            return .failure("The pairing code couldn't be read. Generate a fresh code on your Mac.")
+        }
+
+        // Fail closed: an expiry that cannot be read must not pass as valid.
+        guard let expiry = parseDate(info.expiresAt) else {
+            return .failure("The pairing code's expiry couldn't be read. Generate a fresh code on your Mac.")
+        }
+        if expiry < now {
+            return .failure("This pairing code has expired. Generate a new one on your Mac.")
+        }
+
+        guard URLComponents(string: info.relayURL)?.scheme?.lowercased() == "wss" else {
+            return .failure("Relay URL must use wss:// (encrypted transport). Generate a fresh code on your Mac.")
+        }
+
+        guard RelayToken.make(pairing: info, role: "ios", scope: "connect") != nil else {
+            return .failure("This pairing needs a provisioned relay credential. Scan a fresh QR code from your Mac.")
+        }
+        return .success(info)
+    }
+
+    private static func parseDate(_ value: String) -> Date? {
+        let withFractional = ISO8601DateFormatter()
+        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFractional.date(from: value) { return date }
+        return ISO8601DateFormatter().date(from: value)
+    }
+}
