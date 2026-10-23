@@ -1762,7 +1762,7 @@ mod tests {
         let clip = || payload.to_string();
         let env = |k: &str| {
             if k == "AWS_SECRET_ACCESS_KEY" {
-                "SECRET".to_string()
+                "leaked-s3cr3t-value".to_string()
             } else {
                 String::new()
             }
@@ -1774,7 +1774,7 @@ mod tests {
         );
         for (paste, placeholders) in [(false, true), (true, true), (false, false)] {
             let ins = prepare_insertion(body, &ctx(&clip), &env, paste, placeholders);
-            assert!(!ins.text.contains("SECRET"), "{ins:?}");
+            assert!(!ins.text.contains("leaked-s3cr3t-value"), "{ins:?}");
             assert!(ins.text.starts_with(&format!("echo {payload} ")), "{ins:?}");
         }
         // A value never becomes a tab stop or reads the clipboard.
