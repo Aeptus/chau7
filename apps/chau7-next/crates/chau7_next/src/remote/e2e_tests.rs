@@ -251,3 +251,24 @@ fn real_go_agent_pairs_with_its_own_state() {
     server.stop();
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn a_second_server_neither_steals_nor_removes_a_live_socket() {
+    let (dir, path) = temp_socket("steal");
+    let mut first = IpcServer::start(&path).unwrap();
+    let err = IpcServer::start(&path)
+        .err()
+        .expect("live socket must be refused");
+    assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse);
+    // The first server still owns a reachable socket.
+    assert!(std::os::unix::net::UnixStream::connect(&path).is_ok());
+
+    // A server stopping after its file was replaced leaves the new one alone.
+    std::fs::remove_file(&path).unwrap();
+    let mut second = IpcServer::start(&path).unwrap();
+    first.stop();
+    assert!(path.exists());
+    second.stop();
+    assert!(!path.exists());
+    let _ = std::fs::remove_dir_all(dir);
+}
