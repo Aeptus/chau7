@@ -2,7 +2,7 @@
 
 Your coding agents are running. All of them. Across models, across windows, sometimes at 3 AM. Chau7 is the macOS terminal that notices they exist, tracks what they cost, and lets you steer from the outside. Named after a sock. We're not even sorry.
 
-> **Release status:** The published Chau7 download is still the SwiftUI/AppKit app. A Rust/GPUI production transition is in preparation and has not been released. Homebrew and the Releases link below continue to point to the current published stable build. See [the dual-ship plan](docs/rust-port/DUAL-SHIP.md) and [parity status](docs/rust-port/PARITY.md).
+> **Release status:** Chau7 for macOS is the Rust/GPUI app in [`apps/chau7-next`](apps/chau7-next/README.md). The former SwiftUI/AppKit app has been removed from this repository; it remains in git history and in prior release tags. Releases from `v*` tags publish the Rust production build. See the [production release guide](docs/rust-port/PRODUCTION-RELEASE.md) and [parity status](docs/rust-port/PARITY.md).
 
 [![Release](https://github.com/aeptus/chau7/actions/workflows/release.yml/badge.svg)](https://github.com/aeptus/chau7/actions/workflows/release.yml)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
@@ -13,7 +13,7 @@ Your coding agents are running. All of them. Across models, across windows, some
 - **Know what it costs.** Per-run token counts, cost tracking, tool call distribution. Across providers, across models. All in one place.
 - **Steer from the outside.** MCP tools over an owner-only local Unix socket. Read terminal output, send input, approve tool use, launch agents, stop them. Control from another terminal, a script, or your phone.
 - **Trust it.** Everything stays on your machine. No analytics, no heartbeats, no "anonymous" usage data. API keys forwarded by the local proxy, never stored. [Full privacy details](PRIVACY.md).
-- **The terminal underneath.** Rust backend via FFI. Metal GPU rendering, triple-buffered, VSync-synced. Context Token Optimization cuts ~40% off agent token usage. Tabs auto-group by git repo. Not Electron. Not a wrapper.
+- **The terminal underneath.** Rust from the terminal emulator to the GPUI interface, with GPU rendering through Metal. Context Token Optimization cuts ~40% off agent token usage. Tabs auto-group by git repo. Not Electron. Not a wrapper.
 
 ## FAQ
 
@@ -29,30 +29,29 @@ Your coding agents are running. All of them. Across models, across windows, some
 
 ```
 apps/
-  chau7-macos/              # Swift + AppKit + Metal macOS app
-    rust/                   # Rust workspace (4 crates)
-      chau7_terminal/       #   Terminal emulator FFI bindings
-      chau7_parse/          #   Parsing helpers
-      chau7_optim/          #   Context Token Optimization engine
-      chau7_md/             #   Terminal markdown renderer
-    chau7-proxy/            # Go TLS proxy for API analytics
-  chau7-next/               # Chau7 Next: Rust/GPUI port developed alongside the stable app (Cargo)
+  chau7-next/               # Chau7 for macOS: Rust/GPUI app (Cargo workspace)
   chau7-ios/                # Native iOS companion app
+    Chau7Core/              #   Shared Swift package used by the iOS app and widget
+crates/                     # Shared Rust workspace (own toolchain and lockfile)
+  chau7_terminal/           #   Terminal emulator, used by the macOS and iOS apps
+  chau7_optim/              #   Context Token Optimization engine
+  chau7_md/                 #   Terminal markdown renderer
 services/
+  chau7-proxy/              # Go TLS proxy for API analytics
   chau7-relay/              # Cloudflare Workers relay
   chau7-remote/             # Go relay client for macOS
+  chau7-issues/             # Bug-report intake worker
 scripts/                    # Repo-level CI and build orchestration
 ```
 
-- [macOS app](apps/chau7-macos/README.md)
+- [macOS app (Rust/GPUI)](apps/chau7-next/README.md), port history in [docs/rust-port](docs/rust-port/)
 - [iOS app](apps/chau7-ios/README.md)
 - [Rust terminal crate](crates/chau7_terminal/README.md)
-- [Chau7 Next (Rust/GPUI port)](apps/chau7-next/README.md), plan in [docs/rust-port](docs/rust-port/)
+- [Analytics proxy](services/chau7-proxy/README.md)
 - [Relay service](services/chau7-relay/README.md)
 - [Remote agent](services/chau7-remote/README.md)
 - [Remote protocol](services/chau7-remote/docs/PROTOCOL.md)
 - [Scripts reference](scripts/README.md)
-- [Feature inventory](apps/chau7-macos/docs/FEATURES.md)
 - [Documentation map](docs/README.md)
 
 ## Install
@@ -62,31 +61,24 @@ brew tap aeptus/chau7
 brew install --cask chau7
 ```
 
-Or grab the DMG from the [latest release](https://github.com/aeptus/chau7/releases/latest). Ad-hoc signed, not notarized yet. First launch may require: right-click Chau7.app, then Open.
+Or grab the DMG from the [latest release](https://github.com/aeptus/chau7/releases/latest). Release builds are Developer ID signed and notarized; a release published before the Rust switch contains the former Swift app.
 
 ## Build
 
-The fast way (knit the sock, wear the sock):
-
 ```bash
-cd apps/chau7-macos
-./Scripts/knit           # build release + launch
-./Scripts/knit debug     # build debug + launch (for when you want to see what went wrong)
-./Scripts/knit --no-run  # build only (commitment issues, we get it)
+cd apps/chau7-next
+cargo run                         # development build, runs as "Chau7 Next"
+cargo test --workspace            # verify you didn't break anything
+./scripts/bundle-macos.sh         # optimized "Chau7 Next.app" bundle in target/bundle
 ```
 
-`knit` hot-swaps the binary into your existing app bundle. No full rebuild, no re-signing dance. If no bundle exists yet, it falls back to the full `build-and-run.sh` ceremony.
+Local builds default to the side-by-side `next` channel (`com.chau7.next`, its own
+data folders). `CHANNEL=production RELEASE_VERSION=<semver> BUILD_NUMBER=<n>
+./scripts/bundle-macos.sh` builds the production `Chau7.app` that releases ship.
+See the [Chau7 Next README](apps/chau7-next/README.md) for build modes and data
+locations.
 
-The slow way (for when you want to feel in control):
-
-```bash
-cd apps/chau7-macos
-swift build              # compile
-swift test               # verify you didn't break anything
-./Scripts/build-app.sh   # create a proper .app bundle with notifications and everything
-```
-
-Requirements: macOS 14+, Xcode 26.6 and the tool baseline in [mise.toml](mise.toml). Native Rust/Go backends are generated and ignored; a source clone must build them. See [contributor setup](CONTRIBUTING.md#setting-up).
+Requirements: macOS 13+, Xcode 26.6 and the tool baseline in [mise.toml](mise.toml). The bundle script also builds the Go helpers (`services/chau7-proxy`, `services/chau7-remote`) and the shared `crates/` tools when Go is installed. See [contributor setup](CONTRIBUTING.md#setting-up).
 
 ## Local CI
 

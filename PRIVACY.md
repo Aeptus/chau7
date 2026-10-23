@@ -26,7 +26,7 @@ When you use the in-app bug reporter (Option+Cmd+I):
 3. **No data is sent until you hit Submit.** The report is composed locally and you can preview the full markdown content before sending.
 4. **Rate limited.** The relay enforces a maximum of 5 reports per hour per IP to prevent abuse.
 
-The in-app privacy page ([`IssueReportingPrivacyView.swift`](apps/chau7-macos/Sources/Chau7/Logging/IssueReportingPrivacyView.swift)) provides a full GDPR-compliant disclosure accessible from the bug report dialog.
+The in-app privacy page ([`issue_privacy.rs`](apps/chau7-next/crates/chau7_next_core/src/issue_privacy.rs)) provides a full GDPR-compliant disclosure accessible from the bug report dialog.
 
 ### Sub-processors
 
@@ -73,9 +73,9 @@ Protocol: [`services/chau7-remote/docs/PROTOCOL.md`](services/chau7-remote/docs/
 
 ## MCP server
 
-The MCP server exposes tools over a Unix socket at `~/.chau7/mcp.sock` with permissions `0600` (owner-only). Any process running as your user can connect. The tools can read terminal output, send input, manage tabs, and query history. All communication is local — nothing crosses the network.
+The MCP server exposes tools over a Unix socket at `~/.chau7/rust-v1/mcp.sock` (`~/.chau7-next/mcp.sock` for the side-by-side Chau7 Next build) with permissions `0600` (owner-only). Any process running as your user can connect. The tools can read terminal output, send input, manage tabs, and query history. All communication is local — nothing crosses the network.
 
-Source: [`apps/chau7-macos/Sources/Chau7/MCP/`](apps/chau7-macos/Sources/Chau7/MCP/)
+Source: [`apps/chau7-next/crates/chau7_next/src/mcp/`](apps/chau7-next/crates/chau7_next/src/mcp/)
 
 ## What Chau7 does not do
 

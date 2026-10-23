@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Remove the legacy SwiftUI/AppKit macOS app from the repository; the Rust/GPUI
+  app in `apps/chau7-next` is the macOS app, and `v*` tag releases now sign,
+  notarize and publish its production build as `Chau7-AppleSilicon.dmg`/`.zip`.
+  The shared Rust crates moved to `crates/`, the analytics proxy to
+  `services/chau7-proxy`, and the iOS app's `Chau7Core` Swift package to
+  `apps/chau7-ios/Chau7Core`. The Swift app remains in git history and prior
+  release tags.
+
 - Coalesce toolbar sizing after window resize bursts and skip unchanged AppKit
   constraint updates.
 

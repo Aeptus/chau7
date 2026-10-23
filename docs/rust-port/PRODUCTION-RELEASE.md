@@ -1,14 +1,22 @@
 # Rust production release and rollback
 
-Status: release preparation. The stable download remains the Swift release until
-migration, signing, and release acceptance have passed. Do not interpret a
-successful beta build or a manual candidate artifact as a published stable release.
+Status (2026-10-23): The legacy SwiftUI/AppKit macOS app (`apps/chau7-macos`) has been removed from
+the tree. It remains available in git history and in prior release tags.
+`apps/chau7-next` is the macOS app, and the `Release` workflow publishes its
+production build (`CHANNEL=production`) from `v*` tags. The shared Rust crates
+moved to `crates/`, the Go proxy to `services/chau7-proxy`, and `Chau7Core` to
+`apps/chau7-ios/Chau7Core`. Paths to `apps/chau7-macos` below are historical.
+A `v*` tag signs, notarizes and publishes `Chau7-AppleSilicon.dmg`/`.zip` from the
+Rust production bundle; see [`scripts/release/RUST-RC.md`](../../scripts/release/RUST-RC.md)
+and [`docs/release-validation.md`](../release-validation.md). Migration and release
+acceptance below still apply before pushing a tag; a manual candidate artifact is
+not a published release.
 
 ## Identities and data ownership
 
 | Channel | Bundle | Writable configuration | macOS session state |
 | --- | --- | --- | --- |
-| Existing Swift | `com.chau7.app` | `~/.chau7/` | `Application Support/Chau7/` and Swift UserDefaults |
+| Former Swift app (removed from the tree) | `com.chau7.app` | `~/.chau7/` | `Application Support/Chau7/` and Swift UserDefaults |
 | Next beta | `com.chau7.next` | `~/.chau7-next/` | `Application Support/Chau7 Next/` |
 | Rust production | `com.chau7.app` | `~/.chau7/rust-v1/` | `Application Support/Chau7/RustV1/` |
 

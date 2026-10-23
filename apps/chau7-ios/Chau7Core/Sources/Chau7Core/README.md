@@ -1,6 +1,6 @@
 # Chau7Core
 
-Pure Swift library with zero UI dependencies. Contains all testable business logic, parsers, and domain types.
+Pure Swift library with zero UI dependencies, used by the iOS remote app, its widget and their tests. It started as the shared core of the former Swift macOS app, so it still contains logic that only that app used.
 
 ## What belongs here
 
@@ -15,15 +15,15 @@ Pure Swift library with zero UI dependencies. Contains all testable business log
 ## What does NOT belong here
 
 - Anything that imports AppKit, SwiftUI, or Metal
-- Singleton managers (those live in the Chau7 app target)
+- Singleton managers (those live in the app targets)
 - View models or UI state
 
 ## Testing
 
-All 1100+ tests in `Tests/Chau7Tests/` test this target via `@testable import Chau7Core`.
+The tests in `Tests/Chau7CoreTests/` of this package exercise the target via `@testable import Chau7Core`.
 
 ```bash
-cd apps/chau7-macos && swift test
+swift test --package-path apps/chau7-ios/Chau7Core
 ```
 
 ## Key types

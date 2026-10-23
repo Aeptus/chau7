@@ -2,14 +2,21 @@
 
 Picking this up? Start with [`docs/rust-port/HANDOFF.md`](../../docs/rust-port/HANDOFF.md).
 
-The Rust/GPUI port of Chau7. It runs **next to** the Swift app (bundle id
-`com.chau7.next`, its own data folders), so both can be installed and used at
-the same time while the port reaches parity. This remains a development/preview
-build: it is not the current stable download or a production release. The
-production transition is still gated on release-candidate and migration
-acceptance. See the [production release guide](../../docs/rust-port/PRODUCTION-RELEASE.md),
-[dual-ship plan](../../docs/rust-port/DUAL-SHIP.md), and
-[parity status](../../docs/rust-port/PARITY.md).
+Chau7 for macOS, built with Rust and GPUI. The former SwiftUI/AppKit app has
+been removed from the repository; it remains in git history and prior release
+tags.
+
+Two channels build from this directory:
+
+- **Next** (default for local and CI builds): "Chau7 Next.app", bundle id
+  `com.chau7.next`, its own data folders, so it runs next to an installed
+  production app.
+- **Production** (`CHANNEL=production`): "Chau7.app", bundle id `com.chau7.app`,
+  versioned Rust data under the stable folders. The `Release` workflow publishes
+  this build from `v*` tags.
+
+See the [production release guide](../../docs/rust-port/PRODUCTION-RELEASE.md)
+and [parity status](../../docs/rust-port/PARITY.md).
 
 ## Install on macOS
 
@@ -39,7 +46,7 @@ For an app in `~/Applications`, use that path instead of `/Applications`. The
 installer places `chau7-next` and `chau7-next-cli` in `~/.local/bin` and copies
 the built-in skills to `~/.local/share/chau7-next/skills`; add `~/.local/bin` to
 `PATH` if needed. Installing is opt-in: opening Chau7 Next does not install
-commands or change the Swift app's helpers or data.
+commands or change another Chau7 installation's helpers or data.
 
 ### Build locally
 
@@ -98,7 +105,7 @@ folder below; set `CHAU7_NEXT_LOG_STDOUT=1` to also print them).
 
 ## Data and coexistence
 
-| | Chau7 (Swift) | Chau7 Next |
+| | Former Chau7 (Swift) app | Chau7 Next |
 |---|---|---|
 | Config, snippets | `~/.chau7/` | `~/.chau7-next/` |
 | Window and tab restore | UserDefaults | `~/Library/Application Support/Chau7 Next/session.json` |
@@ -123,7 +130,7 @@ output and command text. The default performance folder is
 with `chau7_performance_snapshot`; `chau7_runtime_info` and
 `chau7_state_snapshot` expose build/runtime and app-state diagnostics.
 
-The API analytics proxy is the same Go program as Chau7's
+The API analytics proxy is the Go program
 (`services/chau7-proxy`, built into the app bundle; needs Go), run
 with Chau7 Next's own ports and files, so both proxies can run at once. Its
 self-signed TLS certificate is trusted separately (Settings > API Proxy >
@@ -145,7 +152,8 @@ not create device credential bundles or deploy relay keys. See
 On first launch, `~/.chau7/config.toml` and `~/.chau7/snippets.json` are
 **copied** (never modified). After that the two apps are independent. Every
 path is defined in `chau7_next_core::data_root`; a test fails the build if any
-other source file mentions a path owned by the Swift app.
+other source file mentions a path owned by the former Swift app (users may
+still have its data).
 
 `CHAU7_NEXT_HOME_ROOT=/some/dir` redirects everything (used by tests).
 
@@ -164,7 +172,7 @@ live here:
 - Checks before a change: `cargo fmt --all --check`,
   `cargo clippy --workspace --all-targets -- -D warnings` and
   `cargo test --workspace` (from `apps/chau7-next`).
-- Never add a path owned by the Swift app outside
+- Never add a path owned by the former Swift app outside
   `chau7_next_core/src/data_root.rs` (a test enforces it).
 - Porting work is driven by `docs/rust-port/inventory/` (read its README
   first). In the same PR as the code, set each ported row's status, then run
@@ -174,9 +182,9 @@ live here:
   and pass CI. Any feature that calls a macOS-only API goes through a small
   trait under `crates/chau7_next/src/platform/` (macOS implementation plus a
   stub that returns "not supported"); see `src/platform/README.md`.
-- `chau7_terminal` is shared with the Swift app: never change its C API or
-  its Swift-visible behavior. Rust-only additions go in `src/rust_api.rs`;
-  the generated header must stay identical (build without
+- `chau7_terminal` (in the top-level `crates/` workspace) is shared with the
+  iOS app: never change its C API or its Swift-visible behavior. Rust-only
+  additions go in `src/rust_api.rs`; the generated header must stay identical (build without
   `CHAU7_TERMINAL_SKIP_CBINDGEN` and check `git diff` of
   `include/chau7_terminal.h`).
 
@@ -190,7 +198,7 @@ the file (created with every option commented out); Reload Settings applies it.
 ### Repo grouping
 
 Find this setting under Settings > Tabs > Repo Grouping. The default is Off
-in both Chau7 Next and the current Swift app. Automatic groups tabs by
+in Chau7 Next, as it was in the former Swift app. Automatic groups tabs by
 detected Git root; Manual is for assigning and clearing groups from a tab
 context menu. Existing groups remain visible in every mode. Changes made in
 Settings save and apply to all open windows immediately. In `config.toml`, set

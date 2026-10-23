@@ -253,7 +253,7 @@ jobs:
             depends_on macos: ">= :sonoma"
             depends_on arch: :arm64
             app "Chau7.app"
-            zap trash: ["~/.chau7", "~/.chau7-rust-v1-state", "~/Library/Logs/Chau7.log", "~/Library/Logs/Chau7"]
+            zap trash: ["~/.chau7", "~/Library/Application Support/Chau7", "~/Library/Logs/Chau7.log", "~/Library/Logs/Chau7"]
           end
           CASK
       - name: Commit and push only changed cask
