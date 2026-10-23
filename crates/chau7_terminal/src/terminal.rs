@@ -1112,6 +1112,25 @@ impl Chau7Terminal {
     /// directly: `tcgetpgrp` on the master returns the slave's foreground pgrp
     /// (the live TUI's), and `killpg(pgrp, SIGWINCH)` makes it re-read the
     /// authoritative size once its handler is finally attached.
+    /// The PTY's foreground process group (`tcgetpgrp` on the master): the
+    /// job a full-screen program runs in, or the shell's own group.
+    pub fn foreground_pgrp(&self) -> Option<i32> {
+        #[cfg(unix)]
+        {
+            let fd = self.echo_fd.load(Ordering::Acquire);
+            if fd < 0 {
+                return None;
+            }
+            // SAFETY: tcgetpgrp only reads the terminal's foreground group.
+            let pgrp = unsafe { libc::tcgetpgrp(fd) };
+            (pgrp > 0).then_some(pgrp)
+        }
+        #[cfg(not(unix))]
+        {
+            None
+        }
+    }
+
     pub fn nudge_winsize(&self) {
         let echo_fd = self.echo_fd.load(Ordering::Acquire);
         if echo_fd < 0 {

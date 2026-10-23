@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Warn about denied Full Disk Access once instead of on every check.
+- Label library log lines by source and stop logging the expected window-close race as an error.
+- Stop reporting command start-up and shell loading time as input latency.
+- Hang up shells when a tab closes or the app quits, so they save history and run exit hooks instead of being killed.
+- Ignore AI notifications addressed to another running Chau7 app's tabs, so running two Chau7 apps no longer shows duplicate alerts.
 - Answer read-only MCP tab queries within one second when the interface is busy, instead of blocking the client.
 - Bound the number of tracked Claude Code sessions.
 - Bound the proxy IPC line buffer and drop over-long lines.

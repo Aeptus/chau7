@@ -90,6 +90,11 @@ impl SuppressionCenter {
         self.retry
             .retain(|_, (_, seen)| now - *seen <= CLOSED_SESSION_RETENTION);
     }
+    /// Routing retries already scheduled for an event (0 on first delivery).
+    pub fn retry_attempts(&self, id: Uuid) -> usize {
+        self.retry.get(&id).map_or(0, |entry| entry.0)
+    }
+
     pub fn forget_retry(&mut self, id: Uuid) {
         self.retry.remove(&id);
     }
@@ -228,6 +233,7 @@ mod tests {
         let mut s = SuppressionCenter::default();
         let mut e = event("permission");
         e.tab_id = None;
+        assert_eq!(s.retry_attempts(e.id), 0);
         for (index, delay) in RETRY_DELAYS.iter().enumerate() {
             assert_eq!(
                 s.routing(&e, now()),
@@ -236,6 +242,7 @@ mod tests {
                     attempt: index + 1
                 }
             );
+            assert_eq!(s.retry_attempts(e.id), index + 1);
         }
         assert!(matches!(s.routing(&e, now()), Verdict::Drop { .. }));
         assert!(s.retry.is_empty());

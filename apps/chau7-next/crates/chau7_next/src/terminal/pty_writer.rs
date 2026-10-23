@@ -26,12 +26,12 @@ const MAX_CLIPBOARD_BYTES: usize = 1_048_576;
 /// How a session ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloseMode {
-    /// Tab or pane closed: `exit`, then SIGTERM to the process group after
-    /// a grace delay (1 s, 3 s when an AI tool runs), then SIGKILL after 0.5 s
-    /// (2 s) (`closeSession`, `scheduleForcedTerminationIfNeeded`).
+    /// Tab or pane closed: `exit`, then SIGHUP to the foreground job and the
+    /// shell's group after a grace delay (1 s, 3 s when an AI tool runs),
+    /// then SIGKILL after 0.5 s (2 s).
     Graceful { ai_running: bool },
-    /// The app quits: `exit` and SIGTERM to the process group at once
-    /// (`closeSessionForTermination`).
+    /// The app quits: `exit` and SIGHUP to the foreground job and the
+    /// shell's group at once.
     AppQuit,
 }
 
@@ -258,23 +258,23 @@ fn close(term: &RwLock<Chau7Terminal>, mode: CloseMode) {
         term.read().send_bytes(b"exit\n");
     }
     match mode {
-        CloseMode::AppQuit => signal_group(pid, Signal::Term),
+        CloseMode::AppQuit => hang_up(term, pid),
         CloseMode::Graceful { ai_running } => {
             let (grace, escalation) = termination_delays(ai_running);
             if wait_for_exit(term, grace) {
                 return;
             }
             log::warn!(
-                "shell {pid} did not exit after `exit`: sending SIGTERM to its group; close_mode={mode:?} grace_ms={} elapsed_ms={}",
+                "shell {pid} did not exit after `exit`: sending SIGHUP; close_mode={mode:?} grace_ms={} elapsed_ms={}",
                 grace.as_millis(),
                 started.elapsed().as_millis()
             );
-            signal_group(pid, Signal::Term);
+            hang_up(term, pid);
             if wait_for_exit(term, escalation) {
                 return;
             }
             log::error!(
-                "shell {pid} still alive after SIGTERM: sending SIGKILL; close_mode={mode:?} escalation_ms={} elapsed_ms={}",
+                "shell {pid} still alive after SIGHUP: sending SIGKILL; close_mode={mode:?} escalation_ms={} elapsed_ms={}",
                 escalation.as_millis(),
                 started.elapsed().as_millis()
             );
@@ -291,6 +291,18 @@ pub fn termination_delays(ai_running: bool) -> (Duration, Duration) {
     } else {
         (Duration::from_secs(1), Duration::from_millis(500))
     }
+}
+
+/// A closing terminal hangs up, as Terminal.app and iTerm do. Interactive
+/// shells ignore SIGTERM but handle SIGHUP by saving history, running exit
+/// hooks and passing it on to their jobs. A full-screen program runs in its
+/// own foreground group, which the shell's group does not include.
+fn hang_up(term: &RwLock<Chau7Terminal>, pid: i32) {
+    let foreground = term.read().foreground_pgrp();
+    if let Some(pgrp) = foreground.filter(|pgrp| *pgrp != pid) {
+        signal_group(pgrp, Signal::Hangup);
+    }
+    signal_group(pid, Signal::Hangup);
 }
 
 fn exited(term: &RwLock<Chau7Terminal>) -> bool {
@@ -311,7 +323,7 @@ fn wait_for_exit(term: &RwLock<Chau7Terminal>, timeout: Duration) -> bool {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Signal {
-    Term,
+    Hangup,
     Kill,
 }
 
@@ -321,7 +333,7 @@ pub fn signal_group(pid: i32, signal: Signal) {
     #[cfg(unix)]
     {
         let sig = match signal {
-            Signal::Term => libc::SIGTERM,
+            Signal::Hangup => libc::SIGHUP,
             Signal::Kill => libc::SIGKILL,
         };
         // SAFETY: plain kill(2) calls on a pid we started.
@@ -486,5 +498,30 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(term.read().try_child_exit_code().is_some());
+    }
+
+    /// A shell that ignores SIGTERM and never reads the typed `exit` (as
+    /// an interactive zsh behind a full-screen program) is hung up, so it
+    /// runs its exit handling instead of being killed.
+    #[cfg(unix)]
+    #[test]
+    fn closing_hangs_up_a_shell_that_ignores_sigterm() {
+        let dir = std::env::temp_dir().join(format!("chau7-next-hangup-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("hangup");
+        let script = format!(
+            "trap '' TERM; trap 'echo hup > {}; exit 0' HUP; while :; do sleep 0.05; done",
+            marker.display()
+        );
+        let term =
+            Chau7Terminal::new_with_args_env_in_dir(80, 24, "/bin/sh", &["-c", &script], &[], None)
+                .unwrap();
+        let term = RwLock::new(term);
+        // Let the shell install its traps before closing.
+        std::thread::sleep(Duration::from_millis(300));
+        close(&term, CloseMode::Graceful { ai_running: false });
+        assert!(exited(&term));
+        assert!(marker.exists(), "the shell was killed instead of hung up");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

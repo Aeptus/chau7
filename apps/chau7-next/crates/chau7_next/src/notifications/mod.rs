@@ -90,6 +90,9 @@ pub struct NotificationCenter {
     flush_scheduled: bool,
     reconciler: Reconciler,
     suppression: SuppressionCenter,
+    /// Tabs this instance hosted; events naming any other tab id come from
+    /// another Chau7 app sharing the event log and are dropped.
+    known_tabs: delivery::KnownTabs,
     /// `AppModel.recentEvents`: accepted events, newest last.
     recent: VecDeque<AiEvent>,
     last_refresh: Option<Instant>,
@@ -522,11 +525,23 @@ fn process_event(event: AiEvent, cx: &mut App) {
     }
     center(cx).suppression.prune(now);
     let rules = Settings::get(cx).notifications.rules.clone();
+    let live: Vec<_> = routing::all_routes(cx)
+        .into_iter()
+        .map(|route| route.id)
+        .collect();
+    center(cx).known_tabs.observe(live);
     let preparation = {
         let app: &App = cx;
+        let known = &app.global::<NotificationCenter>().known_tabs;
         let mut resolver =
             |target: &chau7_next_core::tab_target::TabTarget| routing::resolve(target, app);
-        delivery::prepare(&event, &rules.trigger_state, Some(&mut resolver))
+        let mut owns = |tab| known.owns(tab);
+        delivery::prepare(
+            &event,
+            &rules.trigger_state,
+            Some(&mut resolver),
+            Some(&mut owns),
+        )
     };
     let (event, method) = match preparation {
         Preparation::Drop { reason } => {
@@ -540,7 +555,14 @@ fn process_event(event: AiEvent, cx: &mut App) {
         }
         Preparation::Proceed(p) => (p.event, p.resolution_method),
     };
-    log::info!(
+    // Routing retries re-enter here; only the first attempt is worth INFO.
+    let level = if center(cx).suppression.retry_attempts(event.id) == 0 {
+        log::Level::Info
+    } else {
+        log::Level::Debug
+    };
+    log::log!(
+        level,
         "Notification delivery prepared: id={} type={} tool={} resolution={method}",
         event.id,
         event.event_type,
