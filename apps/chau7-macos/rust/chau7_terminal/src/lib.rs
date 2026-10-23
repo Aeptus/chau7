@@ -4,6 +4,7 @@
 //! using the alacritty_terminal library and portable-pty for PTY management.
 
 mod color;
+mod emoji_presentation;
 mod ffi;
 pub mod graphics;
 mod metrics;

@@ -21,6 +21,7 @@ crossbeam-channel = "0.5"
 memchr = "2"
 base64 = "0.23"
 unicode-normalization = "0.1"
+unicode-width = "0.2"
 
 [build-dependencies]
 cbindgen = "0.29"

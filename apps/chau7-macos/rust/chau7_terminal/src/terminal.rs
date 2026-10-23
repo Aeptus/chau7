@@ -1511,7 +1511,11 @@ impl Chau7Terminal {
                     .unwrap_or(passthrough_owned.len())
                     .clamp(fed, passthrough_owned.len());
                 if end > fed {
-                    processor.advance(&mut *term, &passthrough_owned[fed..end]);
+                    crate::emoji_presentation::advance(
+                        &mut *processor,
+                        &mut *term,
+                        &passthrough_owned[fed..end],
+                    );
                     fed = end;
                 }
                 let grid = term.grid();
@@ -1523,7 +1527,11 @@ impl Chau7Terminal {
                 ));
             }
             if fed < passthrough_owned.len() {
-                processor.advance(&mut *term, &passthrough_owned[fed..]);
+                crate::emoji_presentation::advance(
+                    &mut *processor,
+                    &mut *term,
+                    &passthrough_owned[fed..],
+                );
             }
             if !passthrough_owned.is_empty() {
                 // Sample the grid for invariant violations every
@@ -2612,7 +2620,7 @@ impl Chau7Terminal {
         // above the restored buffer. Using the processor keeps Alacritty's
         // internal state consistent rather than poking the grid directly.
         term.grid_mut().clear_history();
-        processor.advance(&mut *term, b"\x1b[2J\x1b[3J\x1b[H");
+        crate::emoji_presentation::advance(&mut *processor, &mut *term, b"\x1b[2J\x1b[3J\x1b[H");
 
         // The full-buffer export walks every viewport row, so rows below the
         // cursor arrive as bare CRLF terminators (possibly followed by the
@@ -2631,10 +2639,10 @@ impl Chau7Terminal {
         }
 
         if !body.is_empty() {
-            processor.advance(&mut *term, body);
+            crate::emoji_presentation::advance(&mut *processor, &mut *term, body);
         }
         if had_reset {
-            processor.advance(&mut *term, RESET);
+            crate::emoji_presentation::advance(&mut *processor, &mut *term, RESET);
         }
 
         self.grid_dirty.store(true, Ordering::Release);
@@ -5635,6 +5643,53 @@ mod tests {
         let (s, _w, cont) = snapshot_cell_str(&term, 0, 0);
         assert_eq!(s, "\u{2764}\u{FE0F}", "VS16 must survive the snapshot");
         assert_eq!(cont, 0);
+    }
+
+    /// Selects row 0 from column 0 to the last column and returns the copied
+    /// text, exactly as macOS copy does (`selection_to_string`).
+    fn copy_row0(term: &Chau7Terminal) -> String {
+        let cols = term.term.lock().grid().columns() as i32;
+        term.selection_start(0, 0, 0);
+        term.selection_update(cols - 1, 0);
+        let text = term.selection_text().unwrap_or_default();
+        term.selection_clear();
+        text.trim_end().to_string()
+    }
+
+    // Issue #213: the byte pattern Claude Code (Ink) emits for an emoji
+    // presentation sequence. Ink measures `⚠️` as two columns, so it
+    // pre-clears the second column, draws the glyph, then jumps with CHA to
+    // the column after it plus one space. A terminal that kept `⚠️` one
+    // column wide showed and copied two spaces instead of one.
+    #[test]
+    fn vs16_sequence_from_ink_copies_one_space() {
+        let term = Chau7Terminal::new_with_env(20, 2, "", &[]).expect("create");
+        term.inject_output("\x1b[3G \x1b[2G\u{26A0}\u{FE0F}\x1b[5GEn".as_bytes());
+        assert_eq!(copy_row0(&term), " \u{26A0}\u{FE0F} En");
+        let (s, w, _) = snapshot_cell_str(&term, 0, 1);
+        assert_eq!(s, "\u{26A0}\u{FE0F}");
+        assert_eq!(w, 2, "an emoji presentation sequence occupies two cells");
+        let (_, _, cont) = snapshot_cell_str(&term, 0, 2);
+        assert_eq!(cont, 1);
+    }
+
+    // Codex (ratatui) draws the glyph and then moves to the next drawn cell
+    // with CUP. ratatui measures with `unicode-width`, which also counts
+    // `⏸️` as two columns.
+    #[test]
+    fn vs16_sequence_from_ratatui_copies_one_space() {
+        let term = Chau7Terminal::new_with_env(20, 2, "", &[]).expect("create");
+        term.inject_output("\x1b[1;1H\u{23F8}\u{FE0F}\x1b[1;4HPaused".as_bytes());
+        assert_eq!(copy_row0(&term), "\u{23F8}\u{FE0F} Paused");
+    }
+
+    // Plain text following the sequence must advance past both cells.
+    #[test]
+    fn vs16_sequence_advances_cursor_two_columns() {
+        let term = Chau7Terminal::new_with_env(20, 2, "", &[]).expect("create");
+        term.inject_output("a\u{2764}\u{FE0F}b".as_bytes());
+        assert_eq!(cursor_pos(&term), (4, 0));
+        assert_eq!(copy_row0(&term), "a\u{2764}\u{FE0F}b");
     }
 
     #[test]
