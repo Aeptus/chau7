@@ -22,6 +22,9 @@ use crate::shell_session::standardize_path;
 
 /// `maxRecentEvents`.
 pub const MAX_RECENT_EVENTS: usize = 50;
+/// Sessions kept for directory matching; the least recently active one is
+/// forgotten first, so a long-running app does not grow without bound.
+pub const MAX_TRACKED_SESSIONS: usize = 256;
 /// `idleThreshold` (60 s).
 pub const IDLE_THRESHOLD: f64 = 60.0;
 /// `minimumIdleCheckInterval`.
@@ -202,6 +205,9 @@ impl ClaudeSessionTracker {
                     }
                 }
                 None => {
+                    if self.sessions.len() >= MAX_TRACKED_SESSIONS {
+                        self.forget_least_recent();
+                    }
                     self.sessions.insert(
                         event.session_id.clone(),
                         ClaudeSessionInfo {
@@ -226,6 +232,22 @@ impl ClaudeSessionTracker {
             && let Some(session) = self.sessions.get_mut(&event.session_id)
         {
             session.state = SessionState::Closed;
+        }
+    }
+
+    /// Drop the least recently active session, closed ones first.
+    fn forget_least_recent(&mut self) {
+        let oldest = self
+            .sessions
+            .values()
+            .min_by(|a, b| {
+                (b.state == SessionState::Closed)
+                    .cmp(&(a.state == SessionState::Closed))
+                    .then(a.last_activity.total_cmp(&b.last_activity))
+            })
+            .map(|s| s.id.clone());
+        if let Some(id) = oldest {
+            self.sessions.remove(&id);
         }
     }
 
@@ -546,6 +568,31 @@ mod tests {
             Some("Bash")
         );
         assert_eq!(tracker.recent_events.len(), 4);
+    }
+
+    #[test]
+    fn tracked_sessions_are_bounded_closed_and_oldest_first() {
+        let mut tracker = ClaudeSessionTracker::new();
+        let base =
+            parse_event_line(&line("user_prompt", "s", "/p", "2026-01-01T00:00:00Z"), 0.0).unwrap();
+        for i in 0..MAX_TRACKED_SESSIONS {
+            let mut event = base.clone();
+            event.session_id = format!("s{i}");
+            event.timestamp = i as f64;
+            tracker.handle_event(&event);
+        }
+        // A newer session that already closed is evicted before older open ones.
+        tracker.sessions.get_mut("s10").unwrap().state = SessionState::Closed;
+        let mut event = base.clone();
+        event.session_id = "new".into();
+        event.timestamp = 1e9;
+        tracker.handle_event(&event);
+        assert_eq!(tracker.sessions.len(), MAX_TRACKED_SESSIONS);
+        assert!(!tracker.sessions.contains_key("s10"));
+        assert!(tracker.sessions.contains_key("s0"));
+        event.session_id = "newer".into();
+        tracker.handle_event(&event);
+        assert!(!tracker.sessions.contains_key("s0"));
     }
 
     #[test]

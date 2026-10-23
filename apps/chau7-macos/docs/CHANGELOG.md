@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Bound the number of tracked Claude Code sessions.
 - Bound the proxy IPC line buffer and drop over-long lines.
 - Refuse to take over or delete a remote IPC socket that another running instance owns.
 - Keep draining proxy and remote agent output after invalid UTF-8, so the helpers never block on a full pipe.
