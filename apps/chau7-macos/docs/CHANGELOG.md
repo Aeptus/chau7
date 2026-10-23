@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Follow AI hook and event logs with the shared tailer, so split multi-byte characters and rotated logs are read correctly.
 - Reap the curl helper even when a bug report body cannot be written.
 - Coalesce toolbar sizing after window resize bursts and skip unchanged AppKit
   constraint updates.

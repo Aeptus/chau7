@@ -24,6 +24,7 @@ use chau7_next_core::ai::event::{AiEvent, AiEventReliability, AiEventSource, par
 use chau7_next_core::ai::tool_registry::{event_source_raw_value_for, resume_provider_key_for};
 use chau7_next_core::command_detection::event_parsing::EventType;
 use chau7_next_core::data_root::DataRoot;
+use chau7_next_core::file_tailer::{FileTailer, TailerConfig};
 use chau7_next_core::history_events::resolve_directory;
 use chau7_next_core::iso8601;
 use chau7_next_core::monitoring::claude_code::{
@@ -34,7 +35,6 @@ use chau7_next_core::monitoring::codex_sessions::{Candidate, CodexSessionResolve
 use chau7_next_core::monitoring::conflicts::{
     ConflictDetector, FinishedBlock as ConflictFinishedBlock, conflict_message,
 };
-use chau7_next_core::monitoring::tailer::FileTailer;
 use gpui::{App, Global, Task};
 use uuid::Uuid;
 
@@ -154,8 +154,8 @@ struct Flags {
 #[derive(Default)]
 struct MonitorIo {
     flags: Option<Flags>,
-    claude: Vec<FileTailer>,
-    events: Vec<FileTailer>,
+    claude: Vec<FileTailer<String>>,
+    events: Vec<FileTailer<String>>,
     codex: CodexSessionResolver,
     codex_history: Vec<(String, f64)>,
     codex_candidates: Vec<Candidate>,
@@ -226,8 +226,10 @@ impl MonitorIo {
             return;
         }
         self.flags = Some(flags.clone());
-        let started = |path| {
-            let mut tailer = FileTailer::new(path);
+        // Read-only: `TailerConfig::events` never creates the followed file.
+        let started = |path: PathBuf| {
+            let mut tailer =
+                FileTailer::new(TailerConfig::events(path), |line| Ok(line.to_string()));
             tailer.start(0);
             tailer
         };
