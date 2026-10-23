@@ -560,8 +560,8 @@ fn selected(cx: &mut App) -> HashMap<u64, bool> {
         }
     }
     for parked in &cx.global::<AppData>().hidden {
-        if let Some((_, panes)) = parked.tabs.get(parked.selected) {
-            for (_, session) in panes.read(cx).pane_sessions(cx) {
+        if let Some(tab) = parked.tabs.get(parked.selected) {
+            for (_, session) in tab.panes.read(cx).pane_sessions(cx) {
                 selected.insert(session.read(cx).id, false);
             }
         }

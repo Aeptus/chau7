@@ -94,7 +94,8 @@ use crate::tab_bar::{NotificationStyle, TabAnimations, TabDrag, TabId};
 use crate::theme::Chrome;
 
 pub use app_data::{
-    AppData, ParkedWindow, record_clipboard, start_clipboard_watch, update_clipboard_history,
+    AppData, MovedTab, ParkedWindow, record_clipboard, start_clipboard_watch,
+    update_clipboard_history,
 };
 pub use debug::TabDebugInfo;
 pub use panel::reset_panel_positions;
@@ -131,6 +132,19 @@ struct TabEntry {
     /// AI tool last seen in the tab, to color it once per change.
     ai_app: Option<String>,
     _subscription: Subscription,
+}
+
+impl TabEntry {
+    /// The tab with its window-side state, ready for another window.
+    fn into_moved(self, meta: TabMeta) -> MovedTab {
+        MovedTab {
+            meta,
+            panes: self.panes,
+            notification: self.notification,
+            bookmarks: self.bookmarks,
+            ai_app: self.ai_app,
+        }
+    }
 }
 
 /// Frames recorded during layout (window coordinates), used for hit tests
@@ -742,7 +756,7 @@ impl Workspace {
         let mut tabs = Vec::new();
         for id in ids {
             if let (Some(entry), Some(meta)) = (self.entries.remove(&id), self.state.take(id)) {
-                tabs.push((meta, entry.panes));
+                tabs.push(entry.into_moved(meta));
             }
         }
         Some(ParkedWindow {
@@ -1284,12 +1298,7 @@ impl Workspace {
     /// The window emptied this way is put away, like a hidden Swift window:
     /// the next Dock click or Show Chau7 brings it back at the same place
     /// with a fresh tab (`ensureFreshTabIfNeeded`).
-    fn take_tab(
-        &mut self,
-        id: TabId,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Option<(TabMeta, Entity<PaneTree>)> {
+    fn take_tab(&mut self, id: TabId, window: &mut Window, cx: &mut App) -> Option<MovedTab> {
         let entry = self.entries.remove(&id)?;
         let meta = self.state.take(id)?;
         if self.state.is_empty() {
@@ -1306,16 +1315,29 @@ impl Workspace {
             Self::retire_native_window(window);
             window.remove_window();
         }
-        Some((meta, entry.panes))
+        Some(entry.into_moved(meta))
     }
 
     fn adopt_tab(
         &mut self,
-        mut meta: TabMeta,
+        meta: TabMeta,
         panes: Entity<PaneTree>,
         select: bool,
         cx: &mut Context<Self>,
     ) {
+        self.adopt_moved_tab(MovedTab::new(meta, panes), select, cx);
+    }
+
+    /// Take in a tab from another window (or a parked one) with its
+    /// notification style, bookmarks and AI tool.
+    pub fn adopt_moved_tab(&mut self, tab: MovedTab, select: bool, cx: &mut Context<Self>) {
+        let MovedTab {
+            mut meta,
+            panes,
+            notification,
+            bookmarks,
+            ai_app,
+        } = tab;
         // Keep ids unique app-wide: the tab gets a fresh id in its new window,
         // and keeps its stable UUID (MCP, events, remote control).
         let id = AppData::next_tab_id(cx);
@@ -1323,6 +1345,15 @@ impl Workspace {
         let uuid = meta.uuid;
         meta.set_uuid(uuid);
         self.insert_entry(id, panes, cx);
+        // Bookmark ids are allocated per window: stay ahead of the moved ones.
+        if let Some(last) = bookmarks.iter().map(|b| b.id()).max() {
+            self.next_bookmark_id = self.next_bookmark_id.max(last + 1);
+        }
+        if let Some(entry) = self.entries.get_mut(&id) {
+            entry.notification = notification;
+            entry.bookmarks = bookmarks;
+            entry.ai_app = ai_app;
+        }
         self.state.push(meta, select);
         cx.notify();
     }

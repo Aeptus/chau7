@@ -1,5 +1,5 @@
 use super::*;
-use crate::{pane::PaneTree, settings::Settings};
+use crate::{pane::PaneTree, settings::Settings, tab_bar::NotificationStyle};
 use chau7_next_core::{
     data_root::DataRoot,
     tabs_state::{TabColor, TabMeta},
@@ -93,6 +93,74 @@ fn invalid_or_source_destination_preserves_tabs(harness: &mut TestAppContext) {
                 "invalid destinations must not create a window"
             );
         }
+        close_windows(cx);
+    });
+}
+
+/// Give tab `id` a notification style, a bookmark and an AI tool.
+fn decorate(workspace: &Entity<Workspace>, id: TabId, cx: &mut App) {
+    workspace.update(cx, |workspace, _| {
+        workspace.next_bookmark_id = 8;
+        let entry = workspace.entries.get_mut(&id).unwrap();
+        entry.notification = Some(NotificationStyle::attention());
+        entry.bookmarks = vec![super::super::bookmarks::Bookmark::for_test(7, "build")];
+        entry.ai_app = Some("Codex".into());
+    });
+}
+
+fn assert_decorated(workspace: &Workspace) {
+    let id = workspace.state.tabs()[0].id;
+    let entry = workspace.entries.get(&id).unwrap();
+    assert_eq!(entry.notification, Some(NotificationStyle::attention()));
+    assert_eq!(
+        entry
+            .bookmarks
+            .iter()
+            .map(|b| (b.id(), b.label()))
+            .collect::<Vec<_>>(),
+        [(7, Some("build"))]
+    );
+    assert_eq!(entry.ai_app.as_deref(), Some("Codex"));
+    assert!(
+        workspace.next_bookmark_id > 7,
+        "new bookmarks must not reuse a moved bookmark id"
+    );
+}
+
+#[gpui::test]
+fn moved_tab_keeps_notification_bookmarks_and_ai_tool(harness: &mut TestAppContext) {
+    init(harness);
+    harness.update(|cx| {
+        let (_, source) = crate::open_window_for_transfer(cx).unwrap();
+        let (_, target) = crate::open_window_for_transfer(cx).unwrap();
+        let (id, _, _) = seed_tab(&source, cx);
+        decorate(&source, id, cx);
+        move_tabs_to(source.clone(), vec![id], Some(target.entity_id()), cx);
+        assert_decorated(target.read(cx));
+        close_windows(cx);
+    });
+}
+
+#[gpui::test]
+fn parked_window_keeps_tab_state(harness: &mut TestAppContext) {
+    init(harness);
+    harness.update(|cx| {
+        let (handle, source) = crate::open_window_for_transfer(cx).unwrap();
+        let (id, _, _) = seed_tab(&source, cx);
+        decorate(&source, id, cx);
+        let parked = handle
+            .update(cx, |_, window, cx| {
+                source.update(cx, |workspace, _| workspace.take_window_tabs(window))
+            })
+            .unwrap()
+            .unwrap();
+        let (_, target) = crate::open_window_for_transfer(cx).unwrap();
+        target.update(cx, |workspace, cx| {
+            for tab in parked.tabs {
+                workspace.adopt_moved_tab(tab, true, cx);
+            }
+        });
+        assert_decorated(target.read(cx));
         close_windows(cx);
     });
 }

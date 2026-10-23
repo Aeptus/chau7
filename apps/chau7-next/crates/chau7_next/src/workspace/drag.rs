@@ -310,13 +310,13 @@ pub fn move_tabs_to(
             return;
         }
         target_ws.update(cx, |workspace, cx| {
-            for (index, (meta, panes)) in moved.into_iter().enumerate() {
+            for (index, tab) in moved.into_iter().enumerate() {
                 log::info!(
                     "TABBAR move_window tab={} target={:?}",
-                    meta.id,
+                    tab.meta.id,
                     target_window.window_handle().window_id()
                 );
-                workspace.adopt_tab(meta, panes, index + 1 == moved_count, cx);
+                workspace.adopt_moved_tab(tab, index + 1 == moved_count, cx);
             }
             log::info!(
                 "TABBAR move_window done target_tabs={}",

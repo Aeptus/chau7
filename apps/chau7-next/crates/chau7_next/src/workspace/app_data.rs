@@ -10,16 +10,40 @@ use gpui::{AnyWindowHandle, App, Bounds, Entity, Global, Pixels, WeakEntity};
 use super::Workspace;
 use crate::pane::PaneTree;
 use crate::settings::Settings;
-use crate::tab_bar::TabId;
+use crate::tab_bar::{NotificationStyle, TabId};
 
 /// A window that was closed with Close Window: the Swift app only hides it
 /// (`orderOut`), so its shells keep running. Chau7 Next removes the native
 /// window and keeps the tabs here until the Dock icon or a shortcut brings
 /// them back in a new window.
 pub struct ParkedWindow {
-    pub tabs: Vec<(TabMeta, Entity<PaneTree>)>,
+    pub tabs: Vec<MovedTab>,
     pub selected: usize,
     pub bounds: Bounds<Pixels>,
+}
+
+/// A tab taken out of a window (moved to another one, or parked with its
+/// window): its metadata, panes and the window-side state that belongs to the
+/// tab (notification style, bookmarks, last AI tool seen).
+pub struct MovedTab {
+    pub meta: TabMeta,
+    pub panes: Entity<PaneTree>,
+    pub(super) notification: Option<NotificationStyle>,
+    pub(super) bookmarks: Vec<super::bookmarks::Bookmark>,
+    pub(super) ai_app: Option<String>,
+}
+
+impl MovedTab {
+    /// A tab with no window-side state yet.
+    pub fn new(meta: TabMeta, panes: Entity<PaneTree>) -> Self {
+        Self {
+            meta,
+            panes,
+            notification: None,
+            bookmarks: Vec::new(),
+            ai_app: None,
+        }
+    }
 }
 
 /// App-wide state: data paths, open windows, id counter.

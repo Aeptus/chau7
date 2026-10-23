@@ -561,8 +561,8 @@ pub fn open_parked_window(parked: ParkedWindow, cx: &mut App) {
                 return Workspace::new(None, window, cx);
             }
             let mut ws = Workspace::new_empty(window, cx);
-            for (i, (meta, panes)) in tabs.into_iter().enumerate() {
-                ws.adopt_tab_public(meta, panes, i == selected, cx);
+            for (i, tab) in tabs.into_iter().enumerate() {
+                ws.adopt_moved_tab(tab, i == selected, cx);
             }
             ws.focus_selected_public(window, cx);
             ws
