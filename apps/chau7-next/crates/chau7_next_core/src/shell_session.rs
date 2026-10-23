@@ -812,10 +812,10 @@ impl ShellSession {
         {
             return;
         }
-        let Ok(text) = std::str::from_utf8(data) else {
-            return;
-        };
-        let text = escape_sanitizer::sanitize(text);
+        // A chunk can end mid-character or carry a stray invalid byte; decode
+        // lossily so the prompt text around it is still checked.
+        let text = String::from_utf8_lossy(data);
+        let text = escape_sanitizer::sanitize(&text);
         let trailing = text
             .trim_end()
             .chars()
@@ -1815,6 +1815,19 @@ mod tests {
         assert_eq!(s.status(), CommandStatus::Running);
         s.detect_waiting_for_input(b"Input requested");
         assert_eq!(s.status(), CommandStatus::WaitingForInput);
+    }
+
+    #[test]
+    fn terminal_detection_survives_invalid_utf8_in_chunk() {
+        let mut s = session();
+        s.handle_input("mybot\r", false, &Ctx, 1.0);
+        s.set_active_app(Some("Custom AI".into()));
+        // A split multi-byte character (first two bytes of a 3-byte one)
+        // ahead of the prompt must not hide it.
+        let mut chunk = b"\xe2\x94".to_vec();
+        chunk.extend_from_slice(b" This command needs your approval");
+        s.detect_waiting_for_input(&chunk);
+        assert_eq!(s.status(), CommandStatus::ApprovalRequired);
     }
 
     #[test]
