@@ -106,9 +106,9 @@ impl Workspace {
         lifecycle(window.window_handle(), "retiring", cx);
         Self::retire_native_window(window);
         if let Some(closed) = self.take_window_tabs(window) {
-            for (meta, panes) in closed.tabs {
-                crate::mcp::control::forget_closed_tab(&meta.uuid.to_string());
-                for (_, session) in panes.read(cx).pane_sessions(cx) {
+            for tab in closed.tabs {
+                crate::mcp::control::forget_closed_tab(&tab.meta.uuid.to_string());
+                for (_, session) in tab.panes.read(cx).pane_sessions(cx) {
                     session.update(cx, |session, _| session.close());
                 }
             }

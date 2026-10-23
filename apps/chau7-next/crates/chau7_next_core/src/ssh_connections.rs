@@ -37,6 +37,19 @@ pub struct SshConnection {
     pub notes: String,
 }
 
+/// The Port field of the connection editor: empty means 22; anything else
+/// must be a port number from 1 to 65535.
+pub fn parse_port(text: &str) -> Result<i64, &'static str> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(22);
+    }
+    match text.parse::<i64>() {
+        Ok(port) if (1..=65535).contains(&port) => Ok(port),
+        _ => Err("Port must be a number from 1 to 65535."),
+    }
+}
+
 impl Default for SshConnection {
     fn default() -> Self {
         Self {
@@ -356,6 +369,16 @@ mod tests {
             host: host.into(),
             user: user.into(),
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn port_field_rejects_invalid_ports() {
+        assert_eq!(parse_port(""), Ok(22));
+        assert_eq!(parse_port(" 2222 "), Ok(2222));
+        assert_eq!(parse_port("65535"), Ok(65535));
+        for bad in ["0", "-1", "65536", "22x", "ssh"] {
+            assert!(parse_port(bad).is_err(), "{bad}");
         }
     }
 

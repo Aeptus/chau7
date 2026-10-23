@@ -930,17 +930,131 @@ pub fn local_now() -> NaiveDateTime {
     chrono::Local::now().naive_local()
 }
 
-/// Replace `${cwd}`, `${home}`, `${date}`, `${time}`, `${clip}`, then
-/// `${env:VAR}`.
+/// Replace `${cwd}`, `${home}`, `${date}`, `${time}`, `${clip}` and
+/// `${env:VAR}` in one pass over `input`. Substituted values are inert: a
+/// clipboard or directory holding `${env:SECRET}` is inserted as written.
 pub fn replace_tokens(input: &str, ctx: &TokenContext, env: &dyn Fn(&str) -> String) -> String {
-    let mut text = input.replace("${cwd}", ctx.cwd);
-    text = text.replace("${home}", ctx.home);
-    text = text.replace("${date}", &ctx.now.format("%Y-%m-%d").to_string());
-    text = text.replace("${time}", &ctx.now.format("%H:%M:%S").to_string());
-    if text.contains("${clip}") {
-        text = text.replace("${clip}", &(ctx.clipboard)());
+    let (marked, values) = mark_tokens(input, ctx, env);
+    unmark(&marked, &values)
+}
+
+/// First marker character: the start of Supplementary Private Use Area-A.
+/// Each token value stands as one marker char while placeholders are
+/// expanded, so nothing reads inside a value.
+const MARKER_BASE: u32 = 0xF0000;
+/// Area-A holds U+F0000..=U+FFFFD.
+const MARKER_COUNT: u32 = 0xFFFE;
+
+fn marker_index(c: char) -> Option<usize> {
+    let code = c as u32;
+    (MARKER_BASE..MARKER_BASE + MARKER_COUNT)
+        .contains(&code)
+        .then(|| (code - MARKER_BASE) as usize)
+}
+
+/// `input` with each token replaced by a marker char standing for its value
+/// in the returned list. Marker-range characters already in `input` become
+/// markers for themselves, so [`unmark`] gives them back unchanged.
+fn mark_tokens(
+    input: &str,
+    ctx: &TokenContext,
+    env: &dyn Fn(&str) -> String,
+) -> (String, Vec<String>) {
+    let mut out = String::with_capacity(input.len());
+    let mut values: Vec<String> = Vec::new();
+    let mut clip: Option<String> = None;
+    fn push_value(out: &mut String, values: &mut Vec<String>, value: String) {
+        let index = values.len() as u32;
+        if index < MARKER_COUNT {
+            out.push(char::from_u32(MARKER_BASE + index).expect("private use char"));
+            values.push(value);
+        }
+        // Past 65534 tokens the rest expand to nothing rather than to text
+        // that later passes could read.
     }
-    snippet_parsing::replace_env_tokens_with(&text, |k| env(k))
+    let mut rest = input;
+    while !rest.is_empty() {
+        if let Some((len, value)) = token_at(rest, ctx, env, &mut clip) {
+            push_value(&mut out, &mut values, value);
+            rest = &rest[len..];
+            continue;
+        }
+        let c = rest.chars().next().expect("non-empty");
+        if marker_index(c).is_some() {
+            push_value(&mut out, &mut values, c.to_string());
+        } else {
+            out.push(c);
+        }
+        rest = &rest[c.len_utf8()..];
+    }
+    (out, values)
+}
+
+/// The token at the start of `text`: its byte length and its value.
+fn token_at(
+    text: &str,
+    ctx: &TokenContext,
+    env: &dyn Fn(&str) -> String,
+    clip: &mut Option<String>,
+) -> Option<(usize, String)> {
+    let body = text.strip_prefix("${")?;
+    let fixed = |name: &str| body.starts_with(name) && body[name.len()..].starts_with('}');
+    let token_len = |name: &str| 2 + name.len() + 1;
+    if fixed("cwd") {
+        return Some((token_len("cwd"), ctx.cwd.to_string()));
+    }
+    if fixed("home") {
+        return Some((token_len("home"), ctx.home.to_string()));
+    }
+    if fixed("date") {
+        return Some((token_len("date"), ctx.now.format("%Y-%m-%d").to_string()));
+    }
+    if fixed("time") {
+        return Some((token_len("time"), ctx.now.format("%H:%M:%S").to_string()));
+    }
+    if fixed("clip") {
+        // Read at most once, and only when the text uses it.
+        let value = clip.get_or_insert_with(|| (ctx.clipboard)()).clone();
+        return Some((token_len("clip"), value));
+    }
+    // `${env:NAME}`, NAME in [A-Za-z0-9_]+ (`replace_env_tokens_with`).
+    let name_part = body.strip_prefix("env:")?;
+    let name_len = name_part
+        .bytes()
+        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
+        .count();
+    (name_len > 0 && name_part[name_len..].starts_with('}')).then(|| {
+        let name = &name_part[..name_len];
+        (token_len("env:") + name_len, env(name))
+    })
+}
+
+/// `text` with every marker char replaced by its value.
+fn unmark(text: &str, values: &[String]) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match marker_index(c).and_then(|i| values.get(i)) {
+            Some(value) => out.push_str(value),
+            None => out.push(c),
+        }
+    }
+    out
+}
+
+/// Char offset in the unmarked text of each char offset in `text` (one
+/// more entry than `text` has chars, for the end).
+fn unmarked_offsets(text: &str, values: &[String]) -> Vec<usize> {
+    let mut offsets = Vec::with_capacity(text.len() + 1);
+    let mut at = 0;
+    for c in text.chars() {
+        offsets.push(at);
+        at += match marker_index(c).and_then(|i| values.get(i)) {
+            Some(value) => value.chars().count(),
+            None => 1,
+        };
+    }
+    offsets.push(at);
+    offsets
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -960,22 +1074,35 @@ pub fn prepare_insertion(
     paste_mode: bool,
     placeholders_enabled: bool,
 ) -> Insertion {
-    let base = replace_tokens(body, ctx, env);
+    // Tab stops are read from the snippet only: token values (clipboard,
+    // directory, environment) stay markers until the very end.
+    let (marked, values) = mark_tokens(body, ctx, env);
     if paste_mode || !placeholders_enabled {
-        let len = base.chars().count();
+        let text = unmark(&marked, &values);
+        let len = text.chars().count();
         return Insertion {
-            text: base,
+            text,
             placeholders: Vec::new(),
             final_cursor_offset: len,
         };
     }
-    let expanded = snippet_parsing::expand_placeholders(&base);
-    let final_offset = expanded
+    let expanded = snippet_parsing::expand_placeholders(&marked);
+    let offsets = unmarked_offsets(&expanded.text, &values);
+    let at = |offset: usize| offsets[offset.min(offsets.len() - 1)];
+    let placeholders = expanded
+        .placeholders
+        .iter()
+        .map(|p| {
+            let start = at(p.start);
+            Placeholder::new(p.index, start, at(p.start + p.length) - start)
+        })
+        .collect();
+    let final_offset = at(expanded
         .final_cursor_offset
-        .unwrap_or_else(|| expanded.text.chars().count());
+        .unwrap_or_else(|| expanded.text.chars().count()));
     Insertion {
-        text: expanded.text,
-        placeholders: expanded.placeholders,
+        text: unmark(&expanded.text, &values),
+        placeholders,
         final_cursor_offset: final_offset,
     }
 }
@@ -1625,6 +1752,66 @@ mod tests {
             &env,
         );
         assert_eq!(out, "/work /home/me 2026-03-04 05:06:07 CLIP me");
+    }
+
+    /// Clipboard, directory and environment values are inserted as written:
+    /// a copied `${env:...}` must never type a secret into the shell.
+    #[test]
+    fn substituted_values_are_not_expanded_again() {
+        let payload = "${env:AWS_SECRET_ACCESS_KEY}";
+        let clip = || payload.to_string();
+        let env = |k: &str| {
+            if k == "AWS_SECRET_ACCESS_KEY" {
+                "SECRET".to_string()
+            } else {
+                String::new()
+            }
+        };
+        let body = "echo ${clip} ${1:x}";
+        assert_eq!(
+            replace_tokens(body, &ctx(&clip), &env),
+            format!("echo {payload} ${{1:x}}")
+        );
+        for (paste, placeholders) in [(false, true), (true, true), (false, false)] {
+            let ins = prepare_insertion(body, &ctx(&clip), &env, paste, placeholders);
+            assert!(!ins.text.contains("SECRET"), "{ins:?}");
+            assert!(ins.text.starts_with(&format!("echo {payload} ")), "{ins:?}");
+        }
+        // A value never becomes a tab stop or reads the clipboard.
+        let clip = || "${1:stop}".to_string();
+        let ins = prepare_insertion("${clip}", &ctx(&clip), &env, false, true);
+        assert_eq!(ins.text, "${1:stop}");
+        assert!(ins.placeholders.is_empty());
+        let clip = || panic!("clipboard read");
+        let cwd_ctx = TokenContext {
+            cwd: "/w/${clip}/${env:AWS_SECRET_ACCESS_KEY}",
+            ..ctx(&clip)
+        };
+        assert_eq!(
+            replace_tokens("${cwd}", &cwd_ctx, &env),
+            "/w/${clip}/${env:AWS_SECRET_ACCESS_KEY}"
+        );
+    }
+
+    /// Tab stops around and after token values point into the final text.
+    #[test]
+    fn placeholder_offsets_follow_token_values() {
+        let clip = || "é😀".to_string();
+        let env = |_: &str| "ENV".to_string();
+        let ins = prepare_insertion(
+            "${clip} ${1:${cwd}} ${env:X} ${2:b}${0}",
+            &ctx(&clip),
+            &env,
+            false,
+            true,
+        );
+        assert_eq!(ins.text, "é😀 /work ENV b");
+        assert_eq!(ins.placeholders[0], Placeholder::new(1, 3, 5));
+        assert_eq!(ins.placeholders[1], Placeholder::new(2, 13, 1));
+        assert_eq!(ins.final_cursor_offset, 14);
+        // Marker-range characters typed in a snippet come back unchanged.
+        let text = "\u{F0000}\u{F0001}";
+        assert_eq!(replace_tokens(text, &ctx(&clip), &env), text);
     }
 
     #[test]

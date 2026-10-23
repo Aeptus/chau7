@@ -356,6 +356,9 @@ pub(crate) fn run_if_requested() -> Option<i32> {
             // Install the production keymap and native menu route only in this
             // focused case; the original fixture cases keep their old setup.
             crate::actions::bind_keys(cx);
+            crate::commands::bind_keys(cx);
+            crate::panes::bind_keys(cx);
+            crate::actions::capture_default_keymap(cx);
             let input = crate::settings::Settings::get(cx).input.clone();
             crate::actions::bind_shortcut_settings(&input, cx);
             cx.on_keyboard_layout_change(|cx| {
@@ -363,8 +366,6 @@ pub(crate) fn run_if_requested() -> Option<i32> {
                 crate::actions::bind_shortcut_settings(&input, cx);
             })
             .detach();
-            crate::commands::bind_keys(cx);
-            crate::panes::bind_keys(cx);
             crate::commands::register(cx);
             cx.set_menus(crate::actions::app_menus(&[]));
             crate::register_app_actions(cx);

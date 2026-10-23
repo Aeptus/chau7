@@ -3,7 +3,7 @@
 //! details or the editor on the right.
 
 use chau7_next_core::ssh_config;
-use chau7_next_core::ssh_connections::{COLOR_TAGS, SshConnection, validation_message};
+use chau7_next_core::ssh_connections::{COLOR_TAGS, SshConnection, parse_port, validation_message};
 use gpui::{
     AnyElement, AnyWindowHandle, App, Bounds, Context, Entity, Global, Render, SharedString,
     Window, WindowBounds, WindowOptions, div, prelude::*, px, size,
@@ -187,7 +187,8 @@ impl SshManager {
         let mut c = form.original.clone();
         c.name = text(&form.name);
         c.host = text(&form.host);
-        c.port = text(&form.port).parse().unwrap_or(22);
+        // An invalid port keeps the saved one; Save is refused until fixed.
+        c.port = parse_port(&text(&form.port)).unwrap_or(form.original.port);
         c.user = text(&form.user);
         c.identity_file = text(&form.identity);
         c.jump_host = text(&form.jump);
@@ -654,7 +655,8 @@ impl SshManager {
         let validation = draft.extra_options_validation();
         let warning = (!draft.extra_options.is_empty() && !validation.is_valid)
             .then(|| validation_message(validation.issue.as_ref()));
-        let can_save = !draft.host.is_empty();
+        let port_error = parse_port(&form.port.read(cx).value()).err();
+        let can_save = !draft.host.is_empty() && port_error.is_none();
         let labeled = |label: &'static str, input: &Entity<InputState>| {
             div()
                 .flex()
@@ -712,6 +714,14 @@ impl SshManager {
             .child(labeled("Identity File", &form.identity))
             .child(labeled("Jump Host", &form.jump))
             .child(labeled("Extra Options", &form.extra));
+        if let Some(message) = port_error {
+            body = body.child(
+                div()
+                    .text_xs()
+                    .text_color(gpui::hsla(0.0, 0.8, 0.55, 1.0))
+                    .child(crate::l10n::tr(message)),
+            );
+        }
         if let Some(message) = warning {
             body = body.child(
                 div()
@@ -752,7 +762,7 @@ impl SshManager {
                     Self::button("ssh-save", "Save", true, chrome)
                         .when(!can_save, |d| d.opacity(0.4))
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            if save_draft.host.is_empty() {
+                            if !can_save {
                                 return;
                             }
                             let connection = save_draft.clone();

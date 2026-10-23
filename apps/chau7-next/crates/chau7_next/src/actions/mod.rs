@@ -9,7 +9,7 @@ mod tab_actions;
 
 use gpui::{Action, EntityId, actions};
 
-pub use keymap::{bind_keys, bind_shortcut_settings};
+pub use keymap::{bind_keys, bind_shortcut_settings, capture_default_keymap};
 pub use menus::app_menus;
 pub use tab_actions::*;
 

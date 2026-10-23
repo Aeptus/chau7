@@ -81,13 +81,28 @@ pub fn active_name(cx: &App) -> Option<String> {
 
 /// Apply a profile's settings and make it the active one.
 pub fn load_profile(id: &str, cx: &mut App) -> bool {
+    load_profile_with(id, true, cx)
+}
+
+/// `persist`: write the settings to config.toml and queue them for iCloud
+/// (a profile the user picked). Auto-switch loads follow the tab in use and
+/// apply for the session only.
+fn load_profile_with(id: &str, persist: bool, cx: &mut App) -> bool {
     let Some(profile) = cx.global::<ProfilesState>().store.by_id(id).cloned() else {
         return false;
     };
     let loaded = Settings::from_profile_text_local(&profile.config, Settings::get(cx));
-    settings_window::update(cx, |s| *s = loaded);
+    if persist {
+        settings_window::update(cx, |s| *s = loaded);
+    } else {
+        settings_window::apply_base_transient(cx, loaded);
+    }
     edit(cx, |store| store.active = Some(profile.id.clone()));
-    log::info!("profiles: loaded '{}'", profile.name);
+    log::info!(
+        "profiles: loaded '{}'{}",
+        profile.name,
+        if persist { "" } else { " (auto-switch)" }
+    );
     true
 }
 
@@ -144,7 +159,7 @@ fn run(action: SwitchAction, cx: &mut App) {
         .by_name(&name)
         .map(|p| p.id.clone());
     if let Some(id) = id {
-        load_profile(&id, cx);
+        load_profile_with(&id, false, cx);
     }
 }
 

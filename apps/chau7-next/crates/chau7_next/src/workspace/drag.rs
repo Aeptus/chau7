@@ -290,10 +290,12 @@ pub fn move_tabs_to(
     let result = target_window.update(cx, |_, target_window, cx| {
         let moved = source_window.update(cx, |_, source_window, cx| {
             source.update(cx, |workspace, cx| {
+                let selected = workspace.state.selected();
                 let moved: Vec<_> = ids
                     .iter()
                     .filter_map(|id| workspace.take_tab(*id, source_window, cx))
                     .collect();
+                workspace.tabs_moved_out(selected, source_window, cx);
                 cx.notify();
                 moved
             })
@@ -310,13 +312,13 @@ pub fn move_tabs_to(
             return;
         }
         target_ws.update(cx, |workspace, cx| {
-            for (index, (meta, panes)) in moved.into_iter().enumerate() {
+            for (index, tab) in moved.into_iter().enumerate() {
                 log::info!(
                     "TABBAR move_window tab={} target={:?}",
-                    meta.id,
+                    tab.meta.id,
                     target_window.window_handle().window_id()
                 );
-                workspace.adopt_tab(meta, panes, index + 1 == moved_count, cx);
+                workspace.adopt_moved_tab(tab, index + 1 == moved_count, cx);
             }
             log::info!(
                 "TABBAR move_window done target_tabs={}",

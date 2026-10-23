@@ -53,6 +53,8 @@ mod remote_hooks;
 mod rename;
 #[cfg(all(test, unix))]
 mod restore_fixture;
+#[cfg(all(test, unix))]
+mod selection_tests;
 #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
 pub(crate) use native_accessibility_fixture::verify as verify_native_accessibility_fixture;
 #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
@@ -94,7 +96,8 @@ use crate::tab_bar::{NotificationStyle, TabAnimations, TabDrag, TabId};
 use crate::theme::Chrome;
 
 pub use app_data::{
-    AppData, ParkedWindow, record_clipboard, start_clipboard_watch, update_clipboard_history,
+    AppData, MovedTab, ParkedWindow, record_clipboard, start_clipboard_watch,
+    update_clipboard_history,
 };
 pub use debug::TabDebugInfo;
 pub use panel::reset_panel_positions;
@@ -131,6 +134,19 @@ struct TabEntry {
     /// AI tool last seen in the tab, to color it once per change.
     ai_app: Option<String>,
     _subscription: Subscription,
+}
+
+impl TabEntry {
+    /// The tab with its window-side state, ready for another window.
+    fn into_moved(self, meta: TabMeta) -> MovedTab {
+        MovedTab {
+            meta,
+            panes: self.panes,
+            notification: self.notification,
+            bookmarks: self.bookmarks,
+            ai_app: self.ai_app,
+        }
+    }
 }
 
 /// Frames recorded during layout (window coordinates), used for hit tests
@@ -695,6 +711,11 @@ impl Workspace {
             }
             PaneEvent::CommandFinished(code) => {
                 this.offer_explain(id, *code, cx);
+                // A program ended (`ssh` closed, a tool quit): what runs in
+                // the tab changed, so check the rules again.
+                if this.state.selected() == Some(id) {
+                    this.evaluate_profile_rules(id, cx);
+                }
                 // Shell events (`ShellEventDetector`) come from the session's
                 // monitor as `PaneEvent::Ai` and reach the notification engine
                 // through `ai::events_out`.
@@ -742,7 +763,7 @@ impl Workspace {
         let mut tabs = Vec::new();
         for id in ids {
             if let (Some(entry), Some(meta)) = (self.entries.remove(&id), self.state.take(id)) {
-                tabs.push((meta, entry.panes));
+                tabs.push(entry.into_moved(meta));
             }
         }
         Some(ParkedWindow {
@@ -856,22 +877,48 @@ impl Workspace {
                 let direction = if to > from { 1.0 } else { -1.0 };
                 self.switch_anim.start(0, 30.0 * direction, 0.2, 0.9);
             }
-            // The user saw it: clear the style unless it is persistent
-            // (permission requests stay until answered).
-            if let Some(entry) = self.entries.get_mut(&id)
-                && !entry.notification.as_ref().is_some_and(|n| n.persistent)
-            {
-                entry.notification = None;
-            }
-            if self.rename.as_ref().is_some_and(|r| r.tab != id) {
-                self.rename = None;
-            }
-            self.hover = None;
-            self.idle_open = false;
-            self.scroll_to_selected();
-            self.refresh_search(cx);
-            self.focus_selected(window, cx);
-            cx.notify();
+            self.selection_changed(window, cx);
+        }
+    }
+
+    /// What follows any change of the selected tab (click, shortcut, the
+    /// selected tab closed or moved to another window).
+    fn selection_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.state.selected() else {
+            return;
+        };
+        // The user saw it: clear the style unless it is persistent
+        // (permission requests stay until answered).
+        if let Some(entry) = self.entries.get_mut(&id)
+            && !entry.notification.as_ref().is_some_and(|n| n.persistent)
+        {
+            entry.notification = None;
+        }
+        if self.rename.as_ref().is_some_and(|r| r.tab != id) {
+            self.rename = None;
+        }
+        self.hover = None;
+        self.idle_open = false;
+        self.scroll_to_selected();
+        // Find follows the selected tab: its matches, not the old tab's.
+        self.refresh_search(cx);
+        self.focus_selected(window, cx);
+        // Profile auto-switch rules look at the tab in use.
+        self.evaluate_profile_rules(id, cx);
+        cx.notify();
+    }
+
+    /// Hand-off after tabs left this window: when the selected one left, the
+    /// tab selected in its place gets the keyboard and the usual selection
+    /// bookkeeping.
+    pub(super) fn tabs_moved_out(
+        &mut self,
+        previously_selected: Option<TabId>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.state.is_empty() && self.state.selected() != previously_selected {
+            self.selection_changed(window, cx);
         }
     }
 
@@ -1003,6 +1050,7 @@ impl Workspace {
                 }
                 if answer == Some(0) {
                     log::info!("closeTab: last tab - user chose to close window");
+                    this.forget_tab(id);
                     this.entries.remove(&id);
                     Self::retire_native_window(window);
                     window.remove_window();
@@ -1046,6 +1094,7 @@ impl Workspace {
         let mut meta = TabMeta::new(new_id, TabColor::ALL[0]);
         let panes = cx.new(|cx| PaneTree::new_with_owner(cwd.clone(), meta.uuid, window, cx));
         meta.last_activity = AppData::now(cx);
+        meta.created_at = meta.last_activity;
         meta.git_root = cwd.as_deref().and_then(|dir| {
             crate::repository::resolve(dir, cx).or_else(|| {
                 chau7_next_core::tabs_state::known_repo_root(dir, None, &self.known_repo_roots)
@@ -1054,6 +1103,7 @@ impl Workspace {
         meta.primary_git_root = meta.git_root.clone();
         meta.presentation_git_root = meta.git_root.clone();
         panes.update(cx, |tree, cx| tree.set_owner_tab(meta.uuid, window, cx));
+        self.forget_tab(id);
         self.entries.remove(&id);
         self.insert_entry(new_id, panes, cx);
         self.state.replace(id, meta);
@@ -1062,6 +1112,18 @@ impl Workspace {
         }
         self.focus_selected(window, cx);
         cx.notify();
+    }
+
+    /// Drop what outlives a tab that ends without going through
+    /// [`Self::close_tab`]'s reopen bookkeeping: MCP control grants and
+    /// queued commands for its UUID, its bell rate limit and its broadcast
+    /// exclusion.
+    fn forget_tab(&mut self, id: TabId) {
+        if let Some(meta) = self.state.get(id) {
+            crate::mcp::control::forget_closed_tab(&meta.uuid.to_string());
+        }
+        self.last_bell.remove(&id);
+        self.broadcast_excluded.remove(&id);
     }
 
     /// `inheritedStartDirectory`: the selected tab's directory when
@@ -1114,7 +1176,9 @@ impl Workspace {
                     self.closed_snapshots.retain(|uuid, _| kept.contains(uuid));
                 }
                 self.entries.remove(&id);
-                self.focus_selected(window, cx);
+                self.last_bell.remove(&id);
+                self.broadcast_excluded.remove(&id);
+                self.selection_changed(window, cx);
                 let remaining = self.state.len();
                 cx.defer(move |cx| crate::notifications::app_events::tab_closed(remaining, cx));
                 cx.notify();
@@ -1284,12 +1348,7 @@ impl Workspace {
     /// The window emptied this way is put away, like a hidden Swift window:
     /// the next Dock click or Show Chau7 brings it back at the same place
     /// with a fresh tab (`ensureFreshTabIfNeeded`).
-    fn take_tab(
-        &mut self,
-        id: TabId,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Option<(TabMeta, Entity<PaneTree>)> {
+    fn take_tab(&mut self, id: TabId, window: &mut Window, cx: &mut App) -> Option<MovedTab> {
         let entry = self.entries.remove(&id)?;
         let meta = self.state.take(id)?;
         if self.state.is_empty() {
@@ -1306,16 +1365,29 @@ impl Workspace {
             Self::retire_native_window(window);
             window.remove_window();
         }
-        Some((meta, entry.panes))
+        Some(entry.into_moved(meta))
     }
 
     fn adopt_tab(
         &mut self,
-        mut meta: TabMeta,
+        meta: TabMeta,
         panes: Entity<PaneTree>,
         select: bool,
         cx: &mut Context<Self>,
     ) {
+        self.adopt_moved_tab(MovedTab::new(meta, panes), select, cx);
+    }
+
+    /// Take in a tab from another window (or a parked one) with its
+    /// notification style, bookmarks and AI tool.
+    pub fn adopt_moved_tab(&mut self, tab: MovedTab, select: bool, cx: &mut Context<Self>) {
+        let MovedTab {
+            mut meta,
+            panes,
+            notification,
+            bookmarks,
+            ai_app,
+        } = tab;
         // Keep ids unique app-wide: the tab gets a fresh id in its new window,
         // and keeps its stable UUID (MCP, events, remote control).
         let id = AppData::next_tab_id(cx);
@@ -1323,6 +1395,15 @@ impl Workspace {
         let uuid = meta.uuid;
         meta.set_uuid(uuid);
         self.insert_entry(id, panes, cx);
+        // Bookmark ids are allocated per window: stay ahead of the moved ones.
+        if let Some(last) = bookmarks.iter().map(|b| b.id()).max() {
+            self.next_bookmark_id = self.next_bookmark_id.max(last + 1);
+        }
+        if let Some(entry) = self.entries.get_mut(&id) {
+            entry.notification = notification;
+            entry.bookmarks = bookmarks;
+            entry.ai_app = ai_app;
+        }
         self.state.push(meta, select);
         cx.notify();
     }
@@ -1557,28 +1638,36 @@ fn register_tab_actions(div: Stateful<Div>, cx: &mut Context<Workspace>) -> Stat
             cx.notify();
         }
     }))
-    .on_action(cx.listener(|this, _: &NextTab, window, cx| {
-        this.state.select_next();
-        if let Some(id) = this.state.selected() {
-            this.select_tab(id, window, cx);
-        }
-    }))
-    .on_action(cx.listener(|this, _: &PreviousTab, window, cx| {
-        this.state.select_previous();
-        if let Some(id) = this.state.selected() {
-            this.select_tab(id, window, cx);
-        }
-    }))
+    .on_action(cx.listener(|this, _: &NextTab, window, cx| this.select_relative(1, window, cx)))
+    .on_action(
+        cx.listener(|this, _: &PreviousTab, window, cx| this.select_relative(-1, window, cx)),
+    )
     .on_action(cx.listener(|this, action: &SelectTabNumber, window, cx| {
-        if Settings::get(cx).tabs.numbered_shortcuts_visible_only {
-            this.state.select_visible_number(action.0, AppData::now(cx));
-        } else {
-            this.state.select_number(action.0);
-        }
-        if let Some(id) = this.state.selected() {
-            this.select_tab(id, window, cx);
-        }
+        this.select_number(action.0, window, cx)
     }))
+}
+
+impl Workspace {
+    /// Next/Previous Tab. The target is found first and `select_tab` does
+    /// the selecting, so it sees the move (switch animation).
+    fn select_relative(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(id) = self.state.step_target(delta) {
+            self.select_tab(id, window, cx);
+        }
+    }
+
+    /// Cmd+1..9: the Nth tab, counted among the visible ones when
+    /// `numbered_shortcuts_visible_only` is on.
+    fn select_number(&mut self, number: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let target = if Settings::get(cx).tabs.numbered_shortcuts_visible_only {
+            self.state.visible_number_target(number, AppData::now(cx))
+        } else {
+            self.state.number_target(number)
+        };
+        if let Some(id) = target {
+            self.select_tab(id, window, cx);
+        }
+    }
 }
 
 impl Render for Workspace {
