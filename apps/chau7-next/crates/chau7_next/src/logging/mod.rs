@@ -175,8 +175,13 @@ impl log::Log for Logger {
         if !self.enabled(record.metadata()) {
             return;
         }
-        let level = level_of(record.level());
         let target = record.target();
+        let message_text = record.args().to_string();
+        let level = if is_closed_window_race(target, record.file(), &message_text) {
+            LogLevel::Debug
+        } else {
+            level_of(record.level())
+        };
         if let Some(category) = target
             .strip_prefix(CATEGORY_TARGET_PREFIX)
             .and_then(LogCategory::from_label)
@@ -189,9 +194,12 @@ impl log::Log for Logger {
             return;
         }
         let message = if Self::is_app_target(target) {
-            record.args().to_string()
+            message_text
         } else {
-            format!("{target}: {}", record.args())
+            format!(
+                "{}: {message_text}",
+                source_label(target, record.file(), record.line())
+            )
         };
         let line = plain_line(level, Utc::now(), &message);
         output(state, line);
@@ -200,6 +208,32 @@ impl log::Log for Logger {
     fn flush(&self) {
         flush();
     }
+}
+
+/// A library record's label: its target, or for GPUI's caller-located
+/// errors (whose target is empty outside a `crates/` tree) the source
+/// location, so a line never starts with a bare ": ".
+fn source_label(target: &str, file: Option<&str>, line: Option<u32>) -> String {
+    if !target.is_empty() {
+        return target.to_string();
+    }
+    let Some(file) = file else {
+        return "unknown".into();
+    };
+    let short = file.rsplit_once("vendor/").map_or(file, |(_, rest)| rest);
+    match line {
+        Some(line) => format!("{short}:{line}"),
+        None => short.to_string(),
+    }
+}
+
+/// GPUI's window event senders report "window not found" when a closed
+/// window's last events arrive after it is gone. That is expected on every
+/// window close, not an error worth surfacing.
+fn is_closed_window_race(target: &str, file: Option<&str>, message: &str) -> bool {
+    target.is_empty()
+        && message == "window not found"
+        && file.is_some_and(|file| file.contains("gpui"))
 }
 
 fn level_of(level: log::Level) -> LogLevel {
@@ -386,6 +420,37 @@ pub fn metadata(pairs: &[(&str, &str)]) -> Option<BTreeMap<String, String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn library_records_without_a_target_are_labelled_by_location() {
+        let file = "/Users/me/chau7/apps/chau7-next/vendor/gpui-pre/src/window.rs";
+        assert_eq!(
+            source_label("", Some(file), Some(1720)),
+            "gpui-pre/src/window.rs:1720"
+        );
+        assert_eq!(
+            source_label("hyper::client", Some(file), Some(1)),
+            "hyper::client"
+        );
+        assert_eq!(source_label("", None, None), "unknown");
+    }
+
+    #[test]
+    fn only_gpuis_closed_window_race_is_demoted() {
+        let gpui = Some("/x/vendor/gpui-pre/src/window.rs");
+        assert!(is_closed_window_race("", gpui, "window not found"));
+        assert!(!is_closed_window_race("", gpui, "failed to render"));
+        assert!(!is_closed_window_race(
+            "chau7_next::workspace",
+            gpui,
+            "window not found"
+        ));
+        assert!(!is_closed_window_race(
+            "",
+            Some("/x/other/src/lib.rs"),
+            "window not found"
+        ));
+    }
 
     #[test]
     fn env_prefix_is_next() {
