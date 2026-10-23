@@ -124,24 +124,35 @@ fn has_line_editing(command: &str) -> bool {
         .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r'))
 }
 
+/// The name reported for a command line the filter cannot read with
+/// certainty (substitutions inside `${...}`, unknown wrapper options, ...).
+pub const UNVERIFIABLE_COMMAND: &str = "(unverifiable command)";
+
 /// Check a command line (`tab_exec`).
 ///
-/// A line with editing keys in it cannot be checked name by name: unless a
+/// A line that cannot be checked name by name (editing keys in it, or
+/// shell constructs the filter does not read) fails closed: unless a
 /// blocked name shows, it is blocked in Allowlist mode and needs approval
 /// in every other mode.
 pub fn check(command: &str, permissions: &ResolvedPermissions) -> CheckResult {
     let mut audited = Vec::new();
-    let bases = extract_base_commands(command);
-    if has_line_editing(command) {
+    let parsed = parse_command(command);
+    let bases = parsed.names;
+    let opaque = if has_line_editing(command) {
+        Some(LINE_EDITING_INPUT)
+    } else if parsed.unverifiable {
+        Some(UNVERIFIABLE_COMMAND)
+    } else {
+        None
+    };
+    if let Some(opaque) = opaque {
         let blocked = bases
             .into_iter()
             .find(|base| permissions.blocked.contains(&normalize_command(base)));
         let verdict = match (blocked, permissions.mode) {
             (Some(base), _) => CommandVerdict::Blocked(base),
-            (None, MCPPermissionMode::Allowlist) => {
-                CommandVerdict::Blocked(LINE_EDITING_INPUT.into())
-            }
-            (None, _) => CommandVerdict::NeedsApproval(LINE_EDITING_INPUT.into()),
+            (None, MCPPermissionMode::Allowlist) => CommandVerdict::Blocked(opaque.into()),
+            (None, _) => CommandVerdict::NeedsApproval(opaque.into()),
         };
         return CheckResult { verdict, audited };
     }
@@ -327,10 +338,27 @@ pub fn check_submitted_lines<S: AsRef<str>>(
 /// `$(` (also inside double quotes), and after `{`, `}` and `!` in command
 /// position. Names come out in the order their sub-commands start.
 pub fn extract_base_commands(command: &str) -> Vec<String> {
-    split_sub_commands(command)
+    parse_command(command).names
+}
+
+/// The program names of a command line, and whether the line holds
+/// something the filter cannot read with certainty, in which case
+/// [`check`] fails closed.
+struct ParsedCommand {
+    names: Vec<String>,
+    unverifiable: bool,
+}
+
+fn parse_command(command: &str) -> ParsedCommand {
+    let (sub_commands, mut unverifiable) = split_sub_commands(command);
+    let names = sub_commands
         .iter()
-        .filter_map(|words| first_token(words))
-        .collect()
+        .filter_map(|words| first_token(words, &mut unverifiable))
+        .collect();
+    ParsedCommand {
+        names,
+        unverifiable,
+    }
 }
 
 /// One sub-command being read: its finished words and the current word.
@@ -364,13 +392,14 @@ struct Splitter {
     /// One sub-command per `Frame::Code`, innermost last.
     commands: Vec<SubCommand>,
     out: Vec<Option<Vec<String>>>,
+    /// Something was read that the filter does not model.
+    unverifiable: bool,
+    /// The previous character was an unquoted `<` or `>`, so a following
+    /// `&` or `|` belongs to the redirection (`2>&1`, `>|`).
+    after_redirect: bool,
 }
 
 impl Splitter {
-    fn word(&self) -> &str {
-        &self.commands.last().expect("top-level sub-command").word
-    }
-
     fn current(&mut self) -> &mut SubCommand {
         self.commands.last_mut().expect("top-level sub-command")
     }
@@ -442,12 +471,20 @@ impl Splitter {
         self.chars.get(self.i + offset).copied()
     }
 
+    fn in_backticks(&self) -> bool {
+        self.frames.contains(&Frame::Code(Some('`')))
+    }
+
     /// Copy a balanced `open`..`close` span (`${...}`, `$((...))`) into the
-    /// current word as is, starting at the opening character.
+    /// current word as is, starting at the opening character. A span that
+    /// may run a command (`$(`, backticks, `<(`, `>(`) is not read further:
+    /// the line becomes unverifiable.
     fn copy_balanced(&mut self, open: char, close: char) {
         let mut depth = 0usize;
+        let mut span = String::new();
         while let Some(c) = self.peek(0) {
             self.push_char(c);
+            span.push(c);
             self.i += 1;
             if c == open {
                 depth += 1;
@@ -457,6 +494,14 @@ impl Splitter {
                     break;
                 }
             }
+        }
+        let inner = span.get(1..).unwrap_or_default();
+        if inner.contains("$(")
+            || inner.contains('`')
+            || inner.contains("<(")
+            || inner.contains(">(")
+        {
+            self.unverifiable = true;
         }
     }
 
@@ -516,8 +561,14 @@ impl Splitter {
     fn read_code(&mut self, closer: Option<char>) {
         let c = self.chars[self.i];
         let next = self.peek(1);
+        let after_redirect = std::mem::take(&mut self.after_redirect);
         match c {
             '\\' => {
+                // An escaped backtick inside backticks opens a nested
+                // substitution.
+                if next == Some('`') && self.in_backticks() {
+                    self.unverifiable = true;
+                }
                 match next {
                     // Line continuation.
                     Some('\n') => {}
@@ -573,12 +624,12 @@ impl Splitter {
                 }
             }
             // `>&`, `<&`, `&>`: redirections, not the background operator.
-            '&' if self.word().ends_with(['>', '<']) || next == Some('>') => {
+            '&' if after_redirect || next == Some('>') => {
                 self.push_char(c);
                 self.i += 1;
             }
             // `>|`: a redirection, not a pipe.
-            '|' if self.word().ends_with('>') => {
+            '|' if after_redirect => {
                 self.push_char(c);
                 self.i += 1;
             }
@@ -602,6 +653,7 @@ impl Splitter {
             _ => {
                 self.push_char(c);
                 self.i += 1;
+                self.after_redirect = matches!(c, '<' | '>');
             }
         }
     }
@@ -639,6 +691,9 @@ impl Splitter {
                 self.i += 1;
             }
             '\\' if matches!(next, Some('$' | '`' | '"' | '\\' | '\n')) => {
+                if next == Some('`') && self.in_backticks() {
+                    self.unverifiable = true;
+                }
                 if next != Some('\n') {
                     self.push_char(next.unwrap_or_default());
                 }
@@ -656,7 +711,7 @@ impl Splitter {
         }
     }
 
-    fn run(mut self) -> Vec<Vec<String>> {
+    fn run(mut self) -> (Vec<Vec<String>>, bool) {
         while self.i < self.chars.len() {
             match self.top() {
                 Frame::Code(closer) => self.read_code(closer),
@@ -673,18 +728,21 @@ impl Splitter {
             }
         }
         self.end_command();
-        self.out.into_iter().flatten().collect()
+        (self.out.into_iter().flatten().collect(), self.unverifiable)
     }
 }
 
-/// The words of each sub-command, quotes and backslashes removed.
-fn split_sub_commands(command: &str) -> Vec<Vec<String>> {
+/// The words of each sub-command, quotes and backslashes removed, and
+/// whether the line holds something the reader does not model.
+fn split_sub_commands(command: &str) -> (Vec<Vec<String>>, bool) {
     Splitter {
         chars: command.chars().collect(),
         i: 0,
         frames: vec![Frame::Code(None)],
         commands: vec![SubCommand::default()],
         out: Vec::new(),
+        unverifiable: false,
+        after_redirect: false,
     }
     .run()
 }
@@ -714,29 +772,137 @@ fn redirection(word: &str) -> Option<bool> {
     Some(target.is_empty())
 }
 
-/// The program name of one sub-command: skips `VAR=value`, redirections,
-/// flags (and the values of known wrapper options such as `sudo -u root`),
-/// and the prefixes `sudo`, `command`, `builtin`, `env`, `nohup`, `nice`,
-/// `time`, `exec` and the reserved words `if`, `then`, `else`, `elif`,
-/// `while`, `until`, `do`.
-fn first_token(words: &[String]) -> Option<String> {
-    const PASSTHROUGH: [&str; 15] = [
-        "sudo", "command", "builtin", "env", "nohup", "nice", "time", "exec", "if", "then", "else",
-        "elif", "while", "until", "do",
-    ];
-    // Wrapper options that take a separate value.
-    fn takes_value(wrapper: &str, option: &str) -> bool {
-        match wrapper {
-            "sudo" => matches!(
-                option,
-                "-u" | "-g" | "-h" | "-p" | "-C" | "-D" | "-r" | "-t" | "-U" | "-T"
-            ),
-            "nice" => option == "-n",
-            "env" => matches!(option, "-u" | "-C"),
-            "exec" => option == "-a",
-            _ => false,
+/// How a wrapper reads one of its options.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WrapperOption {
+    Flag,
+    /// The option takes a value (attached, or the next word).
+    Value,
+    /// The option changes what runs in a way the filter does not read
+    /// (`env -S`), or is unknown.
+    Unverifiable,
+}
+
+/// A short option (`-u`) of a wrapper.
+fn short_option(wrapper: &str, option: char) -> WrapperOption {
+    use WrapperOption::*;
+    let (values, flags): (&str, &str) = match wrapper {
+        "sudo" => ("ughpCDrtUTR", "AbEeHiKklnPSsVvBN"),
+        "nice" => ("n", ""),
+        "env" => ("uCP", "i0v"),
+        "exec" => ("a", "cl"),
+        "command" => ("", "pvV"),
+        "time" => ("of", "plhav"),
+        _ => ("", ""),
+    };
+    if values.contains(option) {
+        Value
+    } else if flags.contains(option) {
+        Flag
+    } else {
+        Unverifiable
+    }
+}
+
+/// A long option (`--user`, without `=value`) of a wrapper.
+fn long_option(wrapper: &str, option: &str) -> WrapperOption {
+    use WrapperOption::*;
+    let (values, flags): (&[&str], &[&str]) = match wrapper {
+        "sudo" => (
+            &[
+                "user",
+                "group",
+                "host",
+                "prompt",
+                "close-from",
+                "chdir",
+                "role",
+                "type",
+                "other-user",
+                "command-timeout",
+                "chroot",
+            ],
+            &[
+                "askpass",
+                "background",
+                "bell",
+                "preserve-env",
+                "edit",
+                "set-home",
+                "login",
+                "remove-timestamp",
+                "reset-timestamp",
+                "list",
+                "non-interactive",
+                "preserve-groups",
+                "stdin",
+                "shell",
+                "validate",
+                "version",
+                "help",
+                "no-update",
+            ],
+        ),
+        "nice" => (&["adjustment"], &[]),
+        "env" => (
+            &["unset", "chdir"],
+            &["ignore-environment", "null", "debug"],
+        ),
+        "time" => (&["output", "format"], &["verbose", "portability", "append"]),
+        _ => (&[], &[]),
+    };
+    if values.contains(&option) {
+        Value
+    } else if flags.contains(&option) {
+        Flag
+    } else {
+        Unverifiable
+    }
+}
+
+/// Read a wrapper option word: `Some(true)` when its value is the next
+/// word, `None` when the line cannot be verified.
+fn wrapper_option(wrapper: &str, word: &str) -> Option<bool> {
+    if word == "--" || word == "-" {
+        return Some(false);
+    }
+    if let Some(long) = word.strip_prefix("--") {
+        let (name, attached) = match long.split_once('=') {
+            Some((name, _)) => (name, true),
+            None => (long, false),
+        };
+        return match long_option(wrapper, name) {
+            WrapperOption::Flag => Some(false),
+            WrapperOption::Value => Some(!attached),
+            WrapperOption::Unverifiable => None,
+        };
+    }
+    let short = &word[1..];
+    // `nice -10`.
+    if wrapper == "nice" && short.chars().all(|c| c.is_ascii_digit()) {
+        return Some(false);
+    }
+    for (index, option) in short.char_indices() {
+        match short_option(wrapper, option) {
+            WrapperOption::Flag => {}
+            // The rest of the word is the value, else the next word is.
+            WrapperOption::Value => return Some(index + option.len_utf8() == short.len()),
+            WrapperOption::Unverifiable => return None,
         }
     }
+    Some(false)
+}
+
+/// The program name of one sub-command: skips `VAR=value`, redirections,
+/// the prefixes `sudo`, `command`, `builtin`, `env`, `nohup`, `nice`,
+/// `time`, `exec`, `coproc` with their options, and the reserved words
+/// `if`, `then`, `else`, `elif`, `while`, `until`, `do`. Sets
+/// `unverifiable` on a wrapper option it does not know (or `env -S`).
+fn first_token(words: &[String], unverifiable: &mut bool) -> Option<String> {
+    const PASSTHROUGH: [&str; 16] = [
+        "sudo", "command", "builtin", "env", "nohup", "nice", "time", "exec", "coproc", "if",
+        "then", "else", "elif", "while", "until", "do",
+    ];
     let first = words.first()?;
     let mut wrapper: Option<String> = None;
     let mut skip_next = false;
@@ -752,9 +918,12 @@ fn first_token(words: &[String]) -> Option<String> {
             continue;
         }
         if word.starts_with('-') {
-            skip_next = wrapper
-                .as_deref()
-                .is_some_and(|wrapper| takes_value(wrapper, word));
+            if let Some(wrapper) = wrapper.as_deref() {
+                match wrapper_option(wrapper, word) {
+                    Some(value_is_next) => skip_next = value_is_next,
+                    None => *unverifiable = true,
+                }
+            }
             continue;
         }
         let base = normalize_command(word);
@@ -762,19 +931,28 @@ fn first_token(words: &[String]) -> Option<String> {
             wrapper = Some(base);
             continue;
         }
+        // `coproc NAME { ...; }`: the group is not read.
+        if wrapper.as_deref() == Some("coproc") && words.iter().any(|w| w == "{") {
+            *unverifiable = true;
+        }
         return Some(base);
     }
     Some(normalize_command(first))
 }
 
-/// Base name, lowercased, without quotes or backslashes: `/usr/bin/RM`
-/// gives `rm`, `./run.sh` gives `run.sh`, `"r"m` gives `rm`.
+/// Base name, lowercased, without quotes, backslashes or a zsh `=`
+/// prefix: `/usr/bin/RM` gives `rm`, `./run.sh` gives `run.sh`, `"r"m` and
+/// `=rm` give `rm`.
 pub fn normalize_command(command: &str) -> String {
     let unquoted: String = command
         .chars()
         .filter(|c| !matches!(c, '\'' | '"' | '\\'))
         .collect();
-    let command = unquoted.as_str();
+    // zsh `=rm` expands to the path of `rm`.
+    let command = match unquoted.strip_prefix('=') {
+        Some(rest) if !rest.is_empty() => rest,
+        _ => unquoted.as_str(),
+    };
     let trimmed = command.trim_end_matches('/');
     let base = if trimmed.is_empty() {
         command
@@ -922,6 +1100,76 @@ mod tests {
             // `GenericShellBackend::launch_command` quotes every argument.
             "'rm' '-rf' '/'",
         ] {
+            assert_eq!(
+                check(command, &p).verdict,
+                CommandVerdict::Blocked("rm".into()),
+                "{command}"
+            );
+        }
+    }
+
+    #[test]
+    fn unreadable_constructs_fail_closed() {
+        let allow_all = global(MCPPermissionMode::AllowAll, &[], &[]);
+        let allowlist = global(MCPPermissionMode::Allowlist, &["echo", "sudo", "env"], &[]);
+        let unverifiable = || CommandVerdict::NeedsApproval(UNVERIFIABLE_COMMAND.into());
+        for command in [
+            // Substitutions inside `${...}` and `$((...))`.
+            "echo ${x:-$(rm -rf ~)}",
+            "echo ${x:-`rm -rf ~`}",
+            "echo $(( $(rm -rf ~) ))",
+            "echo ${x:-<(rm x)}",
+            // An escaped backtick inside backticks nests a substitution.
+            "echo `echo \\`rm -rf ~\\``",
+            // Wrapper options the filter does not know, and `env -S`.
+            "sudo --frobnicate rm x",
+            "sudo -Z rm x",
+            "env -S 'rm -rf ~'",
+            "env --split-string='rm -rf ~'",
+            "coproc NAME { rm x; }",
+        ] {
+            assert_eq!(
+                check(command, &allow_all).verdict,
+                unverifiable(),
+                "{command}"
+            );
+            assert_eq!(
+                check(command, &allowlist).verdict,
+                CommandVerdict::Blocked(UNVERIFIABLE_COMMAND.into()),
+                "{command}"
+            );
+        }
+        // Plain expansions stay readable.
+        assert_eq!(
+            check("echo ${HOME} $((1 + 2))", &allow_all).verdict,
+            CommandVerdict::Allowed
+        );
+    }
+
+    #[test]
+    fn quoted_redirection_characters_do_not_join_operators() {
+        assert_eq!(extract_base_commands("echo '>'&rm -rf ~"), ["echo", "rm"]);
+        assert_eq!(extract_base_commands("echo \">\"|rm x"), ["echo", "rm"]);
+        assert_eq!(extract_base_commands("echo \\>&rm x"), ["echo", "rm"]);
+        assert_eq!(extract_base_commands("ls >|out 2>&1"), ["ls"]);
+    }
+
+    #[test]
+    fn long_wrapper_options_and_zsh_equals() {
+        for command in [
+            "sudo --user root rm x",
+            "sudo --user=root rm x",
+            "sudo -uroot rm x",
+            "sudo -Eu root rm x",
+            "nice --adjustment 5 rm x",
+            "nice -10 rm x",
+            "env --unset FOO --chdir /tmp rm x",
+            "env -i -u FOO rm x",
+            "coproc rm x",
+            "=rm -rf ~",
+        ] {
+            assert_eq!(extract_base_commands(command), ["rm"], "{command}");
+            let p = global(MCPPermissionMode::AllowAll, &[], &["rm"]);
             assert_eq!(
                 check(command, &p).verdict,
                 CommandVerdict::Blocked("rm".into()),
