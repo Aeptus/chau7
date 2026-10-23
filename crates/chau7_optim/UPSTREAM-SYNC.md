@@ -109,16 +109,16 @@ gh api "repos/rtk-ai/rtk/contents/src/MODULE.rs?ref=COMMIT_SHA" \
   --jq '.content' | base64 -d > /tmp/rtk_module.rs
 
 # Compare with CTO's version
-diff /tmp/rtk_module.rs apps/chau7-macos/rust/chau7_optim/src/MODULE.rs
+diff /tmp/rtk_module.rs crates/chau7_optim/src/MODULE.rs
 ```
 
 When porting:
 1. **Never overwrite the entire file** — CTO may have diverged (renamed types, added features)
 2. **Cherry-pick the specific fix/feature** by reading the RTK diff and applying the logic manually
 3. **Adapt naming**: RTK uses `rtk` in tracking strings; CTO uses `rtk` too (for gain DB compat) but types are prefixed with `CTO`
-4. **Run tests**: `cargo test -p chau7_optim --manifest-path apps/chau7-macos/rust/Cargo.toml`
-5. **Build release**: `cargo build --release -p chau7_optim --manifest-path apps/chau7-macos/rust/Cargo.toml`
-6. **Install**: `cp apps/chau7-macos/rust/target/release/chau7-optim ~/.chau7/bin/chau7-optim`
+4. **Run tests**: `cargo test -p chau7_optim --manifest-path crates/Cargo.toml`
+5. **Build release**: `cargo build --release -p chau7_optim --manifest-path crates/Cargo.toml`
+6. **Install**: `cp crates/target/release/chau7-optim ~/.chau7/bin/chau7-optim`
 
 ### 4. For New Command Modules
 
@@ -128,8 +128,8 @@ If RTK adds a new command (e.g., `aws`, `psql`):
 2. Add `mod MODULE_cmd;` to `main.rs`
 3. Add the `Commands::` variant to the clap enum in `main.rs`
 4. Add the match arm in `fn main()`
-5. Add the command to `ctoRewriteMap` in `Sources/Chau7Core/TokenOptimization.swift`
-6. Rebuild both Rust and Swift: `cargo build --release -p chau7_optim && cd apps/chau7-macos && swift build`
+5. Add the command to the CTO rewrite table used by `cto_rewrite` in `apps/chau7-next`
+6. Rebuild: `cargo build --release -p chau7_optim --manifest-path crates/Cargo.toml`
 7. Reinstall wrappers: restart the app or toggle CTO off/on in settings
 
 ### 5. Update the Sync Log

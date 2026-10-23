@@ -46,7 +46,7 @@ scripts/                    # Repo-level CI and build orchestration
 
 - [macOS app](apps/chau7-macos/README.md)
 - [iOS app](apps/chau7-ios/README.md)
-- [Rust terminal crate](apps/chau7-macos/rust/chau7_terminal/README.md)
+- [Rust terminal crate](crates/chau7_terminal/README.md)
 - [Chau7 Next (Rust/GPUI port)](apps/chau7-next/README.md), plan in [docs/rust-port](docs/rust-port/)
 - [Relay service](services/chau7-relay/README.md)
 - [Remote agent](services/chau7-remote/README.md)

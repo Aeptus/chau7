@@ -165,12 +165,12 @@ done
 mkdir -p "$APP/Contents/Resources/licenses/ondine"
 cp "$ROOT/resources/licenses/ondine/"* "$APP/Contents/Resources/licenses/ondine/"
 
-# Token optimizer and markdown renderer (the apps/chau7-macos/rust
+# Token optimizer and markdown renderer (the top-level crates/
 # workspace), next to the app binary. The app installs them into
 # ~/.chau7-next/bin; the wrappers pass CHAU7_CTO_BIN_DIR so chau7-optim also
 # strips Chau7 Next's wrapper folder from PATH. That workspace pins its own
 # toolchain (rust-toolchain.toml), which may lack the target's standard library.
-OPTIM_DIR="$ROOT/../chau7-macos/rust"
+OPTIM_DIR="$ROOT/../../crates"
 HELPER_CARGO_COMMAND=()
 if [ -d "$OPTIM_DIR" ]; then
   # Reuse the app's private per-worktree target cache by default. Explicit

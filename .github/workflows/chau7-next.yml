@@ -10,14 +10,14 @@ on:
       - "agent/**"
     paths:
       - "apps/chau7-next/**"
-      - "apps/chau7-macos/rust/**"
+      - "crates/**"
       - "apps/chau7-macos/chau7-proxy/**"
       - "services/chau7-remote/**"
       - ".github/workflows/chau7-next.yml"
   pull_request:
     paths:
       - "apps/chau7-next/**"
-      - "apps/chau7-macos/rust/**"
+      - "crates/**"
       - "apps/chau7-macos/chau7-proxy/**"
       - "services/chau7-remote/**"
       - ".github/workflows/chau7-next.yml"

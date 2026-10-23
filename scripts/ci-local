@@ -36,10 +36,10 @@ ci_run_in "Swift test" "apps/chau7-macos" "$SWIFT_BIN" test --jobs "${CHAU7_SWIF
 # analysis build on the supported native driver and cap its parallelism too.
 ci_run_in "Swift dead-code (periphery)" "apps/chau7-macos" periphery scan --config .periphery.yml --strict -- --build-system native --jobs "${CHAU7_SWIFT_JOBS:-3}"
 
-ci_run_in "Rust format check" "apps/chau7-macos/rust" cargo fmt --all --check
-ci_run_in "Rust clippy" "apps/chau7-macos/rust" cargo clippy --workspace --all-targets --all-features -- -D warnings
-ci_run_in "Rust test" "apps/chau7-macos/rust" cargo test --workspace --all-features
-ci_run_in "Rust dependency audit (cargo deny)" "apps/chau7-macos/rust" cargo deny --all-features check
+ci_run_in "Rust format check" "crates" cargo fmt --all --check
+ci_run_in "Rust clippy" "crates" cargo clippy --workspace --all-targets --all-features -- -D warnings
+ci_run_in "Rust test" "crates" cargo test --workspace --all-features
+ci_run_in "Rust dependency audit (cargo deny)" "crates" cargo deny --all-features check
 
 ci_gofmt_check_dir "apps/chau7-macos/chau7-proxy" "Go format check (chau7-proxy)"
 ci_go_vet_dir "apps/chau7-macos/chau7-proxy" "Go vet (chau7-proxy)"

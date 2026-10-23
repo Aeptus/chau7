@@ -51,7 +51,7 @@ and pipes it through `chau7-optim`. The optimizer:
 
 ## Building
 
-From the Rust workspace root (`apps/chau7-macos/rust/`):
+From the Rust workspace root (`crates/`):
 
 ```bash
 cargo build -p chau7_optim           # debug

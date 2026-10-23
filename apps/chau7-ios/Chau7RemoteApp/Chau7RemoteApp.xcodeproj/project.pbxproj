@@ -434,7 +434,7 @@
 			);
 			inputPaths = (
 				"$(PROJECT_DIR)/../Scripts/build-rust-terminal-ios.sh",
-				"$(PROJECT_DIR)/../../chau7-macos/rust/chau7_terminal",
+				"$(PROJECT_DIR)/../../../crates/chau7_terminal",
 			);
 			name = "Build Rust Terminal";
 			outputFileListPaths = (

@@ -272,9 +272,9 @@ apps/chau7-next/
   scripts/bundle-macos.sh   builds "Chau7 Next.app"
 ```
 
-The terminal emulator is the same `chau7_terminal` crate the Swift app uses
-(`apps/chau7-macos/rust/chau7_terminal`), linked as a Rust library instead of
-through its C API.
+The terminal emulator is the shared `chau7_terminal` crate in the repository's
+top-level `crates/` workspace (`crates/chau7_terminal`), linked as a Rust
+library. The iOS app links the same crate through its C API.
 
 ## Checks
 

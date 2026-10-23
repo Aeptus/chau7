@@ -130,7 +130,7 @@ async function buildContext(options, stdin) {
     "pnpm-lock.yaml",
     "services/chau7-relay/package-lock.json",
     "apps/chau7-macos/Package.resolved",
-    "apps/chau7-macos/rust/Cargo.lock",
+    "crates/Cargo.lock",
     "apps/chau7-macos/chau7-proxy/go.sum",
     "services/chau7-remote/go.sum",
   ]);

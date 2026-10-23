@@ -59,7 +59,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Prepare pinned Rust toolchain and iOS targets
-        working-directory: apps/chau7-macos/rust
+        working-directory: crates
         run: |
           rustup show active-toolchain
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios

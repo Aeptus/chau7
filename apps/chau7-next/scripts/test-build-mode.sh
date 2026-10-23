@@ -11,7 +11,7 @@ FAKE_BIN="$TMP_ROOT/fake-bin"
 FAKE_STATE="$TMP_ROOT/fake-state"
 FIXTURE_ROOT="$TMP_ROOT/repo"
 FIXTURE_APP="$FIXTURE_ROOT/apps/chau7-next"
-FIXTURE_HELPERS="$FIXTURE_ROOT/apps/chau7-macos/rust"
+FIXTURE_HELPERS="$FIXTURE_ROOT/crates"
 
 mkdir -p "$FAKE_BIN" "$FAKE_STATE"
 trap 'rm -rf "$TMP_ROOT"' EXIT
@@ -188,7 +188,7 @@ case "$PWD" in
   */apps/chau7-next)
     products=(chau7-next chau7-next-mcp-bridge chau7-next-cli)
     ;;
-  */apps/chau7-macos/rust)
+  */crates)
     products=(chau7-optim chau7-md)
     ;;
   *) exit 3 ;;

@@ -684,8 +684,8 @@ export const gates = [
       "services/chau7-issues/package-lock.json",
       "apps/chau7-macos/chau7-proxy/go.mod",
       "services/chau7-remote/go.mod",
-      "apps/chau7-macos/rust/Cargo.toml",
-      "apps/chau7-macos/rust/deny.toml",
+      "crates/Cargo.toml",
+      "crates/deny.toml",
     ],
     applies: (context) =>
       hasAny(context.changedFiles, (file) => /(package(-lock)?\.json|go\.(mod|sum)|Cargo\.(toml|lock)|deny\.toml)$/.test(file)),
@@ -706,7 +706,7 @@ export const gates = [
     tags: ["swift", "macos"],
     cacheable: true,
     inputs: ["apps/chau7-macos/Sources", "apps/chau7-macos/Tests", "apps/chau7-macos/Package.swift", "apps/chau7-macos/.swiftlint.yml", "apps/chau7-macos/.swiftformat"],
-    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/") && !hasPathPrefix(context.changedFiles, "apps/chau7-macos/rust/") && !hasPathPrefix(context.changedFiles, "apps/chau7-macos/chau7-proxy/"),
+    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/") && !hasPathPrefix(context.changedFiles, "crates/") && !hasPathPrefix(context.changedFiles, "apps/chau7-macos/chau7-proxy/"),
     rerun: "pnpm quality:prepush --include=swift-macos-static-build",
     run: async (context) => {
       for (const command of [
@@ -747,15 +747,15 @@ export const gates = [
     wave: "static",
     tags: ["rust"],
     cacheable: true,
-    inputs: ["apps/chau7-macos/rust"],
-    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/rust/"),
+    inputs: ["crates"],
+    applies: (context) => hasPathPrefix(context.changedFiles, "crates/"),
     rerun: "pnpm quality:prepush --include=rust-terminal-static",
     run: async (context) => {
       for (const command of [
         ["cargo", ["fmt", "--all", "--check"]],
         ["cargo", ["clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"]],
       ]) {
-        const result = await context.exec(command[0], command[1], { cwd: "apps/chau7-macos/rust" });
+        const result = await context.exec(command[0], command[1], { cwd: "crates" });
         if (result.status !== "passed") return result;
       }
       return { status: "passed", summary: "Rust fmt and Clippy passed" };
@@ -768,10 +768,10 @@ export const gates = [
     wave: "tests",
     tags: ["rust", "tests"],
     cacheable: true,
-    inputs: ["apps/chau7-macos/rust"],
-    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/rust/"),
+    inputs: ["crates"],
+    applies: (context) => hasPathPrefix(context.changedFiles, "crates/"),
     rerun: "pnpm quality:prepush --include=rust-terminal-tests",
-    run: async (context) => context.exec("cargo", ["test", "--workspace", "--all-features"], { cwd: "apps/chau7-macos/rust" }),
+    run: async (context) => context.exec("cargo", ["test", "--workspace", "--all-features"], { cwd: "crates" }),
   },
   {
     id: "go-proxy-static-tests",

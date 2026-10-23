@@ -32,7 +32,7 @@ docs/remote-control     protocol and UX spec
 |-----------|------|-------|
 | Main app | `apps/chau7-macos/Sources/Chau7` | SwiftUI/AppKit executable target |
 | Shared core | `apps/chau7-macos/Sources/Chau7Core` | Testable Swift logic shared by app features |
-| Rust workspace | `apps/chau7-macos/rust` | Native crates used by the macOS app |
+| Rust workspace | `crates` | Native crates used by the macOS app |
 | Go proxy | `apps/chau7-macos/chau7-proxy` | Local TLS/WSS proxy binary bundled into the app |
 
 ## Rust Crates in the macOS App
@@ -73,14 +73,14 @@ Chau7 is developed as a single monorepo. The main paths are:
 
 Chau7 contains a modified fork of RTK inside:
 
-- `apps/chau7-macos/rust/chau7_optim`
+- `crates/chau7_optim`
 
 Recorded provenance:
 
 - Upstream repo: `https://github.com/rtk-ai/rtk`
-- Local fork record: `apps/chau7-macos/rust/chau7_optim/UPSTREAM-SYNC.md`
-- Preserved MIT text: `apps/chau7-macos/rust/chau7_optim/LICENSE-RTK`
-- Conservative Apache notice copy: `apps/chau7-macos/rust/chau7_optim/LICENSE-RTK-APACHE`
+- Local fork record: `crates/chau7_optim/UPSTREAM-SYNC.md`
+- Preserved MIT text: `crates/chau7_optim/LICENSE-RTK`
+- Conservative Apache notice copy: `crates/chau7_optim/LICENSE-RTK-APACHE`
 - Repo-wide notice index: `THIRD_PARTY_NOTICES.md`
 
 Licensing note:
@@ -115,6 +115,6 @@ The macOS target links Apple system frameworks including:
 For source-level notices kept in this repository, start with:
 
 - `THIRD_PARTY_NOTICES.md`
-- `apps/chau7-macos/rust/chau7_optim/LICENSE-RTK`
-- `apps/chau7-macos/rust/chau7_optim/LICENSE-RTK-APACHE`
-- `apps/chau7-macos/rust/chau7_optim/UPSTREAM-SYNC.md`
+- `crates/chau7_optim/LICENSE-RTK`
+- `crates/chau7_optim/LICENSE-RTK-APACHE`
+- `crates/chau7_optim/UPSTREAM-SYNC.md`

@@ -9,7 +9,7 @@ The [upstream fetcher](https://github.com/dependabot/dependabot-core/blob/main/s
 defines this support.
 
 Dependabot covers macOS/iOS Swift, both npm services, both Go modules, both Rust
-workspaces (apps/chau7-macos/rust and apps/chau7-next), Python project/test
+workspaces (crates and apps/chau7-next), Python project/test
 requirements and Actions. Compatible minor/patch updates are grouped; major and
 security updates are surfaced for review and are not silently merged. The two
 Rust workspaces have separate tracked app-level Cargo.lock files; the vendored

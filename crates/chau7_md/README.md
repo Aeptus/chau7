@@ -24,7 +24,7 @@ Uses [termimad](https://crates.io/crates/termimad) to render markdown with:
 
 ## Building
 
-From the Rust workspace root (`apps/chau7-macos/rust/`):
+From the Rust workspace root (`crates/`):
 
 ```bash
 cargo build -p chau7_md           # debug

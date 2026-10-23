@@ -25,7 +25,7 @@ allow = [
     "LGPL-2.1-or-later",
 ]
 
-# Local workspace crates (chau7_md, chau7_parse, chau7_terminal) don't publish
+# Local workspace crates (chau7_md, chau7_optim, chau7_terminal) don't publish
 # to crates.io and their license is the repo-wide AGPL-3.0 LICENSE file.
 [licenses.private]
 ignore = true

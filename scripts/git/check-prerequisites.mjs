@@ -29,7 +29,7 @@ for (const [command, key, args] of specs) {
     failed = true; process.stderr.write(`${command}: required baseline ${expected}; ${result.error?.message ?? output.trim()}. Install: mise install && mise exec -- pnpm setup:check\n`);
   }
 }
-const rust = spawnSync("rustc", ["--version"], { cwd: path.join(root, "apps/chau7-macos/rust"), encoding: "utf8", timeout: 10000 });
+const rust = spawnSync("rustc", ["--version"], { cwd: path.join(root, "crates"), encoding: "utf8", timeout: 10000 });
 if (rust.status !== 0 || !rust.stdout.includes(`rustc ${versions.rust} `)) {
   failed = true; process.stderr.write(`Rust workspace requires ${versions.rust}. Run mise install or rustup toolchain install ${versions.rust} --component rustfmt,clippy.\n`);
 }

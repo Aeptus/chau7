@@ -61,7 +61,7 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: cargo
-    directory: /apps/chau7-macos/rust
+    directory: /crates
     schedule:
       interval: weekly
     groups:

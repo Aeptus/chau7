@@ -20,8 +20,8 @@ This repository keeps public-facing documentation close to the code it describes
 - [`apps/chau7-macos/docs/FEATURES.md`](../apps/chau7-macos/docs/FEATURES.md): stable feature inventory
 - [`apps/chau7-macos/docs/CHANGELOG.md`](../apps/chau7-macos/docs/CHANGELOG.md): release and shipped-change history
 - [`apps/chau7-macos/docs/STYLING_GUIDE.md`](../apps/chau7-macos/docs/STYLING_GUIDE.md): UI spacing, typography, and color system
-- [`apps/chau7-macos/rust/chau7_terminal/README.md`](../apps/chau7-macos/rust/chau7_terminal/README.md): Rust terminal crate build and source overview
-- [`apps/chau7-macos/rust/chau7_terminal/FFI_DESIGN.md`](../apps/chau7-macos/rust/chau7_terminal/FFI_DESIGN.md): FFI contract, memory rules, and thread safety
+- [`crates/chau7_terminal/README.md`](../crates/chau7_terminal/README.md): Rust terminal crate build and source overview
+- [`crates/chau7_terminal/FFI_DESIGN.md`](../crates/chau7_terminal/FFI_DESIGN.md): FFI contract, memory rules, and thread safety
 - [`services/chau7-relay/README.md`](../services/chau7-relay/README.md): remote relay build and deployment notes
 - [`services/chau7-issues/README.md`](../services/chau7-issues/README.md): bug-report intake worker build and deployment notes
 - [`services/chau7-remote/README.md`](../services/chau7-remote/README.md): remote agent build and runtime notes

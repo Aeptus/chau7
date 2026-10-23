@@ -230,10 +230,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "chau7_parse"
-version = "0.1.0"
-
-[[package]]
 name = "chau7_terminal"
 version = "0.1.0"
 dependencies = [
