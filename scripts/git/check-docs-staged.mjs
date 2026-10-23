@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 
 const root = process.argv[2] ?? process.cwd();
 const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
-const files = git("diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z").split("\0").filter(Boolean);
+const files = git("diff", "--cached", "--name-only", "--diff-filter=ACMRT", "-z").split("\0").filter(Boolean);
 const read = (file) => git("show", `:${file}`);
 const changelog = "CHANGELOG.md";
 const failures = [];

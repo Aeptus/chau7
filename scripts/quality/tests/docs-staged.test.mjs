@@ -34,3 +34,10 @@ test("reviewable exemption must explain and cover each changed implementation", 
 test("document hygiene inspects staged contents", (t) => {
   const f = fixture(t); f.write("README.md", `[bad](${["", "Users", "person", "file"].join("/")})\n`); f.git("add", "README.md"); f.write("README.md", "repaired but unstaged\n"); assert.equal(f.run().status, 1);
 });
+test("a changelog turned from a symlink into a file counts as updated", (t) => {
+  const f = fixture(t); f.write("docs/CHANGELOG.md", "Moved notes\n");
+  fs.rmSync(path.join(f.root, "CHANGELOG.md")); fs.symlinkSync("docs/CHANGELOG.md", path.join(f.root, "CHANGELOG.md"));
+  f.git("add", "-A"); f.git("-c", "user.name=Quality Tests", "-c", "user.email=quality@example.invalid", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "symlink");
+  fs.rmSync(path.join(f.root, "CHANGELOG.md")); f.write("CHANGELOG.md", "Fixed terminal hang.\n");
+  f.write("apps/chau7-next/crates/chau7_next/src/fix.rs", "// fixed\n"); f.git("add", "-A"); assert.equal(f.run().status, 0);
+});
