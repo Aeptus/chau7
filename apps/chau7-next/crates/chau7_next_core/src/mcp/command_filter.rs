@@ -140,6 +140,48 @@ fn has_history_expansion(command: &str) -> bool {
     })
 }
 
+/// Whether bash evaluates a variable's value as code somewhere in the line:
+/// arithmetic (`$((x))`, `((x))`, `$[x]`, `let`, `declare -i`, `[[ x -eq y ]]`)
+/// evaluates array subscripts in a variable's value, so
+/// `x='a[$(rm -rf ~)]'; echo $((x))` runs `rm`; the `${x@P}` family expands
+/// a value as a prompt or quoted code. Only purely numeric arithmetic stays
+/// readable. (`${!x}` indirection fails closed as history expansion.)
+fn reevaluates_values(command: &str, names: &[String]) -> bool {
+    let identifier = |text: &str| text.chars().any(|c| c.is_ascii_alphabetic() || c == '_');
+    let arithmetic = |open: &str, close: &str| {
+        command.match_indices(open).any(|(start, _)| {
+            let rest = &command[start + open.len()..];
+            identifier(rest.find(close).map_or(rest, |end| &rest[..end]))
+        })
+    };
+    let transform = command.match_indices("${").any(|(start, _)| {
+        let rest = &command[start..];
+        let inner = rest.find('}').map_or(rest, |end| &rest[..end]);
+        inner
+            .char_indices()
+            .any(|(i, c)| c == '@' && inner[i + 1..].starts_with(|n: char| n.is_ascii_alphabetic()))
+    });
+    let words: Vec<&str> = command.split_whitespace().collect();
+    let integer_declaration = names.iter().any(|name| {
+        matches!(
+            name.as_str(),
+            "declare" | "typeset" | "local" | "readonly" | "export"
+        )
+    }) && words
+        .iter()
+        .any(|w| w.starts_with('-') && !w.starts_with("--") && w.contains('i'));
+    let arithmetic_test = words.contains(&"[[")
+        && words
+            .iter()
+            .any(|w| matches!(*w, "-eq" | "-ne" | "-lt" | "-le" | "-gt" | "-ge"));
+    arithmetic("((", "))")
+        || arithmetic("$[", "]")
+        || transform
+        || integer_declaration
+        || arithmetic_test
+        || names.iter().any(|name| name == "let")
+}
+
 /// The name reported for a command line the filter cannot read with
 /// certainty (substitutions inside `${...}`, unknown wrapper options, ...).
 pub const UNVERIFIABLE_COMMAND: &str = "(unverifiable command)";
@@ -156,7 +198,10 @@ pub fn check(command: &str, permissions: &ResolvedPermissions) -> CheckResult {
     let bases = parsed.names;
     let opaque = if has_line_editing(command) {
         Some(LINE_EDITING_INPUT)
-    } else if parsed.unverifiable || has_history_expansion(command) {
+    } else if parsed.unverifiable
+        || has_history_expansion(command)
+        || reevaluates_values(command, &bases)
+    {
         Some(UNVERIFIABLE_COMMAND)
     } else {
         None
@@ -1160,6 +1205,52 @@ mod tests {
             check("echo ${HOME} $((1 + 2))", &allow_all).verdict,
             CommandVerdict::Allowed
         );
+    }
+
+    #[test]
+    fn value_reevaluation_fails_closed() {
+        let allow_all = global(MCPPermissionMode::AllowAll, &[], &[]);
+        let allowlist = global(MCPPermissionMode::Allowlist, &["echo", "declare"], &[]);
+        // Each runs code held in a variable's value (an array subscript or
+        // a prompt expansion), which the filter cannot see.
+        for command in [
+            "echo $((x))",
+            "echo $(( a + 1 ))",
+            "((x))",
+            "(( count++ ))",
+            "echo $[x]",
+            "let x",
+            "declare -i n=x",
+            "[[ x -eq 1 ]]",
+            "echo ${x@P}",
+            "echo ${x@E}",
+            "echo ${!x}",
+        ] {
+            assert_eq!(
+                check(command, &allow_all).verdict,
+                CommandVerdict::NeedsApproval(UNVERIFIABLE_COMMAND.into()),
+                "{command}"
+            );
+            assert!(
+                matches!(
+                    check(command, &allowlist).verdict,
+                    CommandVerdict::Blocked(_)
+                ),
+                "{command}"
+            );
+        }
+        for command in [
+            "echo $((1 + 2))",
+            "echo ${arr[@]}",
+            "echo ${HOME}",
+            "[[ -f x ]]",
+        ] {
+            assert_eq!(
+                check(command, &allow_all).verdict,
+                CommandVerdict::Allowed,
+                "{command}"
+            );
+        }
     }
 
     #[test]
