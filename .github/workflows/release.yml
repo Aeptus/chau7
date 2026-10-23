@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       release_channel:
-        description: Build the existing Swift dry run or prepare a gated Rust production RC artifact.
+        description: Build an unsigned production dry run, or prepare a gated, signed production RC artifact.
         type: choice
         required: true
-        default: swift-dry-run
+        default: production-dry-run
         options:
-          - swift-dry-run
+          - production-dry-run
           - rust-production-rc
       release_version:
         description: SemVer candidate version for the production RC (for example 0.6.0-rc.1).
@@ -32,20 +32,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build release artifacts once
-    if: github.event_name != 'workflow_dispatch' || inputs.release_channel != 'rust-production-rc'
-    runs-on: macos-26
-    timeout-minutes: 60
+  preflight:
+    name: Resolve the release stage and version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      stage: ${{ steps.resolve.outputs.stage }}
+      version: ${{ steps.resolve.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: Select Xcode 26.6
-        run: sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.11.1
@@ -53,216 +52,45 @@ jobs:
         run: npm install --global --allow-scripts=pnpm pnpm@12.11.2
       - name: Validate release quality policy
         run: pnpm quality:cloud-parity --include=quality-cloud-parity-required-workflows
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: services/chau7-remote/go.mod
-          cache-dependency-path: |
-            services/chau7-remote/go.sum
-            services/chau7-proxy/go.sum
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
-      - name: Parse version
-        id: version
+      - name: Resolve stage and version
+        id: resolve
         env:
-          REF_NAME: ${{ github.ref_name }}
           EVENT_NAME: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT_NAME" = push ]; then
-            version="${REF_NAME#v}"
-          else
-            version="0.0.0-dry-run"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "CHAU7_VERSION=$version" >> "$GITHUB_ENV"
-      - name: Build DMG and ZIP
-        working-directory: apps/chau7-macos
-        env:
-          CHAU7_CODESIGN_IDENTITY: '-'
-          CHAU7_BUILD_NUMBER: ${{ github.run_number }}
-        run: ./Scripts/build-dist.sh
-      - name: Run tests
-        working-directory: apps/chau7-macos
-        run: swift test
-      - name: Preserve built artifacts
-        run: tar -cf "$RUNNER_TEMP/release-artifacts.tar" -C apps/chau7-macos dist
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-artifacts
-          path: ${{ runner.temp }}/release-artifacts.tar
-          retention-days: 7
-          if-no-files-found: error
-
-  publish:
-    name: Sign and publish built artifacts
-    needs: build
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: macos-26
-    timeout-minutes: 40
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-    outputs:
-      dmg_sha256: ${{ steps.checksums.outputs.dmg_sha256 }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: release-artifacts
-          path: ${{ runner.temp }}
-      - name: Restore built artifacts
-        run: tar -xf "$RUNNER_TEMP/release-artifacts.tar" -C apps/chau7-macos
-      - name: Require release signing configuration
-        id: signing
-        env:
-          IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
-        run: |
-          if [ -n "$IDENTITY" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo '::error::Developer ID signing is required before publishing a release. Configure signing or publish verified local artifacts in a draft release.'
-            exit 1
-          fi
-      - name: Prepare isolated signing keychain
-        if: steps.signing.outputs.available == 'true'
-        env:
-          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: ./scripts/release/signing-keychain.sh setup
-      - name: Sign and notarize reused app
-        if: steps.signing.outputs.available == 'true'
-        env:
-          IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
-          INSTALLER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER }}
-          VERSION: ${{ needs.build.outputs.version }}
-        run: ./scripts/release/sign-artifacts.sh
-      - name: Always remove signing material
-        if: always()
-        run: ./scripts/release/signing-keychain.sh cleanup
-      - name: Compute checksums
-        id: checksums
-        working-directory: apps/chau7-macos/dist
-        run: |
-          shasum -a 256 ./*.dmg ./*.zip > SHA256SUMS.txt
-          if [ -f Chau7-AppleSilicon.pkg ]; then
-            shasum -a 256 Chau7-AppleSilicon.pkg >> SHA256SUMS.txt
-          fi
-          echo "dmg_sha256=$(shasum -a 256 Chau7-AppleSilicon.dmg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
-        with:
-          subject-path: |
-            apps/chau7-macos/dist/*.dmg
-            apps/chau7-macos/dist/*.zip
-            apps/chau7-macos/dist/*.pkg
-            apps/chau7-macos/dist/SHA256SUMS.txt
-      - name: Extract release notes
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          ./scripts/extract-changelog "$VERSION" > "$RUNNER_TEMP/release-notes.md"
-          echo 'Developer ID signed and notarized.' >> "$RUNNER_TEMP/release-notes.md"
-          echo 'Verify the attached SHA256SUMS.txt and provenance with gh attestation verify.' >> "$RUNNER_TEMP/release-notes.md"
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
-        with:
-          body_path: ${{ runner.temp }}/release-notes.md
-          fail_on_unmatched_files: false # PKG is optional without an installer identity.
-          files: |
-            apps/chau7-macos/dist/*.dmg
-            apps/chau7-macos/dist/*.zip
-            apps/chau7-macos/dist/*.pkg
-            apps/chau7-macos/dist/SHA256SUMS.txt
-
-  update-homebrew-tap:
-    name: Update optional Homebrew tap
-    needs: [build, publish]
-    if: needs.publish.outputs.dmg_sha256 != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    env:
-      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-    steps:
-      - name: Report optional tap skip
-        if: env.HOMEBREW_TAP_TOKEN == ''
-        run: echo 'Optional Homebrew tap update skipped; HOMEBREW_TAP_TOKEN is not configured. Release assets are available directly.' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        if: env.HOMEBREW_TAP_TOKEN != ''
-        with:
-          repository: aeptus/homebrew-chau7
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          persist-credentials: false
-          path: tap
-      - name: Update cask
-        if: env.HOMEBREW_TAP_TOKEN != ''
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
-          SHA256: ${{ needs.publish.outputs.dmg_sha256 }}
-        run: |
-          mkdir -p tap/Casks
-          cat > tap/Casks/chau7.rb << CASK
-          cask "chau7" do
-            version "$VERSION"
-            sha256 "$SHA256"
-            url "https://github.com/aeptus/chau7/releases/download/v#{version}/Chau7-AppleSilicon.dmg"
-            name "Chau7"
-            desc "See your coding agents, know what they cost, steer them from the outside"
-            homepage "https://chau7.sh"
-            depends_on macos: ">= :sonoma"
-            depends_on arch: :arm64
-            app "Chau7.app"
-            zap trash: ["~/.chau7", "~/Library/Logs/Chau7.log", "~/Library/Logs/Chau7"]
-          end
-          CASK
-      - name: Commit and push only changed cask
-        if: env.HOMEBREW_TAP_TOKEN != ''
-        working-directory: tap
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add Casks/chau7.rb
-          if git diff --cached --quiet; then exit 0; fi
-          git commit -m "Update chau7 to $VERSION"
-          # shellcheck disable=SC2016 # Expand the token only inside Git's credential helper.
-          git -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$HOMEBREW_TAP_TOKEN"; }; f' push
-
-  rust-production-rc-preflight:
-    name: Gate Rust production RC preparation
-    if: github.event_name == 'workflow_dispatch' && inputs.release_channel == 'rust-production-rc'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - name: Require validated migration acknowledgement on main
-        env:
           REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          CHANNEL: ${{ inputs.release_channel }}
           ACKNOWLEDGEMENT: ${{ inputs.migration_validation_acknowledgement }}
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
-          if [ "$REF" != 'refs/heads/main' ]; then
-            echo '::error::Rust production RC preparation is allowed only from main.'
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [ "$EVENT_NAME" = push ]; then
+            stage=stable
+            version="${REF_NAME#v}"
+          elif [ "$CHANNEL" = rust-production-rc ]; then
+            stage=rc
+            version="$RELEASE_VERSION"
+            if [ "$REF" != 'refs/heads/main' ]; then
+              echo '::error::Rust production RC preparation is allowed only from main.'
+              exit 1
+            fi
+            if [ "$ACKNOWLEDGEMENT" != 'RUST_PRODUCTION_MIGRATION_VALIDATED' ]; then
+              echo '::error::Confirm migration validation before preparing a Rust production RC.'
+              exit 1
+            fi
+          else
+            stage=dry-run
+            version=0.0.0-dry-run
+          fi
+          if [[ ! "$version" =~ $semver ]]; then
+            echo '::error::Release version must be a valid semantic version.'
             exit 1
           fi
-          if [ "$ACKNOWLEDGEMENT" != 'RUST_PRODUCTION_MIGRATION_VALIDATED' ]; then
-            echo '::error::Confirm migration validation before preparing a Rust production RC.'
-            exit 1
-          fi
-          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
-            echo '::error::Release version must be a valid semantic candidate version.'
-            exit 1
-          fi
+          echo "stage=$stage" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  rust-production-rc-build:
-    name: Build Rust production candidate once
-    needs: rust-production-rc-preflight
-    if: github.event_name == 'workflow_dispatch' && inputs.release_channel == 'rust-production-rc' && needs.rust-production-rc-preflight.result == 'success'
+  build:
+    name: Build the production bundle once
+    needs: preflight
     runs-on: macos-26
     timeout-minutes: 60
     permissions:
@@ -288,14 +116,14 @@ jobs:
           CHANNEL: production
           TARGET: aarch64-apple-darwin
           BUILD_MODE: fast
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
           OUT_DIR: ${{ runner.temp }}/rust-production-candidate
           BUILD_METADATA_DIR: ${{ runner.temp }}/rust-production-candidate
           REQUIRE_REMOTE_AGENT: '1'
           REQUIRE_PROXY: '1'
         run: ./scripts/bundle-macos.sh
-      - name: Preserve unsigned candidate for the signing job
+      - name: Preserve unsigned bundle for the signing job
         run: tar -cf "$RUNNER_TEMP/rust-production-candidate.tar" -C "$RUNNER_TEMP" rust-production-candidate
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -304,10 +132,148 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  publish:
+    name: Sign, notarize and publish the release
+    needs: [preflight, build]
+    if: needs.preflight.outputs.stage == 'stable' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    outputs:
+      dmg_sha256: ${{ steps.checksums.outputs.dmg_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rust-production-candidate-unsigned
+          path: ${{ runner.temp }}
+      - name: Restore the exact built bundle
+        run: tar -xf "$RUNNER_TEMP/rust-production-candidate.tar" -C "$RUNNER_TEMP"
+      - name: Require release signing configuration
+        env:
+          IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: ./scripts/release/require-signing-secrets.sh
+      - name: Prepare isolated signing keychain
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: ./scripts/release/signing-keychain.sh setup
+      - name: Sign and notarize the reused bundle
+        env:
+          RELEASE_STAGE: stable
+          APP_PATH: ${{ runner.temp }}/rust-production-candidate/Chau7.app
+          MANIFEST_PATH: ${{ runner.temp }}/rust-production-candidate/Chau7-Production-aarch64-apple-darwin-fast.json
+          DIST_DIR: ${{ runner.temp }}/rust-production-release
+          BUILD_NUMBER: ${{ github.run_number }}
+          IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: ./scripts/release/sign-rust-production.sh
+      - name: Always remove signing material
+        if: always()
+        run: ./scripts/release/signing-keychain.sh cleanup
+      - name: Verify checksums
+        id: checksums
+        working-directory: ${{ runner.temp }}/rust-production-release
+        run: |
+          shasum -a 256 -c SHA256SUMS.txt
+          echo "dmg_sha256=$(shasum -a 256 Chau7-AppleSilicon.dmg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: |
+            ${{ runner.temp }}/rust-production-release/*.dmg
+            ${{ runner.temp }}/rust-production-release/*.zip
+            ${{ runner.temp }}/rust-production-release/*-build-manifest.json
+            ${{ runner.temp }}/rust-production-release/SHA256SUMS.txt
+      - name: Extract release notes
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          ./scripts/extract-changelog "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+          echo 'Developer ID signed and notarized.' >> "$RUNNER_TEMP/release-notes.md"
+          echo 'Verify the attached SHA256SUMS.txt and provenance with gh attestation verify.' >> "$RUNNER_TEMP/release-notes.md"
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          body_path: ${{ runner.temp }}/release-notes.md
+          fail_on_unmatched_files: true
+          files: |
+            ${{ runner.temp }}/rust-production-release/Chau7-AppleSilicon.dmg
+            ${{ runner.temp }}/rust-production-release/Chau7-AppleSilicon.zip
+            ${{ runner.temp }}/rust-production-release/Chau7-AppleSilicon-build-manifest.json
+            ${{ runner.temp }}/rust-production-release/SHA256SUMS.txt
+
+  update-homebrew-tap:
+    name: Update optional Homebrew tap
+    needs: [preflight, publish]
+    if: needs.publish.outputs.dmg_sha256 != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - name: Report optional tap skip
+        if: env.HOMEBREW_TAP_TOKEN == ''
+        run: echo 'Optional Homebrew tap update skipped; HOMEBREW_TAP_TOKEN is not configured. Release assets are available directly.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: env.HOMEBREW_TAP_TOKEN != ''
+        with:
+          repository: aeptus/homebrew-chau7
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          persist-credentials: false
+          path: tap
+      - name: Update cask
+        if: env.HOMEBREW_TAP_TOKEN != ''
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          SHA256: ${{ needs.publish.outputs.dmg_sha256 }}
+        run: |
+          mkdir -p tap/Casks
+          cat > tap/Casks/chau7.rb << CASK
+          cask "chau7" do
+            version "$VERSION"
+            sha256 "$SHA256"
+            url "https://github.com/aeptus/chau7/releases/download/v#{version}/Chau7-AppleSilicon.dmg"
+            name "Chau7"
+            desc "See your coding agents, know what they cost, steer them from the outside"
+            homepage "https://chau7.sh"
+            depends_on macos: ">= :sonoma"
+            depends_on arch: :arm64
+            app "Chau7.app"
+            zap trash: ["~/.chau7", "~/.chau7-rust-v1-state", "~/Library/Logs/Chau7.log", "~/Library/Logs/Chau7"]
+          end
+          CASK
+      - name: Commit and push only changed cask
+        if: env.HOMEBREW_TAP_TOKEN != ''
+        working-directory: tap
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add Casks/chau7.rb
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Update chau7 to $VERSION"
+          # shellcheck disable=SC2016 # Expand the token only inside Git's credential helper.
+          git -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$HOMEBREW_TAP_TOKEN"; }; f' push
+
   rust-production-rc-sign:
     name: Sign, notarize, attest, and store RC artifact
-    needs: rust-production-rc-build
-    if: needs.rust-production-rc-build.result == 'success'
+    needs: [preflight, build]
+    if: needs.preflight.outputs.stage == 'rc' && github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     timeout-minutes: 60
     permissions:
@@ -324,7 +290,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Restore the exact built candidate
         run: tar -xf "$RUNNER_TEMP/rust-production-candidate.tar" -C "$RUNNER_TEMP"
-      - name: Require complete production signing configuration
+      - name: Require release signing configuration
         env:
           IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
           CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_P12 }}
@@ -332,21 +298,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          for name in IDENTITY CERTIFICATE CERTIFICATE_PASSWORD APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID; do
-            if [ -z "${!name}" ]; then
-              echo "::error::Rust production RC signing requires the $name GitHub secret."
-              exit 1
-            fi
-          done
-          case "$IDENTITY" in
-            'Developer ID Application:'*) ;;
-            *) echo '::error::Rust production RC requires a Developer ID Application identity.'; exit 1 ;;
-          esac
-          if [[ "$IDENTITY" != *" ($APPLE_TEAM_ID)" ]]; then
-            echo '::error::Signing identity team does not match APPLE_TEAM_ID.'
-            exit 1
-          fi
+        run: ./scripts/release/require-signing-secrets.sh
       - name: Prepare isolated signing keychain
         env:
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
@@ -357,13 +309,14 @@ jobs:
         run: ./scripts/release/signing-keychain.sh setup
       - name: Sign and notarize the reused Rust candidate
         env:
+          RELEASE_STAGE: rc
           APP_PATH: ${{ runner.temp }}/rust-production-candidate/Chau7.app
           MANIFEST_PATH: ${{ runner.temp }}/rust-production-candidate/Chau7-Production-aarch64-apple-darwin-fast.json
           DIST_DIR: ${{ runner.temp }}/rust-production-rc
           BUILD_NUMBER: ${{ github.run_number }}
           IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: ./scripts/release/sign-rust-production-rc.sh
+        run: ./scripts/release/sign-rust-production.sh
       - name: Always remove signing material
         if: always()
         run: ./scripts/release/signing-keychain.sh cleanup

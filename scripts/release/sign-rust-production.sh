@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
-# Sign and notarize an already-built Rust production candidate. This script
+# Sign and notarize an already-built Rust production bundle. This script
 # never invokes Cargo and never publishes a tag or GitHub Release.
+# RELEASE_STAGE=rc names versioned candidate artifacts for Actions retention;
+# RELEASE_STAGE=stable names the Chau7-AppleSilicon release assets that the
+# release workflow publishes and the Homebrew cask downloads.
 set -euo pipefail
+
+RELEASE_STAGE="${RELEASE_STAGE:-rc}"
+case "$RELEASE_STAGE" in
+  rc|stable) ;;
+  *) echo "error: RELEASE_STAGE must be 'rc' or 'stable' (got '$RELEASE_STAGE')" >&2; exit 1 ;;
+esac
 
 : "${RUNNER_TEMP:?CI runner temporary directory required}"
 : "${APP_PATH:?Path to the already-built Chau7.app is required}"
@@ -11,7 +20,7 @@ set -euo pipefail
 : "${APPLE_TEAM_ID:?Apple team identifier required}"
 
 if [[ "$IDENTITY" != "Developer ID Application:"* ]]; then
-  echo 'error: production RC signing requires a Developer ID Application identity' >&2
+  echo 'error: production signing requires a Developer ID Application identity' >&2
   exit 1
 fi
 if [[ ! "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
@@ -119,7 +128,7 @@ codesign --force --sign "$IDENTITY" --options runtime --timestamp \
 codesign --verify --strict --deep --verbose=2 "$APP_PATH"
 verify_team "$APP_PATH" "$APP_ID"
 
-NOTARY_ZIP="$RUNNER_TEMP/chau7-signing/Chau7-Rust-Production-RC-notarize.zip"
+NOTARY_ZIP="$RUNNER_TEMP/chau7-signing/Chau7-Rust-Production-notarize.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$NOTARY_ZIP"
 xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile chau7-release \
   --keychain "$KEYCHAIN" --wait --timeout 600
@@ -130,7 +139,8 @@ python3 "$ROOT_DIR/scripts/release/refresh-rust-manifest.py" \
   --app "$APP_PATH" \
   --manifest "$MANIFEST_PATH" \
   --identity "$IDENTITY" \
-  --team-id "$APPLE_TEAM_ID"
+  --team-id "$APPLE_TEAM_ID" \
+  --stage "$RELEASE_STAGE"
 
 RELEASE_VERSION="$(python3 - "$MANIFEST_PATH" <<'PY'
 import json
@@ -139,7 +149,11 @@ with open(sys.argv[1], encoding="utf-8") as stream:
     print(json.load(stream)["releaseVersion"])
 PY
 )"
-ARTIFACT_STEM="Chau7-Rust-Production-RC-${RELEASE_VERSION}-${BUILD_NUMBER}-arm64"
+if [[ "$RELEASE_STAGE" == stable ]]; then
+  ARTIFACT_STEM="Chau7-AppleSilicon"
+else
+  ARTIFACT_STEM="Chau7-Rust-Production-RC-${RELEASE_VERSION}-${BUILD_NUMBER}-arm64"
+fi
 STAGING="$RUNNER_TEMP/chau7-signing/dmg-staging"
 DMG="$DIST_DIR/$ARTIFACT_STEM.dmg"
 ZIP="$DIST_DIR/$ARTIFACT_STEM.zip"
@@ -163,4 +177,4 @@ cp "$MANIFEST_PATH" "$DIST_DIR/$ARTIFACT_STEM-build-manifest.json"
   shasum -a 256 "$ARTIFACT_STEM.dmg" "$ARTIFACT_STEM.zip" \
     "$ARTIFACT_STEM-build-manifest.json" > SHA256SUMS.txt
 )
-printf 'Signed and notarized Rust production RC artifacts: %s\n' "$DIST_DIR"
+printf 'Signed and notarized Rust production %s artifacts: %s\n' "$RELEASE_STAGE" "$DIST_DIR"
