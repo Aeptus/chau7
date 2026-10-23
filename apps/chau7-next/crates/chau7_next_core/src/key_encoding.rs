@@ -398,20 +398,14 @@ mod tests {
             b"\x1b[200~; rm -rf ~\r\x1b[201~".to_vec()
         );
         let deep = "\x1b[2\x1b[2\x1b[201~01~01~tail";
-        assert_eq!(
-            encode_paste(deep, true),
-            b"\x1b[200~tail\x1b[201~".to_vec()
-        );
+        assert_eq!(encode_paste(deep, true), b"\x1b[200~tail\x1b[201~".to_vec());
         // Escape sequences that are not the end marker survive.
         assert_eq!(
             encode_paste("\x1b[31mred\x1b[0m", true),
             b"\x1b[200~\x1b[31mred\x1b[0m\x1b[201~".to_vec()
         );
         // Unbracketed paste is passed through untouched apart from newlines.
-        assert_eq!(
-            encode_paste("a\x1b[201~b", false),
-            b"a\x1b[201~b".to_vec()
-        );
+        assert_eq!(encode_paste("a\x1b[201~b", false), b"a\x1b[201~b".to_vec());
     }
 }
 
