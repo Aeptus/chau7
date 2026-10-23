@@ -41,10 +41,10 @@ ci_run_in "Rust clippy" "crates" cargo clippy --workspace --all-targets --all-fe
 ci_run_in "Rust test" "crates" cargo test --workspace --all-features
 ci_run_in "Rust dependency audit (cargo deny)" "crates" cargo deny --all-features check
 
-ci_gofmt_check_dir "apps/chau7-macos/chau7-proxy" "Go format check (chau7-proxy)"
-ci_go_vet_dir "apps/chau7-macos/chau7-proxy" "Go vet (chau7-proxy)"
-ci_golangci_lint_dir "apps/chau7-macos/chau7-proxy" "Go lint (chau7-proxy)"
-ci_go_test_dir "apps/chau7-macos/chau7-proxy" "Go test (chau7-proxy)"
+ci_gofmt_check_dir "services/chau7-proxy" "Go format check (chau7-proxy)"
+ci_go_vet_dir "services/chau7-proxy" "Go vet (chau7-proxy)"
+ci_golangci_lint_dir "services/chau7-proxy" "Go lint (chau7-proxy)"
+ci_go_test_dir "services/chau7-proxy" "Go test (chau7-proxy)"
 
 ci_gofmt_check_dir "services/chau7-remote" "Go format check (chau7-remote)"
 ci_go_vet_dir "services/chau7-remote" "Go vet (chau7-remote)"

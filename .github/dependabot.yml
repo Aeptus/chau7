@@ -51,7 +51,7 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: gomod
-    directory: /apps/chau7-macos/chau7-proxy
+    directory: /services/chau7-proxy
     schedule:
       interval: weekly
     groups:

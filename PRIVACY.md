@@ -47,7 +47,7 @@ Bug report processing is based on legitimate interest (GDPR Art. 6(1)(f)) — yo
 
 The local Go proxy (`chau7-proxy`) intercepts AI API calls on `localhost:18080` for token counting and cost analytics. Your API keys pass through to the original provider (Anthropic, OpenAI, etc.) and are **never stored, logged, or transmitted elsewhere**. The proxy is opt-in and can be disabled in Settings.
 
-Source: [`apps/chau7-macos/chau7-proxy/`](apps/chau7-macos/chau7-proxy/)
+Source: [`services/chau7-proxy/`](services/chau7-proxy/)
 
 ## Remote control
 

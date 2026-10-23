@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-// correlationContract mirrors Contracts/proxy-correlation.json. The Swift side
-// (ShellLaunchConfiguratorContractTests) reads the same file, so the encoding
-// cannot drift on one side while both suites stay green.
+// correlationContract mirrors contracts/proxy-correlation.json. The Rust app
+// (chau7_next_core::proxy tests) reads the same file, so the encoding cannot
+// drift on one side while both suites stay green.
 type correlationContract struct {
 	Prefix           string `json:"prefix"`
 	Encoding         string `json:"encoding"`
@@ -28,7 +28,7 @@ type correlationContract struct {
 func loadCorrelationContract(t *testing.T) correlationContract {
 	t.Helper()
 
-	path := filepath.Join("..", "Contracts", "proxy-correlation.json")
+	path := filepath.Join("contracts", "proxy-correlation.json")
 	raw, err := os.ReadFile(path) // #nosec G304 -- fixed repository test fixture path
 	if err != nil {
 		t.Fatalf("read correlation contract at %s: %v", path, err)

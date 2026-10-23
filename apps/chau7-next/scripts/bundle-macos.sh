@@ -216,10 +216,10 @@ else
   echo "warning: Go not found, the app is built without the remote control agent" >&2
 fi
 
-# API analytics proxy (apps/chau7-macos/chau7-proxy), next to the app binary.
+# API analytics proxy (services/chau7-proxy), next to the app binary.
 # Chau7 Next starts it with its own ports, database and socket when "Enable
 # API Analytics" is on. Needs Go; set REQUIRE_PROXY=1 to fail without it (CI).
-PROXY_SRC="$ROOT/../chau7-macos/chau7-proxy"
+PROXY_SRC="$ROOT/../../services/chau7-proxy"
 if command -v go >/dev/null 2>&1; then
   if [ "$BUILD_MODE" = "fast" ]; then
     (cd "$PROXY_SRC" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \

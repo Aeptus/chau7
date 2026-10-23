@@ -58,7 +58,7 @@ jobs:
           go-version-file: services/chau7-remote/go.mod
           cache-dependency-path: |
             services/chau7-remote/go.sum
-            apps/chau7-macos/chau7-proxy/go.sum
+            services/chau7-proxy/go.sum
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
       - name: Parse version
         id: version
@@ -278,7 +278,7 @@ jobs:
           go-version-file: services/chau7-remote/go.mod
           cache-dependency-path: |
             services/chau7-remote/go.sum
-            apps/chau7-macos/chau7-proxy/go.sum
+            services/chau7-proxy/go.sum
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
       - name: Add the production target
         run: rustup target add aarch64-apple-darwin

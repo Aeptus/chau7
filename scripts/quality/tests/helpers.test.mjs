@@ -89,7 +89,7 @@ test("frontend impact graph fans out global config to all frontend apps", () => 
 
 test("backend impact classification detects Go, tests, and dependency files", () => {
   const impact = classifyBackendImpact([
-    "apps/chau7-macos/chau7-proxy/router_test.go",
+    "services/chau7-proxy/router_test.go",
     "services/chau7-remote/go.mod",
   ]);
 

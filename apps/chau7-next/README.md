@@ -124,7 +124,7 @@ with `chau7_performance_snapshot`; `chau7_runtime_info` and
 `chau7_state_snapshot` expose build/runtime and app-state diagnostics.
 
 The API analytics proxy is the same Go program as Chau7's
-(`apps/chau7-macos/chau7-proxy`, built into the app bundle; needs Go), run
+(`services/chau7-proxy`, built into the app bundle; needs Go), run
 with Chau7 Next's own ports and files, so both proxies can run at once. Its
 self-signed TLS certificate is trusted separately (Settings > API Proxy >
 Trust Certificate).

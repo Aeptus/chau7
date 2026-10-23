@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "Wire contract between the Codex shell wrapper (Swift, ShellLaunchConfigurator)",
+    "Wire contract between the Codex shell wrapper (Rust, chau7_next_core::proxy)",
     "and the analytics proxy (Go, correlation_path.go).",
     "",
     "Codex cannot send custom request headers, so its project is carried inside the",
@@ -9,7 +9,7 @@
     "detection and upstream forwarding.",
     "",
     "Both sides' tests read THIS file rather than restating the encoding, because the",
-    "two halves are individually testable and only wrong when paired -- a green Swift",
+    "two halves are individually testable and only wrong when paired -- a green Rust",
     "suite and a green Go suite are not evidence that they agree. `healthCapability`",
     "is what the proxy advertises on /health so the app can detect a stale bundled",
     "binary at startup instead of discovering it as a provider 404."

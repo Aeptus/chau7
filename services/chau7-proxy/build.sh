@@ -20,7 +20,7 @@ set -e
 APP_NAME="chau7-proxy"
 VERSION="${VERSION:-dev}"
 BUILD_DIR="build"
-PROXY_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+PROXY_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_SHA="${BUILD_SHA:-$(git -C "${PROXY_REPO_ROOT}" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}"
 BUILD_TIMESTAMP="${BUILD_TIMESTAMP:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
 LDFLAGS="-s -w -X main.Version=${VERSION} -X main.BuildSHA=${BUILD_SHA} -X main.BuildTimestamp=${BUILD_TIMESTAMP}"
@@ -161,22 +161,6 @@ clean() {
     info "Clean complete"
 }
 
-# Install to Chau7 app bundle (development)
-install_to_bundle() {
-    local BUNDLE_PATH="${BUNDLE_PATH:-../build/Chau7.app/Contents/Resources}"
-
-    if [ ! -d "${BUNDLE_PATH}" ]; then
-        warn "Chau7.app not found at ${BUNDLE_PATH}"
-        warn "Building Chau7 first or specify BUNDLE_PATH"
-        return 1
-    fi
-
-    build_darwin
-    cp "${BUILD_DIR}/darwin/${APP_NAME}" "${BUNDLE_PATH}/"
-    chmod +x "${BUNDLE_PATH}/${APP_NAME}"
-    info "Installed to ${BUNDLE_PATH}/${APP_NAME}"
-}
-
 # Print usage
 usage() {
     echo "Usage: $0 [command]"
@@ -190,7 +174,6 @@ usage() {
     echo "  test         Run tests"
     echo "  coverage     Run tests with coverage report"
     echo "  clean        Clean build artifacts"
-    echo "  install      Install to Chau7.app bundle (dev)"
     echo "  help         Show this help"
     echo ""
     echo "Environment variables:"
@@ -232,10 +215,6 @@ main() {
             ;;
         "clean")
             clean
-            ;;
-        "install")
-            deps
-            install_to_bundle
             ;;
         "help"|"-h"|"--help")
             usage

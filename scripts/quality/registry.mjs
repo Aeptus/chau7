@@ -682,7 +682,7 @@ export const gates = [
       "services/chau7-relay/package-lock.json",
       "services/chau7-issues/package.json",
       "services/chau7-issues/package-lock.json",
-      "apps/chau7-macos/chau7-proxy/go.mod",
+      "services/chau7-proxy/go.mod",
       "services/chau7-remote/go.mod",
       "crates/Cargo.toml",
       "crates/deny.toml",
@@ -706,7 +706,7 @@ export const gates = [
     tags: ["swift", "macos"],
     cacheable: true,
     inputs: ["apps/chau7-macos/Sources", "apps/chau7-macos/Tests", "apps/chau7-macos/Package.swift", "apps/chau7-macos/.swiftlint.yml", "apps/chau7-macos/.swiftformat"],
-    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/") && !hasPathPrefix(context.changedFiles, "crates/") && !hasPathPrefix(context.changedFiles, "apps/chau7-macos/chau7-proxy/"),
+    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/") && !hasPathPrefix(context.changedFiles, "crates/") && !hasPathPrefix(context.changedFiles, "services/chau7-proxy/"),
     rerun: "pnpm quality:prepush --include=swift-macos-static-build",
     run: async (context) => {
       for (const command of [
@@ -780,8 +780,8 @@ export const gates = [
     wave: "tests",
     tags: ["go", "backend"],
     cacheable: true,
-    inputs: ["apps/chau7-macos/chau7-proxy"],
-    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/chau7-proxy/"),
+    inputs: ["services/chau7-proxy"],
+    applies: (context) => hasPathPrefix(context.changedFiles, "services/chau7-proxy/"),
     rerun: "pnpm quality:prepush --include=go-proxy-static-tests",
     run: async (context) => {
       for (const command of [
@@ -791,7 +791,7 @@ export const gates = [
         ["go", ["test", "-race", "./..."]],
       ]) {
         if (command[2] === "format") {
-          const files = changedFileList(context, (file) => file.startsWith("apps/chau7-macos/chau7-proxy/") && file.endsWith(".go"));
+          const files = changedFileList(context, (file) => file.startsWith("services/chau7-proxy/") && file.endsWith(".go"));
           if (files.length) {
             const result = await context.exec("gofmt", ["-l", ...files]);
             if (result.status !== "passed") return result;
@@ -801,7 +801,7 @@ export const gates = [
           }
           continue;
         }
-        const result = await context.exec(command[0], command[1], { cwd: "apps/chau7-macos/chau7-proxy" });
+        const result = await context.exec(command[0], command[1], { cwd: "services/chau7-proxy" });
         if (result.status !== "passed") return result;
       }
       return { status: "passed", summary: "Go proxy checks passed" };
@@ -981,7 +981,7 @@ export const gates = [
     applies: () => true,
     rerun: "pnpm quality:prepush --include=go-dependency-audit",
     run: async (context) => {
-      for (const dir of ["apps/chau7-macos/chau7-proxy", "services/chau7-remote"]) {
+      for (const dir of ["services/chau7-proxy", "services/chau7-remote"]) {
         const result = await context.exec("go", ["run", "golang.org/x/vuln/cmd/govulncheck@v1.8.0", "./..."], { cwd: dir });
         if (result.status !== "passed") return { ...result, summary: `${result.summary}\nFix the Go advisory or scanner/toolchain/database failure; this live audit cannot be skipped.` };
       }

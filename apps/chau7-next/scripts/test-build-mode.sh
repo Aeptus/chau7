@@ -325,7 +325,7 @@ mkdir -p \
   "$FIXTURE_APP/resources/licenses/ondine" \
   "$FIXTURE_APP/vendor/history/0.3.8" \
   "$FIXTURE_ROOT/apps/chau7-macos/Resources" \
-  "$FIXTURE_ROOT/apps/chau7-macos/chau7-proxy" \
+  "$FIXTURE_ROOT/services/chau7-proxy" \
   "$FIXTURE_HELPERS" \
   "$FIXTURE_ROOT/services/chau7-remote"
 sed "s|/usr/bin/xcrun|$FAKE_BIN/xcrun|" "$APP_ROOT/scripts/bundle-macos.sh" > "$FIXTURE_APP/scripts/bundle-macos.sh"

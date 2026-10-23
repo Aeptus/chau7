@@ -33,7 +33,7 @@ docs/remote-control     protocol and UX spec
 | Main app | `apps/chau7-macos/Sources/Chau7` | SwiftUI/AppKit executable target |
 | Shared core | `apps/chau7-macos/Sources/Chau7Core` | Testable Swift logic shared by app features |
 | Rust workspace | `crates` | Native crates used by the macOS app |
-| Go proxy | `apps/chau7-macos/chau7-proxy` | Local TLS/WSS proxy binary bundled into the app |
+| Go proxy | `services/chau7-proxy` | Local TLS/WSS proxy binary bundled into the app |
 
 ## Rust Crates in the macOS App
 

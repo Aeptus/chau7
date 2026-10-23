@@ -131,7 +131,7 @@ async function buildContext(options, stdin) {
     "services/chau7-relay/package-lock.json",
     "apps/chau7-macos/Package.resolved",
     "crates/Cargo.lock",
-    "apps/chau7-macos/chau7-proxy/go.sum",
+    "services/chau7-proxy/go.sum",
     "services/chau7-remote/go.sum",
   ]);
   const repositoryFingerprint = sha256(`${root}\n${git(root, ["config", "--get", "remote.origin.url"], { allowFailure: true }).stdout}`);

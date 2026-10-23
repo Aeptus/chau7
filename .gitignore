@@ -29,7 +29,7 @@ logs/quality-*.log
 /*.jpeg
 *.xcuserstate
 **/xcuserdata/
-apps/chau7-macos/chau7-proxy/chau7-proxy
+services/chau7-proxy/chau7-proxy
 /crates/target/
 /crates/chau7_terminal/target/
 apps/chau7-ios/BuildArtifacts/
