@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Draw emoji written with a variation selector, such as `⚠️`, two columns wide
+  so Claude Code and Codex output no longer shows or copies an extra space
+  after them (#213).
+
 - Coalesce toolbar sizing after window resize bursts and skip unchanged AppKit
   constraint updates.
 
