@@ -1512,7 +1512,7 @@ impl Chau7Terminal {
                     .clamp(fed, passthrough_owned.len());
                 if end > fed {
                     crate::emoji_presentation::advance(
-                        &mut *processor,
+                        &mut processor,
                         &mut *term,
                         &passthrough_owned[fed..end],
                     );
@@ -1528,7 +1528,7 @@ impl Chau7Terminal {
             }
             if fed < passthrough_owned.len() {
                 crate::emoji_presentation::advance(
-                    &mut *processor,
+                    &mut processor,
                     &mut *term,
                     &passthrough_owned[fed..],
                 );
@@ -2620,7 +2620,7 @@ impl Chau7Terminal {
         // above the restored buffer. Using the processor keeps Alacritty's
         // internal state consistent rather than poking the grid directly.
         term.grid_mut().clear_history();
-        crate::emoji_presentation::advance(&mut *processor, &mut *term, b"\x1b[2J\x1b[3J\x1b[H");
+        crate::emoji_presentation::advance(&mut processor, &mut *term, b"\x1b[2J\x1b[3J\x1b[H");
 
         // The full-buffer export walks every viewport row, so rows below the
         // cursor arrive as bare CRLF terminators (possibly followed by the
@@ -2639,10 +2639,10 @@ impl Chau7Terminal {
         }
 
         if !body.is_empty() {
-            crate::emoji_presentation::advance(&mut *processor, &mut *term, body);
+            crate::emoji_presentation::advance(&mut processor, &mut *term, body);
         }
         if had_reset {
-            crate::emoji_presentation::advance(&mut *processor, &mut *term, RESET);
+            crate::emoji_presentation::advance(&mut processor, &mut *term, RESET);
         }
 
         self.grid_dirty.store(true, Ordering::Release);
