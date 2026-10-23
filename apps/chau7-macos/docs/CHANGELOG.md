@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the dangerous command confirmation inside the window for long pastes, with a scrolling command preview.
 - Coalesce toolbar sizing after window resize bursts and skip unchanged AppKit
   constraint updates.
 
