@@ -299,7 +299,7 @@ environment overrides when a gate has an intentional escape hatch. Any bypass
 should be justified in the commit message.
 
 Documentation policy: implementation behavior changes require a meaningful entry in
-`apps/chau7-macos/docs/CHANGELOG.md`. Update `FEATURES.md` and `features.json` when
+the root `CHANGELOG.md`. Update `FEATURES.md` and `features.json` when
 capabilities change; an unchanged generated CSV is valid. The gate checks the indexed
 manifest/CSV pair, including when working-tree metadata has unstaged edits. Tooling,
 configuration and test-only changes do not require invented product features. For a

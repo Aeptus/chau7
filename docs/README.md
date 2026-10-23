@@ -18,7 +18,7 @@ This repository keeps public-facing documentation close to the code it describes
 - [`rust-port/PRODUCTION-RELEASE.md`](rust-port/PRODUCTION-RELEASE.md): release candidate, migration, and production release process
 - [`apps/chau7-macos/docs/ARCHITECTURE.md`](../apps/chau7-macos/docs/ARCHITECTURE.md): current macOS architecture overview
 - [`apps/chau7-macos/docs/FEATURES.md`](../apps/chau7-macos/docs/FEATURES.md): stable feature inventory
-- [`apps/chau7-macos/docs/CHANGELOG.md`](../apps/chau7-macos/docs/CHANGELOG.md): release and shipped-change history
+- [`CHANGELOG.md`](../CHANGELOG.md): release and shipped-change history
 - [`apps/chau7-macos/docs/STYLING_GUIDE.md`](../apps/chau7-macos/docs/STYLING_GUIDE.md): UI spacing, typography, and color system
 - [`crates/chau7_terminal/README.md`](../crates/chau7_terminal/README.md): Rust terminal crate build and source overview
 - [`crates/chau7_terminal/FFI_DESIGN.md`](../crates/chau7_terminal/FFI_DESIGN.md): FFI contract, memory rules, and thread safety

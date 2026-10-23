@@ -38,7 +38,7 @@ GPUI's source rebase additionally has upstream checksum, provenance and
 modification-ledger records.
 
 Repository text follows LF through .gitattributes; no history normalization was
-performed. Root CHANGELOG.md is already a symlink to the app's canonical changelog; it is preserved. Local
+performed. The root CHANGELOG.md is the canonical changelog. Local
 `.chau7/pre-commit-review.conf` is ignored; the tracked `.example` documents the
 optional advisory override. The existing script has matching defaults when the
 local file is absent. Do not author product commits with a fixture identity:

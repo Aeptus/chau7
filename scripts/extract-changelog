@@ -17,7 +17,7 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-CHANGELOG="$(git rev-parse --show-toplevel)/apps/chau7-macos/docs/CHANGELOG.md"
+CHANGELOG="$(git rev-parse --show-toplevel)/CHANGELOG.md"
 
 if [ ! -f "$CHANGELOG" ]; then
   echo "CHANGELOG not found at $CHANGELOG" >&2

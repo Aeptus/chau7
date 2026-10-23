@@ -9,6 +9,7 @@ const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8"
 const files = git("diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z").split("\0").filter(Boolean);
 const read = (file) => git("show", `:${file}`);
 const docs = "apps/chau7-macos/docs";
+const changelog = "CHANGELOG.md";
 const failures = [];
 for (const file of files.filter((file) => file.endsWith(".md"))) {
   const content = read(file);
@@ -24,7 +25,7 @@ const behavioral = files.filter((file) =>
   !/(^|\/)(docs|Tests|tests|test|Scripts|scripts|git-hooks)\//.test(file) &&
   !/(_test\.go|\.(md|csv|json|lock|png|jpg|jpeg|gif|svg|ico|xcuserstate|xcscheme))$/.test(file) &&
   !/(^|\/)(Package\.(swift|resolved)|Cargo\.toml|go\.(mod|sum)|[^/]*config[^/]*)$/.test(file));
-if (!process.env.CHAU7_SKIP_DOC_CHECK && behavioral.length && !files.includes(`${docs}/CHANGELOG.md`)) {
+if (!process.env.CHAU7_SKIP_DOC_CHECK && behavioral.length && !files.includes(changelog)) {
   const exemption = ".chau7/docs-exemption.json";
   let valid = false;
   if (files.includes(exemption)) {
@@ -34,7 +35,7 @@ if (!process.env.CHAU7_SKIP_DOC_CHECK && behavioral.length && !files.includes(`$
         Array.isArray(entry.paths) && behavioral.every((file) => entry.paths.includes(file));
     } catch { /* Invalid exemptions fail closed below. */ }
   }
-  if (!valid) failures.push(`Update ${docs}/CHANGELOG.md for behavioral changes, or stage ${exemption} with exact paths and a meaningful reason. FEATURES.md and feature inventory changes are needed only when capabilities change.`);
+  if (!valid) failures.push(`Update ${changelog} for behavioral changes, or stage ${exemption} with exact paths and a meaningful reason. FEATURES.md and feature inventory changes are needed only when capabilities change.`);
 }
 // Validate the committed/indexed pair, never unstaged working-tree metadata.
 // Unchanged deterministic output is valid; staged stale output still fails.
