@@ -324,7 +324,6 @@ mkdir -p \
   "$FIXTURE_APP/resources/skills/chau7-next-build" \
   "$FIXTURE_APP/resources/licenses/ondine" \
   "$FIXTURE_APP/vendor/history/0.3.8" \
-  "$FIXTURE_ROOT/apps/chau7-macos/Resources" \
   "$FIXTURE_ROOT/services/chau7-proxy" \
   "$FIXTURE_HELPERS" \
   "$FIXTURE_ROOT/services/chau7-remote"
@@ -335,7 +334,7 @@ cp "$APP_ROOT/scripts/install-chau7-next-cli.sh" "$FIXTURE_APP/scripts/install-c
 printf 'version = "0.1.0"\n' > "$FIXTURE_APP/Cargo.toml"
 printf 'fixture skill\n' > "$FIXTURE_APP/resources/skills/chau7-next-build/SKILL.md"
 cp "$APP_ROOT/resources/licenses/ondine/"* "$FIXTURE_APP/resources/licenses/ondine/"
-printf 'icon\n' > "$FIXTURE_ROOT/apps/chau7-macos/Resources/AppDockIcon.icns"
+printf 'icon\n' > "$FIXTURE_APP/resources/AppDockIcon.icns"
 printf 'history\n' > "$FIXTURE_APP/vendor/history/0.3.8/README.md"
 for audit in README.md gpui-provenance.json gpui-modifications.json gpui-rebase-0.3.8-to-0.3.9.json; do
   printf 'audit\n' > "$FIXTURE_APP/vendor/$audit"

@@ -145,7 +145,7 @@ if [ "$CHANNEL" = "next" ]; then
   cp "$ROOT/scripts/install-chau7-next-cli.sh" "$APP/Contents/Resources/install-chau7-next-cli.sh"
   chmod 755 "$APP/Contents/Resources/install-chau7-next-cli.sh"
 fi
-cp "$ROOT/../chau7-macos/Resources/AppDockIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+cp "$ROOT/resources/AppDockIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Ship attribution and the source audit trail for the three modified, locked
 # Apache-2.0 GPUI packages. Missing required notices fail packaging before signing.

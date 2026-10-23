@@ -584,19 +584,19 @@ pub(super) fn ai_logo(app_name: &str) -> Option<Arc<Image>> {
             (
                 "claude",
                 png(include_bytes!(
-                    "../../../../../chau7-macos/Sources/Chau7/Resources/claude-logo.png"
+                    "../../assets/claude-logo.png"
                 )),
             ),
             (
                 "gemini",
                 png(include_bytes!(
-                    "../../../../../chau7-macos/Sources/Chau7/Resources/gemini-logo.png"
+                    "../../assets/gemini-logo.png"
                 )),
             ),
             (
                 "codex",
                 png(include_bytes!(
-                    "../../../../../chau7-macos/Sources/Chau7/Resources/codex-logo.png"
+                    "../../assets/codex-logo.png"
                 )),
             ),
             // Official OpenCode Mark, rasterized from its UI logo component.
@@ -607,25 +607,25 @@ pub(super) fn ai_logo(app_name: &str) -> Option<Arc<Image>> {
             (
                 "chatgpt",
                 png(include_bytes!(
-                    "../../../../../chau7-macos/Sources/Chau7/Resources/chatgpt-logo.png"
+                    "../../assets/chatgpt-logo.png"
                 )),
             ),
             (
                 "copilot",
                 png(include_bytes!(
-                    "../../../../../chau7-macos/Sources/Chau7/Resources/copilot-logo.png"
+                    "../../assets/copilot-logo.png"
                 )),
             ),
             (
                 "aider",
                 png(include_bytes!(
-                    "../../../../../chau7-macos/Sources/Chau7/Resources/aider-logo.png"
+                    "../../assets/aider-logo.png"
                 )),
             ),
             (
                 "cursor",
                 png(include_bytes!(
-                    "../../../../../chau7-macos/Sources/Chau7/Resources/cursor-logo.png"
+                    "../../assets/cursor-logo.png"
                 )),
             ),
         ])
