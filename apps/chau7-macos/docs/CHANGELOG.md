@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- iOS: offer Re-pair only when the pairing is stale, rejected, or the Mac
+  identity changed, keep Retry inline for transient failures, and show the full
+  connection error without expanding the banner.
+
 - Coalesce toolbar sizing after window resize bursts and skip unchanged AppKit
   constraint updates.
 
