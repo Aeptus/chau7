@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- iOS: stop re-copying the full terminal text buffer on every frame and the full diagnostics log on every entry once they are full, and free each tab's replay buffer once its terminal is built.
 - Answer read-only MCP tab queries within one second when the interface is busy, instead of blocking the client.
 - Bound the number of tracked Claude Code sessions.
 - Bound the proxy IPC line buffer and drop over-long lines.
