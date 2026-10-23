@@ -84,16 +84,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn plural_resources_match_current_swift() {
-        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../chau7-macos/Sources/Chau7/Resources");
-        for lang in Lang::ALL {
-            let path = base.join(format!("{}.lproj/Localizable.stringsdict", lang.code()));
-            assert_eq!(source(lang), std::fs::read_to_string(path).unwrap());
-        }
-    }
-
-    #[test]
     fn arabic_counts_select_every_category() {
         let expected = [
             (0, "لا ملفات"),

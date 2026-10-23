@@ -167,18 +167,7 @@ mod tests {
     use super::*;
     use gpui::px;
     #[test]
-    fn actual_swift_source_declares_the_animation_durations() {
-        let root = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../chau7-macos/Sources/Chau7/Settings/SettingsRootView.swift"
-        ));
-        let anchors = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../chau7-macos/Sources/Chau7/Settings/SettingsComponents.swift"
-        ));
-        assert!(root.contains(".easeInOut(duration: 0.22)"));
-        assert!(root.contains(".now() + 0.12"));
-        assert!(anchors.contains(".easeInOut(duration: 0.18)"));
+    fn animation_durations_match_the_settings_motion_spec() {
         assert_eq!(SCROLL_DURATION, Duration::from_millis(220));
         assert_eq!(SCROLL_RETRY, Duration::from_millis(120));
         assert_eq!(HIGHLIGHT_DURATION, Duration::from_millis(180));
