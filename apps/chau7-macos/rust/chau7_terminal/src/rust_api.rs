@@ -381,7 +381,10 @@ impl Chau7Terminal {
             scrolling_history: scrollback_lines,
             ..Default::default()
         };
-        self.term.lock().set_options(config);
+        let mut term = self.term.lock();
+        self.kitty_keyboard.store(enabled, Ordering::Release);
+        term.set_options(config);
+        drop(term);
         self.grid_dirty.store(true, Ordering::Release);
     }
 
@@ -475,6 +478,19 @@ mod tests {
         assert_eq!(term.kitty_keyboard_flags(), 1);
         term.inject_output(b"\x1b[<u");
         assert_eq!(term.kitty_keyboard_flags(), 0);
+    }
+
+    #[test]
+    fn scrollback_resize_keeps_kitty_keyboard_enabled() {
+        let term = Chau7Terminal::new_headless(10, 3).unwrap();
+        term.set_kitty_keyboard(true, 1000);
+        term.inject_output(b"\x1b[>1u");
+        assert_eq!(term.kitty_keyboard_flags(), 1);
+        // Settings changes and memory-pressure tiers resize the scrollback.
+        term.set_scrollback_size(500);
+        assert_eq!(term.kitty_keyboard_flags(), 1);
+        term.inject_output(b"\x1b[<u\x1b[>11u");
+        assert_eq!(term.kitty_keyboard_flags(), 11);
     }
 
     #[test]

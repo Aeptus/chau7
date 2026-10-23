@@ -362,6 +362,10 @@ pub struct Chau7Terminal {
     pub(crate) event_rx: Receiver<Event>,
     /// Flag indicating if grid has changed since last poll
     pub(crate) grid_dirty: AtomicBool,
+    /// Whether the Kitty keyboard protocol is enabled in the emulator config.
+    /// `Term` keeps its config private, so every `set_options` caller reads
+    /// this to avoid resetting the protocol (and its mode stack) by accident.
+    pub(crate) kitty_keyboard: AtomicBool,
     /// Terminal dimensions (atomic: written by `resize` on the UI thread while
     /// drain threads concurrently read via `debug_state`)
     pub(crate) cols: AtomicU16,
@@ -501,6 +505,7 @@ impl Chau7Terminal {
             reader_pool_fd: None,
             event_rx,
             grid_dirty: AtomicBool::new(true),
+            kitty_keyboard: AtomicBool::new(false),
             cols: AtomicU16::new(cols),
             rows: AtomicU16::new(rows),
             created_at,
@@ -822,6 +827,7 @@ impl Chau7Terminal {
             },
             event_rx,
             grid_dirty: AtomicBool::new(true),
+            kitty_keyboard: AtomicBool::new(false),
             cols: AtomicU16::new(cols),
             rows: AtomicU16::new(rows),
             created_at,
@@ -2528,7 +2534,9 @@ impl Chau7Terminal {
     /// that always targets the primary grid's history. Side effects verified
     /// benign: the re-sent Title event is either ignored (ResetTitle) or
     /// re-posts the current title, and the config we pass differs from the
-    /// creation-time `TermConfig::default()` only in `scrolling_history`.
+    /// current one only in `scrolling_history`. The Kitty keyboard setting
+    /// is carried over: `set_options` clears the protocol's mode stack when
+    /// it changes, so dropping it would silently disable the protocol.
     pub fn set_scrollback_size(&self, lines: usize) {
         info!(
             "[terminal-{}] set_scrollback_size: Setting scrollback to {} lines",
@@ -2537,6 +2545,7 @@ impl Chau7Terminal {
         let mut term = self.term.lock();
         let config = TermConfig {
             scrolling_history: lines,
+            kitty_keyboard: self.kitty_keyboard.load(Ordering::Acquire),
             ..TermConfig::default()
         };
         term.set_options(config);
