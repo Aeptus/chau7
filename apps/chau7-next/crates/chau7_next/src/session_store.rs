@@ -37,6 +37,14 @@ const MAX_MANIFEST_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 static LAST_ARCHIVE: Mutex<Option<(PathBuf, u64, SystemTime)>> = Mutex::new(None);
 static IMPORTED_ROOTS: Mutex<Option<std::collections::HashSet<PathBuf>>> = Mutex::new(None);
+/// Serializes every writer of the restore files (the restore writer thread,
+/// Reset Window Positions, the restore-source archive): a transaction writes
+/// its context sidecars before the bundle that references them, so a
+/// concurrent `prune_contexts` would otherwise delete them in between.
+static STORE_LOCK: Mutex<()> = Mutex::new(());
+fn store_lock() -> std::sync::MutexGuard<'static, ()> {
+    STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RestoreIndex {
@@ -89,36 +97,9 @@ fn parse_bundle(path: &Path) -> Option<RestoreBundle> {
     .then_some(bundle)
 }
 
-/// Temp files are exclusive and private; both content and parent directory
-/// are flushed before publishing the next transaction marker.
-pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let parent = path
-        .parent()
-        .ok_or_else(|| std::io::Error::other("missing restore directory"))?;
-    std::fs::create_dir_all(parent)?;
-    let tmp = parent.join(format!(".restore-{}.tmp", uuid::Uuid::new_v4()));
-    let result = (|| {
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(&tmp)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        std::fs::rename(&tmp, path)?;
-        #[cfg(unix)]
-        std::fs::File::open(parent)?.sync_all()?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(tmp);
-    }
-    result
-}
+// Temp files are exclusive and private; both content and parent directory
+// are flushed before publishing the next transaction marker.
+pub(crate) use chau7_next_core::atomic_file::write as atomic_write;
 
 fn decoded_contexts(root: &DataRoot, bundle: &RestoreBundle) -> Option<Vec<(u64, Vec<u8>)>> {
     let mut decoded = Vec::new();
@@ -365,6 +346,7 @@ fn remember_restore_source(root: &DataRoot, session: &SavedSession) {
     }
     drop(imported);
     let result = (|| {
+        let _store = store_lock();
         let mut contexts = std::collections::BTreeMap::new();
         for pane in session
             .windows
@@ -669,6 +651,7 @@ fn save_transaction(
     terminating: bool,
     explicit_clear: bool,
 ) -> std::io::Result<SaveMeasurements> {
+    let _store = store_lock();
     root.ensure_dirs()?;
     let session = sanitize_session(session.clone());
     if !explicit_clear && session.windows.is_empty() {
@@ -785,7 +768,28 @@ fn write_backups(
     }
     prune_archive(&archive, now);
     prune_contexts(root);
+    sweep_temps(root);
     Ok(())
+}
+/// Remove temporary files that crashed writes left in the restore folders.
+fn sweep_temps(root: &DataRoot) {
+    let backups = root.tab_state_backups_dir();
+    for dir in [
+        root.state_dir().to_path_buf(),
+        bundle_file(root)
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default(),
+        contexts_dir(root),
+        backups.join("archive"),
+        backups,
+        root.scrollback_dir(),
+    ] {
+        chau7_next_core::atomic_file::sweep_stale_temps(
+            &dir,
+            chau7_next_core::atomic_file::STALE_TEMP_AGE,
+        );
+    }
 }
 fn prune_archive(dir: &Path, now: SystemTime) {
     let mut total = 0_u64;
@@ -803,10 +807,15 @@ fn prune_archive(dir: &Path, now: SystemTime) {
                     .fold(meta.len(), |n, r| n.saturating_add(r.byte_count as u64))
             })
             .unwrap_or(meta.len());
-        if index >= ARCHIVE_KEEP
-            || old
-            || effective_bytes > MAX_MANIFEST_BYTES
-            || total.saturating_add(effective_bytes) > MAX_ARCHIVE_BYTES
+        // The newest archive is the last resort of restore: always kept.
+        // The per-file bound is Swift's `maximumArchiveFileBytes` and applies
+        // to the manifest; its scrollback sidecars only count toward the
+        // folder's total, or a large scrollback would delete every archive.
+        if index > 0
+            && (index >= ARCHIVE_KEEP
+                || old
+                || meta.len() > MAX_MANIFEST_BYTES
+                || total.saturating_add(effective_bytes) > MAX_ARCHIVE_BYTES)
         {
             let _ = std::fs::remove_file(path);
         } else {
@@ -1196,11 +1205,7 @@ mod tests {
         recover_resume_metadata(&mut base, &[backup], true);
         assert!(base.windows[0].tabs[0].panes[0].ai_provider.is_none());
     }
-    #[test]
-    fn oversized_archive_is_pruned_by_effective_context_bytes() {
-        let root = isolated_root();
-        let dir = root.tab_state_backups_dir().join("archive");
-        std::fs::create_dir_all(&dir).unwrap();
+    fn write_archive(dir: &Path, name: &str, context_bytes: u64) {
         let bundle = RestoreBundle {
             schema_version: 1,
             save_token: "x".into(),
@@ -1211,19 +1216,124 @@ mod tests {
                 1,
                 ContextRef {
                     sha256: "a".repeat(64),
-                    byte_count: MAX_MANIFEST_BYTES as usize + 1,
+                    byte_count: context_bytes as usize,
                 },
             )]
             .into_iter()
             .collect(),
         };
-        std::fs::write(
-            dir.join("9999999999999.json"),
-            serde_json::to_vec(&bundle).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(dir.join(name), serde_json::to_vec(&bundle).unwrap()).unwrap();
+    }
+    #[test]
+    fn archive_budget_counts_contexts_but_keeps_large_scrollback_archives() {
+        let root = isolated_root();
+        let dir = root.tab_state_backups_dir().join("archive");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Scrollback beyond the 16 MiB manifest bound is not a reason to
+        // drop an archive; only the 128 MiB folder budget is.
+        let large = MAX_MANIFEST_BYTES + 1;
+        write_archive(&dir, "0000000000003.json", large);
+        write_archive(&dir, "0000000000002.json", large);
+        write_archive(&dir, "0000000000001.json", MAX_ARCHIVE_BYTES - large);
         prune_archive(&dir, SystemTime::now());
-        assert!(archive_files(&dir).is_empty());
+        let names: Vec<_> = archive_files(&dir)
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["0000000000003.json", "0000000000002.json"]);
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+    #[test]
+    fn the_newest_archive_is_always_kept() {
+        let root = isolated_root();
+        let dir = root.tab_state_backups_dir().join("archive");
+        std::fs::create_dir_all(&dir).unwrap();
+        write_archive(&dir, "0000000000002.json", MAX_ARCHIVE_BYTES + 1);
+        write_archive(&dir, "0000000000001.json", 1);
+        prune_archive(&dir, SystemTime::now());
+        assert_eq!(archive_files(&dir), vec![dir.join("0000000000002.json")]);
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+    #[test]
+    fn writers_are_serialized_by_the_store_lock() {
+        let root = isolated_root();
+        let guard = store_lock();
+        let writer = {
+            let root = root.clone();
+            std::thread::spawn(move || save(&root, &one_tab(1, "x")))
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        // The save waits for the lock: nothing is written meanwhile.
+        assert!(!root.session_file().exists());
+        drop(guard);
+        writer.join().unwrap().unwrap();
+        assert!(root.session_file().exists());
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+    #[test]
+    fn concurrent_saves_never_lose_a_committed_context() {
+        let root = isolated_root();
+        std::fs::create_dir_all(root.scrollback_dir()).unwrap();
+        let threads: Vec<_> = (0..4_u64)
+            .map(|t| {
+                let root = root.clone();
+                std::thread::spawn(move || {
+                    for i in 0..25 {
+                        let pane = 100 + t;
+                        std::fs::write(
+                            root.scrollback_dir().join(format!("{pane}.txt")),
+                            format!("thread {t} iteration {i}"),
+                        )
+                        .unwrap();
+                        let mut session = one_tab(u128::from(pane), "x");
+                        session.windows[0].tabs[0].panes.push(SavedPane {
+                            id: pane,
+                            scrollback: true,
+                            ..Default::default()
+                        });
+                        save(&root, &session).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let bundle = parse_bundle(&bundle_file(&root)).unwrap();
+        assert!(hydrate_bundle(&root, &bundle).is_some());
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+    #[test]
+    fn stale_temporary_files_are_swept() {
+        let root = isolated_root();
+        save(&root, &one_tab(1, "x")).unwrap();
+        let old = SystemTime::now() - Duration::from_secs(3600);
+        let dirs = [
+            bundle_file(&root).parent().unwrap().to_path_buf(),
+            contexts_dir(&root),
+            root.tab_state_backups_dir(),
+            root.tab_state_backups_dir().join("archive"),
+        ];
+        let mut stale = Vec::new();
+        let mut fresh = Vec::new();
+        for dir in &dirs {
+            std::fs::create_dir_all(dir).unwrap();
+            let path = dir.join(format!(".restore-{}.tmp", uuid::Uuid::new_v4()));
+            std::fs::write(&path, b"leak").unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(old)
+                .unwrap();
+            stale.push(path);
+            let path = dir.join(format!(".latest.json.{}.tmp", uuid::Uuid::new_v4()));
+            std::fs::write(&path, b"in flight").unwrap();
+            fresh.push(path);
+        }
+        save(&root, &one_tab(1, "y")).unwrap();
+        assert!(stale.iter().all(|p| !p.exists()), "{stale:?}");
+        assert!(fresh.iter().all(|p| p.exists()), "{fresh:?}");
         std::fs::remove_dir_all(root.home()).unwrap();
     }
 

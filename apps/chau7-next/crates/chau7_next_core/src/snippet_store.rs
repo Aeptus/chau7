@@ -371,11 +371,8 @@ fn set_tombstone(dir: &Path, id: &str, deleted: bool) -> std::io::Result<()> {
     if !changed {
         return Ok(());
     }
-    std::fs::create_dir_all(dir)?;
     let text = serde_json::to_string_pretty(&ids).map_err(std::io::Error::other)?;
-    let temp = dir.join(".deleted.json.tmp");
-    std::fs::write(&temp, text)?;
-    std::fs::rename(temp, dir.join(TOMBSTONES))
+    crate::atomic_file::write(&dir.join(TOMBSTONES), text.as_bytes())
 }
 
 /// Remove a repo snippet in Chau7 Next: drop its overlay file and hide the
@@ -402,8 +399,10 @@ fn remove_from(paths: &SnippetPaths, source: SnippetSource, repo_root: Option<&P
     }
 }
 
-/// Write `<dir>/<id>.json` (via a temporary file, so a crash never leaves half
-/// a snippet). A hidden (deleted) id in an overlay folder shows again.
+/// Write `<dir>/<id>.json` atomically and durably (unique temporary file,
+/// flushed, renamed, folder flushed), so a crash never leaves half a snippet
+/// and a legacy file removed afterwards is never the only copy. A hidden
+/// (deleted) id in an overlay folder shows again.
 pub fn save_snippet(dir: &Path, snippet: &Snippet) -> std::io::Result<()> {
     if !valid_file_id(&snippet.id) {
         return Err(std::io::Error::new(
@@ -411,11 +410,8 @@ pub fn save_snippet(dir: &Path, snippet: &Snippet) -> std::io::Result<()> {
             format!("invalid snippet id: {}", snippet.id),
         ));
     }
-    std::fs::create_dir_all(dir)?;
     let target = dir.join(format!("{}.json", snippet.id));
-    let temp = dir.join(format!(".{}.json.tmp", snippet.id));
-    std::fs::write(&temp, encode_snippet(snippet))?;
-    std::fs::rename(&temp, &target)?;
+    crate::atomic_file::write(&target, encode_snippet(snippet).as_bytes())?;
     if dir.join(TOMBSTONES).exists() {
         set_tombstone(dir, &snippet.id, false)?;
     }
@@ -1225,6 +1221,26 @@ mod tests {
 
     fn now() -> DateTime<Utc> {
         DateTime::from_timestamp(1_700_000_000, 0).unwrap()
+    }
+
+    #[test]
+    fn writes_survive_a_leftover_temporary_file() {
+        let dir = temp("leftover");
+        // A crash of the old fixed-name scheme left these behind; a write
+        // must not depend on the name being free.
+        std::fs::create_dir_all(dir.join(".a.json.tmp/x")).unwrap();
+        std::fs::create_dir_all(dir.join(".deleted.json.tmp/x")).unwrap();
+        save_snippet(&dir, &Snippet::new("a", "A", "ls")).unwrap();
+        set_tombstone(&dir, "b", true).unwrap();
+        assert_eq!(load_dir(&dir).len(), 1);
+        assert!(tombstones(&dir).contains("b"));
+        let leftovers = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| crate::atomic_file::is_temp_name(&e.file_name().to_string_lossy()))
+            .count();
+        assert_eq!(leftovers, 0);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
