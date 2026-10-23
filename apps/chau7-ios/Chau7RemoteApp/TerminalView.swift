@@ -214,6 +214,15 @@ struct TerminalView: View {
     @ViewBuilder
     private var statusBar: some View {
         if let error = client.lastError, !error.isEmpty {
+            let primaryAction = RemoteErrorBannerAction.primary(
+                for: client.lastErrorRecovery,
+                isConnected: client.isConnected
+            )
+            let secondaryActions = RemoteErrorBannerAction.secondary(
+                for: client.lastErrorRecovery,
+                isConnected: client.isConnected,
+                status: client.status
+            )
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 8) {
                     Button {
@@ -226,11 +235,14 @@ struct TerminalView: View {
                                 Text("Connection issue")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.red)
+                                // Show the whole reason: the actionable sentence
+                                // ("Scan a fresh QR code...") is usually last.
                                 Text(error)
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                                    .lineLimit(4)
                                     .truncationMode(.tail)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer(minLength: 0)
                             Image(systemName: isErrorExpanded ? "chevron.up" : "chevron.down")
@@ -244,16 +256,13 @@ struct TerminalView: View {
                     .accessibilityLabel("Connection issue: \(error)")
                     .accessibilityHint("Tap to show connection details.")
 
-                    if client.status.offersPairingRecovery {
-                        Button {
-                            isPairingPresented = true
-                            isErrorExpanded = false
-                        } label: {
-                            Label("Re-pair", systemImage: "qrcode.viewfinder")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .accessibilityHint("Scan a fresh pairing QR code from your Mac.")
+                    switch primaryAction {
+                    case .repair:
+                        repairButton
+                    case .retry:
+                        retryButton
+                    case .none:
+                        EmptyView()
                     }
                 }
                 .padding(.horizontal)
@@ -267,16 +276,15 @@ struct TerminalView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         HStack(spacing: 10) {
-                            if !client.isConnected {
-                                Button {
-                                    client.lastError = nil
-                                    isErrorExpanded = false
-                                    client.connect()
-                                } label: {
-                                    Label("Retry", systemImage: "arrow.clockwise")
+                            ForEach(secondaryActions, id: \.self) { action in
+                                switch action {
+                                case .repair:
+                                    repairButton
+                                case .retry:
+                                    retryButton
+                                case .none:
+                                    EmptyView()
                                 }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
                             }
                             Button("Dismiss") {
                                 client.lastError = nil
@@ -293,6 +301,31 @@ struct TerminalView: View {
             }
             .background(Color(UIColor.secondarySystemBackground))
         }
+    }
+
+    private var repairButton: some View {
+        Button {
+            isPairingPresented = true
+            isErrorExpanded = false
+        } label: {
+            Label("Re-pair", systemImage: "qrcode.viewfinder")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .accessibilityHint("Scan a fresh pairing QR code from your Mac.")
+    }
+
+    private var retryButton: some View {
+        Button {
+            client.lastError = nil
+            isErrorExpanded = false
+            client.connect()
+        } label: {
+            Label("Retry", systemImage: "arrow.clockwise")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .accessibilityHint("Reconnect to your Mac with the current pairing.")
     }
 
     // MARK: - Tabs

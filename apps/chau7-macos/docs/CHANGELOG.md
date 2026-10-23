@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Follow AI hook and event logs with the shared tailer, so split multi-byte characters and rotated logs are read correctly.
 - Reap the curl helper even when a bug report body cannot be written.
 - Keep the dangerous command confirmation inside the window for long pastes, with a scrolling command preview.
+- iOS: offer Re-pair only when the pairing is stale, rejected, or the Mac
+  identity changed, keep Retry inline for transient failures, and show the full
+  connection error without expanding the banner.
+
 - Coalesce toolbar sizing after window resize bursts and skip unchanged AppKit
   constraint updates.
 
