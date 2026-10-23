@@ -1618,7 +1618,8 @@ final class ApprovalsNavigationRequestTests: XCTestCase {
 }
 
 final class PairingPayloadValidatorTests: XCTestCase {
-    private let now = ISO8601DateFormatter().date(from: "2026-10-23T12:00:00Z")!
+    /// 2026-10-23T12:00:00Z
+    private let now = Date(timeIntervalSince1970: 1_792_756_800)
 
     private func payload(expiresAt: String) -> String {
         let secret = Data(repeating: 7, count: 32).base64EncodedString()
