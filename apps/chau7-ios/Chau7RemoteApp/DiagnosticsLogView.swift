@@ -88,13 +88,8 @@ final class IssueReportDraft {
 
     func exportFile() -> URL? {
         persistContactPreference()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("chau7-ios-issue-\(formatter.string(from: Date())).md")
         do {
-            try markdownReport.write(to: url, atomically: true, encoding: .utf8)
-            return url
+            return try DiagnosticsExportFile.write(markdownReport, prefix: "chau7-ios-issue", fileExtension: "md")
         } catch {
             submitError = "Could not prepare the report for sharing: \(error.localizedDescription)"
             return nil

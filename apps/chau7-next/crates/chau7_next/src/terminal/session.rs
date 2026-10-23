@@ -382,8 +382,9 @@ pub fn system_login_shell() -> String {
         })
 }
 
-/// SIGTERM to every live shell's process group (`closeSessionForTermination`
-/// on quit). Sessions dropped afterwards skip the grace delays.
+/// SIGHUP to every live shell's process group on quit: interactive shells
+/// ignore SIGTERM but save history and exit on a hangup. Sessions dropped
+/// afterwards skip the grace delays.
 pub fn terminate_all_for_quit() {
     APP_QUITTING.store(true, Ordering::Release);
     let pids: Vec<i32> = LIVE_SHELLS
@@ -392,7 +393,7 @@ pub fn terminate_all_for_quit() {
         .map(|m| m.values().copied().collect())
         .unwrap_or_default();
     for pid in pids {
-        signal_group(pid, Signal::Term);
+        signal_group(pid, Signal::Hangup);
     }
 }
 
@@ -2291,7 +2292,9 @@ impl TerminalSession {
         // Password prompts only: Swift checks ECHO alone, which line editors
         // (readline, ZLE) also clear, so every typed command looked secret.
         let echo_disabled = Chau7Terminal::password_input_on_fd(self.echo_fd);
-        self.latency.borrow_mut().mark_input(clock(Instant::now()));
+        if chau7_next_core::shell_latency::measures_echo(bytes, self.is_loading(), echo_disabled) {
+            self.latency.borrow_mut().mark_input(clock(Instant::now()));
+        }
         if !echo_disabled {
             crate::history::recorder::input(self.id, bytes);
         }

@@ -249,9 +249,9 @@ public final class AISessionEventReconciler {
         observation: AIObservation,
         previous: SessionRecord
     ) -> Bool {
-        guard state.isTerminal else { return false }
-        guard observation.reliability == .authoritative else { return false }
-        guard observation.sourceClass == .providerHook || observation.sourceClass == .runtime else {
+        guard state.isTerminal,
+              observation.reliability == .authoritative,
+              observation.sourceClass == .providerHook || observation.sourceClass == .runtime else {
             return false
         }
         return observation.timestamp.timeIntervalSince(previous.updatedAt) > terminalRepeatWindow

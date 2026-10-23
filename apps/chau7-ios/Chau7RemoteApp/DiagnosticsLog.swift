@@ -304,14 +304,8 @@ final class DiagnosticsLog {
 
     /// Write the export to a temporary file and return its URL (for ShareLink).
     func exportFile() -> URL? {
-        let text = exportText()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let name = "chau7-diagnostics-\(formatter.string(from: Date())).txt"
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         do {
-            try text.data(using: .utf8)?.write(to: url, options: .atomic)
-            return url
+            return try DiagnosticsExportFile.write(exportText(), prefix: "chau7-diagnostics", fileExtension: "txt")
         } catch {
             osLog.error("Diagnostics export failed: \(error.localizedDescription)")
             return nil
@@ -399,14 +393,25 @@ final class DiagnosticsLog {
     /// debounced (off-main) and synchronous flush paths can share it off the
     /// main actor; `Data` is `Sendable`, so nothing actor-isolated crosses.
     private nonisolated static func writeData(_ data: Data, to fileURL: URL) {
-        try? data.write(to: fileURL, options: .atomic)
+        guard (try? data.write(to: fileURL, options: .atomic)) != nil else { return }
+        excludeFromBackup(fileURL)
+    }
+
+    /// The log can hold typed terminal input, so it must not travel into
+    /// device or iCloud backups. An atomic write replaces the file and its
+    /// attributes, so this is reapplied after each full write.
+    private nonisolated static func excludeFromBackup(_ fileURL: URL) {
+        var url = fileURL
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
     }
 
     /// Append pre-encoded JSONL bytes; falls back to a plain write when the
     /// file doesn't exist yet.
     private nonisolated static func appendData(_ data: Data, to fileURL: URL) {
         guard let handle = try? FileHandle(forWritingTo: fileURL) else {
-            try? data.write(to: fileURL, options: .atomic)
+            writeData(data, to: fileURL)
             return
         }
         defer { try? handle.close() }
@@ -538,5 +543,28 @@ final class DiagnosticsLog {
         }
         guard result == KERN_SUCCESS else { return nil }
         return info.phys_footprint
+    }
+}
+
+/// Shareable copies of the diagnostics log and issue reports. They live in one
+/// temporary folder that is emptied before each export, so a report holding
+/// typed input does not linger after it has been shared.
+enum DiagnosticsExportFile {
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter
+    }()
+
+    static func write(_ text: String, prefix: String, fileExtension: String) throws -> URL {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory.appendingPathComponent("DiagnosticsExports", isDirectory: true)
+        try? fileManager.removeItem(at: directory)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("\(prefix)-\(formatter.string(from: Date())).\(fileExtension)")
+        try Data(text.utf8).write(to: url, options: [.atomic, .completeFileProtection])
+        return url
     }
 }

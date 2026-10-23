@@ -1,3 +1,4 @@
+import ActivityKit
 import Chau7Core
 import CryptoKit
 import XCTest
@@ -202,7 +203,9 @@ final class ApprovalCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.takeSendable { _ in true }.count, 1)
         XCTAssertTrue(coordinator.takeSendable { _ in true }.isEmpty)
 
-        coordinator.resetInFlight()
+        let released = coordinator.resetInFlight()
+        XCTAssertEqual(released.map(\.requestID), ["r1"])
+        XCTAssertEqual(released.map(\.approved), [true])
 
         XCTAssertEqual(
             coordinator.takeSendable { _ in true }.map(\.requestID),
@@ -210,6 +213,17 @@ final class ApprovalCoordinatorTests: XCTestCase {
             "the replacement session must be able to flush a response whose old socket completion was fenced"
         )
         XCTAssertEqual(coordinator.queuedResponses["r1"], true)
+    }
+
+    func testResetInFlightReleasesOnlyAnswersStillQueued() {
+        let coordinator = ApprovalCoordinator()
+        coordinator.queue(requestID: "sent", approved: false)
+        coordinator.queue(requestID: "idle", approved: true)
+        _ = coordinator.takeSendable { $0 == "sent" || $0 == "idle" }
+        coordinator.forget(requestID: "idle")
+
+        XCTAssertEqual(coordinator.resetInFlight().map(\.requestID), ["sent"])
+        XCTAssertTrue(coordinator.resetInFlight().isEmpty, "a second reset has nothing in flight")
     }
 }
 
@@ -630,6 +644,11 @@ final class RemoteTerminalScrollPolicyTests: XCTestCase {
 }
 
 final class RemoteConnectionStartPolicyTests: XCTestCase {
+    func testPushWakeKeepsForegroundStreamingWhenAppIsActive() {
+        XCTAssertFalse(RemoteConnectionStartPolicy.pushWakeEntersBackground(applicationIsActive: true))
+        XCTAssertTrue(RemoteConnectionStartPolicy.pushWakeEntersBackground(applicationIsActive: false))
+    }
+
     func testAutomaticConnectionCoalescesBehindOpenTransport() {
         XCTAssertFalse(RemoteConnectionStartPolicy.shouldStartConnection(
             transportIsOpen: true,
@@ -1588,5 +1607,85 @@ final class RemoteInboundQueueEvictionTests: XCTestCase {
         XCTAssertEqual(queue.evictedOutputFrames, 0)
         XCTAssertEqual(queue.bufferedBytes, 0)
         XCTAssertEqual(queue.takeShedCounts(), QueueShedCounts.none)
+    }
+}
+
+final class RemotePairingStoreDeviceKeyTests: XCTestCase {
+    func testStoredKeyIsReused() {
+        let stored = Curve25519.KeyAgreement.PrivateKey().rawRepresentation
+        XCTAssertEqual(RemotePairingStore.deviceKeyDecision(for: .found(stored)), .use(stored))
+    }
+
+    func testMissingOrCorruptKeyIsMinted() {
+        XCTAssertEqual(RemotePairingStore.deviceKeyDecision(for: .notFound), .mint)
+        XCTAssertEqual(RemotePairingStore.deviceKeyDecision(for: .found(Data([1, 2, 3]))), .mint)
+    }
+
+    func testLockedKeychainNeverMintsAReplacementIdentity() {
+        XCTAssertEqual(
+            RemotePairingStore.deviceKeyDecision(for: .unavailable(errSecInteractionNotAllowed)),
+            .retryLater
+        )
+    }
+}
+
+final class RemoteLiveActivityPolicyTests: XCTestCase {
+    func testStaleActivityIsUpdatedInPlaceInsteadOfDuplicated() {
+        XCTAssertTrue(RemoteLiveActivityPolicy.acceptsUpdates(.active))
+        XCTAssertTrue(RemoteLiveActivityPolicy.acceptsUpdates(.stale))
+        XCTAssertFalse(RemoteLiveActivityPolicy.acceptsUpdates(.ended))
+        XCTAssertFalse(RemoteLiveActivityPolicy.acceptsUpdates(.dismissed))
+    }
+}
+
+final class ApprovalsNavigationRequestTests: XCTestCase {
+    func testTargetsMatchTheApprovalsDeckPageIDs() {
+        XCTAssertEqual(ApprovalsNavigationRequest.approval(requestID: "r1").decisionID, "approval:r1")
+        XCTAssertEqual(ApprovalsNavigationRequest.prompt(promptID: "p1").decisionID, "prompt:p1")
+        XCTAssertNil(ApprovalsNavigationRequest.queue().decisionID)
+    }
+
+    func testRepeatedRequestsAreDistinctSoEachTapNavigates() {
+        XCTAssertNotEqual(
+            ApprovalsNavigationRequest.approval(requestID: "r1"),
+            ApprovalsNavigationRequest.approval(requestID: "r1")
+        )
+    }
+}
+
+final class PairingPayloadValidatorTests: XCTestCase {
+    /// 2026-10-23T12:00:00Z
+    private let now = Date(timeIntervalSince1970: 1_792_756_800)
+
+    private func payload(expiresAt: String) -> String {
+        let secret = Data(repeating: 7, count: 32).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return """
+        {"relay_url":"wss://relay.example","device_id":"device-1","mac_pub":"AAAA",\
+        "pairing_code":"123456","expires_at":"\(expiresAt)",\
+        "relay_secret":"\(secret)","relay_key_id":"key1"}
+        """
+    }
+
+    func testFreshPayloadIsAccepted() {
+        guard case .success = PairingPayloadValidator.validate(payload(expiresAt: "2026-10-23T12:10:00Z"), now: now) else {
+            return XCTFail("a fresh, provisioned payload must validate")
+        }
+    }
+
+    func testExpiredPayloadIsRejected() {
+        guard case let .failure(message) = PairingPayloadValidator.validate(payload(expiresAt: "2026-10-23T11:00:00Z"), now: now) else {
+            return XCTFail("an expired payload must not validate")
+        }
+        XCTAssertTrue(message.contains("expired"))
+    }
+
+    func testUnreadableExpiryFailsClosed() {
+        guard case let .failure(message) = PairingPayloadValidator.validate(payload(expiresAt: "next tuesday"), now: now) else {
+            return XCTFail("an unparseable expiry must not validate")
+        }
+        XCTAssertTrue(message.contains("expiry couldn't be read"))
     }
 }

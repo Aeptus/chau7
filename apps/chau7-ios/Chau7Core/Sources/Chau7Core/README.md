@@ -1,22 +1,21 @@
 # Chau7Core
 
-Pure Swift library with zero UI dependencies, used by the iOS remote app, its widget and their tests. It started as the shared core of the former Swift macOS app, so it still contains logic that only that app used.
+Pure Swift library with zero UI dependencies, used by the iOS remote app, its widget and their tests. It started as the shared core of the former Swift macOS app; the logic only that app used has been removed, so everything here is reachable from the iOS targets.
 
 ## What belongs here
 
-- Domain types: `AIEvent`, `TerminalKeyPress`, `CommandBlock`, `HistoryRecord`
-- Parsers: `ConfigFileParser`, `SSHConfigParser`, `FrameParser`, `EscapeSequenceSanitizer`
-- Detection: `AIDetectionState`, `CommandDetection`, `AIToolRegistry`, `AIResumeParser`
-- Notification model: `CanonicalNotificationEvent`, `NotificationIngress`, provider adapters
-- Runtime: `EventJournal`, `RuntimeSessionState`, `AgentBackend` protocol
-- Telemetry: `TelemetryRun`, `TelemetryTurn`, `TokenMetrics`
-- Utilities: `SubprocessRunner`, `ShellEscaping`, `DateFormatters`
+- Remote protocol: `RemoteFrame`, `FrameParser`, `RemoteWirePayloads`, `RemoteCryptoSession`, `RemoteReplayGuard`, `RelayToken`
+- Remote state: `PendingStateReconciler`, `RemoteActivityState`, `RemoteReconnectBackoff`, `RemoteTabSelectionPolicy`
+- Terminal data: `RemoteTerminalGridSnapshot`, `RemoteOutputBuffering`, `ANSIStripper`, `TerminalColorScheme`, `TerminalKeyPress`
+- Prompts and approvals: `InteractivePromptDetector`, `RemoteInteractivePrompt`, `ApprovalSeverity`
+- Notification model: `CanonicalNotificationModel`, `NotificationContentFormatter`, provider adapters
 
 ## What does NOT belong here
 
-- Anything that imports AppKit, SwiftUI, or Metal
+- Anything that imports UIKit, SwiftUI, ActivityKit or Metal
 - Singleton managers (those live in the app targets)
 - View models or UI state
+- Code no iOS target uses
 
 ## Testing
 
@@ -25,14 +24,3 @@ The tests in `Tests/Chau7CoreTests/` of this package exercise the target via `@t
 ```bash
 swift test --package-path apps/chau7-ios/Chau7Core
 ```
-
-## Key types
-
-| Type | Purpose |
-|------|---------|
-| `AIEvent` | Canonical cross-tool event (all monitors produce these) |
-| `AIToolRegistry` | Single source of truth for AI tool identity |
-| `AIDetectionState` | State machine for detecting which AI tool is running |
-| `NotificationIngress` | Entry point for the notification pipeline |
-| `RuntimeSessionState` | State machine for managed AI agent sessions |
-| `CommandDetection` | Pattern matching for shell commands |
