@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Answer read-only MCP tab queries within one second when the interface is busy, instead of blocking the client.
 - Bound the number of tracked Claude Code sessions.
 - Bound the proxy IPC line buffer and drop over-long lines.
 - Refuse to take over or delete a remote IPC socket that another running instance owns.

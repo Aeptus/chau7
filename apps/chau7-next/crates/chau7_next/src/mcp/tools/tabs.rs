@@ -168,7 +168,7 @@ pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<
     let main = ctx.main;
     let owner = (!ctx.is_internal()).then(|| ctx.client_id.to_string());
     Some(match name {
-        "tab_list" => main.call(list_tabs).unwrap_or_else(no_window),
+        "tab_list" => read_main(ctx, list_tabs).unwrap_or_else(|error| error),
         "tab_create" => create_tab(
             arg_str(args, "directory").map(str::to_string),
             arg_int(args, "window_id"),
@@ -252,6 +252,18 @@ pub fn call(name: &str, args: &Map<String, Value>, ctx: &ToolContext) -> Option<
 
 pub(crate) fn no_window() -> String {
     json_error(NO_WINDOW)
+}
+
+/// A read-only main-thread lookup, bounded like the observer tools: a busy UI
+/// answers `main_thread_unresponsive` instead of holding the client until its
+/// own timeout (#230).
+fn read_main<T: Send + 'static>(
+    ctx: &ToolContext,
+    f: impl FnOnce(&mut App) -> T + Send + 'static,
+) -> Result<T, String> {
+    ctx.main
+        .read(f)
+        .map_err(|error| encode_sorted(&error.payload()))
 }
 
 fn not_found(tab_id: &str) -> String {
@@ -646,7 +658,7 @@ pub(super) fn add_deferred_status_fields(summary: &mut Map<String, Value>) {
 
 pub(crate) fn status(tab_id: &str, ctx: &ToolContext) -> String {
     let id = tab_id.to_string();
-    let found = ctx.main.call(move |cx| {
+    let found = read_main(ctx, move |cx| {
         let tab = find_tab(&id, cx)?;
         let ws = tab.window.workspace.read(cx);
         let mut summary = ws.mcp_summary(tab.tab, cx);
@@ -664,8 +676,9 @@ pub(crate) fn status(tab_id: &str, ctx: &ToolContext) -> String {
         };
         Some((summary, Some((pid, s.tab_identifier.clone()))))
     });
-    let Some(found) = found else {
-        return no_window();
+    let found = match found {
+        Ok(found) => found,
+        Err(error) => return error,
     };
     let Some((mut summary, live)) = found else {
         return not_found(tab_id);
@@ -787,9 +800,8 @@ fn output(
         let mut stability = StabilityWait::new(wait);
         while Instant::now() < deadline {
             let id = tab_id.to_string();
-            let Some(Some(fp)) = ctx
-                .main
-                .call(move |cx| buffer_text(&id, cx).map(|t| fingerprint(&t)))
+            let Ok(Some(fp)) =
+                read_main(ctx, move |cx| buffer_text(&id, cx).map(|t| fingerprint(&t)))
             else {
                 break;
             };
@@ -800,11 +812,10 @@ fn output(
         }
     }
     let id = tab_id.to_string();
-    let text = ctx.main.call(move |cx| buffer_text(&id, cx));
-    match text {
-        None => no_window(),
-        Some(None) => not_found(tab_id),
-        Some(Some(text)) => encode_buffer_output(tab_id, &text, lines),
+    match read_main(ctx, move |cx| buffer_text(&id, cx)) {
+        Err(error) => error,
+        Ok(None) => not_found(tab_id),
+        Ok(Some(text)) => encode_buffer_output(tab_id, &text, lines),
     }
 }
 
@@ -834,7 +845,7 @@ fn empty_pty_log_output(tab_id: &str) -> String {
 
 fn pty_log_output(tab_id: &str, lines: usize, ctx: &ToolContext) -> String {
     let id = tab_id.to_string();
-    let lookup = ctx.main.call(move |cx| {
+    let lookup = read_main(ctx, move |cx| {
         let tab = find_tab(&id, cx);
         let (terminal_found, path) = tab.as_ref().map_or((false, None), |tab| {
             let ws = tab.window.workspace.read(cx);
@@ -851,8 +862,8 @@ fn pty_log_output(tab_id: &str, lines: usize, ctx: &ToolContext) -> String {
         classify_pty_log_lookup(terminal_found, path)
     });
     let lookup = match lookup {
-        None => return no_window(),
-        Some(lookup) => lookup,
+        Err(error) => return error,
+        Ok(lookup) => lookup,
     };
     let path = match lookup {
         PtyLogLookup::MissingTerminal => return not_found(tab_id),
@@ -1062,5 +1073,30 @@ mod deferred_read_tests {
                 "source": "pty_log"
             })
         );
+    }
+}
+
+#[cfg(test)]
+mod unresponsive_main_thread_tests {
+    use super::*;
+    use crate::mcp::MainThread;
+
+    #[test]
+    fn read_only_tab_tools_answer_when_the_main_thread_is_stuck() {
+        // The receiver is kept alive and never drained: a busy UI thread.
+        let (jobs, _queued) = futures::channel::mpsc::unbounded();
+        let main = MainThread::for_tests(jobs);
+        let ctx = ToolContext::internal(&main);
+        let started = Instant::now();
+        let mut args = Map::new();
+        for name in ["tab_list", "tab_status", "tab_output"] {
+            args.insert("tab_id".into(), json!("tab"));
+            let reply = call(name, &args, &ctx).unwrap();
+            assert!(
+                reply.contains("main_thread_unresponsive"),
+                "{name}: {reply}"
+            );
+        }
+        assert!(started.elapsed() < Duration::from_secs(10));
     }
 }
