@@ -751,10 +751,14 @@ impl Chau7Terminal {
         };
 
         // Get writer for PTY input
-        let writer = pair.master.take_writer().map_err(|e| {
-            error!("[terminal-{}] Failed to get PTY writer: {}", id, e);
-            TerminalError::PtyWriter(e.into())
-        })?;
+        let writer = match pair.master.take_writer() {
+            Ok(writer) => writer,
+            Err(e) => {
+                error!("[terminal-{}] Failed to get PTY writer: {}", id, e);
+                abandon_spawned_shell(id, child, &[master_fd, reader_fd]);
+                return Err(TerminalError::PtyWriter(e.into()));
+            }
+        };
         debug!("[terminal-{}] PTY writer obtained", id);
 
         // Create running flag
@@ -778,7 +782,7 @@ impl Chau7Terminal {
                     "[terminal-{}] Shared PTY reader pool is not running; aborting terminal creation",
                     id
                 );
-                unsafe { libc::close(reader_fd) };
+                abandon_spawned_shell(id, child, &[master_fd, reader_fd]);
                 return Err(TerminalError::ReaderThread(std::io::Error::other(
                     "shared PTY reader pool thread is not running",
                 )));
@@ -795,7 +799,10 @@ impl Chau7Terminal {
             );
         }
         #[cfg(not(unix))]
-        spawn_pty_reader_thread(id, pair.master.as_ref(), pty_tx, running.clone())?;
+        if let Err(e) = spawn_pty_reader_thread(id, pair.master.as_ref(), pty_tx, running.clone()) {
+            abandon_spawned_shell(id, child, &[master_fd, reader_fd]);
+            return Err(e);
+        }
 
         // Create the PTY handle
         let pty_handle = PtyHandle {
@@ -3616,6 +3623,31 @@ impl Drop for Chau7Terminal {
     }
 }
 
+/// Undo a shell spawn when terminal creation fails after it: close the
+/// dup'd master fds and kill and reap the child, so neither outlives the
+/// error. `kill` sends SIGHUP and escalates to SIGKILL after a short grace
+/// period, so the wait that follows does not hang.
+fn abandon_spawned_shell(
+    id: u64,
+    mut child: Box<dyn portable_pty::Child + Send + Sync>,
+    fds: &[i32],
+) {
+    #[cfg(unix)]
+    for &fd in fds {
+        if fd >= 0 {
+            unsafe { libc::close(fd) };
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = fds;
+    if let Err(e) = child.kill() {
+        warn!("[terminal-{}] Failed to kill abandoned shell: {}", id, e);
+    }
+    if let Err(e) = child.wait() {
+        warn!("[terminal-{}] Failed to reap abandoned shell: {}", id, e);
+    }
+}
+
 /// Shell used when `$SHELL` is unset. macOS keeps its historical default.
 fn default_shell() -> &'static str {
     if cfg!(windows) {
@@ -3781,6 +3813,41 @@ mod tests {
         use std::os::unix::process::ExitStatusExt;
         let stopped = std::process::ExitStatus::from_raw((libc::SIGSTOP << 8) | 0x7f);
         assert_eq!(terminal_exit_code(stopped), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn abandoned_shell_is_killed_and_its_fds_closed() {
+        let pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new("/bin/sleep");
+        cmd.arg("30");
+        let child = pair.slave.spawn_command(cmd).expect("spawn sleep");
+        let pid = child.process_id().expect("pid") as i32;
+        // Stand in a pipe's write end for a dup'd master fd: once it is
+        // closed the read end reports EOF. (Checking the fd number itself
+        // would race with other tests reusing it.)
+        let mut pipe = [0i32; 2];
+        assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
+        for fd in pipe {
+            unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) };
+        }
+        unsafe { libc::fcntl(pipe[0], libc::F_SETFL, libc::O_NONBLOCK) };
+
+        abandon_spawned_shell(0, child, &[pipe[1], -1]);
+
+        let mut byte = 0u8;
+        let read = unsafe { libc::read(pipe[0], (&mut byte as *mut u8).cast(), 1) };
+        unsafe { libc::close(pipe[0]) };
+        assert_eq!(read, 0, "write end still open");
+        // Killed and reaped: the pid no longer exists.
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
     }
 
     #[test]
