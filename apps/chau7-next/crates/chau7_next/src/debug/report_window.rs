@@ -73,14 +73,16 @@ fn post_report(endpoint: &str, title: &str, report: &str) -> Result<u64, BugRepo
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| BugReportError::Network(err.to_string()))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(body.as_bytes())
-            .map_err(|err| BugReportError::Network(err.to_string()))?;
-    }
+    // Reap curl even when the body write fails (curl exited early): returning
+    // before the wait would leave a zombie per failed submit.
+    let written = child
+        .stdin
+        .take()
+        .map_or(Ok(()), |mut stdin| stdin.write_all(body.as_bytes()));
     let output = child
         .wait_with_output()
         .map_err(|err| BugReportError::Network(err.to_string()))?;
+    written.map_err(|err| BugReportError::Network(err.to_string()))?;
     if !output.status.success() {
         let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(BugReportError::Network(if message.is_empty() {

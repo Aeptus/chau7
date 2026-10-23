@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reap the curl helper even when a bug report body cannot be written.
 - Coalesce toolbar sizing after window resize bursts and skip unchanged AppKit
   constraint updates.
 
