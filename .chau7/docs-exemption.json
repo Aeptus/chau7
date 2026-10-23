@@ -1,13 +1,16 @@
 {
-  "reason": "Adds native Ondine Mermaid previews, documented in docs/rust-port/MERMAID.md. This Rust-only feature uses native documentation rather than the legacy Swift changelog. Follow-up native review fixes runbook element ownership and groups block state, and visual review preserves readable default label size for wide charts while keeping explicit Fit, and verifies drawable native label paths. The patch-only workflow runs isolated core tests and native type checking without building, installing, stopping or restarting the app.",
+  "reason": "Removes iOS app code with no callers in the app, widget or tests (two unused files and unread symbols). No user-visible behaviour changes, so there is nothing to add to the changelog.",
   "paths": [
-    "apps/chau7-next/crates/chau7_next/src/panes/editor.rs",
-    "apps/chau7-next/crates/chau7_next/src/panes/mod.rs",
-    "apps/chau7-next/crates/chau7_next/src/panes/runbook.rs",
-    "apps/chau7-next/crates/chau7_next/src/panes/mermaid.rs",
-    "apps/chau7-next/crates/chau7_next_core/src/editor/mod.rs",
-    "apps/chau7-next/crates/chau7_next_core/src/editor/mermaid.rs",
-    "apps/chau7-next/resources/licenses/ondine/LICENSE-ONDINE",
-    "apps/chau7-next/resources/licenses/ondine/LICENSE-PELE"
+    "apps/chau7-ios/Chau7RemoteApp/BackgroundKeepalive.swift",
+    "apps/chau7-ios/Chau7RemoteApp/Chau7RemoteApp.xcodeproj/project.pbxproj",
+    "apps/chau7-ios/Chau7RemoteApp/DiagnosticsLog.swift",
+    "apps/chau7-ios/Chau7RemoteApp/RemoteActivityCard.swift",
+    "apps/chau7-ios/Chau7RemoteApp/RemoteConnectionStatus.swift",
+    "apps/chau7-ios/Chau7RemoteApp/RemoteCrypto.swift",
+    "apps/chau7-ios/Chau7RemoteApp/RemoteModels.swift",
+    "apps/chau7-ios/Chau7RemoteApp/RemoteSessionController.swift",
+    "apps/chau7-ios/Chau7RemoteApp/RemoteTerminalCellMetrics.swift",
+    "apps/chau7-ios/Chau7RemoteApp/RemoteTerminalRendererView.swift",
+    "apps/chau7-ios/Chau7RemoteApp/TerminalView.swift"
   ]
 }

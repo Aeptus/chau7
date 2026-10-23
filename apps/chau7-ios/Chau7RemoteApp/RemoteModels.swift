@@ -143,8 +143,6 @@ struct RemoteTerminalRenderDiagnostics: Equatable {
     /// makes the current per-cell `clusterString` fold expensive; Phase 3
     /// should drive it to roughly the visible cell count once Rust pre-folds.
     var decodedCells: Int = 0
-    /// Milliseconds spent inside the last `draw(_:)`.
-    var drawMilliseconds: Double = 0
     /// Source rows that soft-wrap from the row above, as reported by the
     /// engine's wrap flag.
     var softWrappedRows: Int = 0
@@ -466,18 +464,6 @@ struct ApprovalRequest: Identifiable {
 
     var id: String {
         requestID
-    }
-
-    var isProtectedRemoteAction: Bool {
-        flaggedCommand != command
-    }
-
-    var title: String {
-        isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
-    }
-
-    var subtitle: String? {
-        isProtectedRemoteAction ? flaggedCommand : nil
     }
 }
 
