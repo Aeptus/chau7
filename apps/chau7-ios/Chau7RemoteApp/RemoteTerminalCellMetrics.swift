@@ -64,8 +64,4 @@ enum RemoteTerminalFontMetrics {
     static func metrics(for font: UIFont = baseFont) -> RemoteTerminalCellMetrics {
         RemoteTerminalCellMetrics(font: font)
     }
-
-    static func cellSize(for font: UIFont = baseFont) -> CGSize {
-        metrics(for: font).cellSize
-    }
 }

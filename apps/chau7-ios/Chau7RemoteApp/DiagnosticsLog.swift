@@ -175,10 +175,6 @@ final class DiagnosticsLog {
         scheduleSave()
     }
 
-    func trace(_ category: Category, _ message: String, _ metadata: [String: String] = [:]) {
-        record(.trace, category, message, metadata)
-    }
-
     func debug(_ category: Category, _ message: String, _ metadata: [String: String] = [:]) {
         record(.debug, category, message, metadata)
     }
@@ -224,16 +220,6 @@ final class DiagnosticsLog {
             meta["mem_mb"] = String(format: "%.1f", Double(footprint) / 1_048_576)
         }
         record(.info, .performance, name, meta)
-    }
-
-    /// Measure the duration of a synchronous block and record it.
-    @discardableResult
-    func measure<T>(_ name: String, _ metadata: [String: String] = [:], _ body: () throws -> T) rethrows -> T {
-        let start = DispatchTime.now()
-        let result = try body()
-        let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
-        performance(name, durationMs: elapsedMs, metadata)
-        return result
     }
 
     /// Capture a point-in-time performance snapshot (memory, thermal, uptime).

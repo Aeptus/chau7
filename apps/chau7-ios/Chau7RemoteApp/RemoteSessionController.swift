@@ -70,12 +70,6 @@ final class RemoteSessionController {
         nonceMac = nonce
     }
 
-    /// Forget the Mac's nonce so establishment waits for its fresh HELLO
-    /// (explicit re-pairing: both sides re-handshake with new nonces).
-    func clearMacNonce() {
-        nonceMac = nil
-    }
-
     /// Mint a fresh iOS nonce (start of a handshake attempt).
     @discardableResult
     func mintIOSNonce() -> Data {
