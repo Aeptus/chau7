@@ -290,10 +290,12 @@ pub fn move_tabs_to(
     let result = target_window.update(cx, |_, target_window, cx| {
         let moved = source_window.update(cx, |_, source_window, cx| {
             source.update(cx, |workspace, cx| {
+                let selected = workspace.state.selected();
                 let moved: Vec<_> = ids
                     .iter()
                     .filter_map(|id| workspace.take_tab(*id, source_window, cx))
                     .collect();
+                workspace.tabs_moved_out(selected, source_window, cx);
                 cx.notify();
                 moved
             })

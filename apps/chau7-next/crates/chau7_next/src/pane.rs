@@ -278,6 +278,43 @@ impl PaneTree {
         Self::empty()
     }
 
+    /// Panes split side by side, each a headless terminal with the
+    /// production event wiring (no shell process). The last one is focused.
+    #[cfg(all(test, unix))]
+    pub(crate) fn headless_for_test(
+        count: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut tree = Self::empty();
+        let mut leaves = Vec::new();
+        for _ in 0..count.max(1) {
+            let terminal = chau7_terminal::Chau7Terminal::new_headless(80, 24).unwrap();
+            let session =
+                cx.new(|cx| TerminalSession::from_terminal_manually_driven(terminal, None, cx));
+            let view = tree.wire_terminal(session, new_pane_id(), window, cx);
+            leaves.push(Node::Leaf(PaneItem::Terminal(view)));
+        }
+        let last = match leaves.last() {
+            Some(Node::Leaf(item)) => item.entity_id(),
+            _ => unreachable!(),
+        };
+        tree.root = Some(if leaves.len() == 1 {
+            leaves.remove(0)
+        } else {
+            let ratios = vec![1.0 / leaves.len() as f32; leaves.len()];
+            Node::Split {
+                axis: Axis::Horizontal,
+                children: leaves,
+                ratios,
+                id: 0,
+            }
+        });
+        tree.focused = Some(last);
+        tree.presentation_terminal = Some(last);
+        tree
+    }
+
     fn empty() -> Self {
         Self {
             deferred_saved: None,
@@ -773,6 +810,18 @@ impl PaneTree {
                 }
             }
         });
+        self.wire_terminal(session, pane_id, window, cx)
+    }
+
+    /// A view for `session`, with the subscriptions that turn its events into
+    /// pane events.
+    fn wire_terminal(
+        &mut self,
+        session: Entity<TerminalSession>,
+        pane_id: PaneId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<TerminalView> {
         let view = cx.new(|cx| TerminalView::new(session.clone(), window, cx));
         let view_id = view.entity_id();
         self.pane_ids.insert(view_id, pane_id);
