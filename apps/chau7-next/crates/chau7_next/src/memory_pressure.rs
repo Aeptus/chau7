@@ -59,6 +59,8 @@ struct Service {
     views: ViewRegistrations<gpui::WeakEntity<crate::terminal::view::TerminalView>>,
     reclaimed_cache_bytes: u64,
     last_critical_reclaim: Option<Instant>,
+    /// Service-epoch time of the last footprint check.
+    last_footprint_check: Option<Duration>,
     #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
     fixture_worker: Option<std::thread::JoinHandle<()>>,
 }
@@ -479,6 +481,7 @@ pub fn start(cx: &mut App) {
         views,
         reclaimed_cache_bytes: 0,
         last_critical_reclaim: None,
+        last_footprint_check: None,
         #[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
         fixture_worker: Some(worker),
     });
@@ -568,6 +571,13 @@ fn selected(cx: &mut App) -> HashMap<u64, bool> {
     }
     selected
 }
+/// Interval between two footprint checks.
+const FOOTPRINT_CHECK_INTERVAL: Duration = Duration::from_secs(30);
+
+fn footprint_check_due(last: Option<Duration>, now: Duration) -> bool {
+    last.is_none_or(|last| now.saturating_sub(last) >= FOOTPRINT_CHECK_INTERVAL)
+}
+
 fn tick(cx: &mut App) {
     let _wake = chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::wakeup(
         "memory_pressure_timer",
@@ -579,13 +589,19 @@ fn tick(cx: &mut App) {
         .iter()
         .filter_map(|(id, visible)| visible.then_some(*id))
         .collect();
-    let Some(service) = cx.try_global::<Service>() else {
+    if !cx.has_global::<Service>() {
         return;
-    };
+    }
+    let service = cx.global_mut::<Service>();
     let now = service.epoch.elapsed();
-    if now.as_secs() % 30 == 0
-        && let Some((used, physical)) = native::footprint()
-    {
+    // Every 30 s whatever the tick timing: a late or skipped tick must not
+    // skip a check, and two ticks in the same second must not repeat it.
+    let check_footprint = footprint_check_due(service.last_footprint_check, now);
+    if check_footprint {
+        service.last_footprint_check = Some(now);
+    }
+    let service = &*service;
+    if check_footprint && let Some((used, physical)) = native::footprint() {
         service.pressure.lock().check_footprint(used, physical, now);
     }
     let pressure = service.pressure.lock().is_under_pressure(now);
@@ -964,6 +980,18 @@ mod native {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn footprint_check_runs_every_thirty_seconds_of_service_time() {
+        use super::footprint_check_due as due;
+        let s = Duration::from_secs;
+        assert!(due(None, s(7)), "first tick checks");
+        assert!(!due(Some(s(7)), s(36)));
+        assert!(due(Some(s(7)), s(37)));
+        // A tick that lands late still checks once, then waits again.
+        assert!(due(Some(s(7)), s(95)));
+        assert!(!due(Some(s(95)), s(95)));
+    }
+
     use super::*;
 
     #[test]
