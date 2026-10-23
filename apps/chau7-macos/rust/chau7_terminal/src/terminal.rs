@@ -479,7 +479,7 @@ impl Chau7Terminal {
             return Err(TerminalError::InvalidDimensions { cols, rows });
         }
 
-        let (event_tx, event_rx) = bounded::<Event>(100);
+        let (event_tx, event_rx) = crate::pty::event_channel();
         let bell_pending = Arc::new(AtomicBool::new(false));
         let listener = Chau7EventListener {
             sender: event_tx,
@@ -633,7 +633,7 @@ impl Chau7Terminal {
         debug!("[terminal-{}] PTY opened successfully", id);
 
         // Create event channel for terminal events
-        let (event_tx, event_rx) = bounded::<Event>(100);
+        let (event_tx, event_rx) = crate::pty::event_channel();
         let bell_pending = Arc::new(AtomicBool::new(false));
         let listener = Chau7EventListener {
             sender: event_tx,
@@ -1114,119 +1114,11 @@ impl Chau7Terminal {
         signal_foreground_winch(self.id, echo_fd);
     }
 
-    /// Poll for new data from PTY, process it, and return event flags.
-    /// Raw output bytes are stored in `last_output` for retrieval via `get_last_output()`.
-    /// Concurrent callers must not dequeue ahead of the active parser. A zero
-    /// timeout never waits for another poll; blocking callers share their timeout
-    /// budget between acquiring ownership and waiting for the first PTY message.
-    #[must_use]
-    pub fn poll_events(&self, timeout_ms: u32) -> u32 {
-        let poll_start = Instant::now();
-
-        // Adaptive polling: use suggested timeout or caller's timeout (whichever is shorter)
-        let adaptive_timeout = self.adaptive_poller.suggested_timeout_ms();
-        let effective_timeout = timeout_ms.min(adaptive_timeout);
-        trace!(
-            "[terminal-{}] poll(timeout_ms={}, adaptive={})",
-            self.id, timeout_ms, effective_timeout
-        );
-
-        let timeout = Duration::from_millis(effective_timeout as u64);
-        // A timed lock still spins/yields before inspecting its deadline.
-        // On an overloaded machine even a zero deadline can park the UI
-        // behind the event-drain worker. Zero-timeout callers must only CAS.
-        let poll_guard = if effective_timeout == 0 {
-            self.pty_poll_lock.try_lock()
-        } else {
-            self.pty_poll_lock.try_lock_for(timeout)
-        };
-        let Some(_poll_guard) = poll_guard else {
-            return 0;
-        };
-        let timeout = timeout.saturating_sub(poll_start.elapsed());
-        let mut had_data = false;
-        let mut had_renderable_data = false;
-        let mut bytes_this_poll = 0usize;
-
-        // Accumulate all data locally, then lock last_output once at the end
-        let mut local_output = Vec::new();
-
-        if let Some(pty_rx) = self.pty_rx.as_ref() {
-            // Try to receive data with timeout for the first message
-            match pty_rx.recv_timeout(timeout) {
-                Ok(PtyMessage::Data(data)) => {
-                    bytes_this_poll += data.len();
-                    let visible_data = filter_terminal_output_noise(&data);
-                    if !visible_data.is_empty() {
-                        let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
-                        local_output.extend_from_slice(visible_data.as_ref());
-                        self.process_pty_data(visible_data.as_ref());
-                        had_data = true;
-                        had_renderable_data |= renderable;
-                    }
-                }
-                Ok(PtyMessage::Closed) => {
-                    info!("[terminal-{}] PTY closed message received in poll", self.id);
-                    self.pty_closed.store(true, Ordering::Release);
-                    return POLL_EVENT_METADATA_CHANGED;
-                }
-                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
-                    trace!("[terminal-{}] poll timeout (no data)", self.id);
-                }
-                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                    warn!("[terminal-{}] PTY channel disconnected", self.id);
-                    self.pty_closed.store(true, Ordering::Release);
-                }
-            }
-
-            // Yield ownership between output batches. A producer can keep
-            // the channel permanently nonempty; draining it to exhaustion
-            // would monopolize the UI and starve grid snapshots indefinitely.
-            // Leave queued chunks untouched so subsequent polls preserve order.
-            let batch_started = Instant::now();
-            while bytes_this_poll < 64 * 1024 && batch_started.elapsed() < Duration::from_millis(2)
-            {
-                match pty_rx.try_recv() {
-                    Ok(PtyMessage::Data(data)) => {
-                        bytes_this_poll += data.len();
-                        let visible_data = filter_terminal_output_noise(&data);
-                        if !visible_data.is_empty() {
-                            let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
-                            local_output.extend_from_slice(visible_data.as_ref());
-                            self.process_pty_data(visible_data.as_ref());
-                            had_data = true;
-                            had_renderable_data |= renderable;
-                        }
-                    }
-                    Ok(PtyMessage::Closed) => {
-                        info!(
-                            "[terminal-{}] PTY closed message received while draining",
-                            self.id
-                        );
-                        self.pty_closed.store(true, Ordering::Release);
-                        break;
-                    }
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => {
-                        warn!(
-                            "[terminal-{}] PTY channel disconnected while draining",
-                            self.id
-                        );
-                        self.pty_closed.store(true, Ordering::Release);
-                        break;
-                    }
-                }
-            }
-        }
-
-        // The event-drain worker can poll again before Swift handles its wake.
-        // Keep unread bytes in stream order; an idle poll must not erase them.
-        if !local_output.is_empty() {
-            let mut last_output = self.last_output.lock();
-            last_output.extend_from_slice(&local_output);
-        }
-
-        // Process terminal events
+    /// Handle queued emulator events: write replies (`PtyWrite`) to the PTY
+    /// and record title, clipboard and exit changes. Called after every PTY
+    /// chunk so a burst of queries cannot pile up in the queue. Returns
+    /// (events handled, `PtyWrite` events among them).
+    fn drain_terminal_events(&self) -> (usize, usize) {
         let mut event_count = 0;
         let mut pty_write_count = 0;
         while let Ok(event) = self.event_rx.try_recv() {
@@ -1290,6 +1182,134 @@ impl Chau7Terminal {
                 _ => {}
             }
         }
+        (event_count, pty_write_count)
+    }
+
+    /// Poll for new data from PTY, process it, and return event flags.
+    /// Raw output bytes are stored in `last_output` for retrieval via `get_last_output()`.
+    /// Concurrent callers must not dequeue ahead of the active parser. A zero
+    /// timeout never waits for another poll; blocking callers share their timeout
+    /// budget between acquiring ownership and waiting for the first PTY message.
+    #[must_use]
+    pub fn poll_events(&self, timeout_ms: u32) -> u32 {
+        let poll_start = Instant::now();
+
+        // Adaptive polling: use suggested timeout or caller's timeout (whichever is shorter)
+        let adaptive_timeout = self.adaptive_poller.suggested_timeout_ms();
+        let effective_timeout = timeout_ms.min(adaptive_timeout);
+        trace!(
+            "[terminal-{}] poll(timeout_ms={}, adaptive={})",
+            self.id, timeout_ms, effective_timeout
+        );
+
+        let timeout = Duration::from_millis(effective_timeout as u64);
+        // A timed lock still spins/yields before inspecting its deadline.
+        // On an overloaded machine even a zero deadline can park the UI
+        // behind the event-drain worker. Zero-timeout callers must only CAS.
+        let poll_guard = if effective_timeout == 0 {
+            self.pty_poll_lock.try_lock()
+        } else {
+            self.pty_poll_lock.try_lock_for(timeout)
+        };
+        let Some(_poll_guard) = poll_guard else {
+            return 0;
+        };
+        let timeout = timeout.saturating_sub(poll_start.elapsed());
+        let mut had_data = false;
+        let mut had_renderable_data = false;
+        let mut bytes_this_poll = 0usize;
+        let mut event_count = 0;
+        let mut pty_write_count = 0;
+
+        // Accumulate all data locally, then lock last_output once at the end
+        let mut local_output = Vec::new();
+
+        if let Some(pty_rx) = self.pty_rx.as_ref() {
+            // Try to receive data with timeout for the first message
+            match pty_rx.recv_timeout(timeout) {
+                Ok(PtyMessage::Data(data)) => {
+                    bytes_this_poll += data.len();
+                    let visible_data = filter_terminal_output_noise(&data);
+                    if !visible_data.is_empty() {
+                        let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
+                        local_output.extend_from_slice(visible_data.as_ref());
+                        self.process_pty_data(visible_data.as_ref());
+                        let (count, writes) = self.drain_terminal_events();
+                        event_count += count;
+                        pty_write_count += writes;
+                        had_data = true;
+                        had_renderable_data |= renderable;
+                    }
+                }
+                Ok(PtyMessage::Closed) => {
+                    info!("[terminal-{}] PTY closed message received in poll", self.id);
+                    self.pty_closed.store(true, Ordering::Release);
+                    return POLL_EVENT_METADATA_CHANGED;
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                    trace!("[terminal-{}] poll timeout (no data)", self.id);
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                    warn!("[terminal-{}] PTY channel disconnected", self.id);
+                    self.pty_closed.store(true, Ordering::Release);
+                }
+            }
+
+            // Yield ownership between output batches. A producer can keep
+            // the channel permanently nonempty; draining it to exhaustion
+            // would monopolize the UI and starve grid snapshots indefinitely.
+            // Leave queued chunks untouched so subsequent polls preserve order.
+            let batch_started = Instant::now();
+            while bytes_this_poll < 64 * 1024 && batch_started.elapsed() < Duration::from_millis(2)
+            {
+                match pty_rx.try_recv() {
+                    Ok(PtyMessage::Data(data)) => {
+                        bytes_this_poll += data.len();
+                        let visible_data = filter_terminal_output_noise(&data);
+                        if !visible_data.is_empty() {
+                            let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
+                            local_output.extend_from_slice(visible_data.as_ref());
+                            self.process_pty_data(visible_data.as_ref());
+                            let (count, writes) = self.drain_terminal_events();
+                            event_count += count;
+                            pty_write_count += writes;
+                            had_data = true;
+                            had_renderable_data |= renderable;
+                        }
+                    }
+                    Ok(PtyMessage::Closed) => {
+                        info!(
+                            "[terminal-{}] PTY closed message received while draining",
+                            self.id
+                        );
+                        self.pty_closed.store(true, Ordering::Release);
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        warn!(
+                            "[terminal-{}] PTY channel disconnected while draining",
+                            self.id
+                        );
+                        self.pty_closed.store(true, Ordering::Release);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // The event-drain worker can poll again before Swift handles its wake.
+        // Keep unread bytes in stream order; an idle poll must not erase them.
+        if !local_output.is_empty() {
+            let mut last_output = self.last_output.lock();
+            last_output.extend_from_slice(&local_output);
+        }
+
+        // Process terminal events not drained after a chunk (events from
+        // injected output, child exit).
+        let (count, writes) = self.drain_terminal_events();
+        event_count += count;
+        pty_write_count += writes;
         if event_count > 0 {
             trace!(
                 "[terminal-{}] Processed {} terminal events ({} PtyWrite)",
@@ -3761,6 +3781,36 @@ mod tests {
         use std::os::unix::process::ExitStatusExt;
         let stopped = std::process::ExitStatus::from_raw((libc::SIGSTOP << 8) | 0x7f);
         assert_eq!(terminal_exit_code(stopped), 1);
+    }
+
+    #[test]
+    fn query_burst_keeps_every_reply() {
+        let term = Chau7Terminal::new_headless(80, 24).expect("headless terminal");
+        // More device status queries than the old 100-slot event channel.
+        term.process_pty_data(&b"\x1b[6n".repeat(300));
+        let replies = term
+            .event_rx
+            .try_iter()
+            .filter(|event| matches!(event, Event::PtyWrite(_)))
+            .count();
+        assert_eq!(replies, 300);
+    }
+
+    #[test]
+    fn lossy_events_stay_capped_without_blocking_replies() {
+        use alacritty_terminal::event::EventListener;
+        let (sender, receiver) = crate::pty::event_channel();
+        let listener = Chau7EventListener {
+            sender,
+            terminal_id: 0,
+            bell_pending: Arc::new(AtomicBool::new(false)),
+        };
+        for _ in 0..500 {
+            listener.send_event(Event::Wakeup);
+        }
+        assert_eq!(receiver.len(), crate::pty::LOSSY_EVENT_LIMIT);
+        listener.send_event(Event::PtyWrite("\x1b[1;1R".into()));
+        assert_eq!(receiver.len(), crate::pty::LOSSY_EVENT_LIMIT + 1);
     }
 
     #[cfg(unix)]

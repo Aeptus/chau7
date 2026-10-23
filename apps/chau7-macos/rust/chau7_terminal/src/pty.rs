@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Dimensions;
-use crossbeam_channel::Sender;
-use log::{debug, trace};
+use crossbeam_channel::{Receiver, Sender};
+use log::{debug, trace, warn};
 use portable_pty::PtySize;
 
 // ============================================================================
@@ -72,6 +72,32 @@ impl PtyHandle {
 // Event listener
 // ============================================================================
 
+/// Queued events beyond which lossy events (wakeups, bells, cursor
+/// notifications) are dropped. Matches the old bounded channel capacity.
+pub(crate) const LOSSY_EVENT_LIMIT: usize = 100;
+
+/// Queued events beyond which even events that must reach the consumer are
+/// dropped. Only a safety valve against a terminal that is fed but never
+/// polled: `poll_events` drains the queue after every PTY chunk, so a chunk
+/// would need thousands of queries to get near it.
+pub(crate) const DELIVERED_EVENT_LIMIT: usize = 16 * 1024;
+
+/// Channel for emulator events. Unbounded so a burst of terminal queries in
+/// one poll cannot drop their replies; [`Chau7EventListener`] enforces the
+/// limits above instead.
+pub(crate) fn event_channel() -> (Sender<Event>, Receiver<Event>) {
+    crossbeam_channel::unbounded()
+}
+
+/// Events the consumer must see: replies to the program (`PtyWrite`, color
+/// and size requests), clipboard and title changes, and exit notifications.
+fn must_deliver(event: &Event) -> bool {
+    !matches!(
+        event,
+        Event::Wakeup | Event::Bell | Event::MouseCursorDirty | Event::CursorBlinkingChange
+    )
+}
+
 /// Event listener that forwards events to a channel and tracks bell events
 pub struct Chau7EventListener {
     pub sender: Sender<Event>,
@@ -93,11 +119,27 @@ impl EventListener for Chau7EventListener {
             self.bell_pending.store(true, Ordering::Release);
         }
 
-        if self.sender.try_send(event).is_err() {
-            trace!(
-                "[terminal-{}] Event channel full, dropping event",
-                self.terminal_id
-            );
+        let limit = if must_deliver(&event) {
+            DELIVERED_EVENT_LIMIT
+        } else {
+            LOSSY_EVENT_LIMIT
+        };
+        if self.sender.len() >= limit {
+            if limit == DELIVERED_EVENT_LIMIT {
+                // No payload in the log: it can hold clipboard text.
+                warn!(
+                    "[terminal-{}] Event queue full ({} queued), dropping a reply/metadata event",
+                    self.terminal_id, limit
+                );
+            } else {
+                trace!(
+                    "[terminal-{}] Event queue full, dropping lossy event",
+                    self.terminal_id
+                );
+            }
+            return;
         }
+        // Unbounded: fails only once the terminal (receiver) is gone.
+        let _ = self.sender.send(event);
     }
 }
