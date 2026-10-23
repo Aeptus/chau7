@@ -152,7 +152,9 @@ pub fn encode_key(
             '\\' | '4' => 0x1c,
             ']' | '5' => 0x1d,
             '^' | '6' => 0x1e,
-            '_' | '-' | '7' => 0x1f,
+            // Ctrl+/ is US like Ctrl+_ (xterm, Terminal.app, iTerm2); Emacs
+            // and readline bind it to undo.
+            '_' | '-' | '/' | '7' => 0x1f,
             '?' | '8' => 0x7f,
             _ => return None,
         };
@@ -269,6 +271,16 @@ mod tests {
         assert_eq!(enc("a", None, ctrl), Some(vec![1]));
         assert_eq!(enc("[", None, ctrl), Some(vec![0x1b]));
         assert_eq!(enc("space", None, ctrl), Some(vec![0]));
+    }
+
+    #[test]
+    fn control_slash_sends_unit_separator() {
+        let ctrl = KeyMods {
+            control: true,
+            ..NONE
+        };
+        assert_eq!(enc("/", Some("/"), ctrl), Some(vec![0x1f]));
+        assert_eq!(enc("_", None, ctrl), Some(vec![0x1f]));
     }
 
     #[test]
