@@ -37,6 +37,14 @@ const MAX_MANIFEST_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 static LAST_ARCHIVE: Mutex<Option<(PathBuf, u64, SystemTime)>> = Mutex::new(None);
 static IMPORTED_ROOTS: Mutex<Option<std::collections::HashSet<PathBuf>>> = Mutex::new(None);
+/// Serializes every writer of the restore files (the restore writer thread,
+/// Reset Window Positions, the restore-source archive): a transaction writes
+/// its context sidecars before the bundle that references them, so a
+/// concurrent `prune_contexts` would otherwise delete them in between.
+static STORE_LOCK: Mutex<()> = Mutex::new(());
+fn store_lock() -> std::sync::MutexGuard<'static, ()> {
+    STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RestoreIndex {
@@ -338,6 +346,7 @@ fn remember_restore_source(root: &DataRoot, session: &SavedSession) {
     }
     drop(imported);
     let result = (|| {
+        let _store = store_lock();
         let mut contexts = std::collections::BTreeMap::new();
         for pane in session
             .windows
@@ -642,6 +651,7 @@ fn save_transaction(
     terminating: bool,
     explicit_clear: bool,
 ) -> std::io::Result<SaveMeasurements> {
+    let _store = store_lock();
     root.ensure_dirs()?;
     let session = sanitize_session(session.clone());
     if !explicit_clear && session.windows.is_empty() {
@@ -1200,6 +1210,55 @@ mod tests {
         std::fs::remove_dir_all(root.home()).unwrap();
     }
 
+    #[test]
+    fn writers_are_serialized_by_the_store_lock() {
+        let root = isolated_root();
+        let guard = store_lock();
+        let writer = {
+            let root = root.clone();
+            std::thread::spawn(move || save(&root, &one_tab(1, "x")))
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        // The save waits for the lock: nothing is written meanwhile.
+        assert!(!root.session_file().exists());
+        drop(guard);
+        writer.join().unwrap().unwrap();
+        assert!(root.session_file().exists());
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+    #[test]
+    fn concurrent_saves_never_lose_a_committed_context() {
+        let root = isolated_root();
+        std::fs::create_dir_all(root.scrollback_dir()).unwrap();
+        let threads: Vec<_> = (0..4_u64)
+            .map(|t| {
+                let root = root.clone();
+                std::thread::spawn(move || {
+                    for i in 0..25 {
+                        let pane = 100 + t;
+                        std::fs::write(
+                            root.scrollback_dir().join(format!("{pane}.txt")),
+                            format!("thread {t} iteration {i}"),
+                        )
+                        .unwrap();
+                        let mut session = one_tab(u128::from(pane), "x");
+                        session.windows[0].tabs[0].panes.push(SavedPane {
+                            id: pane,
+                            scrollback: true,
+                            ..Default::default()
+                        });
+                        save(&root, &session).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let bundle = parse_bundle(&bundle_file(&root)).unwrap();
+        assert!(hydrate_bundle(&root, &bundle).is_some());
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
     #[test]
     fn unmarked_empty_bundle_or_index_never_overrides_viable_backups() {
         let root = isolated_root();
