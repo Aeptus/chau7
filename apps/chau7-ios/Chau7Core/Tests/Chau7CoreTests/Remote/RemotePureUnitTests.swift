@@ -293,8 +293,9 @@ final class RelayTokenTests: XCTestCase {
     }
 
     func testSharedCrossLanguageV3Vector() throws {
+        // <repo>/apps/chau7-ios/Chau7Core/Tests/Chau7CoreTests/Remote/ThisFile.swift -> <repo>
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("services/chau7-remote/docs/fixtures/relay_credentials_v3.json")
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("services/chau7-remote/docs/fixtures/relay_credentials_v3.json")
         let vector = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: fixture))
         for role in ["mac", "ios"] {
             let hex = try XCTUnwrap(vector["\(role)_bytes_hex"])

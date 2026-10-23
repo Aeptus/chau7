@@ -1,4 +1,3 @@
-import { sharedSwiftLockPaths, sharedSwiftPinFailures } from "./shared-swift-pins.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -838,16 +837,40 @@ export const gates = [
     },
   },
   {
+    id: "swift-core-package",
+    modes: PREPUSH,
+    scope: "changed",
+    wave: "tests",
+    tags: ["swift", "ios", "tests"],
+    cacheable: true,
+    inputs: ["apps/chau7-ios/Chau7Core"],
+    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-ios/Chau7Core/"),
+    rerun: "pnpm quality:prepush --include=swift-core-package",
+    run: async (context) => {
+      for (const command of [
+        ["swiftformat", ["Sources", "Tests", "--lint"]],
+        ["swiftlint", ["lint", "--strict"]],
+        // --jobs is capped: full-parallelism swift-frontend jobs saturate
+        // memory alongside the running Chau7 app and other agents.
+        ["/usr/bin/swift", ["test", "--jobs", swiftBuildJobs()]],
+      ]) {
+        const result = await execWithoutHookGitEnv(context, command[0], command[1], { cwd: "apps/chau7-ios/Chau7Core" });
+        if (result.status !== "passed") return result;
+      }
+      return { status: "passed", summary: "Chau7Core format, lint, and tests passed" };
+    },
+  },
+  {
     id: "ios-app-build",
     modes: PREPUSH,
     scope: "changed",
     wave: "tests",
     tags: ["swift", "ios"],
     cacheable: true,
-    inputs: ["apps/chau7-ios", "apps/chau7-macos/Sources/Chau7Core"],
+    inputs: ["apps/chau7-ios", "crates/chau7_terminal"],
     applies: (context) =>
       hasPathPrefix(context.changedFiles, "apps/chau7-ios/") ||
-      hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/Chau7Core/"),
+      hasPathPrefix(context.changedFiles, "crates/chau7_terminal/"),
     rerun: "pnpm quality:prepush --include=ios-app-build",
     run: async (context) =>
       execWithoutHookGitEnv(context, "xcodebuild", [
@@ -867,10 +890,10 @@ export const gates = [
     tags: ["swift", "ios", "tests"],
     cacheable: true,
     cacheEnv: ["CHAU7_IOS_TEST_DESTINATION"],
-    inputs: ["apps/chau7-ios", "apps/chau7-macos/Sources/Chau7Core", "scripts/quality/ios-simulator.mjs"],
+    inputs: ["apps/chau7-ios", "crates/chau7_terminal", "scripts/quality/ios-simulator.mjs"],
     applies: (context) =>
       hasPathPrefix(context.changedFiles, "apps/chau7-ios/") ||
-      hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/Chau7Core/") ||
+      hasPathPrefix(context.changedFiles, "crates/chau7_terminal/") ||
       context.changedFiles.some((file) => ["scripts/quality/ios-simulator.mjs", "scripts/quality/registry.mjs", ".github/workflows/ci.yml"].includes(file)),
     rerun: "pnpm quality:prepush-full --include=ios-app-tests",
     run: async (context) =>
@@ -936,21 +959,6 @@ export const gates = [
     rerun: "pnpm quality:prepush:full --include=full-local-ci",
     // ci-local runs swift build/test; see HOOK_GIT_ENV_VARS.
     run: async (context) => execWithoutHookGitEnv(context, "./scripts/ci-local", [], { cwd: "." }),
-  },
-  {
-    id: "shared-swift-pins",
-    modes: ["staged", "prepush-full", "local"],
-    scope: "repo",
-    wave: "static",
-    tags: ["swift", "dependencies"],
-    cacheable: true,
-    inputs: sharedSwiftLockPaths,
-    applies: () => true,
-    rerun: "pnpm quality:staged --include=shared-swift-pins",
-    run: async (context) => {
-      const failures = sharedSwiftPinFailures((file) => getContextContent(context, file));
-      return failures.length ? { status: "failed", summary: failures.join("\n") } : { status: "passed", summary: "Shared Swift dependency pins agree" };
-    },
   },
   {
     id: "quality-runner-tests",

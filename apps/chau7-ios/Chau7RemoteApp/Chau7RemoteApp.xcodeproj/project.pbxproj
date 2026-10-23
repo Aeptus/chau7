@@ -382,7 +382,7 @@
 			mainGroup = 84B303312F31076300A7D19E;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */,
+				5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "Chau7Core" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 84B3033B2F31076300A7D19E /* Products */;
@@ -873,26 +873,26 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */ = {
+		5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "Chau7Core" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../../chau7-macos";
+			relativePath = "../Chau7Core";
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		547262E303BCF82220E49C0A /* Chau7Core */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */;
+			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "Chau7Core" */;
 			productName = Chau7Core;
 		};
 		A34D4B59796146F1BDF72F8E /* Chau7Core */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */;
+			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "Chau7Core" */;
 			productName = Chau7Core;
 		};
 		F1A4000031F2A00100A1B001 /* Chau7Core */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */;
+			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "Chau7Core" */;
 			productName = Chau7Core;
 		};
 /* End XCSwiftPackageProductDependency section */

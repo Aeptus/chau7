@@ -1,4 +1,4 @@
-# SwiftLint Configuration for Chau7
+# SwiftLint Configuration for the Chau7Core package
 # Philosophy: SwiftLint catches semantic/logic issues. SwiftFormat handles formatting.
 
 included:
@@ -7,9 +7,6 @@ included:
 
 excluded:
   - .build
-  - Packages
-  - rust
-  - Libraries
 
 # Disabled rules — either handled by SwiftFormat or not matching project style
 disabled_rules:

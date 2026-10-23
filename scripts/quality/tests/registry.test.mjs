@@ -87,6 +87,7 @@ test("quality runner tests clear inherited Git repository overrides", async () =
 for (const [id, wrapped, cwd] of [
   ["swift-macos-static-build", "/usr/bin/swift", "apps/chau7-macos"],
   ["swift-macos-tests", "/usr/bin/swift", "apps/chau7-macos"],
+  ["swift-core-package", "/usr/bin/swift", "apps/chau7-ios/Chau7Core"],
   ["ios-app-build", "xcodebuild", undefined],
   ["ios-app-tests", "xcodebuild", undefined],
   ["full-local-ci", "./scripts/ci-local", "."],

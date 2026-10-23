@@ -1,10 +1,10 @@
-# Chau7 SwiftFormat Configuration
+# Chau7Core SwiftFormat Configuration
 
 # Swift version
 --swiftversion 5.9
 
 # File scope
---exclude .build,rust,Libraries
+--exclude .build
 
 # Indentation
 --indent 4

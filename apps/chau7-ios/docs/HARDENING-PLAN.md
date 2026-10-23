@@ -149,9 +149,9 @@ Phase D (perf polish, optional)            → items 10, 11
 ### Item 6 — Consolidate crypto into `Chau7Core` + unit tests  **[P3, do with item 1]**
 - **Why:** `RemoteCryptoSession` lives only in the iOS target, so it has no test
   coverage and duplicates the Go logic conceptually. Moving it into `Chau7Core`
-  gives one audited Swift implementation testable from the macOS XCTest target.
+  gives one audited Swift implementation testable from the Chau7Core package tests.
 - **Where:** new `Chau7Core/RemoteCryptoSession.swift`; iOS imports it; tests in
-  `apps/chau7-macos/Tests/Chau7Tests/`.
+  `apps/chau7-ios/Chau7Core/Tests/Chau7CoreTests/`.
 - **How:** Move the type into `Chau7Core` (it already only depends on CryptoKit +
   `RemoteFrame`). Add tests: encrypt→decrypt round-trip, replay rejection,
   direction separation, tamper (bit-flip) rejection, KATs matching Go.
