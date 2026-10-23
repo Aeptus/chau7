@@ -1,22 +1,18 @@
 # Scripts (Repo Root)
 
-Build orchestration and CI scripts that operate across the entire monorepo. The macOS app has its own scripts in `apps/chau7-macos/Scripts/`.
+Build orchestration and CI scripts that operate across the entire monorepo. The macOS app (`apps/chau7-next`) has its own scripts in `apps/chau7-next/scripts/`.
 
 ## Files
 
 | Script | Purpose |
 |--------|---------|
-| `order66` | Top-level build orchestrator. Delegates to `apps/chau7-macos/Scripts/order66` for macOS and runs `xcodebuild` for iOS. Run `./scripts/order66 --help` for targets. |
-| `ci-local` | Legacy full local CI implementation invoked by the registered `full-local-ci` quality gate. Runs format + lint + build + test + dead-code + duplication + Rust dep audit across Swift, Rust, Go, and the relay; live JS/Python dependency audits are separate registry gates. |
+| `order66` | Top-level build orchestrator. Delegates to `apps/chau7-next/scripts/bundle-macos.sh` for macOS and runs `xcodebuild` for iOS. Run `./scripts/order66 --help` for targets. |
+| `ci-local` | Legacy full local CI implementation invoked by the registered `full-local-ci` quality gate. Runs format + lint + test + duplication + Rust dep audit across the Chau7Core Swift package, the shared Rust crates, Go, and the relay; live JS/Python dependency audits are separate registry gates. |
 | `ci-local-relay-ts` | Scoped TS check for `services/chau7-relay`. Runs `tsc --noEmit` + `prettier --check`. |
 | `ci-lib.sh` | Shared CI helper functions sourced by `ci-local` and `ci-local-relay-ts`. Provides `ci_section`, `ci_fail`, `ci_require_cmd`, `ci_require_cmd_strict`, `ci_run_in`, `ci_gofmt_check_dir`, `ci_go_vet_dir`, `ci_golangci_lint_dir`, `ci_shellcheck_tracked`, `ci_ruff_check_dir`. |
-| `check-docs-staged` | Blocking indexed documentation gate. App behavior changes need a changelog change or a reviewed exact-path exemption; tooling edits do not need artificial feature rows. Validates staged JSON/CSV correspondence and link hygiene; unstaged repairs do not mask failures. |
-| `check-features-csv.mjs` | Deterministic structural validator for `apps/chau7-macos/docs/features.csv` (5 columns, valid `Status`/`Differentiator`, no blank/malformed rows). Run via the `staged-features-csv` gate. |
-| `generate-features-csv.mjs` | Generates `features.csv` from the authoritative `features.json` manifest. `pnpm features:generate` writes it; `pnpm features:check` (the `staged-features-csv-generated` gate) fails on drift. Edit the manifest, never the CSV. |
-| `check-feature-coverage.mjs` | Fails when an MCP tool registered in `MCPSession.swift` has no canonical inventory row in `features.json` (the `staged-feature-coverage` gate). Warns on removed tools. Skip with `CHAU7_SKIP_FEATURE_COVERAGE=1`. |
+| `check-docs-staged` | Blocking indexed documentation gate. App behavior changes need a root `CHANGELOG.md` change or a reviewed exact-path exemption; tooling edits need neither. Validates link hygiene in staged Markdown; unstaged repairs do not mask failures. |
 | `check-forbidden-files` | Registered through `staged-legacy-guardrails`; blocks staged secret/credential paths (`.env*`, `*.pem`, `id_rsa*`, etc.) and blobs at least 5 MiB. Skip with `CHAU7_SKIP_FORBIDDEN_CHECK=1`. |
 | `check-anti-slop` | Regex slop check on added diff lines only. Catches new force-unwraps/`print`/`AnyView` in Swift, `console.log`/`as any`/`@ts-ignore` in TS, `fmt.Println`/`panic` in Go, bare `except:` in Python, and AI ghost comments across all. Skip with `CHAU7_SKIP_ANTISLOP=1`. |
-| `check-design-system` | Design-system ratchet. For every staged Swift view file outside `Appearance/`, `Tests/`, and `Chau7Core/`, scans the **entire file** and blocks on color literals, `AnyView`, or literal font sizes. Grandfathers untouched files; forces cleanup when a file is touched. Skip with `CHAU7_SKIP_DS_CHECK=1`. |
 | `pre-commit-review` | Registered staged advisory review via the running Chau7 app. It skips if the app isn't reachable, and honors `CHAU7_PRE_COMMIT_REVIEW_ENABLED=0`; silence the skip banner with `CHAU7_PRE_COMMIT_REVIEW_QUIET=1`. |
 | `pentagi-mcp-local-preflight` | Local PentAGI MCP shakedown helper. Verifies the host HTTPS target, keeps upstream PentAGI off the target port, ensures a `pentagi-sandbox` Kali tool container exists, checks required pentest tools, and can start a sandbox-local SNI proxy for `localhost`-only TLS services. |
 | `install-hooks` | Compatibility wrapper for `pnpm hooks:install`, which points Git at `.husky/`. |
@@ -32,13 +28,13 @@ Build orchestration and CI scripts that operate across the entire monorepo. The 
 The supported source-development tool versions are pinned in
 [../mise.toml](../mise.toml). Follow [../CONTRIBUTING.md](../CONTRIBUTING.md) to
 install those tools and the isolated Python test requirements, then run
-`pnpm setup:check`. Xcode 26.6 is selected separately; native CI runs the full
-macOS/iOS build and tests. The developer tool pins and CI runner tool versions
+`pnpm setup:check`. Xcode 26.6 is selected separately; native CI runs the iOS build
+and tests, and the Chau7 Next workflow builds and tests the macOS app. The developer tool pins and CI runner tool versions
 serve different environments and need not be byte-identical.
 
-`pnpm test` runs Node tests and both Python suites. Core-only Swift checks use
-`apps/chau7-macos/Scripts/test-core.sh`; they do not replace the full native
-`swift test` and `swift build` gates. Security scans and dependency audits fail
+`pnpm test` runs Node tests and both Python suites. Chau7Core Swift checks run
+with `swift test --package-path apps/chau7-ios/Chau7Core`; the iOS app build
+and tests run through `xcodebuild`. Security scans and dependency audits fail
 when required tools or fixtures are missing; setup never silently skips them.
 
 ### Follow-ups (future work)
@@ -78,7 +74,7 @@ runner architecture, registry contract, cache policy, and reproduction flow.
 
 ## App-Level Scripts
 
-The macOS app has 17 additional scripts in `apps/chau7-macos/Scripts/` for building the app bundle, creating DMGs, building Rust dylibs, managing PTY wrappers, and more. See the macOS app README for details.
+The macOS app keeps its packaging, update and test helpers in `apps/chau7-next/scripts/`, and the iOS app keeps its Rust build helper in `apps/chau7-ios/Scripts/`. See each app's README for details.
 
 Developer setup uses the pinned [mise.toml](../mise.toml) baseline; see
 [CONTRIBUTING](../CONTRIBUTING.md#setting-up). `pnpm install` installs hooks via

@@ -32,10 +32,3 @@ test("compatibility post-commit delegates maintenance", (t) => {
   fs.writeFileSync(path.join(bin, "pnpm"), '#!/bin/sh\nprintf "%s\\n" "$*" > "$HOOK_TEST_LOG"\n', { mode: 0o755 });
   const result = spawnSync("/bin/sh", [path.join(source, "tools/git-hooks/post-commit")], { env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, HOOK_TEST_LOG: log } }); assert.equal(result.status, 0); assert.match(fs.readFileSync(log, "utf8"), /quality:postcommit/);
 });
-test("source packaging rejects missing terminal backend before bundle creation or compiler invocation", (t) => {
-  const f = fixture(t); const app = "apps/chau7-macos";
-  for (const file of ["build-app.sh", "logging.sh", "signing.sh"]) f.write(`${app}/Scripts/${file}`, fs.readFileSync(path.join(source, app, "Scripts", file)));
-  f.write(`${app}/.build/release/Chau7`, "synthetic binary\n");
-  const result = spawnSync("/bin/bash", [path.join(f.root, app, "Scripts/build-app.sh")], { encoding: "utf8", env: { ...process.env, CHAU7_LOG_COLOR: "0" } });
-  assert.equal(result.status, 1); assert.match(result.stdout + result.stderr, /Required terminal emulator missing/); assert.match(result.stdout + result.stderr, /build-rust.sh --release/); assert.equal(fs.existsSync(path.join(f.root, app, "build/Chau7.app")), false);
-});

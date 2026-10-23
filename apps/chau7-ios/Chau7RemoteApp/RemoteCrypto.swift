@@ -1,6 +1,6 @@
 // RemoteCryptoSession moved to Chau7Core (`RemoteCryptoSession.swift`) so the
-// security-critical AEAD code is shared with macOS and covered by unit tests
-// (`Tests/Chau7Tests/Remote/RemoteCryptoSessionTests.swift`). It is used here
+// security-critical AEAD code lives in the shared package and is covered by unit tests
+// (`Chau7Core/Tests/Chau7CoreTests/Remote/RemoteCryptoSessionTests.swift`). It is used here
 // via `import Chau7Core`.
 //
 // This file is intentionally left as a stub because it still has an explicit

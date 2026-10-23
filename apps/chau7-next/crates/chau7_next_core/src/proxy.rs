@@ -1,7 +1,7 @@
 //! The API analytics proxy, without UI (`Proxy/*.swift`).
 //!
 //! The proxy itself is the Go program `chau7-proxy`
-//! (`apps/chau7-macos/chau7-proxy`), started by the app. This module has
+//! (`services/chau7-proxy`), started by the app. This module has
 //! what the app needs around it: the ports and environments (for the
 //! proxy and for shells), the newline-delimited JSON messages it sends on
 //! its IPC socket, the task lifecycle models, a small HTTP client for its
@@ -1449,6 +1449,35 @@ mod tests {
                 .any(|(key, _)| key == "HTTPS_PROXY" || key == "CODEX_CA_CERTIFICATE")
         );
     }
+
+    /// The Go proxy's correlation tests read the same contract file, so the
+    /// project-path encoding cannot drift on one side while both suites pass.
+    #[test]
+    fn project_path_tokens_match_the_shared_proxy_contract() {
+        let contract: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../services/chau7-proxy/contracts/proxy-correlation.json"
+        ))
+        .unwrap();
+        let prefix = contract["prefix"].as_str().unwrap();
+        assert_eq!(contract["encoding"], "base64url-unpadded");
+        let cases = contract["cases"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let project = case["projectPath"].as_str().unwrap();
+            let token = case["token"].as_str().unwrap();
+            let path = proxy_project_path(project);
+            assert_eq!(path, format!("{prefix}{token}"), "{}", case["name"]);
+            assert!(
+                case["requestPath"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with(&format!("{path}/")),
+                "{}",
+                case["name"]
+            );
+        }
+    }
+
     #[test]
     fn formatting_matches_swift() {
         assert_eq!(format_cost(0.0012), "$0.0012");

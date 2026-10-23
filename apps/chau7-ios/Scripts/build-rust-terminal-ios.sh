@@ -3,11 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IOS_APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-MACOS_APP_DIR="$(cd "$IOS_APP_DIR/../chau7-macos" && pwd)"
-CRATE_MANIFEST="$MACOS_APP_DIR/rust/chau7_terminal/Cargo.toml"
+RUST_WORKSPACE_DIR="$(cd "$IOS_APP_DIR/../../crates" && pwd)"
+CRATE_MANIFEST="$RUST_WORKSPACE_DIR/chau7_terminal/Cargo.toml"
 # Rustup resolves rust-toolchain.toml from the working directory, not
 # --manifest-path. Match macOS/CI for both target checks and compilation.
-cd "$MACOS_APP_DIR/rust"
+cd "$RUST_WORKSPACE_DIR"
 
 deployment_target="${IPHONEOS_DEPLOYMENT_TARGET:-20.0}"
 deployment_target_key="${deployment_target//./_}"

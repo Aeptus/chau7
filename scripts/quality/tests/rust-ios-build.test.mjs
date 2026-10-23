@@ -22,7 +22,7 @@ for (const fixture of cases) {
   test(`Xcode Rust build resolves workspace toolchain and requested slices: ${fixture.name}`, () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-rust-ios-"));
     const ios = path.join(root, "apps/chau7-ios");
-    const rust = path.join(root, "apps/chau7-macos/rust");
+    const rust = path.join(root, "crates");
     const scripts = path.join(ios, "Scripts");
     const fixtureHome = path.join(root, "fake-home");
     const cargoHome = fixture.cargoHome ? path.join(root, "custom cargo home") : path.join(fixtureHome, ".cargo");

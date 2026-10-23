@@ -1,8 +1,7 @@
 //! The Dock icon (`AppIcon.swift`). A bundled app shows the bundle's icon
 //! (`bundle-macos.sh` copies `AppDockIcon.icns`). Run outside the bundle
-//! (`cargo run`), the icon comes from `chau7-macos/Resources/AppDockIcon.png`
-//! next to the build folder, as Swift looks next to `.build`, else a
-//! generated bell (`chau7_next_core::app_icon`).
+//! (`cargo run`), the icon comes from `resources/AppDockIcon.png` above the
+//! build folder, else a generated bell (`chau7_next_core::app_icon`).
 
 use std::path::PathBuf;
 
@@ -27,18 +26,15 @@ fn load_png() -> Option<Vec<u8>> {
     fallback_png()
 }
 
-/// `AppDockIcon.png` of the repository the executable was built in
-/// (`apps/chau7-next/target/<profile>/chau7-next` next to `apps/chau7-macos`).
+/// `AppDockIcon.png` of the checkout the executable was built in
+/// (`apps/chau7-next/target/<profile>/chau7-next` below
+/// `apps/chau7-next/resources`).
 fn icon_file() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     exe.ancestors()
         .skip(1)
         .take(5)
-        .map(|dir| {
-            dir.join("chau7-macos")
-                .join("Resources")
-                .join("AppDockIcon.png")
-        })
+        .map(|dir| dir.join("resources").join("AppDockIcon.png"))
         .find(|path| path.is_file())
 }
 

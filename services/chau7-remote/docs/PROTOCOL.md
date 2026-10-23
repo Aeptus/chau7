@@ -130,7 +130,7 @@ Flags:
 ## Message Types
 
 Type codes (`u8`). The Swift enum `RemoteFrameType`
-(`apps/chau7-macos/Sources/Chau7Core/RemoteFrame.swift`) and the Go table in
+(`apps/chau7-ios/Chau7Core/Sources/Chau7Core/RemoteFrame.swift`) and the Go table in
 `internal/protocol/frame.go` must both match this list:
 
 - `0x01 HELLO` (cleartext, JSON)
@@ -173,7 +173,7 @@ JSON payloads are UTF-8.
 
 Golden fixtures for every JSON payload live in `docs/fixtures/` and are
 round-trip-tested from both Swift
-(`apps/chau7-macos/Tests/Chau7Tests/Remote/RemoteWirePayloadFixtureTests.swift`)
+(`apps/chau7-ios/Chau7Core/Tests/Chau7CoreTests/Remote/RemoteWirePayloadFixtureTests.swift`)
 and Go (`internal/agent/fixtures_test.go`). Change a payload by updating the
 fixture and both implementations together; this document is the normative
 description.
@@ -261,7 +261,7 @@ client sees every session regardless of which window owns it.
 
 This is the distilled remote AI task state selected by macOS for iOS Live
 Activity rendering. Canonical Swift shape: `RemoteActivityState`
-(`apps/chau7-macos/Sources/Chau7Core/RemoteActivityState.swift`).
+(`apps/chau7-ios/Chau7Core/Sources/Chau7Core/RemoteActivityState.swift`).
 
 ```json
 {
@@ -314,7 +314,7 @@ immediately.
 
 The full current set of interactive prompts (list replace, not delta).
 Canonical Swift shape: `RemoteInteractivePromptListPayload`
-(`apps/chau7-macos/Sources/Chau7Core/RemoteInteractivePrompt.swift`).
+(`apps/chau7-ios/Chau7Core/Sources/Chau7Core/RemoteInteractivePrompt.swift`).
 
 ```json
 {
@@ -377,7 +377,7 @@ pane, session, and terminal-instance identity until the decision is delivered.
 Sent by iOS whenever its delivery-relevant state changes. The agent uses it
 to gate push notifications (`shouldNotifyClientViaPush`). Canonical Swift
 shape: `RemoteClientStatePayload`
-(`apps/chau7-macos/Sources/Chau7Core/Remote/RemoteWirePayloads.swift`).
+(`apps/chau7-ios/Chau7Core/Sources/Chau7Core/Remote/RemoteWirePayloads.swift`).
 
 ```json
 {

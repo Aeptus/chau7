@@ -115,30 +115,25 @@ impl QuerySpec {
 mod tests {
     use super::*;
     use chau7_next_core::settings_search::{matching_settings_in, sections_matching_in};
-    fn swift_table(lang: Lang) -> l10n::Table {
-        let source = match lang {
-            Lang::En => include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../chau7-macos/Sources/Chau7/Resources/en.lproj/Localizable.strings"
-            )),
-            Lang::Fr => include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../chau7-macos/Sources/Chau7/Resources/fr.lproj/Localizable.strings"
-            )),
-            Lang::Ar => include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../chau7-macos/Sources/Chau7/Resources/ar.lproj/Localizable.strings"
-            )),
-            Lang::Es => include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../chau7-macos/Sources/Chau7/Resources/es.lproj/Localizable.strings"
-            )),
-            Lang::He => include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../chau7-macos/Sources/Chau7/Resources/he.lproj/Localizable.strings"
-            )),
+    /// Localized search titles as shipped by the former Swift app's
+    /// `Localizable.strings`; `None` means the English default applies.
+    fn golden_title(lang: Lang, key: &str) -> Option<&'static str> {
+        let config = "settings.search.configFile.title";
+        let cursor = "settings.search.cursor.title";
+        let (config_title, cursor_title) = match lang {
+            Lang::En => ("Config File", "Cursor Style"),
+            Lang::Fr => ("Fichier de configuration", "Style du curseur"),
+            Lang::Ar => ("ملف الإعدادات", "نمط المؤشر"),
+            Lang::Es => ("Archivo de configuración", "Estilo del cursor"),
+            Lang::He => ("קובץ תצורה", "סגנון הסמן"),
         };
-        l10n::parse_strings(source)
+        if key == config {
+            Some(config_title)
+        } else if key == cursor {
+            Some(cursor_title)
+        } else {
+            None
+        }
     }
     #[test]
     fn native_choices_follow_actual_resolution_and_reject_unknown_variants() {
@@ -207,16 +202,6 @@ mod tests {
     }
     #[test]
     fn five_queries_keep_english_exact_and_localized_source_goldens() {
-        let swift_metadata = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../chau7-macos/Sources/Chau7/Settings/SettingsSearch.swift"
-        ));
-        for (key, default, _, _) in TITLES {
-            assert!(
-                swift_metadata.contains(&format!("title: L(\"{key}\", \"{default}\")")),
-                "source default: {key}"
-            );
-        }
         for requested in AppLanguage::ALL.map(AppLanguage::id) {
             let case = LocaleCase::new(requested, vec!["fr-FR".into()]).unwrap();
             let queries = case.queries();
@@ -250,20 +235,14 @@ mod tests {
                 }
                 if let Some(key) = spec.title_key {
                     let (_, default, _, _) = TITLES.iter().find(|t| t.0 == key).unwrap();
-                    let swift = swift_table(case.resolved);
+                    let golden = golden_title(case.resolved, key);
                     assert_eq!(
                         spec.query,
-                        swift
-                            .get(key)
-                            .map_or_else(|| default.to_string(), Clone::clone),
+                        golden.unwrap_or(default),
                         "{}: {key}",
                         case.resolved.code()
                     );
-                    assert_eq!(
-                        spec.fallback,
-                        !swift.contains_key(key),
-                        "{requested}: {key}"
-                    );
+                    assert_eq!(spec.fallback, golden.is_none(), "{requested}: {key}");
                 }
             }
         }

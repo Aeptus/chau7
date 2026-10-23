@@ -1,7 +1,7 @@
 //! The `chau7-proxy` process (`ProxyManager.start` / `stop` and its binary
 //! lookup).
 //!
-//! The proxy is the Go program in `apps/chau7-macos/chau7-proxy`, shipped
+//! The proxy is the Go program in `services/chau7-proxy`, shipped
 //! next to the app binary by `scripts/bundle-macos.sh`. It always gets
 //! Chau7 Next's own ports, database, socket and certificate
 //! (`chau7_next_core::proxy::proxy_env`), so it never touches the Swift
@@ -21,7 +21,7 @@ fn source_dir() -> Option<PathBuf> {
         return None;
     }
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../chau7-macos")
+        .join("../../../../services")
         .join(PROXY_BINARY);
     dir.join("go.mod").is_file().then_some(dir)
 }

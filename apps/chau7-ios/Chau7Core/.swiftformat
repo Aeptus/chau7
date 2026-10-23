@@ -1,0 +1,59 @@
+# Chau7Core SwiftFormat Configuration
+
+# Swift version
+--swiftversion 5.9
+
+# File scope
+--exclude .build
+
+# Indentation
+--indent 4
+--tabwidth 4
+--indentcase false
+--ifdef no-indent
+
+# Wrapping
+--maxwidth 200
+--wraparguments before-first
+--wrapcollections before-first
+--wrapconditions after-first
+--wrapparameters before-first
+--wrapreturntype preserve
+--wraptypealiases preserve
+
+# Spacing
+--commas inline
+--trimwhitespace always
+--stripunusedargs closure-only
+
+# Braces
+--allman false
+
+# Other
+--self init-only
+--importgrouping alpha
+--semicolons never
+--redundanttype inferred
+--emptybraces no-space
+--trailingclosures
+--nospaceoperators
+--ranges spaced
+
+# Disable rules that conflict with project style
+--disable blankLinesAtStartOfScope
+--disable blankLinesAtEndOfScope
+--disable sortImports
+--disable redundantReturn
+--disable wrapMultilineStatementBraces
+--disable hoistPatternLet
+--disable preferKeyPath
+--disable acronyms
+--disable redundantOptionalBinding
+--disable conditionalAssignment
+--disable noForceUnwrapInTests
+--disable redundantSendable
+# The codebase uses single-line `if cond { body }` throughout (965 sites);
+# swiftformat 0.62's wrapIf*Bodies rules would rewrap all of them. Keep the
+# established style, consistent with the other opinionated rules disabled above.
+--disable wrapIfStatementBodies
+--disable wrapIfExpressionBodies

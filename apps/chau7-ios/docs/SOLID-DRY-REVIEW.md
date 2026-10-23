@@ -1,7 +1,7 @@
 # iOS App — SOLID / DRY Review
 
 Scope: `apps/chau7-ios` (`Chau7RemoteApp` + `Chau7RemoteWidget` targets). Shared
-protocol/model types live in `Chau7Core` (`apps/chau7-macos/Sources/Chau7Core`)
+protocol/model types live in `Chau7Core` (`apps/chau7-ios/Chau7Core/Sources/Chau7Core`)
 and are consumed by both platforms.
 
 Date: 2026-06-16

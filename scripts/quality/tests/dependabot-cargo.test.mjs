@@ -36,8 +36,8 @@ function groupBlock(entry, name) {
 
 const workspaces = [
   {
-    directory: "/apps/chau7-macos/rust",
-    lockfile: "apps/chau7-macos/rust/Cargo.lock",
+    directory: "/crates",
+    lockfile: "crates/Cargo.lock",
   },
   {
     directory: "/apps/chau7-next",

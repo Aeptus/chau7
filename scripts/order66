@@ -2,30 +2,16 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LOGGING="$ROOT_DIR/apps/chau7-macos/Scripts/logging.sh"
-
-if [[ -f "$LOGGING" ]]; then
-  export CHAU7_LOG_ROOT="$ROOT_DIR"
-  CHAU7_LOG_NAME="order66-mono"
-  export CHAU7_LOG_NAME
-  # shellcheck disable=SC1090
-  source "$LOGGING"
-else
-  log_init() { :; }
-  log_info() { printf '%s\n' "$*"; }
-  log_warn() { printf 'WARN: %s\n' "$*"; }
-  log_error() { printf 'ERROR: %s\n' "$*" >&2; }
-  log_step() { printf '%s\n' "$*"; }
-  log_ok() { printf '%s\n' "$*"; }
-  run_cmd() { "$@"; }
-fi
+log_init() { :; }
+log_error() { printf 'ERROR: %s\n' "$*" >&2; }
+run_cmd() { "$@"; }
 
 usage() {
   cat <<'USAGE'
 Usage: ./scripts/order66 <target> [args]
 
 Targets:
-  macos   Clean build and bundle the macOS app (delegates to apps/chau7-macos/Scripts/order66)
+  macos   Build and bundle the macOS app (delegates to apps/chau7-next/scripts/bundle-macos.sh)
   ios     Clean build the iOS app via xcodebuild
   all     Build macOS then iOS
 
@@ -45,12 +31,12 @@ USAGE
 }
 
 run_macos() {
-  local script="$ROOT_DIR/apps/chau7-macos/Scripts/order66"
+  local script="$ROOT_DIR/apps/chau7-next/scripts/bundle-macos.sh"
   if [[ ! -x "$script" ]]; then
-    log_error "macOS build script not found or not executable: $script"
+    log_error "macOS bundle script not found or not executable: $script"
     return 1
   fi
-  (cd "$ROOT_DIR/apps/chau7-macos" && "$script" "$@")
+  (cd "$ROOT_DIR/apps/chau7-next" && "$script" "$@")
 }
 
 run_ios() {

@@ -12,7 +12,7 @@ import (
 // TestWireFixtureRoundTrips proves the Go payload structs stay in sync with
 // the language-neutral golden fixtures under docs/fixtures/, which are also
 // round-trip-tested by the Swift shared types in
-// apps/chau7-macos/Tests/Chau7Tests/Remote/RemoteWirePayloadFixtureTests.swift.
+// apps/chau7-ios/Chau7Core/Tests/Chau7CoreTests/Remote/RemoteWirePayloadFixtureTests.swift.
 // A schema change that breaks either implementation fails one of the suites
 // instead of shipping silent drift.
 func TestWireFixtureRoundTrips(t *testing.T) {

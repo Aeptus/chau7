@@ -10,15 +10,15 @@ on:
       - "agent/**"
     paths:
       - "apps/chau7-next/**"
-      - "apps/chau7-macos/rust/**"
-      - "apps/chau7-macos/chau7-proxy/**"
+      - "crates/**"
+      - "services/chau7-proxy/**"
       - "services/chau7-remote/**"
       - ".github/workflows/chau7-next.yml"
   pull_request:
     paths:
       - "apps/chau7-next/**"
-      - "apps/chau7-macos/rust/**"
-      - "apps/chau7-macos/chau7-proxy/**"
+      - "crates/**"
+      - "services/chau7-proxy/**"
       - "services/chau7-remote/**"
       - ".github/workflows/chau7-next.yml"
   workflow_dispatch:
@@ -98,14 +98,14 @@ jobs:
           cargo test --workspace "${TARGET_ARGS[@]}" 2>&1 | tee "$RUNNER_TEMP/ci.log"
 
       # The remote control agent (services/chau7-remote) and the API
-      # analytics proxy (apps/chau7-macos/chau7-proxy) ship inside the app.
+      # analytics proxy (services/chau7-proxy) ship inside the app.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: runner.os == 'macOS'
         with:
           go-version-file: services/chau7-remote/go.mod
           cache-dependency-path: |
             services/chau7-remote/go.sum
-            apps/chau7-macos/chau7-proxy/go.sum
+            services/chau7-proxy/go.sum
 
       - name: Build script contracts
         if: runner.os == 'macOS'

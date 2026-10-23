@@ -7,7 +7,7 @@ import test from "node:test";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const dependencies = [
   "services/chau7-remote/go.sum",
-  "apps/chau7-macos/chau7-proxy/go.sum",
+  "services/chau7-proxy/go.sum",
 ];
 
 for (const name of ["ci.yml", "release.yml", "chau7-next.yml"]) {

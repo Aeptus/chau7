@@ -35,10 +35,8 @@ fn parse_handles_comments_and_escapes() {
     assert_eq!(t.len(), 2);
 }
 
-// Explicit source-evidenced supplemental defaults. Every original Swift key/value must
-// remain identical. Unknown extras still fail the exact resource-sync test.
-// Source evidence: current Settings/Views/StartHereSettingsView.swift, except
-// fullDiskAccess also comes from ProductivitySettingsView.swift.
+// Supplemental defaults added for Chau7, taken from the former Swift
+// StartHereSettingsView (fullDiskAccess from ProductivitySettingsView).
 const NEXT_STATUS_DEFAULTS: &[(&str, &str)] = &[
     ("settings.profileBar.defaultSettings", "Default Settings"),
     ("settings.startHere.operationalState", "Operational State"),
@@ -82,8 +80,7 @@ const NEXT_STATUS_DEFAULTS: &[(&str, &str)] = &[
     ),
 ];
 
-// Current SettingsPageSummaryView.swift source defaults, with no overrides
-// of any existing Swift language entry.
+// Summary defaults taken from the former Swift SettingsPageSummaryView.
 const NEXT_SUMMARY_DEFAULTS: &[(&str, &str)] = &[
     ("Profile Auto-Switching", "Profile Auto-Switching"),
     ("settings.about.developmentVersion", "Development"),
@@ -152,7 +149,7 @@ const NEXT_SUMMARY_DEFAULTS: &[(&str, &str)] = &[
     ("status.visible", "Visible"),
 ];
 
-// Rust-specific tab navigation labels. The original Swift catalog stays intact.
+// Rust-specific tab navigation labels.
 const NEXT_TAB_NAVIGATION_DEFAULTS: &[(&str, &str)] = &[
     ("tabs.idle.noRepository", "No repository"),
     (
@@ -168,58 +165,6 @@ const NEXT_TAB_NAVIGATION_DEFAULTS: &[(&str, &str)] = &[
         "visible tabs,numbered shortcuts,command number,cmd,alt,function keys,idle,collapsed groups",
     ),
 ];
-
-#[test]
-fn tables_match_the_swift_resources() {
-    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../chau7-macos/Sources/Chau7/Resources");
-    if !base.exists() {
-        return;
-    }
-    for lang in Lang::ALL {
-        let path = base.join(format!("{}.lproj/Localizable.strings", lang.code()));
-        let swift = std::fs::read_to_string(&path).unwrap();
-        let swift_table = parse_strings(&swift);
-        let mut next_base = table(lang).clone();
-        for (key, _) in NEXT_STATUS_DEFAULTS
-            .iter()
-            .chain(NEXT_SUMMARY_DEFAULTS)
-            .chain(NEXT_TAB_NAVIGATION_DEFAULTS)
-        {
-            if !swift_table.contains_key(*key) {
-                assert!(
-                    next_base.remove(*key).is_some(),
-                    "{} missing declared status key {key}",
-                    lang.code()
-                );
-            }
-        }
-        for (key, value) in &swift_table {
-            assert_eq!(
-                next_base.get(key),
-                Some(value),
-                "{} original Swift key differs: {key}",
-                lang.code()
-            );
-        }
-        let unknown: Vec<_> = next_base
-            .keys()
-            .filter(|key| !swift_table.contains_key(*key))
-            .collect();
-        assert!(
-            unknown.is_empty(),
-            "{} undeclared extra keys (first 20): {:?}",
-            lang.code(),
-            unknown.iter().take(20).collect::<Vec<_>>()
-        );
-        assert_eq!(
-            next_base.len(),
-            swift_table.len(),
-            "{} original Swift key count",
-            lang.code()
-        );
-    }
-}
 
 #[test]
 fn other_languages_only_miss_the_known_keys() {
@@ -440,18 +385,8 @@ fn spanish_resolution_and_formatting() {
 }
 
 #[test]
-fn next_status_defaults_have_current_swift_source_evidence() {
-    let start_here = include_str!(
-        "../../../../../chau7-macos/Sources/Chau7/Settings/Views/StartHereSettingsView.swift"
-    );
-    let productivity = include_str!(
-        "../../../../../chau7-macos/Sources/Chau7/Settings/Views/ProductivitySettingsView.swift"
-    );
+fn next_status_defaults_are_the_english_table_values() {
     for (key, default) in NEXT_STATUS_DEFAULTS {
-        assert!(
-            start_here.contains(key) || productivity.contains(key),
-            "supplemental key lacks Swift source evidence: {key}"
-        );
         assert_eq!(
             table(Lang::En)[*key],
             *default,
@@ -462,15 +397,8 @@ fn next_status_defaults_have_current_swift_source_evidence() {
 }
 
 #[test]
-fn current_summary_defaults_preserve_declared_swift_fallback_values() {
-    let swift = include_str!(
-        "../../../../../chau7-macos/Sources/Chau7/Settings/Views/SettingsPageSummaryView.swift"
-    );
+fn summary_defaults_are_the_english_table_values() {
     for (key, default) in NEXT_SUMMARY_DEFAULTS {
-        assert!(
-            swift.contains(&format!("L(\"{key}\", \"{default}\")")),
-            "summary key/default lacks exact current Swift source: {key}"
-        );
         assert_eq!(
             table(Lang::En)[*key],
             *default,

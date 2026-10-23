@@ -37,6 +37,7 @@ def main() -> int:
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--identity", required=True)
     parser.add_argument("--team-id", required=True)
+    parser.add_argument("--stage", choices=("rc", "stable"), default="rc")
     args = parser.parse_args()
 
     app = args.app.resolve(strict=True)
@@ -116,8 +117,8 @@ def main() -> int:
         entry["sha256"] = sha256(artifact)
 
     manifest["appSignatureVerified"] = True
-    manifest["releaseStage"] = "rc"
-    manifest["distribution"] = "github-actions-artifact-only"
+    manifest["releaseStage"] = args.stage
+    manifest["distribution"] = "github-release" if args.stage == "stable" else "github-actions-artifact-only"
     manifest["signing"] = {
         "identity": args.identity,
         "teamIdentifier": args.team_id,
