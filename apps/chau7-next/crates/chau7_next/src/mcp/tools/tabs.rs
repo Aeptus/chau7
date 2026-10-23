@@ -547,9 +547,9 @@ fn check_typed_input(
         return Err(no_window());
     };
     let tab = tab_id.to_string();
-    let before = ctx
+    let (before, app_foreground) = ctx
         .main
-        .call(move |_| pending_input(&tab))
+        .call(move |cx| (pending_input(&tab), app_foreground(&tab, cx)))
         .ok_or_else(no_window)?;
     let staged = command_filter::stage_input(&before, input);
     if staged.overflows() {
@@ -558,7 +558,8 @@ fn check_typed_input(
             command_filter::MAX_PENDING_INPUT_CHARS
         )));
     }
-    let check = command_filter::check_submitted_lines(&staged.submitted, &permissions);
+    let check =
+        command_filter::check_submitted_lines(&staged.submitted, &permissions, app_foreground);
     let submitted = staged.submitted.join("\n");
     if let Some(err) = approval::enforce(
         ctx.main,
@@ -575,6 +576,25 @@ fn check_typed_input(
         before,
         after: staged.pending,
     })
+}
+
+/// The tab is verifiably not at a shell prompt: the shell has shell
+/// integration (without it, prompt state is unknown) and reports a running
+/// command, and either a full-screen program holds the alternate screen or
+/// an AI CLI is detected in the foreground. Keys then go to that program,
+/// not to the shell's line editor. Unknown states count as a shell.
+fn app_foreground(tab_id: &str, cx: &mut App) -> bool {
+    let Some(tab) = find_tab(tab_id, cx) else {
+        return false;
+    };
+    let Some(session) = tab.window.workspace.read(cx).mcp_session(tab.tab, cx) else {
+        return false;
+    };
+    let s = session.read(cx);
+    s.has_shell_integration()
+        && !s.is_loading()
+        && !s.is_at_prompt()
+        && (s.with_terminal(|t| t.is_alternate_screen_active()) || s.is_ai_running())
 }
 
 /// Another call typed into the tab while this one was being checked.
