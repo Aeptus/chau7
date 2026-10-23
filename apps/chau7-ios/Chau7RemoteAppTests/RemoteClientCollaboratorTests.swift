@@ -713,12 +713,48 @@ final class DiagnosticsRetentionPolicyTests: XCTestCase {
         )
     }
 
+    func testGlobalOverflowTrimsInOneBatchDownToTheTarget() {
+        let categories = (0 ..< 11).map { "event-\($0)" }
+
+        let removals = DiagnosticsRetentionPolicy.removalIndexes(
+            categories: categories,
+            maxEntries: 10,
+            entryTarget: 7,
+            sensitiveLimit: 5,
+            sensitiveTarget: 5
+        )
+
+        XCTAssertEqual(Array(removals), [0, 1, 2, 3], "oldest entries go, leaving the target")
+    }
+
+    func testNoTrimWhileAtOrUnderTheCap() {
+        let categories = (0 ..< 10).map { "event-\($0)" }
+
+        XCTAssertTrue(DiagnosticsRetentionPolicy.removalIndexes(
+            categories: categories,
+            maxEntries: 10,
+            entryTarget: 7,
+            sensitiveLimit: 5,
+            sensitiveTarget: 5
+        ).isEmpty)
+    }
+
     func testInvalidLimitsFailClosedWithoutRemovingEntries() {
         XCTAssertTrue(DiagnosticsRetentionPolicy.removalIndexes(
             categories: ["keystroke"],
             maxEntries: 8,
             sensitiveLimit: 1,
             sensitiveTarget: 2
+        ).isEmpty)
+    }
+
+    func testTargetAboveTheCapFailsClosed() {
+        XCTAssertTrue(DiagnosticsRetentionPolicy.removalIndexes(
+            categories: ["a", "b", "c"],
+            maxEntries: 2,
+            entryTarget: 3,
+            sensitiveLimit: 1,
+            sensitiveTarget: 1
         ).isEmpty)
     }
 }

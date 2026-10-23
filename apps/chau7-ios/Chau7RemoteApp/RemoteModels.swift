@@ -286,18 +286,24 @@ enum RemoteConnectionFailureClassifier {
 }
 
 /// Protects operational evidence from high-volume, privacy-sensitive input
-/// capture. Sensitive entries trim in batches to amortize the required JSONL
-/// rewrite; the global cap is then enforced against the remaining timeline.
+/// capture. Both caps trim in batches, down to a target below the limit: each
+/// trim costs a pass over the buffer and a full JSONL rewrite, so trimming one
+/// entry at a time made every record at the cap O(n) on the main actor. The
+/// global cap is enforced against the timeline left after the sensitive trim.
 enum DiagnosticsRetentionPolicy {
     static let sensitiveCategories: Set = ["input", "keystroke"]
 
     static func removalIndexes(
         categories: [String],
         maxEntries: Int,
+        entryTarget: Int? = nil,
         sensitiveLimit: Int,
         sensitiveTarget: Int
     ) -> IndexSet {
+        let entryTarget = entryTarget ?? maxEntries
         guard maxEntries >= 0,
+              entryTarget >= 0,
+              entryTarget <= maxEntries,
               sensitiveLimit >= 0,
               sensitiveTarget >= 0,
               sensitiveTarget <= sensitiveLimit else {
@@ -315,7 +321,8 @@ enum DiagnosticsRetentionPolicy {
             }
         }
 
-        var remainingOverflow = categories.count - removals.count - maxEntries
+        let retained = categories.count - removals.count
+        var remainingOverflow = retained > maxEntries ? retained - entryTarget : 0
         if remainingOverflow > 0 {
             for index in categories.indices where !removals.contains(index) {
                 removals.insert(index)

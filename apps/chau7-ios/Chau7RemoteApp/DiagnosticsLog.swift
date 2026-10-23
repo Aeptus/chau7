@@ -82,6 +82,9 @@ final class DiagnosticsLog {
     /// Hard cap on retained entries. Performance + keystroke logging is high
     /// volume, so the cap is generous but bounded to protect memory/disk.
     private static let maxEntries = 8000
+    /// Over the cap, trim down to this in one batch (see
+    /// `DiagnosticsRetentionPolicy`).
+    private static let entryTrimTarget = 7000
     /// Sensitive input capture gets a separate budget so it cannot evict most
     /// connection/lifecycle evidence. Trim below the limit in one batch to
     /// amortize the full JSONL rewrite required by non-prefix eviction.
@@ -435,13 +438,11 @@ final class DiagnosticsLog {
         let removals = DiagnosticsRetentionPolicy.removalIndexes(
             categories: loaded.map(\.category),
             maxEntries: Self.maxEntries,
+            entryTarget: Self.entryTrimTarget,
             sensitiveLimit: Self.maxSensitiveEntries,
             sensitiveTarget: Self.sensitiveTrimTarget
         )
-        for index in removals.reversed() {
-            loaded.remove(at: index)
-        }
-        entries = loaded
+        entries = Self.removing(removals, from: loaded)
         sensitiveEntryCount = loaded.lazy.filter {
             DiagnosticsRetentionPolicy.sensitiveCategories.contains($0.category)
         }.count
@@ -461,18 +462,28 @@ final class DiagnosticsLog {
         let removals = DiagnosticsRetentionPolicy.removalIndexes(
             categories: entries.map(\.category),
             maxEntries: Self.maxEntries,
+            entryTarget: Self.entryTrimTarget,
             sensitiveLimit: Self.maxSensitiveEntries,
             sensitiveTarget: Self.sensitiveTrimTarget
         )
         guard !removals.isEmpty else { return }
-        for index in removals.reversed() {
-            if DiagnosticsRetentionPolicy.sensitiveCategories.contains(entries[index].category) {
-                sensitiveEntryCount -= 1
-            }
-            entries.remove(at: index)
-        }
+        sensitiveEntryCount -= removals.lazy.filter {
+            DiagnosticsRetentionPolicy.sensitiveCategories.contains(self.entries[$0].category)
+        }.count
+        entries = Self.removing(removals, from: entries)
         needsFullRewrite = true
         persistedEntryCount = 0
+    }
+
+    /// One pass instead of an O(n) `remove(at:)` per removed entry.
+    private static func removing(_ removals: IndexSet, from entries: [Entry]) -> [Entry] {
+        guard !removals.isEmpty else { return entries }
+        var kept: [Entry] = []
+        kept.reserveCapacity(entries.count - removals.count)
+        for (index, entry) in entries.enumerated() where !removals.contains(index) {
+            kept.append(entry)
+        }
+        return kept
     }
 
     private func mirrorToOSLog(_ entry: Entry) {
