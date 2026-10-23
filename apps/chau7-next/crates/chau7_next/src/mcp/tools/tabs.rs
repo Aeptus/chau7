@@ -2,7 +2,9 @@
 //! tabs in every window. Tab state is read and changed on the main thread;
 //! waits (stable output, CPU sampling) happen on the client thread.
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use chau7_next_core::mcp::command_filter::{self, ResolvedPermissions};
@@ -16,6 +18,7 @@ use chau7_next_core::terminal_key_press::TerminalKeyPress;
 use chau7_next_core::token_optimization::{TabTokenOptOverride, TokenOptimizationMode};
 use gpui::{AnyWindowHandle, App};
 use serde_json::{Map, Value, json};
+use uuid::Uuid;
 
 use super::{ToolContext, arg_bool, arg_int, arg_str, arg_str_list, tool};
 use crate::mcp::approval;
@@ -486,6 +489,101 @@ fn input_held() -> String {
     )
 }
 
+/// Text MCP typed into each tab without submitting it yet
+/// (`mcpPendingInput`), by tab UUID: it runs with the next line end, so it
+/// is checked then. Read and changed on the main thread.
+static PENDING_INPUT: Mutex<Option<HashMap<Uuid, String>>> = Mutex::new(None);
+/// Entries kept before those of closed tabs are dropped.
+const MAX_PENDING_TABS: usize = 64;
+
+fn pending_input(tab_id: &str) -> String {
+    let Some(uuid) = parse_tab_id(tab_id) else {
+        return String::new();
+    };
+    PENDING_INPUT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .and_then(|pending| pending.get(&uuid).cloned())
+        .unwrap_or_default()
+}
+
+fn set_pending_input(tab_id: &str, text: String, cx: &mut App) {
+    let Some(uuid) = parse_tab_id(tab_id) else {
+        return;
+    };
+    let mut state = PENDING_INPUT.lock().unwrap_or_else(|e| e.into_inner());
+    let pending = state.get_or_insert_with(HashMap::new);
+    if text.is_empty() {
+        pending.remove(&uuid);
+        return;
+    }
+    pending.insert(uuid, text);
+    if pending.len() > MAX_PENDING_TABS {
+        let live: HashSet<Uuid> = windows(cx)
+            .iter()
+            .flat_map(|window| window.workspace.read(cx).mcp_tab_uuids())
+            .collect();
+        pending.retain(|uuid, _| live.contains(uuid));
+    }
+}
+
+/// The text the tab had pending when `input` was checked, and the text it
+/// keeps once `input` is delivered.
+struct StagedDelivery {
+    before: String,
+    after: String,
+}
+
+/// Check the lines `input` submits on the tab's command line, together
+/// with the text typed before them, and ask or refuse as the rules say
+/// (`filterSubmittedLine`). `Err` is the response for the client.
+fn check_typed_input(
+    tab_id: &str,
+    input: &str,
+    ctx: &ToolContext,
+) -> Result<StagedDelivery, String> {
+    let Some((permissions, window, target_tab)) = permissions_for(tab_id, ctx) else {
+        return Err(no_window());
+    };
+    let tab = tab_id.to_string();
+    let before = ctx
+        .main
+        .call(move |_| pending_input(&tab))
+        .ok_or_else(no_window)?;
+    let staged = command_filter::stage_input(&before, input);
+    if staged.overflows() {
+        return Err(json_error(&format!(
+            "Input not delivered: more than {} characters would be left unsubmitted",
+            command_filter::MAX_PENDING_INPUT_CHARS
+        )));
+    }
+    let check = command_filter::check_submitted_lines(&staged.submitted, &permissions);
+    let submitted = staged.submitted.join("\n");
+    if let Some(err) = approval::enforce(
+        ctx.main,
+        check,
+        &permissions,
+        &submitted,
+        window,
+        tab_id,
+        target_tab,
+    ) {
+        return Err(err);
+    }
+    Ok(StagedDelivery {
+        before,
+        after: staged.pending,
+    })
+}
+
+/// Another call typed into the tab while this one was being checked.
+fn pending_changed(tab_id: &str, before: &str) -> Option<String> {
+    (pending_input(tab_id) != before).then(|| {
+        json_error("Input not delivered: the tab's input changed while it was being checked; retry")
+    })
+}
+
 fn authorize(tab_id: &str, owner: Option<&str>, cx: &mut App) -> Result<(), String> {
     match owner {
         Some(owner) => crate::mcp::control::authorize_mutation_on_main(tab_id, owner, cx),
@@ -511,12 +609,22 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
     let Some((permissions, window, target_tab)) = permissions_for(tab_id, ctx) else {
         return no_window();
     };
-    let check = command_filter::check(command, &permissions);
+    // Text typed before (`tab_send_input` without a line end) is still on
+    // the command line: it runs as the start of this command.
+    let pending = {
+        let tab = tab_id.to_string();
+        let Some(pending) = ctx.main.call(move |_| pending_input(&tab)) else {
+            return no_window();
+        };
+        pending
+    };
+    let line = format!("{pending}{command}");
+    let check = command_filter::check(&line, &permissions);
     if let Some(err) = approval::enforce(
         ctx.main,
         check,
         &permissions,
-        command,
+        &line,
         window,
         tab_id,
         target_tab,
@@ -528,6 +636,9 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
     ctx.main
         .call(move |cx| {
             if let Err(error) = authorize(&tab_id, owner.as_deref(), cx) { return error; }
+            if let Some(error) = pending_changed(&tab_id, &pending) {
+                return error;
+            }
             let Some(tab) = find_tab(&tab_id, cx) else {
                 return not_found(&tab_id);
             };
@@ -544,6 +655,7 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
                 if !send_to_tab(&tab, format!("{command}\n").as_bytes(), cx) {
                     return input_held();
                 }
+                set_pending_input(&tab_id, String::new(), cx);
                 log::info!("MCP: queued exec in {tab_id}: {preview}");
                 return encode_sorted(&json!({"ok": true, "queued": true}));
             }
@@ -555,6 +667,7 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
             if !send_to_tab(&tab, format!("{command}\n").as_bytes(), cx) {
                 return input_held();
             }
+            set_pending_input(&tab_id, String::new(), cx);
             log::info!("MCP: exec in {tab_id}: {preview}");
             encode_sorted(&json!({"ok": true, "queued": false}))
         })
@@ -566,21 +679,10 @@ pub(crate) fn send_input(tab_id: &str, input: &str, ctx: &ToolContext) -> String
         return error;
     }
     let owner = (!ctx.is_internal()).then(|| ctx.client_id.to_string());
-    let Some((permissions, window, target_tab)) = permissions_for(tab_id, ctx) else {
-        return no_window();
+    let staged = match check_typed_input(tab_id, input, ctx) {
+        Ok(staged) => staged,
+        Err(err) => return err,
     };
-    let check = command_filter::check_raw_input(input, &permissions);
-    if let Some(err) = approval::enforce(
-        ctx.main,
-        check,
-        &permissions,
-        input,
-        window,
-        tab_id,
-        target_tab,
-    ) {
-        return err;
-    }
     let tab_id = tab_id.to_string();
     let input = input.to_string();
     ctx.main
@@ -591,9 +693,13 @@ pub(crate) fn send_input(tab_id: &str, input: &str, ctx: &ToolContext) -> String
             let Some(tab) = find_tab(&tab_id, cx) else {
                 return not_found(&tab_id);
             };
+            if let Some(error) = pending_changed(&tab_id, &staged.before) {
+                return error;
+            }
             if !send_to_tab(&tab, input.as_bytes(), cx) {
                 return input_held();
             }
+            set_pending_input(&tab_id, staged.after, cx);
             log::info!(
                 "MCP: send_input to {tab_id} ({} chars)",
                 input.chars().count()
@@ -603,16 +709,27 @@ pub(crate) fn send_input(tab_id: &str, input: &str, ctx: &ToolContext) -> String
         .unwrap_or_else(no_window)
 }
 
+/// `tab_press_key` and `tab_submit_prompt`. A key that submits the line
+/// (Enter, Ctrl+J, Ctrl+M, Ctrl+O) runs the text typed before it, which is
+/// checked like `tab_send_input` text.
 fn press_key(tab_id: &str, key: &str, modifiers: &[String], ctx: &ToolContext) -> String {
+    if let Err(error) = preflight(tab_id, ctx) {
+        return error;
+    }
     let owner = (!ctx.is_internal()).then(|| ctx.client_id.to_string());
     let modifiers: Vec<&str> = modifiers.iter().map(String::as_str).collect();
     let press = match TerminalKeyPress::new(key, &modifiers) {
         Ok(press) => press,
         Err(err) => return json_error(&err.to_string()),
     };
-    if let Err(err) = press.encode(false) {
-        return json_error(&err.to_string());
-    }
+    let encoded = match press.encode(false) {
+        Ok(encoded) => encoded,
+        Err(err) => return json_error(&err.to_string()),
+    };
+    let staged = match check_typed_input(tab_id, &String::from_utf8_lossy(&encoded.bytes), ctx) {
+        Ok(staged) => staged,
+        Err(err) => return err,
+    };
     let tab_id = tab_id.to_string();
     ctx.main
         .call(move |cx| {
@@ -625,9 +742,13 @@ fn press_key(tab_id: &str, key: &str, modifiers: &[String], ctx: &ToolContext) -
             let Some(panes) = tab.window.workspace.read(cx).mcp_panes(tab.tab) else {
                 return not_found(&tab_id);
             };
+            if let Some(error) = pending_changed(&tab_id, &staged.before) {
+                return error;
+            }
             if !PaneTree::send_key_press(&panes, &press, cx) {
                 return json_error("Key not delivered: unsupported key, unavailable terminal, or pending/blocked command approval");
             }
+            set_pending_input(&tab_id, staged.after, cx);
             log::info!(
                 "MCP: press_key in {tab_id}: key={} modifiers={}",
                 press.key,
@@ -742,6 +863,7 @@ pub(crate) fn close_tab(tab_id: &str, force: bool, cx: &mut App) -> String {
         }
     }
     log::info!("MCP: closing tab {tab_id} force={force}");
+    set_pending_input(tab_id, String::new(), cx);
     let workspace = tab.window.workspace.clone();
     let _ = tab.window.handle.update(cx, |_, window, cx| {
         workspace.update(cx, |ws, cx| ws.mcp_close_tab(tab.tab, window, cx))

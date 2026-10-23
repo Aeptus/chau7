@@ -112,10 +112,40 @@ pub struct CheckResult {
     pub audited: Vec<String>,
 }
 
+/// The name reported for a line whose text the shell edits before running
+/// it (cursor moves, word kills, ...): what runs cannot be read from it.
+pub const LINE_EDITING_INPUT: &str = "(line editing keys)";
+
+/// Control characters other than tab and line ends: the shell treats them
+/// as editing keys, so the line it runs is not the text that was sent.
+fn has_line_editing(command: &str) -> bool {
+    command
+        .chars()
+        .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r'))
+}
+
 /// Check a command line (`tab_exec`).
+///
+/// A line with editing keys in it cannot be checked name by name: unless a
+/// blocked name shows, it is blocked in Allowlist mode and needs approval
+/// in every other mode.
 pub fn check(command: &str, permissions: &ResolvedPermissions) -> CheckResult {
     let mut audited = Vec::new();
-    for base in extract_base_commands(command) {
+    let bases = extract_base_commands(command);
+    if has_line_editing(command) {
+        let blocked = bases
+            .into_iter()
+            .find(|base| permissions.blocked.contains(&normalize_command(base)));
+        let verdict = match (blocked, permissions.mode) {
+            (Some(base), _) => CommandVerdict::Blocked(base),
+            (None, MCPPermissionMode::Allowlist) => {
+                CommandVerdict::Blocked(LINE_EDITING_INPUT.into())
+            }
+            (None, _) => CommandVerdict::NeedsApproval(LINE_EDITING_INPUT.into()),
+        };
+        return CheckResult { verdict, audited };
+    }
+    for base in bases {
         let normalized = normalize_command(&base);
         if permissions.blocked.contains(&normalized) {
             return CheckResult {
@@ -149,18 +179,142 @@ pub fn check(command: &str, permissions: &ResolvedPermissions) -> CheckResult {
     }
 }
 
-/// `checkRawInput` (`tab_send_input`): short input (2 characters or less
-/// once trimmed) and input without a final newline are interactive typing
-/// and pass; anything else is checked as a command.
+/// `checkRawInput` (`tab_send_input` with nothing typed before): every
+/// line the input submits is checked with [`check_submitted_lines`]; text
+/// after the last line end is still being typed and passes.
 pub fn check_raw_input(input: &str, permissions: &ResolvedPermissions) -> CheckResult {
-    let trimmed = input.trim();
-    if trimmed.chars().count() <= 2 || !(input.ends_with('\n') || input.ends_with('\r')) {
-        return CheckResult {
-            verdict: CommandVerdict::Allowed,
-            audited: Vec::new(),
-        };
+    let staged = stage_input("", input);
+    check_submitted_lines(&staged.submitted, permissions)
+}
+
+/// Longest unsubmitted text kept for a tab, in characters. Input that
+/// would leave more than this unsubmitted is refused rather than tracked
+/// partially, since a partial record could hide a command.
+pub const MAX_PENDING_INPUT_CHARS: usize = 16 * 1024;
+
+/// What a piece of input does to a tab's command line (`mcpPendingInput`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StagedInput {
+    /// Lines the input submits (Return, Line Feed or Ctrl+O), with the
+    /// text typed before them; these must be checked before it is sent.
+    pub submitted: Vec<String>,
+    /// Text left typed but not submitted.
+    pub pending: String,
+}
+
+impl StagedInput {
+    /// The pending text is too long to track ([`MAX_PENDING_INPUT_CHARS`]).
+    pub fn overflows(&self) -> bool {
+        self.pending.chars().count() > MAX_PENDING_INPUT_CHARS
     }
-    check(trimmed, permissions)
+}
+
+/// Apply `input` (text, or the bytes of a key press) to the unsubmitted
+/// text `pending` of a tab. Ctrl+C drops the line; Ctrl+U and Backspace
+/// are applied while the line has no other editing key in it (the cursor
+/// is then at its end), and kept as editing keys otherwise.
+pub fn stage_input(pending: &str, input: &str) -> StagedInput {
+    let mut submitted = Vec::new();
+    let mut line = pending.to_string();
+    let mut edited = has_line_editing(&line);
+    for c in input.chars() {
+        match c {
+            // Ctrl+O is bash and zsh "operate-and-get-next": it runs the line.
+            '\r' | '\n' | '\u{0f}' => {
+                submitted.push(std::mem::take(&mut line));
+                edited = false;
+            }
+            '\u{03}' => {
+                line.clear();
+                edited = false;
+            }
+            '\u{15}' if !edited => line.clear(),
+            '\u{7f}' | '\u{08}' if !edited => {
+                line.pop();
+            }
+            _ => {
+                edited |= c.is_control() && c != '\t';
+                line.push(c);
+            }
+        }
+    }
+    StagedInput {
+        submitted,
+        pending: line,
+    }
+}
+
+/// The printable text of a line, escape sequences and control characters
+/// removed.
+fn printable_text(line: &str) -> String {
+    let mut out = String::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            match chars.next() {
+                // CSI: parameters, then a final byte in `@`..`~`.
+                Some('[') => {
+                    for c in chars.by_ref() {
+                        if ('@'..='~').contains(&c) {
+                            break;
+                        }
+                    }
+                }
+                // SS3 (`ESC O x`), else an Alt+key.
+                Some('O') => {
+                    chars.next();
+                }
+                _ => {}
+            }
+        } else if !c.is_control() || c == '\t' {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Check the lines a piece of input submits (`tab_send_input`,
+/// `tab_press_key`, `tab_submit_prompt`). Lines with no printable text
+/// (empty, or only keys such as arrows) pass; lines of 2 characters or less
+/// are interactive answers (`y`, `n`, `1`) and are only checked against the
+/// blocked names; anything else is checked as a command with [`check`].
+pub fn check_submitted_lines<S: AsRef<str>>(
+    lines: &[S],
+    permissions: &ResolvedPermissions,
+) -> CheckResult {
+    let mut audited = Vec::new();
+    for line in lines {
+        let line = line.as_ref();
+        let text = printable_text(line);
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.chars().count() <= 2 {
+            if let Some(base) = extract_base_commands(trimmed)
+                .into_iter()
+                .find(|base| permissions.blocked.contains(&normalize_command(base)))
+            {
+                return CheckResult {
+                    verdict: CommandVerdict::Blocked(base),
+                    audited,
+                };
+            }
+            continue;
+        }
+        let result = check(line.trim(), permissions);
+        audited.extend(result.audited);
+        if result.verdict != CommandVerdict::Allowed {
+            return CheckResult {
+                verdict: result.verdict,
+                audited,
+            };
+        }
+    }
+    CheckResult {
+        verdict: CommandVerdict::Allowed,
+        audited,
+    }
 }
 
 /// Split a command line into sub-commands and return the program name of
@@ -850,6 +1004,100 @@ mod tests {
         assert_eq!(
             check_raw_input("rm -rf x\r", &p).verdict,
             CommandVerdict::Blocked("rm".into())
+        );
+    }
+
+    #[test]
+    fn raw_input_checks_every_submitted_line() {
+        let p = global(MCPPermissionMode::AllowAll, &[], &["rm"]);
+        for input in [
+            "ls\nrm -rf ~\n",
+            "ls\rrm -rf ~\rls",
+            "rm -rf ~\u{f}",
+            "ls\n\nrm x\nls",
+        ] {
+            assert_eq!(
+                check_raw_input(input, &p).verdict,
+                CommandVerdict::Blocked("rm".into()),
+                "{input:?}"
+            );
+        }
+        // Text after the last line end is still being typed.
+        assert_eq!(
+            check_raw_input("ls\nrm -rf ~", &p).verdict,
+            CommandVerdict::Allowed
+        );
+        // Short answers are only checked against the blocked names.
+        let allowlist = global(MCPPermissionMode::Allowlist, &[], &["rm"]);
+        assert_eq!(
+            check_raw_input("y\nn\r", &allowlist).verdict,
+            CommandVerdict::Allowed
+        );
+        assert_eq!(
+            check_raw_input("rm\n", &allowlist).verdict,
+            CommandVerdict::Blocked("rm".into())
+        );
+    }
+
+    #[test]
+    fn staged_input_is_checked_when_submitted() {
+        let p = global(MCPPermissionMode::AllowAll, &[], &["rm"]);
+        // `tab_send_input "rm -rf ~"`, then `tab_submit_prompt` (Enter).
+        let typed = stage_input("", "rm -rf ~");
+        assert!(typed.submitted.is_empty());
+        assert_eq!(typed.pending, "rm -rf ~");
+        let entered = stage_input(&typed.pending, "\r");
+        assert_eq!(entered.submitted, ["rm -rf ~"]);
+        assert_eq!(entered.pending, "");
+        assert_eq!(
+            check_submitted_lines(&entered.submitted, &p).verdict,
+            CommandVerdict::Blocked("rm".into())
+        );
+        // `tab_send_input "ls\nrm -rf ~"` leaves `rm -rf ~` on the line.
+        assert_eq!(stage_input("", "ls\nrm -rf ~").pending, "rm -rf ~");
+        // Typed in pieces.
+        let r = stage_input("", "r");
+        let rm = stage_input(&r.pending, "m -rf ~\n");
+        assert_eq!(rm.submitted, ["rm -rf ~"]);
+        // Ctrl+C drops the line; Ctrl+U and Backspace edit it.
+        assert_eq!(stage_input("rm -rf ~", "\u{3}\r").submitted, [""]);
+        assert_eq!(stage_input("x", "\u{15}rm\r").submitted, ["rm"]);
+        assert_eq!(stage_input("rmx", "\u{7f}\r").submitted, ["rm"]);
+        assert!(!stage_input("", "x").overflows());
+        assert!(stage_input("", &"x".repeat(MAX_PENDING_INPUT_CHARS + 1)).overflows());
+    }
+
+    #[test]
+    fn line_editing_keys_need_approval() {
+        // Ctrl+A then `r`: the shell runs `rm -rf ~`.
+        let line = stage_input("m -rf ~", "\u{1}r\r");
+        let allow_all = global(MCPPermissionMode::AllowAll, &[], &["rm"]);
+        assert_eq!(
+            check_submitted_lines(&line.submitted, &allow_all).verdict,
+            CommandVerdict::NeedsApproval(LINE_EDITING_INPUT.into())
+        );
+        // Left arrow, then Backspace: kept as editing keys.
+        let line = stage_input("rmx -rf ~", "\u{1b}[D\u{7f}\r");
+        assert_eq!(line.submitted, ["rmx -rf ~\u{1b}[D\u{7f}"]);
+        assert_eq!(
+            check_submitted_lines(&line.submitted, &allow_all).verdict,
+            CommandVerdict::NeedsApproval(LINE_EDITING_INPUT.into())
+        );
+        let allowlist = global(MCPPermissionMode::Allowlist, &["ls"], &[]);
+        assert_eq!(
+            check("ls\u{1}x", &allowlist).verdict,
+            CommandVerdict::Blocked(LINE_EDITING_INPUT.into())
+        );
+        // A blocked name still wins.
+        assert_eq!(
+            check("rm x\u{1}", &allow_all).verdict,
+            CommandVerdict::Blocked("rm".into())
+        );
+        // Keys alone (menu navigation in a TUI) pass.
+        let keys = stage_input("", "\u{1b}[B\u{1b}[B\r");
+        assert_eq!(
+            check_submitted_lines(&keys.submitted, &allowlist).verdict,
+            CommandVerdict::Allowed
         );
     }
 
