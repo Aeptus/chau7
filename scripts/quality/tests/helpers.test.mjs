@@ -66,7 +66,7 @@ test("fallback diff base resolves HEAD parent when no upstream exists", () => {
 
 test("high-impact changes force full pre-push", () => {
   const result = shouldForceFullPrepush({
-    changedFiles: ["scripts/quality/runner.mjs", "apps/chau7-macos/Sources/App.swift"],
+    changedFiles: ["scripts/quality/runner.mjs", "apps/chau7-next/crates/chau7_next/src/main.rs"],
   });
 
   assert.equal(result.full, true);
@@ -75,7 +75,7 @@ test("high-impact changes force full pre-push", () => {
 
 test("normal source changes do not force full pre-push", () => {
   const result = shouldForceFullPrepush({
-    changedFiles: ["apps/chau7-macos/Sources/Chau7/AppModel.swift"],
+    changedFiles: ["apps/chau7-next/crates/chau7_next/src/app.rs"],
   });
 
   assert.equal(result.full, false);

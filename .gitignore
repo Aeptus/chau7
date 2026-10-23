@@ -33,7 +33,6 @@ services/chau7-proxy/chau7-proxy
 /crates/target/
 /crates/chau7_terminal/target/
 apps/chau7-ios/BuildArtifacts/
-apps/chau7-macos/Libraries/
 # pnpm quality tooling creates this local workspace cache.
 /node_modules/
 services/chau7-relay/node_modules/
@@ -42,7 +41,6 @@ services/chau7-remote/chau7-remote
 .jscpd-report/
 **/__pycache__/
 aetower-feedback.md
-apps/chau7-macos/chau7-xunit-swift-testing.xml
 
 # Rust workspace owns the only lockfile; member-crate locks are unused.
 /crates/*/Cargo.lock

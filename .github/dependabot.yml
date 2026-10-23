@@ -1,25 +1,5 @@
 version: 2
 updates:
-  - package-ecosystem: swift
-    directory: /apps/chau7-macos
-    schedule:
-      interval: weekly
-    groups:
-      compatible-updates:
-        patterns: ["*"]
-        update-types: [minor, patch]
-    open-pull-requests-limit: 5
-
-  - package-ecosystem: swift
-    directory: /apps/chau7-ios/Chau7RemoteApp
-    schedule:
-      interval: weekly
-    groups:
-      compatible-updates:
-        patterns: ["*"]
-        update-types: [minor, patch]
-    open-pull-requests-limit: 5
-
   - package-ecosystem: npm
     directory: /services/chau7-relay
     schedule:

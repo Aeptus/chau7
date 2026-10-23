@@ -25,7 +25,6 @@ const LOCKFILE_INPUTS = [
   "pnpm-lock.yaml",
   "package-lock.json",
   "services/chau7-relay/package-lock.json",
-  "apps/chau7-macos/Package.resolved",
   "crates/Cargo.lock",
   "services/chau7-proxy/go.sum",
   "services/chau7-remote/go.sum",

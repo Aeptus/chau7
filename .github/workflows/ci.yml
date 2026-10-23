@@ -65,7 +65,7 @@ jobs:
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       - name: Install full-suite quality tools
-        run: brew install swiftformat swiftlint gitleaks shellcheck ruff periphery pip-audit
+        run: brew install swiftformat swiftlint gitleaks shellcheck ruff pip-audit
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.20.2 --locked

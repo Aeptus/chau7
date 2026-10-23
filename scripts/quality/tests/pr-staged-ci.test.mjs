@@ -32,10 +32,7 @@ function fixture(t, changelog) {
     git("-c", "user.name=Quality Tests", "-c", "user.email=quality@example.invalid", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "fixture");
   };
   git("init", "-q");
-  const docs = "apps/chau7-macos/docs";
-  const app = "apps/chau7-next/crates/chau7_next/src/fix.rs";
-  for (const file of ["features.json", "features.csv"]) write(`${docs}/${file}`, fs.readFileSync(path.join(source, docs, file)));
-  write("scripts/generate-features-csv.mjs", fs.readFileSync(path.join(source, "scripts/generate-features-csv.mjs")));
+    const app = "apps/chau7-next/crates/chau7_next/src/fix.rs";
   write("CHANGELOG.md", "Existing notes\n");
   write(app, "// original\n");
   commit();
