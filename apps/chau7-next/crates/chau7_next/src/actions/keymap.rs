@@ -9,10 +9,12 @@
 //! Custom shortcuts: the keybinding preset (`[next] keybinding_preset`) and
 //! `[keybindings]` in config.toml (`"cmd+shift+b" = "toggleBroadcast"`, Swift
 //! action names). They are bound on top of the defaults, so they win over
-//! terminal input.
+//! terminal input. A settings change rebuilds the key map from the defaults
+//! (see [`capture_default_keymap`]), so a removed or remapped shortcut stops
+//! working at once.
 
 use chau7_next_core::input::shortcuts;
-use gpui::{Action, App, KeyBinding};
+use gpui::{Action, App, Global, KeyBinding};
 
 use super::*;
 use crate::settings::InputSettings;
@@ -70,42 +72,91 @@ fn common_bindings(p: &str) -> Vec<KeyBinding> {
 }
 
 pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys(default_bindings());
+    bind_layout_keys(cx);
+}
+
+/// The fixed default bindings of this platform (without the
+/// layout-dependent Cmd+0..9, [`bind_layout_keys`]).
+fn default_bindings() -> Vec<KeyBinding> {
     let mut bindings = common_bindings(primary());
     if cfg!(target_os = "macos") {
         bindings.extend(macos_bindings());
     } else {
-        bindings.extend([
-            KeyBinding::new("ctrl-c", gpui::NoAction, Some("Terminal")),
-            // Shift+/ arrives as "?" with or without the Shift flag, by backend.
-            KeyBinding::new("ctrl-?", ShowKeyboardShortcuts, None),
-            // Same for Shift+, ("<"): Settings.
-            KeyBinding::new("ctrl-<", OpenSettings, None),
-            KeyBinding::new("ctrl-shift-<", OpenSettings, None),
-            KeyBinding::new("ctrl-shift-?", ShowKeyboardShortcuts, None),
-            KeyBinding::new("ctrl-pagedown", NextTab, None),
-            KeyBinding::new("ctrl-pageup", PreviousTab, None),
-            KeyBinding::new("ctrl-shift-r", RenameTab, None),
-            KeyBinding::new("ctrl-shift-alt-t", ReopenClosedTab, None),
-            KeyBinding::new("ctrl-shift-]", FocusNextPane, Some("Workspace")),
-            KeyBinding::new("ctrl-shift-[", FocusPreviousPane, Some("Workspace")),
-            KeyBinding::new("ctrl-shift-e", SplitDown, Some("Workspace")),
-            KeyBinding::new("ctrl-shift-x", ClosePane, Some("Workspace")),
-            KeyBinding::new("ctrl-shift-s", ToggleSnippets, Some("Workspace")),
-            KeyBinding::new("ctrl-shift-alt-s", ExportText, Some("Workspace")),
-            KeyBinding::new("ctrl-shift-o", crate::commands::ShowSshManager, None),
-            KeyBinding::new("ctrl-shift-g", FindPrevious, Some("Workspace")),
-            KeyBinding::new("ctrl-shift-space", ToggleCommandPalette, Some("Workspace")),
-            KeyBinding::new("ctrl-shift-space", ToggleCommandPalette, Some("Palette")),
-            KeyBinding::new("ctrl-shift-h", ShowCommandHistory, Some("Workspace")),
-            KeyBinding::new("ctrl-shift-alt-v", PasteEscaped, Some("Terminal")),
-            KeyBinding::new("ctrl-shift-alt-k", ClearScrollback, Some("Terminal")),
-            KeyBinding::new("f11", ToggleFullScreen, None),
-            KeyBinding::new("ctrl-shift-q", Quit, None),
-            KeyBinding::new("ctrl-shift-f12", SeedDebugTabs, None),
-        ]);
+        bindings.extend(other_platform_bindings());
     }
-    cx.bind_keys(bindings);
-    bind_layout_keys(cx);
+    bindings
+}
+
+/// Default shortcuts on Linux and Windows, on top of `common_bindings`.
+fn other_platform_bindings() -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("ctrl-c", gpui::NoAction, Some("Terminal")),
+        // Shift+/ arrives as "?" with or without the Shift flag, by backend.
+        KeyBinding::new("ctrl-?", ShowKeyboardShortcuts, None),
+        // Same for Shift+, ("<"): Settings.
+        KeyBinding::new("ctrl-<", OpenSettings, None),
+        KeyBinding::new("ctrl-shift-<", OpenSettings, None),
+        KeyBinding::new("ctrl-shift-?", ShowKeyboardShortcuts, None),
+        KeyBinding::new("ctrl-pagedown", NextTab, None),
+        KeyBinding::new("ctrl-pageup", PreviousTab, None),
+        KeyBinding::new("ctrl-shift-r", RenameTab, None),
+        KeyBinding::new("ctrl-shift-alt-t", ReopenClosedTab, None),
+        KeyBinding::new("ctrl-shift-]", FocusNextPane, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-[", FocusPreviousPane, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-e", SplitDown, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-x", ClosePane, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-s", ToggleSnippets, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-alt-s", ExportText, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-o", crate::commands::ShowSshManager, None),
+        // Ctrl+Shift+G is Find Next (`common_bindings`); Ctrl+Shift+Alt+G
+        // is Show Changed Files (`panes::bind_keys`).
+        KeyBinding::new("ctrl-shift-alt-f", FindPrevious, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-space", ToggleCommandPalette, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-space", ToggleCommandPalette, Some("Palette")),
+        KeyBinding::new("ctrl-shift-h", ShowCommandHistory, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-alt-v", PasteEscaped, Some("Terminal")),
+        KeyBinding::new("ctrl-shift-alt-k", ClearScrollback, Some("Terminal")),
+        KeyBinding::new("f11", ToggleFullScreen, None),
+        KeyBinding::new("ctrl-shift-q", Quit, None),
+        KeyBinding::new("ctrl-shift-f12", SeedDebugTabs, None),
+    ]
+}
+
+/// Every binding made at startup before the user's shortcuts: GPUI's and
+/// the components', then the app's defaults. Settings changes rebuild the
+/// key map from it.
+struct DefaultKeymap(Vec<KeyBinding>);
+
+impl Global for DefaultKeymap {}
+
+/// Remember the key map as it stands, once every module bound its default
+/// keys and before [`bind_shortcut_settings`] binds the user's shortcuts.
+/// Layout-dependent keys are left out: they are bound again with each
+/// rebuild, for the current layout.
+pub fn capture_default_keymap(cx: &mut App) {
+    let keymap = cx.key_bindings();
+    let layout_actions: Vec<_> = layout_actions();
+    let bindings = keymap
+        .borrow()
+        .bindings()
+        .filter(|b| {
+            !layout_actions
+                .iter()
+                .any(|a| b.action().partial_eq(a.as_ref()))
+        })
+        .cloned()
+        .collect();
+    cx.set_global(DefaultKeymap(bindings));
+}
+
+/// The actions [`bind_layout_keys`] binds (Cmd+1..9, Cmd+0).
+fn layout_actions() -> Vec<Box<dyn Action>> {
+    let mut actions: Vec<Box<dyn Action>> = (1..=9)
+        .map(|n| Box::new(SelectTabNumber(n)) as Box<dyn Action>)
+        .collect();
+    actions.push(Box::new(ResetFontSize));
+    actions
 }
 
 /// Cmd+1..9 (select tab) and Cmd+0 (actual size), matched by physical key:
@@ -146,6 +197,12 @@ fn tab_bindings() -> Vec<KeyBinding> {
     if cfg!(target_os = "macos") {
         Vec::new()
     } else {
+        other_platform_tab_bindings()
+    }
+}
+
+fn other_platform_tab_bindings() -> Vec<KeyBinding> {
+    {
         vec![
             KeyBinding::new("ctrl-shift-alt-w", CloseOtherTabs, None),
             KeyBinding::new("ctrl-shift-alt-]", MoveTabRight, None),
@@ -164,10 +221,15 @@ fn tab_bindings() -> Vec<KeyBinding> {
 /// plus Cmd+Opt+Left/Right for tabs while the tab shortcuts are not
 /// customized (Swift `shouldUseAlternateTabNavigationShortcuts`). Called at
 /// startup, after a settings change and when the keyboard layout changes.
-/// Bindings only accumulate (GPUI has no way to remove one without clearing
-/// the whole key map): a removed custom shortcut stays until relaunch, while
-/// a changed one takes effect at once since the newest binding wins.
+/// GPUI cannot remove a single binding, so the key map is rebuilt from the
+/// defaults captured at startup ([`capture_default_keymap`]): a removed or
+/// remapped shortcut stops working at once and nothing accumulates.
 pub fn bind_shortcut_settings(input: &InputSettings, cx: &mut App) {
+    if let Some(defaults) = cx.try_global::<DefaultKeymap>() {
+        let defaults = defaults.0.clone();
+        cx.clear_key_bindings();
+        cx.bind_keys(defaults);
+    }
     bind_layout_keys(cx);
     let list = input.shortcuts();
     let tabs_customized = shortcuts::changed_from_defaults(&list)
@@ -585,6 +647,75 @@ mod tests {
             let bound = seen.get(&key).map(|a| a.rsplit("::").next().unwrap_or(a));
             assert_eq!(bound, Some(action), "{stroke}");
         }
+    }
+
+    /// Linux and Windows defaults (Cmd becomes Ctrl+Shift): each key is
+    /// bound once, panes and tab shortcuts included.
+    #[test]
+    fn other_platform_defaults_bind_each_key_once() {
+        let mut bindings = common_bindings("ctrl-shift");
+        bindings.extend(other_platform_bindings());
+        bindings.extend(other_platform_tab_bindings());
+        bindings.extend(crate::panes::other_platform_bindings());
+        let mut seen: std::collections::HashMap<String, String> = Default::default();
+        for b in &bindings {
+            let context = b.predicate().map(|p| p.to_string()).unwrap_or_default();
+            if ["SearchBar", "Snippets", "Palette"].contains(&context.as_str())
+                || b.action().name() == "zed::NoAction"
+            {
+                continue;
+            }
+            let key = b
+                .keystrokes()
+                .iter()
+                .map(|k| k.unparse())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let action = b.action().name().to_string();
+            if let Some(previous) = seen.insert(key.clone(), action.clone()) {
+                panic!("{key} is bound twice: {previous} and {action}");
+            }
+        }
+    }
+
+    /// A settings change rebuilds the key map from the captured defaults:
+    /// a removed custom shortcut stops working and bindings never pile up.
+    #[gpui::test]
+    fn shortcut_changes_replace_previous_custom_bindings(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            bind_keys(cx);
+            capture_default_keymap(cx);
+            let bound = |cx: &App| -> Vec<String> {
+                cx.key_bindings()
+                    .borrow()
+                    .bindings()
+                    .filter(|b| b.action().partial_eq(&ToggleBroadcast))
+                    .map(|b| {
+                        b.keystrokes()
+                            .iter()
+                            .map(|k| k.unparse())
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    })
+                    .collect()
+            };
+            let mut input = InputSettings::default();
+            input.keybindings = vec![("cmd+shift+y".into(), "toggleBroadcast".into())];
+            bind_shortcut_settings(&input, cx);
+            let count = cx.key_bindings().borrow().bindings().len();
+            assert_eq!(bound(cx).len(), 1);
+            bind_shortcut_settings(&input, cx);
+            assert_eq!(cx.key_bindings().borrow().bindings().len(), count);
+
+            input.keybindings = vec![("cmd+shift+u".into(), "toggleBroadcast".into())];
+            bind_shortcut_settings(&input, cx);
+            let keys = bound(cx);
+            assert_eq!(keys.len(), 1, "{keys:?}");
+            assert!(keys[0].ends_with('u'), "{keys:?}");
+
+            bind_shortcut_settings(&InputSettings::default(), cx);
+            assert!(bound(cx).is_empty());
+        });
     }
 
     /// GPUI panics at launch when two actions share a name (two `actions!`
