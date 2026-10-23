@@ -768,7 +768,28 @@ fn write_backups(
     }
     prune_archive(&archive, now);
     prune_contexts(root);
+    sweep_temps(root);
     Ok(())
+}
+/// Remove temporary files that crashed writes left in the restore folders.
+fn sweep_temps(root: &DataRoot) {
+    let backups = root.tab_state_backups_dir();
+    for dir in [
+        root.state_dir().to_path_buf(),
+        bundle_file(root)
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default(),
+        contexts_dir(root),
+        backups.join("archive"),
+        backups,
+        root.scrollback_dir(),
+    ] {
+        chau7_next_core::atomic_file::sweep_stale_temps(
+            &dir,
+            chau7_next_core::atomic_file::STALE_TEMP_AGE,
+        );
+    }
 }
 fn prune_archive(dir: &Path, now: SystemTime) {
     let mut total = 0_u64;
@@ -1282,6 +1303,40 @@ mod tests {
         assert!(hydrate_bundle(&root, &bundle).is_some());
         std::fs::remove_dir_all(root.home()).unwrap();
     }
+    #[test]
+    fn stale_temporary_files_are_swept() {
+        let root = isolated_root();
+        save(&root, &one_tab(1, "x")).unwrap();
+        let old = SystemTime::now() - Duration::from_secs(3600);
+        let dirs = [
+            bundle_file(&root).parent().unwrap().to_path_buf(),
+            contexts_dir(&root),
+            root.tab_state_backups_dir(),
+            root.tab_state_backups_dir().join("archive"),
+        ];
+        let mut stale = Vec::new();
+        let mut fresh = Vec::new();
+        for dir in &dirs {
+            std::fs::create_dir_all(dir).unwrap();
+            let path = dir.join(format!(".restore-{}.tmp", uuid::Uuid::new_v4()));
+            std::fs::write(&path, b"leak").unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(old)
+                .unwrap();
+            stale.push(path);
+            let path = dir.join(format!(".latest.json.{}.tmp", uuid::Uuid::new_v4()));
+            std::fs::write(&path, b"in flight").unwrap();
+            fresh.push(path);
+        }
+        save(&root, &one_tab(1, "y")).unwrap();
+        assert!(stale.iter().all(|p| !p.exists()), "{stale:?}");
+        assert!(fresh.iter().all(|p| p.exists()), "{fresh:?}");
+        std::fs::remove_dir_all(root.home()).unwrap();
+    }
+
     #[test]
     fn unmarked_empty_bundle_or_index_never_overrides_viable_backups() {
         let root = isolated_root();
