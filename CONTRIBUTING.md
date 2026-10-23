@@ -4,7 +4,7 @@ So you want to contribute to a terminal named after a sock. Excellent judgment.
 
 ## Reporting Bugs
 
-The fastest path: use the in-app bug reporter (Option+Cmd+I). It captures diagnostic context automatically and submits via an encrypted relay to a [private GitHub repository](https://github.com/aeptus/chau7-issue-intake) that only maintainers can access. You choose what data to include — all diagnostic sections are off by default. [Privacy details](PRIVACY.md). The relay is implemented in [`services/chau7-relay/src/worker.ts`](services/chau7-relay/src/worker.ts) and the in-app privacy disclosure is in [`IssueReportingPrivacyView.swift`](apps/chau7-macos/Sources/Chau7/Logging/IssueReportingPrivacyView.swift).
+The fastest path: use the in-app bug reporter (Option+Cmd+I). It captures diagnostic context automatically and submits via an encrypted relay to a [private GitHub repository](https://github.com/aeptus/chau7-issue-intake) that only maintainers can access. You choose what data to include — all diagnostic sections are off by default. [Privacy details](PRIVACY.md). The relay is implemented in [`services/chau7-relay/src/worker.ts`](services/chau7-relay/src/worker.ts) and the in-app privacy disclosure is in [`issue_privacy.rs`](apps/chau7-next/crates/chau7_next_core/src/issue_privacy.rs).
 
 Or just open an issue here. Include: what you did, what you expected, what happened, and your macOS version. Screenshots help. Logs help more.
 
@@ -21,24 +21,26 @@ mise exec -- pnpm setup:check   # fails clearly for missing or wrong mandatory t
 mise exec -- python3 -m venv .venv
 .venv/bin/pip install -r scripts/requirements-tests.txt # exact Python test dependency lock
 
-# Build required emulator/parser/helper backends before Swift and packaging.
-cd apps/chau7-macos
-mise exec -- ./Scripts/build-rust.sh --release
-mise exec -- swift build -c release
-mise exec -- swift test
-mise exec -- ./Scripts/build-app.sh
-# Launch only when desired: open build/Chau7.app
+# Build and test the macOS app (Rust/GPUI).
+cd apps/chau7-next
+mise exec -- cargo test --workspace
+mise exec -- ./scripts/bundle-macos.sh
+# Launch only when desired: open "target/bundle/Chau7 Next.app"
+
+# Shared Rust crates and the iOS app's Swift package.
+mise exec -- cargo test --manifest-path ../../crates/Cargo.toml --workspace
+mise exec -- swift test --package-path ../chau7-ios/Chau7Core
 ```
 
 ### Environment Requirements
 
-The exact developer tool baseline lives in [mise.toml](mise.toml); the Rust
-workspace additionally enforces `rust-toolchain.toml`. Xcode 26.6 must be installed
-and selected separately (`sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer`).
-Rust/Go binaries and `Libraries/` are generated, ignored artifacts and do not ship
-in a clean clone. `build-app.sh` builds the Go proxy and remote helper and requires
-the Rust terminal emulator; the parser has a Swift fallback. `build-dist.sh` builds
-all backends and Swift once, then reuses its Go artifacts for packaging.
+The exact developer tool baseline lives in [mise.toml](mise.toml); both Rust
+workspaces (`apps/chau7-next` and `crates/`) additionally enforce their own
+`rust-toolchain.toml`. Xcode 26.6 must be installed and selected separately
+(`sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer`).
+Rust and Go binaries are generated, ignored artifacts and do not ship in a clean
+clone. `bundle-macos.sh` builds the app, the `crates/` helpers (`chau7-optim`,
+`chau7-md`) and, when Go is installed, the proxy and remote helpers.
 
 `pnpm setup:check` checks pinned mandatory tools, real author identity and hooks;
 it does not build, install, launch or terminate Chau7. `pnpm hooks:check` detects
@@ -51,9 +53,9 @@ missing security audit tools are blocking, never silently skipped.
 
 Run `pnpm test` for Node quality tests and both Python unittest suites (review
 helper and isolated PentAGI logic). These tests use temporary fixtures and do not
-contact live Chau7 or require a running container. For rapid Core-only validation,
-run `apps/chau7-macos/Scripts/test-core.sh` from the repository root; it builds only
-Chau7Core and cannot replace full `swift test`/`swift build` validation in native CI.
+contact live Chau7 or require a running container. For the iOS app's shared Swift
+code, run `swift test --package-path apps/chau7-ios/Chau7Core`; the iOS app build
+itself runs through `xcodebuild` in native CI.
 
 ### Bypassing a check
 
@@ -101,20 +103,20 @@ SwiftFormat and SwiftLint enforce style via pre-commit hooks. Rust uses `cargo f
 Chau7 follows Rule #1: document decisions near the code. Every subdirectory has a README. The canonical doc entry points are listed in [docs/README.md](docs/README.md).
 
 Quick orientation:
-- **Chau7Core**: Pure Swift library, no UI. All testable logic lives here.
-- **Chau7**: The macOS app. SwiftUI views, AppKit integration, Metal rendering.
-- **rust/chau7_terminal**: Rust terminal emulator, accessed via FFI.
-- **chau7-proxy**: Go TLS proxy for API analytics.
+- **apps/chau7-next**: Chau7 for macOS, a Rust/GPUI app. Logic in `chau7_next_core`, UI in `chau7_next`.
+- **crates/chau7_terminal**: Rust terminal emulator, linked by the macOS app and, through its C API, by the iOS app.
+- **apps/chau7-ios**: iOS companion app; `Chau7Core` is its shared Swift package.
+- **services/chau7-proxy**: Go TLS proxy for API analytics.
 - **services/chau7-relay**: Cloudflare Worker for the bug report relay and remote control.
 
-The current published macOS app is built from `apps/chau7-macos` (SwiftUI and AppKit). Rust/GPUI work lives in `apps/chau7-next`; branch and CI artifacts are development builds, not the current stable download. Follow [the dual-ship plan](docs/rust-port/DUAL-SHIP.md) and [parity status](docs/rust-port/PARITY.md). Production packaging and the state transition remain gated until the Rust release candidate is accepted; see [the production release guide](docs/rust-port/PRODUCTION-RELEASE.md).
+The former SwiftUI/AppKit macOS app (`apps/chau7-macos`) has been removed from the tree; it remains in git history and prior release tags. Releases from `v*` tags ship the Rust production build; see [the production release guide](docs/rust-port/PRODUCTION-RELEASE.md) and [parity status](docs/rust-port/PARITY.md).
 
 ## What We're Looking For
 
 - Bug fixes. Especially with tests.
 - Performance improvements. Especially with measurements.
-- New AI tool integrations. Add a definition to `AIToolRegistry.swift` and you're done.
-- Localization. We have English, French, Arabic, and Hebrew. More is welcome.
+- New AI tool integrations. Add an entry to `AI_TOOLS` in `apps/chau7-next/crates/chau7_next_core/src/command_detection.rs`.
+- Localization. We have English, French, Spanish, Arabic, and Hebrew. More is welcome.
 - Documentation fixes. Typos, stale references, unclear explanations.
 
 ## What We're Not Looking For (Yet)

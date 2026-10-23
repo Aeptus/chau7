@@ -28,6 +28,27 @@ pub(super) struct GuardPrompt {
     focus_pending: bool,
 }
 
+/// Lines and bytes of a held command shown in the confirmation. A paste can be
+/// arbitrarily long; the preview scrolls, and past these limits says how much
+/// it leaves out instead of shaping megabytes of text.
+const PREVIEW_MAX_LINES: usize = 400;
+const PREVIEW_MAX_BYTES: usize = 32 * 1024;
+
+/// The shown part of `command` and the number of lines left out.
+fn guard_preview(command: &str) -> (&str, usize) {
+    let total = command.lines().count();
+    let mut end = command.len().min(PREVIEW_MAX_BYTES);
+    while !command.is_char_boundary(end) {
+        end -= 1;
+    }
+    if let Some((index, _)) = command.match_indices('\n').nth(PREVIEW_MAX_LINES - 1) {
+        end = end.min(index);
+    }
+    let shown = &command[..end];
+    let hidden = total.saturating_sub(shown.lines().count());
+    (shown, hidden)
+}
+
 impl TerminalView {
     fn approval_context(&self, cx: &Context<Self>) -> Option<ApprovalContext> {
         let session = self.session.read(cx);
@@ -301,44 +322,57 @@ impl TerminalView {
         let mut body = div()
             .flex()
             .flex_col()
+            .flex_shrink(1.0)
+            .min_h_0()
             .gap_3()
             .child(
                 div()
+                    .flex_none()
                     .text_base()
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(title),
             )
             .child(
                 div()
+                    .flex_none()
                     .text_xs()
                     .text_color(chrome.text_muted)
                     .child(SharedString::from(subtitle.to_string())),
             );
-        if blocked && !prompt.command.is_empty() {
-            body = body.child(
-                div()
-                    .text_sm()
-                    .font_family("monospace")
-                    .text_color(chrome.danger)
-                    .child(SharedString::from(prompt.command.clone())),
-            );
+        // Only the command scrolls: it shrinks to fit the window, the title,
+        // pattern and buttons around it always stay visible.
+        let (preview, hidden) = guard_preview(&prompt.command);
+        let mut command = div()
+            .id("guard-command")
+            .debug_selector(|| "guard-command".into())
+            .flex_shrink(1.0)
+            .min_h(px(40.0))
+            .overflow_y_scroll()
+            .text_sm()
+            .font_family("monospace")
+            .text_color(chrome.danger)
+            .child(SharedString::from(preview.to_string()));
+        if hidden > 0 {
+            command = command.child(div().pt_2().text_xs().text_color(chrome.text_muted).child(
+                format!("{} {}", hidden, crate::l10n::tr("more lines not shown")),
+            ));
+        }
+        if !blocked {
+            command = command
+                .p_3()
+                .rounded_md()
+                .border_1()
+                .border_color(chrome.danger.opacity(0.4))
+                .bg(chrome.danger.opacity(0.1));
+        }
+        if !prompt.command.is_empty() {
+            body = body.child(command);
         }
         if !blocked {
             body = body
                 .child(
                     div()
-                        .p_3()
-                        .rounded_md()
-                        .border_1()
-                        .border_color(chrome.danger.opacity(0.4))
-                        .bg(chrome.danger.opacity(0.1))
-                        .text_sm()
-                        .font_family("monospace")
-                        .text_color(chrome.danger)
-                        .child(SharedString::from(prompt.command.clone())),
-                )
-                .child(
-                    div()
+                        .flex_none()
                         .flex()
                         .gap_2()
                         .text_xs()
@@ -354,6 +388,7 @@ impl TerminalView {
                 .child(
                     div()
                         .id("guard-dont-warn")
+                        .flex_none()
                         .flex()
                         .items_center()
                         .gap_2()
@@ -381,7 +416,12 @@ impl TerminalView {
                         .child(crate::l10n::tr("Do not warn for this command again")),
                 );
         }
-        let mut buttons = div().flex().justify_end().gap_2();
+        let mut buttons = div()
+            .debug_selector(|| "guard-buttons".into())
+            .flex_none()
+            .flex()
+            .justify_end()
+            .gap_2();
         if blocked {
             buttons = buttons.child(button("guard-dismiss", "OK", false).on_click(
                 cx.listener(|this, _, window, cx| this.guard_decide(false, false, window, cx)),
@@ -406,8 +446,8 @@ impl TerminalView {
                     .inset_0()
                     .flex()
                     .justify_center()
-                    .items_start()
-                    .pt(px(80.0))
+                    .items_center()
+                    .p_6()
                     .bg(gpui::hsla(0.0, 0.0, 0.0, 0.3))
                     .occlude()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -421,8 +461,10 @@ impl TerminalView {
                             .on_action(cx.listener(|this, _: &GuardCancel, window, cx| {
                                 this.guard_decide(false, false, window, cx)
                             }))
+                            .debug_selector(|| "guard-card".into())
                             .w(px(440.0))
                             .max_w_full()
+                            .max_h_full()
                             .p_5()
                             .flex()
                             .flex_col()
@@ -640,6 +682,123 @@ mod tests {
         });
         cx.update_window(handle, |_, window, _| window.remove_window())
             .unwrap();
+        let _ = std::fs::remove_dir_all(home);
+    }
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+
+    #[test]
+    fn short_commands_are_shown_whole() {
+        assert_eq!(guard_preview("rm -rf build"), ("rm -rf build", 0));
+        assert_eq!(guard_preview("a\nb\nc\n"), ("a\nb\nc\n", 0));
+    }
+
+    #[test]
+    fn long_pastes_are_capped_and_say_how_much_is_hidden() {
+        let paste: String = (0..1000).map(|i| format!("echo {i}\n")).collect();
+        let (shown, hidden) = guard_preview(&paste);
+        assert_eq!(shown.lines().count(), PREVIEW_MAX_LINES);
+        assert_eq!(hidden, 1000 - PREVIEW_MAX_LINES);
+
+        let wide = "é".repeat(PREVIEW_MAX_BYTES);
+        let (shown, hidden) = guard_preview(&wide);
+        assert!(shown.len() <= PREVIEW_MAX_BYTES && !shown.is_empty());
+        assert_eq!(
+            hidden, 0,
+            "a single cut line is partially shown, not hidden"
+        );
+    }
+}
+
+#[cfg(all(test, unix))]
+mod fit_tests {
+    use super::*;
+    use crate::{settings::Settings, terminal::session::TerminalSession, workspace::AppData};
+    use chau7_next_core::data_root::DataRoot;
+    use chau7_terminal::Chau7Terminal;
+    use gpui::{AppContext, Bounds, TestAppContext, WindowBounds, WindowOptions, point, size};
+
+    /// A long dangerous paste in a short window keeps the whole card, and so
+    /// its Execute and Cancel buttons, inside the window.
+    #[gpui::test]
+    fn a_long_paste_keeps_the_buttons_on_screen(cx: &mut TestAppContext) {
+        let home =
+            std::env::temp_dir().join(format!("chau7-next-guard-fit-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).unwrap();
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            cx.set_global(Settings::default());
+            cx.set_global(AppData::new(DataRoot::with_home(home.clone(), true)));
+            command_guard::init(cx);
+        });
+        let window_size = size(px(520.0), px(320.0));
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                point(px(0.0), px(0.0)),
+                window_size,
+            ))),
+            ..WindowOptions::default()
+        };
+        let (handle, view) = cx.update(|cx| {
+            gpui_kit::open_window(options, cx, |window, cx| {
+                let term = Chau7Terminal::new_with_args_env_in_dir(
+                    80,
+                    24,
+                    "/bin/cat",
+                    &[],
+                    &[("TERM", "xterm-256color")],
+                    None,
+                )
+                .unwrap();
+                let session =
+                    cx.new(|cx| TerminalSession::from_terminal_manually_driven(term, None, cx));
+                cx.new(|cx| TerminalView::new(session, window, cx))
+            })
+            .unwrap()
+        });
+        cx.update(|cx| {
+            view.update(cx, |view, cx| {
+                let context = view.approval_context(cx).unwrap();
+                view.guard_prompt = Some(GuardPrompt {
+                    command: (0..300)
+                        .map(|i| format!("rm -rf /tmp/chau7-{i}\n"))
+                        .collect(),
+                    pattern: Some("rm -rf".into()),
+                    pending: Vec::new(),
+                    broadcast: false,
+                    context,
+                    dont_warn: false,
+                    reason: None,
+                    focus_pending: false,
+                });
+                cx.notify();
+            })
+        });
+        let mut visual = gpui::VisualTestContext::from_window(handle, cx);
+        visual.run_until_parked();
+        let card = visual.debug_bounds("guard-card").expect("card rendered");
+        let buttons = visual
+            .debug_bounds("guard-buttons")
+            .expect("buttons rendered");
+        let command = visual
+            .debug_bounds("guard-command")
+            .expect("command rendered");
+        assert!(
+            card.bottom() <= window_size.height,
+            "card {card:?} overflows"
+        );
+        assert!(
+            buttons.bottom() <= card.bottom(),
+            "buttons {buttons:?} outside card"
+        );
+        assert!(buttons.size.height > px(0.0));
+        assert!(
+            command.size.height < px(300.0),
+            "command {command:?} did not shrink"
+        );
         let _ = std::fs::remove_dir_all(home);
     }
 }

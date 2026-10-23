@@ -40,6 +40,108 @@ final class RemoteConnectionStatusTests: XCTestCase {
     }
 }
 
+/// Issue #214: the banner's recovery action follows the failure cause, not the
+/// coarse status, so a transient timeout offers Retry and a broken pairing
+/// offers Re-pair.
+final class RemoteConnectionFailureRecoveryTests: XCTestCase {
+    func testStaleRelayCredentialRequiresRepair() {
+        let failure = RemoteConnectionFailure.staleRelayCredential
+        XCTAssertEqual(failure.recovery, .repairRequired)
+        XCTAssertTrue(failure.message.contains("Scan a fresh QR code"))
+    }
+
+    func testMacIdentityMismatchRequiresRepair() {
+        let failure = RemoteConnectionFailure.macIdentityChanged
+        XCTAssertEqual(failure.recovery, .repairRequired)
+        XCTAssertTrue(failure.message.contains("Mac identity changed"))
+    }
+
+    func testPairingRejectedRequiresRepairAndKeepsReason() {
+        let withReason = RemoteConnectionFailure.pairingRejected(reason: "pairing expired")
+        XCTAssertEqual(withReason.recovery, .repairRequired)
+        XCTAssertTrue(withReason.message.contains("pairing expired"))
+
+        for reason in [nil, ""] as [String?] {
+            let failure = RemoteConnectionFailure.pairingRejected(reason: reason)
+            XCTAssertEqual(failure.recovery, .repairRequired)
+            XCTAssertTrue(failure.message.hasPrefix("Pairing rejected."))
+        }
+    }
+
+    func testMalformedRelayURLRequiresRepair() {
+        XCTAssertEqual(RemoteConnectionFailure.insecureRelayURL.recovery, .repairRequired)
+        XCTAssertEqual(RemoteConnectionFailure.invalidRelayURL.recovery, .repairRequired)
+    }
+
+    func testHandshakeTimeoutIsRetryable() {
+        XCTAssertEqual(RemoteConnectionFailure.handshakeTimedOut.recovery, .retryable)
+    }
+
+    func testReconnectLimitIsRetryable() {
+        let failure = RemoteConnectionFailure.reconnectLimitReached(attempts: 5)
+        XCTAssertEqual(failure.recovery, .retryable)
+        XCTAssertTrue(failure.message.contains("5 attempts"))
+    }
+
+    func testBannerOffersRepairForBrokenPairing() {
+        XCTAssertEqual(RemoteErrorBannerAction.primary(for: .repairRequired, isConnected: false), .repair)
+        XCTAssertEqual(RemoteErrorBannerAction.primary(for: .repairRequired, isConnected: true), .repair)
+    }
+
+    func testBannerOffersRetryInlineForTransientFailure() {
+        XCTAssertEqual(RemoteErrorBannerAction.primary(for: .retryable, isConnected: false), .retry)
+        // Once connected again there is nothing to retry.
+        XCTAssertEqual(RemoteErrorBannerAction.primary(for: .retryable, isConnected: true), .none)
+    }
+
+    func testBannerOffersNoRecoveryForUnrelatedErrors() {
+        XCTAssertEqual(RemoteErrorBannerAction.primary(for: .none, isConnected: false), .none)
+        XCTAssertEqual(RemoteErrorBannerAction.primary(for: .none, isConnected: true), .none)
+    }
+
+    func testExpandedDetailsHideRetryForBrokenPairing() {
+        XCTAssertEqual(
+            RemoteErrorBannerAction.secondary(for: .repairRequired, isConnected: false, status: .error),
+            []
+        )
+    }
+
+    func testExpandedDetailsKeepRepairReachableForTransientFailure() {
+        XCTAssertEqual(
+            RemoteErrorBannerAction.secondary(for: .retryable, isConnected: false, status: .reconnecting(attempt: 1, max: 5)),
+            [.repair]
+        )
+    }
+
+    func testExpandedDetailsFallBackToStatusForUnclassifiedErrors() {
+        XCTAssertEqual(
+            RemoteErrorBannerAction.secondary(for: .none, isConnected: false, status: .error),
+            [.retry, .repair]
+        )
+        XCTAssertEqual(
+            RemoteErrorBannerAction.secondary(for: .none, isConnected: true, status: .encrypted),
+            []
+        )
+    }
+
+    func testFailureCatalogDrivesBannerChoice() {
+        let cases: [(RemoteConnectionFailure, RemoteErrorBannerAction)] = [
+            (.staleRelayCredential, .repair),
+            (.macIdentityChanged, .repair),
+            (.pairingRejected(reason: "revoked"), .repair),
+            (.handshakeTimedOut, .retry),
+            (.reconnectLimitReached(attempts: 5), .retry)
+        ]
+        for (failure, expected) in cases {
+            XCTAssertEqual(
+                RemoteErrorBannerAction.primary(for: failure.recovery, isConnected: false),
+                expected,
+                "Unexpected banner action for \(failure.message)"
+            )
+        }
+    }
+}
+
 @MainActor
 final class ApprovalCoordinatorTests: XCTestCase {
     func testQueueAndSendableLifecycle() {

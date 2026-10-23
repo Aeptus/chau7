@@ -172,11 +172,6 @@ fn real_search_change_centers_first_match_and_empty_retains_selection(
         assert!(current.search_animations_finished(cx.background_executor().now()));
         assert!(anchors::highlighted_targets().is_empty());
     });
-    let swift = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../chau7-macos/Sources/Chau7/Settings/Views/SettingsPageSummaryView.swift"
-    ));
-    let ids = regex::Regex::new(r#"(?:statusItem|countItem)\(\s*"([^"]+)""#).unwrap();
     let mut card_count = 0;
     for section in SettingsSection::ALL {
         handle
@@ -202,17 +197,9 @@ fn real_search_change_centers_first_match_and_empty_retains_selection(
             cx.run_until_parked();
         }
         let cards = summary::observed(section);
-        let marker = format!("case .{}:", section.id());
-        let body = swift
-            .split_once(&marker)
-            .expect("current Swift section")
-            .1
-            .split("\n        case .")
-            .next()
-            .unwrap();
-        let mut expected: Vec<_> = ids
-            .captures_iter(body)
-            .map(|capture| capture[1].to_string())
+        let mut expected: Vec<_> = expected_summary_card_ids(section.id())
+            .iter()
+            .map(|id| (*id).to_owned())
             .collect();
         if section == SettingsSection::StartHere {
             expected.insert(2, "remote".to_owned());
@@ -220,7 +207,7 @@ fn real_search_change_centers_first_match_and_empty_retains_selection(
         assert_eq!(
             cards.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
             expected,
-            "current Swift summary card identities for {}",
+            "summary card identities for {}",
             section.id()
         );
         assert!(cards.len() >= 4);
@@ -271,4 +258,56 @@ fn real_search_change_centers_first_match_and_empty_retains_selection(
     drop(view);
     cx.update(crate::observability::shutdown);
     std::fs::remove_dir_all(home).unwrap();
+}
+
+/// Summary card identities per section, as the former Swift
+/// `SettingsPageSummaryView` declared them.
+fn expected_summary_card_ids(section: &str) -> &'static [&'static str] {
+    match section {
+        "startHere" => &["profile", "agentControl", "alerts"],
+        "general" => &["startup", "language", "configFile", "defaultDirectory"],
+        "profilesBackup" => &["profile", "profiles", "icloud", "profileAutoSwitch"],
+        "about" => &["version", "support", "logs", "diagnostics"],
+        "fontColors" => &["font", "size", "scheme", "zoom"],
+        "display" => &["syntax", "urls", "images", "json"],
+        "windows" => &["theme", "opacity", "blur", "floating", "splitPanes"],
+        "tabs" => &[
+            "newTabPosition",
+            "idleGrouping",
+            "indicators",
+            "closeWarnings",
+        ],
+        "hoverCard" => &["visible", "aiSession", "processes", "footer"],
+        "repositories" => &["grouping", "search", "recent", "defaultDirectory"],
+        "shell" => &["shell", "startup", "lsColors", "bell"],
+        "scrollbackPerf" => &["scrollback", "restored", "renderer", "refresh"],
+        "dangerousCommands" => &["protectChau7", "scope", "patterns", "lowPower"],
+        "graphics" => &["sixel", "kitty", "inlineImages", "cache"],
+        "keyboardMouse" => &[
+            "shortcutHelper",
+            "copyOnSelect",
+            "cmdClick",
+            "mouseReporting",
+        ],
+        "snippetsTools" => &["snippets", "repoSnippets", "clipboard", "bookmarks"],
+        "editor" => &["editor", "internal", "splitPanes", "semanticSearch"],
+        "minimalMode" => &["minimal", "tabBar", "titleBar", "statusBar"],
+        "aiDetection" => &[
+            "autoTheme",
+            "customRules",
+            "errorExplain",
+            "usage",
+            "numberFormat",
+        ],
+        "tokenOptimization" => &["mode", "prefix", "overrides", "indicator"],
+        "mcpControl" => &["enabled", "approval", "mode", "profiles"],
+        "remoteControl" => &["enabled", "agent", "relay", "devices"],
+        "sshProfiles" => &["watch", "configEntries", "connections", "lastSync"],
+        "apiProxy" => &["enabled", "status", "port", "privacy"],
+        "promptInjection" => &["global", "repoRules", "localRules", "proxy"],
+        "notifications" => &["permission", "actions", "conditions", "rateLimit"],
+        "history" => &["persistent", "maxRecords", "telemetry", "privacy"],
+        "logsHistory" => &["historyLogs", "terminalLogs", "sessions", "logPath"],
+        other => panic!("no summary card fixture for section {other}"),
+    }
 }

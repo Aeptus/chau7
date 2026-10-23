@@ -9,6 +9,7 @@ pub mod ai;
 pub mod ansi_log;
 pub mod app_icon;
 pub mod app_shell;
+pub mod atomic_file;
 pub mod bug_report;
 pub mod color_parsing;
 pub mod color_schemes;

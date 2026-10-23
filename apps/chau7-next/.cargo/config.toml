@@ -1,4 +1,4 @@
 [env]
-# chau7_terminal regenerates its C header for the Swift app on every build.
+# chau7_terminal (crates/) regenerates its C header for the iOS app on every build.
 # Chau7 Next links it as a Rust library and must not rewrite that header.
 CHAU7_TERMINAL_SKIP_CBINDGEN = "1"

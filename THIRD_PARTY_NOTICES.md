@@ -4,15 +4,15 @@ This repository contains third-party code and third-party-derived code that is s
 
 ### RTK / `chau7_optim`
 
-- Derived subtree: `apps/chau7-macos/rust/chau7_optim`
+- Derived subtree: `crates/chau7_optim`
 - Upstream project: `rtk` by Patrick Szymkowiak
 - Upstream repository: <https://github.com/rtk-ai/rtk>
-- Local fork record: `apps/chau7-macos/rust/chau7_optim/UPSTREAM-SYNC.md`
+- Local fork record: `crates/chau7_optim/UPSTREAM-SYNC.md`
 - Local fork point record: RTK commit `5b59700` as recorded in the file above
 
 Chau7 includes a modified fork of RTK in the `chau7_optim` crate. The local fork preserves the MIT license text in:
 
-- `apps/chau7-macos/rust/chau7_optim/LICENSE-RTK`
+- `crates/chau7_optim/LICENSE-RTK`
 
 As of 2026-04-01, RTK upstream publishes inconsistent license metadata:
 
@@ -23,8 +23,8 @@ Because Chau7 contains copied and modified RTK-derived code, this repository kee
 
 Files kept for this purpose:
 
-- `apps/chau7-macos/rust/chau7_optim/LICENSE-RTK`
-- `apps/chau7-macos/rust/chau7_optim/LICENSE-RTK-APACHE`
+- `crates/chau7_optim/LICENSE-RTK`
+- `crates/chau7_optim/LICENSE-RTK-APACHE`
 
 No upstream `NOTICE` file was found in RTK during this review. If that changes upstream, downstream distributions of Chau7 should include any required NOTICE text alongside the license files above.
 

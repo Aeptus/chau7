@@ -68,7 +68,15 @@ final class RemoteClient {
     }
 
     var activeTabID: UInt32 = 0
-    var lastError: String?
+    /// User-facing explanation of the latest problem. Any direct assignment
+    /// resets `lastErrorRecovery` to `.none`; connection failures go through
+    /// `reportConnectionFailure(_:status:)` so the recovery is set alongside.
+    var lastError: String? {
+        didSet { lastErrorRecovery = .none }
+    }
+
+    /// Recovery that drives the error banner's primary action.
+    private(set) var lastErrorRecovery: RemoteConnectionRecovery = .none
     var pendingApprovals: [ApprovalRequest] = []
     var pendingInteractivePrompts: [RemoteInteractivePrompt] = []
     var approvalHistory: [ApprovalHistoryEntry] = []
@@ -338,8 +346,7 @@ final class RemoteClient {
 
         guard let token = RelayToken.make(pairing: pairing, role: "ios", scope: "connect") else {
             disconnect(autoReconnect: false, trigger: .connectionRestart)
-            lastError = "This pairing needs a provisioned relay credential. Scan a fresh QR code from your Mac."
-            status = .error
+            reportConnectionFailure(.staleRelayCredential, status: .error)
             return
         }
 
@@ -368,14 +375,13 @@ final class RemoteClient {
 
         var components = URLComponents(string: pairing.relayURL.strippingTrailingSlash)
         guard components?.scheme?.lowercased() == "wss" else {
-            lastError = "Relay URL must use wss:// (encrypted transport)."
-            status = .error
+            reportConnectionFailure(.insecureRelayURL, status: .error)
             return
         }
         components?.path += "/\(pairing.deviceID)"
         components?.queryItems = [URLQueryItem(name: "role", value: "ios")]
         guard let url = components?.url else {
-            lastError = "Invalid relay URL"
+            reportConnectionFailure(.invalidRelayURL, status: .error)
             return
         }
 
@@ -935,8 +941,10 @@ final class RemoteClient {
             hasRemainingAttempts: reconnectBackoff.hasRemainingAttempts
         ) else {
             if !reconnectBackoff.hasRemainingAttempts {
-                lastError = "Reconnect limit reached (\(Self.maxReconnectAttempts) attempts)"
-                status = .connectionFailed
+                reportConnectionFailure(
+                    .reconnectLimitReached(attempts: Self.maxReconnectAttempts),
+                    status: .connectionFailed
+                )
                 // The session is over rather than merely restarting, so retire
                 // the Live Activity here instead of leaving a stale card whose
                 // actions can no longer resolve.
@@ -1021,7 +1029,7 @@ final class RemoteClient {
             transport.close()
             isConnected = false
             session.invalidateSession(clearHandshakeMaterial: false)
-            lastError = "No response from your Mac. Make sure Chau7 is open, Remote is enabled, and the pairing payload is still current."
+            reportConnectionFailure(.handshakeTimedOut)
             emitTelemetry(
                 type: .errorReceived,
                 status: "timeout",
@@ -1301,8 +1309,7 @@ private func handlePairAccept(_ data: Data) {
               expectedMacKey == keyData else {
             log.error("handlePairAccept: Mac public key does not match pairing identity")
             DiagnosticsLog.shared.error(.connection, "Pair accept identity mismatch")
-            lastError = "The Mac identity changed. Scan a fresh pairing code before reconnecting."
-            status = .error
+            reportConnectionFailure(.macIdentityChanged, status: .error)
             shouldReconnect = false
             return
         }
@@ -1326,13 +1333,22 @@ private func handlePairAccept(_ data: Data) {
     }
 
     private func handlePairReject(_ data: Data) {
-        if let msg = try? RemoteJSON.decoder.decode(PairRejectPayload.self, from: data) {
-            lastError = "Pairing rejected: \(msg.reason)"
-        } else {
-            lastError = "Pairing rejected"
-        }
-        status = .pairingRejected
+        let reason = (try? RemoteJSON.decoder.decode(PairRejectPayload.self, from: data))?.reason
+        reportConnectionFailure(.pairingRejected(reason: reason), status: .pairingRejected)
         shouldReconnect = false
+    }
+
+    /// Records a connection failure's message and recovery together so the
+    /// error banner offers Re-pair only when the pairing itself is unusable.
+    private func reportConnectionFailure(
+        _ failure: RemoteConnectionFailure,
+        status newStatus: RemoteConnectionStatus? = nil
+    ) {
+        lastError = failure.message
+        lastErrorRecovery = failure.recovery
+        if let newStatus {
+            status = newStatus
+        }
     }
 
     private func handleError(_ data: Data) {

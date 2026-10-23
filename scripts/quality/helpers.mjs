@@ -47,13 +47,11 @@ export const HIGH_IMPACT_PATTERNS = [
   /(^|\/)eslint\.config\.[cm]?[jt]s$/,
   /(^|\/)pyproject\.toml$/,
   /(^|\/)requirements[^/]*\.txt$/,
-  /^apps\/chau7-macos\/Package\.swift$/,
-  /^apps\/chau7-macos\/Package\.resolved$/,
-  /^apps\/chau7-macos\/\.swiftformat$/,
-  /^apps\/chau7-macos\/\.swiftlint\.yml$/,
-  /^apps\/chau7-macos\/\.periphery\.yml$/,
-  /^apps\/chau7-macos\/rust\/Cargo\.(toml|lock)$/,
-  /^apps\/chau7-macos\/rust\/deny\.toml$/,
+  /^apps\/chau7-ios\/Chau7Core\/Package\.swift$/,
+  /^apps\/chau7-ios\/Chau7Core\/\.swiftformat$/,
+  /^apps\/chau7-ios\/Chau7Core\/\.swiftlint\.yml$/,
+  /^crates\/Cargo\.(toml|lock)$/,
+  /^crates\/deny\.toml$/,
   /(^|\/)go\.(mod|sum)$/,
   /^scripts\/ci-/,
   /^scripts\/check-/,
@@ -219,7 +217,7 @@ export function classifyFrontendImpact(files) {
 export function classifyBackendImpact(files) {
   const groups = new Set();
   for (const file of files) {
-    if (file.startsWith("apps/chau7-macos/chau7-proxy/")) groups.add("go-proxy");
+    if (file.startsWith("services/chau7-proxy/")) groups.add("go-proxy");
     if (file.startsWith("services/chau7-remote/")) groups.add("go-remote");
     if (file.endsWith("_test.go")) groups.add("backend-tests");
     if (file.endsWith(".py")) groups.add("python");

@@ -27,9 +27,72 @@ use serde::{Deserialize, Serialize};
 use crate::history_record::{FrequentCommand, HistoryRecord};
 
 fn wal_path(database: &Path) -> PathBuf {
-    let mut path = database.as_os_str().to_os_string();
-    path.push("-wal");
+    with_suffix(database, "-wal")
+}
+
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut path = path.as_os_str().to_os_string();
+    path.push(suffix);
     PathBuf::from(path)
+}
+
+/// Quarantined databases kept next to the live one; older ones are removed.
+const MAX_CORRUPT_COPIES: usize = 3;
+
+/// Only these errors prove the file itself is damaged.
+fn is_corruption(err: &rusqlite::Error) -> bool {
+    matches!(
+        err.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::NotADatabase | rusqlite::ErrorCode::DatabaseCorrupt)
+    )
+}
+
+/// Move a damaged database and its `-wal`/`-shm` files to
+/// `<path>.corrupt.<unix millis>[-wal|-shm]`, so the fresh database does not
+/// adopt the old journal, then keep only the newest copies.
+fn quarantine(path: &Path) -> rusqlite::Result<PathBuf> {
+    let stamp = Utc::now().timestamp_millis();
+    let corrupt = PathBuf::from(format!("{}.corrupt.{stamp}", path.display()));
+    let io_error = |err: std::io::Error| {
+        rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
+            Some(format!("cannot move corrupt history database aside: {err}")),
+        )
+    };
+    std::fs::rename(path, &corrupt).map_err(io_error)?;
+    for suffix in ["-wal", "-shm"] {
+        let source = with_suffix(path, suffix);
+        if std::fs::symlink_metadata(&source).is_ok() {
+            std::fs::rename(&source, with_suffix(&corrupt, suffix)).map_err(io_error)?;
+        }
+    }
+    prune_corrupt_copies(path);
+    Ok(corrupt)
+}
+
+fn prune_corrupt_copies(path: &Path) {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return;
+    };
+    let prefix = format!("{}.corrupt.", name.to_string_lossy());
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut stamps: Vec<(i64, String)> = entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let stamp = name.strip_prefix(&prefix)?.parse().ok()?;
+            Some((stamp, name))
+        })
+        .collect();
+    stamps.sort_unstable_by(|a, b| b.cmp(a));
+    for (_, name) in stamps.into_iter().skip(MAX_CORRUPT_COPIES) {
+        let copy = dir.join(name);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(with_suffix(&copy, suffix));
+        }
+    }
 }
 
 /// Default and bounds of the "maximum records" setting.
@@ -152,8 +215,10 @@ fn read_record(row: &rusqlite::Row) -> rusqlite::Result<HistoryRecord> {
 
 impl HistoryStore {
     /// Open (or create) the database at `path`; `":memory:"` gives a
-    /// throwaway one. A file that cannot be opened is renamed to
-    /// `*.corrupt.<unix time>` and a fresh one is created.
+    /// throwaway one. A file SQLite reports as not a database or corrupt is
+    /// moved, with its `-wal` and `-shm` files, to `*.corrupt.<unix millis>`
+    /// and a fresh one is created; any other error (busy, locked,
+    /// permissions, I/O) is returned and the file is left alone.
     pub fn open(path: &Path) -> rusqlite::Result<Self> {
         if path.as_os_str() == ":memory:" {
             return Self::from_connection(Connection::open_in_memory()?, None);
@@ -161,25 +226,40 @@ impl HistoryStore {
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let opened = Connection::open(path).and_then(|conn| {
-            // A quick read proves the file is a database.
+        // A quick read proves the file is a database.
+        let probe = |conn: Connection| {
             conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| {
                 r.get::<_, i64>(0)
             })?;
             Ok(conn)
+        };
+        // Probe an existing file read-only first: a read-write connection
+        // that fails truncates or deletes the `-wal` file on close, losing
+        // what the quarantined copy could still recover.
+        let read_only = std::fs::symlink_metadata(path).is_ok().then(|| {
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .and_then(probe)
         });
+        let opened = match read_only {
+            Some(Err(err)) if is_corruption(&err) => Err(err),
+            _ => Connection::open(path).and_then(probe),
+        };
         let conn = match opened {
             Ok(conn) => conn,
-            Err(err) => {
-                log::error!("history store: cannot open {}: {err}", path.display());
-                let stamp = Utc::now().timestamp();
-                let corrupt = PathBuf::from(format!("{}.corrupt.{stamp}", path.display()));
-                let _ = std::fs::rename(path, &corrupt);
+            Err(err) if is_corruption(&err) => {
+                log::error!("history store: {} is not usable: {err}", path.display());
+                let corrupt = quarantine(path)?;
                 log::warn!(
-                    "history store: renamed corrupt database to {}, retrying",
+                    "history store: moved corrupt database to {}, retrying",
                     corrupt.display()
                 );
                 Connection::open(path)?
+            }
+            // Busy, locked, permission or I/O errors say nothing about the
+            // file's content: report them and leave the history in place.
+            Err(err) => {
+                log::error!("history store: cannot open {}: {err}", path.display());
+                return Err(err);
             }
         };
         Self::from_connection(conn, Some(path.to_path_buf()))
@@ -858,6 +938,93 @@ mod tests {
             .filter_map(Result::ok)
             .any(|e| e.file_name().to_string_lossy().contains(".corrupt."));
         assert!(moved);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn test_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("chau7-next-{name}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn corrupt_copies(dir: &Path) -> Vec<String> {
+        let mut names: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains(".corrupt."))
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unopenable_database_is_reported_not_quarantined() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = test_dir("histdb-perm");
+        let path = dir.join("history.db");
+        {
+            let s = HistoryStore::open(&path).unwrap();
+            s.insert(&HistoryRecord::new("precious")).unwrap();
+        }
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::File::open(&path).is_ok() {
+            // Running as root: permissions do not apply.
+            let _ = std::fs::remove_dir_all(&dir);
+            return;
+        }
+        assert!(HistoryStore::open(&path).is_err());
+        assert!(corrupt_copies(&dir).is_empty());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let s = HistoryStore::open(&path).unwrap();
+        assert_eq!(s.recent(1)[0].command, "precious");
+        drop(s);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_corrupt_database_moves_with_its_journal_files() {
+        let dir = test_dir("histdb-wal");
+        let path = dir.join("history.db");
+        std::fs::write(&path, b"this is not a database at all, really not").unwrap();
+        std::fs::write(wal_path(&path), b"old journal").unwrap();
+        std::fs::write(with_suffix(&path, "-shm"), b"old shm").unwrap();
+        let s = HistoryStore::open(&path).unwrap();
+        assert_eq!(s.total_count(), 0);
+        let copies = corrupt_copies(&dir);
+        assert_eq!(copies.len(), 3, "{copies:?}");
+        let main = dir.join(copies.iter().find(|n| !n.contains('-')).unwrap());
+        assert_eq!(
+            std::fs::read(wal_path(&main)).unwrap(),
+            b"old journal".to_vec()
+        );
+        // The shared-memory index is rebuilt by SQLite; it only has to move.
+        assert!(with_suffix(&main, "-shm").exists());
+        assert_ne!(
+            std::fs::read(wal_path(&path)).unwrap_or_default(),
+            b"old journal".to_vec()
+        );
+        drop(s);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_the_newest_corrupt_copies_are_kept() {
+        let dir = test_dir("histdb-cap");
+        let path = dir.join("history.db");
+        for stamp in 1..=5 {
+            std::fs::write(dir.join(format!("history.db.corrupt.{stamp}")), b"x").unwrap();
+        }
+        std::fs::write(dir.join("history.db.corrupt.1-wal"), b"x").unwrap();
+        std::fs::write(&path, b"this is not a database at all, really not").unwrap();
+        drop(HistoryStore::open(&path).unwrap());
+        let copies = corrupt_copies(&dir);
+        assert_eq!(copies.len(), MAX_CORRUPT_COPIES, "{copies:?}");
+        assert!(copies.contains(&"history.db.corrupt.5".to_string()));
+        assert!(copies.contains(&"history.db.corrupt.4".to_string()));
+        assert!(!copies.contains(&"history.db.corrupt.1".to_string()));
+        assert!(!copies.contains(&"history.db.corrupt.1-wal".to_string()));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

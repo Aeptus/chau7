@@ -307,7 +307,11 @@ impl DataRoot {
 
     /// Copy the Swift app's config and snippets on first launch. Copy only:
     /// sources are opened read-only and destinations that already exist are
-    /// left alone. Returns the destinations that were created.
+    /// left alone. Every destination appears complete or not at all (the
+    /// config through an atomic write, a snippet folder built next to its
+    /// destination and renamed into place), so an interrupted import is
+    /// retried on the next launch. A snippet file that cannot be read is
+    /// skipped and logged. Returns the destinations that were created.
     pub fn import_from_swift_app(&self) -> std::io::Result<Vec<PathBuf>> {
         self.ensure_dirs()?;
         let mut imported = Vec::new();
@@ -316,7 +320,7 @@ impl DataRoot {
                 continue;
             }
             let bytes = std::fs::read(&source)?;
-            std::fs::write(&destination, bytes)?;
+            crate::atomic_file::write(&destination, &bytes)?;
             imported.push(destination);
         }
         // Snippet folders and their pre-split single files: copy when the
@@ -333,24 +337,59 @@ impl DataRoot {
             if destination.exists() || (read.is_none() && legacy.is_none()) {
                 continue;
             }
-            std::fs::create_dir_all(&destination)?;
-            for file in read.into_iter().flatten().flatten() {
-                let path = file.path();
-                if path.extension().is_some_and(|e| e == "json") && path.is_file() {
-                    let target = destination.join(file.file_name());
-                    std::fs::write(&target, std::fs::read(&path)?)?;
-                    imported.push(target);
-                }
-            }
-            for snippet in legacy
-                .map(crate::snippet_store::load_legacy_file)
-                .unwrap_or_default()
-            {
-                if crate::snippet_store::save_snippet(&destination, &snippet).is_ok() {
-                    let target = destination.join(format!("{}.json", snippet.id));
-                    if !imported.contains(&target) {
-                        imported.push(target);
+            let parent = destination
+                .parent()
+                .ok_or_else(|| std::io::Error::other("snippet folder without a parent"))?;
+            std::fs::create_dir_all(parent)?;
+            let name = destination
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let staging = parent.join(format!(".{name}.import-{}", uuid::Uuid::new_v4()));
+            let built = (|| {
+                std::fs::create_dir(&staging)?;
+                let mut names = Vec::new();
+                for file in read.into_iter().flatten().flatten() {
+                    let path = file.path();
+                    if !(path.extension().is_some_and(|e| e == "json") && path.is_file()) {
+                        continue;
                     }
+                    let copied = std::fs::read(&path).and_then(|bytes| {
+                        crate::atomic_file::write(&staging.join(file.file_name()), &bytes)
+                    });
+                    match copied {
+                        Ok(()) => names.push(file.file_name()),
+                        Err(err) => {
+                            log::warn!("snippet import: skipped {}: {err}", path.display())
+                        }
+                    }
+                }
+                for snippet in legacy
+                    .map(crate::snippet_store::load_legacy_file)
+                    .unwrap_or_default()
+                {
+                    match crate::snippet_store::save_snippet(&staging, &snippet) {
+                        Ok(()) => names.push(format!("{}.json", snippet.id).into()),
+                        Err(err) => log::warn!("snippet import: skipped {}: {err}", snippet.id),
+                    }
+                }
+                std::fs::rename(&staging, &destination)?;
+                #[cfg(unix)]
+                std::fs::File::open(parent)?.sync_all()?;
+                Ok::<_, std::io::Error>(names)
+            })();
+            match built {
+                Ok(names) => {
+                    for name in names {
+                        let target = destination.join(name);
+                        if !imported.contains(&target) {
+                            imported.push(target);
+                        }
+                    }
+                }
+                Err(err) => {
+                    let _ = std::fs::remove_dir_all(&staging);
+                    return Err(err);
                 }
             }
         }
@@ -921,6 +960,46 @@ mod tests {
             .modified()
             .unwrap();
         assert_eq!(source_before, source_after);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_snippet_is_skipped_not_fatal() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = temp_home("import-unreadable-snippet");
+        let root = DataRoot::with_home(home.clone(), true);
+        let (folder, destination) = root.importable_snippet_dirs()[0].clone();
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("a.json"),
+            r#"{"id":"a","title":"A","body":"a"}"#,
+        )
+        .unwrap();
+        let locked = folder.join("b.json");
+        std::fs::write(&locked, r#"{"id":"b","title":"B","body":"b"}"#).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&locked).is_ok() {
+            // Running as root: permissions do not apply.
+            let _ = std::fs::remove_dir_all(&home);
+            return;
+        }
+        let imported = root.import_from_swift_app().unwrap();
+        assert_eq!(imported, vec![destination.join("a.json")]);
+        let ids: Vec<_> = crate::snippet_store::load_dir(&destination)
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+        assert_eq!(ids, vec!["a".to_string()]);
+        // No staging folder is left next to the destination.
+        let parent = destination.parent().unwrap();
+        assert!(
+            std::fs::read_dir(parent)
+                .unwrap()
+                .flatten()
+                .all(|e| !e.file_name().to_string_lossy().contains(".import-"))
+        );
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o600)).unwrap();
         let _ = std::fs::remove_dir_all(&home);
     }
 

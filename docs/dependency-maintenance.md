@@ -1,15 +1,12 @@
 # Dependency and repository maintenance
 
-The macOS Swift manifest/lock and iOS Xcode Package.resolved share swift-atomics
-1.3.1 at the same revision. Update both in dependency PRs and run native macOS/iOS
-CI; platform-specific divergence requires a separately reviewed policy change.
-Dependabot's Swift fetcher supports Xcode project lockfiles, so the iOS update
-surface is `apps/chau7-ios/Chau7RemoteApp`, not a synthetic second Package.swift.
-The [upstream fetcher](https://github.com/dependabot/dependabot-core/blob/main/swift/lib/dependabot/swift/file_fetcher.rb)
-defines this support.
+The iOS app's Swift code has no remote Swift packages: the Xcode project links only
+the local `apps/chau7-ios/Chau7Core` package, which has no dependencies, so there is
+no Swift lockfile or Swift Dependabot entry. Adding a remote Swift package requires
+adding its lockfile and a Dependabot entry in the same change.
 
-Dependabot covers macOS/iOS Swift, both npm services, both Go modules, both Rust
-workspaces (apps/chau7-macos/rust and apps/chau7-next), Python project/test
+Dependabot covers both npm services, both Go modules (services/chau7-remote and
+services/chau7-proxy), both Rust workspaces (crates and apps/chau7-next), Python project/test
 requirements and Actions. Compatible minor/patch updates are grouped; major and
 security updates are surfaced for review and are not silently merged. The two
 Rust workspaces have separate tracked app-level Cargo.lock files; the vendored
@@ -38,7 +35,7 @@ GPUI's source rebase additionally has upstream checksum, provenance and
 modification-ledger records.
 
 Repository text follows LF through .gitattributes; no history normalization was
-performed. Root CHANGELOG.md is already a symlink to the app's canonical changelog; it is preserved. Local
+performed. The root CHANGELOG.md is the canonical changelog. Local
 `.chau7/pre-commit-review.conf` is ignored; the tracked `.example` documents the
 optional advisory override. The existing script has matching defaults when the
 local file is absent. Do not author product commits with a fixture identity:
@@ -76,8 +73,7 @@ claim that every required but unreachable module is advisory-free. Run with
 Both Go modules require Go 1.27.1 or newer. CI and release setup read this patched minimum from the remote module manifest; they must not select the unpatched Go 1.26.0 compiler. The live audit covers the standard library of the compiler actually used.
 
 SwiftPM has **no automated vulnerability-advisory scanner in this repository**.
-Shared-pin validation and native builds/tests establish consistency and
-compatibility, not advisory coverage. Swift dependency updates must include a
-manual review of upstream security advisories and release notes for the exact
-macOS/iOS revisions in the PR. Track any unreviewed revision or new dependency
+Native builds/tests establish compatibility, not advisory coverage. Any future
+Swift dependency must include a manual review of upstream security advisories and
+release notes for the exact revisions in the PR. Track any unreviewed revision or new dependency
 explicitly; do not describe the Rust/npm/Python/Go audits as Swift coverage.

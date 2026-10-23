@@ -1,7 +1,7 @@
-//! Localization (`Localization/Localization.swift`): the same
-//! `Localizable.strings` tables as the Swift app (copied unchanged into
-//! `strings/`, a test checks they still match the Swift originals), looked up
-//! by the same keys, with the English default from the code as the fallback.
+//! Localization (`Localization/Localization.swift`): the `Localizable.strings`
+//! tables in `strings/` (originally copied from the Swift app, then extended
+//! with Chau7-specific keys), looked up by the same keys, with the English
+//! default from the code as the fallback.
 //!
 //! - [`Lang`] is a resolved interface language; [`resolve`] maps the
 //!   `app.language` setting ("system", "en", "fr", "es", "ar", "he") and the OS

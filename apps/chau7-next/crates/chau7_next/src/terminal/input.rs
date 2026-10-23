@@ -183,7 +183,9 @@ impl TerminalView {
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(|this, _: &Cut, window, cx| this.copy(&Copy, window, cx)))
             .on_action(cx.listener(Self::paste))
-            .on_action(cx.listener(|this, _: &PasteEscaped, _, cx| this.paste_escaped(cx)))
+            .on_action(
+                cx.listener(|this, _: &PasteEscaped, window, cx| this.paste_escaped(window, cx)),
+            )
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(|this, _: &ClearScreen, _, cx| this.clear_screen(cx)))
             .on_action(cx.listener(|this, _: &ClearScrollback, window, cx| {
@@ -522,11 +524,18 @@ impl TerminalView {
     }
 
     /// Paste Escaped (Cmd+Opt+V): backslashes before shell metacharacters,
-    /// sent as typed text (Swift `send(txt:)`, no paste markers).
-    fn paste_escaped(&mut self, cx: &mut Context<Self>) {
-        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            self.write(paste_escaper::escape(&text).as_bytes(), cx);
+    /// control characters dropped, then the same guard and encoding as a
+    /// normal paste (bracketed markers when the program asked for them).
+    fn paste_escaped(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return;
+        };
+        let bracketed = self.session.read(cx).is_bracketed_paste();
+        let bytes = paste_escaper::encode(&text, bracketed);
+        if self.guard_paste(&text, bytes.clone(), window, cx) {
+            return;
         }
+        self.write(&bytes, cx);
     }
 
     /// Send text as if typed (palette, history picker).
@@ -605,7 +614,7 @@ impl TerminalView {
         match action.0 {
             TerminalMenuOp::Copy => self.copy(&Copy, window, cx),
             TerminalMenuOp::Paste => self.paste(&Paste, window, cx),
-            TerminalMenuOp::PasteEscaped => self.paste_escaped(cx),
+            TerminalMenuOp::PasteEscaped => self.paste_escaped(window, cx),
             TerminalMenuOp::SelectAll => {
                 self.clear_accumulated_selection();
                 self.session.read(cx).select_all();

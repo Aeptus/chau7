@@ -17,6 +17,16 @@ if [[ -z "$staged_files" ]]; then
   exit 0
 fi
 
+# Renamed files are diffed against their old path, so moving a file does
+# not turn its untouched lines into "added" lines.
+staged_renames="$(git -C "$REPO_ROOT" diff --cached --find-renames --name-status --diff-filter=R || true)"
+
+rename_source() {
+  # A here-string, not a pipe: with many renames an early awk exit would
+  # SIGPIPE the writer and abort the script under pipefail.
+  awk -F '\t' -v target="$1" '$3 == target { print $2; exit }' <<<"$staged_renames"
+}
+
 hits_total=0
 
 report() {
@@ -53,6 +63,8 @@ walk_added_lines() {
   local callback="$2"
   local lineno=0
   local in_hunk=0
+  local source
+  source="$(rename_source "$file")"
 
   while IFS= read -r line; do
     if [[ "$line" == "@@"* ]]; then
@@ -81,7 +93,7 @@ walk_added_lines() {
         : # deletion — no line-number advance on the + side
         ;;
     esac
-  done < <(git -C "$REPO_ROOT" diff --cached --unified=0 -- "$file" 2>/dev/null || true)
+  done < <(git -C "$REPO_ROOT" diff --cached --find-renames --unified=0 -- ${source:+"$source"} "$file" 2>/dev/null || true)
 }
 
 check_swift_line() {

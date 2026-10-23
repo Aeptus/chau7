@@ -1,0 +1,15 @@
+[workspace]
+members = ["chau7_terminal", "chau7_md", "chau7_optim"]
+resolver = "2"
+
+[profile.release]
+panic = "abort"
+opt-level = 3
+debug = false
+lto = "off"
+codegen-units = 64
+incremental = true
+strip = "symbols"
+
+[profile.dev]
+panic = "abort"

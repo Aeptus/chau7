@@ -382,8 +382,8 @@ mod tests {
         assert_eq!(filter_topics("").len(), 11);
         let by_title = filter_topics("ssh manager");
         assert!(by_title.iter().any(|t| t.id == "ssh-manager"));
-        // Only the license page mentions swift-atomics.
-        let by_content = filter_topics("SWIFT-ATOMICS");
+        // Only the license page mentions alacritty_terminal.
+        let by_content = filter_topics("ALACRITTY_TERMINAL");
         assert_eq!(by_content.len(), 1);
         assert_eq!(by_content[0].id, TECHNOLOGY_LICENSES);
         assert!(filter_topics("zzzzqqq").is_empty());

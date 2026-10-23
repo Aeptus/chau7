@@ -85,8 +85,7 @@ test("quality runner tests clear inherited Git repository overrides", async () =
 });
 
 for (const [id, wrapped, cwd] of [
-  ["swift-macos-static-build", "/usr/bin/swift", "apps/chau7-macos"],
-  ["swift-macos-tests", "/usr/bin/swift", "apps/chau7-macos"],
+  ["swift-core-package", "/usr/bin/swift", "apps/chau7-ios/Chau7Core"],
   ["ios-app-build", "xcodebuild", undefined],
   ["ios-app-tests", "xcodebuild", undefined],
   ["full-local-ci", "./scripts/ci-local", "."],
@@ -550,7 +549,7 @@ test("Go audit visits both modules live and fails closed on scanner errors", asy
   const calls = [];
   const context = {exec: async (command,args,options) => { calls.push({command,args,options});return {status:"passed"}; }};
   assert.equal((await audit.run(context)).status,"passed");
-  assert.deepEqual(calls.map(x=>x.options.cwd),["apps/chau7-macos/chau7-proxy","services/chau7-remote"]);
+  assert.deepEqual(calls.map(x=>x.options.cwd),["services/chau7-proxy","services/chau7-remote"]);
   assert.ok(calls.every(x=>x.command === "go" && x.args.includes("golang.org/x/vuln/cmd/govulncheck@v1.8.0")));
   for (const cwd of calls.map(x=>x.options.cwd)) {
     const result = await audit.run({exec: async (_,__,options) => options.cwd === cwd ? {status:"failed",summary:"database unavailable"} : {status:"passed"}});

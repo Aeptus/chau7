@@ -1,0 +1,5941 @@
+//! Core terminal emulator: Chau7Terminal struct, PTY management, and terminal operations.
+
+use std::borrow::Cow;
+use std::collections::{HashMap, VecDeque};
+use std::io::Write;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU16, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+use alacritty_terminal::event::Event;
+use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::index::{Column, Line, Point, Side};
+use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
+use alacritty_terminal::term::cell::{Cell, Flags as CellFlags, LineLength};
+use alacritty_terminal::term::{Config as TermConfig, Term, TermDamage, TermMode};
+use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Processor};
+use crossbeam_channel::{Receiver, TryRecvError, bounded};
+use log::{debug, error, info, trace, warn};
+use parking_lot::{Mutex, RwLock};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use unicode_normalization::UnicodeNormalization;
+
+use crate::color::{ThemeColors, color_to_rgb_with_theme};
+use crate::graphics;
+use crate::metrics::{AdaptivePoller, DirtyRowTracker};
+use crate::pool::get_cell_buffer_pool;
+use crate::pty::{Chau7EventListener, PtyHandle, PtyMessage, SizeInfo};
+use crate::types::{
+    CELL_FLAG_BOLD, CELL_FLAG_DIM, CELL_FLAG_HIDDEN, CELL_FLAG_INVERSE, CELL_FLAG_ITALIC,
+    CELL_FLAG_STRIKETHROUGH, CELL_FLAG_UNDERLINE, CELL_FLAG_WRAPPED, CellData, DebugState,
+    DisplayRowBuffer, GridDeltaSnapshot, GridSnapshot, PerformanceMetrics, cell_flags_to_u8,
+    underline_style,
+};
+
+/// Preserve the C ABI integer result after Alacritty started delivering an
+/// ExitStatus. Unix signal exits use the shell convention; unknown statuses
+/// are failures, never the -1 sentinel meaning "no pending exit".
+fn terminal_exit_code(status: std::process::ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+    1
+}
+
+/// Static counter for terminal IDs (for logging)
+static TERMINAL_COUNTER: AtomicU64 = AtomicU64::new(0);
+pub const POLL_EVENT_GRID_CHANGED: u32 = 1 << 0;
+pub const POLL_EVENT_METADATA_CHANGED: u32 = 1 << 1;
+
+/// Type alias for the clipboard load formatter function.
+type ClipboardLoadFormatter = Arc<dyn Fn(&str) -> String + Sync + Send>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AnsiCellStyle {
+    fg: (u8, u8, u8),
+    bg: (u8, u8, u8),
+    flags: u8,
+}
+
+/// Stable OSC-8 identifiers shared by full and incremental snapshots. IDs may
+/// not be rebuilt per frame: unchanged rows retained by a delta consumer still
+/// reference the IDs assigned by an earlier snapshot.
+struct HyperlinkRegistry {
+    urls: Vec<String>,
+    ids: HashMap<String, u16>,
+}
+
+impl HyperlinkRegistry {
+    fn new() -> Self {
+        Self {
+            urls: vec![String::new()],
+            ids: HashMap::new(),
+        }
+    }
+
+    fn id_for_uri(&mut self, uri: &str) -> u16 {
+        if let Some(id) = self.ids.get(uri) {
+            return *id;
+        }
+        // Cap the table. This was an unbounded growth path: every distinct OSC 8
+        // URI a terminal ever printed was retained TWICE (once in `urls`, once
+        // as the `ids` key) and nothing ever evicted, so a
+        // `grep --color=always=hyperlink` sweep or an adversarial stream grew
+        // it until `u16::MAX` — 65 535 entries, and it counted for nothing in
+        // `estimated_grid_bytes`, so the memory-pressure path could not see it.
+        //
+        // On saturation this returns 0, which is already reserved for "no link".
+        // The previous revision returned `u16::MAX`, and since
+        // `get_link_url(u16::MAX)` resolves to the LAST url in the table, every
+        // hyperlink after saturation silently rendered and clicked as that one
+        // final link. A missing link is a much better failure than a
+        // confidently wrong one.
+        //
+        // There is no eviction. The type's own contract forbids rebuilding ids,
+        // because a delta consumer can still hold a row referencing an id
+        // assigned earlier; so once full the table is frozen and further URIs
+        // resolve to "no link".
+        if self.urls.len() >= MAX_HYPERLINKS {
+            return 0;
+        }
+        let id = self.urls.len() as u16;
+        self.urls.push(uri.to_owned());
+        // One clone, not a second independent `to_owned`: the map key must be
+        // owned, so reuse the string already stored in `urls`.
+        let stored = self.urls[id as usize].clone();
+        self.ids.insert(stored, id);
+        id
+    }
+
+    /// Resolves an id back to its URI. `0` is reserved for "no link" and always
+    /// resolves to `None`, so an id from a saturated table degrades to "no link"
+    /// rather than to an arbitrary earlier link.
+    fn url(&self, link_id: u16) -> Option<&str> {
+        if link_id == 0 {
+            return None;
+        }
+        self.urls.get(link_id as usize).map(String::as_str)
+    }
+
+    /// Bytes retained by this registry, for the memory report. Excludes
+    /// `HashMap` bucket overhead, which is proportional and not worth modelling
+    /// precisely.
+    fn estimated_bytes(&self) -> usize {
+        self.urls
+            .iter()
+            .map(|u| u.len() + std::mem::size_of::<String>())
+            .sum()
+    }
+}
+
+/// Period of the post-advance grid invariant check. Set to 16 so the cost
+/// is amortized across PTY chunks while still catching corruption near
+/// the moment it happens. A power-of-two so `is_multiple_of` is a single
+/// AND in release builds.
+const INVARIANT_CHECK_PERIOD: u64 = 16;
+
+/// Upper bound on distinct OSC 8 hyperlink URIs retained per terminal.
+///
+/// Sized to cover any realistic interactive session with a wide margin while
+/// keeping the worst case a fixed, small allocation instead of an 65 535-entry
+/// table. See `HyperlinkRegistry::id_for_uri` for why saturation resolves to
+/// "no link" rather than to a wrong link.
+const MAX_HYPERLINKS: usize = 4096;
+
+const MALLOC_STACK_LOGGING_WARNING: &[u8] =
+    b" MallocStackLogging: can't turn off malloc stack logging because it was not enabled.";
+
+fn configure_terminal_color_environment(cmd: &mut CommandBuilder) {
+    // GUI launches from automation must not make interactive TUIs monochrome.
+    // Explicit launch overrides are applied afterward, and shell startup files
+    // remain free to opt out of color themselves.
+    cmd.env_remove("NO_COLOR");
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+}
+
+fn filter_terminal_output_noise<'a>(data: &'a [u8]) -> Cow<'a, [u8]> {
+    if !data
+        .windows(b"MallocStackLogging".len())
+        .any(|window| window == b"MallocStackLogging")
+    {
+        return Cow::Borrowed(data);
+    }
+
+    let mut filtered = Vec::with_capacity(data.len());
+    let mut line_start = 0usize;
+    for (index, byte) in data.iter().enumerate() {
+        if *byte != b'\n' {
+            continue;
+        }
+        let line = &data[line_start..=index];
+        if !is_suppressed_terminal_noise_line(line) {
+            filtered.extend_from_slice(line);
+        }
+        line_start = index + 1;
+    }
+
+    if line_start < data.len() {
+        let tail = &data[line_start..];
+        if !is_suppressed_terminal_noise_line(tail) {
+            filtered.extend_from_slice(tail);
+        }
+    }
+
+    if filtered.len() == data.len() {
+        Cow::Borrowed(data)
+    } else {
+        Cow::Owned(filtered)
+    }
+}
+
+fn is_suppressed_terminal_noise_line(line: &[u8]) -> bool {
+    let mut start = 0usize;
+    while start < line.len() && matches!(line[start], b' ' | b'\t') {
+        start += 1;
+    }
+    let mut end = line.len();
+    while end > start && matches!(line[end - 1], b'\r' | b'\n' | b' ' | b'\t') {
+        end -= 1;
+    }
+    let trimmed = &line[start..end];
+    if !trimmed.starts_with(b"codex(") || !trimmed.ends_with(MALLOC_STACK_LOGGING_WARNING) {
+        return false;
+    }
+
+    let process_end = trimmed.len() - MALLOC_STACK_LOGGING_WARNING.len();
+    let pid_with_close_paren = &trimmed[b"codex(".len()..process_end];
+    if let Some(pid) = pid_with_close_paren.strip_suffix(b")") {
+        !pid.is_empty() && pid.iter().all(u8::is_ascii_digit)
+    } else {
+        false
+    }
+}
+
+fn is_metadata_only_terminal_data(data: &[u8]) -> bool {
+    let mut index = 0usize;
+    let mut saw_metadata = false;
+
+    while index < data.len() {
+        match data[index] {
+            // BEL outside an OSC sequence triggers terminal feedback, but it
+            // does not mutate the visible grid.
+            0x07 => {
+                saw_metadata = true;
+                index += 1;
+            }
+            0x1B if index + 1 < data.len() && data[index + 1] == b']' => {
+                let Some((command_end, sequence_end)) = parse_complete_osc_sequence(data, index)
+                else {
+                    return false;
+                };
+                if !is_non_rendering_osc_command(&data[(index + 2)..command_end]) {
+                    return false;
+                }
+                saw_metadata = true;
+                index = sequence_end;
+            }
+            _ => return false,
+        }
+    }
+
+    saw_metadata
+}
+
+fn parse_complete_osc_sequence(data: &[u8], start: usize) -> Option<(usize, usize)> {
+    debug_assert!(start + 1 < data.len());
+    debug_assert_eq!(data[start], 0x1B);
+    debug_assert_eq!(data[start + 1], b']');
+
+    let mut command_end = None;
+    let mut index = start + 2;
+    while index < data.len() {
+        match data[index] {
+            b';' if command_end.is_none() => {
+                command_end = Some(index);
+            }
+            0x07 => {
+                return Some((command_end.unwrap_or(index), index + 1));
+            }
+            0x1B if index + 1 < data.len() && data[index + 1] == b'\\' => {
+                return Some((command_end.unwrap_or(index), index + 2));
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+
+    None
+}
+
+fn is_non_rendering_osc_command(command: &[u8]) -> bool {
+    matches!(
+        command,
+        b"0" | b"1" | b"2" | b"7" | b"8" | b"52" | b"133" | b"633"
+    )
+}
+
+// ============================================================================
+// Error types
+// ============================================================================
+
+#[derive(Debug, thiserror::Error)]
+pub enum TerminalError {
+    #[error("Invalid dimensions: {cols}x{rows}")]
+    InvalidDimensions { cols: u16, rows: u16 },
+    #[error("Failed to open PTY: {0}")]
+    PtyOpen(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("Failed to spawn shell '{shell}': {source}")]
+    SpawnShell {
+        shell: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+    #[error("Failed to clone PTY reader: {0}")]
+    PtyCloneReader(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("Failed to get PTY writer: {0}")]
+    PtyWriter(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("Failed to spawn reader thread: {0}")]
+    ReaderThread(#[source] std::io::Error),
+    #[error("PTY resize failed: {0}")]
+    PtyResize(String),
+}
+
+// ============================================================================
+// Main terminal structure
+// ============================================================================
+
+/// The main terminal emulator structure.
+///
+/// # Lock Ordering
+///
+/// Acquire locks in ascending order to prevent deadlocks:
+///
+/// 0. `pty_poll_lock`        (Mutex)  — ordered receive/parse/publish transaction
+/// 1. `pty_handle`           (Mutex)  — PTY writer for input/resize
+/// 2. `term`                 (Mutex)  — alacritty terminal state
+/// 3. `processor`            (Mutex)  — VTE processor (always acquired with #2)
+/// 4. `theme_colors`         (RwLock) — theme for rendering (read-heavy)
+/// 5. `last_output`          (Mutex)  — raw output buffer
+/// 6. `pending_title`        (Mutex)  — title change
+/// 7. `pending_exit_code`    (Mutex)  — exit code
+/// 8. `graphics_interceptor` (Mutex)  — image pre-filter
+/// 9. `image_store`          (Mutex)  — decoded images
+/// 10. `child`               (Mutex)  — child process (Drop only)
+pub struct Chau7Terminal {
+    /// Unique identifier for this terminal (for logging)
+    pub(crate) id: u64,
+    /// The alacritty terminal state machine
+    pub(crate) term: Mutex<Term<Chau7EventListener>>,
+    /// VTE processor for parsing escape sequences
+    pub(crate) processor: Mutex<Processor>,
+    /// PTY handle for writing input when backed by a live shell.
+    pub(crate) pty_handle: Mutex<Option<PtyHandle>>,
+    /// Duplicated master PTY fd used only for echo detection.
+    ///
+    /// Keep this separate from `pty_handle`: PTY writes can block under
+    /// backpressure while holding that mutex, and echo detection runs from
+    /// Swift input bookkeeping on the main thread.
+    pub(crate) echo_fd: AtomicI32,
+    /// Child process handle (to avoid zombies)
+    pub(crate) child: Mutex<Option<Box<dyn portable_pty::Child + Send + Sync>>>,
+    /// Shell process ID (for dev server monitoring)
+    pub(crate) shell_pid: AtomicU64,
+    /// Channel receiver for PTY output data when backed by a live shell.
+    pub(crate) pty_rx: Option<Receiver<PtyMessage>>,
+    /// One poll owns the stream from dequeue through parsing and publication.
+    /// Per-parser locks alone allow concurrent consumers to reorder PTY chunks.
+    pty_poll_lock: Mutex<()>,
+    /// Flag to signal the reader pool to stop monitoring this terminal
+    pub(crate) running: Arc<AtomicBool>,
+    /// Raw fd registered with the shared reader pool (for unregistration on drop)
+    #[cfg_attr(not(unix), allow(dead_code))]
+    pub(crate) reader_pool_fd: Option<i32>,
+    /// Event receiver for terminal events
+    pub(crate) event_rx: Receiver<Event>,
+    /// Flag indicating if grid has changed since last poll
+    pub(crate) grid_dirty: AtomicBool,
+    /// Whether the Kitty keyboard protocol is enabled in the emulator config.
+    /// `Term` keeps its config private, so every `set_options` caller reads
+    /// this to avoid resetting the protocol (and its mode stack) by accident.
+    pub(crate) kitty_keyboard: AtomicBool,
+    /// Terminal dimensions (atomic: written by `resize` on the UI thread while
+    /// drain threads concurrently read via `debug_state`)
+    pub(crate) cols: AtomicU16,
+    pub(crate) rows: AtomicU16,
+    /// Creation timestamp for debugging
+    pub(crate) created_at: Instant,
+    /// Total bytes received from PTY
+    pub(crate) bytes_received: AtomicU64,
+    /// Total bytes sent to PTY
+    pub(crate) bytes_sent: AtomicU64,
+    /// Total PTY write errors
+    pub(crate) write_errors: AtomicU64,
+    /// Last observed total line count (history + screen) of the PRIMARY grid.
+    /// The primary grid is unreachable while the alternate screen is active
+    /// (`Term` swaps it into a private field), so `debug_state` records it on
+    /// every non-alt observation and reuses it for memory estimates on alt.
+    pub(crate) last_primary_total_lines: AtomicU64,
+    /// Theme colors for rendering (RwLock for read-heavy access pattern)
+    pub(crate) theme_colors: RwLock<ThemeColors>,
+    /// Unread output bytes, accumulated until Swift consumes them.
+    pub(crate) last_output: Mutex<Vec<u8>>,
+    /// Flag indicating if a bell occurred since last check (shared with EventListener)
+    pub(crate) bell_pending: Arc<AtomicBool>,
+    /// Performance metrics for debugging
+    pub(crate) metrics: PerformanceMetrics,
+    /// Pending terminal title change (from OSC 0/1/2)
+    pub(crate) pending_title: Mutex<Option<String>>,
+    /// Fast check flag — avoids locking pending_title Mutex on every poll (99% empty).
+    pub(crate) has_pending_title: AtomicBool,
+    /// Pending current working directory (from OSC 7).
+    /// Captured by `process_pty_data` so attribution is race-free w.r.t. the
+    /// `last_output` drain (which is consumed by `std::mem::take` and is thus
+    /// vulnerable to whichever Swift view polls first).
+    pub(crate) pending_cwd: Mutex<Option<String>>,
+    /// Fast check flag — avoids locking pending_cwd Mutex on every poll.
+    pub(crate) has_pending_cwd: AtomicBool,
+    /// Pending child exit code (from Event::ChildExit)
+    pub(crate) pending_exit_code: Mutex<Option<i32>>,
+    /// Flag indicating PTY has closed
+    pub(crate) pty_closed: AtomicBool,
+
+    // Hyperlink support (OSC 8)
+    /// Stable map of link_id → URL used by both full and delta snapshots.
+    /// Index 0 is unused (link_id 0 = no link).
+    hyperlinks: Mutex<HyperlinkRegistry>,
+
+    // Clipboard support (OSC 52)
+    /// Pending clipboard store request from the terminal (OSC 52 write)
+    pub(crate) pending_clipboard_store: Mutex<Option<String>>,
+    /// Fast check flag — avoids locking pending_clipboard_store Mutex on every poll.
+    pub(crate) has_pending_clipboard_store: AtomicBool,
+    /// Pending clipboard load formatter — terminal wants us to read clipboard and
+    /// send the response back via PTY. The Arc<dyn Fn> wraps the text in OSC 52 response.
+    pub(crate) pending_clipboard_load: Mutex<Option<ClipboardLoadFormatter>>,
+    /// Fast check flag — avoids locking pending_clipboard_load Mutex on every poll.
+    pub(crate) has_pending_clipboard_load: AtomicBool,
+
+    // Shell integration (OSC 133)
+    /// Pending shell integration events (prompt start, command start/end, etc.)
+    pub(crate) pending_shell_events: Mutex<Vec<graphics::ShellIntegrationEvent>>,
+    /// Fast check flag — avoids locking on every poll.
+    pub(crate) has_pending_shell_events: AtomicBool,
+
+    // Performance optimization structures
+    /// Adaptive polling rate controller
+    pub(crate) adaptive_poller: AdaptivePoller,
+    /// Dirty row tracker for partial updates
+    pub(crate) dirty_rows: DirtyRowTracker,
+
+    /// Counter incremented on every `processor.advance` call. Sampled every
+    /// `INVARIANT_CHECK_PERIOD` calls to run a grid-state invariant check
+    /// (cursor in bounds, no orphan wide-char spacers). Rate-limited to
+    /// keep the per-PTY-chunk cost bounded under heavy streaming.
+    pub(crate) advance_counter: AtomicU64,
+
+    // Graphics protocol support
+    /// Pre-filter that intercepts image escape sequences before VTE processing
+    pub(crate) graphics_interceptor: Mutex<graphics::GraphicsInterceptor>,
+    /// Store for decoded images pending pickup by Swift
+    pub(crate) image_store: Mutex<graphics::ImageStore>,
+    /// Kitty multi-chunk accumulator
+    pub(crate) kitty_accumulator: Mutex<graphics::KittyAccumulator>,
+}
+
+// ============================================================================
+// Terminal implementation
+// ============================================================================
+
+impl Chau7Terminal {
+    /// Create a new terminal with the specified dimensions and shell
+    pub fn new(cols: u16, rows: u16, shell: &str) -> Result<Self, TerminalError> {
+        Self::new_with_env(cols, rows, shell, &[])
+    }
+
+    /// Create a headless terminal suitable for remote playback.
+    ///
+    /// This does not spawn a PTY or child process. Callers are expected to feed
+    /// output through `inject_output()` and query state through the existing grid
+    /// snapshot APIs.
+    pub fn new_headless(cols: u16, rows: u16) -> Result<Self, TerminalError> {
+        let id = TERMINAL_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let created_at = Instant::now();
+
+        info!(
+            "[terminal-{}] Creating new headless terminal: {}x{}",
+            id, cols, rows
+        );
+
+        if cols == 0 || rows == 0 {
+            error!("[terminal-{}] Invalid dimensions: {}x{}", id, cols, rows);
+            return Err(TerminalError::InvalidDimensions { cols, rows });
+        }
+
+        let (event_tx, event_rx) = crate::pty::event_channel();
+        let bell_pending = Arc::new(AtomicBool::new(false));
+        let listener = Chau7EventListener {
+            sender: event_tx,
+            terminal_id: id,
+            bell_pending: bell_pending.clone(),
+        };
+
+        let size = SizeInfo::new(cols as usize, rows as usize);
+        let config = TermConfig::default();
+        let term = Term::new(config, &size, listener);
+
+        Ok(Chau7Terminal {
+            id,
+            term: Mutex::new(term),
+            processor: Mutex::new(Processor::new()),
+            pty_handle: Mutex::new(None),
+            echo_fd: AtomicI32::new(-1),
+            child: Mutex::new(None),
+            shell_pid: AtomicU64::new(0),
+            pty_rx: None,
+            pty_poll_lock: Mutex::new(()),
+            running: Arc::new(AtomicBool::new(false)),
+            reader_pool_fd: None,
+            event_rx,
+            grid_dirty: AtomicBool::new(true),
+            kitty_keyboard: AtomicBool::new(false),
+            cols: AtomicU16::new(cols),
+            rows: AtomicU16::new(rows),
+            created_at,
+            bytes_received: AtomicU64::new(0),
+            bytes_sent: AtomicU64::new(0),
+            write_errors: AtomicU64::new(0),
+            last_primary_total_lines: AtomicU64::new(0),
+            theme_colors: RwLock::new(ThemeColors::default()),
+            last_output: Mutex::new(Vec::new()),
+            bell_pending,
+            metrics: PerformanceMetrics::default(),
+            pending_title: Mutex::new(None),
+            has_pending_title: AtomicBool::new(false),
+            pending_cwd: Mutex::new(None),
+            has_pending_cwd: AtomicBool::new(false),
+            pending_exit_code: Mutex::new(None),
+            pty_closed: AtomicBool::new(true),
+            hyperlinks: Mutex::new(HyperlinkRegistry::new()),
+            pending_clipboard_store: Mutex::new(None),
+            has_pending_clipboard_store: AtomicBool::new(false),
+            pending_clipboard_load: Mutex::new(None),
+            has_pending_clipboard_load: AtomicBool::new(false),
+            pending_shell_events: Mutex::new(Vec::new()),
+            has_pending_shell_events: AtomicBool::new(false),
+            adaptive_poller: AdaptivePoller::new(),
+            dirty_rows: DirtyRowTracker::new(rows as usize),
+            advance_counter: AtomicU64::new(0),
+            graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
+            image_store: Mutex::new(graphics::ImageStore::new()),
+            kitty_accumulator: Mutex::new(graphics::KittyAccumulator::new()),
+        })
+    }
+
+    /// Create a new terminal with the specified dimensions, shell, and environment variables
+    pub fn new_with_env(
+        cols: u16,
+        rows: u16,
+        shell: &str,
+        env_vars: &[(&str, &str)],
+    ) -> Result<Self, TerminalError> {
+        Self::new_with_launch(cols, rows, shell, env_vars, &[], None)
+    }
+
+    /// Same as [`Self::new_with_env`], starting the shell in `cwd` when given.
+    /// Used by Chau7 Next; the Swift app goes through the C API.
+    pub fn new_with_env_in_dir(
+        cols: u16,
+        rows: u16,
+        shell: &str,
+        env_vars: &[(&str, &str)],
+        cwd: Option<&std::path::Path>,
+    ) -> Result<Self, TerminalError> {
+        Self::new_with_args_env_in_dir(cols, rows, shell, &[], env_vars, cwd)
+    }
+
+    /// Same as [`Self::new_with_env_in_dir`], passing `args` to the shell
+    /// (Chau7 Next starts bash with `--rcfile`). A thin wrapper over
+    /// [`Self::new_with_launch`] for Rust callers.
+    pub fn new_with_args_env_in_dir(
+        cols: u16,
+        rows: u16,
+        shell: &str,
+        args: &[&str],
+        env_vars: &[(&str, &str)],
+        cwd: Option<&std::path::Path>,
+    ) -> Result<Self, TerminalError> {
+        let args: Vec<String> = args.iter().map(|arg| (*arg).to_string()).collect();
+        let cwd = cwd.map(|dir| dir.to_string_lossy().into_owned());
+        Self::new_with_launch(cols, rows, shell, env_vars, &args, cwd.as_deref())
+    }
+
+    /// Create a new terminal with full launch control: shell argv (e.g. bash's
+    /// `--rcfile` for interactive shell integration) and an explicit working
+    /// directory (otherwise the child inherits the app's cwd — often `/` when
+    /// launched from Finder).
+    pub fn new_with_launch(
+        cols: u16,
+        rows: u16,
+        shell: &str,
+        env_vars: &[(&str, &str)],
+        args: &[String],
+        cwd: Option<&str>,
+    ) -> Result<Self, TerminalError> {
+        let id = TERMINAL_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let created_at = Instant::now();
+
+        info!(
+            "[terminal-{}] Creating new terminal: {}x{}, shell={:?}",
+            id, cols, rows, shell
+        );
+
+        // Validate dimensions
+        if cols == 0 || rows == 0 {
+            error!("[terminal-{}] Invalid dimensions: {}x{}", id, cols, rows);
+            return Err(TerminalError::InvalidDimensions { cols, rows });
+        }
+        if cols > 1000 || rows > 1000 {
+            warn!(
+                "[terminal-{}] Large dimensions requested: {}x{}",
+                id, cols, rows
+            );
+        }
+
+        // Determine shell path
+        let shell_path = if shell.is_empty() {
+            std::env::var("SHELL").unwrap_or_else(|_| default_shell().to_string())
+        } else {
+            shell.to_string()
+        };
+        info!("[terminal-{}] Using shell: {}", id, shell_path);
+
+        // Create PTY
+        let pty_system = native_pty_system();
+        let pty_size = PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+
+        let pair = pty_system.openpty(pty_size).map_err(|e| {
+            error!("[terminal-{}] Failed to open PTY: {}", id, e);
+            TerminalError::PtyOpen(e.into())
+        })?;
+        debug!("[terminal-{}] PTY opened successfully", id);
+
+        // Create event channel for terminal events
+        let (event_tx, event_rx) = crate::pty::event_channel();
+        let bell_pending = Arc::new(AtomicBool::new(false));
+        let listener = Chau7EventListener {
+            sender: event_tx,
+            terminal_id: id,
+            bell_pending: bell_pending.clone(),
+        };
+
+        // Create alacritty terminal
+        let size = SizeInfo::new(cols as usize, rows as usize);
+        let config = TermConfig::default();
+        let term = Term::new(config, &size, listener);
+        debug!(
+            "[terminal-{}] Terminal state initialized (history: 10000 lines)",
+            id
+        );
+
+        // Prepare shell command
+        let mut cmd = CommandBuilder::new(&shell_path);
+        for arg in args {
+            debug!("[terminal-{}] Shell arg: {}", id, arg);
+            cmd.arg(arg);
+        }
+        if let Some(dir) = cwd.filter(|dir| !dir.is_empty()) {
+            debug!("[terminal-{}] Working directory: {}", id, dir);
+            cmd.cwd(dir);
+        }
+        configure_terminal_color_environment(&mut cmd);
+
+        // Set environment variables
+        for (key, value) in env_vars {
+            debug!("[terminal-{}] Setting env: {}={}", id, key, value);
+            cmd.env(key, value);
+        }
+        info!(
+            "[terminal-{}] Spawning shell process: {} (with {} extra env vars)",
+            id,
+            shell_path,
+            env_vars.len()
+        );
+
+        let child = pair.slave.spawn_command(cmd).map_err(|e| {
+            error!(
+                "[terminal-{}] Failed to spawn shell '{}': {}",
+                id, shell_path, e
+            );
+            TerminalError::SpawnShell {
+                shell: shell_path.clone(),
+                source: e.into(),
+            }
+        })?;
+
+        // Capture shell PID for dev server monitoring
+        let shell_pid = child.process_id().unwrap_or(0);
+        info!(
+            "[terminal-{}] Shell process spawned successfully (PID: {})",
+            id, shell_pid
+        );
+
+        // Capture the master PTY fd for tcgetattr echo detection.
+        // Use the MasterPty trait's as_raw_fd() method directly — no unsafe casts needed.
+        // Windows (Chau7 Next only) has no PTY fd; echo detection is disabled there.
+        #[cfg(not(unix))]
+        let master_fd: i32 = -1;
+        #[cfg(unix)]
+        let master_fd = match pair.master.as_raw_fd() {
+            Some(raw_fd) => {
+                let duped = unsafe { libc::dup(raw_fd) };
+                if duped < 0 {
+                    warn!(
+                        "[terminal-{}] Failed to dup master fd for echo detection",
+                        id
+                    );
+                    -1
+                } else {
+                    debug!(
+                        "[terminal-{}] Captured master PTY fd (duped to {}) for echo detection",
+                        id, duped
+                    );
+                    duped
+                }
+            }
+            None => {
+                warn!("[terminal-{}] MasterPty::as_raw_fd() returned None", id);
+                -1
+            }
+        };
+
+        // Get a raw fd for the shared reader pool by dup'ing the master PTY.
+        // The pool thread will use poll()+read() on this fd.
+        // Windows (Chau7 Next only) uses a reader thread instead, see below.
+        #[cfg(not(unix))]
+        let reader_fd: i32 = -1;
+        #[cfg(unix)]
+        let reader_fd = match pair.master.as_raw_fd() {
+            Some(raw_fd) => {
+                let duped = unsafe { libc::dup(raw_fd) };
+                if duped < 0 {
+                    error!("[terminal-{}] Failed to dup master fd for reader pool", id);
+                    -1
+                } else {
+                    debug!(
+                        "[terminal-{}] Dup'd master PTY fd {} → {} for reader pool",
+                        id, raw_fd, duped
+                    );
+                    duped
+                }
+            }
+            None => {
+                error!(
+                    "[terminal-{}] MasterPty::as_raw_fd() returned None — no reader pool",
+                    id
+                );
+                -1
+            }
+        };
+
+        // Get writer for PTY input
+        let writer = match pair.master.take_writer() {
+            Ok(writer) => writer,
+            Err(e) => {
+                error!("[terminal-{}] Failed to get PTY writer: {}", id, e);
+                abandon_spawned_shell(id, child, &[master_fd, reader_fd]);
+                return Err(TerminalError::PtyWriter(e.into()));
+            }
+        };
+        debug!("[terminal-{}] PTY writer obtained", id);
+
+        // Create running flag
+        let running = Arc::new(AtomicBool::new(true));
+
+        // Create channel for PTY data (same API as before — poll() still
+        // receives from this channel)
+        let (pty_tx, pty_rx) = bounded::<PtyMessage>(256);
+
+        // Register with the shared reader pool instead of spawning a per-terminal thread.
+        // The pool's single thread uses poll() to monitor all PTY fds and dispatches
+        // PtyMessage::Data to the appropriate channel.
+        #[cfg(unix)]
+        if reader_fd >= 0 {
+            let pool = crate::reader_pool::shared_reader_pool();
+            if !pool.is_running() {
+                // No pool thread → registered fds would never be read and the
+                // terminal would look alive but stay blank forever. Fail the
+                // creation so the UI can show an explicit error instead.
+                error!(
+                    "[terminal-{}] Shared PTY reader pool is not running; aborting terminal creation",
+                    id
+                );
+                abandon_spawned_shell(id, child, &[master_fd, reader_fd]);
+                return Err(TerminalError::ReaderThread(std::io::Error::other(
+                    "shared PTY reader pool thread is not running",
+                )));
+            }
+            pool.register(reader_fd, id, pty_tx, running.clone());
+            info!(
+                "[terminal-{}] Registered with shared PTY reader pool (fd={})",
+                id, reader_fd
+            );
+        } else {
+            warn!(
+                "[terminal-{}] No reader fd — PTY output will not be monitored",
+                id
+            );
+        }
+        #[cfg(not(unix))]
+        if let Err(e) = spawn_pty_reader_thread(id, pair.master.as_ref(), pty_tx, running.clone()) {
+            abandon_spawned_shell(id, child, &[master_fd, reader_fd]);
+            return Err(e);
+        }
+
+        // Create the PTY handle
+        let pty_handle = PtyHandle {
+            writer,
+            _master: pair.master,
+        };
+
+        info!(
+            "[terminal-{}] Terminal created successfully in {:?}",
+            id,
+            created_at.elapsed()
+        );
+
+        Ok(Chau7Terminal {
+            id,
+            term: Mutex::new(term),
+            processor: Mutex::new(Processor::new()),
+            pty_handle: Mutex::new(Some(pty_handle)),
+            echo_fd: AtomicI32::new(master_fd),
+            child: Mutex::new(Some(child)),
+            shell_pid: AtomicU64::new(shell_pid as u64),
+            pty_rx: Some(pty_rx),
+            pty_poll_lock: Mutex::new(()),
+            running,
+            reader_pool_fd: if reader_fd >= 0 {
+                Some(reader_fd)
+            } else {
+                None
+            },
+            event_rx,
+            grid_dirty: AtomicBool::new(true),
+            kitty_keyboard: AtomicBool::new(false),
+            cols: AtomicU16::new(cols),
+            rows: AtomicU16::new(rows),
+            created_at,
+            bytes_received: AtomicU64::new(0),
+            bytes_sent: AtomicU64::new(0),
+            write_errors: AtomicU64::new(0),
+            last_primary_total_lines: AtomicU64::new(0),
+            theme_colors: RwLock::new(ThemeColors::default()),
+            last_output: Mutex::new(Vec::new()),
+            bell_pending,
+            metrics: PerformanceMetrics::default(),
+            pending_title: Mutex::new(None),
+            has_pending_title: AtomicBool::new(false),
+            pending_cwd: Mutex::new(None),
+            has_pending_cwd: AtomicBool::new(false),
+            pending_exit_code: Mutex::new(None),
+            pty_closed: AtomicBool::new(false),
+            // Hyperlinks (OSC 8) — index 0 reserved for "no link"
+            hyperlinks: Mutex::new(HyperlinkRegistry::new()),
+            // Clipboard (OSC 52)
+            pending_clipboard_store: Mutex::new(None),
+            has_pending_clipboard_store: AtomicBool::new(false),
+            pending_clipboard_load: Mutex::new(None),
+            has_pending_clipboard_load: AtomicBool::new(false),
+            // Shell integration (OSC 133)
+            pending_shell_events: Mutex::new(Vec::new()),
+            has_pending_shell_events: AtomicBool::new(false),
+            // Performance optimizations
+            adaptive_poller: AdaptivePoller::new(),
+            dirty_rows: DirtyRowTracker::new(rows as usize),
+            advance_counter: AtomicU64::new(0),
+            // Graphics protocol support
+            graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
+            image_store: Mutex::new(graphics::ImageStore::new()),
+            kitty_accumulator: Mutex::new(graphics::KittyAccumulator::new()),
+        })
+    }
+
+    /// Set theme colors for rendering
+    pub fn set_colors(
+        &self,
+        fg: (u8, u8, u8),
+        bg: (u8, u8, u8),
+        cursor: (u8, u8, u8),
+        palette: [(u8, u8, u8); 16],
+    ) {
+        debug!(
+            "[terminal-{}] Setting theme colors: fg={:?}, bg={:?}, cursor={:?}",
+            self.id, fg, bg, cursor
+        );
+        let mut theme = self.theme_colors.write();
+        theme.fg = fg;
+        theme.bg = bg;
+        theme.cursor = cursor;
+        theme.palette = palette;
+        theme.rebuild_lut();
+        // Mark grid dirty so it gets re-rendered with new colors
+        self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
+    }
+
+    /// Check if PTY has echo disabled (e.g., during password prompts).
+    /// Uses tcgetattr on the duplicated master fd to check the ECHO flag.
+    /// Returns true if ECHO is disabled (password/secret input mode).
+    pub fn is_echo_disabled(&self) -> bool {
+        let echo_fd = self.echo_fd.load(Ordering::Acquire);
+        if echo_fd < 0 {
+            // fd capture failed at creation time, can't check
+            return false;
+        }
+        echo_disabled_for_fd(self.id, echo_fd)
+    }
+
+    /// Get the URL for a hyperlink ID from the most recent grid snapshot.
+    /// Returns None if the ID is invalid or 0 (no link).
+    pub fn get_link_url(&self, link_id: u16) -> Option<String> {
+        if link_id == 0 {
+            return None;
+        }
+        let registry = self.hyperlinks.lock();
+        registry.url(link_id).map(str::to_owned)
+    }
+
+    /// Takes pending clipboard store text (OSC 52 write).
+    /// Returns the text to place on the system clipboard, or None.
+    pub fn take_pending_clipboard_store(&self) -> Option<String> {
+        // Fast path: skip Mutex lock when no clipboard event pending
+        if !self.has_pending_clipboard_store.load(Ordering::Acquire) {
+            return None;
+        }
+        let value = self.pending_clipboard_store.lock().take();
+        // Clear flag *after* lock to avoid TOCTOU: a producer setting a new
+        // value between flag-clear and lock-acquire would be invisible to polls.
+        if value.is_some() {
+            self.has_pending_clipboard_store
+                .store(false, Ordering::Release);
+        }
+        value
+    }
+
+    /// Takes pending clipboard load request (OSC 52 read).
+    /// Returns true if a clipboard read was requested.
+    /// Caller must then provide the clipboard text via `respond_clipboard_load()`.
+    pub fn has_pending_clipboard_load(&self) -> bool {
+        // Fast path: skip Mutex lock when no clipboard load pending
+        if !self.has_pending_clipboard_load.load(Ordering::Acquire) {
+            return false;
+        }
+        self.pending_clipboard_load.lock().is_some()
+    }
+
+    /// Respond to a pending clipboard load request.
+    /// The formatter closure wraps the text in the proper OSC 52 response sequence
+    /// and we write it to the PTY.
+    pub fn respond_clipboard_load(&self, clipboard_text: &str) {
+        let formatter = {
+            let mut pending = self.pending_clipboard_load.lock();
+            let formatter = pending.take();
+            // Clear under the same lock as the producer. Replies now run on
+            // the input writer queue while new requests may arrive on drain.
+            self.has_pending_clipboard_load
+                .store(false, Ordering::Release);
+            formatter
+        };
+        if let Some(fmt) = formatter {
+            let response = fmt(clipboard_text);
+            trace!(
+                "[terminal-{}] OSC 52 clipboard load response: {} bytes",
+                self.id,
+                response.len()
+            );
+            let mut handle = self.pty_handle.lock();
+            let Some(handle) = handle.as_mut() else {
+                trace!(
+                    "[terminal-{}] Ignoring clipboard load response for headless terminal",
+                    self.id
+                );
+                return;
+            };
+            if let Err(e) = handle.writer.write_all(response.as_bytes()) {
+                warn!(
+                    "[terminal-{}] Failed to write OSC 52 response: {}",
+                    self.id, e
+                );
+            } else if let Err(e) = handle.writer.flush() {
+                warn!(
+                    "[terminal-{}] Failed to flush OSC 52 response: {}",
+                    self.id, e
+                );
+            }
+        }
+    }
+
+    /// Send bytes to the PTY (user input)
+    pub fn send_bytes(&self, data: &[u8]) {
+        trace!("[terminal-{}] Sending {} bytes to PTY", self.id, data.len());
+        let mut handle = self.pty_handle.lock();
+        let Some(handle) = handle.as_mut() else {
+            trace!(
+                "[terminal-{}] Ignoring send_bytes on headless terminal",
+                self.id
+            );
+            return;
+        };
+        match handle.write_all(data) {
+            Ok(()) => {
+                self.bytes_sent
+                    .fetch_add(data.len() as u64, Ordering::Relaxed);
+                trace!(
+                    "[terminal-{}] Successfully wrote {} bytes to PTY",
+                    self.id,
+                    data.len()
+                );
+            }
+            Err(e) => {
+                self.write_errors.fetch_add(1, Ordering::Relaxed);
+                error!(
+                    "[terminal-{}] Failed to write {} bytes to PTY: {}",
+                    self.id,
+                    data.len(),
+                    e
+                );
+            }
+        }
+    }
+
+    /// Resize the terminal.
+    ///
+    /// Takes `&self`: the FFI layer calls this from the UI thread while drain
+    /// threads concurrently hold `&self` for `poll_events`/`debug_state`, so a
+    /// `&mut self` receiver would be aliasing UB. All touched state is behind
+    /// mutexes or atomics.
+    pub fn resize(&self, cols: u16, rows: u16) {
+        info!(
+            "[terminal-{}] Resizing terminal: {}x{} -> {}x{}",
+            self.id,
+            self.cols.load(Ordering::Relaxed),
+            self.rows.load(Ordering::Relaxed),
+            cols,
+            rows
+        );
+
+        if cols == 0 || rows == 0 {
+            warn!(
+                "[terminal-{}] Ignoring invalid resize dimensions: {}x{}",
+                self.id, cols, rows
+            );
+            return;
+        }
+
+        self.cols.store(cols, Ordering::Relaxed);
+        self.rows.store(rows, Ordering::Relaxed);
+
+        // Keep the dirty-row tracker's height in sync with the resize, otherwise
+        // its row count stays frozen at the creation height and dirty_count()
+        // (DebugState.dirty_row_count) reports the wrong value.
+        self.dirty_rows.set_rows(rows as usize);
+
+        // Resize the PTY without taking the pty_handle mutex: send_bytes and
+        // the PtyWrite path hold that mutex during a *blocking* write_all
+        // when the child stops reading stdin — resize is called synchronously
+        // from the UI thread (window drag) and must never stall behind a
+        // backpressured write. The dup'd echo_fd ioctls TIOCSWINSZ directly,
+        // the same lock-free pattern echo detection uses for tcgetattr.
+        let echo_fd = self.echo_fd.load(Ordering::Acquire);
+        let pty_resized = echo_fd >= 0 && set_fd_winsize(self.id, echo_fd, cols, rows);
+        if !pty_resized {
+            // Fallback (no dup'd fd): use the handle, but never block behind
+            // a backpressured write — a missed PTY resize self-corrects on
+            // the next layout pass.
+            let pty_size = PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            };
+            if let Some(guard) = self.pty_handle.try_lock() {
+                if let Some(handle) = guard.as_ref() {
+                    if let Err(e) = handle.resize(pty_size) {
+                        error!("[terminal-{}] Failed to resize PTY: {}", self.id, e);
+                    } else {
+                        debug!("[terminal-{}] PTY resized successfully", self.id);
+                    }
+                }
+            } else {
+                warn!(
+                    "[terminal-{}] PTY writer busy; skipping PTY winsize update this pass",
+                    self.id
+                );
+            }
+        }
+
+        // Resize terminal
+        let mut term = self.term.lock();
+        let term_size = SizeInfo::new(cols as usize, rows as usize);
+        term.resize(term_size);
+        debug!("[terminal-{}] Terminal state resized", self.id);
+
+        self.grid_dirty.store(true, Ordering::Release);
+    }
+
+    /// Re-deliver a `SIGWINCH` to the PTY's current foreground process group
+    /// without changing the winsize.
+    ///
+    /// This defeats a TUI startup race: a full-screen relative-cursor renderer
+    /// (e.g. Claude Code's Ink) caches the terminal width when it boots and only
+    /// re-reads it on a `resize` event. If a layout pass resizes the view during
+    /// that ~1s boot — before the child installs its `SIGWINCH` handler — the
+    /// child misses the size change, keeps a stale width, and (because it only
+    /// diff-repaints) corrupts its output for the rest of the session.
+    ///
+    /// A plain re-apply of the *same* winsize is insufficient on Darwin: XNU's
+    /// `TIOCSWINSZ` only signals `t_pgrp` when the dimensions actually change
+    /// (`bcmp` guard in `ttioctl`). So we signal the foreground process group
+    /// directly: `tcgetpgrp` on the master returns the slave's foreground pgrp
+    /// (the live TUI's), and `killpg(pgrp, SIGWINCH)` makes it re-read the
+    /// authoritative size once its handler is finally attached.
+    pub fn nudge_winsize(&self) {
+        let echo_fd = self.echo_fd.load(Ordering::Acquire);
+        if echo_fd < 0 {
+            warn!("[terminal-{}] nudge_winsize: no master fd", self.id);
+            return;
+        }
+        signal_foreground_winch(self.id, echo_fd);
+    }
+
+    /// Handle queued emulator events: write replies (`PtyWrite`) to the PTY
+    /// and record title, clipboard and exit changes. Called after every PTY
+    /// chunk so a burst of queries cannot pile up in the queue. Returns
+    /// (events handled, `PtyWrite` events among them).
+    fn drain_terminal_events(&self) -> (usize, usize) {
+        let mut event_count = 0;
+        let mut pty_write_count = 0;
+        while let Ok(event) = self.event_rx.try_recv() {
+            event_count += 1;
+            match event {
+                Event::PtyWrite(text) => {
+                    pty_write_count += 1;
+                    let bytes = text.as_bytes();
+                    trace!(
+                        "[terminal-{}] PtyWrite event: {} bytes",
+                        self.id,
+                        bytes.len()
+                    );
+                    let mut handle = self.pty_handle.lock();
+                    let Some(handle) = handle.as_mut() else {
+                        trace!(
+                            "[terminal-{}] Dropping PtyWrite event for headless terminal",
+                            self.id
+                        );
+                        continue;
+                    };
+                    if let Err(e) = handle.writer.write_all(bytes) {
+                        warn!(
+                            "[terminal-{}] Failed to write PtyWrite response: {}",
+                            self.id, e
+                        );
+                    } else if let Err(e) = handle.writer.flush() {
+                        warn!(
+                            "[terminal-{}] Failed to flush PtyWrite response: {}",
+                            self.id, e
+                        );
+                    }
+                }
+                Event::Title(title) => {
+                    trace!("[terminal-{}] Title change: {}", self.id, title);
+                    *self.pending_title.lock() = Some(title);
+                    self.has_pending_title.store(true, Ordering::Release);
+                }
+                Event::ChildExit(status) => {
+                    let code = terminal_exit_code(status);
+                    debug!("[terminal-{}] Child exit with code: {}", self.id, code);
+                    *self.pending_exit_code.lock() = Some(code);
+                }
+                Event::ClipboardStore(_clipboard_type, text) => {
+                    debug!(
+                        "[terminal-{}] OSC 52 clipboard store: {} chars",
+                        self.id,
+                        text.len()
+                    );
+                    *self.pending_clipboard_store.lock() = Some(text);
+                    self.has_pending_clipboard_store
+                        .store(true, Ordering::Release);
+                }
+                Event::ClipboardLoad(_clipboard_type, formatter) => {
+                    debug!("[terminal-{}] OSC 52 clipboard load request", self.id);
+                    let mut pending = self.pending_clipboard_load.lock();
+                    *pending = Some(formatter);
+                    self.has_pending_clipboard_load
+                        .store(true, Ordering::Release);
+                }
+                _ => {}
+            }
+        }
+        (event_count, pty_write_count)
+    }
+
+    /// Poll for new data from PTY, process it, and return event flags.
+    /// Raw output bytes are stored in `last_output` for retrieval via `get_last_output()`.
+    /// Concurrent callers must not dequeue ahead of the active parser. A zero
+    /// timeout never waits for another poll; blocking callers share their timeout
+    /// budget between acquiring ownership and waiting for the first PTY message.
+    #[must_use]
+    pub fn poll_events(&self, timeout_ms: u32) -> u32 {
+        let poll_start = Instant::now();
+
+        // Adaptive polling: use suggested timeout or caller's timeout (whichever is shorter)
+        let adaptive_timeout = self.adaptive_poller.suggested_timeout_ms();
+        let effective_timeout = timeout_ms.min(adaptive_timeout);
+        trace!(
+            "[terminal-{}] poll(timeout_ms={}, adaptive={})",
+            self.id, timeout_ms, effective_timeout
+        );
+
+        let timeout = Duration::from_millis(effective_timeout as u64);
+        // A timed lock still spins/yields before inspecting its deadline.
+        // On an overloaded machine even a zero deadline can park the UI
+        // behind the event-drain worker. Zero-timeout callers must only CAS.
+        let poll_guard = if effective_timeout == 0 {
+            self.pty_poll_lock.try_lock()
+        } else {
+            self.pty_poll_lock.try_lock_for(timeout)
+        };
+        let Some(_poll_guard) = poll_guard else {
+            return 0;
+        };
+        let timeout = timeout.saturating_sub(poll_start.elapsed());
+        let mut had_data = false;
+        let mut had_renderable_data = false;
+        let mut bytes_this_poll = 0usize;
+        let mut event_count = 0;
+        let mut pty_write_count = 0;
+
+        // Accumulate all data locally, then lock last_output once at the end
+        let mut local_output = Vec::new();
+
+        if let Some(pty_rx) = self.pty_rx.as_ref() {
+            // Try to receive data with timeout for the first message
+            match pty_rx.recv_timeout(timeout) {
+                Ok(PtyMessage::Data(data)) => {
+                    bytes_this_poll += data.len();
+                    let visible_data = filter_terminal_output_noise(&data);
+                    if !visible_data.is_empty() {
+                        let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
+                        local_output.extend_from_slice(visible_data.as_ref());
+                        self.process_pty_data(visible_data.as_ref());
+                        let (count, writes) = self.drain_terminal_events();
+                        event_count += count;
+                        pty_write_count += writes;
+                        had_data = true;
+                        had_renderable_data |= renderable;
+                    }
+                }
+                Ok(PtyMessage::Closed) => {
+                    info!("[terminal-{}] PTY closed message received in poll", self.id);
+                    self.pty_closed.store(true, Ordering::Release);
+                    return POLL_EVENT_METADATA_CHANGED;
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                    trace!("[terminal-{}] poll timeout (no data)", self.id);
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                    warn!("[terminal-{}] PTY channel disconnected", self.id);
+                    self.pty_closed.store(true, Ordering::Release);
+                }
+            }
+
+            // Yield ownership between output batches. A producer can keep
+            // the channel permanently nonempty; draining it to exhaustion
+            // would monopolize the UI and starve grid snapshots indefinitely.
+            // Leave queued chunks untouched so subsequent polls preserve order.
+            let batch_started = Instant::now();
+            while bytes_this_poll < 64 * 1024 && batch_started.elapsed() < Duration::from_millis(2)
+            {
+                match pty_rx.try_recv() {
+                    Ok(PtyMessage::Data(data)) => {
+                        bytes_this_poll += data.len();
+                        let visible_data = filter_terminal_output_noise(&data);
+                        if !visible_data.is_empty() {
+                            let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
+                            local_output.extend_from_slice(visible_data.as_ref());
+                            self.process_pty_data(visible_data.as_ref());
+                            let (count, writes) = self.drain_terminal_events();
+                            event_count += count;
+                            pty_write_count += writes;
+                            had_data = true;
+                            had_renderable_data |= renderable;
+                        }
+                    }
+                    Ok(PtyMessage::Closed) => {
+                        info!(
+                            "[terminal-{}] PTY closed message received while draining",
+                            self.id
+                        );
+                        self.pty_closed.store(true, Ordering::Release);
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        warn!(
+                            "[terminal-{}] PTY channel disconnected while draining",
+                            self.id
+                        );
+                        self.pty_closed.store(true, Ordering::Release);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // The event-drain worker can poll again before Swift handles its wake.
+        // Keep unread bytes in stream order; an idle poll must not erase them.
+        if !local_output.is_empty() {
+            let mut last_output = self.last_output.lock();
+            last_output.extend_from_slice(&local_output);
+        }
+
+        // Process terminal events not drained after a chunk (events from
+        // injected output, child exit).
+        let (count, writes) = self.drain_terminal_events();
+        event_count += count;
+        pty_write_count += writes;
+        if event_count > 0 {
+            trace!(
+                "[terminal-{}] Processed {} terminal events ({} PtyWrite)",
+                self.id, event_count, pty_write_count
+            );
+        }
+
+        // Update adaptive poller based on activity
+        if had_data {
+            self.bytes_received
+                .fetch_add(bytes_this_poll as u64, Ordering::Relaxed);
+            debug!(
+                "[terminal-{}] poll: processed {} bytes",
+                self.id, bytes_this_poll
+            );
+            if had_renderable_data {
+                self.grid_dirty.store(true, Ordering::Release);
+            } else {
+                trace!(
+                    "[terminal-{}] poll: processed metadata-only terminal events",
+                    self.id
+                );
+            }
+            self.adaptive_poller.record_activity(bytes_this_poll);
+            self.metrics
+                .bytes_batched
+                .fetch_add(bytes_this_poll as u64, Ordering::Relaxed);
+            self.metrics.batch_count.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.adaptive_poller.record_idle();
+            self.metrics.idle_polls.fetch_add(1, Ordering::Relaxed);
+        }
+
+        let was_dirty = self.grid_dirty.swap(false, Ordering::AcqRel);
+        let mut event_flags = 0u32;
+        if was_dirty {
+            event_flags |= POLL_EVENT_GRID_CHANGED;
+        }
+        if event_count > 0 || (had_data && !had_renderable_data) {
+            event_flags |= POLL_EVENT_METADATA_CHANGED;
+        }
+
+        // Track performance metrics
+        let poll_time_us = poll_start.elapsed().as_micros() as u64;
+        self.metrics.poll_count.fetch_add(1, Ordering::Relaxed);
+        self.metrics
+            .poll_time_us
+            .fetch_add(poll_time_us, Ordering::Relaxed);
+        let current_max = self.metrics.max_poll_time_us.load(Ordering::Relaxed);
+        if poll_time_us > current_max {
+            self.metrics
+                .max_poll_time_us
+                .store(poll_time_us, Ordering::Relaxed);
+        }
+
+        trace!(
+            "[terminal-{}] poll returning: flags={} dirty={} (took {}µs, activity={}%)",
+            self.id,
+            event_flags,
+            was_dirty,
+            poll_time_us,
+            self.adaptive_poller.activity_percent()
+        );
+        event_flags
+    }
+
+    /// Poll for new data from PTY, process it, and return whether grid changed.
+    /// Kept for callers that have not migrated to `poll_events`.
+    #[must_use]
+    pub fn poll(&self, timeout_ms: u32) -> bool {
+        self.poll_events(timeout_ms) & POLL_EVENT_GRID_CHANGED != 0
+    }
+
+    /// Scan a chunk of PTY bytes for OSC 7 (current working directory) and
+    /// store the most recent payload in `pending_cwd`. Terminators are BEL
+    /// (0x07) or ST (ESC \). Non-UTF8 payloads are dropped silently — Swift
+    /// would only re-emit the warning and we keep this hot path quiet.
+    fn scan_osc7(&self, data: &[u8]) {
+        if data.len() < 6 {
+            return;
+        }
+        let mut i = 0usize;
+        let mut latest: Option<String> = None;
+        while i + 4 < data.len() {
+            if data[i] == 0x1B && data[i + 1] == 0x5D && data[i + 2] == b'7' && data[i + 3] == b';'
+            {
+                let start = i + 4;
+                let mut end = start;
+                while end < data.len() {
+                    if data[end] == 0x07 {
+                        break;
+                    }
+                    if data[end] == 0x1B && end + 1 < data.len() && data[end + 1] == 0x5C {
+                        break;
+                    }
+                    end += 1;
+                }
+                if end > start && end < data.len() {
+                    if let Ok(payload) = std::str::from_utf8(&data[start..end]) {
+                        latest = Some(payload.to_owned());
+                    }
+                    i = end + 1;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        if let Some(payload) = latest {
+            let mut pending = self.pending_cwd.lock();
+            *pending = Some(payload);
+            self.has_pending_cwd
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+
+    /// Take the pending OSC 7 cwd payload, if any. Format is the raw URL the
+    /// shell emitted (typically `file://host/path` — Swift handles parsing).
+    pub fn get_pending_cwd(&self) -> Option<String> {
+        if !self
+            .has_pending_cwd
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return None;
+        }
+        let mut pending = self.pending_cwd.lock();
+        let value = pending.take();
+        if value.is_some() {
+            self.has_pending_cwd
+                .store(false, std::sync::atomic::Ordering::Release);
+        }
+        value
+    }
+
+    /// Consume raw output bytes accumulated since the previous retrieval.
+    pub fn get_last_output(&self) -> Vec<u8> {
+        let mut last_output = self.last_output.lock();
+        std::mem::take(&mut *last_output)
+    }
+
+    /// Process PTY output data through the VTE processor.
+    /// The graphics interceptor pre-filters image escape sequences before VTE.
+    pub fn process_pty_data(&self, data: &[u8]) {
+        trace!(
+            "[terminal-{}] Processing {} bytes of PTY data",
+            self.id,
+            data.len()
+        );
+
+        // Scan for OSC 7 (current working directory report) before any
+        // downstream consumer can drain or filter the bytes. Alacritty's VTE
+        // processor doesn't emit a Cwd event for OSC 7, and the prior
+        // Swift-side scan on `last_output` was vulnerable to a race when
+        // multiple Swift views shared the same Rust terminal: whichever view
+        // polled first drained the buffer via `std::mem::take`, leaving the
+        // others to re-parse empty data. Capturing here gives a single
+        // race-free pickup point queried via `get_pending_cwd`.
+        self.scan_osc7(data);
+
+        let (passthrough_owned, events, shell_events, offsets) = {
+            let mut interceptor = self.graphics_interceptor.lock();
+            let (passthrough, events, shell) = interceptor.feed_owned(data);
+            (passthrough, events, shell, interceptor.take_event_offsets())
+            // Lock dropped here — passthrough_owned is an owned Vec, no borrow.
+        };
+
+        // Store shell integration events (OSC 133) for Swift to poll
+        if !shell_events.is_empty() {
+            debug!(
+                "[terminal-{}] OSC 133: {} shell integration events",
+                self.id,
+                shell_events.len()
+            );
+            let mut pending = self.pending_shell_events.lock();
+            pending.extend(shell_events);
+            self.has_pending_shell_events
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+
+        // Feed the parser up to each image to record where the cursor was
+        // when it arrived (`arrival_*`, Rust callers), then the rest. Without
+        // images this is the single `advance` call it always was, and the
+        // parser state is the same either way.
+        let mut arrivals = Vec::with_capacity(events.len());
+        if !passthrough_owned.is_empty() || !events.is_empty() {
+            let mut term = self.term.lock();
+            let mut processor = self.processor.lock();
+            let mut fed = 0usize;
+            for index in 0..events.len() {
+                let end = offsets
+                    .get(index)
+                    .copied()
+                    .unwrap_or(passthrough_owned.len())
+                    .clamp(fed, passthrough_owned.len());
+                if end > fed {
+                    crate::emoji_presentation::advance(
+                        &mut processor,
+                        &mut *term,
+                        &passthrough_owned[fed..end],
+                    );
+                    fed = end;
+                }
+                let grid = term.grid();
+                let cursor = grid.cursor.point;
+                arrivals.push((
+                    cursor.line.0,
+                    cursor.column.0 as u16,
+                    grid.history_size() as u32,
+                ));
+            }
+            if fed < passthrough_owned.len() {
+                crate::emoji_presentation::advance(
+                    &mut processor,
+                    &mut *term,
+                    &passthrough_owned[fed..],
+                );
+            }
+            if !passthrough_owned.is_empty() {
+                // Sample the grid for invariant violations every
+                // INVARIANT_CHECK_PERIOD calls. Catches the moment of state
+                // corruption (orphan wide-char spacers, cursor outside
+                // viewport) without paying the per-byte cost on every chunk.
+                let n = self
+                    .advance_counter
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if n.is_multiple_of(INVARIANT_CHECK_PERIOD) {
+                    Self::check_grid_invariants(self.id, &term, passthrough_owned.len());
+                }
+            }
+        }
+
+        if !events.is_empty() {
+            debug!(
+                "[terminal-{}] Graphics interceptor produced {} events",
+                self.id,
+                events.len()
+            );
+
+            // `anchor_*` stay the cursor after the whole chunk, as before.
+            let (cursor_row, cursor_col) = {
+                let term = self.term.lock();
+                let cursor = term.grid().cursor.point;
+                (cursor.line.0, cursor.column.0 as u16)
+            };
+
+            let mut store = self.image_store.lock();
+            for (event, (arrival_row, arrival_col, history_size)) in
+                events.into_iter().zip(arrivals)
+            {
+                let image = match event {
+                    graphics::GraphicsEvent::ITerm2 { args, base64_data } => {
+                        graphics::DecodedImage {
+                            id: 0,
+                            width: 0,
+                            height: 0,
+                            rgba: base64_data,
+                            anchor_row: cursor_row,
+                            anchor_col: cursor_col,
+                            protocol: graphics::ImageProtocol::ITerm2,
+                            args,
+                            arrival_row,
+                            arrival_col,
+                            history_size,
+                        }
+                    }
+                    graphics::GraphicsEvent::Sixel { params: _, data } => {
+                        match graphics::decode_sixel(&data) {
+                            Some((rgba, width, height)) => {
+                                debug!(
+                                    "[terminal-{}] Sixel decoded: {}x{} ({} bytes RGBA)",
+                                    self.id,
+                                    width,
+                                    height,
+                                    rgba.len()
+                                );
+                                graphics::DecodedImage {
+                                    id: 0,
+                                    width,
+                                    height,
+                                    rgba,
+                                    anchor_row: cursor_row,
+                                    anchor_col: cursor_col,
+                                    protocol: graphics::ImageProtocol::Sixel,
+                                    args: String::new(),
+                                    arrival_row,
+                                    arrival_col,
+                                    history_size,
+                                }
+                            }
+                            None => {
+                                warn!("[terminal-{}] Sixel decode failed, skipping image", self.id);
+                                continue;
+                            }
+                        }
+                    }
+                    graphics::GraphicsEvent::Kitty { control, payload } => {
+                        let mut accum = self.kitty_accumulator.lock();
+                        match accum.feed(&control, &payload) {
+                            graphics::KittyAction::Display {
+                                rgba,
+                                width,
+                                height,
+                            } => {
+                                debug!(
+                                    "[terminal-{}] Kitty decoded: {}x{} ({} bytes)",
+                                    self.id,
+                                    width,
+                                    height,
+                                    rgba.len()
+                                );
+                                graphics::DecodedImage {
+                                    id: 0,
+                                    width,
+                                    height,
+                                    rgba,
+                                    anchor_row: cursor_row,
+                                    anchor_col: cursor_col,
+                                    protocol: graphics::ImageProtocol::Kitty,
+                                    args: String::new(),
+                                    arrival_row,
+                                    arrival_col,
+                                    history_size,
+                                }
+                            }
+                            graphics::KittyAction::Continue => {
+                                trace!("[terminal-{}] Kitty: accumulating chunk", self.id);
+                                continue;
+                            }
+                            graphics::KittyAction::Delete { id } => {
+                                debug!("[terminal-{}] Kitty delete image id={}", self.id, id);
+                                // TODO: Implement image deletion from store
+                                continue;
+                            }
+                            graphics::KittyAction::Noop => {
+                                continue;
+                            }
+                        }
+                    }
+                };
+                store.push(image);
+            }
+        }
+    }
+
+    /// Inject output bytes directly into the terminal (without sending to PTY).
+    pub fn inject_output(&self, data: &[u8]) {
+        if data.is_empty() {
+            return;
+        }
+        trace!(
+            "[terminal-{}] Injecting {} bytes of output",
+            self.id,
+            data.len()
+        );
+        self.process_pty_data(data);
+        self.grid_dirty.store(true, Ordering::Release);
+    }
+
+    /// Fold the visible grid down to `display_cols` phone-width rows.
+    ///
+    /// Folding happens on *logical* lines. A physical row the engine marked as a
+    /// soft-wrap continuation is joined to the line above, so a paragraph that
+    /// exceeded the source width reads continuously instead of being cut at
+    /// every fold. Trailing blank cells on a logical line are trimmed so a short
+    /// line in a wide grid does not inflate the display height, and a wide
+    /// grapheme is never split across a fold boundary.
+    ///
+    /// `display_cols` of 0 uses the maximum width. A nonzero width is at least
+    /// two columns so a wide grapheme can always remain intact.
+    pub fn get_display_rows(&self, display_cols: u16) -> DisplayRowBuffer {
+        let display_cols = if display_cols == 0 {
+            u16::MAX
+        } else {
+            display_cols.max(2)
+        };
+        let fold_width = display_cols as usize;
+        let theme = self.theme_colors.read().clone();
+
+        let (
+            mut cells,
+            mut clusters,
+            out_cells,
+            out_clusters,
+            row_offsets,
+            cols,
+            rows,
+            display_cursor,
+        ) = {
+            let term = self.term.lock();
+            let grid = term.grid();
+            let cursor_visible = term.mode().contains(TermMode::SHOW_CURSOR);
+
+            let cols = grid.columns();
+            let rows = grid.screen_lines();
+            let display_offset = grid.display_offset();
+            let cursor = grid.cursor.point;
+            let cursor_row = cursor.line.0 + display_offset as i32;
+            let source_cursor = (cursor_visible
+                && cursor_row >= 0
+                && (cursor_row as usize) < rows
+                && cursor.column.0 < cols)
+                .then(|| cursor_row as usize * cols + cursor.column.0);
+            let selection_range = term.selection.as_ref().and_then(|sel| sel.to_range(&*term));
+
+            let total_cells = cols * rows;
+            let mut cells: Vec<CellData> = get_cell_buffer_pool().acquire(total_cells);
+            let mut clusters: Vec<u8> = Vec::with_capacity(total_cells);
+            let mut cluster_scratch = String::with_capacity(16);
+            let mut hyperlinks = self.hyperlinks.lock();
+            let mut leading_wide_spacers = Vec::with_capacity(total_cells);
+
+            for line_idx in 0..rows {
+                let line = Line(line_idx as i32 - display_offset as i32);
+                let row_is_continuation =
+                    line_idx > 0 && Self::grid_line_wraps(grid, Line(line.0 - 1));
+                for col_idx in 0..cols {
+                    let point = Point::new(line, Column(col_idx));
+                    let cell = &grid[point];
+                    leading_wide_spacers
+                        .push(cell.flags.contains(CellFlags::LEADING_WIDE_CHAR_SPACER));
+                    cells.push(Self::snapshot_cell(
+                        cell,
+                        point,
+                        row_is_continuation,
+                        selection_range.as_ref(),
+                        &theme,
+                        &mut hyperlinks,
+                        &mut clusters,
+                        &mut cluster_scratch,
+                    ));
+                }
+            }
+
+            // ── Fold ────────────────────────────────────────────────────
+            // Group physical rows into logical lines, then lay each logical line
+            // out at `display_cols` width.
+            let mut out_cells: Vec<CellData> = Vec::with_capacity(total_cells);
+            let mut out_clusters: Vec<u8> = Vec::with_capacity(total_cells);
+            let mut row_offsets: Vec<u32> = vec![0];
+            let mut display_cursor = None;
+            // A cursor on a wide continuation highlights its grapheme's owner.
+            let source_cursor = source_cursor.map(|index| {
+                if cells[index].continuation != 0 && index > 0 {
+                    index - 1
+                } else {
+                    index
+                }
+            });
+
+            // Copy a source cell into the output buffers, re-basing the cluster
+            // offset into the output cluster buffer.
+            fn push_cell(
+                cell: &CellData,
+                source_clusters: &[u8],
+                out_cells: &mut Vec<CellData>,
+                out_clusters: &mut Vec<u8>,
+            ) {
+                let start = cell.cluster_offset as usize;
+                let end = start + cell.cluster_len as usize;
+                // CellData is intentionally not Copy (it crosses the FFI
+                // boundary), so the fold rebuilds it field-wise. Only the cluster
+                // offset changes: it is re-based into the output buffer.
+                let mut cluster_len = cell.cluster_len;
+                let mut cluster_offset = cell.cluster_offset;
+                if cell.cluster_len > 0 && end <= source_clusters.len() {
+                    cluster_offset = out_clusters.len() as u32;
+                    out_clusters.extend_from_slice(&source_clusters[start..end]);
+                } else {
+                    cluster_len = 0;
+                }
+                out_cells.push(CellData {
+                    cluster_offset,
+                    fg_r: cell.fg_r,
+                    fg_g: cell.fg_g,
+                    fg_b: cell.fg_b,
+                    bg_r: cell.bg_r,
+                    bg_g: cell.bg_g,
+                    bg_b: cell.bg_b,
+                    cluster_len,
+                    width: cell.width,
+                    continuation: cell.continuation,
+                    flags: cell.flags,
+                    underline_style: cell.underline_style,
+                    link_id: cell.link_id,
+                });
+            }
+
+            let mut row = 0usize;
+            while row < rows {
+                // Collect the physical rows of this logical line.
+                let line_start = row;
+                let mut line_end = row + 1;
+                while line_end < rows && Self::is_continuation_cell(&cells, line_end, cols) {
+                    line_end += 1;
+                }
+
+                // Find the last non-blank cell in the logical line so trailing
+                // padding does not create empty display rows.
+                let mut last_content = None;
+                for r in line_start..line_end {
+                    for c in 0..cols {
+                        let idx = r * cols + c;
+                        let cell = &cells[idx];
+                        if cell.cluster_len > 0 && !Self::cell_is_space(cell, &clusters) {
+                            // Include the continuation of a final wide glyph.
+                            last_content =
+                                Some((idx + usize::from(cell.width.max(1))).min(line_end * cols));
+                        }
+                    }
+                }
+
+                let mut content_end = last_content.unwrap_or(line_start * cols);
+                if let Some(cursor) = source_cursor
+                    .filter(|index| *index >= line_start * cols && *index < line_end * cols)
+                {
+                    // Retain spaces through the cursor, including an otherwise
+                    // empty row after a hard newline or a display fold boundary.
+                    content_end = content_end.max(cursor + 1);
+                }
+                let line_begin = line_start * cols;
+
+                if content_end > line_begin || line_end == line_start + 1 {
+                    let mut col_in_row = 0usize;
+                    let mut idx = line_begin;
+                    while idx < content_end {
+                        // Source wrap padding is not part of the logical text.
+                        if leading_wide_spacers[idx] {
+                            idx += 1;
+                            continue;
+                        }
+                        let cell_width = usize::from(cells[idx].width.max(1));
+                        let cell_count = if cell_width == 2
+                            && idx + 1 < line_end * cols
+                            && cells[idx + 1].continuation != 0
+                        {
+                            2
+                        } else {
+                            1
+                        };
+                        // Count terminal columns, not graphemes. Move a wide
+                        // pair together when only one column remains.
+                        if col_in_row > 0 && col_in_row + cell_count > fold_width {
+                            row_offsets.push(out_cells.len() as u32);
+                            col_in_row = 0;
+                        }
+                        if source_cursor == Some(idx) {
+                            display_cursor =
+                                Some((col_in_row as u16, (row_offsets.len() - 1) as u16));
+                        }
+                        for source_cell in &cells[idx..idx + cell_count] {
+                            push_cell(source_cell, &clusters, &mut out_cells, &mut out_clusters);
+                        }
+                        idx += cell_count;
+                        col_in_row += cell_count;
+                        if col_in_row >= fold_width {
+                            row_offsets.push(out_cells.len() as u32);
+                            col_in_row = 0;
+                        }
+                    }
+                    if col_in_row > 0 {
+                        row_offsets.push(out_cells.len() as u32);
+                    }
+                }
+
+                row = line_end;
+            }
+
+            // Guarantee at least one row so the buffer is never empty.
+            if row_offsets.len() == 1 {
+                row_offsets.push(0);
+            }
+
+            (
+                cells,
+                clusters,
+                out_cells,
+                out_clusters,
+                row_offsets,
+                cols,
+                rows,
+                display_cursor,
+            )
+        };
+        cells.clear();
+        clusters.clear();
+        drop((cells, clusters));
+
+        let display_rows = (row_offsets.len() - 1) as u16;
+        let cell_count = out_cells.len();
+        Self::into_display_row_buffer(
+            out_cells,
+            out_clusters,
+            row_offsets,
+            cell_count,
+            display_cols,
+            display_rows,
+            cols as u16,
+            rows as u16,
+            display_cursor,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn into_display_row_buffer(
+        mut cells: Vec<CellData>,
+        mut clusters: Vec<u8>,
+        mut row_offsets: Vec<u32>,
+        cell_count: usize,
+        display_cols: u16,
+        display_rows: u16,
+        source_cols: u16,
+        source_rows: u16,
+        cursor: Option<(u16, u16)>,
+    ) -> DisplayRowBuffer {
+        let cells_ptr = cells.as_mut_ptr();
+        let cells_capacity = cells.capacity();
+        std::mem::forget(cells);
+
+        let clusters_len = clusters.len();
+        let clusters_capacity = clusters.capacity();
+        let clusters_ptr = if clusters_capacity == 0 {
+            std::ptr::null_mut()
+        } else {
+            let p = clusters.as_mut_ptr();
+            std::mem::forget(clusters);
+            p
+        };
+
+        let row_offsets_len = row_offsets.len();
+        let row_offsets_capacity = row_offsets.capacity();
+        let row_offsets_ptr = row_offsets.as_mut_ptr();
+        std::mem::forget(row_offsets);
+
+        DisplayRowBuffer {
+            cells: cells_ptr,
+            cells_capacity,
+            clusters_utf8: clusters_ptr,
+            clusters_len,
+            clusters_capacity,
+            row_offsets: row_offsets_ptr,
+            row_offsets_len,
+            row_offsets_capacity,
+            cell_count,
+            display_cols,
+            display_rows,
+            source_cols,
+            source_rows,
+            cursor_col: cursor.map_or(0, |position| position.0),
+            cursor_row: cursor.map_or(0, |position| position.1),
+            cursor_visible: u8::from(cursor.is_some()),
+        }
+    }
+
+    /// Convert one Alacritty cell into the stable C representation shared by
+    /// full and incremental snapshots.
+    #[allow(clippy::too_many_arguments)]
+    fn snapshot_cell(
+        cell: &Cell,
+        point: Point,
+        // True when this row is a soft-wrap continuation, i.e. the row *above*
+        // it ran out of width rather than ending with a newline. Derived from
+        // the previous line's WRAPLINE marker, not this line's.
+        row_is_continuation: bool,
+        selection_range: Option<&SelectionRange>,
+        theme: &ThemeColors,
+        hyperlinks: &mut HyperlinkRegistry,
+        clusters: &mut Vec<u8>,
+        cluster_scratch: &mut String,
+    ) -> CellData {
+        let is_spacer = cell.flags.contains(CellFlags::WIDE_CHAR_SPACER);
+        let is_wide = cell.flags.contains(CellFlags::WIDE_CHAR);
+
+        let (cluster_offset, cluster_len, width, continuation) = if is_spacer {
+            (0u32, 0u16, 0u8, 1u8)
+        } else if cell.c == '\u{0}' {
+            (0u32, 0u16, 1u8, 0u8)
+        } else if cell.c.is_ascii() && cell.zerowidth().is_none() {
+            // ASCII cells are by far the common case in shell output. They
+            // are already NFC and have a one-byte UTF-8 representation, so
+            // avoid constructing a scratch String and walking the Unicode
+            // normalization iterator for every cell in every dirty row.
+            let offset = clusters.len() as u32;
+            clusters.push(cell.c as u8);
+            (offset, 1u16, if is_wide { 2u8 } else { 1u8 }, 0u8)
+        } else {
+            cluster_scratch.clear();
+            cluster_scratch.push(cell.c);
+            if let Some(extras) = cell.zerowidth() {
+                for &ch in extras {
+                    cluster_scratch.push(ch);
+                }
+            }
+            debug_assert!(
+                clusters.len() <= u32::MAX as usize,
+                "clusters buffer exceeded u32::MAX bytes; cluster_offset would truncate"
+            );
+            let offset = clusters.len() as u32;
+            for ch in cluster_scratch.chars().nfc() {
+                let mut buf = [0u8; 4];
+                clusters.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+            }
+            let written = clusters.len() as u32 - offset;
+            debug_assert!(
+                written <= u16::MAX as u32,
+                "single grapheme cluster exceeded u16::MAX bytes"
+            );
+            (offset, written as u16, if is_wide { 2u8 } else { 1u8 }, 0u8)
+        };
+
+        let fg_color = Self::effective_cell_fg(cell);
+        let (mut fg_r, mut fg_g, mut fg_b) = color_to_rgb_with_theme(fg_color, true, theme);
+        let (mut bg_r, mut bg_g, mut bg_b) = color_to_rgb_with_theme(cell.bg, false, theme);
+        let flags = cell_flags_to_u8(cell.flags);
+        // The wrap marker is a property of the *row*, so it is set on the row's
+        // first cell only. Clients fold on logical lines by reading
+        // `cells[row * cols].flags & CELL_FLAG_WRAPPED`.
+        let flags = if row_is_continuation && point.column.0 == 0 {
+            flags | CELL_FLAG_WRAPPED
+        } else {
+            flags
+        };
+        let link_id = cell
+            .hyperlink()
+            .map(|hyperlink| hyperlinks.id_for_uri(hyperlink.uri()))
+            .unwrap_or(0);
+
+        if selection_range.is_some_and(|range| range.contains(point)) {
+            std::mem::swap(&mut fg_r, &mut bg_r);
+            std::mem::swap(&mut fg_g, &mut bg_g);
+            std::mem::swap(&mut fg_b, &mut bg_b);
+        }
+
+        CellData {
+            cluster_offset,
+            fg_r,
+            fg_g,
+            fg_b,
+            bg_r,
+            bg_g,
+            bg_b,
+            cluster_len,
+            width,
+            continuation,
+            flags,
+            underline_style: underline_style(cell.flags),
+            link_id,
+        }
+    }
+
+    /// Create a snapshot of the current grid state
+    #[must_use]
+    pub fn get_grid_snapshot(&self) -> GridSnapshot {
+        debug!("[terminal-{}] Creating grid snapshot", self.id);
+        let start = Instant::now();
+
+        // Clone theme to release the RwLock before the cell loop.
+        // ThemeColors is ~2KB — cloning is negligible vs. holding the lock
+        // for 3000+ cell iterations.
+        let theme = self.theme_colors.read().clone();
+
+        // ── Phase 1: Extract cell data under term lock ──────────────
+        // We hold the term lock only for grid iteration. Color conversion
+        // uses the cloned theme (no lock). Hyperlink URI extraction must
+        // happen here since it references grid cell data.
+        let (mut cells, mut clusters, cols, rows, display_offset, history_size, cursor_visible) = {
+            let term = self.term.lock();
+            let grid = term.grid();
+
+            // DECTCEM: whether the cursor should be drawn (ESC[?25l hides, ESC[?25h shows)
+            let cursor_visible = term.mode().contains(TermMode::SHOW_CURSOR);
+
+            let cols = grid.columns();
+            let rows = grid.screen_lines();
+            let display_offset = grid.display_offset();
+            let history_size = grid.history_size();
+            let total_cells = cols * rows;
+
+            trace!(
+                "[terminal-{}] Grid snapshot: {}x{}, {} total cells, history={}, offset={}",
+                self.id, cols, rows, total_cells, history_size, display_offset
+            );
+
+            let selection_range = term.selection.as_ref().and_then(|sel| sel.to_range(&*term));
+
+            let mut cells: Vec<CellData> = get_cell_buffer_pool().acquire(total_cells);
+            // UTF-8 cluster buffer. Pre-size for ASCII-dense grids (1 byte/cell).
+            // Emoji-heavy grids will grow this, which is fine — the Vec doubles.
+            let mut clusters: Vec<u8> = Vec::with_capacity(total_cells);
+            // Scratch buffer reused across cells to avoid per-cell allocation.
+            let mut cluster_scratch = String::with_capacity(16);
+            let mut hyperlinks = self.hyperlinks.lock();
+
+            // Iterate over the VIEWPORT, not the active screen.
+            // Like Alacritty's display_iter(), we offset by -display_offset so that
+            // when the user scrolls up, we read scrollback history lines (negative
+            // Line values) instead of the active screen.
+            //
+            // Coordinate mapping:
+            //   viewport row 0 → grid Line(-display_offset)     (top of what user sees)
+            //   viewport row N → grid Line(N - display_offset)
+            //   When display_offset == 0, this simplifies to Line(0)..Line(rows-1).
+            for line_idx in 0..rows {
+                let line = Line(line_idx as i32 - display_offset as i32);
+                // A row continues the line above when the *previous* line carried
+                // the WRAPLINE marker on its last cell.
+                let row_is_continuation =
+                    line_idx > 0 && Self::grid_line_wraps(grid, Line(line.0 - 1));
+                for col_idx in 0..cols {
+                    let point = Point::new(line, Column(col_idx));
+                    let cell = &grid[point];
+                    cells.push(Self::snapshot_cell(
+                        cell,
+                        point,
+                        row_is_continuation,
+                        selection_range.as_ref(),
+                        &theme,
+                        &mut hyperlinks,
+                        &mut clusters,
+                        &mut cluster_scratch,
+                    ));
+                }
+            }
+
+            // term lock is dropped at the end of this block
+            (
+                cells,
+                clusters,
+                cols,
+                rows,
+                display_offset,
+                history_size,
+                cursor_visible,
+            )
+        };
+        // ── Phase 2: Post-processing without any lock ───────────────
+
+        // Convert to raw pointer - preserve Vec capacity for proper deallocation.
+        // Do NOT use into_boxed_slice() — it shrinks the allocation, making
+        // the previously recorded capacity invalid for Vec::from_raw_parts.
+        let len = cells.len();
+        let capacity = cells.capacity();
+        let cells_ptr = cells.as_mut_ptr();
+        std::mem::forget(cells);
+
+        // Same forget-dance for the cluster byte buffer. Freed alongside cells
+        // in `chau7_terminal_free_grid`.
+        let clusters_len = clusters.len();
+        let clusters_capacity = clusters.capacity();
+        let clusters_ptr = if clusters_capacity == 0 {
+            std::ptr::null_mut()
+        } else {
+            let p = clusters.as_mut_ptr();
+            std::mem::forget(clusters);
+            p
+        };
+
+        // Track performance metrics
+        let snapshot_time_us = start.elapsed().as_micros() as u64;
+        self.metrics
+            .grid_snapshot_count
+            .fetch_add(1, Ordering::Relaxed);
+        self.metrics
+            .grid_snapshot_time_us
+            .fetch_add(snapshot_time_us, Ordering::Relaxed);
+        let current_max = self
+            .metrics
+            .max_grid_snapshot_time_us
+            .load(Ordering::Relaxed);
+        if snapshot_time_us > current_max {
+            self.metrics
+                .max_grid_snapshot_time_us
+                .store(snapshot_time_us, Ordering::Relaxed);
+        }
+
+        debug!(
+            "[terminal-{}] Grid snapshot created in {}µs (len={}, cap={})",
+            self.id, snapshot_time_us, len, capacity
+        );
+
+        GridSnapshot {
+            cells: cells_ptr,
+            clusters_utf8: clusters_ptr,
+            clusters_len,
+            clusters_capacity,
+            cols: cols as u16,
+            rows: rows as u16,
+            cursor_visible: if cursor_visible { 1 } else { 0 },
+            _pad: [0; 3],
+            scrollback_rows: history_size as u32,
+            display_offset: display_offset as u32,
+            capacity,
+        }
+    }
+
+    /// Create the smallest viewport snapshot needed to advance one consumer
+    /// from `consumer_generation` to the current terminal generation.
+    ///
+    /// Alacritty owns the authoritative damage ranges. We collapse them to
+    /// rows, persist each row's generation, and reset Alacritty's damage only
+    /// after recording it. A second split view with an older generation still
+    /// receives every row it missed.
+    #[must_use]
+    pub fn get_grid_delta_snapshot(&self, consumer_generation: u64) -> GridDeltaSnapshot {
+        let start = Instant::now();
+        let theme = self.theme_colors.read().clone();
+
+        let (
+            mut cells,
+            mut clusters,
+            mut row_indices,
+            cols,
+            rows,
+            display_offset,
+            history_size,
+            cursor_visible,
+            generation,
+            full_refresh,
+        ) = {
+            let mut term = self.term.lock();
+            let (terminal_full_damage, damaged_rows) = match term.damage() {
+                TermDamage::Full => (true, Vec::new()),
+                TermDamage::Partial(lines) => {
+                    let mut rows: Vec<usize> = lines.map(|damage| damage.line).collect();
+                    rows.sort_unstable();
+                    rows.dedup();
+                    (false, rows)
+                }
+            };
+            term.reset_damage();
+
+            let grid = term.grid();
+            let cols = grid.columns();
+            let rows = grid.screen_lines();
+            let display_offset = grid.display_offset();
+            let history_size = grid.history_size();
+            let cursor_visible = term.mode().contains(TermMode::SHOW_CURSOR);
+            let selection_range = term
+                .selection
+                .as_ref()
+                .and_then(|selection| selection.to_range(&*term));
+            let dirty = self.dirty_rows.record_and_snapshot(
+                rows,
+                &damaged_rows,
+                terminal_full_damage,
+                consumer_generation,
+            );
+
+            let changed_cell_count = dirty.rows.len() * cols;
+            let mut cells = get_cell_buffer_pool().acquire(changed_cell_count);
+            let mut clusters = Vec::with_capacity(changed_cell_count);
+            let mut row_indices = Vec::with_capacity(dirty.rows.len());
+            let mut cluster_scratch = String::with_capacity(16);
+            let mut hyperlinks = self.hyperlinks.lock();
+
+            for row in dirty.rows.iter().copied() {
+                row_indices.push(row as u16);
+                let line = Line(row as i32 - display_offset as i32);
+                let row_is_continuation = row > 0 && Self::grid_line_wraps(grid, Line(line.0 - 1));
+                for col in 0..cols {
+                    let point = Point::new(line, Column(col));
+                    cells.push(Self::snapshot_cell(
+                        &grid[point],
+                        point,
+                        row_is_continuation,
+                        selection_range.as_ref(),
+                        &theme,
+                        &mut hyperlinks,
+                        &mut clusters,
+                        &mut cluster_scratch,
+                    ));
+                }
+            }
+
+            (
+                cells,
+                clusters,
+                row_indices,
+                cols,
+                rows,
+                display_offset,
+                history_size,
+                cursor_visible,
+                dirty.generation,
+                dirty.full_refresh,
+            )
+        };
+
+        let cells_capacity = cells.capacity();
+        let cells_ptr = cells.as_mut_ptr();
+        std::mem::forget(cells);
+        let clusters_len = clusters.len();
+        let clusters_capacity = clusters.capacity();
+        let clusters_ptr = if clusters_capacity == 0 {
+            std::ptr::null_mut()
+        } else {
+            let pointer = clusters.as_mut_ptr();
+            std::mem::forget(clusters);
+            pointer
+        };
+        let row_count = row_indices.len();
+        let row_indices_capacity = row_indices.capacity();
+        let row_indices_ptr = row_indices.as_mut_ptr();
+        std::mem::forget(row_indices);
+
+        let snapshot_time_us = start.elapsed().as_micros() as u64;
+        self.metrics
+            .grid_snapshot_count
+            .fetch_add(1, Ordering::Relaxed);
+        self.metrics
+            .grid_snapshot_time_us
+            .fetch_add(snapshot_time_us, Ordering::Relaxed);
+        self.metrics
+            .max_grid_snapshot_time_us
+            .fetch_max(snapshot_time_us, Ordering::Relaxed);
+
+        trace!(
+            "[terminal-{}] Grid delta generation={} consumer={} rows={}/{} cells={} created in {}µs",
+            self.id,
+            generation,
+            consumer_generation,
+            row_count,
+            rows,
+            row_count * cols,
+            snapshot_time_us
+        );
+
+        GridDeltaSnapshot {
+            cells: cells_ptr,
+            clusters_utf8: clusters_ptr,
+            row_indices: row_indices_ptr,
+            clusters_len,
+            clusters_capacity,
+            cells_capacity,
+            row_indices_capacity,
+            generation,
+            scrollback_rows: history_size as u32,
+            display_offset: display_offset as u32,
+            row_count: row_count as u32,
+            cols: cols as u16,
+            rows: rows as u16,
+            cursor_visible: u8::from(cursor_visible),
+            full_refresh: u8::from(full_refresh),
+            _pad: [0; 6],
+        }
+    }
+
+    /// Get current scroll position as a normalized value (0.0 = bottom, 1.0 = top of history)
+    pub fn scroll_position(&self) -> f64 {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let history_size = grid.history_size();
+        if history_size == 0 {
+            return 0.0;
+        }
+        let display_offset = grid.display_offset();
+        let pos = display_offset as f64 / history_size as f64;
+        trace!(
+            "[terminal-{}] scroll_position: {} (offset={}, history={})",
+            self.id, pos, display_offset, history_size
+        );
+        pos
+    }
+
+    /// Scroll to a normalized position (0.0 = bottom, 1.0 = top of history)
+    pub fn scroll_to(&self, position: f64) {
+        debug!("[terminal-{}] scroll_to({})", self.id, position);
+        let mut term = self.term.lock();
+        let history_size = term.grid().history_size();
+        if history_size == 0 {
+            trace!("[terminal-{}] scroll_to: no history, ignoring", self.id);
+            return;
+        }
+        let target_offset = (position.clamp(0.0, 1.0) * history_size as f64) as usize;
+        let current_offset = term.grid().display_offset();
+
+        if target_offset > current_offset {
+            term.scroll_display(alacritty_terminal::grid::Scroll::Delta(
+                (target_offset - current_offset) as i32,
+            ));
+        } else if target_offset < current_offset {
+            term.scroll_display(alacritty_terminal::grid::Scroll::Delta(
+                -((current_offset - target_offset) as i32),
+            ));
+        }
+        trace!(
+            "[terminal-{}] scroll_to: {} -> {} (target offset: {})",
+            self.id, current_offset, target_offset, target_offset
+        );
+        self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
+    }
+
+    /// Scroll by a number of lines (positive = up/back, negative = down/forward)
+    pub fn scroll_lines(&self, lines: i32) {
+        debug!("[terminal-{}] scroll_lines({})", self.id, lines);
+        let mut term = self.term.lock();
+        term.scroll_display(alacritty_terminal::grid::Scroll::Delta(lines));
+        self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
+    }
+
+    /// Get the currently selected text, if any
+    pub fn selection_text(&self) -> Option<String> {
+        let term = self.term.lock();
+        let text = term.selection_to_string();
+        if let Some(ref t) = text {
+            debug!("[terminal-{}] selection_text: {} chars", self.id, t.len());
+        } else {
+            trace!("[terminal-{}] selection_text: no selection", self.id);
+        }
+        text
+    }
+
+    /// Clear any active selection
+    pub fn selection_clear(&self) {
+        debug!("[terminal-{}] selection_clear", self.id);
+        let mut term = self.term.lock();
+        term.selection = None;
+        self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
+    }
+
+    /// Start a new selection at the given position
+    pub fn selection_start(&self, col: i32, row: i32, selection_type: u8) {
+        debug!(
+            "[terminal-{}] selection_start(col={}, row={}, type={})",
+            self.id, col, row, selection_type
+        );
+        let mut term = self.term.lock();
+
+        let ty = match selection_type {
+            0 => SelectionType::Simple,
+            1 => SelectionType::Block,
+            2 => SelectionType::Semantic,
+            3 => SelectionType::Lines,
+            _ => SelectionType::Simple,
+        };
+
+        let point = Self::clamped_selection_point(&term, col, row);
+        let selection = Selection::new(ty, point, Side::Left);
+        term.selection = Some(selection);
+        self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
+    }
+
+    /// Update the current selection to extend to the given position
+    pub fn selection_update(&self, col: i32, row: i32) {
+        debug!(
+            "[terminal-{}] selection_update(col={}, row={})",
+            self.id, col, row
+        );
+        let mut term = self.term.lock();
+
+        let point = Self::clamped_selection_point(&term, col, row);
+        if let Some(ref mut selection) = term.selection {
+            selection.update(point, Side::Right);
+            // Keep whole-cell selection symmetric when the drag reverses.
+            // The endpoint sorts before the original anchor, so Side::Right
+            // alone would omit that first cell.
+            selection.include_all();
+            self.grid_dirty.store(true, Ordering::Release);
+            self.dirty_rows.mark_all_dirty();
+        }
+    }
+
+    /// Clamp FFI-provided coordinates to the grid. A negative `col` cast to
+    /// usize would index alacritty's Selection with a ~1.8e19 column — treat
+    /// every FFI input as hostile and clamp to valid grid bounds.
+    fn clamped_selection_point(term: &Term<Chau7EventListener>, col: i32, row: i32) -> Point {
+        let grid = term.grid();
+        let max_col = (grid.columns() as i32 - 1).max(0);
+        let max_row = (grid.screen_lines() as i32 - 1).max(0);
+        let min_row = -(grid.history_size() as i32);
+        Point::new(
+            Line(row.clamp(min_row, max_row)),
+            Column(col.clamp(0, max_col) as usize),
+        )
+    }
+
+    /// Select all content (screen + scrollback)
+    pub fn selection_all(&self) {
+        debug!("[terminal-{}] selection_all", self.id);
+        let mut term = self.term.lock();
+        let grid = term.grid();
+
+        let history_size = grid.history_size();
+        let screen_lines = grid.screen_lines();
+
+        let start_line = -(history_size as i32);
+        let start = Point::new(Line(start_line), Column(0));
+
+        let mut selection = Selection::new(SelectionType::Simple, start, Side::Left);
+
+        let end_line = (screen_lines as i32) - 1;
+        let end_col = grid.columns().saturating_sub(1);
+        let end = Point::new(Line(end_line), Column(end_col));
+
+        selection.update(end, Side::Right);
+
+        term.selection = Some(selection);
+        self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
+        debug!(
+            "[terminal-{}] selection_all: selected from line {} to line {}",
+            self.id, start_line, end_line
+        );
+    }
+
+    /// Get cursor position
+    pub fn cursor_position(&self) -> (u16, u16) {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let cursor = grid.cursor.point;
+        let display_offset = grid.display_offset();
+
+        // Convert cursor from grid coordinates to viewport coordinates.
+        // Grid: Line(0) = top of active screen.
+        // Viewport: row 0 = top of what the user sees.
+        // viewport_row = cursor.line + display_offset
+        // When display_offset == 0, this is a no-op.
+        let viewport_row = cursor.line.0 + display_offset as i32;
+        let pos = (cursor.column.0 as u16, viewport_row as u16);
+        trace!(
+            "[terminal-{}] cursor_position: ({}, {}) [display_offset={}]",
+            self.id, pos.0, pos.1, display_offset
+        );
+        pos
+    }
+
+    /// Clear the scrollback history buffer
+    pub fn clear_scrollback(&self) {
+        info!(
+            "[terminal-{}] clear_scrollback: Clearing scrollback history",
+            self.id
+        );
+        let mut term = self.term.lock();
+        term.grid_mut().clear_history();
+        self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
+        debug!("[terminal-{}] clear_scrollback: History cleared", self.id);
+    }
+
+    /// Set the scrollback buffer size (number of lines).
+    ///
+    /// Routed through `Term::set_options` rather than
+    /// `grid_mut().update_history()`: `grid_mut()` returns the ACTIVE grid,
+    /// and while the alternate screen is on, the primary grid — the one that
+    /// actually owns scrollback history — is swapped into a private field.
+    /// The old direct call was therefore a silent no-op for alt-screen TUIs;
+    /// `set_options` contains the `ALT_SCREEN ? inactive_grid : grid` branch
+    /// that always targets the primary grid's history. Side effects verified
+    /// benign: the re-sent Title event is either ignored (ResetTitle) or
+    /// re-posts the current title, and the config we pass differs from the
+    /// current one only in `scrolling_history`. The Kitty keyboard setting
+    /// is carried over: `set_options` clears the protocol's mode stack when
+    /// it changes, so dropping it would silently disable the protocol.
+    pub fn set_scrollback_size(&self, lines: usize) {
+        info!(
+            "[terminal-{}] set_scrollback_size: Setting scrollback to {} lines",
+            self.id, lines
+        );
+        let mut term = self.term.lock();
+        let config = TermConfig {
+            scrolling_history: lines,
+            kitty_keyboard: self.kitty_keyboard.load(Ordering::Acquire),
+            ..TermConfig::default()
+        };
+        term.set_options(config);
+        self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
+        debug!(
+            "[terminal-{}] set_scrollback_size: Scrollback set to {} lines",
+            self.id, lines
+        );
+    }
+
+    /// Replay a historical buffer into an empty terminal.
+    ///
+    /// Clears both scrollback history and the visible viewport, then feeds `data`
+    /// through the VTE processor. The processor naturally fills the viewport and
+    /// scrolls older content into history as new rows arrive. After replay, the
+    /// viewport shows the tail of `data` (typically the last shell prompt) and
+    /// the scrollback contains everything above it.
+    ///
+    /// Intended for tier promotion: when a previously `.hidden` tab becomes
+    /// active, we call `set_scrollback_size(cap)` to allocate the history ring
+    /// and then this method to populate it from the on-disk cache.
+    pub fn replay_buffer(&self, data: &[u8]) {
+        info!(
+            "[terminal-{}] replay_buffer: Replaying {} bytes into cleared terminal",
+            self.id,
+            data.len()
+        );
+
+        let mut term = self.term.lock();
+        let mut processor = self.processor.lock();
+
+        // Reset to a truly empty terminal before pouring the cache in. Order
+        // matters: Alacritty's ESC[2J scrolls the current viewport INTO
+        // history, so it must run before ESC[3J (clear saved lines) — the old
+        // clear_history-then-2J order left the stale on-screen rows sitting
+        // above the restored buffer. Using the processor keeps Alacritty's
+        // internal state consistent rather than poking the grid directly.
+        term.grid_mut().clear_history();
+        crate::emoji_presentation::advance(&mut processor, &mut *term, b"\x1b[2J\x1b[3J\x1b[H");
+
+        // The full-buffer export walks every viewport row, so rows below the
+        // cursor arrive as bare CRLF terminators (possibly followed by the
+        // exporter's final SGR reset). Feeding them advances the cursor one
+        // row per flush/reload cycle, compounding a blank line each time —
+        // trim them, keeping the last content row's own terminator.
+        const RESET: &[u8] = b"\x1b[0m";
+        let mut body = data;
+        let mut had_reset = false;
+        if body.ends_with(RESET) {
+            had_reset = true;
+            body = &body[..body.len() - RESET.len()];
+        }
+        while body.ends_with(b"\r\n\r\n") {
+            body = &body[..body.len() - 2];
+        }
+
+        if !body.is_empty() {
+            crate::emoji_presentation::advance(&mut processor, &mut *term, body);
+        }
+        if had_reset {
+            crate::emoji_presentation::advance(&mut processor, &mut *term, RESET);
+        }
+
+        self.grid_dirty.store(true, Ordering::Release);
+        self.dirty_rows.mark_all_dirty();
+        debug!("[terminal-{}] replay_buffer: Replay complete", self.id);
+    }
+
+    /// Get the current display offset
+    pub fn display_offset(&self) -> usize {
+        let term = self.term.lock();
+        term.grid().display_offset()
+    }
+
+    /// Get terminal statistics for debugging
+    pub fn stats(&self) -> (u64, u64, Duration) {
+        (
+            self.bytes_sent.load(Ordering::Relaxed),
+            self.bytes_received.load(Ordering::Relaxed),
+            self.created_at.elapsed(),
+        )
+    }
+
+    /// Get text for a specific line in the grid
+    pub fn line_text(&self, row: i32) -> Option<String> {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let rows = grid.screen_lines() as i32;
+        let history = grid.history_size() as i32;
+
+        let min_row = -history;
+        let max_row = rows - 1;
+        if row < min_row || row > max_row {
+            return None;
+        }
+
+        let line = Line(row);
+        let (text, _) = Self::grid_line_text(grid, line);
+        Some(text.trim_end_matches('\n').to_string())
+    }
+
+    /// Get the full logical wrapped line containing the specified physical row.
+    ///
+    /// Returns the flattened text, the starting physical row, and the UTF-16
+    /// offset within that flattened text for the specified physical column.
+    pub fn logical_line_text(&self, row: i32, column: usize) -> Option<(String, i32, usize)> {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let rows = grid.screen_lines() as i32;
+        let history = grid.history_size() as i32;
+
+        let min_row = -history;
+        let max_row = rows - 1;
+        if row < min_row || row > max_row {
+            return None;
+        }
+
+        let mut start_row = row;
+        while start_row > min_row && Self::grid_line_wraps(grid, Line(start_row - 1)) {
+            start_row -= 1;
+        }
+
+        let mut end_row = row;
+        while end_row < max_row && Self::grid_line_wraps(grid, Line(end_row)) {
+            end_row += 1;
+        }
+
+        let mut text = String::new();
+        let mut clicked_utf16_offset = 0usize;
+        for physical_row in start_row..=end_row {
+            let line = Line(physical_row);
+            let (line_text, _) = Self::grid_line_text(grid, line);
+            if physical_row < row {
+                clicked_utf16_offset += line_text.encode_utf16().count();
+            } else if physical_row == row {
+                clicked_utf16_offset += Self::grid_column_utf16_offset(grid, line, column);
+            }
+            text.push_str(&line_text);
+        }
+
+        let text = text.trim_end_matches('\n').to_string();
+        let clicked_utf16_offset = clicked_utf16_offset.min(text.encode_utf16().count());
+        Some((text, start_row, clicked_utf16_offset))
+    }
+
+    /// Check if bracketed paste mode is enabled
+    pub fn is_bracketed_paste_mode(&self) -> bool {
+        let term = self.term.lock();
+        let mode = term.mode();
+        let enabled = mode.contains(TermMode::BRACKETED_PASTE);
+        trace!(
+            "[terminal-{}] is_bracketed_paste_mode: {}",
+            self.id, enabled
+        );
+        enabled
+    }
+
+    /// Check if the terminal is currently rendering the alternate screen.
+    ///
+    /// Full-screen TUI programs (vim, less, Claude/Codex/Gemini-style agents,
+    /// etc.) usually draw here instead of the normal scrollback-producing
+    /// screen. Exposing this as a terminal fact lets higher layers decide how
+    /// to route scroll input without hardcoding provider names.
+    pub fn is_alternate_screen_active(&self) -> bool {
+        let term = self.term.lock();
+        let active = term.mode().contains(TermMode::ALT_SCREEN);
+        trace!(
+            "[terminal-{}] is_alternate_screen_active: {}",
+            self.id, active
+        );
+        active
+    }
+
+    /// Whether DECSET 1007 alternate scrolling is active on the alternate
+    /// screen. The mode can be enabled while the primary screen is active,
+    /// but it only changes wheel behavior for a full-screen program when
+    /// both terminal modes are set.
+    pub fn is_alternate_scroll_active(&self) -> bool {
+        let term = self.term.lock();
+        let mode = term.mode();
+        let active =
+            mode.contains(TermMode::ALT_SCREEN) && mode.contains(TermMode::ALTERNATE_SCROLL);
+        trace!(
+            "[terminal-{}] is_alternate_scroll_active: {}",
+            self.id, active
+        );
+        active
+    }
+
+    /// Check if a bell event has occurred since the last check, and clear the flag
+    #[must_use]
+    pub fn check_bell(&self) -> bool {
+        let was_pending = self.bell_pending.swap(false, Ordering::AcqRel);
+        if was_pending {
+            debug!(
+                "[terminal-{}] check_bell: Bell was pending, now cleared",
+                self.id
+            );
+        }
+        was_pending
+    }
+
+    /// Get the current mouse mode as a bitmask
+    pub fn mouse_mode(&self) -> u32 {
+        let term = self.term.lock();
+        let mode = term.mode();
+        let mut result: u32 = 0;
+
+        if mode.contains(TermMode::MOUSE_REPORT_CLICK) {
+            result |= 1;
+        }
+        if mode.contains(TermMode::MOUSE_DRAG) {
+            result |= 2;
+        }
+        if mode.contains(TermMode::MOUSE_MOTION) {
+            result |= 4;
+        }
+        if mode.contains(TermMode::FOCUS_IN_OUT) {
+            result |= 8;
+        }
+        if mode.contains(TermMode::SGR_MOUSE) {
+            result |= 16;
+        }
+
+        trace!(
+            "[terminal-{}] mouse_mode: {:05b} ({})",
+            self.id, result, result
+        );
+        result
+    }
+
+    /// Check if any mouse tracking is active
+    pub fn is_mouse_reporting_active(&self) -> bool {
+        let mode = self.mouse_mode();
+        let mouse_tracking_mask: u32 = 0b111;
+        (mode & mouse_tracking_mask) != 0
+    }
+
+    /// Check if application cursor mode (DECCKM) is enabled
+    pub fn is_application_cursor_mode(&self) -> bool {
+        let term = self.term.lock();
+        let mode = term.mode();
+        let enabled = mode.contains(TermMode::APP_CURSOR);
+        trace!(
+            "[terminal-{}] is_application_cursor_mode: {}",
+            self.id, enabled
+        );
+        enabled
+    }
+
+    /// Get the shell process ID
+    pub fn shell_pid(&self) -> u64 {
+        self.shell_pid.load(Ordering::Relaxed)
+    }
+
+    /// Get comprehensive debug state snapshot
+    pub fn debug_state(&self) -> DebugState {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let cursor = grid.cursor.point;
+        let mode = term.mode();
+        let has_selection = term.selection.is_some();
+        let history_size = grid.history_size() as u32;
+        let display_offset = grid.display_offset() as u32;
+        let cursor_col = cursor.column.0 as u16;
+        let cursor_row = cursor.line.0 as u16;
+        let bracketed_paste = mode.contains(TermMode::BRACKETED_PASTE);
+        let alternate_screen = mode.contains(TermMode::ALT_SCREEN);
+        let app_cursor = mode.contains(TermMode::APP_CURSOR);
+        let screen_lines = grid.screen_lines() as u64;
+        let active_total_lines = u64::from(history_size) + screen_lines;
+        if !alternate_screen {
+            self.last_primary_total_lines
+                .store(active_total_lines, Ordering::Relaxed);
+        }
+        // The inactive grid is private; on alt screen, use the primary grid's
+        // last observed size. The other grid (whichever is inactive) keeps no
+        // history of its own beyond one screen of rows.
+        let primary_total_lines = if alternate_screen {
+            self.last_primary_total_lines
+                .load(Ordering::Relaxed)
+                .max(screen_lines)
+        } else {
+            active_total_lines
+        };
+        let cell_bytes = std::mem::size_of::<alacritty_terminal::term::cell::Cell>() as u64;
+        let cols_estimate = u64::from(grid.columns() as u16);
+        // The hyperlink table is not part of the alacritty grid, so it was
+        // invisible to the Swift-side memory budget — which sizes flush and
+        // eviction decisions off this number. Add it here so the report reflects
+        // what the terminal actually retains.
+        //
+        // Lock order is `term` -> `hyperlinks`, the same order the grid
+        // snapshot path already uses (`get_grid` holds `term` while locking
+        // `hyperlinks`), so taking it here introduces no inversion.
+        let hyperlink_bytes = self.hyperlinks.lock().estimated_bytes() as u64;
+        let estimated_grid_bytes =
+            (primary_total_lines + screen_lines) * cols_estimate * cell_bytes + hyperlink_bytes;
+        drop(term);
+
+        let poll_count = self.metrics.poll_count.load(Ordering::Relaxed);
+        let poll_time = self.metrics.poll_time_us.load(Ordering::Relaxed);
+        let grid_count = self.metrics.grid_snapshot_count.load(Ordering::Relaxed);
+        let grid_time = self.metrics.grid_snapshot_time_us.load(Ordering::Relaxed);
+        let batch_count = self.metrics.batch_count.load(Ordering::Relaxed);
+        let bytes_batched = self.metrics.bytes_batched.load(Ordering::Relaxed);
+        let idle_polls = self.metrics.idle_polls.load(Ordering::Relaxed);
+
+        DebugState {
+            id: self.id,
+            cols: self.cols.load(Ordering::Relaxed),
+            rows: self.rows.load(Ordering::Relaxed),
+            history_size,
+            display_offset,
+            cursor_col,
+            cursor_row,
+            bytes_sent: self.bytes_sent.load(Ordering::Relaxed),
+            bytes_received: self.bytes_received.load(Ordering::Relaxed),
+            uptime_ms: self.created_at.elapsed().as_millis() as u64,
+            grid_dirty: self.grid_dirty.load(Ordering::Relaxed) as u8,
+            running: self.running.load(Ordering::Relaxed) as u8,
+            has_selection: has_selection as u8,
+            mouse_mode: self.mouse_mode(),
+            bracketed_paste: bracketed_paste as u8,
+            alternate_screen: alternate_screen as u8,
+            app_cursor: app_cursor as u8,
+            poll_count,
+            avg_poll_time_us: poll_time.checked_div(poll_count).unwrap_or(0),
+            max_poll_time_us: self.metrics.max_poll_time_us.load(Ordering::Relaxed),
+            avg_grid_snapshot_time_us: grid_time.checked_div(grid_count).unwrap_or(0),
+            max_grid_snapshot_time_us: self
+                .metrics
+                .max_grid_snapshot_time_us
+                .load(Ordering::Relaxed),
+            activity_percent: self.adaptive_poller.activity_percent(),
+            idle_polls,
+            avg_batch_size: bytes_batched.checked_div(batch_count).unwrap_or(0),
+            dirty_row_count: self.dirty_rows.dirty_count() as u32,
+            estimated_grid_bytes,
+        }
+    }
+
+    /// Get full buffer text (visible + scrollback) for debugging
+    pub fn full_buffer_text(&self) -> String {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let screen_lines = grid.screen_lines() as i32;
+        let history = grid.history_size() as i32;
+
+        let mut result = String::new();
+        let mut wrapped_rows = 0usize;
+        for row in (-history)..screen_lines {
+            let line = Line(row);
+            let (line_text, wraps) = Self::grid_line_text(grid, line);
+            if wraps {
+                wrapped_rows += 1;
+            }
+            result.push_str(&line_text);
+        }
+        debug!(
+            "[terminal-{}] full_buffer_text exported {} chars from {} physical rows ({} wrapped rows)",
+            self.id,
+            result.len(),
+            history + screen_lines,
+            wrapped_rows
+        );
+        result
+    }
+
+    /// Get full buffer text (visible + scrollback) with ANSI SGR styling.
+    ///
+    /// This is used for Chau7 tab restoration: plain text loses the original
+    /// foreground/background/style attributes, so replaying it through `cat`
+    /// produces monochrome transcripts. The terminal grid still owns resolved
+    /// cell attributes, so export a compact ANSI reconstruction of the same
+    /// logical lines that `full_buffer_text` returns.
+    pub fn full_buffer_ansi_text(&self) -> String {
+        let theme = self.theme_colors.read().clone();
+        let term = self.term.lock();
+        let grid = term.grid();
+        let screen_lines = grid.screen_lines() as i32;
+        let history = grid.history_size() as i32;
+
+        let mut result = String::new();
+        let mut current_style: Option<AnsiCellStyle> = None;
+        let mut wrapped_rows = 0usize;
+        for row in (-history)..screen_lines {
+            let line = Line(row);
+            let wraps =
+                Self::grid_line_ansi_text(grid, line, &theme, &mut current_style, &mut result);
+            if wraps {
+                wrapped_rows += 1;
+            }
+        }
+        if current_style.is_some() {
+            result.push_str("\x1b[0m");
+        }
+        debug!(
+            "[terminal-{}] full_buffer_ansi_text exported {} chars from {} physical rows ({} wrapped rows)",
+            self.id,
+            result.len(),
+            history + screen_lines,
+            wrapped_rows
+        );
+        result
+    }
+
+    /// Get the tail of the terminal buffer with ANSI SGR styling.
+    ///
+    /// Restoration autosave only needs the last N logical lines, so this keeps
+    /// the exported string bounded at the Rust source instead of constructing a
+    /// multi-megabyte full-buffer string and trimming it later in Swift.
+    pub fn tail_buffer_ansi_text(&self, max_lines: usize, max_bytes: usize) -> String {
+        if max_lines == 0 || max_bytes == 0 {
+            return String::new();
+        }
+
+        let theme = self.theme_colors.read().clone();
+        let term = self.term.lock();
+        let grid = term.grid();
+        let screen_lines = grid.screen_lines() as i32;
+        let history = grid.history_size() as i32;
+
+        let mut tail: VecDeque<String> = VecDeque::new();
+        let mut tail_bytes = 0usize;
+        let first_row = -history;
+        let mut end_row = screen_lines - 1;
+        let mut wrapped_rows = 0usize;
+        let mut scanned_rows = 0usize;
+
+        while end_row >= first_row {
+            let mut start_row = end_row;
+            while start_row > first_row && Self::grid_line_wraps(grid, Line(start_row - 1)) {
+                start_row -= 1;
+            }
+
+            let mut current_line = String::new();
+            let mut current_style: Option<AnsiCellStyle> = None;
+            for row in start_row..=end_row {
+                let wraps = Self::grid_line_ansi_text(
+                    grid,
+                    Line(row),
+                    &theme,
+                    &mut current_style,
+                    &mut current_line,
+                );
+                if wraps {
+                    wrapped_rows += 1;
+                }
+            }
+            if current_style.is_some() {
+                current_line.push_str("\x1b[0m");
+            }
+
+            scanned_rows += (end_row - start_row + 1) as usize;
+            Self::push_front_bounded_tail_line(
+                &mut tail,
+                &mut tail_bytes,
+                current_line,
+                max_lines,
+                max_bytes,
+            );
+
+            if tail.len() >= max_lines || tail_bytes >= max_bytes {
+                break;
+            }
+            if start_row <= first_row {
+                break;
+            }
+            end_row = start_row - 1;
+        }
+
+        let result: String = tail.into_iter().collect();
+        debug!(
+            "[terminal-{}] tail_buffer_ansi_text exported {} chars / {} bytes after scanning {} of {} physical rows ({} wrapped rows, max_lines={}, max_bytes={})",
+            self.id,
+            result.chars().count(),
+            result.len(),
+            scanned_rows,
+            history + screen_lines,
+            wrapped_rows,
+            max_lines,
+            max_bytes
+        );
+        result
+    }
+
+    /// Plain-text twin of `tail_buffer_ansi_text` for detectors that only
+    /// need recent text (e.g. remote interactive-prompt scraping): bounded at
+    /// the source, no SGR, wrapped rows joined into logical lines. Avoids
+    /// flattening the entire ring (multi-MB) to inspect a screenful.
+    pub fn tail_buffer_text(&self, max_lines: usize, max_bytes: usize) -> String {
+        if max_lines == 0 || max_bytes == 0 {
+            return String::new();
+        }
+
+        let term = self.term.lock();
+        let grid = term.grid();
+        let screen_lines = grid.screen_lines() as i32;
+        let history = grid.history_size() as i32;
+
+        let mut tail: VecDeque<String> = VecDeque::new();
+        let mut tail_bytes = 0usize;
+        let first_row = -history;
+        let mut end_row = screen_lines - 1;
+        let mut scanned_rows = 0usize;
+
+        while end_row >= first_row {
+            let mut start_row = end_row;
+            while start_row > first_row && Self::grid_line_wraps(grid, Line(start_row - 1)) {
+                start_row -= 1;
+            }
+
+            let mut current_line = String::new();
+            for row in start_row..=end_row {
+                let (line_text, _wraps) = Self::grid_line_text(grid, Line(row));
+                current_line.push_str(&line_text);
+            }
+
+            scanned_rows += (end_row - start_row + 1) as usize;
+            Self::push_front_bounded_tail_line(
+                &mut tail,
+                &mut tail_bytes,
+                current_line,
+                max_lines,
+                max_bytes,
+            );
+
+            if tail.len() >= max_lines || tail_bytes >= max_bytes {
+                break;
+            }
+            if start_row <= first_row {
+                break;
+            }
+            end_row = start_row - 1;
+        }
+
+        let result: String = tail.into_iter().collect();
+        debug!(
+            "[terminal-{}] tail_buffer_text exported {} bytes after scanning {} of {} physical rows (max_lines={}, max_bytes={})",
+            self.id,
+            result.len(),
+            scanned_rows,
+            history + screen_lines,
+            max_lines,
+            max_bytes
+        );
+        result
+    }
+
+    fn push_front_bounded_tail_line(
+        tail: &mut VecDeque<String>,
+        tail_bytes: &mut usize,
+        mut line: String,
+        max_lines: usize,
+        max_bytes: usize,
+    ) {
+        if !Self::ansi_line_has_visible_content(&line) {
+            return;
+        }
+
+        if line.len() > max_bytes {
+            line = Self::utf8_suffix_within_bytes(&line, max_bytes);
+        }
+
+        *tail_bytes += line.len();
+        tail.push_front(line);
+
+        while tail.len() > max_lines || *tail_bytes > max_bytes {
+            if let Some(removed) = tail.pop_front() {
+                *tail_bytes = tail_bytes.saturating_sub(removed.len());
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn utf8_suffix_within_bytes(text: &str, max_bytes: usize) -> String {
+        if text.len() <= max_bytes {
+            return text.to_string();
+        }
+        if max_bytes == 0 {
+            return String::new();
+        }
+
+        let mut start = text.len().saturating_sub(max_bytes);
+        while start < text.len() && !text.is_char_boundary(start) {
+            start += 1;
+        }
+        text[start..].to_string()
+    }
+
+    fn ansi_line_has_visible_content(line: &str) -> bool {
+        let mut chars = line.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\u{1b}' {
+                match chars.peek().copied() {
+                    Some('[') => {
+                        chars.next();
+                        for csi_ch in chars.by_ref() {
+                            if ('@'..='~').contains(&csi_ch) {
+                                break;
+                            }
+                        }
+                    }
+                    Some(']') => {
+                        chars.next();
+                        let mut previous_was_escape = false;
+                        for osc_ch in chars.by_ref() {
+                            if osc_ch == '\u{7}' || (previous_was_escape && osc_ch == '\\') {
+                                break;
+                            }
+                            previous_was_escape = osc_ch == '\u{1b}';
+                        }
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
+            if !ch.is_whitespace() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Sample-rate grid invariant check, called every
+    /// `INVARIANT_CHECK_PERIOD` `processor.advance` calls. Walks the
+    /// visible viewport (not full scrollback — too expensive at this
+    /// rate) and surfaces violations that indicate cursor / wide-char
+    /// state corruption. Each violation logs at most once per terminal
+    /// (via the `advance_counter` value as a coarse rate-limit) so heavy
+    /// streams don't flood the log.
+    ///
+    /// Invariants checked:
+    ///   1. Cursor `line × column` within `[0, screen_lines) × [0, cols)`.
+    ///   2. No `WIDE_CHAR_SPACER` cell at column 0 of any row (orphan —
+    ///      the leading half it pairs with would have to be on the
+    ///      previous row, which alacritty doesn't model).
+    ///   3. Every `LEADING_WIDE_CHAR_SPACER` cell is immediately followed
+    ///      by a `WIDE_CHAR_SPACER` cell (the second half of the wide
+    ///      char's display).
+    ///
+    /// Designed to surface bugs in our pipeline (graphics interceptor,
+    /// reader pool, replay paths) rather than alacritty's parser, which
+    /// is well-tested.
+    fn check_grid_invariants(
+        terminal_id: u64,
+        term: &Term<Chau7EventListener>,
+        last_chunk_bytes: usize,
+    ) {
+        let grid = term.grid();
+        let cols = grid.columns();
+        let screen_lines = grid.screen_lines();
+        let cursor = grid.cursor.point;
+        let cursor_line = cursor.line.0;
+        let cursor_col = cursor.column.0;
+
+        if cursor_line < 0 || (cursor_line as usize) >= screen_lines {
+            warn!(
+                "[terminal-{}] grid_invariant: cursor line {} outside [0, {}) (cols={}, last_chunk={}B)",
+                terminal_id, cursor_line, screen_lines, cols, last_chunk_bytes
+            );
+            return; // skip cell-flag walk if cursor is off — likely cascade follows
+        }
+        if cursor_col >= cols {
+            warn!(
+                "[terminal-{}] grid_invariant: cursor col {} outside [0, {}) (line={}, last_chunk={}B)",
+                terminal_id, cursor_col, cols, cursor_line, last_chunk_bytes
+            );
+            return;
+        }
+
+        for row in 0..(screen_lines as i32) {
+            let line = Line(row);
+            let grid_line = &grid[line];
+            for col in 0..cols {
+                let cell = &grid_line[Column(col)];
+                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) && col == 0 {
+                    warn!(
+                        "[terminal-{}] grid_invariant: orphan WIDE_CHAR_SPACER at row {} col 0 (last_chunk={}B)",
+                        terminal_id, row, last_chunk_bytes
+                    );
+                    return; // first violation is enough — return to keep log volume bounded
+                }
+                if cell.flags.contains(CellFlags::LEADING_WIDE_CHAR_SPACER) {
+                    if col + 1 >= cols {
+                        warn!(
+                            "[terminal-{}] grid_invariant: LEADING_WIDE_CHAR_SPACER at row {} col {} but no successor cell (cols={}, last_chunk={}B)",
+                            terminal_id, row, col, cols, last_chunk_bytes
+                        );
+                        return;
+                    }
+                    let next = &grid_line[Column(col + 1)];
+                    if !next.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                        warn!(
+                            "[terminal-{}] grid_invariant: LEADING_WIDE_CHAR_SPACER at row {} col {} not followed by WIDE_CHAR_SPACER (next flags={:?}, last_chunk={}B)",
+                            terminal_id, row, col, next.flags, last_chunk_bytes
+                        );
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    fn grid_line_text(grid: &alacritty_terminal::grid::Grid<Cell>, line: Line) -> (String, bool) {
+        let grid_line = &grid[line];
+        let line_length = grid_line.line_length();
+        let wraps = Self::grid_line_wraps(grid, line);
+
+        let mut text = String::with_capacity(line_length.0);
+        for col in 0..line_length.0 {
+            let cell = &grid_line[Column(col)];
+            if cell
+                .flags
+                .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+            {
+                continue;
+            }
+
+            text.push(if cell.c == '\u{0}' { ' ' } else { cell.c });
+            for ch in cell.zerowidth().into_iter().flatten() {
+                text.push(*ch);
+            }
+        }
+
+        if !wraps {
+            while text.ends_with(' ') {
+                text.pop();
+            }
+            text.push('\n');
+        }
+
+        (text, wraps)
+    }
+
+    fn grid_line_ansi_text(
+        grid: &alacritty_terminal::grid::Grid<Cell>,
+        line: Line,
+        theme: &ThemeColors,
+        current_style: &mut Option<AnsiCellStyle>,
+        output: &mut String,
+    ) -> bool {
+        let grid_line = &grid[line];
+        let line_length = grid_line.line_length();
+        let wraps = Self::grid_line_wraps(grid, line);
+
+        for col in 0..line_length.0 {
+            let cell = &grid_line[Column(col)];
+            if cell
+                .flags
+                .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+            {
+                continue;
+            }
+
+            let style = Self::ansi_cell_style(cell, theme);
+            if *current_style != Some(style) {
+                output.push_str(&Self::ansi_sgr_sequence(style));
+                *current_style = Some(style);
+            }
+
+            output.push(if cell.c == '\u{0}' { ' ' } else { cell.c });
+            for ch in cell.zerowidth().into_iter().flatten() {
+                output.push(*ch);
+            }
+        }
+
+        if !wraps {
+            if current_style.is_some() {
+                output.push_str("\x1b[0m");
+                *current_style = None;
+            }
+            // CRLF, not bare LF: this export is re-injected through the VTE
+            // parser (no PTY line discipline), where `\n` moves down without
+            // returning to column 0 and staircases every following line.
+            output.push_str("\r\n");
+        }
+
+        wraps
+    }
+
+    fn ansi_cell_style(cell: &Cell, theme: &ThemeColors) -> AnsiCellStyle {
+        let fg_color = Self::effective_cell_fg(cell);
+        AnsiCellStyle {
+            fg: color_to_rgb_with_theme(fg_color, true, theme),
+            bg: color_to_rgb_with_theme(cell.bg, false, theme),
+            flags: cell_flags_to_u8(cell.flags),
+        }
+    }
+
+    pub(crate) fn effective_cell_fg(cell: &Cell) -> AnsiColor {
+        if cell.flags.contains(CellFlags::BOLD) {
+            match cell.fg {
+                AnsiColor::Indexed(idx) if idx < 8 => AnsiColor::Indexed(idx + 8),
+                AnsiColor::Named(named) => match named {
+                    NamedColor::Black => AnsiColor::Named(NamedColor::BrightBlack),
+                    NamedColor::Red => AnsiColor::Named(NamedColor::BrightRed),
+                    NamedColor::Green => AnsiColor::Named(NamedColor::BrightGreen),
+                    NamedColor::Yellow => AnsiColor::Named(NamedColor::BrightYellow),
+                    NamedColor::Blue => AnsiColor::Named(NamedColor::BrightBlue),
+                    NamedColor::Magenta => AnsiColor::Named(NamedColor::BrightMagenta),
+                    NamedColor::Cyan => AnsiColor::Named(NamedColor::BrightCyan),
+                    NamedColor::White => AnsiColor::Named(NamedColor::BrightWhite),
+                    _ => cell.fg,
+                },
+                _ => cell.fg,
+            }
+        } else {
+            cell.fg
+        }
+    }
+
+    fn ansi_sgr_sequence(style: AnsiCellStyle) -> String {
+        use std::fmt::Write;
+        // Format directly into one String rather than building a Vec<String> of
+        // short heap allocations and joining — this runs per style transition on
+        // the (full/tail) buffer export path.
+        let mut out = String::with_capacity(48);
+        out.push_str("\x1b[0");
+        if style.flags & CELL_FLAG_BOLD != 0 {
+            out.push_str(";1");
+        }
+        if style.flags & CELL_FLAG_DIM != 0 {
+            out.push_str(";2");
+        }
+        if style.flags & CELL_FLAG_ITALIC != 0 {
+            out.push_str(";3");
+        }
+        if style.flags & CELL_FLAG_UNDERLINE != 0 {
+            out.push_str(";4");
+        }
+        if style.flags & CELL_FLAG_INVERSE != 0 {
+            out.push_str(";7");
+        }
+        if style.flags & CELL_FLAG_HIDDEN != 0 {
+            out.push_str(";8");
+        }
+        if style.flags & CELL_FLAG_STRIKETHROUGH != 0 {
+            out.push_str(";9");
+        }
+        let _ = write!(
+            out,
+            ";38;2;{};{};{};48;2;{};{};{}m",
+            style.fg.0, style.fg.1, style.fg.2, style.bg.0, style.bg.1, style.bg.2
+        );
+        out
+    }
+
+    fn grid_line_wraps(grid: &alacritty_terminal::grid::Grid<Cell>, line: Line) -> bool {
+        let grid_line = &grid[line];
+        let line_length = grid_line.line_length();
+        line_length.0 > 0
+            && grid_line[line_length - 1]
+                .flags
+                .contains(CellFlags::WRAPLINE)
+    }
+
+    /// Whether the first cell of source row `row` carries the engine's
+    /// soft-wrap marker, i.e. that row continues the logical line above it.
+    fn is_continuation_cell(cells: &[CellData], row: usize, cols: usize) -> bool {
+        if row == 0 || cols == 0 {
+            return false;
+        }
+        let index = row * cols;
+        match cells.get(index) {
+            Some(cell) => cell.flags & CELL_FLAG_WRAPPED != 0,
+            None => false,
+        }
+    }
+
+    /// A cell counts as blank padding when it holds no cluster or holds a plain
+    /// space. Such cells are trimmed from the end of a logical line so a short
+    /// line in a wide grid does not inflate the display height.
+    fn cell_is_space(cell: &CellData, clusters: &[u8]) -> bool {
+        if cell.cluster_len != 1 {
+            return false;
+        }
+        let start = cell.cluster_offset as usize;
+        matches!(clusters.get(start), Some(b' '))
+    }
+
+    fn grid_column_utf16_offset(
+        grid: &alacritty_terminal::grid::Grid<Cell>,
+        line: Line,
+        column: usize,
+    ) -> usize {
+        let grid_line = &grid[line];
+        let line_length = grid_line.line_length();
+        let upper_bound = column.min(line_length.0);
+        let mut count = 0usize;
+
+        for col in 0..upper_bound {
+            let cell = &grid_line[Column(col)];
+            if cell
+                .flags
+                .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+            {
+                continue;
+            }
+
+            count += cell.c.len_utf16();
+            count += cell.zerowidth().into_iter().flatten().count();
+        }
+
+        count
+    }
+
+    /// Reset performance metrics
+    pub fn reset_metrics(&self) {
+        self.metrics.poll_count.store(0, Ordering::Relaxed);
+        self.metrics.poll_time_us.store(0, Ordering::Relaxed);
+        self.metrics.grid_snapshot_count.store(0, Ordering::Relaxed);
+        self.metrics
+            .grid_snapshot_time_us
+            .store(0, Ordering::Relaxed);
+        self.metrics.max_poll_time_us.store(0, Ordering::Relaxed);
+        self.metrics
+            .max_grid_snapshot_time_us
+            .store(0, Ordering::Relaxed);
+        self.metrics.bytes_batched.store(0, Ordering::Relaxed);
+        self.metrics.batch_count.store(0, Ordering::Relaxed);
+        self.metrics.idle_polls.store(0, Ordering::Relaxed);
+        self.dirty_rows.clear();
+        info!("[terminal-{}] Performance metrics reset", self.id);
+    }
+
+    /// Clear dirty row tracking after sync
+    pub fn clear_dirty_rows(&self) {
+        self.dirty_rows.clear();
+    }
+
+    /// Get the current activity level (0-100)
+    pub fn activity_level(&self) -> u8 {
+        self.adaptive_poller.activity_percent()
+    }
+
+    /// Check if poll should be skipped (power saving when very idle)
+    pub fn should_skip_poll(&self) -> bool {
+        self.adaptive_poller.should_skip_poll()
+    }
+}
+
+// ============================================================================
+// Drop implementation
+// ============================================================================
+
+impl Drop for Chau7Terminal {
+    fn drop(&mut self) {
+        let (sent, received, uptime) = self.stats();
+        info!(
+            "[terminal-{}] Destroying terminal (uptime: {:?}, sent: {} bytes, received: {} bytes)",
+            self.id, uptime, sent, received
+        );
+
+        // Close the duplicated master fd used for echo detection without taking
+        // the PTY writer lock. Drop can run while a write is backpressured.
+        let echo_fd = self.echo_fd.swap(-1, Ordering::AcqRel);
+        // Outside Unix there is never a duplicated fd (always -1).
+        #[cfg(not(unix))]
+        let _ = echo_fd;
+        #[cfg(unix)]
+        if echo_fd >= 0 {
+            unsafe {
+                libc::close(echo_fd);
+            }
+            debug!(
+                "[terminal-{}] Closed echo detection fd {}",
+                self.id, echo_fd
+            );
+        }
+
+        // Signal the shared reader pool to stop monitoring this terminal
+        self.running.store(false, Ordering::Release);
+        #[cfg(unix)]
+        if let Some(fd) = self.reader_pool_fd.take() {
+            crate::reader_pool::shared_reader_pool().unregister(fd, self.id);
+            debug!(
+                "[terminal-{}] Unregistered from reader pool (fd={})",
+                self.id, fd
+            );
+        }
+
+        // Kill the child process to unblock the reader thread.
+        // CRITICAL: Do NOT block indefinitely on child.wait() — this runs on
+        // whatever thread triggers deallocation (often the main thread via
+        // SwiftUI view responder cleanup). A blocking wait here freezes the UI.
+        if let Some(mut child) = self.child.lock().take() {
+            debug!("[terminal-{}] Killing child process", self.id);
+            if let Err(e) = child.kill() {
+                debug!("[terminal-{}] Child kill returned: {}", self.id, e);
+            }
+
+            // Try a non-blocking check first (try_wait returns immediately)
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    info!(
+                        "[terminal-{}] Child process already exited: {:?}",
+                        self.id, status
+                    );
+                }
+                Ok(None) => {
+                    // Child hasn't exited yet after kill — wait on a background thread
+                    // with a timeout so we never block the caller indefinitely.
+                    let id = self.id;
+                    std::thread::Builder::new()
+                        .name(format!("term-{}-reap", id))
+                        .spawn(move || {
+                            let start = Instant::now();
+                            let timeout = Duration::from_secs(3);
+                            loop {
+                                match child.try_wait() {
+                                    Ok(Some(status)) => {
+                                        info!("[terminal-{}] Child reaped after {:?}: {:?}", id, start.elapsed(), status);
+                                        return;
+                                    }
+                                    Ok(None) => {
+                                        if start.elapsed() > timeout {
+                                            warn!("[terminal-{}] Child did not exit within {:?} after kill, abandoning", id, timeout);
+                                            // Let the OS reap it when it eventually exits.
+                                            // std::mem::forget(child) would leak — instead just drop
+                                            // and let the destructor handle it however it can.
+                                            return;
+                                        }
+                                        std::thread::sleep(Duration::from_millis(10));
+                                    }
+                                    Err(e) => {
+                                        warn!("[terminal-{}] try_wait error: {}", id, e);
+                                        return;
+                                    }
+                                }
+                            }
+                        })
+                        .ok(); // If thread spawn fails, just abandon the child
+                }
+                Err(e) => {
+                    warn!("[terminal-{}] Failed to check child status: {}", self.id, e);
+                }
+            }
+        }
+
+        // No reader thread to join — the shared reader pool handles all PTY reads.
+
+        info!("[terminal-{}] Terminal destroyed", self.id);
+    }
+}
+
+/// Undo a shell spawn when terminal creation fails after it: close the
+/// dup'd master fds and kill and reap the child, so neither outlives the
+/// error. `kill` sends SIGHUP and escalates to SIGKILL after a short grace
+/// period, so the wait that follows does not hang.
+fn abandon_spawned_shell(
+    id: u64,
+    mut child: Box<dyn portable_pty::Child + Send + Sync>,
+    fds: &[i32],
+) {
+    #[cfg(unix)]
+    for &fd in fds {
+        if fd >= 0 {
+            unsafe { libc::close(fd) };
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = fds;
+    if let Err(e) = child.kill() {
+        warn!("[terminal-{}] Failed to kill abandoned shell: {}", id, e);
+    }
+    if let Err(e) = child.wait() {
+        warn!("[terminal-{}] Failed to reap abandoned shell: {}", id, e);
+    }
+}
+
+/// Shell used when `$SHELL` is unset. macOS keeps its historical default.
+fn default_shell() -> &'static str {
+    if cfg!(windows) {
+        "powershell.exe"
+    } else {
+        "/bin/zsh"
+    }
+}
+
+/// tcgetattr-based echo check (password prompts) on the duplicated master fd.
+#[cfg(unix)]
+pub(crate) fn echo_disabled_for_fd(id: u64, master_fd: i32) -> bool {
+    unsafe {
+        let mut termios: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(master_fd, &mut termios) == 0 {
+            let echo_off = (termios.c_lflag & (libc::ECHO as libc::tcflag_t)) == 0;
+            trace!(
+                "[terminal-{}] tcgetattr: ECHO={}, echo_disabled={}",
+                id,
+                if echo_off { "off" } else { "on" },
+                echo_off
+            );
+            echo_off
+        } else {
+            // tcgetattr failed (PTY might be closed)
+            trace!("[terminal-{}] tcgetattr failed, assuming echo enabled", id);
+            false
+        }
+    }
+}
+
+/// No PTY fd outside Unix (Chau7 Next on Windows): echo is never reported off.
+#[cfg(not(unix))]
+pub(crate) fn echo_disabled_for_fd(_id: u64, _master_fd: i32) -> bool {
+    false
+}
+
+/// TIOCSWINSZ on the duplicated master fd. True when the PTY was resized.
+#[cfg(unix)]
+fn set_fd_winsize(id: u64, fd: i32, cols: u16, rows: u16) -> bool {
+    let winsize = libc::winsize {
+        ws_row: rows,
+        ws_col: cols,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    let rc = unsafe { libc::ioctl(fd, libc::TIOCSWINSZ, &winsize) };
+    if rc == 0 {
+        debug!("[terminal-{}] PTY resized via TIOCSWINSZ", id);
+        true
+    } else {
+        error!(
+            "[terminal-{}] TIOCSWINSZ failed: {}",
+            id,
+            std::io::Error::last_os_error()
+        );
+        false
+    }
+}
+
+#[cfg(not(unix))]
+fn set_fd_winsize(_id: u64, _fd: i32, _cols: u16, _rows: u16) -> bool {
+    false
+}
+
+/// `killpg(tcgetpgrp(fd), SIGWINCH)`, see [`Chau7Terminal::nudge_winsize`].
+#[cfg(unix)]
+fn signal_foreground_winch(id: u64, fd: i32) {
+    let pgrp = unsafe { libc::tcgetpgrp(fd) };
+    if pgrp <= 0 {
+        debug!(
+            "[terminal-{}] nudge_winsize: no foreground pgrp ({})",
+            id, pgrp
+        );
+        return;
+    }
+    let rc = unsafe { libc::killpg(pgrp, libc::SIGWINCH) };
+    if rc == 0 {
+        debug!(
+            "[terminal-{}] nudge_winsize: SIGWINCH delivered to pgrp {}",
+            id, pgrp
+        );
+    } else {
+        warn!(
+            "[terminal-{}] nudge_winsize: killpg({}) failed: {}",
+            id,
+            pgrp,
+            std::io::Error::last_os_error()
+        );
+    }
+}
+
+#[cfg(not(unix))]
+fn signal_foreground_winch(_id: u64, _fd: i32) {}
+
+/// Outside Unix (Chau7 Next on Windows) there is no fd for the shared
+/// `poll()` reader pool, so each terminal reads its PTY on its own thread,
+/// with the same channel messages (blocking send gives the same no-loss
+/// backpressure as the pool's retained buffer).
+#[cfg(not(unix))]
+fn spawn_pty_reader_thread(
+    id: u64,
+    master: &(dyn portable_pty::MasterPty + Send),
+    sender: crossbeam_channel::Sender<PtyMessage>,
+    running: Arc<AtomicBool>,
+) -> Result<(), TerminalError> {
+    use std::io::Read;
+    let mut reader = master.try_clone_reader().map_err(|e| {
+        error!("[terminal-{}] Failed to clone PTY reader: {}", id, e);
+        TerminalError::ReaderThread(std::io::Error::other(e.to_string()))
+    })?;
+    std::thread::Builder::new()
+        .name(format!("term-{}-reader", id))
+        .spawn(move || {
+            let mut buf = vec![0u8; 64 * 1024];
+            while running.load(Ordering::Acquire) {
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if sender.send(PtyMessage::Data(buf[..n].to_vec())).is_err() {
+                            return;
+                        }
+                    }
+                }
+            }
+            let _ = sender.send(PtyMessage::Closed);
+        })
+        .map_err(TerminalError::ReaderThread)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn child_exit_status_preserves_normal_codes() {
+        use std::os::unix::process::ExitStatusExt;
+        for code in [0, 1, 42, 255] {
+            assert_eq!(
+                terminal_exit_code(std::process::ExitStatus::from_raw(code << 8)),
+                code
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_exit_status_preserves_signal_failure() {
+        use std::os::unix::process::ExitStatusExt;
+        for signal in [libc::SIGTERM, libc::SIGKILL, libc::SIGINT] {
+            assert_eq!(
+                terminal_exit_code(std::process::ExitStatus::from_raw(signal)),
+                128 + signal
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_exit_status_never_turns_unknown_status_into_success_or_absence() {
+        use std::os::unix::process::ExitStatusExt;
+        let stopped = std::process::ExitStatus::from_raw((libc::SIGSTOP << 8) | 0x7f);
+        assert_eq!(terminal_exit_code(stopped), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn abandoned_shell_is_killed_and_its_fds_closed() {
+        let pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new("/bin/sleep");
+        cmd.arg("30");
+        let child = pair.slave.spawn_command(cmd).expect("spawn sleep");
+        let pid = child.process_id().expect("pid") as i32;
+        // Stand in a pipe's write end for a dup'd master fd: once it is
+        // closed the read end reports EOF. (Checking the fd number itself
+        // would race with other tests reusing it.)
+        let mut pipe = [0i32; 2];
+        assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
+        for fd in pipe {
+            unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) };
+        }
+        unsafe { libc::fcntl(pipe[0], libc::F_SETFL, libc::O_NONBLOCK) };
+
+        abandon_spawned_shell(0, child, &[pipe[1], -1]);
+
+        let mut byte = 0u8;
+        let read = unsafe { libc::read(pipe[0], (&mut byte as *mut u8).cast(), 1) };
+        unsafe { libc::close(pipe[0]) };
+        assert_eq!(read, 0, "write end still open");
+        // Killed and reaped: the pid no longer exists.
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+    }
+
+    #[test]
+    fn query_burst_keeps_every_reply() {
+        let term = Chau7Terminal::new_headless(80, 24).expect("headless terminal");
+        // More device status queries than the old 100-slot event channel.
+        term.process_pty_data(&b"\x1b[6n".repeat(300));
+        let replies = term
+            .event_rx
+            .try_iter()
+            .filter(|event| matches!(event, Event::PtyWrite(_)))
+            .count();
+        assert_eq!(replies, 300);
+    }
+
+    #[test]
+    fn lossy_events_stay_capped_without_blocking_replies() {
+        use alacritty_terminal::event::EventListener;
+        let (sender, receiver) = crate::pty::event_channel();
+        let listener = Chau7EventListener {
+            sender,
+            terminal_id: 0,
+            bell_pending: Arc::new(AtomicBool::new(false)),
+        };
+        for _ in 0..500 {
+            listener.send_event(Event::Wakeup);
+        }
+        assert_eq!(receiver.len(), crate::pty::LOSSY_EVENT_LIMIT);
+        listener.send_event(Event::PtyWrite("\x1b[1;1R".into()));
+        assert_eq!(receiver.len(), crate::pty::LOSSY_EVENT_LIMIT + 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_exit_event_publishes_integer_status_to_ffi_consumer() {
+        use std::os::unix::process::ExitStatusExt;
+        let mut term = Chau7Terminal::new_headless(80, 24).expect("headless terminal");
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        term.event_rx = receiver;
+        sender
+            .send(Event::ChildExit(std::process::ExitStatus::from_raw(
+                libc::SIGTERM,
+            )))
+            .unwrap();
+        let _ = term.poll_events(0);
+        assert_eq!(
+            term.pending_exit_code.lock().take(),
+            Some(128 + libc::SIGTERM)
+        );
+        assert_eq!(term.pending_exit_code.lock().take(), None);
+    }
+
+    /// The fold must produce display rows a narrow client can paint directly:
+    /// folded on *logical* lines, trailing padding trimmed, and never splitting a
+    /// wide grapheme across a fold boundary.
+    mod display_row_fold {
+        use super::*;
+        use crate::types::DisplayRowBuffer;
+
+        /// Read a folded buffer back as plain text, one String per display row.
+        fn folded_text(buffer: &DisplayRowBuffer, clusters: &[u8]) -> Vec<String> {
+            let mut rows = Vec::with_capacity(buffer.display_rows as usize);
+            let offsets =
+                unsafe { std::slice::from_raw_parts(buffer.row_offsets, buffer.row_offsets_len) };
+            for r in 0..buffer.display_rows as usize {
+                let begin = offsets[r] as usize;
+                let end = offsets[r + 1] as usize;
+                let mut line = String::new();
+                for i in begin..end {
+                    let cell = unsafe { &*buffer.cells.add(i) };
+                    if cell.cluster_len == 0 || cell.continuation != 0 {
+                        continue;
+                    }
+                    let start = cell.cluster_offset as usize;
+                    let stop = start + cell.cluster_len as usize;
+                    line.push_str(&String::from_utf8_lossy(&clusters[start..stop]));
+                }
+                rows.push(line);
+            }
+            rows
+        }
+
+        fn fold(term: &Chau7Terminal, display_cols: u16) -> (DisplayRowBuffer, Vec<u8>) {
+            let buffer = term.get_display_rows(display_cols);
+            let clusters = if buffer.clusters_utf8.is_null() {
+                Vec::new()
+            } else {
+                unsafe {
+                    std::slice::from_raw_parts(buffer.clusters_utf8, buffer.clusters_len).to_vec()
+                }
+            };
+            (buffer, clusters)
+        }
+
+        fn release(buffer: &mut DisplayRowBuffer) {
+            unsafe {
+                crate::ffi::chau7_terminal_free_display_rows(Box::into_raw(Box::new(
+                    std::mem::replace(
+                        buffer,
+                        DisplayRowBuffer {
+                            cells: std::ptr::null_mut(),
+                            cells_capacity: 0,
+                            clusters_utf8: std::ptr::null_mut(),
+                            clusters_len: 0,
+                            clusters_capacity: 0,
+                            row_offsets: std::ptr::null_mut(),
+                            row_offsets_len: 0,
+                            row_offsets_capacity: 0,
+                            cell_count: 0,
+                            display_cols: 0,
+                            display_rows: 0,
+                            source_cols: 0,
+                            source_rows: 0,
+                            cursor_col: 0,
+                            cursor_row: 0,
+                            cursor_visible: 0,
+                        },
+                    ),
+                )));
+            }
+        }
+
+        #[test]
+        fn single_column_request_reports_width_that_can_hold_a_wide_cell() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output("界".as_bytes());
+            let (mut buffer, _) = fold(&term, 1);
+            assert_eq!(buffer.display_cols, 2);
+            let offsets =
+                unsafe { std::slice::from_raw_parts(buffer.row_offsets, buffer.row_offsets_len) };
+            assert!(offsets.windows(2).all(|pair| pair[1] - pair[0] <= 2));
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn cursor_follows_logical_soft_wrap_and_trailing_spaces() {
+            let term = Chau7Terminal::new_headless(8, 4).expect("create headless terminal");
+            term.inject_output(b"abcdefghij   ");
+            let (mut buffer, _) = fold(&term, 5);
+            assert_eq!(buffer.cursor_visible, 1);
+            assert_eq!((buffer.cursor_col, buffer.cursor_row), (3, 2));
+            let offsets =
+                unsafe { std::slice::from_raw_parts(buffer.row_offsets, buffer.row_offsets_len) };
+            assert_eq!(offsets, &[0, 5, 10, 14]);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn cursor_after_exact_display_width_gets_its_own_row() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"abcde");
+            let (mut buffer, _) = fold(&term, 5);
+            assert_eq!((buffer.cursor_col, buffer.cursor_row), (0, 1));
+            assert_eq!(buffer.display_rows, 2);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn cursor_survives_empty_line_after_hard_newline() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"hi\r\n");
+            let (mut buffer, _) = fold(&term, 5);
+            assert_eq!(buffer.cursor_visible, 1);
+            assert_eq!((buffer.cursor_col, buffer.cursor_row), (0, 1));
+            assert_eq!(buffer.display_rows, 2);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn wide_grapheme_moves_together_and_cursor_counts_both_columns() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output("abc界".as_bytes());
+            let (mut buffer, _) = fold(&term, 4);
+            let offsets =
+                unsafe { std::slice::from_raw_parts(buffer.row_offsets, buffer.row_offsets_len) };
+            assert_eq!(offsets, &[0, 3, 6]);
+            assert!(offsets.windows(2).all(|pair| pair[1] - pair[0] <= 4));
+            assert_eq!((buffer.cursor_col, buffer.cursor_row), (2, 1));
+            assert_eq!(unsafe { (*buffer.cells.add(3)).width }, 2);
+            assert_eq!(unsafe { (*buffer.cells.add(4)).continuation }, 1);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn final_wide_grapheme_keeps_continuation_when_cursor_is_hidden() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output("abc界\u{1b}[?25l".as_bytes());
+            let (mut buffer, _) = fold(&term, 4);
+            assert_eq!(buffer.cell_count, 5);
+            assert_eq!(buffer.cursor_visible, 0);
+            assert_eq!(unsafe { (*buffer.cells.add(4)).continuation }, 1);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn source_wide_wrap_padding_does_not_move_display_cursor() {
+            let term = Chau7Terminal::new_headless(4, 4).expect("create headless terminal");
+            term.inject_output("abc界x".as_bytes());
+            let (mut buffer, clusters) = fold(&term, 3);
+            assert_eq!((buffer.cursor_col, buffer.cursor_row), (0, 2));
+            assert_eq!(folded_text(&buffer, &clusters), vec!["abc", "界x", " "]);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn cursor_outside_scrolled_viewport_is_hidden() {
+            let term = Chau7Terminal::new_headless(20, 3).expect("create headless terminal");
+            term.inject_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+            term.scroll_to(1.0);
+            let (mut buffer, _) = fold(&term, 5);
+            assert_eq!(buffer.cursor_visible, 0);
+            release(&mut buffer);
+        }
+
+        #[test]
+        #[cfg(target_pointer_width = "64")]
+        fn display_buffer_matches_swift_64_bit_layout() {
+            assert_eq!(std::mem::size_of::<DisplayRowBuffer>(), 88);
+            assert_eq!(std::mem::align_of::<DisplayRowBuffer>(), 8);
+            assert_eq!(std::mem::offset_of!(DisplayRowBuffer, cursor_col), 80);
+            assert_eq!(std::mem::offset_of!(DisplayRowBuffer, cursor_row), 82);
+            assert_eq!(std::mem::offset_of!(DisplayRowBuffer, cursor_visible), 84);
+        }
+
+        #[test]
+        fn soft_wrapped_prose_folds_as_one_logical_line() {
+            // 20-column source, 40 columns of text: the terminal soft-wraps it
+            // across two physical rows. Folding to 10 must re-wrap the *logical*
+            // line into four continuous display rows, not two rows each cut at
+            // the physical boundary.
+            let term = Chau7Terminal::new_headless(20, 6).expect("create headless terminal");
+            let text = "abcdefghijklmnopqrstuvwxyz0123456789";
+            term.inject_output(text.as_bytes());
+
+            term.inject_output(b"\x1b[?25l");
+            let (mut buffer, clusters) = fold(&term, 10);
+            let rows = folded_text(&buffer, &clusters);
+            let joined: String = rows.concat();
+
+            assert_eq!(joined, text, "folding must not lose or reorder content");
+            assert_eq!(buffer.display_rows, 4, "40 columns at 10 wide is 4 rows");
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn fold_ignores_physical_row_boundaries() {
+            // The distinction that matters. With a display width that does not
+            // divide the source width, folding each *physical* row separately
+            // would break the display rows at column 20; folding the logical
+            // line keeps filling to the display width across that boundary.
+            // 20 -> 7: logical gives rows of 7,7,7,7,7,5; physical would give
+            // 7,7,6,7,7,6, cutting mid-word at the terminal's own wrap point.
+            let term = Chau7Terminal::new_headless(20, 6).expect("create headless terminal");
+            let text = "abcdefghijklmnopqrstuvwxyz0123456789";
+            term.inject_output(text.as_bytes());
+
+            term.inject_output(b"\x1b[?25l");
+            let (mut buffer, clusters) = fold(&term, 7);
+            let rows = folded_text(&buffer, &clusters);
+
+            let expected: Vec<String> = text
+                .as_bytes()
+                .chunks(7)
+                .map(|c| String::from_utf8_lossy(c).to_string())
+                .collect();
+            assert_eq!(
+                rows, expected,
+                "display rows must fill to the display width across the source wrap point"
+            );
+            // Row 2 spans source columns 14..=20, crossing the terminal's own
+            // 20-column wrap point. A per-physical-row fold would stop at 19 and
+            // emit a 6-character row here instead.
+            assert_eq!(
+                rows[2], "opqrstu",
+                "row 2 must continue past the physical row end"
+            );
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn trailing_padding_does_not_inflate_height() {
+            // A 20-column grid with one short line: folding must not emit rows
+            // of mostly padding.
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"hi");
+
+            term.inject_output(b"\x1b[?25l");
+            let (mut buffer, clusters) = fold(&term, 10);
+            let rows = folded_text(&buffer, &clusters);
+
+            assert_eq!(
+                rows.iter().filter(|r| !r.is_empty()).count(),
+                1,
+                "a short line must occupy exactly one non-empty display row"
+            );
+            assert!(
+                buffer.display_rows < 4,
+                "trailing padding must be trimmed, got {} rows",
+                buffer.display_rows
+            );
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn newline_separated_lines_stay_separate() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"one\r\ntwo");
+
+            term.inject_output(b"\x1b[?25l");
+            let (mut buffer, clusters) = fold(&term, 10);
+            let rows: Vec<String> = folded_text(&buffer, &clusters)
+                .into_iter()
+                .filter(|r| !r.is_empty())
+                .collect();
+
+            assert_eq!(rows, vec!["one".to_string(), "two".to_string()]);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn display_wider_than_source_is_one_to_one() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"0123456789012345");
+
+            term.inject_output(b"\x1b[?25l");
+            let (mut buffer, clusters) = fold(&term, 40);
+            let rows = folded_text(&buffer, &clusters);
+
+            assert_eq!(buffer.display_cols, 40);
+            assert_eq!(rows[0], "0123456789012345");
+            release(&mut buffer);
+        }
+    }
+
+    /// A grid snapshot must mark rows that soft-wrap from the row above.
+    ///
+    /// Clients re-composing a wide grid onto a narrow display fold on logical
+    /// lines. Folding physical rows independently instead chops soft-wrapped
+    /// prose mid-sentence at every fold, so this bit is the difference between
+    /// readable output and fragmented output.
+    mod wrapped_row_flag {
+        use super::*;
+        use crate::types::CELL_FLAG_WRAPPED;
+
+        fn row_is_wrapped(snapshot: &GridSnapshot, cols: usize, row: usize) -> bool {
+            // Safety: the snapshot owns `cols * rows` cells; callers pass row
+            // indices within that range.
+            unsafe { (*snapshot.cells.add(row * cols)).flags & CELL_FLAG_WRAPPED != 0 }
+        }
+
+        #[test]
+        fn soft_wrapped_row_is_marked() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            // 45 chars into a 20-column terminal: rows 1 and 2 are soft-wrap
+            // continuations of the line that began on row 0.
+            term.inject_output(b"123456789012345678901234567890123456789012345\r\nnext");
+
+            let snapshot = term.get_grid_snapshot();
+            let cols = snapshot.cols as usize;
+
+            assert!(
+                !row_is_wrapped(&snapshot, cols, 0),
+                "the first row never continues a previous line"
+            );
+            assert!(
+                row_is_wrapped(&snapshot, cols, 1),
+                "row 1 continues row 0 after 20 columns"
+            );
+            assert!(
+                row_is_wrapped(&snapshot, cols, 2),
+                "row 2 continues row 1 after 40 columns"
+            );
+        }
+
+        #[test]
+        fn newline_started_row_is_not_marked() {
+            let term = Chau7Terminal::new_headless(20, 4).expect("create headless terminal");
+            term.inject_output(b"short\r\nalso short");
+
+            let snapshot = term.get_grid_snapshot();
+            let cols = snapshot.cols as usize;
+
+            assert!(!row_is_wrapped(&snapshot, cols, 0));
+            assert!(
+                !row_is_wrapped(&snapshot, cols, 1),
+                "a row that begins after a newline is not a soft-wrap continuation"
+            );
+        }
+    }
+
+    /// -----------------------------------------------------------------
+    /// Hyperlink registry bound
+    ///
+    /// Two distinct defects lived in one 15-line function:
+    /// 1. Unbounded growth — every distinct OSC 8 URI ever printed was stored
+    ///    twice and never evicted, up to 65 535 entries, and invisible to
+    ///    `estimated_grid_bytes` so the Swift-side memory budget could not see
+    ///    it.
+    /// 2. A correctness bug at saturation — `id_for_uri` returned `u16::MAX`
+    ///    for every new URI once full, and that id resolves to the LAST url in
+    ///    the table, so every subsequent hyperlink rendered and clicked as
+    ///    that one final link. Returning 0 ("no link") is a far better failure
+    ///    than a confidently wrong one.
+    /// -----------------------------------------------------------------
+    mod hyperlink_registry {
+        use super::*;
+
+        #[test]
+        fn id_zero_is_reserved_for_no_link() {
+            let registry = HyperlinkRegistry::new();
+            // `new()` seeds index 0 with an empty url, so 0 means "no link".
+            assert_eq!(registry.urls[0], "");
+            assert_eq!(registry.url(0), None);
+        }
+
+        #[test]
+        fn same_uri_reuses_its_id() {
+            let mut registry = HyperlinkRegistry::new();
+            let a = registry.id_for_uri("https://example.com/a");
+            let b = registry.id_for_uri("https://example.com/a");
+            assert_eq!(a, b, "a repeated URI must not allocate a second id");
+        }
+
+        #[test]
+        fn distinct_uris_get_distinct_resolvable_ids() {
+            let mut registry = HyperlinkRegistry::new();
+            let a = registry.id_for_uri("https://example.com/a");
+            let b = registry.id_for_uri("https://example.com/b");
+            assert_ne!(a, b);
+            assert_eq!(registry.url(a), Some("https://example.com/a"));
+            assert_eq!(registry.url(b), Some("https://example.com/b"));
+        }
+
+        #[test]
+        fn table_is_bounded() {
+            let mut registry = HyperlinkRegistry::new();
+            for i in 0..(MAX_HYPERLINKS * 2) {
+                let _ = registry.id_for_uri(&format!("https://example.com/{i}"));
+            }
+            assert!(
+                registry.urls.len() <= MAX_HYPERLINKS,
+                "registry grew to {} entries, cap is {MAX_HYPERLINKS}",
+                registry.urls.len()
+            );
+        }
+
+        #[test]
+        fn saturation_resolves_to_no_link_not_a_wrong_link() {
+            let mut registry = HyperlinkRegistry::new();
+            for i in 0..MAX_HYPERLINKS {
+                let _ = registry.id_for_uri(&format!("https://example.com/{i}"));
+            }
+            assert!(
+                registry.urls.len() >= MAX_HYPERLINKS,
+                "table should be full for this test to mean anything"
+            );
+
+            // A URI past the cap must degrade to "no link" (0)...
+            let overflow_id = registry.id_for_uri("https://example.com/one-too-many");
+            assert_eq!(overflow_id, 0, "a URI past the cap must report no link");
+
+            // ...and must NOT resolve to some earlier link, which was the bug.
+            assert_eq!(
+                registry.url(overflow_id),
+                None,
+                "an overflowing URI must never resolve to a real URL"
+            );
+        }
+
+        #[test]
+        fn saturation_does_not_corrupt_ids_already_handed_out() {
+            let mut registry = HyperlinkRegistry::new();
+            let first = registry.id_for_uri("https://example.com/first");
+            let first_url = registry.url(first).map(str::to_owned);
+
+            for i in 0..(MAX_HYPERLINKS + 10) {
+                let _ = registry.id_for_uri(&format!("https://example.com/{i}"));
+            }
+
+            // Ids already handed to a delta consumer must still resolve — the
+            // type's whole contract is that ids are never rebuilt.
+            assert_eq!(registry.url(first).map(str::to_owned), first_url);
+        }
+
+        #[test]
+        fn estimated_bytes_grows_with_entries() {
+            let mut registry = HyperlinkRegistry::new();
+            let empty = registry.estimated_bytes();
+            for i in 0..100 {
+                let _ = registry.id_for_uri(&format!("https://example.com/{i}"));
+            }
+            assert!(
+                registry.estimated_bytes() > empty,
+                "estimated_bytes must reflect retained URIs so the memory report can see them"
+            );
+        }
+    }
+
+    #[test]
+    fn interactive_terminal_drops_inherited_color_suppression() {
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.env("NO_COLOR", "1");
+        cmd.env("TERM", "dumb");
+        cmd.env("COLORTERM", "");
+        cmd.env("CHAU7_TEST_UNRELATED", "preserved");
+
+        configure_terminal_color_environment(&mut cmd);
+
+        assert_eq!(cmd.get_env("NO_COLOR"), None);
+        assert_eq!(
+            cmd.get_env("TERM"),
+            Some(std::ffi::OsStr::new("xterm-256color"))
+        );
+        assert_eq!(
+            cmd.get_env("COLORTERM"),
+            Some(std::ffi::OsStr::new("truecolor"))
+        );
+        assert_eq!(
+            cmd.get_env("CHAU7_TEST_UNRELATED"),
+            Some(std::ffi::OsStr::new("preserved"))
+        );
+    }
+
+    #[test]
+    fn interactive_terminal_allows_explicit_color_opt_out() {
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        configure_terminal_color_environment(&mut cmd);
+        // Same order as new_with_launch: explicit overrides win.
+        cmd.env("NO_COLOR", "1");
+        assert_eq!(cmd.get_env("NO_COLOR"), Some(std::ffi::OsStr::new("1")));
+    }
+
+    fn terminal_with_queued_pty() -> (Chau7Terminal, crossbeam_channel::Sender<PtyMessage>) {
+        let mut term = Chau7Terminal::new_headless(80, 24).expect("headless terminal");
+        let (tx, rx) = crossbeam_channel::unbounded();
+        term.pty_rx = Some(rx);
+        (term, tx)
+    }
+
+    #[test]
+    fn clipboard_reply_consumes_request_and_preserves_subsequent_requests() {
+        let (term, tx) = terminal_with_queued_pty();
+        // Production keeps Alacritty's copy-only permission default. Enable
+        // reads only in this fixture to exercise the asynchronous reply path.
+        term.term.lock().set_options(TermConfig {
+            osc52: alacritty_terminal::term::Osc52::CopyPaste,
+            ..TermConfig::default()
+        });
+        for _ in 0..2 {
+            tx.send(PtyMessage::Data(b"\x1b]52;c;?\x07".to_vec()))
+                .unwrap();
+            let _ = term.poll_events(0);
+            assert!(term.has_pending_clipboard_load());
+            // Headless terminal consumes the formatter without writing a PTY.
+            term.respond_clipboard_load("fixture clipboard");
+            assert!(!term.has_pending_clipboard_load());
+            assert!(term.pending_clipboard_load.lock().is_none());
+        }
+    }
+
+    #[test]
+    fn concurrent_polls_preserve_fragmented_tui_styles_and_layout() {
+        let input = (0..96)
+            .map(|n| format!("\x1b[1;38;2;255;140;30m│ row {n:03} │\x1b[0m \x1b[4;32mgreen\x1b[0m \x1b[3;34mblue\x1b[0m\r\n"))
+            .collect::<String>();
+        let reference = Chau7Terminal::new_headless(80, 24).unwrap();
+        reference.inject_output(input.as_bytes());
+        let (term, tx) = terminal_with_queued_pty();
+        let term = Arc::new(term);
+        // Split SGR parameters and UTF-8 box characters across PTY messages.
+        for chunk in input.as_bytes().chunks(3) {
+            tx.send(PtyMessage::Data(chunk.to_vec())).unwrap();
+        }
+        let barrier = Arc::new(std::sync::Barrier::new(8));
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let term = Arc::clone(&term);
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    while !term.pty_rx.as_ref().unwrap().is_empty() {
+                        let _ = term.poll_events(0);
+                        std::thread::yield_now();
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+
+        assert_eq!(
+            term.full_buffer_ansi_text(),
+            reference.full_buffer_ansi_text()
+        );
+        assert_eq!(term.get_last_output(), input.as_bytes());
+        let restored = Chau7Terminal::new_headless(80, 24).unwrap();
+        restored.inject_output(term.full_buffer_ansi_text().as_bytes());
+        // Export includes the blank cursor row; compare all styled content
+        // exactly, ignoring only empty rows appended by replay/export.
+        assert_eq!(
+            restored
+                .full_buffer_ansi_text()
+                .trim_end_matches(['\r', '\n']),
+            reference
+                .full_buffer_ansi_text()
+                .trim_end_matches(['\r', '\n'])
+        );
+    }
+
+    #[test]
+    fn poll_yields_with_output_backlog_without_losing_or_reordering_bytes() {
+        let (term, tx) = terminal_with_queued_pty();
+        let chunk = b"batch\r\n".repeat(512);
+        let chunks = 64;
+        for _ in 0..chunks {
+            tx.send(PtyMessage::Data(chunk.clone())).unwrap();
+        }
+        let first_flags = term.poll_events(0);
+        assert_ne!(first_flags & POLL_EVENT_GRID_CHANGED, 0);
+        assert!(
+            !term.pty_rx.as_ref().unwrap().is_empty(),
+            "one UI poll must yield before consuming an entire backlog"
+        );
+        let mut output = term.get_last_output();
+        while !term.pty_rx.as_ref().unwrap().is_empty() {
+            let _ = term.poll_events(0);
+            output.extend(term.get_last_output());
+        }
+        assert_eq!(output, chunk.repeat(chunks));
+        assert!(term.get_last_output().is_empty());
+    }
+
+    #[test]
+    fn poll_preserves_unread_output_across_data_and_idle_polls() {
+        let (term, tx) = terminal_with_queued_pty();
+        tx.send(PtyMessage::Data(b"first\r\n".to_vec())).unwrap();
+        let _ = term.poll_events(0);
+        tx.send(PtyMessage::Data(b"second\r\n".to_vec())).unwrap();
+        let _ = term.poll_events(0);
+        let _ = term.poll_events(0);
+
+        assert_eq!(term.get_last_output(), b"first\r\nsecond\r\n");
+        assert!(term.get_last_output().is_empty(), "retrieval consumes once");
+    }
+
+    #[test]
+    fn poll_zero_timeout_does_not_wait_or_dequeue_behind_another_poller() {
+        let (term, tx) = terminal_with_queued_pty();
+        let term = Arc::new(term);
+        // Pause the first poll after it receives a chunk, before parsing it.
+        let parser_guard = term.graphics_interceptor.lock();
+        tx.send(PtyMessage::Data(b"first\r\n".to_vec())).unwrap();
+        let first_term = Arc::clone(&term);
+        let first = std::thread::spawn(move || first_term.poll_events(200));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !term.pty_rx.as_ref().unwrap().is_empty() && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        let first_dequeued = term.pty_rx.as_ref().unwrap().is_empty();
+
+        tx.send(PtyMessage::Data(b"second\r\n".to_vec())).unwrap();
+        let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+        let second_term = Arc::clone(&term);
+        let second = std::thread::spawn(move || {
+            finished_tx.send(second_term.poll_events(0)).unwrap();
+        });
+        let result = finished_rx.recv_timeout(Duration::from_millis(200));
+        let queued_while_parser_blocked = term.pty_rx.as_ref().unwrap().len();
+        // Always release/join before assertions, even on the broken implementation.
+        drop(parser_guard);
+        first.join().unwrap();
+        second.join().unwrap();
+
+        assert!(first_dequeued, "first poll should reach the parser");
+        assert_eq!(result, Ok(0), "UI polling must not wait for another poll");
+        assert_eq!(
+            queued_while_parser_blocked, 1,
+            "only one consumer may dequeue"
+        );
+        assert_eq!(term.get_last_output(), b"first\r\nsecond\r\n");
+        assert_eq!(term.full_buffer_text().trim_end(), "first\nsecond");
+    }
+
+    #[test]
+    fn concurrent_polls_preserve_pty_byte_and_scrollback_order() {
+        let (term, tx) = terminal_with_queued_pty();
+        let term = Arc::new(term);
+        let expected_text = (0..1024).map(|n| format!("{n}\n")).collect::<String>();
+        let expected_bytes = expected_text.replace('\n', "\r\n").into_bytes();
+        for chunk in expected_bytes.chunks(7) {
+            tx.send(PtyMessage::Data(chunk.to_vec())).unwrap();
+        }
+        let barrier = Arc::new(std::sync::Barrier::new(8));
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let term = Arc::clone(&term);
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    while !term.pty_rx.as_ref().unwrap().is_empty() {
+                        let _ = term.poll_events(0);
+                        std::thread::yield_now();
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+
+        assert_eq!(term.full_buffer_text().trim_end(), expected_text.trim_end());
+        assert_eq!(term.get_last_output(), expected_bytes);
+    }
+
+    #[test]
+    fn filters_codex_malloc_stack_logging_noise_line() {
+        let input = b"before\r\ncodex(67690) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.\r\nafter\n";
+        let filtered = filter_terminal_output_noise(input);
+        assert_eq!(filtered.as_ref(), b"before\r\nafter\n");
+    }
+
+    #[test]
+    fn filters_codex_malloc_stack_logging_noise_without_newline() {
+        let input = b"codex(67690) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.";
+        let filtered = filter_terminal_output_noise(input);
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn keeps_related_non_matching_output() {
+        let input = b"echo codex(67690) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.\n";
+        let filtered = filter_terminal_output_noise(input);
+        assert_eq!(filtered.as_ref(), input);
+    }
+
+    #[test]
+    fn treats_title_osc_as_metadata_only() {
+        assert!(is_metadata_only_terminal_data(b"\x1b]0;Mockup\x07"));
+        assert!(is_metadata_only_terminal_data(b"\x1b]2;Mockup\x1b\\"));
+    }
+
+    #[test]
+    fn treats_multiple_metadata_osc_sequences_as_metadata_only() {
+        let input = b"\x1b]0;Mockup\x07\x1b]7;file://host/tmp\x07\x1b]133;A\x07";
+        assert!(is_metadata_only_terminal_data(input));
+    }
+
+    #[test]
+    fn treats_bell_as_metadata_only() {
+        assert!(is_metadata_only_terminal_data(b"\x07"));
+    }
+
+    #[test]
+    fn treats_text_mixed_with_title_as_renderable() {
+        assert!(!is_metadata_only_terminal_data(b"\x1b]0;Mockup\x07hello"));
+    }
+
+    #[test]
+    fn treats_incomplete_or_unknown_osc_as_renderable() {
+        assert!(!is_metadata_only_terminal_data(b"\x1b]0;Mockup"));
+        assert!(!is_metadata_only_terminal_data(
+            b"\x1b]4;1;rgb:00/00/00\x07"
+        ));
+    }
+
+    #[test]
+    fn echo_detection_does_not_wait_for_pty_handle_lock() {
+        let term = Arc::new(Chau7Terminal::new_headless(2, 2).expect("headless terminal"));
+        let _held_writer_lock = term.pty_handle.lock();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker_term = Arc::clone(&term);
+        std::thread::spawn(move || {
+            let _ = worker_term.is_echo_disabled();
+            let _ = tx.send(());
+        });
+
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(200))
+                .is_ok(),
+            "echo detection must not wait behind the PTY writer lock"
+        );
+    }
+
+    #[test]
+    fn selection_clamps_hostile_ffi_coordinates() {
+        // Negative col cast to usize used to become a ~1.8e19 Column index
+        // handed to alacritty's Selection. All coordinates must clamp.
+        let term = Chau7Terminal::new_headless(80, 24).expect("headless terminal");
+        term.inject_output(b"hello world\r\n");
+
+        term.selection_start(-5, -99_999, 0);
+        term.selection_update(i32::MAX, i32::MAX);
+        let _ = term.selection_text();
+
+        term.selection_start(i32::MAX, 0, 1);
+        term.selection_update(-1, -1);
+        let _ = term.selection_text();
+
+        // Sane coordinates still select.
+        term.selection_start(0, 0, 3);
+        term.selection_update(10, 0);
+        assert!(
+            term.selection_text().is_some(),
+            "line selection should produce text"
+        );
+    }
+
+    #[test]
+    fn selection_updates_include_whole_cells_in_both_directions_and_styles() {
+        fn assert_selection(
+            term: &Chau7Terminal,
+            start: (i32, i32),
+            end: (i32, i32),
+            kind: u8,
+            expected: &str,
+        ) {
+            term.selection_start(start.0, start.1, kind);
+            term.selection_update(end.0, end.1);
+            let plain = term.selection_text().expect("selected text");
+            assert_eq!(plain, expected);
+
+            let styled = term.selection_styled_text().expect("styled selection");
+            assert_eq!(styled.plain_text, plain);
+            assert_eq!(
+                styled
+                    .runs
+                    .iter()
+                    .map(|run| run.text.as_str())
+                    .collect::<String>(),
+                plain,
+            );
+        }
+
+        let term = Chau7Terminal::new_headless(10, 2).expect("headless terminal");
+        term.inject_output(b"abcdef");
+
+        // Forward and reverse simple selections include both endpoint cells.
+        assert_selection(&term, (0, 0), (5, 0), 0, "abcdef");
+        assert_selection(&term, (5, 0), (0, 0), 0, "abcdef");
+        assert_selection(&term, (3, 0), (3, 0), 0, "d");
+
+        // Block selections also retain whole-cell behavior when reversed.
+        assert_selection(&term, (5, 0), (0, 0), 1, "abcdef");
+    }
+
+    #[test]
+    fn launch_args_and_cwd_reach_the_child() {
+        let term = Chau7Terminal::new_with_launch(
+            80,
+            24,
+            "/bin/sh",
+            &[],
+            &["-c".to_string(), "pwd && echo CHAU7_ARGS_OK".to_string()],
+            Some("/private/tmp"),
+        )
+        .expect("terminal with launch args");
+
+        let mut combined = String::new();
+        for _ in 0..100 {
+            let _ = term.poll(50);
+            let chunk = std::mem::take(&mut *term.last_output.lock());
+            combined.push_str(&String::from_utf8_lossy(&chunk));
+            if combined.contains("CHAU7_ARGS_OK") {
+                break;
+            }
+        }
+
+        assert!(
+            combined.contains("CHAU7_ARGS_OK"),
+            "argv was not passed to the child: {combined:?}"
+        );
+        assert!(
+            combined.contains("/private/tmp") || combined.contains("/tmp"),
+            "cwd was not applied: {combined:?}"
+        );
+    }
+
+    #[test]
+    fn hup_drains_tail_output_burst_from_short_lived_command() {
+        // A child that writes a large final burst and exits immediately
+        // leaves data in the kernel PTY buffer when POLLHUP fires. The pool
+        // must drain it all before latching closed — pre-fix, only one read
+        // happened per cycle and the tail was silently lost.
+        let term = Chau7Terminal::new_with_launch(
+            80,
+            24,
+            "/bin/sh",
+            &[],
+            &[
+                "-c".to_string(),
+                "head -c 65536 /dev/zero | tr '\\0' X; echo; echo CHAU7_TAIL_END".to_string(),
+            ],
+            None,
+        )
+        .expect("short-lived burst terminal");
+
+        let mut combined = String::new();
+        let started = Instant::now();
+        let deadline = started + Duration::from_secs(10);
+        let mut observed_in_time = false;
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let poll_timeout_ms = remaining.as_millis().min(50) as u32;
+            let _ = term.poll(poll_timeout_ms);
+            let chunk = std::mem::take(&mut *term.last_output.lock());
+            combined.push_str(&String::from_utf8_lossy(&chunk));
+            let pty_closed = term.pty_closed.load(Ordering::Acquire);
+            if combined.contains("CHAU7_TAIL_END") && pty_closed && Instant::now() < deadline {
+                observed_in_time = true;
+                break;
+            }
+            // Adaptive polling may reduce the timeout to zero after a large
+            // batch. Yield briefly so the child and reader pool can progress,
+            // without sleeping past this test's deadline.
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if !remaining.is_zero() {
+                std::thread::sleep(remaining.min(Duration::from_millis(1)));
+            }
+        }
+
+        let elapsed = started.elapsed();
+        let pty_closed = term.pty_closed.load(Ordering::Acquire);
+        let running = term.running.load(Ordering::Acquire);
+        let child_status = term.child.lock().as_mut().map(|child| child.try_wait());
+        assert!(
+            combined.contains("CHAU7_TAIL_END"),
+            "tail marker not observed before deadline (received {} bytes after {elapsed:?}; pty_closed={pty_closed}, running={running}, child_status={child_status:?})",
+            combined.len()
+        );
+        let x_count = combined.matches('X').count();
+        assert!(
+            x_count >= 65536,
+            "burst truncated: only {x_count}/65536 payload bytes arrived (received {} bytes after {elapsed:?}; pty_closed={pty_closed}, running={running}, child_status={child_status:?})",
+            combined.len()
+        );
+        assert!(
+            pty_closed,
+            "PTY close was not observed after the complete burst (received {} bytes after {elapsed:?}; running={running}, child_status={child_status:?})",
+            combined.len()
+        );
+        assert!(
+            observed_in_time,
+            "complete burst and PTY close were not both observed before the 10s deadline (received {} bytes after {elapsed:?}; pty_closed={pty_closed}, running={running}, child_status={child_status:?})",
+            combined.len()
+        );
+    }
+
+    #[test]
+    fn resize_is_safe_against_concurrent_shared_access() {
+        // resize takes &self so the UI thread can call it while drain threads
+        // hold &self for poll/debug_state; exercise that interleaving.
+        let term = Arc::new(Chau7Terminal::new_headless(80, 24).expect("headless terminal"));
+
+        let reader_term = Arc::clone(&term);
+        let reader = std::thread::spawn(move || {
+            for _ in 0..200 {
+                let state = reader_term.debug_state();
+                assert!(state.cols >= 10 && state.rows >= 5);
+            }
+        });
+
+        for i in 0..200u16 {
+            term.resize(10 + (i % 100), 5 + (i % 50));
+        }
+        reader.join().expect("reader thread");
+
+        term.resize(132, 43);
+        let state = term.debug_state();
+        assert_eq!((state.cols, state.rows), (132, 43));
+    }
+
+    #[test]
+    fn test_grid_snapshot_has_visible_content() {
+        let _ = env_logger::try_init();
+
+        // Create terminal with small dimensions
+        let term = Chau7Terminal::new_with_env(40, 10, "", &[]).expect("Should create terminal");
+
+        // Wait briefly for shell to start and produce output
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Poll to process any PTY data
+        let _changed = term.poll(100);
+
+        // Inject known content: "Hello World" with newline
+        term.inject_output(b"Hello World\r\n");
+
+        // Get grid snapshot
+        let snapshot = term.get_grid_snapshot();
+        assert!(snapshot.cols > 0, "Snapshot should have cols");
+        assert!(snapshot.rows > 0, "Snapshot should have rows");
+        assert!(
+            !snapshot.cells.is_null(),
+            "Cells pointer should not be null"
+        );
+
+        let total = snapshot.cols as usize * snapshot.rows as usize;
+        let cells = unsafe { std::slice::from_raw_parts(snapshot.cells, total) };
+        let clusters = if snapshot.clusters_utf8.is_null() {
+            &[][..]
+        } else {
+            unsafe { std::slice::from_raw_parts(snapshot.clusters_utf8, snapshot.clusters_len) }
+        };
+        let cell_str = |c: &CellData| -> &str {
+            if c.cluster_len == 0 {
+                return "";
+            }
+            let start = c.cluster_offset as usize;
+            let end = start + c.cluster_len as usize;
+            std::str::from_utf8(&clusters[start..end]).unwrap_or("?")
+        };
+
+        // Print first row for debugging
+        let first_row: String = cells[..snapshot.cols as usize]
+            .iter()
+            .map(|c| {
+                let s = cell_str(c);
+                if s.len() == 1 && s.as_bytes()[0].is_ascii_graphic() {
+                    s.chars().next().unwrap()
+                } else {
+                    '.'
+                }
+            })
+            .collect();
+        eprintln!("First row chars: {:?}", first_row);
+
+        // Print first few cells with color info
+        for (i, c) in cells.iter().enumerate().take(std::cmp::min(12, total)) {
+            eprintln!(
+                "  cell[{}]: cluster={:?} w={} cont={} fg=({},{},{}) bg=({},{},{}) flags=0x{:02X}",
+                i,
+                cell_str(c),
+                c.width,
+                c.continuation,
+                c.fg_r,
+                c.fg_g,
+                c.fg_b,
+                c.bg_r,
+                c.bg_g,
+                c.bg_b,
+                c.flags
+            );
+        }
+
+        // Verify "Hello" appears somewhere in the grid
+        let has_h = cells.iter().any(|c| cell_str(c) == "H");
+        let has_visible_fg = cells.iter().any(|c| c.fg_r > 0 || c.fg_g > 0 || c.fg_b > 0);
+
+        eprintln!("Has 'H': {}", has_h);
+        eprintln!("Has visible fg: {}", has_visible_fg);
+
+        assert!(has_h, "Grid should contain 'H' from injected 'Hello World'");
+        assert!(
+            has_visible_fg,
+            "At least some cells should have non-black foreground"
+        );
+
+        // Clean up - reconstruct Vec to free memory
+        unsafe {
+            let _ = Vec::from_raw_parts(snapshot.cells, total, snapshot.capacity);
+            if !snapshot.clusters_utf8.is_null() {
+                let _ = Vec::from_raw_parts(
+                    snapshot.clusters_utf8,
+                    snapshot.clusters_len,
+                    snapshot.clusters_capacity,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn grid_delta_is_row_bounded_and_preserved_for_lagging_consumers() {
+        let term = Chau7Terminal::new_headless(8, 3).expect("headless terminal");
+
+        let first = term.get_grid_delta_snapshot(0);
+        assert_eq!(first.full_refresh, 1);
+        assert_eq!(first.row_count, first.rows as u32);
+        let first_generation = first.generation;
+        unsafe {
+            crate::ffi::chau7_terminal_free_grid_delta(Box::into_raw(Box::new(first)));
+        }
+
+        term.inject_output(b"X");
+        let second = term.get_grid_delta_snapshot(first_generation);
+        assert_eq!(second.full_refresh, 0);
+        assert!(second.row_count > 0);
+        assert!(second.row_count < second.rows as u32);
+        let rows = unsafe {
+            std::slice::from_raw_parts(second.row_indices, second.row_count as usize).to_vec()
+        };
+        assert!(rows.contains(&0));
+        let second_generation = second.generation;
+        unsafe {
+            crate::ffi::chau7_terminal_free_grid_delta(Box::into_raw(Box::new(second)));
+        }
+
+        let current = term.get_grid_delta_snapshot(second_generation);
+        // Alacritty intentionally keeps the cursor row in terminal damage, so
+        // an otherwise idle snapshot may contain that one row. It must remain
+        // bounded rather than falling back to the full viewport.
+        assert_eq!(current.full_refresh, 0);
+        assert!(current.row_count <= 1);
+        unsafe {
+            crate::ffi::chau7_terminal_free_grid_delta(Box::into_raw(Box::new(current)));
+        }
+
+        // Resetting Alacritty damage for the first consumer must not erase the
+        // retained row generation needed by a split view that is one frame late.
+        let lagging = term.get_grid_delta_snapshot(first_generation);
+        assert_eq!(lagging.full_refresh, 0);
+        let lagging_rows = unsafe {
+            std::slice::from_raw_parts(lagging.row_indices, lagging.row_count as usize).to_vec()
+        };
+        assert!(lagging_rows.contains(&0));
+        unsafe {
+            crate::ffi::chau7_terminal_free_grid_delta(Box::into_raw(Box::new(lagging)));
+        }
+    }
+
+    #[test]
+    fn test_full_buffer_text_preserves_soft_wrapped_logical_lines() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(5, 4, "", &[]).expect("Should create terminal");
+        term.inject_output(b"hello world");
+
+        let text = term.full_buffer_text();
+
+        assert!(
+            text.contains("hello world"),
+            "Expected wrapped output to remain one logical line, got: {:?}",
+            text
+        );
+        assert!(
+            !text.contains("hello\n worl"),
+            "Expected no hard newline at soft-wrap boundary, got: {:?}",
+            text
+        );
+    }
+
+    #[test]
+    fn test_full_buffer_ansi_text_preserves_sgr_attributes() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(20, 4, "", &[]).expect("Should create terminal");
+        term.inject_output(b"\x1b[31mred\x1b[0m plain");
+
+        let plain = term.full_buffer_text();
+        let ansi = term.full_buffer_ansi_text();
+
+        assert!(plain.contains("red plain"));
+        assert!(!plain.contains('\u{1b}'));
+        assert!(ansi.contains("red"));
+        assert!(
+            ansi.contains("\u{1b}[") && ansi.contains("38;2;"),
+            "Expected ANSI SGR truecolor styling in export, got: {:?}",
+            ansi
+        );
+    }
+
+    #[test]
+    fn test_tail_buffer_ansi_text_limits_logical_lines() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
+        term.inject_output(b"one\ntwo\nthree\nfour\nfive\n");
+
+        let tail = term.tail_buffer_ansi_text(2, 4096);
+
+        assert!(
+            !tail.contains("one"),
+            "Expected old line to be trimmed: {:?}",
+            tail
+        );
+        assert!(
+            !tail.contains("two"),
+            "Expected old line to be trimmed: {:?}",
+            tail
+        );
+        assert!(
+            tail.contains("four"),
+            "Expected recent line in tail: {:?}",
+            tail
+        );
+        assert!(
+            tail.contains("five"),
+            "Expected recent line in tail: {:?}",
+            tail
+        );
+    }
+
+    #[test]
+    fn test_tail_buffer_ansi_text_preserves_sgr_attributes() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
+        term.inject_output(b"plain\n\x1b[31mred tail\x1b[0m\n");
+
+        let tail = term.tail_buffer_ansi_text(1, 4096);
+
+        assert!(!tail.contains("plain"));
+        assert!(tail.contains("red tail"));
+        assert!(
+            tail.contains("\u{1b}[") && tail.contains("38;2;"),
+            "Expected ANSI SGR truecolor styling in tail export, got: {:?}",
+            tail
+        );
+    }
+
+    #[test]
+    fn test_tail_buffer_ansi_text_round_trip_preserves_columns() {
+        let _ = env_logger::try_init();
+
+        // Regression for the restored-tab "staircase" corruption: the export is
+        // injected straight into the VTE parser (no PTY, so no ONLCR translating
+        // LF to CRLF). A bare `\n` moves the cursor down WITHOUT returning to
+        // column 0, so every replayed line inherits the previous line's end
+        // column and indentation shifts across the whole restored buffer.
+        let source = Chau7Terminal::new_with_env(40, 6, "", &[]).expect("Should create terminal");
+        source.inject_output(b"alpha\r\nbeta\r\n  indented\r\n");
+        let tail = source.tail_buffer_ansi_text(100, 65536);
+
+        let restored = Chau7Terminal::new_with_env(40, 6, "", &[]).expect("Should create terminal");
+        restored.inject_output(tail.as_bytes());
+
+        assert_eq!(restored.line_text(0).as_deref(), Some("alpha"));
+        assert_eq!(restored.line_text(1).as_deref(), Some("beta"));
+        assert_eq!(restored.line_text(2).as_deref(), Some("  indented"));
+    }
+
+    #[test]
+    fn test_full_buffer_ansi_text_replay_round_trip_preserves_columns() {
+        let _ = env_logger::try_init();
+
+        // The scrollback disk cache is captured with `full_buffer_ansi_text`
+        // and restored through `replay_buffer`, which injects straight into the
+        // VTE parser (no PTY line discipline, so no ONLCR expanding LF to
+        // CRLF). The export must be CRLF-terminated end to end or every
+        // restored line inherits the previous line's end column and the whole
+        // buffer staircases — including rows that scrolled into history.
+        let source = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
+        let history = concat!(
+            "\x1b[1;4;38;2;12;34;56;48;2;7;8;9mRESTORED_STYLE:",
+            "e\u{301}中❤️",
+            "\x1b[0m\r\nalpha\r\nbeta\r\n  indented\r\n\x1b[31mred\x1b[0m\r\ntail\r\nlast\r\n",
+        );
+        source.inject_output(history.as_bytes());
+        let export = source.full_buffer_ansi_text();
+
+        let restored = Chau7Terminal::new_with_env(40, 4, "", &[]).expect("Should create terminal");
+        restored.replay_buffer(export.as_bytes());
+
+        assert_eq!(restored.full_buffer_text(), source.full_buffer_text());
+        assert_eq!(
+            restored.line_text(0).as_deref(),
+            source.line_text(0).as_deref()
+        );
+
+        // Compare actual emulator cells for styled text that has scrolled into
+        // history, not only the ANSI serialization or plain-text projection.
+        source.scroll_to(1.0);
+        restored.scroll_to(1.0);
+        let source_grid = source.grid_copy();
+        let restored_grid = restored.grid_copy();
+        assert!(source_grid.scrollback_rows > 0);
+        assert!(restored_grid.scrollback_rows > 0);
+        assert_eq!(source_grid.cols, restored_grid.cols);
+        assert_eq!(source_grid.rows, restored_grid.rows);
+
+        let find_cell = |grid: &crate::GridCopy, expected: &str| {
+            (0..grid.cells.len())
+                .find(|index| grid.cell_text(*index).as_deref() == Some(expected))
+                .unwrap_or_else(|| panic!("grid is missing styled cell {expected:?}"))
+        };
+        let combining = find_cell(&source_grid, "é");
+        let cjk = find_cell(&source_grid, "中");
+        let emoji = find_cell(&source_grid, "❤️");
+        for (source_index, replay_index, label) in [
+            (combining, find_cell(&restored_grid, "é"), "combining mark"),
+            (cjk, find_cell(&restored_grid, "中"), "CJK grapheme"),
+            (emoji, find_cell(&restored_grid, "❤️"), "emoji grapheme"),
+        ] {
+            assert_eq!(
+                source_index, replay_index,
+                "replay moved the {label} to a different visible cell"
+            );
+            assert_eq!(
+                source_grid.cells[source_index], restored_grid.cells[replay_index],
+                "replay changed the {label} cell attributes or layout"
+            );
+            let cell = source_grid.cells[source_index];
+            assert_eq!(cell.fg, (12, 34, 56), "foreground color on {label}");
+            assert_eq!(cell.bg, (7, 8, 9), "background color on {label}");
+            assert_ne!(cell.flags & CELL_FLAG_BOLD, 0, "bold flag on {label}");
+            assert_ne!(
+                cell.flags & CELL_FLAG_UNDERLINE,
+                0,
+                "underline flag on {label}"
+            );
+            assert_eq!(cell.underline, crate::types::UNDERLINE_SINGLE);
+        }
+        assert_eq!(source_grid.cells[cjk].width, 2);
+        assert!(!source_grid.cells[cjk].continuation);
+        let cjk_continuation = cjk + 1;
+        assert!(cjk % source_grid.cols as usize + 1 < source_grid.cols as usize);
+        assert_eq!(
+            cjk_continuation / source_grid.cols as usize,
+            cjk / source_grid.cols as usize
+        );
+        assert!(source_grid.cells[cjk_continuation].continuation);
+        assert_eq!(source_grid.cells[cjk_continuation].width, 0);
+        assert_eq!(
+            source_grid.cells[cjk_continuation], restored_grid.cells[cjk_continuation],
+            "replay changed the wide CJK continuation cell"
+        );
+    }
+    #[test]
+    fn test_set_scrollback_size_shrinks_primary_history_while_on_alt_screen() {
+        let _ = env_logger::try_init();
+
+        // Regression: `grid_mut().update_history()` targets the ACTIVE grid,
+        // so shrinking while a TUI held the alternate screen silently
+        // no-opped against the primary grid that owns all the history. The
+        // set_options routing must shrink the primary grid regardless.
+        let term = Chau7Terminal::new_with_env(20, 4, "", &[]).expect("Should create terminal");
+        let mut output = Vec::new();
+        for i in 0..200 {
+            output.extend_from_slice(format!("line {}\r\n", i).as_bytes());
+        }
+        term.inject_output(&output);
+        let before = term.debug_state().history_size;
+        assert!(
+            before > 50,
+            "history should have accumulated (got {})",
+            before
+        );
+
+        term.inject_output(b"\x1b[?1049h"); // enter alt screen
+        term.set_scrollback_size(50);
+        term.inject_output(b"\x1b[?1049l"); // leave alt screen
+
+        let after = term.debug_state().history_size;
+        assert!(
+            after <= 50,
+            "primary history must shrink while the alt screen was active (got {})",
+            after
+        );
+    }
+
+    #[test]
+    fn test_tail_buffer_text_returns_bounded_logical_line_suffix() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(40, 6, "", &[]).expect("Should create terminal");
+        term.inject_output(b"alpha\r\nbeta\r\n  indented\r\ndelta\r\n");
+
+        // Last 3 non-blank logical lines, plain text, LF-terminated.
+        assert_eq!(term.tail_buffer_text(3, 65536), "beta\n  indented\ndelta\n");
+
+        // Wrapped physical rows must join into one logical line.
+        let wrapped = Chau7Terminal::new_with_env(20, 6, "", &[]).expect("Should create terminal");
+        let long_line = "x".repeat(50);
+        wrapped.inject_output(format!("{}\r\n", long_line).as_bytes());
+        assert_eq!(
+            wrapped.tail_buffer_text(1, 65536),
+            format!("{}\n", long_line)
+        );
+
+        // Byte bound is respected.
+        assert!(term.tail_buffer_text(100, 8).len() <= 8);
+    }
+
+    #[test]
+    fn test_tail_buffer_ansi_text_limits_bytes_on_char_boundary() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(80, 4, "", &[]).expect("Should create terminal");
+        term.inject_output("alpha beta gamma delta epsilon 😀\n".as_bytes());
+
+        let tail = term.tail_buffer_ansi_text(10, 32);
+
+        assert!(
+            tail.len() <= 32,
+            "Expected bounded tail to stay within max bytes, got {} bytes: {:?}",
+            tail.len(),
+            tail
+        );
+        assert!(tail.is_char_boundary(tail.len()));
+    }
+
+    #[test]
+    fn test_logical_line_text_returns_wrapped_text_and_clicked_offset() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(5, 4, "", &[]).expect("Should create terminal");
+        term.inject_output(b"docs/readme.md");
+
+        let cases = [
+            (0, 2, 2),
+            (1, 2, 7),
+            (2, 2, 12),
+            // Clicking terminal padding after the final wrapped fragment clamps
+            // to the end of the logical line instead of jumping to offset zero.
+            (2, 99, 14),
+        ];
+
+        for (row, column, expected_offset) in cases {
+            let (text, start_row, clicked_offset) = term
+                .logical_line_text(row, column)
+                .expect("Expected wrapped logical line");
+
+            assert_eq!(text, "docs/readme.md");
+            assert_eq!(start_row, 0);
+            assert_eq!(clicked_offset, expected_offset, "row={row} column={column}");
+        }
+    }
+
+    #[test]
+    fn test_logical_line_text_uses_utf16_offset_for_combining_sequences() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(20, 4, "", &[]).expect("Should create terminal");
+        term.inject_output("e\u{301}docs/readme.md".as_bytes());
+
+        let (text, start_row, clicked_offset) =
+            term.logical_line_text(0, 2).expect("Expected logical line");
+
+        assert_eq!(text, "e\u{301}docs/readme.md");
+        assert_eq!(start_row, 0);
+        assert_eq!(clicked_offset, 3);
+    }
+
+    // ======================================================================
+    // Escape Sequence Conformance Tests (vttest/esctest equivalent)
+    // ======================================================================
+    //
+    // These tests feed standard escape sequences into the terminal and verify
+    // the resulting grid state. They serve as a lightweight alternative to
+    // running the full vttest/esctest suites.
+
+    /// Helper: extract text from row 0 of a terminal
+    fn row_text(term: &Chau7Terminal, row: usize) -> String {
+        let t = term.term.lock();
+        let grid = t.grid();
+        let cols = grid.columns();
+        let line = Line(row as i32);
+        (0..cols)
+            .map(|c| {
+                let cell = &grid[line][Column(c)];
+                let ch = cell.c;
+                if ch == ' ' || ch == '\0' { ' ' } else { ch }
+            })
+            .collect::<String>()
+            .trim_end()
+            .to_string()
+    }
+
+    /// Helper: get cursor position (col, row) — 0-indexed
+    fn cursor_pos(term: &Chau7Terminal) -> (usize, usize) {
+        let t = term.term.lock();
+        let point = t.grid().cursor.point;
+        (point.column.0, point.line.0 as usize)
+    }
+
+    #[test]
+    fn test_csi_cursor_up() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 10, "", &[]).expect("create");
+        // Move to row 5, then cursor up 3
+        term.inject_output(b"\x1b[6;1H"); // Move to row 6, col 1
+        term.inject_output(b"\x1b[3A"); // Cursor up 3
+        let (_, row) = cursor_pos(&term);
+        assert_eq!(row, 2, "CUU 3 from row 5 should land on row 2");
+    }
+
+    #[test]
+    fn test_csi_cursor_down() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 10, "", &[]).expect("create");
+        term.inject_output(b"\x1b[1;1H"); // Home
+        term.inject_output(b"\x1b[4B"); // Cursor down 4
+        let (_, row) = cursor_pos(&term);
+        assert_eq!(row, 4, "CUD 4 from row 0 should land on row 4");
+    }
+
+    #[test]
+    fn test_csi_cursor_forward_backward() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 10, "", &[]).expect("create");
+        term.inject_output(b"\x1b[1;1H"); // Home
+        term.inject_output(b"\x1b[10C"); // Forward 10
+        let (col, _) = cursor_pos(&term);
+        assert_eq!(col, 10, "CUF 10 from col 0 should land on col 10");
+
+        term.inject_output(b"\x1b[3D"); // Back 3
+        let (col, _) = cursor_pos(&term);
+        assert_eq!(col, 7, "CUB 3 from col 10 should land on col 7");
+    }
+
+    #[test]
+    fn test_csi_erase_in_display() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
+        term.inject_output(b"AAAA\r\nBBBB\r\nCCCC");
+        // Erase from cursor to end of display
+        term.inject_output(b"\x1b[2;1H"); // Move to row 2, col 1
+        term.inject_output(b"\x1b[0J"); // Erase below
+        let _row2 = row_text(&term, 1);
+        // Row 1 (0-indexed) should still have content (cursor is ON this row)
+        // Row 2+ should be cleared
+        let row3 = row_text(&term, 2);
+        assert!(
+            row3.trim().is_empty(),
+            "Row below cursor should be cleared after ED 0, got: {:?}",
+            row3
+        );
+    }
+
+    #[test]
+    fn test_csi_erase_in_line() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
+        term.inject_output(b"Hello World");
+        term.inject_output(b"\x1b[1;6H"); // Move to col 6 (the W)
+        term.inject_output(b"\x1b[0K"); // Erase to end of line
+        let text = row_text(&term, 0);
+        assert_eq!(
+            text, "Hello",
+            "EL 0 should erase from cursor to end of line"
+        );
+    }
+
+    #[test]
+    fn test_csi_absolute_position() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 10, "", &[]).expect("create");
+        term.inject_output(b"\x1b[5;8H"); // Row 5, Col 8 (1-indexed)
+        let (col, row) = cursor_pos(&term);
+        assert_eq!(row, 4, "CUP row should be 4 (0-indexed from 5)");
+        assert_eq!(col, 7, "CUP col should be 7 (0-indexed from 8)");
+    }
+
+    #[test]
+    fn test_sgr_colors_applied() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
+        // Write with red foreground (SGR 31)
+        term.inject_output(b"\x1b[31mRED\x1b[0m");
+        let snapshot = term.get_grid_snapshot();
+        let total = snapshot.cols as usize * snapshot.rows as usize;
+        let cells = unsafe { std::slice::from_raw_parts(snapshot.cells, total) };
+        let clusters =
+            unsafe { std::slice::from_raw_parts(snapshot.clusters_utf8, snapshot.clusters_len) };
+        // First cell 'R' should have red foreground
+        let r_cell = &cells[0];
+        let r_start = r_cell.cluster_offset as usize;
+        let r_end = r_start + r_cell.cluster_len as usize;
+        assert_eq!(&clusters[r_start..r_end], b"R");
+        // Red in default 16-color palette is typically (205, 49, 49) or similar
+        assert!(
+            r_cell.fg_r > 150,
+            "Red text should have high fg_r, got {}",
+            r_cell.fg_r
+        );
+        unsafe {
+            let _ = Vec::from_raw_parts(snapshot.cells, total, snapshot.capacity);
+        }
+    }
+
+    #[test]
+    fn test_osc_title() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
+        // OSC 0 sets the terminal title. The VTE processor parses this and
+        // dispatches a Title event. Verify the escape doesn't leak into the
+        // grid text (the VTE processor correctly consumed it).
+        term.inject_output(b"\x1b]0;My Custom Title\x07Visible");
+        let text = term.full_buffer_text();
+        assert!(text.contains("Visible"), "Text after OSC should be visible");
+        assert!(
+            !text.contains("My Custom Title"),
+            "OSC payload should NOT appear in grid text"
+        );
+    }
+
+    #[test]
+    fn test_alternate_screen() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
+        term.inject_output(b"\x1b[HMain Screen");
+        let before = row_text(&term, 0);
+        assert!(
+            before.contains("Main Screen"),
+            "Initial content, got: {:?}",
+            before
+        );
+
+        // Switch to alternate screen and write content
+        assert!(!term.is_alternate_screen_active());
+        term.inject_output(b"\x1b[?1049h");
+        assert!(term.is_alternate_screen_active());
+        term.inject_output(b"\x1b[HAlt Screen");
+
+        // Switch back — main screen content should be restored.
+        // The alternate screen content ("Alt Screen") is discarded.
+        term.inject_output(b"\x1b[?1049l");
+        assert!(!term.is_alternate_screen_active());
+        let after = row_text(&term, 0);
+        assert!(
+            after.contains("Main Screen"),
+            "Restoring from alt screen should show original content, got: {:?}",
+            after
+        );
+    }
+
+    #[test]
+    fn test_alternate_scroll_requires_alternate_screen_and_resets() {
+        let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
+
+        // Alacritty enables DEC 1007 by default, but it must not affect the
+        // primary screen's scrollback behavior.
+        assert!(!term.is_alternate_scroll_active());
+        term.inject_output(b"\x1b[?1007l");
+        assert!(!term.is_alternate_scroll_active());
+
+        // Disabling DEC 1007 keeps alternate-screen wheel input local.
+        term.inject_output(b"\x1b[?1049h");
+        assert!(term.is_alternate_screen_active());
+        assert!(!term.is_alternate_scroll_active());
+
+        // Enabling DEC 1007 forwards wheel input only while on the alternate
+        // screen. Leaving that screen disables the combined state.
+        term.inject_output(b"\x1b[?1007h");
+        assert!(term.is_alternate_scroll_active());
+        term.inject_output(b"\x1b[?1049l");
+        assert!(!term.is_alternate_screen_active());
+        assert!(!term.is_alternate_scroll_active());
+
+        // The mode survives a screen leave/re-entry, while RIS resets the
+        // active screen and restores the terminal's default mode state.
+        term.inject_output(b"\x1b[?1049h");
+        assert!(term.is_alternate_scroll_active());
+        term.inject_output(b"\x1bc");
+        assert!(!term.is_alternate_screen_active());
+        assert!(!term.is_alternate_scroll_active());
+    }
+
+    #[test]
+    fn test_scroll_region() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 10, "", &[]).expect("create");
+        // Set scroll region to rows 3-7 (1-indexed)
+        term.inject_output(b"\x1b[3;7r");
+        // Fill rows
+        for i in 0..10 {
+            term.inject_output(format!("\x1b[{};1H{}", i + 1, (b'A' + i) as char).as_bytes());
+        }
+        // Scroll within region by adding lines at the bottom
+        term.inject_output(b"\x1b[7;1H\n\n");
+        // Row outside scroll region (row 1) should be unchanged
+        let row1 = row_text(&term, 0);
+        assert!(
+            row1.starts_with('A'),
+            "Row outside scroll region should be preserved, got: {:?}",
+            row1
+        );
+    }
+
+    #[test]
+    fn test_utf8_wide_characters() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
+        term.inject_output("你好世界".as_bytes());
+        let text = term.full_buffer_text();
+        assert!(
+            text.contains("你好世界"),
+            "CJK characters should render correctly"
+        );
+    }
+
+    #[test]
+    fn test_bracketed_paste_mode() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
+        // Enable bracketed paste mode
+        term.inject_output(b"\x1b[?2004h");
+        assert!(
+            term.is_bracketed_paste_mode(),
+            "Bracketed paste mode should be enabled"
+        );
+        // Disable
+        term.inject_output(b"\x1b[?2004l");
+        assert!(
+            !term.is_bracketed_paste_mode(),
+            "Bracketed paste mode should be disabled"
+        );
+    }
+
+    #[test]
+    fn test_insert_delete_characters() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
+        term.inject_output(b"ABCDEF");
+        term.inject_output(b"\x1b[1;3H"); // Move to col 3
+        term.inject_output(b"\x1b[2P"); // Delete 2 characters
+        let text = row_text(&term, 0);
+        assert_eq!(
+            text, "ABEF",
+            "DCH 2 at col 2 should delete 'CD', got: {:?}",
+            text
+        );
+    }
+
+    #[test]
+    fn test_tab_stops() {
+        let _ = env_logger::try_init();
+        let term = Chau7Terminal::new_with_env(40, 5, "", &[]).expect("create");
+        term.inject_output(b"\x1b[1;1H"); // Home
+        term.inject_output(b"\t"); // Tab to first stop (col 8)
+        let (col, _) = cursor_pos(&term);
+        assert_eq!(col, 8, "First tab stop should be at col 8, got {}", col);
+    }
+
+    /// Helper: snapshot the grid and return (cell at row r col c, its cluster as &str,
+    /// and the continuation cell to the right if any). Used by grapheme round-trip tests.
+    fn snapshot_cell_str(term: &Chau7Terminal, row: usize, col: usize) -> (String, u8, u8) {
+        let snap = term.get_grid_snapshot();
+        let total = snap.cols as usize * snap.rows as usize;
+        let cells = unsafe { std::slice::from_raw_parts(snap.cells, total) };
+        let clusters = if snap.clusters_utf8.is_null() {
+            &[][..]
+        } else {
+            unsafe { std::slice::from_raw_parts(snap.clusters_utf8, snap.clusters_len) }
+        };
+        let idx = row * snap.cols as usize + col;
+        let c = &cells[idx];
+        let s = if c.cluster_len == 0 {
+            String::new()
+        } else {
+            let start = c.cluster_offset as usize;
+            String::from_utf8_lossy(&clusters[start..start + c.cluster_len as usize]).into_owned()
+        };
+        let (width, cont) = (c.width, c.continuation);
+        unsafe {
+            let _ = Vec::from_raw_parts(snap.cells, total, snap.capacity);
+            if !snap.clusters_utf8.is_null() {
+                let _ = Vec::from_raw_parts(
+                    snap.clusters_utf8,
+                    snap.clusters_len,
+                    snap.clusters_capacity,
+                );
+            }
+        }
+        (s, width, cont)
+    }
+
+    #[test]
+    fn grapheme_ascii_survives_snapshot() {
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output(b"A");
+        let (s, w, cont) = snapshot_cell_str(&term, 0, 0);
+        assert_eq!(s, "A");
+        assert_eq!(w, 1);
+        assert_eq!(cont, 0);
+    }
+
+    #[test]
+    fn grapheme_nfd_e_acute_normalizes_to_nfc() {
+        // "e" + U+0301 (combining acute) → NFC "é"
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output("e\u{0301}".as_bytes());
+        let (s, w, cont) = snapshot_cell_str(&term, 0, 0);
+        assert_eq!(s, "é");
+        assert_eq!(w, 1);
+        assert_eq!(cont, 0);
+    }
+
+    #[test]
+    fn grapheme_emoji_vs16_survives() {
+        // ❤ + VS16 (U+FE0F) → emoji-presentation heart
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output("\u{2764}\u{FE0F}".as_bytes());
+        let (s, _w, cont) = snapshot_cell_str(&term, 0, 0);
+        assert_eq!(s, "\u{2764}\u{FE0F}", "VS16 must survive the snapshot");
+        assert_eq!(cont, 0);
+    }
+
+    /// Selects row 0 from column 0 to the last column and returns the copied
+    /// text, exactly as macOS copy does (`selection_to_string`).
+    fn copy_row0(term: &Chau7Terminal) -> String {
+        let cols = term.term.lock().grid().columns() as i32;
+        term.selection_start(0, 0, 0);
+        term.selection_update(cols - 1, 0);
+        let text = term.selection_text().unwrap_or_default();
+        term.selection_clear();
+        text.trim_end().to_string()
+    }
+
+    // Issue #213: the byte pattern Claude Code (Ink) emits for an emoji
+    // presentation sequence. Ink measures `⚠️` as two columns, so it
+    // pre-clears the second column, draws the glyph, then jumps with CHA to
+    // the column after it plus one space. A terminal that kept `⚠️` one
+    // column wide showed and copied two spaces instead of one.
+    #[test]
+    fn vs16_sequence_from_ink_copies_one_space() {
+        let term = Chau7Terminal::new_with_env(20, 2, "", &[]).expect("create");
+        term.inject_output("\x1b[3G \x1b[2G\u{26A0}\u{FE0F}\x1b[5GEn".as_bytes());
+        assert_eq!(copy_row0(&term), " \u{26A0}\u{FE0F} En");
+        let (s, w, _) = snapshot_cell_str(&term, 0, 1);
+        assert_eq!(s, "\u{26A0}\u{FE0F}");
+        assert_eq!(w, 2, "an emoji presentation sequence occupies two cells");
+        let (_, _, cont) = snapshot_cell_str(&term, 0, 2);
+        assert_eq!(cont, 1);
+    }
+
+    // Codex (ratatui) draws the glyph and then moves to the next drawn cell
+    // with CUP. ratatui measures with `unicode-width`, which also counts
+    // `⏸️` as two columns.
+    #[test]
+    fn vs16_sequence_from_ratatui_copies_one_space() {
+        let term = Chau7Terminal::new_with_env(20, 2, "", &[]).expect("create");
+        term.inject_output("\x1b[1;1H\u{23F8}\u{FE0F}\x1b[1;4HPaused".as_bytes());
+        assert_eq!(copy_row0(&term), "\u{23F8}\u{FE0F} Paused");
+    }
+
+    // Plain text following the sequence must advance past both cells.
+    #[test]
+    fn vs16_sequence_advances_cursor_two_columns() {
+        let term = Chau7Terminal::new_with_env(20, 2, "", &[]).expect("create");
+        term.inject_output("a\u{2764}\u{FE0F}b".as_bytes());
+        assert_eq!(cursor_pos(&term), (4, 0));
+        assert_eq!(copy_row0(&term), "a\u{2764}\u{FE0F}b");
+    }
+
+    #[test]
+    fn grapheme_regional_indicator_flag_survives() {
+        // 🇫🇷 = Regional Indicator F + R. One grapheme, but Alacritty assigns the
+        // pair to two columns (each RI is itself a 2-wide codepoint). The first
+        // cell carries the flag bytes; we just verify the bytes round-trip.
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output("\u{1F1EB}\u{1F1F7}".as_bytes());
+        let (s, _w, _cont) = snapshot_cell_str(&term, 0, 0);
+        assert!(
+            s.starts_with('\u{1F1EB}'),
+            "First RI must survive intact, got {:?}",
+            s
+        );
+    }
+
+    #[test]
+    fn grapheme_zwj_family_emoji_survives() {
+        // 👨🏽‍💻 = U+1F468 U+1F3FD U+200D U+1F4BB (4 codepoints, single grapheme).
+        // Alacritty's cell model puts each wide codepoint in its own cell pair;
+        // zero-width chars (ZWJ) attach to the preceding cell. We verify all four
+        // codepoints survive *somewhere* on the row — none are silently dropped.
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output("\u{1F468}\u{1F3FD}\u{200D}\u{1F4BB}".as_bytes());
+        let snap = term.get_grid_snapshot();
+        let total = snap.cols as usize * snap.rows as usize;
+        let cells = unsafe { std::slice::from_raw_parts(snap.cells, total) };
+        let clusters = unsafe { std::slice::from_raw_parts(snap.clusters_utf8, snap.clusters_len) };
+        let mut row0 = String::new();
+        for c in cells.iter().take(snap.cols as usize) {
+            if c.cluster_len > 0 {
+                let start = c.cluster_offset as usize;
+                row0.push_str(
+                    std::str::from_utf8(&clusters[start..start + c.cluster_len as usize]).unwrap(),
+                );
+            }
+        }
+        unsafe {
+            let _ = Vec::from_raw_parts(snap.cells, total, snap.capacity);
+            let _ = Vec::from_raw_parts(
+                snap.clusters_utf8,
+                snap.clusters_len,
+                snap.clusters_capacity,
+            );
+        }
+        assert!(row0.contains('\u{1F468}'), "man codepoint lost: {:?}", row0);
+        assert!(row0.contains('\u{1F3FD}'), "skin-tone lost: {:?}", row0);
+        assert!(row0.contains('\u{200D}'), "ZWJ lost: {:?}", row0);
+        assert!(row0.contains('\u{1F4BB}'), "laptop lost: {:?}", row0);
+    }
+
+    #[test]
+    fn grapheme_wide_char_marks_continuation_cell() {
+        // CJK char is wide → cell 0 has width=2, cell 1 has continuation=1, len=0.
+        let term = Chau7Terminal::new_with_env(10, 2, "", &[]).expect("create");
+        term.inject_output("中".as_bytes());
+        let (s0, w0, c0) = snapshot_cell_str(&term, 0, 0);
+        let (s1, w1, c1) = snapshot_cell_str(&term, 0, 1);
+        assert_eq!(s0, "中");
+        assert_eq!(w0, 2);
+        assert_eq!(c0, 0);
+        assert_eq!(s1, "", "continuation cell must have empty cluster");
+        assert_eq!(w1, 0);
+        assert_eq!(c1, 1);
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    // Claude Code / Ink incremental-redraw investigation (deferred autowrap)
+    //
+    // Hypothesis under test: writing exactly `cols` chars on a line leaves the
+    // cursor in the DECAWM "pending wrap" state at the last column; a following
+    // LF must advance EXACTLY ONE row (xterm/alacritty behaviour). If the
+    // emulator instead consumes the pending-wrap as a real extra row, a
+    // full-width-line + LF advances TWO rows, and Ink's relative `\e[nA` lands
+    // on the wrong row → doubled prompt / output-over-input / stale spinner.
+    // ───────────────────────────────────────────────────────────────────
+
+    /// Build a string of `n` U+2500 box-drawing chars (Claude's separator).
+    fn hline(n: usize) -> String {
+        "\u{2500}".repeat(n)
+    }
+
+    #[test]
+    fn fullwidth_line_then_lf_advances_exactly_one_row() {
+        // 135-col grid, like Claude Code's reported width.
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        // Home, write 135 ─ (fills the row, leaving pending-wrap), then LF.
+        term.inject_output(b"\x1b[1;1H");
+        term.inject_output(hline(135).as_bytes());
+        // After exactly `cols` chars, cursor must still be on row 0 (pending wrap),
+        // NOT already wrapped to row 1.
+        let (_, row_after_fill) = cursor_pos(&term);
+        assert_eq!(
+            row_after_fill, 0,
+            "writing exactly cols chars must leave cursor on the same row in pending-wrap state"
+        );
+        // Now a single LF.
+        term.inject_output(b"\n");
+        let (_, row_after_lf) = cursor_pos(&term);
+        assert_eq!(
+            row_after_lf, 1,
+            "full-width line + LF must advance EXACTLY ONE row (got {row_after_lf}); \
+             two would mean deferred-autowrap is consumed as a real row"
+        );
+    }
+
+    #[test]
+    fn stacked_fullwidth_separators_with_real_crcrlf_advance_one_row_each() {
+        // Claude Code terminates every separator line with CR CR LF (`\r\r\n`),
+        // NOT a bare LF. The CR clears the column AND the DECAWM pending-wrap
+        // latch before the LF advances, so three stacked 135-wide separators
+        // advance exactly +1 row each. (A bare LF after a pending-wrap full
+        // line would instead drift +2 because the next printable char of the
+        // following line first consumes the pending wrap — but Claude never
+        // emits that; this documents why the emulator is innocent.)
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        term.inject_output(b"\x1b[1;1H");
+        for expected_row in 1..=3usize {
+            term.inject_output(hline(135).as_bytes());
+            term.inject_output(b"\r\r\n");
+            let (col, row) = cursor_pos(&term);
+            assert_eq!(
+                (col, row),
+                (0, expected_row),
+                "separator #{expected_row} with CR CR LF must land at col 0, row {expected_row}"
+            );
+        }
+    }
+
+    #[test]
+    fn cuu_at_top_row_clamps() {
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        term.inject_output(b"\x1b[1;1H");
+        term.inject_output(b"\x1b[7A"); // CUU 7 from row 0
+        let (_, row) = cursor_pos(&term);
+        assert_eq!(row, 0, "CUU from top row must clamp at row 0");
+    }
+
+    #[test]
+    fn cha_then_el_erases_to_line_end() {
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        term.inject_output(b"\x1b[1;1H");
+        term.inject_output(b"hello world banner text here");
+        // CHA to column 7 (1-based) → col 6, then EL (erase to end of line).
+        term.inject_output(b"\x1b[7G\x1b[K");
+        let row = row_text(&term, 0);
+        assert_eq!(
+            row, "hello",
+            "CHA col 7 + EL must erase from col 6 onward, leaving 'hello'; got {row:?}"
+        );
+    }
+
+    #[test]
+    fn ambiguous_and_spinner_glyphs_have_width_one() {
+        // Ink (string-width) treats these as width 1. If alacritty assigns
+        // width 2, every line containing them drifts by a column and the
+        // CHA/relative-move accounting diverges from Ink's model.
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        // Spinner / status glyphs seen in the live capture.
+        for (label, ch) in [
+            ("U+273B ✻", '\u{273B}'),
+            ("U+2733 ✳", '\u{2733}'),
+            ("U+23F5 ⏵", '\u{23F5}'),
+            ("U+2500 ─", '\u{2500}'),
+            ("U+276F ❯", '\u{276F}'),
+            ("U+2190 ←", '\u{2190}'),
+        ] {
+            term.inject_output(b"\x1b[1;1H\x1b[K");
+            let mut s = String::new();
+            s.push(ch);
+            s.push('X');
+            term.inject_output(s.as_bytes());
+            // Cursor column after writing 1 glyph + 'X' tells us the glyph width.
+            let (col, _) = cursor_pos(&term);
+            assert_eq!(
+                col, 2,
+                "{label} must occupy width 1 (cursor at col 2 after glyph+X); \
+                 got col {col} → alacritty treats it as wide, drifting Ink's layout"
+            );
+        }
+    }
+
+    #[test]
+    fn replay_real_claude_input_box_tail() {
+        // Replay the last ~8KB of a real Claude Code PTY capture into a 135×79
+        // headless grid and dump the resulting rows. Looks for the three
+        // reported bugs: duplicated ❯ prompt, stale Spinning…/Churned line
+        // coexisting with the prompt, or assistant text over the separators.
+        let bytes = include_bytes!("../tests/fixtures/claude_input_box_tail_8k.bin");
+        let term = Chau7Terminal::new_headless(135, 79).expect("headless");
+        // Start from a clean home so the slice's relative moves have a defined base.
+        term.inject_output(b"\x1b[2J\x1b[H");
+        term.inject_output(bytes);
+
+        let mut prompt_rows = Vec::new();
+        for r in 0..79usize {
+            if row_text(&term, r).contains('\u{276F}') {
+                prompt_rows.push(r);
+            }
+        }
+        // The replay at the NATIVE 135 width produces a clean grid: a single
+        // ❯ prompt, intact 135-wide separators, no output-over-input. The
+        // reported duplicate-prompt corruption never appears at matching width.
+        assert!(
+            prompt_rows.len() <= 1,
+            "duplicated prompt: ❯ found on rows {prompt_rows:?}"
+        );
+    }
+
+    #[test]
+    fn replay_at_wrong_width_changes_layout() {
+        // Root cause: Claude/Ink lays out for a fixed width (135 here) and only
+        // diff-repaints. Replaying the SAME bytes into a grid whose width does
+        // NOT match (134) produces a DIFFERENT prompt/separator layout — the
+        // off-by-N that surfaces as duplicated prompt / output-over-input. This
+        // proves the corruption is a width mismatch, not an emulator wrap bug,
+        // and is exactly what the post-resize SIGWINCH nudge prevents by keeping
+        // Ink's width in lockstep with the grid.
+        let bytes = include_bytes!("../tests/fixtures/claude_input_box_tail_8k.bin");
+        let fingerprint = |width: u16| {
+            let term = Chau7Terminal::new_headless(width, 79).expect("headless");
+            term.inject_output(b"\x1b[2J\x1b[H");
+            term.inject_output(bytes);
+            let mut prompt_rows = Vec::new();
+            let mut sep_rows = Vec::new();
+            for r in 0..79usize {
+                let line = row_text(&term, r);
+                if line.contains('\u{276F}') {
+                    prompt_rows.push(r);
+                }
+                if line.matches('\u{2500}').count() > 100 {
+                    sep_rows.push(r);
+                }
+            }
+            (prompt_rows, sep_rows)
+        };
+        let native = fingerprint(135);
+        let narrow = fingerprint(134);
+        assert!(
+            native.0.len() <= 1,
+            "native 135 width must stay clean (single prompt); got {native:?}"
+        );
+        assert_ne!(
+            native, narrow,
+            "a one-column width mismatch must change the layout — this is the bug"
+        );
+    }
+}

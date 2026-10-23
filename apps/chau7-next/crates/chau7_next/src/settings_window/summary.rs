@@ -1310,15 +1310,9 @@ mod tests {
             compact_path(&cluster.repeat(43), "/owned/home"),
             format!("...{}", cluster.repeat(39))
         );
-        let swift = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../chau7-macos/Sources/Chau7/Settings/Views/SettingsPageSummaryView.swift"
-        ));
-        assert!(swift.contains("abbreviated.count > 42"));
-        assert!(swift.contains("abbreviated.suffix(39)"));
     }
     #[test]
-    fn summary_history_budget_keeps_current_swift_fallback_and_bounds() {
+    fn summary_history_budget_keeps_its_fallback_and_bounds() {
         assert_eq!(history_summary_budget(0), 50_000);
         assert_eq!(history_summary_budget(9_999), 10_000);
         assert_eq!(history_summary_budget(10_000), 10_000);
@@ -1326,10 +1320,5 @@ mod tests {
         assert_eq!(history_summary_budget(100_000), 100_000);
         assert_eq!(history_summary_budget(100_001), 100_000);
         assert_eq!(history_summary_budget(usize::MAX), 100_000);
-        let swift = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../chau7-macos/Sources/Chau7/Settings/Views/SettingsPageSummaryView.swift"
-        ));
-        assert!(swift.contains("max(10000, min(stored > 0 ? stored : 50000, 100_000))"));
     }
 }

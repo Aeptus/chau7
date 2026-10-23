@@ -655,6 +655,19 @@ pub(crate) fn replace_base(cx: &mut App, base: Settings) {
     crate::settings::sync::schedule_push(cx);
 }
 
+/// Apply `base` for this session only, without writing config.toml or
+/// queueing an iCloud upload: a profile chosen by an auto-switch rule
+/// follows the tab in use and must not replace the saved settings.
+pub(crate) fn apply_base_transient(cx: &mut App, base: Settings) {
+    let shortcuts_changed = Settings::get(cx).input != base.input;
+    cx.update_global(|files: &mut ConfigFiles, _| files.base = base);
+    config_files::apply(cx);
+    if shortcuts_changed {
+        let input = Settings::get(cx).input.clone();
+        crate::actions::bind_shortcut_settings(&input, cx);
+    }
+}
+
 impl SettingsView {
     /// The sidebar: the search field, then the groups and their sections.
     fn sidebar(&self, chrome: Chrome, cx: &Context<Self>) -> gpui::Stateful<gpui::Div> {

@@ -1,25 +1,5 @@
 version: 2
 updates:
-  - package-ecosystem: swift
-    directory: /apps/chau7-macos
-    schedule:
-      interval: weekly
-    groups:
-      compatible-updates:
-        patterns: ["*"]
-        update-types: [minor, patch]
-    open-pull-requests-limit: 5
-
-  - package-ecosystem: swift
-    directory: /apps/chau7-ios/Chau7RemoteApp
-    schedule:
-      interval: weekly
-    groups:
-      compatible-updates:
-        patterns: ["*"]
-        update-types: [minor, patch]
-    open-pull-requests-limit: 5
-
   - package-ecosystem: npm
     directory: /services/chau7-relay
     schedule:
@@ -51,7 +31,7 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: gomod
-    directory: /apps/chau7-macos/chau7-proxy
+    directory: /services/chau7-proxy
     schedule:
       interval: weekly
     groups:
@@ -61,7 +41,7 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: cargo
-    directory: /apps/chau7-macos/rust
+    directory: /crates
     schedule:
       interval: weekly
     groups:

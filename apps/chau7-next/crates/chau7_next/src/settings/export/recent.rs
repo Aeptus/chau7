@@ -158,40 +158,140 @@ mod tests {
             None
         );
     }
+    /// Every field of the former Swift app's `ExportableSettings` document,
+    /// so documents stay compatible with settings files that app exported.
+    const SHARED_EXPORT_FIELDS: [&str; 117] = [
+        "fontFamily",
+        "fontSize",
+        "defaultZoomPercent",
+        "colorSchemeName",
+        "customColorScheme",
+        "shellType",
+        "customShellPath",
+        "startupCommand",
+        "isLsColorsEnabled",
+        "customShortcuts",
+        "isShortcutHelperHintEnabled",
+        "notificationTriggerState",
+        "notificationFilters",
+        "triggerActionBindings",
+        "notificationRateLimitConfig",
+        "triggerConditions",
+        "groupActionBindings",
+        "groupConditions",
+        "findCaseSensitiveDefault",
+        "findRegexDefault",
+        "lastTabCloseBehavior",
+        "newTabPosition",
+        "newTabsUseCurrentDirectory",
+        "alwaysShowTabBar",
+        "alwaysShowToolbarInFullscreen",
+        "appTheme",
+        "launchAtLogin",
+        "menuBarOnlyMode",
+        "windowFloating",
+        "appLanguage",
+        "windowOpacity",
+        "windowBlurEnabled",
+        "enableLigatures",
+        "cursorStyle",
+        "cursorBlink",
+        "scrollbackLines",
+        "shellHistoryMaxLines",
+        "restoredScrollbackLines",
+        "bellEnabled",
+        "bellSound",
+        "isDangerousCommandHighlightEnabled",
+        "dangerousCommandHighlightScope",
+        "dangerousCommandPatterns",
+        "dangerousCommandProtectChau7Enabled",
+        "dangerousCommandProtectChau7Level",
+        "dangerousCommandProtectedProcessPatterns",
+        "dangerousOutputHighlightIdleDelayMs",
+        "dangerousOutputHighlightMaxIntervalMs",
+        "dangerousOutputHighlightLowPowerEnabled",
+        "defaultStartDirectory",
+        "isAutoTabThemeEnabled",
+        "showTabIcons",
+        "showTabPath",
+        "showTabGitIndicator",
+        "showTabCTOIndicator",
+        "allowTabCTOToggle",
+        "showTabBroadcastIndicator",
+        "showProviderHealthBorder",
+        "hoverCardShowDirectory",
+        "hoverCardShowGitBranch",
+        "hoverCardShowShellIntegration",
+        "hoverCardShowDevServer",
+        "hoverCardShowLastCommand",
+        "hoverCardShowAISession",
+        "hoverCardShowRepoStats",
+        "hoverCardShowProcesses",
+        "hoverCardShowTokenOptimization",
+        "hoverCardShowBroadcast",
+        "hoverCardShowConflicts",
+        "hoverCardShowNotificationState",
+        "hoverCardShowFooter",
+        "customTitleOnly",
+        "isCopyOnSelectEnabled",
+        "isLineTimestampsEnabled",
+        "timestampFormat",
+        "isLastCommandBadgeEnabled",
+        "isCmdClickPathsEnabled",
+        "cmdClickOpensInternalEditor",
+        "isOptionClickCursorEnabled",
+        "defaultEditor",
+        "urlHandler",
+        "activePollingRateCap",
+        "customAIDetectionRules",
+        "isBroadcastEnabled",
+        "isClipboardHistoryEnabled",
+        "clipboardHistoryMaxItems",
+        "isBookmarksEnabled",
+        "maxBookmarksPerTab",
+        "isSnippetsEnabled",
+        "isRepoSnippetsEnabled",
+        "allowProtectedFolderAccess",
+        "recentRepoRoots",
+        "repoSnippetPath",
+        "snippetInsertMode",
+        "snippetPlaceholdersEnabled",
+        "isSyntaxHighlightEnabled",
+        "isClickableURLsEnabled",
+        "isInlineImagesEnabled",
+        "isJSONPrettyPrintEnabled",
+        "isSemanticSearchEnabled",
+        "isSplitPanesEnabled",
+        "keybindingPreset",
+        "mcpEnabled",
+        "mcpMaxTabs",
+        "mcpRequiresApproval",
+        "mcpShowTabIndicator",
+        "mcpPermissionMode",
+        "mcpAllowedCommands",
+        "mcpBlockedCommands",
+        "mcpProfiles",
+        "isRemoteEnabled",
+        "remoteRelayURL",
+        "isCTOEnabled",
+        "ctoPrefix",
+        "ctoTabOverrides",
+        "exportVersion",
+        "exportedAt",
+    ];
+
     #[test]
-    fn shared_document_contains_every_current_swift_export_field() {
-        let source = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../chau7-macos/Sources/Chau7/Settings/FeatureSettings.swift"
-        ));
-        let block = source
-            .split_once("struct ExportableSettings")
-            .unwrap()
-            .1
-            .split_once("func exportSettings")
-            .unwrap()
-            .0;
+    fn shared_document_contains_every_shared_export_field() {
         let value: Value = serde_json::from_str(
             &export_json_with_recent(&Settings::default(), "/home/test", &[]).unwrap(),
         )
         .unwrap();
-        let mut fields = 0;
-        for line in block.lines() {
-            if let Some(field) = line.strip_prefix("        var ").and_then(|line| {
-                line.split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
-                    .next()
-            }) {
-                assert!(
-                    value.get(field).is_some(),
-                    "Missing current Swift shared export field {field}"
-                );
-                fields += 1;
-            }
+        for field in SHARED_EXPORT_FIELDS {
+            assert!(
+                value.get(field).is_some(),
+                "Missing shared export field {field}"
+            );
         }
-        assert_eq!(
-            fields, 117,
-            "Reaudit the changed current Swift shared export schema"
-        );
     }
 
     #[cfg(unix)]

@@ -18,7 +18,13 @@ This directory hosts the native iOS companion app for Chau7.
 ## Build
 Open `apps/chau7-ios/Chau7RemoteApp/Chau7RemoteApp.xcodeproj` in Xcode.
 
-The iOS target links the local `Chau7Core` Swift package from `apps/chau7-macos`, so keep the repository layout intact when opening the project.
+The iOS targets link the local `Chau7Core` Swift package in [`Chau7Core/`](Chau7Core/) and the `chau7_terminal` Rust crate from the repository's top-level `crates/` workspace, so keep the repository layout intact when opening the project.
+
+`Chau7Core` is a standalone Swift package. Run its tests from the repository root with:
+
+```bash
+swift test --package-path apps/chau7-ios/Chau7Core
+```
 
 The Xcode project now includes two targets:
 - `Chau7RemoteApp` for the companion app UI and websocket client.

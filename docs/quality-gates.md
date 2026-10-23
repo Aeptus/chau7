@@ -50,21 +50,17 @@ This sets `core.hooksPath` to `.husky`. The legacy `scripts/install-hooks` and
 | `pnpm quality:cache:clear` | Remove quality cache entries and outputs. |
 | `pnpm test` | Fast unit tests for the quality runner and registry. |
 
-## Swift Strict-Concurrency Rollout
+## Swift Strict-Concurrency Checking
 
-Every macOS SwiftPM target enables complete strict-concurrency checking in
-warning-only mode. The registry and full local CI build/test checks use the
-same policy; compilation errors and failed tests remain blocking.
-The Periphery analysis build uses SwiftPM’s native driver to produce the
-index-store layout expected by Periphery 3.x, with the same job limit. The known warning backlog is triaged in
-[`swift-concurrency-rollout.md`](swift-concurrency-rollout.md). Do not restore
-`-warnings-as-errors` to the `just build` or `just test` recipes until the
-blocking isolation findings are fixed and the remaining diagnostics are
-reviewed.
+The `Chau7Core` Swift package (`apps/chau7-ios/Chau7Core`) enables complete
+strict-concurrency checking in warning-only mode. The `swift-core-package` gate
+and full local CI run its format, lint and tests; compilation errors and failed
+tests remain blocking. The former macOS Swift package, its Periphery dead-code
+scan and its concurrency inventory were removed with the Swift app.
 
 ## SwiftLint Thresholds
 
-Repository SwiftLint checks run with `--strict`, so reaching a warning threshold
+Chau7Core SwiftLint checks run with `--strict`, so reaching a warning threshold
 fails the check. The configured caps leave limited room above measured current
 source sizes while keeping each threshold below its error cap:
 
@@ -108,8 +104,8 @@ Staged gates include:
 - Python guardrails for bare/silent exceptions, placeholders, and debuggers;
 - Prettier write/check for staged JS/TS files where package-local Prettier is installed;
 - JS/TS security and naming guardrails;
-- registered source-policy checks for anti-slop, design-system ratchet,
-  docs hygiene, and forbidden-file protection;
+- registered source-policy checks for anti-slop, docs hygiene, and
+  forbidden-file protection;
 - an advisory staged code review through Chau7 when the app scripting API is
   available; disable it with `CHAU7_PRE_COMMIT_REVIEW_ENABLED=0`;
 - staged ShellCheck.
@@ -255,7 +251,7 @@ Runtime filters are for diagnosis, not normal weakening of hooks:
 
 ```bash
 pnpm quality:prepush --include=rust-terminal-static
-pnpm quality:prepush --skip=swift-macos-tests
+pnpm quality:prepush --skip=swift-core-package
 pnpm quality:local --tags=backend
 pnpm quality:local --skip-tags=slow
 pnpm quality:prepush --wave=static
@@ -299,9 +295,7 @@ environment overrides when a gate has an intentional escape hatch. Any bypass
 should be justified in the commit message.
 
 Documentation policy: implementation behavior changes require a meaningful entry in
-`apps/chau7-macos/docs/CHANGELOG.md`. Update `FEATURES.md` and `features.json` when
-capabilities change; an unchanged generated CSV is valid. The gate checks the indexed
-manifest/CSV pair, including when working-tree metadata has unstaged edits. Tooling,
+the root `CHANGELOG.md`. Tooling,
 configuration and test-only changes do not require invented product features. For a
 behavior-preserving implementation change, stage `.chau7/docs-exemption.json` containing
 `{"reason":"A specific explanation of at least 20 characters","paths":["exact/changed/path"]}`.

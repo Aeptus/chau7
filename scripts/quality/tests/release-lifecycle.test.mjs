@@ -46,42 +46,90 @@ test("cancellation invokes the same cleanup path without real signing assets", (
   const result = spawnSync("/bin/bash", ["-c", `trap 'bash "$SIGNING_SCRIPT" cleanup; exit 143' TERM; kill -TERM $$`], { env: { ...f.env, SIGNING_SCRIPT: script }, encoding: "utf8" });
   assert.equal(result.status, 143); assert.equal(fs.existsSync(path.join(f.root, "chau7-signing")), false);
 });
-test("nonpublishing workflow has one read-only build and restores its artifact for gated publication", () => {
+function workflowJobs() {
   const workflow = fs.readFileSync(path.join(source, ".github/workflows/release.yml"), "utf8");
-  const [build, publish] = workflow.split("  publish:");
-  assert.match(build, /workflow_dispatch:/); assert.doesNotMatch(build, /secrets\./); assert.match(build, /permissions:\n  contents: read/);
-  assert.equal((workflow.match(/run: \.\/Scripts\/build-dist\.sh/g) ?? []).length, 1);
-  assert.match(publish, /if: github.event_name == 'push' && startsWith\(github.ref, 'refs\/tags\/v'\)/);
-  assert.doesNotMatch(publish, /swift build|build-app\.sh|build-dist\.sh/); assert.match(publish, /tar -xf.*release-artifacts.tar/); assert.match(publish, /if: always\(\)/);
-  const rustRcStart = workflow.indexOf("  rust-production-rc-preflight:");
-  assert.ok(rustRcStart > 0, "Rust RC jobs should be isolated after the existing Swift release jobs");
-  assert.equal((workflow.slice(0, rustRcStart).match(/timeout-minutes:/g) ?? []).length, 3);
-  assert.equal((workflow.slice(rustRcStart).match(/timeout-minutes:/g) ?? []).length, 3);
+  const jobs = {};
+  for (const match of workflow.slice(workflow.indexOf("\njobs:\n")).matchAll(/^  ([a-z][a-z0-9-]+):\n([\s\S]*?)(?=^  [a-z][a-z0-9-]+:\n|(?![\s\S]))/gm)) jobs[match[1]] = match[2];
+  return { workflow, jobs };
+}
+
+test("release builds the Rust production bundle once without secrets and reuses it", () => {
+  const { workflow, jobs } = workflowJobs();
+  assert.deepEqual(Object.keys(jobs), ["preflight", "build", "publish", "update-homebrew-tap", "rust-production-rc-sign"]);
+  assert.match(workflow, /tags: \['v\*'\]/);
+  assert.match(workflow, /permissions:\n  contents: read/);
   assert.match(workflow, /cancel-in-progress: false/);
+  assert.doesNotMatch(workflow, /build-dist\.sh|swift (build|test)|apps\/chau7-macos/);
+  assert.equal((workflow.match(/run: \.\/scripts\/bundle-macos\.sh/g) ?? []).length, 1);
+  for (const id of ["preflight", "build"]) assert.doesNotMatch(jobs[id], /secrets\./, id);
+  assert.match(jobs.build, /CHANNEL: production/);
+  assert.match(jobs.build, /RELEASE_VERSION: \$\{\{ needs\.preflight\.outputs\.version \}\}/);
+  assert.match(jobs.build, /rust-production-candidate-unsigned/);
+  for (const id of ["publish", "rust-production-rc-sign"]) {
+    assert.doesNotMatch(jobs[id], /cargo build|bundle-macos\.sh/, id);
+    assert.match(jobs[id], /tar -xf.*rust-production-candidate\.tar/, id);
+    assert.match(jobs[id], /require-signing-secrets\.sh/, id);
+    assert.match(jobs[id], /sign-rust-production\.sh/, id);
+    assert.match(jobs[id], /if: always\(\)\n        run: \.\/scripts\/release\/signing-keychain\.sh cleanup/, id);
+    assert.match(jobs[id], /actions\/attest-build-provenance/, id);
+  }
   for (const match of workflow.matchAll(/uses: (.+)/g)) assert.match(match[1], /@[a-f0-9]{40}(?: |$)/);
+  assert.equal((workflow.match(/timeout-minutes:/g) ?? []).length, 5);
+});
+
+test("only a v tag publishes, signs as stable, and feeds the Homebrew cask", () => {
+  const { jobs } = workflowJobs();
+  assert.match(jobs.publish, /if: needs\.preflight\.outputs\.stage == 'stable' && github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/v'\)/);
+  assert.match(jobs.publish, /contents: write/);
+  assert.match(jobs.publish, /RELEASE_STAGE: stable/);
+  assert.match(jobs.publish, /softprops\/action-gh-release/);
+  assert.match(jobs.publish, /Chau7-AppleSilicon\.dmg/);
+  assert.match(jobs.publish, /extract-changelog/);
+  assert.match(jobs["update-homebrew-tap"], /needs: \[preflight, publish\]/);
+  assert.match(jobs["update-homebrew-tap"], /releases\/download\/v#\{version\}\/Chau7-AppleSilicon\.dmg/);
+  assert.match(jobs["update-homebrew-tap"], /app "Chau7\.app"/);
 });
 
 test("Rust production RC stays manual, versioned, signed, and artifact-only", () => {
-  const workflow = fs.readFileSync(path.join(source, ".github/workflows/release.yml"), "utf8");
-  const preflightStart = workflow.indexOf("  rust-production-rc-preflight:");
-  assert.ok(preflightStart >= 0);
-  const [swiftJobs, rcJobs] = [workflow.slice(0, preflightStart), workflow.slice(preflightStart)];
-  const buildJob = rcJobs.match(/  rust-production-rc-build:\n([\s\S]*?)(?=\n  [a-z][a-z0-9-]+:\n|$)/)?.[1];
-  const signJob = rcJobs.match(/  rust-production-rc-sign:\n([\s\S]*?)(?=\n  [a-z][a-z0-9-]+:\n|$)/)?.[1];
-  assert.match(workflow, /release_channel:[\s\S]*?default: swift-dry-run[\s\S]*?rust-production-rc/);
+  const { workflow, jobs } = workflowJobs();
+  assert.match(workflow, /release_channel:[\s\S]*?default: production-dry-run[\s\S]*?rust-production-rc/);
   assert.match(workflow, /default: 0\.6\.0-rc\.1/);
-  assert.match(workflow, /RUST_PRODUCTION_MIGRATION_VALIDATED/);
-  assert.match(rcJobs, /refs\/heads\/main/);
-  assert.match(rcJobs, /RELEASE_VERSION: \$\{\{ inputs\.release_version \}\}/);
-  assert.match(buildJob ?? "", /CHANNEL: production/);
-  assert.match(buildJob ?? "", /run: \.\/scripts\/bundle-macos\.sh/);
-  assert.match(buildJob ?? "", /rust-production-candidate-unsigned/);
-  assert.match(signJob ?? "", /sign-rust-production-rc\.sh/);
-  assert.match(signJob ?? "", /actions\/attest-build-provenance/);
-  assert.match(signJob ?? "", /rust-production-rc-\$\{\{ github\.run_number \}\}/);
-  assert.doesNotMatch(signJob ?? "", /cargo build|bundle-macos\.sh|softprops\/action-gh-release|contents:\s*write|HOMEBREW_TAP_TOKEN/);
-  assert.doesNotMatch(rcJobs, /softprops\/action-gh-release/);
-  assert.match(swiftJobs, /softprops\/action-gh-release/);
+  assert.match(jobs.preflight, /RUST_PRODUCTION_MIGRATION_VALIDATED/);
+  assert.match(jobs.preflight, /refs\/heads\/main/);
+  assert.match(jobs.preflight, /RELEASE_VERSION: \$\{\{ inputs\.release_version \}\}/);
+  const rc = jobs["rust-production-rc-sign"];
+  assert.match(rc, /if: needs\.preflight\.outputs\.stage == 'rc' && github\.event_name == 'workflow_dispatch'/);
+  assert.match(rc, /RELEASE_STAGE: rc/);
+  assert.match(rc, /rust-production-rc-\$\{\{ github\.run_number \}\}/);
+  assert.doesNotMatch(rc, /softprops\/action-gh-release|contents:\s*write|HOMEBREW_TAP_TOKEN/);
+});
+
+function runResolve(env) {
+  const { jobs } = workflowJobs();
+  const script = jobs.preflight.match(/- name: Resolve stage and version[\s\S]*?run: \|\n([\s\S]*)$/)[1]
+    .split("\n").map((line) => line.replace(/^ {10}/, "")).join("\n");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-release-resolve-"));
+  try {
+    const output = path.join(root, "output");
+    const result = spawnSync("/bin/bash", ["-e", "-c", script], { env: { ...process.env, GITHUB_OUTPUT: output, ...env }, encoding: "utf8" });
+    return { status: result.status, stdout: result.stdout, output: fs.existsSync(output) ? fs.readFileSync(output, "utf8") : "" };
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("preflight resolves stable tags, dry runs and gated RCs", () => {
+  const stable = runResolve({ EVENT_NAME: "push", REF: "refs/tags/v0.7.0", REF_NAME: "v0.7.0" });
+  assert.equal(stable.status, 0); assert.match(stable.output, /stage=stable\nversion=0\.7\.0/);
+  assert.notEqual(runResolve({ EVENT_NAME: "push", REF: "refs/tags/vnext", REF_NAME: "vnext" }).status, 0);
+  const dry = runResolve({ EVENT_NAME: "workflow_dispatch", REF: "refs/heads/feature", CHANNEL: "production-dry-run" });
+  assert.equal(dry.status, 0); assert.match(dry.output, /stage=dry-run\nversion=0\.0\.0-dry-run/);
+  const rcEnv = { EVENT_NAME: "workflow_dispatch", REF: "refs/heads/main", CHANNEL: "rust-production-rc", RELEASE_VERSION: "0.6.0-rc.1", ACKNOWLEDGEMENT: "RUST_PRODUCTION_MIGRATION_VALIDATED" };
+  const rc = runResolve(rcEnv);
+  assert.equal(rc.status, 0); assert.match(rc.output, /stage=rc\nversion=0\.6\.0-rc\.1/);
+  assert.notEqual(runResolve({ ...rcEnv, REF: "refs/heads/feature" }).status, 0);
+  assert.notEqual(runResolve({ ...rcEnv, ACKNOWLEDGEMENT: "not-validated" }).status, 0);
+  assert.notEqual(runResolve({ ...rcEnv, RELEASE_VERSION: "next" }).status, 0);
 });
 
 test("Rust production manifest refresh hashes the seven final executables", (t) => {
@@ -128,36 +176,40 @@ test("Rust production manifest refresh hashes the seven final executables", (t) 
   const writePlist = spawnSync("python3", ["-c", plistScript, path.join(app, "Contents", "Info.plist")], { encoding: "utf8" });
   assert.equal(writePlist.status, 0, writePlist.stderr);
   const script = path.join(source, "scripts/release/refresh-rust-manifest.py");
-  const refresh = spawnSync("python3", [script, "--app", app, "--manifest", manifestPath,
-    "--identity", "Developer ID Application: Fixture (ABCDEFGHIJ)", "--team-id", "ABCDEFGHIJ"], { encoding: "utf8" });
-  assert.equal(refresh.status, 0, refresh.stderr);
-  const updated = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  assert.equal(updated.releaseStage, "rc");
-  assert.equal(updated.distribution, "github-actions-artifact-only");
-  assert.equal(updated.signing.notaryTicketStapled, true);
-  for (const [name, relative] of Object.entries(executablePaths)) {
-    const bytes = fs.readFileSync(path.join(app, relative));
-    const digest = createHash("sha256").update(bytes).digest("hex");
-    assert.equal(updated.artifacts[name].sha256, digest);
+  const original = fs.readFileSync(manifestPath, "utf8");
+  for (const [stage, distribution] of [["rc", "github-actions-artifact-only"], ["stable", "github-release"]]) {
+    fs.writeFileSync(manifestPath, original);
+    const refresh = spawnSync("python3", [script, "--app", app, "--manifest", manifestPath,
+      "--identity", "Developer ID Application: Fixture (ABCDEFGHIJ)", "--team-id", "ABCDEFGHIJ", "--stage", stage], { encoding: "utf8" });
+    assert.equal(refresh.status, 0, refresh.stderr);
+    const updated = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    assert.equal(updated.releaseStage, stage);
+    assert.equal(updated.distribution, distribution);
+    assert.equal(updated.signing.notaryTicketStapled, true);
+    for (const [name, relative] of Object.entries(executablePaths)) {
+      const bytes = fs.readFileSync(path.join(app, relative));
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      assert.equal(updated.artifacts[name].sha256, digest);
+    }
   }
 });
 
-for (const identity of ["", "Developer ID Application: Fixture (TESTTEAM)"]) {
-  test(`release signing preflight ${identity ? "accepts a configured identity" : "refuses unsigned publication"}`, (t) => {
-    const workflow = fs.readFileSync(path.join(source, ".github/workflows/release.yml"), "utf8");
-    const preflight = workflow.match(/- name: Require release signing configuration[\s\S]*?run: \|\n([\s\S]*?)(?=      - name:)/)?.[1];
-    assert.ok(preflight, "release publication must check signing before using artifacts");
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "chau7-signing-preflight-"));
-    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    const output = path.join(root, "output");
-    const result = spawnSync("/bin/bash", ["-e", "-c", preflight], {
-      env: { ...process.env, IDENTITY: identity, GITHUB_OUTPUT: output }, encoding: "utf8",
+const completeSigningEnv = {
+  IDENTITY: "Developer ID Application: Fixture (ABCDEFGHIJ)", CERTIFICATE: "fixture", CERTIFICATE_PASSWORD: "fixture",
+  APPLE_ID: "fixture@example.invalid", APPLE_ID_PASSWORD: "fixture", APPLE_TEAM_ID: "ABCDEFGHIJ",
+};
+for (const [label, overrides, expected] of [
+  ["accepts complete configuration", {}, 0],
+  ["refuses a missing identity", { IDENTITY: "" }, 1],
+  ["refuses a missing notarization password", { APPLE_ID_PASSWORD: "" }, 1],
+  ["refuses a non Developer ID identity", { IDENTITY: "Apple Development: Fixture (ABCDEFGHIJ)" }, 1],
+  ["refuses a team mismatch", { APPLE_TEAM_ID: "ZYXWVUTSRQ" }, 1],
+]) {
+  test(`release signing preflight ${label}`, () => {
+    const result = spawnSync("/bin/bash", [path.join(source, "scripts/release/require-signing-secrets.sh")], {
+      env: { ...process.env, ...completeSigningEnv, ...overrides }, encoding: "utf8",
     });
-    assert.equal(result.status, identity ? 0 : 1, result.stderr);
-    if (identity) assert.match(fs.readFileSync(output, "utf8"), /available=true/);
-    else {
-      assert.match(result.stdout, /::error::Developer ID signing is required/);
-      assert.equal(fs.existsSync(output), false, "unsigned builds cannot reach gated publication");
-    }
+    assert.equal(result.status, expected, result.stdout + result.stderr);
+    if (expected) assert.match(result.stdout, /::error::/);
   });
 }

@@ -95,19 +95,41 @@ pub struct ProfileStore {
 }
 
 impl ProfileStore {
+    /// The saved store, or an empty one. A file that exists but cannot be
+    /// read or decoded is moved to `<path>.corrupt.<unix millis>` first, so
+    /// the save that follows (the default profile) does not destroy it.
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+        let error = match std::fs::read_to_string(path) {
+            Ok(text) => match serde_json::from_str(&text) {
+                Ok(store) => return store,
+                Err(err) => err.to_string(),
+            },
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Self::default(),
+            Err(err) => err.to_string(),
+        };
+        let aside = std::path::PathBuf::from(format!(
+            "{}.corrupt.{}",
+            path.display(),
+            chrono::Utc::now().timestamp_millis()
+        ));
+        match std::fs::rename(path, &aside) {
+            Ok(()) => log::warn!(
+                "profiles: {} is unreadable ({error}); kept as {}",
+                path.display(),
+                aside.display()
+            ),
+            Err(err) => log::warn!(
+                "profiles: {} is unreadable ({error}) and could not be kept: {err}",
+                path.display()
+            ),
+        }
+        Self::default()
     }
 
+    /// Replace the file atomically, so a crash never leaves it half written.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
         let text = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
-        std::fs::write(path, text)
+        crate::atomic_file::write(path, text.as_bytes())
     }
 
     /// Make sure the "Default" profile exists when none were saved
@@ -360,6 +382,41 @@ mod tests {
         assert_eq!(ProfileStore::load(&path), s);
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(ProfileStore::load(&path), ProfileStore::default());
+    }
+
+    #[test]
+    fn save_replaces_the_file_atomically() {
+        let dir = std::env::temp_dir().join(format!("chau7-prof-{}", uuid::Uuid::new_v4()));
+        let path = dir.join("profiles.json");
+        ProfileStore::default().save(&path).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        // The old inode keeps its bytes: renamed over, never truncated.
+        let snapshot = dir.join("snapshot.json");
+        std::fs::hard_link(&path, &snapshot).unwrap();
+        let saved = store();
+        saved.save(&path).unwrap();
+        assert_eq!(std::fs::read(&snapshot).unwrap(), before);
+        assert_eq!(ProfileStore::load(&path), saved);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unreadable_file_is_kept_aside() {
+        let dir = std::env::temp_dir().join(format!("chau7-prof-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("profiles.json");
+        std::fs::write(&path, b"{\"profiles\": [{\"id\"").unwrap();
+        assert_eq!(ProfileStore::load(&path), ProfileStore::default());
+        assert!(!path.exists());
+        let kept: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.to_string_lossy().contains("profiles.json.corrupt."))
+            .collect();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(std::fs::read(&kept[0]).unwrap(), b"{\"profiles\": [{\"id\"");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

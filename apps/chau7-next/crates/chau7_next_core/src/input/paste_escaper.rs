@@ -17,9 +17,31 @@ pub fn escape(text: &str) -> String {
     out
 }
 
+/// Bytes for a Paste Escaped of `text`: control characters other than tab
+/// and line breaks are dropped (a raw ESC or Ctrl-C in the clipboard would
+/// otherwise act as a keystroke), the rest is escaped with [`escape`], then
+/// encoded like a normal paste (line endings normalized, bracketed paste
+/// markers when the program asked for them, end markers stripped).
+pub fn encode(text: &str, bracketed: bool) -> Vec<u8> {
+    let cleaned: String = text
+        .chars()
+        .filter(|c| !c.is_control() || matches!(c, '\t' | '\n' | '\r'))
+        .collect();
+    crate::key_encoding::encode_paste(&escape(&cleaned), bracketed)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::escape;
+    use super::{encode, escape};
+
+    #[test]
+    fn encode_strips_controls_and_uses_paste_encoding() {
+        assert_eq!(
+            encode("a$\x1b[201~\x03b\nc", true),
+            b"\x1b[200~a\\$[201~b\rc\x1b[201~".to_vec()
+        );
+        assert_eq!(encode("x\x1b[31m\ty\r\n", false), b"x[31m\ty\r".to_vec());
+    }
 
     // Ports of `PasteEscaperTests`.
 
