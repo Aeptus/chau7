@@ -163,7 +163,14 @@ final class RemoteClient {
     private var telemetryBuffer = RemoteTelemetryBuffer(maxEvents: RemoteClient.maxBufferedTelemetryEvents)
     /// Per-event failed-send attempts (bounded retry for the drain-on-success path).
     private var telemetrySendAttempts: [String: Int] = [:]
-    private var pendingURLActions: [RemoteActivityURLAction] = []
+    /// The latest tab navigation from a deep link, waiting for a session and
+    /// a tab inventory. Only the newest matters, so repeated opens never
+    /// accumulate.
+    private var pendingURLAction: RemoteActivityURLAction?
+    /// A request to show the Approvals tab, optionally on one card. Set by
+    /// deep links and notification taps, which can arrive before the root view
+    /// exists on a cold launch; ApprovalsView consumes it.
+    private(set) var approvalsNavigation: ApprovalsNavigationRequest?
     private var currentAppState: RemoteClientAppState = .foreground
     private var desiredStreamMode: RemoteClientStreamMode = .full
     private var desiredTerminalPresentation: RemoteTerminalPresentation =
@@ -615,14 +622,21 @@ final class RemoteClient {
         // also runs from inside `startConnection`, so dismissing on every
         // teardown made the Dynamic Island blink off and on for each reconnect
         // backoff attempt, each cycle requesting a brand-new activity. The
-        // activity is ended from the authoritative `.activityCleared` frame and
-        // after the reconnect budget is exhausted.
+        // activity is ended from the authoritative `.activityCleared` frame,
+        // after the reconnect budget is exhausted, and on an explicit
+        // Disconnect or pairing change (below).
         if !autoReconnect {
             lastError = nil
             if clearIntent {
                 pendingApprovals = []
-                pendingURLActions.removeAll()
+                pendingURLAction = nil
             }
+        }
+        // An explicit Disconnect or a pairing change ends this Mac's session
+        // for good, so its card must not stay on the lock screen until the
+        // 8-hour cap.
+        if discardUserIntent {
+            RemoteLiveActivityManager.shared.update(with: nil)
         }
     }
 
@@ -860,12 +874,26 @@ final class RemoteClient {
 
     func handle(url: URL) {
         guard let action = RemoteActivityURLAction(url: url) else { return }
+        if case let .review(requestID) = action {
+            showApprovals(.approval(requestID: requestID))
+            return
+        }
         if !performURLAction(action) {
-            pendingURLActions.append(action)
+            pendingURLAction = action
             if !transport.isOpen, pairingInfo != nil {
                 connectIfNeeded(trigger: .urlAction)
             }
         }
+    }
+
+    func showApprovals(_ request: ApprovalsNavigationRequest) {
+        approvalsNavigation = request
+    }
+
+    /// Hands the pending navigation to the view that applies it, once.
+    func takeApprovalsNavigation() -> ApprovalsNavigationRequest? {
+        defer { approvalsNavigation = nil }
+        return approvalsNavigation
     }
 
     // MARK: - Receive Loop
@@ -981,9 +1009,7 @@ final class RemoteClient {
                 // The session is over rather than merely restarting, so retire
                 // the Live Activity here instead of leaving a stale card whose
                 // actions can no longer resolve.
-                if #available(iOS 16.1, *) {
-                    RemoteLiveActivityManager.shared.update(with: nil)
-                }
+                RemoteLiveActivityManager.shared.update(with: nil)
             }
             return
         }
@@ -1498,9 +1524,7 @@ private func handlePairAccept(_ data: Data) {
         do {
             let state = try RemoteJSON.decoder.decode(RemoteActivityState.self, from: data)
             liveActivityState = state
-            if #available(iOS 16.1, *) {
-                RemoteLiveActivityManager.shared.update(with: state)
-            }
+            RemoteLiveActivityManager.shared.update(with: state)
         } catch {
             log.error("handleActivityState: decode failed: \(error.localizedDescription)")
         }
@@ -1508,9 +1532,7 @@ private func handlePairAccept(_ data: Data) {
 
     private func clearActivityState() {
         liveActivityState = nil
-        if #available(iOS 16.1, *) {
-            RemoteLiveActivityManager.shared.update(with: nil)
-        }
+        RemoteLiveActivityManager.shared.update(with: nil)
     }
 
     private func handleInteractivePromptList(_ data: Data) {
@@ -1818,30 +1840,16 @@ private func handlePairAccept(_ data: Data) {
             guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
             switchTab(tabID)
             return true
-        case let .approve(requestID, tabID), let .deny(requestID, tabID):
-            if let tabID {
-                guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
-                switchTab(tabID)
-            }
-            guard pendingApprovals.contains(where: { $0.requestID == requestID }) else { return false }
-            let approved = if case .approve = action {
-                true
-            } else {
-                false
-            }
-            respondToApproval(requestID: requestID, approved: approved)
+        case .review:
+            // Navigation only; handled in `handle(url:)` without a session.
             return true
         }
     }
 
     private func flushPendingURLActions() {
-        guard crypto != nil, isConnected, !pendingURLActions.isEmpty else { return }
-
-        let queued = pendingURLActions
-        pendingURLActions.removeAll(keepingCapacity: true)
-
-        for action in queued where !performURLAction(action) {
-            pendingURLActions.append(action)
+        guard crypto != nil, isConnected, let action = pendingURLAction else { return }
+        if performURLAction(action) {
+            pendingURLAction = nil
         }
     }
 

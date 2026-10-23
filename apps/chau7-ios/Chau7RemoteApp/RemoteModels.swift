@@ -4,6 +4,7 @@
 // pending state, errors) live in `Chau7Core/Remote/RemoteWirePayloads.swift`
 // — the single Swift source of truth shared with the macOS app. This file
 // keeps iOS-local aliases, UI-facing models, and utilities.
+import ActivityKit
 import CryptoKit
 import Chau7Core
 import Foundation
@@ -509,7 +510,6 @@ enum RemoteNotificationID {
         static let promptID = "prompt_id"
         static let tabID = "tab_id"
         static let openApprovals = "open_approvals"
-        static let approved = "approved"
     }
 }
 
@@ -594,5 +594,35 @@ enum RemoteMenuKeyHeuristics {
             && !text.isEmpty
             && text.count <= 3
             && text.allSatisfy { $0.isASCII && $0.isNumber }
+    }
+}
+
+/// Ask to show the Approvals tab, optionally focused on one card. Each
+/// request has its own identity, so tapping the same link twice still
+/// navigates.
+struct ApprovalsNavigationRequest: Equatable {
+    let id = UUID()
+    /// The approvals deck's page id to land on, or nil for the queue as is.
+    let decisionID: String?
+
+    static func queue() -> Self {
+        Self(decisionID: nil)
+    }
+
+    static func approval(requestID: String) -> Self {
+        Self(decisionID: "approval:\(requestID)")
+    }
+
+    static func prompt(promptID: String) -> Self {
+        Self(decisionID: "prompt:\(promptID)")
+    }
+}
+
+enum RemoteLiveActivityPolicy {
+    /// `.stale` only means no update arrived before the stale date; the
+    /// activity is still on screen. Updating it in place matters: requesting
+    /// a replacement left the stale card behind as a duplicate.
+    static func acceptsUpdates(_ state: ActivityState) -> Bool {
+        state == .active || state == .stale
     }
 }

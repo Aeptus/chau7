@@ -160,21 +160,25 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             // `respondToApproval` now defers unknown request ids, so a decision
             // that still arrives before the pending list is populated is held
             // rather than dropped.
-            await RemoteClient.shared.recordApprovalDecisionFromNotification(
+            RemoteClient.shared.recordApprovalDecisionFromNotification(
                 requestID: requestID,
                 approved: approved
             )
         default:
-            await MainActor.run {
-                NotificationCenter.default.post(name: .openApprovals, object: nil)
-            }
+            // Same cold-launch race as above: record the navigation on the
+            // client, which the root view reads once it exists, instead of
+            // posting to observers that may not be installed yet.
+            let navigation: ApprovalsNavigationRequest =
+                if let requestID = userInfo[RemoteNotificationID.UserInfoKey.requestID] as? String {
+                    .approval(requestID: requestID)
+                } else if let promptID = userInfo[RemoteNotificationID.UserInfoKey.promptID] as? String {
+                    .prompt(promptID: promptID)
+                } else {
+                    .queue()
+                }
+            RemoteClient.shared.showApprovals(navigation)
         }
     }
-}
-
-extension Notification.Name {
-    static let approvalNotificationResponse = Notification.Name("ch7.approvalResponse")
-    static let openApprovals = Notification.Name("ch7.openApprovals")
 }
 
 // MARK: - Root View
@@ -284,19 +288,8 @@ struct RemoteRootView: View {
         .onChange(of: selectedTab) { _, newTab in
             if newTab == .approvals { dismissBanner() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .openApprovals)) { _ in
-            goToApprovals()
-        }
-        .task {
-            // Bridge Allow/Deny notification actions to the client. Lives on
-            // the root view (structured, cancelled with the scene) instead of
-            // an unstructured Task in RemoteClient that a static singleton's
-            // never-running deinit pretended to cancel.
-            for await note in NotificationCenter.default.notifications(named: .approvalNotificationResponse) {
-                guard let id = note.userInfo?[RemoteNotificationID.UserInfoKey.requestID] as? String,
-                      let approved = note.userInfo?[RemoteNotificationID.UserInfoKey.approved] as? Bool else { continue }
-                client.respondToApproval(requestID: id, approved: approved)
-            }
+        .onChange(of: client.approvalsNavigation, initial: true) { _, navigation in
+            if navigation != nil { goToApprovals() }
         }
         .sheet(isPresented: $isPairingPresented) {
             PairingSheetView(client: client)

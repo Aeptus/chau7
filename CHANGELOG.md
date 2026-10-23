@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- iOS: the Live Activity's Approve and Deny buttons are replaced by Review, which opens the approval in the app instead of answering it from a link.
+- iOS: update a stale Live Activity in place instead of adding a duplicate, and end it on Disconnect or when the pairing changes.
+- iOS: a notification tap on a cold launch now opens the Approvals tab on the matching card.
+- iOS: a silent push no longer freezes the terminal on screen, a rejected pairing stops retrying and keeps its Re-pair prompt, and a locked Keychain at launch no longer leaves the app unpaired.
 - Answer read-only MCP tab queries within one second when the interface is busy, instead of blocking the client.
 - Bound the number of tracked Claude Code sessions.
 - Bound the proxy IPC line buffer and drop over-long lines.

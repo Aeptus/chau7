@@ -1,3 +1,4 @@
+import ActivityKit
 import Chau7Core
 import CryptoKit
 import XCTest
@@ -1588,6 +1589,30 @@ final class RemotePairingStoreDeviceKeyTests: XCTestCase {
         XCTAssertEqual(
             RemotePairingStore.deviceKeyDecision(for: .unavailable(errSecInteractionNotAllowed)),
             .retryLater
+        )
+    }
+}
+
+final class RemoteLiveActivityPolicyTests: XCTestCase {
+    func testStaleActivityIsUpdatedInPlaceInsteadOfDuplicated() {
+        XCTAssertTrue(RemoteLiveActivityPolicy.acceptsUpdates(.active))
+        XCTAssertTrue(RemoteLiveActivityPolicy.acceptsUpdates(.stale))
+        XCTAssertFalse(RemoteLiveActivityPolicy.acceptsUpdates(.ended))
+        XCTAssertFalse(RemoteLiveActivityPolicy.acceptsUpdates(.dismissed))
+    }
+}
+
+final class ApprovalsNavigationRequestTests: XCTestCase {
+    func testTargetsMatchTheApprovalsDeckPageIDs() {
+        XCTAssertEqual(ApprovalsNavigationRequest.approval(requestID: "r1").decisionID, "approval:r1")
+        XCTAssertEqual(ApprovalsNavigationRequest.prompt(promptID: "p1").decisionID, "prompt:p1")
+        XCTAssertNil(ApprovalsNavigationRequest.queue().decisionID)
+    }
+
+    func testRepeatedRequestsAreDistinctSoEachTapNavigates() {
+        XCTAssertNotEqual(
+            ApprovalsNavigationRequest.approval(requestID: "r1"),
+            ApprovalsNavigationRequest.approval(requestID: "r1")
         )
     }
 }
