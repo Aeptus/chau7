@@ -711,6 +711,11 @@ impl Workspace {
             }
             PaneEvent::CommandFinished(code) => {
                 this.offer_explain(id, *code, cx);
+                // A program ended (`ssh` closed, a tool quit): what runs in
+                // the tab changed, so check the rules again.
+                if this.state.selected() == Some(id) {
+                    this.evaluate_profile_rules(id, cx);
+                }
                 // Shell events (`ShellEventDetector`) come from the session's
                 // monitor as `PaneEvent::Ai` and reach the notification engine
                 // through `ai::events_out`.
@@ -898,6 +903,8 @@ impl Workspace {
         // Find follows the selected tab: its matches, not the old tab's.
         self.refresh_search(cx);
         self.focus_selected(window, cx);
+        // Profile auto-switch rules look at the tab in use.
+        self.evaluate_profile_rules(id, cx);
         cx.notify();
     }
 
