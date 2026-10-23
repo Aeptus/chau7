@@ -8,7 +8,6 @@ import Foundation
 import os
 import Chau7Core
 
-@available(iOS 16.1, *)
 @MainActor
 final class RemoteLiveActivityManager {
     static let shared = RemoteLiveActivityManager()
@@ -51,36 +50,45 @@ final class RemoteLiveActivityManager {
         )
         let staleDate = Date().addingTimeInterval(Self.staleAfter)
 
-        // Only one activity is tracked. Anything left over for a different task
-        // is ended first so two never coexist.
-        Task { await endActivities(except: state.activityID) }
+        // Snapshot before any request, so the activity requested below is
+        // never in the set that gets ended.
+        let existing = Activity<Chau7RemoteActivityAttributes>.activities
 
         if let activity, activity.attributes.activityID == state.activityID,
-           activity.activityState == .active {
+           RemoteLiveActivityPolicy.acceptsUpdates(activity.activityState) {
             Task {
                 await activity.update(ActivityContent(state: contentState, staleDate: staleDate))
                 await scheduleEndIfNeeded(for: activity, status: state.status)
             }
-            return
-        }
-
-        if let activity, activity.attributes.activityID == state.activityID {
-            // Tracked but no longer active (ended or dismissed). Drop the stale
-            // handle and request a fresh one.
-            self.activity = nil
-        }
-
-        do {
-            let requested = try Activity.request(
-                attributes: attributes,
-                content: ActivityContent(state: contentState, staleDate: staleDate)
-            )
-            activity = requested
-            Task {
-                await scheduleEndIfNeeded(for: requested, status: state.status)
+        } else {
+            // Untracked, or ended/dismissed by the user. Request a fresh one.
+            activity = nil
+            do {
+                let requested = try Activity.request(
+                    attributes: attributes,
+                    content: ActivityContent(state: contentState, staleDate: staleDate)
+                )
+                activity = requested
+                Task {
+                    await scheduleEndIfNeeded(for: requested, status: state.status)
+                }
+            } catch {
+                log.error("Failed to request live activity: \(error.localizedDescription)")
+                DiagnosticsLog.shared.error(.lifecycle, "Live Activity request failed", [
+                    "error": error.localizedDescription
+                ])
             }
-        } catch {
-            log.error("Failed to request live activity: \(error.localizedDescription)")
+        }
+
+        // Only one activity is shown. End everything else, including an older
+        // duplicate for the same task, so two never coexist.
+        let keptID = activity?.id
+        let leftovers = existing.filter { $0.id != keptID }
+        guard !leftovers.isEmpty else { return }
+        Task {
+            for candidate in leftovers {
+                await candidate.end(nil, dismissalPolicy: .immediate)
+            }
         }
     }
 
@@ -89,15 +97,7 @@ final class RemoteLiveActivityManager {
     private func adoptExistingActivity() {
         let existing = Activity<Chau7RemoteActivityAttributes>.activities
         guard !existing.isEmpty else { return }
-        activity = existing.first { $0.activityState == .active } ?? existing.first
-    }
-
-    /// Ends every activity except the one for `activityID`.
-    private func endActivities(except activityID: String) async {
-        for candidate in Activity<Chau7RemoteActivityAttributes>.activities
-        where candidate.attributes.activityID != activityID {
-            await candidate.end(nil, dismissalPolicy: .immediate)
-        }
+        activity = existing.first { RemoteLiveActivityPolicy.acceptsUpdates($0.activityState) } ?? existing.first
     }
 
     private func scheduleEndIfNeeded(

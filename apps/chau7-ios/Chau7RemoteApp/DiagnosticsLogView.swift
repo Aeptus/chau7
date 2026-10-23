@@ -88,13 +88,8 @@ final class IssueReportDraft {
 
     func exportFile() -> URL? {
         persistContactPreference()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("chau7-ios-issue-\(formatter.string(from: Date())).md")
         do {
-            try markdownReport.write(to: url, atomically: true, encoding: .utf8)
-            return url
+            return try DiagnosticsExportFile.write(markdownReport, prefix: "chau7-ios-issue", fileExtension: "md")
         } catch {
             submitError = "Could not prepare the report for sharing: \(error.localizedDescription)"
             return nil
@@ -397,14 +392,16 @@ struct DiagnosticsLogView: View {
 
     @ViewBuilder
     private var logList: some View {
-        if filteredEntries.isEmpty {
+        // Filtering walks up to 8000 entries; evaluate it once per body.
+        let rows = filteredEntries
+        if rows.isEmpty {
             ContentUnavailableView(
                 "No Log Entries",
                 systemImage: "doc.text.magnifyingglass",
                 description: Text("Entries will appear here as you use the app.")
             )
         } else {
-            List(filteredEntries) { entry in
+            List(rows) { entry in
                 DiagnosticsRow(entry: entry)
                     .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             }

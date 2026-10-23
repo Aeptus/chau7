@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stop reporting command start-up and shell loading time as input latency.
 - Hang up shells when a tab closes or the app quits, so they save history and run exit hooks instead of being killed.
 - Ignore AI notifications addressed to another running Chau7 app's tabs, so running two Chau7 apps no longer shows duplicate alerts.
+- iOS: keep the diagnostics log out of device backups, clear old diagnostic exports before each new one, stop pre-filling the pairing secret in the Re-pair sheet, reject pairing codes whose expiry cannot be read, and always stop the camera when the QR scanner closes.
+- iOS: the Live Activity's Approve and Deny buttons are replaced by Review, which opens the approval in the app instead of answering it from a link.
+- iOS: update a stale Live Activity in place instead of adding a duplicate, and end it on Disconnect or when the pairing changes.
+- iOS: a notification tap on a cold launch now opens the Approvals tab on the matching card.
+- iOS: a silent push no longer freezes the terminal on screen, a rejected pairing stops retrying and keeps its Re-pair prompt, and a locked Keychain at launch no longer leaves the app unpaired.
+- iOS: stop re-copying the full terminal text buffer on every frame and the full diagnostics log on every entry once they are full, and free each tab's replay buffer once its terminal is built.
 - Answer read-only MCP tab queries within one second when the interface is busy, instead of blocking the client.
 - Bound the number of tracked Claude Code sessions.
 - Bound the proxy IPC line buffer and drop over-long lines.

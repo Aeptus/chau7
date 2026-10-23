@@ -7,6 +7,13 @@ import Foundation
 /// reaches the shared cap or on the plain-text display cadence. Snapshots replace the entire
 /// tab output atomically (used when switching tabs or receiving grid state).
 struct RemoteTerminalOutputStore {
+    /// Committed text may overshoot the retained cap by this much before it
+    /// is trimmed. Once a tab's buffer is full, trimming on every flush
+    /// re-copied the whole tail every 16 ms on the main actor, even while the
+    /// rich renderer was on screen and nothing read the text. With the slack
+    /// a flush appends in place, and a trim runs once per 32 KB of output.
+    static let trimSlackBytes = 32768
+
     private var committedByTabID: [UInt32: String] = [:]
     private var pendingByTabID = RemotePendingOutputBuffer<String>()
     /// UTF-8 scalars may be split across arbitrary PTY/WebSocket frames. Keep
@@ -75,19 +82,27 @@ struct RemoteTerminalOutputStore {
         var updatedTabIDs: Set<UInt32> = []
         for targetTabID in targetTabIDs {
             guard let pending = pendingByTabID.drain(tabID: targetTabID), !pending.isEmpty else { continue }
-            let committed = committedByTabID[targetTabID] ?? ""
-            committedByTabID[targetTabID] = RemoteOutputTuning.trimRetainedText(committed + pending)
+            // Take the value out of the dictionary so the append is in place
+            // rather than a copy of the whole retained tail.
+            var committed = committedByTabID.removeValue(forKey: targetTabID) ?? ""
+            committed.append(pending)
+            if committed.utf8.count > RemoteOutputTuning.maxRetainedBytes + Self.trimSlackBytes {
+                committed = RemoteOutputTuning.trimRetainedText(committed)
+            }
+            committedByTabID[targetTabID] = committed
             updatedTabIDs.insert(targetTabID)
         }
         return updatedTabIDs
     }
 
+    /// The displayed tail, exactly within the retained cap. Only the plain
+    /// text presentation reads it, so the trim copy is paid only there.
     func visibleOutput(for activeTabID: UInt32) -> String {
         let committed = committedByTabID[activeTabID] ?? ""
         if let pending = pendingByTabID[activeTabID], !pending.isEmpty {
             return RemoteOutputTuning.trimRetainedText(committed + pending)
         }
-        return committed
+        return RemoteOutputTuning.trimRetainedText(committed)
     }
 
     /// Returns the start of a valid but incomplete UTF-8 scalar at the end of

@@ -51,7 +51,11 @@ final class ScannerViewController: UIViewController {
     var coordinator: QRScannerView.Coordinator?
 
     private let session = AVCaptureSession()
+    /// One serial queue for start and stop, so a stop can never run ahead of
+    /// the start it follows and leave the camera on after the sheet closes.
+    private let sessionQueue = DispatchQueue(label: "ch7.qr-scanner.session")
     private var previewLayer: AVCaptureVideoPreviewLayer?
+    private var isVisible = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -61,15 +65,17 @@ final class ScannerViewController: UIViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        isVisible = true
         startRunningIfConfigured()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if session.isRunning {
-            DispatchQueue.global(qos: .userInitiated).async { [session] in
-                session.stopRunning()
-            }
+        isVisible = false
+        // Always enqueue the stop: `isRunning` is still false while a start
+        // is in flight, and skipping the stop then left the camera running.
+        sessionQueue.async { [session] in
+            session.stopRunning()
         }
     }
 
@@ -126,8 +132,10 @@ final class ScannerViewController: UIViewController {
     }
 
     private func startRunningIfConfigured() {
-        guard !session.inputs.isEmpty, !session.isRunning else { return }
-        DispatchQueue.global(qos: .userInitiated).async { [session] in
+        // The permission prompt can return after the sheet was dismissed.
+        guard isVisible, !session.inputs.isEmpty else { return }
+        sessionQueue.async { [session] in
+            guard !session.isRunning else { return }
             session.startRunning()
         }
     }
