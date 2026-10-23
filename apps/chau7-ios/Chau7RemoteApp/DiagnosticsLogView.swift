@@ -392,14 +392,16 @@ struct DiagnosticsLogView: View {
 
     @ViewBuilder
     private var logList: some View {
-        if filteredEntries.isEmpty {
+        // Filtering walks up to 8000 entries; evaluate it once per body.
+        let rows = filteredEntries
+        if rows.isEmpty {
             ContentUnavailableView(
                 "No Log Entries",
                 systemImage: "doc.text.magnifyingglass",
                 description: Text("Entries will appear here as you use the app.")
             )
         } else {
-            List(filteredEntries) { entry in
+            List(rows) { entry in
                 DiagnosticsRow(entry: entry)
                     .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             }
