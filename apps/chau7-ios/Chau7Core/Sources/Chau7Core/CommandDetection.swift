@@ -223,10 +223,9 @@ public enum CommandDetection {
         if packageManagers.contains(normalized) {
             let devScripts = ["dev", "start", "serve", "develop", "watch"]
             // Check for "run dev", "run start", etc.
-            if findSubcommand(tokens: tokens, after: normalized, looking: ["run"]) != nil {
-                if let script = findSubcommand(tokens: tokens, after: "run", looking: devScripts) {
-                    return scriptToServerName(script)
-                }
+            if findSubcommand(tokens: tokens, after: normalized, looking: ["run"]) != nil,
+               let script = findSubcommand(tokens: tokens, after: "run", looking: devScripts) {
+                return scriptToServerName(script)
             }
             // Direct: pnpm dev, yarn dev, bun dev
             if let script = findSubcommand(tokens: tokens, after: normalized, looking: devScripts) {
@@ -235,10 +234,9 @@ public enum CommandDetection {
         }
 
         // npx/bunx with dev server packages
-        if normalized == "npx" || normalized == "bunx" {
-            if let devServer = findSubcommand(tokens: tokens, after: normalized, looking: Array(devServerMap.keys)) {
-                return devServerMap[devServer]
-            }
+        if normalized == "npx" || normalized == "bunx",
+           let devServer = findSubcommand(tokens: tokens, after: normalized, looking: Array(devServerMap.keys)) {
+            return devServerMap[devServer]
         }
 
         return nil
