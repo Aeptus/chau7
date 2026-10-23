@@ -362,6 +362,10 @@ pub struct Chau7Terminal {
     pub(crate) event_rx: Receiver<Event>,
     /// Flag indicating if grid has changed since last poll
     pub(crate) grid_dirty: AtomicBool,
+    /// Whether the Kitty keyboard protocol is enabled in the emulator config.
+    /// `Term` keeps its config private, so every `set_options` caller reads
+    /// this to avoid resetting the protocol (and its mode stack) by accident.
+    pub(crate) kitty_keyboard: AtomicBool,
     /// Terminal dimensions (atomic: written by `resize` on the UI thread while
     /// drain threads concurrently read via `debug_state`)
     pub(crate) cols: AtomicU16,
@@ -475,7 +479,7 @@ impl Chau7Terminal {
             return Err(TerminalError::InvalidDimensions { cols, rows });
         }
 
-        let (event_tx, event_rx) = bounded::<Event>(100);
+        let (event_tx, event_rx) = crate::pty::event_channel();
         let bell_pending = Arc::new(AtomicBool::new(false));
         let listener = Chau7EventListener {
             sender: event_tx,
@@ -501,6 +505,7 @@ impl Chau7Terminal {
             reader_pool_fd: None,
             event_rx,
             grid_dirty: AtomicBool::new(true),
+            kitty_keyboard: AtomicBool::new(false),
             cols: AtomicU16::new(cols),
             rows: AtomicU16::new(rows),
             created_at,
@@ -628,7 +633,7 @@ impl Chau7Terminal {
         debug!("[terminal-{}] PTY opened successfully", id);
 
         // Create event channel for terminal events
-        let (event_tx, event_rx) = bounded::<Event>(100);
+        let (event_tx, event_rx) = crate::pty::event_channel();
         let bell_pending = Arc::new(AtomicBool::new(false));
         let listener = Chau7EventListener {
             sender: event_tx,
@@ -746,10 +751,14 @@ impl Chau7Terminal {
         };
 
         // Get writer for PTY input
-        let writer = pair.master.take_writer().map_err(|e| {
-            error!("[terminal-{}] Failed to get PTY writer: {}", id, e);
-            TerminalError::PtyWriter(e.into())
-        })?;
+        let writer = match pair.master.take_writer() {
+            Ok(writer) => writer,
+            Err(e) => {
+                error!("[terminal-{}] Failed to get PTY writer: {}", id, e);
+                abandon_spawned_shell(id, child, &[master_fd, reader_fd]);
+                return Err(TerminalError::PtyWriter(e.into()));
+            }
+        };
         debug!("[terminal-{}] PTY writer obtained", id);
 
         // Create running flag
@@ -773,7 +782,7 @@ impl Chau7Terminal {
                     "[terminal-{}] Shared PTY reader pool is not running; aborting terminal creation",
                     id
                 );
-                unsafe { libc::close(reader_fd) };
+                abandon_spawned_shell(id, child, &[master_fd, reader_fd]);
                 return Err(TerminalError::ReaderThread(std::io::Error::other(
                     "shared PTY reader pool thread is not running",
                 )));
@@ -790,7 +799,10 @@ impl Chau7Terminal {
             );
         }
         #[cfg(not(unix))]
-        spawn_pty_reader_thread(id, pair.master.as_ref(), pty_tx, running.clone())?;
+        if let Err(e) = spawn_pty_reader_thread(id, pair.master.as_ref(), pty_tx, running.clone()) {
+            abandon_spawned_shell(id, child, &[master_fd, reader_fd]);
+            return Err(e);
+        }
 
         // Create the PTY handle
         let pty_handle = PtyHandle {
@@ -822,6 +834,7 @@ impl Chau7Terminal {
             },
             event_rx,
             grid_dirty: AtomicBool::new(true),
+            kitty_keyboard: AtomicBool::new(false),
             cols: AtomicU16::new(cols),
             rows: AtomicU16::new(rows),
             created_at,
@@ -1108,119 +1121,11 @@ impl Chau7Terminal {
         signal_foreground_winch(self.id, echo_fd);
     }
 
-    /// Poll for new data from PTY, process it, and return event flags.
-    /// Raw output bytes are stored in `last_output` for retrieval via `get_last_output()`.
-    /// Concurrent callers must not dequeue ahead of the active parser. A zero
-    /// timeout never waits for another poll; blocking callers share their timeout
-    /// budget between acquiring ownership and waiting for the first PTY message.
-    #[must_use]
-    pub fn poll_events(&self, timeout_ms: u32) -> u32 {
-        let poll_start = Instant::now();
-
-        // Adaptive polling: use suggested timeout or caller's timeout (whichever is shorter)
-        let adaptive_timeout = self.adaptive_poller.suggested_timeout_ms();
-        let effective_timeout = timeout_ms.min(adaptive_timeout);
-        trace!(
-            "[terminal-{}] poll(timeout_ms={}, adaptive={})",
-            self.id, timeout_ms, effective_timeout
-        );
-
-        let timeout = Duration::from_millis(effective_timeout as u64);
-        // A timed lock still spins/yields before inspecting its deadline.
-        // On an overloaded machine even a zero deadline can park the UI
-        // behind the event-drain worker. Zero-timeout callers must only CAS.
-        let poll_guard = if effective_timeout == 0 {
-            self.pty_poll_lock.try_lock()
-        } else {
-            self.pty_poll_lock.try_lock_for(timeout)
-        };
-        let Some(_poll_guard) = poll_guard else {
-            return 0;
-        };
-        let timeout = timeout.saturating_sub(poll_start.elapsed());
-        let mut had_data = false;
-        let mut had_renderable_data = false;
-        let mut bytes_this_poll = 0usize;
-
-        // Accumulate all data locally, then lock last_output once at the end
-        let mut local_output = Vec::new();
-
-        if let Some(pty_rx) = self.pty_rx.as_ref() {
-            // Try to receive data with timeout for the first message
-            match pty_rx.recv_timeout(timeout) {
-                Ok(PtyMessage::Data(data)) => {
-                    bytes_this_poll += data.len();
-                    let visible_data = filter_terminal_output_noise(&data);
-                    if !visible_data.is_empty() {
-                        let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
-                        local_output.extend_from_slice(visible_data.as_ref());
-                        self.process_pty_data(visible_data.as_ref());
-                        had_data = true;
-                        had_renderable_data |= renderable;
-                    }
-                }
-                Ok(PtyMessage::Closed) => {
-                    info!("[terminal-{}] PTY closed message received in poll", self.id);
-                    self.pty_closed.store(true, Ordering::Release);
-                    return POLL_EVENT_METADATA_CHANGED;
-                }
-                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
-                    trace!("[terminal-{}] poll timeout (no data)", self.id);
-                }
-                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                    warn!("[terminal-{}] PTY channel disconnected", self.id);
-                    self.pty_closed.store(true, Ordering::Release);
-                }
-            }
-
-            // Yield ownership between output batches. A producer can keep
-            // the channel permanently nonempty; draining it to exhaustion
-            // would monopolize the UI and starve grid snapshots indefinitely.
-            // Leave queued chunks untouched so subsequent polls preserve order.
-            let batch_started = Instant::now();
-            while bytes_this_poll < 64 * 1024 && batch_started.elapsed() < Duration::from_millis(2)
-            {
-                match pty_rx.try_recv() {
-                    Ok(PtyMessage::Data(data)) => {
-                        bytes_this_poll += data.len();
-                        let visible_data = filter_terminal_output_noise(&data);
-                        if !visible_data.is_empty() {
-                            let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
-                            local_output.extend_from_slice(visible_data.as_ref());
-                            self.process_pty_data(visible_data.as_ref());
-                            had_data = true;
-                            had_renderable_data |= renderable;
-                        }
-                    }
-                    Ok(PtyMessage::Closed) => {
-                        info!(
-                            "[terminal-{}] PTY closed message received while draining",
-                            self.id
-                        );
-                        self.pty_closed.store(true, Ordering::Release);
-                        break;
-                    }
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => {
-                        warn!(
-                            "[terminal-{}] PTY channel disconnected while draining",
-                            self.id
-                        );
-                        self.pty_closed.store(true, Ordering::Release);
-                        break;
-                    }
-                }
-            }
-        }
-
-        // The event-drain worker can poll again before Swift handles its wake.
-        // Keep unread bytes in stream order; an idle poll must not erase them.
-        if !local_output.is_empty() {
-            let mut last_output = self.last_output.lock();
-            last_output.extend_from_slice(&local_output);
-        }
-
-        // Process terminal events
+    /// Handle queued emulator events: write replies (`PtyWrite`) to the PTY
+    /// and record title, clipboard and exit changes. Called after every PTY
+    /// chunk so a burst of queries cannot pile up in the queue. Returns
+    /// (events handled, `PtyWrite` events among them).
+    fn drain_terminal_events(&self) -> (usize, usize) {
         let mut event_count = 0;
         let mut pty_write_count = 0;
         while let Ok(event) = self.event_rx.try_recv() {
@@ -1284,6 +1189,134 @@ impl Chau7Terminal {
                 _ => {}
             }
         }
+        (event_count, pty_write_count)
+    }
+
+    /// Poll for new data from PTY, process it, and return event flags.
+    /// Raw output bytes are stored in `last_output` for retrieval via `get_last_output()`.
+    /// Concurrent callers must not dequeue ahead of the active parser. A zero
+    /// timeout never waits for another poll; blocking callers share their timeout
+    /// budget between acquiring ownership and waiting for the first PTY message.
+    #[must_use]
+    pub fn poll_events(&self, timeout_ms: u32) -> u32 {
+        let poll_start = Instant::now();
+
+        // Adaptive polling: use suggested timeout or caller's timeout (whichever is shorter)
+        let adaptive_timeout = self.adaptive_poller.suggested_timeout_ms();
+        let effective_timeout = timeout_ms.min(adaptive_timeout);
+        trace!(
+            "[terminal-{}] poll(timeout_ms={}, adaptive={})",
+            self.id, timeout_ms, effective_timeout
+        );
+
+        let timeout = Duration::from_millis(effective_timeout as u64);
+        // A timed lock still spins/yields before inspecting its deadline.
+        // On an overloaded machine even a zero deadline can park the UI
+        // behind the event-drain worker. Zero-timeout callers must only CAS.
+        let poll_guard = if effective_timeout == 0 {
+            self.pty_poll_lock.try_lock()
+        } else {
+            self.pty_poll_lock.try_lock_for(timeout)
+        };
+        let Some(_poll_guard) = poll_guard else {
+            return 0;
+        };
+        let timeout = timeout.saturating_sub(poll_start.elapsed());
+        let mut had_data = false;
+        let mut had_renderable_data = false;
+        let mut bytes_this_poll = 0usize;
+        let mut event_count = 0;
+        let mut pty_write_count = 0;
+
+        // Accumulate all data locally, then lock last_output once at the end
+        let mut local_output = Vec::new();
+
+        if let Some(pty_rx) = self.pty_rx.as_ref() {
+            // Try to receive data with timeout for the first message
+            match pty_rx.recv_timeout(timeout) {
+                Ok(PtyMessage::Data(data)) => {
+                    bytes_this_poll += data.len();
+                    let visible_data = filter_terminal_output_noise(&data);
+                    if !visible_data.is_empty() {
+                        let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
+                        local_output.extend_from_slice(visible_data.as_ref());
+                        self.process_pty_data(visible_data.as_ref());
+                        let (count, writes) = self.drain_terminal_events();
+                        event_count += count;
+                        pty_write_count += writes;
+                        had_data = true;
+                        had_renderable_data |= renderable;
+                    }
+                }
+                Ok(PtyMessage::Closed) => {
+                    info!("[terminal-{}] PTY closed message received in poll", self.id);
+                    self.pty_closed.store(true, Ordering::Release);
+                    return POLL_EVENT_METADATA_CHANGED;
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                    trace!("[terminal-{}] poll timeout (no data)", self.id);
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                    warn!("[terminal-{}] PTY channel disconnected", self.id);
+                    self.pty_closed.store(true, Ordering::Release);
+                }
+            }
+
+            // Yield ownership between output batches. A producer can keep
+            // the channel permanently nonempty; draining it to exhaustion
+            // would monopolize the UI and starve grid snapshots indefinitely.
+            // Leave queued chunks untouched so subsequent polls preserve order.
+            let batch_started = Instant::now();
+            while bytes_this_poll < 64 * 1024 && batch_started.elapsed() < Duration::from_millis(2)
+            {
+                match pty_rx.try_recv() {
+                    Ok(PtyMessage::Data(data)) => {
+                        bytes_this_poll += data.len();
+                        let visible_data = filter_terminal_output_noise(&data);
+                        if !visible_data.is_empty() {
+                            let renderable = !is_metadata_only_terminal_data(visible_data.as_ref());
+                            local_output.extend_from_slice(visible_data.as_ref());
+                            self.process_pty_data(visible_data.as_ref());
+                            let (count, writes) = self.drain_terminal_events();
+                            event_count += count;
+                            pty_write_count += writes;
+                            had_data = true;
+                            had_renderable_data |= renderable;
+                        }
+                    }
+                    Ok(PtyMessage::Closed) => {
+                        info!(
+                            "[terminal-{}] PTY closed message received while draining",
+                            self.id
+                        );
+                        self.pty_closed.store(true, Ordering::Release);
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        warn!(
+                            "[terminal-{}] PTY channel disconnected while draining",
+                            self.id
+                        );
+                        self.pty_closed.store(true, Ordering::Release);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // The event-drain worker can poll again before Swift handles its wake.
+        // Keep unread bytes in stream order; an idle poll must not erase them.
+        if !local_output.is_empty() {
+            let mut last_output = self.last_output.lock();
+            last_output.extend_from_slice(&local_output);
+        }
+
+        // Process terminal events not drained after a chunk (events from
+        // injected output, child exit).
+        let (count, writes) = self.drain_terminal_events();
+        event_count += count;
+        pty_write_count += writes;
         if event_count > 0 {
             trace!(
                 "[terminal-{}] Processed {} terminal events ({} PtyWrite)",
@@ -2528,7 +2561,9 @@ impl Chau7Terminal {
     /// that always targets the primary grid's history. Side effects verified
     /// benign: the re-sent Title event is either ignored (ResetTitle) or
     /// re-posts the current title, and the config we pass differs from the
-    /// creation-time `TermConfig::default()` only in `scrolling_history`.
+    /// current one only in `scrolling_history`. The Kitty keyboard setting
+    /// is carried over: `set_options` clears the protocol's mode stack when
+    /// it changes, so dropping it would silently disable the protocol.
     pub fn set_scrollback_size(&self, lines: usize) {
         info!(
             "[terminal-{}] set_scrollback_size: Setting scrollback to {} lines",
@@ -2537,6 +2572,7 @@ impl Chau7Terminal {
         let mut term = self.term.lock();
         let config = TermConfig {
             scrolling_history: lines,
+            kitty_keyboard: self.kitty_keyboard.load(Ordering::Acquire),
             ..TermConfig::default()
         };
         term.set_options(config);
@@ -3587,6 +3623,31 @@ impl Drop for Chau7Terminal {
     }
 }
 
+/// Undo a shell spawn when terminal creation fails after it: close the
+/// dup'd master fds and kill and reap the child, so neither outlives the
+/// error. `kill` sends SIGHUP and escalates to SIGKILL after a short grace
+/// period, so the wait that follows does not hang.
+fn abandon_spawned_shell(
+    id: u64,
+    mut child: Box<dyn portable_pty::Child + Send + Sync>,
+    fds: &[i32],
+) {
+    #[cfg(unix)]
+    for &fd in fds {
+        if fd >= 0 {
+            unsafe { libc::close(fd) };
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = fds;
+    if let Err(e) = child.kill() {
+        warn!("[terminal-{}] Failed to kill abandoned shell: {}", id, e);
+    }
+    if let Err(e) = child.wait() {
+        warn!("[terminal-{}] Failed to reap abandoned shell: {}", id, e);
+    }
+}
+
 /// Shell used when `$SHELL` is unset. macOS keeps its historical default.
 fn default_shell() -> &'static str {
     if cfg!(windows) {
@@ -3752,6 +3813,71 @@ mod tests {
         use std::os::unix::process::ExitStatusExt;
         let stopped = std::process::ExitStatus::from_raw((libc::SIGSTOP << 8) | 0x7f);
         assert_eq!(terminal_exit_code(stopped), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn abandoned_shell_is_killed_and_its_fds_closed() {
+        let pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new("/bin/sleep");
+        cmd.arg("30");
+        let child = pair.slave.spawn_command(cmd).expect("spawn sleep");
+        let pid = child.process_id().expect("pid") as i32;
+        // Stand in a pipe's write end for a dup'd master fd: once it is
+        // closed the read end reports EOF. (Checking the fd number itself
+        // would race with other tests reusing it.)
+        let mut pipe = [0i32; 2];
+        assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
+        for fd in pipe {
+            unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) };
+        }
+        unsafe { libc::fcntl(pipe[0], libc::F_SETFL, libc::O_NONBLOCK) };
+
+        abandon_spawned_shell(0, child, &[pipe[1], -1]);
+
+        let mut byte = 0u8;
+        let read = unsafe { libc::read(pipe[0], (&mut byte as *mut u8).cast(), 1) };
+        unsafe { libc::close(pipe[0]) };
+        assert_eq!(read, 0, "write end still open");
+        // Killed and reaped: the pid no longer exists.
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+    }
+
+    #[test]
+    fn query_burst_keeps_every_reply() {
+        let term = Chau7Terminal::new_headless(80, 24).expect("headless terminal");
+        // More device status queries than the old 100-slot event channel.
+        term.process_pty_data(&b"\x1b[6n".repeat(300));
+        let replies = term
+            .event_rx
+            .try_iter()
+            .filter(|event| matches!(event, Event::PtyWrite(_)))
+            .count();
+        assert_eq!(replies, 300);
+    }
+
+    #[test]
+    fn lossy_events_stay_capped_without_blocking_replies() {
+        use alacritty_terminal::event::EventListener;
+        let (sender, receiver) = crate::pty::event_channel();
+        let listener = Chau7EventListener {
+            sender,
+            terminal_id: 0,
+            bell_pending: Arc::new(AtomicBool::new(false)),
+        };
+        for _ in 0..500 {
+            listener.send_event(Event::Wakeup);
+        }
+        assert_eq!(receiver.len(), crate::pty::LOSSY_EVENT_LIMIT);
+        listener.send_event(Event::PtyWrite("\x1b[1;1R".into()));
+        assert_eq!(receiver.len(), crate::pty::LOSSY_EVENT_LIMIT + 1);
     }
 
     #[cfg(unix)]
