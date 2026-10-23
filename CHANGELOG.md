@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Ignore AI notifications addressed to another running Chau7 app's tabs, so running two Chau7 apps no longer shows duplicate alerts.
 - Answer read-only MCP tab queries within one second when the interface is busy, instead of blocking the client.
 - Bound the number of tracked Claude Code sessions.
 - Bound the proxy IPC line buffer and drop over-long lines.
