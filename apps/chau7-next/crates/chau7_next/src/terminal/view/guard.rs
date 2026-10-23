@@ -322,7 +322,7 @@ impl TerminalView {
         let mut body = div()
             .flex()
             .flex_col()
-            .flex_shrink()
+            .flex_shrink(1.0)
             .min_h_0()
             .gap_3()
             .child(
@@ -345,7 +345,7 @@ impl TerminalView {
         let mut command = div()
             .id("guard-command")
             .debug_selector(|| "guard-command".into())
-            .flex_shrink()
+            .flex_shrink(1.0)
             .min_h(px(40.0))
             .overflow_y_scroll()
             .text_sm()
