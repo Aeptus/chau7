@@ -2292,7 +2292,9 @@ impl TerminalSession {
         // Password prompts only: Swift checks ECHO alone, which line editors
         // (readline, ZLE) also clear, so every typed command looked secret.
         let echo_disabled = Chau7Terminal::password_input_on_fd(self.echo_fd);
-        self.latency.borrow_mut().mark_input(clock(Instant::now()));
+        if chau7_next_core::shell_latency::measures_echo(bytes, self.is_loading(), echo_disabled) {
+            self.latency.borrow_mut().mark_input(clock(Instant::now()));
+        }
         if !echo_disabled {
             crate::history::recorder::input(self.id, bytes);
         }

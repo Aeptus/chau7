@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Stop reporting command start-up and shell loading time as input latency.
 - Hang up shells when a tab closes or the app quits, so they save history and run exit hooks instead of being killed.
 - Ignore AI notifications addressed to another running Chau7 app's tabs, so running two Chau7 apps no longer shows duplicate alerts.
 - Answer read-only MCP tab queries within one second when the interface is busy, instead of blocking the client.
