@@ -89,36 +89,9 @@ fn parse_bundle(path: &Path) -> Option<RestoreBundle> {
     .then_some(bundle)
 }
 
-/// Temp files are exclusive and private; both content and parent directory
-/// are flushed before publishing the next transaction marker.
-pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let parent = path
-        .parent()
-        .ok_or_else(|| std::io::Error::other("missing restore directory"))?;
-    std::fs::create_dir_all(parent)?;
-    let tmp = parent.join(format!(".restore-{}.tmp", uuid::Uuid::new_v4()));
-    let result = (|| {
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(&tmp)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        std::fs::rename(&tmp, path)?;
-        #[cfg(unix)]
-        std::fs::File::open(parent)?.sync_all()?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(tmp);
-    }
-    result
-}
+// Temp files are exclusive and private; both content and parent directory
+// are flushed before publishing the next transaction marker.
+pub(crate) use chau7_next_core::atomic_file::write as atomic_write;
 
 fn decoded_contexts(root: &DataRoot, bundle: &RestoreBundle) -> Option<Vec<(u64, Vec<u8>)>> {
     let mut decoded = Vec::new();
