@@ -699,8 +699,10 @@ mod tests {
                     })
                     .collect()
             };
-            let mut input = InputSettings::default();
-            input.keybindings = vec![("cmd+shift+y".into(), "toggleBroadcast".into())];
+            let mut input = InputSettings {
+                keybindings: vec![("cmd+shift+y".into(), "toggleBroadcast".into())],
+                ..Default::default()
+            };
             bind_shortcut_settings(&input, cx);
             let count = cx.key_bindings().borrow().bindings().len();
             assert_eq!(bound(cx).len(), 1);
