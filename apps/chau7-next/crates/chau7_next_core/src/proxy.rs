@@ -814,24 +814,47 @@ pub fn parse_message(line: &str, now: DateTime<Utc>) -> Result<ProxyMessage, Str
     })
 }
 
+/// Longest unterminated line [`LineBuffer`] keeps; proxy messages are small.
+pub const MAX_LINE_BYTES: usize = 4 * 1024 * 1024;
+
 /// Splits a byte stream into newline-terminated lines.
 #[derive(Debug, Default)]
 pub struct LineBuffer {
     buffer: Vec<u8>,
+    /// An over-long line was dropped: skip bytes up to its newline.
+    discarding: bool,
 }
 
 impl LineBuffer {
-    /// Add bytes; returns the complete, non-empty lines.
-    pub fn push(&mut self, bytes: &[u8]) -> Vec<String> {
-        self.buffer.extend_from_slice(bytes);
+    /// Add bytes; returns the complete, non-empty lines. A line longer than
+    /// [`MAX_LINE_BYTES`] is dropped whole, so a peer that never sends a
+    /// newline cannot grow the buffer without bound.
+    pub fn push(&mut self, mut bytes: &[u8]) -> Vec<String> {
         let mut lines = Vec::new();
-        while let Some(pos) = self.buffer.iter().position(|b| *b == b'\n') {
-            let line: Vec<u8> = self.buffer.drain(..=pos).collect();
-            let text = String::from_utf8_lossy(&line[..line.len() - 1])
+        while let Some(pos) = bytes.iter().position(|b| *b == b'\n') {
+            let (head, rest) = (&bytes[..pos], &bytes[pos + 1..]);
+            bytes = rest;
+            if std::mem::take(&mut self.discarding) {
+                continue;
+            }
+            self.buffer.extend_from_slice(head);
+            let line = std::mem::take(&mut self.buffer);
+            if line.len() > MAX_LINE_BYTES {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&line)
                 .trim_end_matches('\r')
                 .to_string();
             if !text.is_empty() {
                 lines.push(text);
+            }
+        }
+        if !self.discarding {
+            self.buffer.extend_from_slice(bytes);
+            if self.buffer.len() > MAX_LINE_BYTES {
+                log::warn!("proxy IPC line over {MAX_LINE_BYTES} bytes dropped");
+                self.buffer = Vec::new();
+                self.discarding = true;
             }
         }
         lines
@@ -1581,6 +1604,18 @@ mod tests {
             vec!["{\"a\":1}", "{\"b\":2}"]
         );
         assert_eq!(b.push(b"}\n"), vec!["{}"]);
+    }
+
+    #[test]
+    fn line_buffer_drops_an_unterminated_flood() {
+        let mut b = LineBuffer::default();
+        let chunk = vec![b'x'; 1024 * 1024];
+        for _ in 0..5 {
+            assert!(b.push(&chunk).is_empty());
+        }
+        assert!(b.buffer.len() <= MAX_LINE_BYTES);
+        // The tail of the dropped line is skipped, the next line is kept.
+        assert_eq!(b.push(b"tail\n{\"ok\":1}\n"), vec!["{\"ok\":1}"]);
     }
 
     #[test]

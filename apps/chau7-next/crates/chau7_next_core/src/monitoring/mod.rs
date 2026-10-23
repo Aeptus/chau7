@@ -13,4 +13,3 @@ pub mod git;
 pub mod process_tree;
 pub mod quarantine;
 pub mod shell_events;
-pub mod tailer;

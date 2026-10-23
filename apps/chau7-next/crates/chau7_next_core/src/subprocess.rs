@@ -233,6 +233,41 @@ pub fn run(executable_path: &str, arguments: &[&str]) -> Option<String> {
     (result.completed() && result.status == Some(0))
         .then(|| String::from_utf8_lossy(&result.stdout).into_owned())
 }
+
+/// Drain a helper's stdout or stderr to EOF, one lossily decoded line at a
+/// time (without the line ending). Invalid UTF-8 never stops the drain: a
+/// reader that quit early would leave the pipe full and block the child.
+pub fn for_each_output_line(stream: impl Read, mut on_line: impl FnMut(&str)) {
+    use std::io::BufRead;
+    let mut reader = io::BufReader::new(stream);
+    let mut raw = Vec::new();
+    loop {
+        raw.clear();
+        match reader.read_until(b'\n', &mut raw) {
+            Ok(0) => return,
+            Ok(_) => {
+                let line = String::from_utf8_lossy(&raw);
+                on_line(line.trim_end_matches(['\n', '\r']));
+            }
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
+            Err(_) => return,
+        }
+    }
+}
+
+#[cfg(test)]
+mod output_line_tests {
+    use super::for_each_output_line;
+
+    #[test]
+    fn invalid_utf8_does_not_stop_the_drain() {
+        let input: &[u8] = b"first\r\nbad \xff byte\nlast";
+        let mut lines = Vec::new();
+        for_each_output_line(input, |line| lines.push(line.to_string()));
+        assert_eq!(lines, ["first", "bad \u{fffd} byte", "last"]);
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;

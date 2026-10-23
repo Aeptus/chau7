@@ -7,7 +7,7 @@
 //! shares a pairing with the Swift app, and a `CHAU7_MAC_NAME` naming
 //! "Chau7 Next" so the iPhone can tell the two hosts apart.
 
-use std::io::{BufRead, BufReader, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::SystemTime;
@@ -400,13 +400,13 @@ fn forward_lines(stream: impl std::io::Read + Send + 'static, is_stderr: bool) {
     let _ = std::thread::Builder::new()
         .name("remote-agent-log".into())
         .spawn(move || {
-            for line in BufReader::new(stream).lines().map_while(Result::ok) {
+            chau7_next_core::subprocess::for_each_output_line(stream, |line| {
                 if is_stderr {
                     log::warn!("Remote stderr: {line}");
                 } else {
                     log::debug!("Remote stdout: {line}");
                 }
-            }
+            });
         });
 }
 
