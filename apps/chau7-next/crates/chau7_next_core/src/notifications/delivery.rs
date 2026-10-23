@@ -9,7 +9,7 @@
 //! - Style planner: the default tab style for an event type, and which style
 //!   actions to run when only the tab should be styled.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use uuid::Uuid;
@@ -148,12 +148,53 @@ pub enum Preparation {
 /// Maps a routing target to the tab it belongs to.
 pub type TabResolverFn<'a> = &'a mut dyn FnMut(&TabTarget) -> Option<Uuid>;
 
-/// Drop disabled triggers first (without resolving a tab), then fill in the
-/// tab id when the event has none.
+/// Whether this app instance hosts (or hosted) a tab.
+pub type TabOwnerFn<'a> = &'a mut dyn FnMut(Uuid) -> bool;
+
+/// Why an event naming another instance's tab is dropped.
+pub const FOREIGN_TAB_REASON: &str = "Tab belongs to another Chau7 instance";
+
+/// Tabs this instance has hosted. The AI event log and CLI hooks are shared
+/// by every Chau7 instance on the Mac, so an explicit tab id may name a tab
+/// of another running app; only ids seen here are owned. A tab closed
+/// moments before its event stays owned, so its result still resolves.
+#[derive(Debug, Default)]
+pub struct KnownTabs {
+    seen: HashSet<Uuid>,
+    order: VecDeque<Uuid>,
+}
+
+impl KnownTabs {
+    /// Ids remembered beyond the live tabs; the oldest are forgotten first.
+    pub const CAPACITY: usize = 4096;
+
+    /// Remember the tabs open right now.
+    pub fn observe(&mut self, live: impl IntoIterator<Item = Uuid>) {
+        for tab in live {
+            if self.seen.insert(tab) {
+                self.order.push_back(tab);
+            }
+        }
+        while self.order.len() > Self::CAPACITY {
+            if let Some(oldest) = self.order.pop_front() {
+                self.seen.remove(&oldest);
+            }
+        }
+    }
+
+    pub fn owns(&self, tab: Uuid) -> bool {
+        self.seen.contains(&tab)
+    }
+}
+
+/// Drop disabled triggers first (without resolving a tab), then events
+/// naming a tab this instance does not own, then fill in the tab id when the
+/// event has none.
 pub fn prepare(
     event: &AiEvent,
     trigger_state: &NotificationTriggerState,
     tab_resolver: Option<TabResolverFn>,
+    owns_tab: Option<TabOwnerFn>,
 ) -> Preparation {
     if let Some(trigger) = triggers::trigger_for_event(event)
         && !trigger_state.is_enabled(trigger)
@@ -162,7 +203,14 @@ pub fn prepare(
             reason: format!("Trigger {} disabled", trigger.id),
         };
     }
-    if event.tab_id.is_some() {
+    if let Some(tab) = event.tab_id {
+        if let Some(owns) = owns_tab
+            && !owns(tab)
+        {
+            return Preparation::Drop {
+                reason: FOREIGN_TAB_REASON.into(),
+            };
+        }
         return Preparation::Proceed(PreparedEvent {
             event: event.clone(),
             resolution_method: "explicit_tab".into(),
@@ -428,7 +476,7 @@ mod tests {
             calls += 1;
             Some(Uuid::new_v4())
         };
-        let decision = prepare(&e, &state, Some(&mut resolver));
+        let decision = prepare(&e, &state, Some(&mut resolver), None);
         assert_eq!(calls, 0);
         assert_eq!(
             decision,
@@ -464,6 +512,7 @@ mod tests {
             &e,
             &NotificationTriggerState::default(),
             Some(&mut resolver),
+            None,
         ) {
             Preparation::Proceed(p) => {
                 assert_eq!(p.event.tab_id, Some(expected));
@@ -471,7 +520,7 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        match prepare(&e, &NotificationTriggerState::default(), None) {
+        match prepare(&e, &NotificationTriggerState::default(), None, None) {
             Preparation::Proceed(p) => assert_eq!(p.resolution_method, "unresolved"),
             other => panic!("{other:?}"),
         }
@@ -495,6 +544,7 @@ mod tests {
             &e,
             &NotificationTriggerState::default(),
             Some(&mut resolver),
+            None,
         ) {
             Preparation::Proceed(p) => {
                 assert_eq!(p.event.tab_id, Some(explicit));
@@ -503,6 +553,54 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert_eq!(calls, 0);
+    }
+
+    #[test]
+    fn events_for_another_instances_tab_are_dropped() {
+        let mut known = KnownTabs::default();
+        let mine = Uuid::new_v4();
+        let closed_here = Uuid::new_v4();
+        known.observe([mine, closed_here]);
+        known.observe([mine]);
+        let foreign = Uuid::new_v4();
+        let decide = |tab: Uuid, known: &KnownTabs| {
+            let mut e = ev(
+                AiEventSource::codex(),
+                "finished",
+                AiEventReliability::Authoritative,
+            );
+            e.tab_id = Some(tab);
+            let mut owns = |tab: Uuid| known.owns(tab);
+            prepare(
+                &e,
+                &NotificationTriggerState::default(),
+                None,
+                Some(&mut owns),
+            )
+        };
+        assert_eq!(
+            decide(foreign, &known),
+            Preparation::Drop {
+                reason: FOREIGN_TAB_REASON.into()
+            }
+        );
+        // A live tab, and one closed in this instance, still resolve.
+        for tab in [mine, closed_here] {
+            assert!(
+                matches!(decide(tab, &known), Preparation::Proceed(_)),
+                "{tab}"
+            );
+        }
+    }
+
+    #[test]
+    fn known_tabs_are_bounded_oldest_first() {
+        let mut known = KnownTabs::default();
+        let first = Uuid::new_v4();
+        known.observe([first]);
+        known.observe((0..KnownTabs::CAPACITY).map(|_| Uuid::new_v4()));
+        assert!(!known.owns(first));
+        assert_eq!(known.order.len(), KnownTabs::CAPACITY);
     }
 
     // NotificationStylePlannerTests
