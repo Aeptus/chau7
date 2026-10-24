@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Close the MCP bridge as soon as the AI tool that started it stops reading or exits, instead of leaving it connected to Chau7.
 - Warn about denied Full Disk Access once instead of on every check.
 - Label library log lines by source and stop logging the expected window-close race as an error.
 - Stop reporting command start-up and shell loading time as input latency.
