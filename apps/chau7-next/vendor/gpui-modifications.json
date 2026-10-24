@@ -95,9 +95,15 @@
           "before_sha256": "7e94f1c8354fb955bad10c0e0086562025bb82f460e9cc0894900e8e62c0f2ef",
           "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
           "kind": "semantic"
+        },
+        {
+          "kind": "semantic",
+          "description": "Expose a test-support-only observation of actual fullscreen auxiliary-toolbar geometry and the expected GPUI renderer frame for native reveal fixtures.",
+          "before_sha256": "c3258637e0143241c75150a731f9b0c4fa769c16dfbad240e31a559c4237e16f",
+          "after_sha256": "fa8741027b5d2d635c3956ff5aee837e50485bd96b8dda0bbd08d3cd65d67dee"
         }
       ],
-      "current_sha256": "c3258637e0143241c75150a731f9b0c4fa769c16dfbad240e31a559c4237e16f",
+      "current_sha256": "fa8741027b5d2d635c3956ff5aee837e50485bd96b8dda0bbd08d3cd65d67dee",
       "original_sha256": "7e94f1c8354fb955bad10c0e0086562025bb82f460e9cc0894900e8e62c0f2ef",
       "package": "gpui-pre-macos",
       "path": "src/gpui_macos.rs"
@@ -389,9 +395,51 @@
           "description": "Preserve configured custom-titlebar transparency throughout native fullscreen enter, exit and failure callbacks on macOS 15.3 and later, avoiding the opaque native band over the GPUI tabbar when the system menu reveals; add a policy regression and apply Rust 1.99 formatting to this source",
           "before_sha256": "0fb49084c11d29dcfd0e19f1f36316a97794995652b2a283f859e35e6fa3667c",
           "after_sha256": "91eadb38a9693b6d56218fcf609492f3ccf69de6552e6231f810716dd53123c6"
+        },
+        {
+          "kind": "semantic",
+          "description": "Preserve AppKit fullscreen toolbar auto-hide options and track the KVO-compliant contentLayoutRect with the GPUI renderer view, restoring full content bounds when hidden or exiting; align renderer sizing and native view-local pointer, drag, and text-input coordinates; skip queued layout updates after close and add geometry and options regressions",
+          "before_sha256": "91eadb38a9693b6d56218fcf609492f3ccf69de6552e6231f810716dd53123c6",
+          "after_sha256": "ff07868c01a78e3da2d33159ac1b35d11571250b17e73dc8be97e5ddb3db03fd"
+        },
+        {
+          "kind": "semantic",
+          "description": "Use an explicit unsafe block for the Objective-C KVO key-path string conversion; apply Rust 1.99 formatting",
+          "before_sha256": "ff07868c01a78e3da2d33159ac1b35d11571250b17e73dc8be97e5ddb3db03fd",
+          "after_sha256": "c9195382c1519aea2836c0274ecad0efef563732a7f0f4b613abbd2d1ab6b00f"
+        },
+        {
+          "kind": "semantic",
+          "description": "Anchor AccessKit to the inset GPUI renderer view and keep custom fullscreen traffic lights aligned with its frame as contentLayoutRect changes; format with Rust 1.99",
+          "before_sha256": "c9195382c1519aea2836c0274ecad0efef563732a7f0f4b613abbd2d1ab6b00f",
+          "after_sha256": "1c4e6b71bd963a6fbe6a1b6807f1ede597ad885c84d8e31c178433414330ed81"
+        },
+        {
+          "kind": "semantic",
+          "description": "Measure the AppKit-owned fullscreen toolbar window's visible top overlap and inset the GPUI renderer and traffic lights only while it covers the tab row; coalesce move, resize, occlusion, and close notifications, detach observers and clear pending callbacks on close, expose live geometry to test-support, and add orientation/hidden-restore geometry regressions. Visibility and alpha are sampled on public notifications; alpha-only Reduce Motion transitions without a corresponding notification remain unverified.",
+          "before_sha256": "1c4e6b71bd963a6fbe6a1b6807f1ede597ad885c84d8e31c178433414330ed81",
+          "after_sha256": "d5789b5ca9661c39d4ba9c90922453556376e845dbfdcea333279bceab6d9138"
+        },
+        {
+          "kind": "semantic",
+          "description": "Suppress only owned empty fullscreen titlebar chrome after native controls move to the main content host; restore public AppKit settings on exit, keep occlusion avoidance as fallback, and report independent renderer top-gap evidence",
+          "before_sha256": "d5789b5ca9661c39d4ba9c90922453556376e845dbfdcea333279bceab6d9138",
+          "after_sha256": "c6babb5789ee317b1f00fcaad0658ca67b68e8cab45e51e2c2a7519ee6139d3e"
+        },
+        {
+          "kind": "semantic",
+          "description": "Guard titlebar access by the titled window style to prevent AppKit exceptions on borderless fullscreen auxiliary windows; preserve toolbar and accessory eligibility conservatively and lazily",
+          "before_sha256": "c6babb5789ee317b1f00fcaad0658ca67b68e8cab45e51e2c2a7519ee6139d3e",
+          "after_sha256": "a3e810b2253aa7e999c7924efce622ad947ccfce2c5fa5b2323526f7ee8be2d7"
+        },
+        {
+          "after_sha256": "fd1527d6427fa9de3118a42e55d0c7faccb1da90de2db22d0d3d17da9138f5df",
+          "before_sha256": "a3e810b2253aa7e999c7924efce622ad947ccfce2c5fa5b2323526f7ee8be2d7",
+          "description": "Track actual screen menu overlap independently of empty fullscreen auxiliary chrome; hide and restore its retained content root, defer geometry updates, and expose separate menu and toolbar occlusion diagnostics with regression coverage",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "91eadb38a9693b6d56218fcf609492f3ccf69de6552e6231f810716dd53123c6",
+      "current_sha256": "fd1527d6427fa9de3118a42e55d0c7faccb1da90de2db22d0d3d17da9138f5df",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"
@@ -539,6 +587,20 @@
       "original_sha256": "3f9de99c94f9390abcc1f1d69729f35304b233468668e471420793b0f4e02513",
       "package": "gpui-pre-macos",
       "path": "src/display_link.rs"
+    },
+    {
+      "changes": [
+        {
+          "after_sha256": "b83958a1523d7e82135f69b52a8058b311b2803618a2ea986378e9e7f3c036d7",
+          "before_sha256": "a4027cd12e14953b0954c5c04981148125ff85e8460a7219200dbcc3e93d50f7",
+          "description": "Convert NSEvent and drag positions from window-base coordinates into the GPUI native view before top-left mapping; add a view-local coordinate regression",
+          "kind": "semantic"
+        }
+      ],
+      "current_sha256": "b83958a1523d7e82135f69b52a8058b311b2803618a2ea986378e9e7f3c036d7",
+      "original_sha256": "a4027cd12e14953b0954c5c04981148125ff85e8460a7219200dbcc3e93d50f7",
+      "package": "gpui-pre-macos",
+      "path": "src/events.rs"
     },
     {
       "changes": [

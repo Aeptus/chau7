@@ -48,6 +48,9 @@ pub(crate) use keyboard::*;
 pub(crate) use platform::*;
 pub(crate) use window::*;
 
+#[cfg(feature = "test-support")]
+pub use window::{FullscreenToolbarRevealObservation, fullscreen_toolbar_reveal_observation};
+
 pub use platform::MacPlatform;
 
 trait BoolExt {
