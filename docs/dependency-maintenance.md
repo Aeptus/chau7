@@ -34,6 +34,45 @@ change and tested compatibility, not that every newer release was adopted.
 GPUI's source rebase additionally has upstream checksum, provenance and
 modification-ledger records.
 
+CI installs SwiftFormat 0.63.1 from the upstream release archive and verifies
+its SHA-256 and executable version, matching `mise.toml`. Update those pins
+together. Homebrew's latest formatter can enable new rules before this
+repository intentionally adopts them.
+
+The app lockfile also selects Rustls 0.23.46 and rustls-webpki 0.103.16 for
+[the Rustls session-secret disclosure](https://rustsec.org/advisories/RUSTSEC-2026-0346),
+[ECH rejection ordering](https://rustsec.org/advisories/RUSTSEC-2026-0347),
+[certificate-decompression allocation](https://rustsec.org/advisories/RUSTSEC-2026-0348),
+[key-exchange downgrade](https://rustsec.org/advisories/RUSTSEC-2026-0349) and
+[distrusted-intermediate validation](https://rustsec.org/advisories/RUSTSEC-2026-0382)
+fixes. These are compatible patch updates within the existing TLS graph.
+
+The full local Rust audit checks `crates/`; the app graph requires its own
+check: `cargo deny --manifest-path apps/chau7-next/Cargo.toml --all-features
+check --config crates/deny.toml advisories`. After those TLS updates, this
+strict check still fails on eight unmaintained crates already present at the
+same versions on main: `instant`, `paste`, `rustls-pemfile`, `rustybuzz`,
+`ttf-parser`, `zbus_names`, `zvariant` and `zvariant_derive`. The advisory
+database provides no compatible package-version fix for these findings;
+retiring them requires upstream GPUI/font/D-Bus migrations. Do not describe
+the app's strict advisory check as passing, or exempt those findings in the
+shared audit policy. Keep that maintenance work distinct from the patched
+vulnerability findings.
+
+Both Worker services override Miniflare's Undici dependency to 7.30.1. The
+Wrangler 4.151.3 / Miniflare 5.20261019.1-beta toolchain still pins an affected
+Undici 7.x release. The scoped override keeps the same major version while
+fixing [excessive content-encoding crashes](https://github.com/advisories/GHSA-xjj6-f33q-929c),
+[EventSource memory exhaustion](https://github.com/advisories/GHSA-4qv8-2p9j-2685)
+and [integrity-token parsing](https://github.com/advisories/GHSA-f72v-6w45-q472).
+Keep both npm lockfiles in sync with their manifests. Remove this override
+when the selected Miniflare release requires a patched version itself, after
+both services pass their tests, Wrangler dry-run builds and live npm audits.
+The relay similarly overrides `@cloudflare/vitest-plugin`'s Zod to 4.6.6 for
+[bounded collection validation](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
+Remove that scoped override once the plugin selects a patched Zod release,
+with the same integration and audit checks.
+
 Repository text follows LF through .gitattributes; no history normalization was
 performed. The root CHANGELOG.md is the canonical changelog. Local
 `.chau7/pre-commit-review.conf` is ignored; the tracked `.example` documents the

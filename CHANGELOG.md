@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Patch the app's Rust TLS dependencies to Rustls 0.23.46 and WebPKI
+  0.103.16 for the current TLS and certificate-validation advisories.
+- Update the coordinated GPUI kit to 0.8.0, SVG test renderer, compatible Rust
+  lockfile dependencies, Python test tooling and GitHub Actions. Keep CI's
+  Swift formatter on the repository-pinned release for reproducible checks.
+- Update the Cloudflare development toolchain and pin its local runtime's HTTP
+  client to the patched Undici 7.30.1 release in both Worker services; update
+  the relay test plugin's Zod to 4.6.6 to bound collection validation memory.
 - Stop memory-pressure cache eviction when macOS reports recovery, and stop
   critical shedding when pressure drops to a warning, while preserving
   independent protection against Chau7's own high memory use.
