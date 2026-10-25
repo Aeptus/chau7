@@ -9,6 +9,13 @@ The workspace activates these exact versions through three Cargo path patches.
 Changes remain separately reviewable; `gpui-modifications.json` records modified paths,
 reasons and original/current SHA256, including upstream whitespace normalization.
 
+GPUI Kit, Base, Component, their macros and assets use the matching 0.8.0
+release. Its [upstream manifest](https://github.com/longbridge/gpui-kit/blob/v0.8.0/Cargo.toml)
+still pins the default engine and platform packages to GPUI Pre 0.3.9, so this
+Kit update preserves all three patched source packages, their original
+checksums and modification ledgers. The lockfile also records GPUI Fast 0.1.10
+as an optional backend; Chau7 continues to select the default GPUI Pre backend.
+
 The Apple package's five `vendor/gpui/src` files are shader binding inputs used
 by its build script. They are required source, not a duplicate engine dependency.
 
