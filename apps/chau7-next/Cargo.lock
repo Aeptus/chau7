@@ -1020,6 +1020,7 @@ name = "chau7_next_mcp_bridge"
 version = "0.1.0"
 dependencies = [
  "chau7_next_core",
+ "libc",
 ]
 
 [[package]]

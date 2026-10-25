@@ -192,6 +192,10 @@ private actor RemoteTerminalRenderEngine {
         }
         playback.inject(replay)
         playbacks[tabID] = playback
+        // Live output now goes straight to the playback, and a resize keeps
+        // it, so nothing reads this replay again until `replaceSnapshot`
+        // installs a new one. Free up to 400 KB per tab.
+        replayByTabID[tabID] = nil
         isAvailable = true
         return playback
     }

@@ -5,13 +5,17 @@ import Foundation
 /// URL scheme: `chau7remote://`
 /// - `open?tab_id=N` — open app, optionally switch to tab
 /// - `switch?tab_id=N` — switch to a specific tab
-/// - `approve?request_id=X&tab_id=N` — approve a pending request
-/// - `deny?request_id=X&tab_id=N` — deny a pending request
+/// - `review?request_id=X` — show that pending approval in the app
+///
+/// A link never answers an approval by itself: any app or web page can open
+/// a custom-scheme URL, and a lock-screen tap would skip the hold-to-confirm
+/// gate on destructive commands. The legacy `approve` and `deny` hosts, which
+/// a Live Activity started by an older build may still show, therefore also
+/// map to `review`.
 public enum RemoteActivityURLAction: Equatable, Sendable {
     case open(tabID: UInt32?)
     case switchTab(tabID: UInt32)
-    case approve(requestID: String, tabID: UInt32?)
-    case deny(requestID: String, tabID: UInt32?)
+    case review(requestID: String)
 
     public init?(url: URL) {
         guard url.scheme == "chau7remote" else { return nil }
@@ -33,12 +37,9 @@ public enum RemoteActivityURLAction: Equatable, Sendable {
         case "switch":
             guard let tabID else { return nil }
             self = .switchTab(tabID: tabID)
-        case "approve":
+        case "review", "approve", "deny":
             guard let requestID, !requestID.isEmpty else { return nil }
-            self = .approve(requestID: requestID, tabID: tabID)
-        case "deny":
-            guard let requestID, !requestID.isEmpty else { return nil }
-            self = .deny(requestID: requestID, tabID: tabID)
+            self = .review(requestID: requestID)
         default:
             return nil
         }

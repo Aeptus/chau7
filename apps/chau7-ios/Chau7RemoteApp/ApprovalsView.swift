@@ -16,6 +16,8 @@ struct ApprovalsView: View {
     @State private var pendingPromptConfirmation: PendingInteractivePromptConfirmation?
     @State private var customPromptDrafts: [String: String] = [:]
     @State private var selection: String?
+    /// A card a deep link asked for that `/pending` has not delivered yet.
+    @State private var pendingFocusID: String?
     @State private var showHistory = false
 
     /// Approvals first (they gate a running command), then detected prompts,
@@ -70,7 +72,15 @@ struct ApprovalsView: View {
             }
         }
         .onAppear { normalizeSelection() }
-        .onChange(of: decisions.map(\.id)) { _, _ in normalizeSelection() }
+        .onDisappear { pendingFocusID = nil }
+        .onChange(of: decisions.map(\.id)) { _, _ in
+            applyPendingFocus()
+            normalizeSelection()
+        }
+        .onChange(of: client.approvalsNavigation, initial: true) { _, navigation in
+            guard navigation != nil else { return }
+            focus(client.takeApprovalsNavigation())
+        }
     }
 
     // MARK: - Deck
@@ -173,6 +183,20 @@ struct ApprovalsView: View {
         if idx + 1 < ids.count { return ids[idx + 1] }
         if idx > 0 { return ids[idx - 1] }
         return nil
+    }
+
+    /// Land on the card a deep link or notification named. On a cold launch
+    /// the card may not have arrived yet, so the focus waits for it.
+    private func focus(_ navigation: ApprovalsNavigationRequest?) {
+        guard let navigation else { return }
+        pendingFocusID = navigation.decisionID
+        applyPendingFocus()
+    }
+
+    private func applyPendingFocus() {
+        guard let pendingFocusID, decisions.contains(where: { $0.id == pendingFocusID }) else { return }
+        selection = pendingFocusID
+        self.pendingFocusID = nil
     }
 
     /// Keep `selection` pointing at a real page as the queue changes.
