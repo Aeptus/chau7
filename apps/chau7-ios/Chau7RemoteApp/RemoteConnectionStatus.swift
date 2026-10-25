@@ -48,17 +48,6 @@ enum RemoteConnectionStatus: Equatable {
         case .backgroundSuspended: return "Background suspended"
         }
     }
-
-    /// Whether the encrypted session is fully established, used to drive the
-    /// status indicator color.
-    var isEncryptedSession: Bool {
-        switch self {
-        case .encrypted, .sessionReady:
-            return true
-        default:
-            return false
-        }
-    }
 }
 
 /// What the user can do about the current `lastError`.

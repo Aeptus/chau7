@@ -654,8 +654,7 @@ struct TerminalView: View {
                 text: text,
                 flaggedAction: flaggedAction,
                 message: "\(flaggedAction) requires a second approval before it is forwarded to your Mac.",
-                tabID: client.activeTabID,
-                tabTitle: client.tabs.first { $0.tabID == client.activeTabID }?.title
+                tabID: client.activeTabID
             )
             return
         }
@@ -995,7 +994,6 @@ private struct ProtectedRemoteSend: Identifiable {
     /// `killall …` to a shell the user never looked at, so the tab is pinned
     /// when the prompt is raised and re-validated before sending.
     let tabID: UInt32
-    let tabTitle: String?
 }
 
 // MARK: - Connection Status Symbol

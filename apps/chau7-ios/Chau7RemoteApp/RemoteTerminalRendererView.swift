@@ -330,7 +330,6 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
     private let canvasView = RemoteTerminalCanvasView()
     private var store: RemoteTerminalRendererStore?
     private var renderState: RemoteTerminalRenderState?
-    private var displayState: RemoteTerminalDisplayState?
     private var isAlternateScreenActive = false
     private var lastSyncedAlternateScreenActive: Bool?
     private var availableSize: CGSize = .zero
@@ -386,7 +385,6 @@ private final class RemoteTerminalViewportView: UIView, UIScrollViewDelegate {
     ) {
         self.store = store
         self.renderState = renderState
-        self.displayState = displayState
         self.isAlternateScreenActive = isAlternateScreenActive
         self.availableSize = availableSize
         let bg = colorScheme.backgroundUIColor
@@ -767,7 +765,6 @@ private final class RemoteTerminalCanvasView: UIView {
             displayRows: displayRows,
             scrollbackRows: renderState.scrollbackRows,
             decodedCells: decodedCells,
-            drawMilliseconds: 0,
             softWrappedRows: softWrappedRows
         )
         if showsDiagnostics {
@@ -853,7 +850,7 @@ private final class RemoteTerminalCanvasView: UIView {
                 let key = colorCache.backgroundKey(for: display.cells[range.lowerBound + offset])
                 if key != runKey {
                     fillFoldedRun(
-                        display: display, context: context, range: range, start: runStart, end: offset,
+                        start: runStart, end: offset,
                         y: y, cellW: cellW, cellH: cellH, colorKey: runKey, skipKey: backgroundColorKey
                     )
                     runStart = offset
@@ -861,7 +858,7 @@ private final class RemoteTerminalCanvasView: UIView {
                 }
             }
             fillFoldedRun(
-                display: display, context: context, range: range, start: runStart, end: range.count,
+                start: runStart, end: range.count,
                 y: y, cellW: cellW, cellH: cellH, colorKey: runKey, skipKey: backgroundColorKey
             )
         }
@@ -915,9 +912,6 @@ private final class RemoteTerminalCanvasView: UIView {
     }
 
     private func fillFoldedRun(
-        display: RemoteTerminalDisplayState,
-        context: CGContext,
-        range: Range<Int>,
         start: Int,
         end: Int,
         y: CGFloat,
