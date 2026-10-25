@@ -99,6 +99,14 @@ JSON schema version 1 contains:
   and sampled CPU percentage. One logical CPU is 100 percent; multiple busy
   threads can exceed 100. Children and helper processes are excluded.
   The first CPU sample and unsupported platforms return null.
+- Memory-pressure incidents can originate from macOS system pressure even when
+  Chau7's own resident memory is small. The native source subscribes to normal,
+  warning and critical events: normal immediately ends the system-pressure
+  hint, and warning ends critical cache shedding. Empty or unknown event flags
+  do not create warnings. App physical-footprint protection is independent;
+  system recovery cannot clear a high-footprint hint, and a low footprint
+  cannot clear an active system warning. Without a recovery event, pressure
+  hints expire after 90 seconds and critical shedding after 30 seconds.
 - Main-thread timer delay in **milliseconds**, sampled every five seconds,
   including the maximum observed delay. This detects a late scheduler callback;
   it does not measure every frame or replace a native stack profiler.

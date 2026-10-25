@@ -823,15 +823,12 @@ mod native {
     unsafe extern "C" fn event(context: *mut c_void) {
         let context = unsafe { &*(context as *const Handler) };
         let flags = unsafe { dispatch_source_get_data(context.source) };
-        let level = if flags & 4 != 0 {
-            PressureLevel::Critical
-        } else {
-            PressureLevel::Warning
-        };
-        context
-            .pressure
-            .lock()
-            .record(level, context.epoch.elapsed());
+        if let Some(level) = PressureLevel::from_macos_flags(flags) {
+            context
+                .pressure
+                .lock()
+                .record(level, context.epoch.elapsed());
+        }
     }
     unsafe extern "C" fn cancelled(context: *mut c_void) {
         drop(unsafe { Box::from_raw(context as *mut Handler) });
@@ -845,7 +842,7 @@ mod native {
                 let source = dispatch_source_create(
                     (&raw const _dispatch_source_type_memorypressure).cast(),
                     0,
-                    2 | 4,
+                    PressureLevel::MACOS_EVENT_MASK,
                     dispatch_get_global_queue(0x11, 0),
                 );
                 if !source.is_null() {

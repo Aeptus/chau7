@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Stop memory-pressure cache eviction when macOS reports recovery, and stop
+  critical shedding when pressure drops to a warning, while preserving
+  independent protection against Chau7's own high memory use.
+- Refresh cached Claude session metadata on Windows when a history file is
+  replaced, even if its size and timestamps stay the same.
 - Close the MCP bridge as soon as the AI tool that started it stops reading or exits, instead of leaving it connected to Chau7.
 - Restore the macOS fullscreen fixes that never reached main: no empty titlebar row above the tabs, tabs stay clear of the revealed menu bar, and borderless windows no longer crash in fullscreen.
 - Warn about denied Full Disk Access once instead of on every check.
