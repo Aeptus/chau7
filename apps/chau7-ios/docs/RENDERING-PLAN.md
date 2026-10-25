@@ -1,6 +1,6 @@
 # iOS Terminal Rendering — Phased Plan
 
-Owner surface: `apps/chau7-ios` (renderer), `apps/chau7-macos/rust/chau7_terminal`
+Owner surface: `apps/chau7-ios` (renderer), `crates/chau7_terminal`
 (shared terminal crate), plus a small Mac-side frame emit.
 
 Companion to `ARCHITECTURE.md` and `HARDENING-PLAN.md`. This plan supersedes the

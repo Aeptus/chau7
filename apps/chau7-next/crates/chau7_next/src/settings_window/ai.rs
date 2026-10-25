@@ -197,8 +197,9 @@ fn test_connection(view: Entity<SettingsView>, cx: &mut App) {
             .read(cx)
             .value()
             .trim()
-            .parse()
-            .unwrap_or(1024);
+            .parse::<i64>()
+            .unwrap_or(1024)
+            .max(1);
         cx.notify();
         inputs.api_key.read(cx).value().trim().to_string()
     });

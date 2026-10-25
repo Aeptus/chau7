@@ -439,43 +439,55 @@ impl TabsState {
     }
 
     fn step(&mut self, delta: isize) {
+        if let Some(id) = self.step_target(delta) {
+            self.select(id);
+        }
+    }
+
+    /// The tab `delta` places from the selected one, wrapping around
+    /// (next/previous tab), without selecting it. None with fewer than two
+    /// tabs or nothing selected.
+    pub fn step_target(&self, delta: isize) -> Option<TabId> {
         let count = self.tabs.len() as isize;
         if count < 2 {
-            return;
+            return None;
         }
-        let Some(index) = self.selected.and_then(|id| self.index_of(id)) else {
-            return;
-        };
+        let index = self.selected.and_then(|id| self.index_of(id))?;
         let next = (index as isize + delta).rem_euclid(count) as usize;
-        let id = self.tabs[next].id;
-        self.select(id);
+        Some(self.tabs[next].id)
     }
 
     /// Select a 1-based tab by its position in the rendered tab-bar row.
     /// Idle-dropdown, repository-group, and new-tab items are not numbered.
     /// The same display policy used by rendering supplies the ordered tabs.
     pub fn select_visible_number(&mut self, number: usize, now: f64) -> bool {
-        let Some(id) = self
-            .display_items(now)
+        match self.visible_number_target(number, now) {
+            Some(id) => self.select(id),
+            None => false,
+        }
+    }
+
+    /// The tab [`Self::select_visible_number`] would select.
+    pub fn visible_number_target(&self, number: usize, now: f64) -> Option<TabId> {
+        self.display_items(now)
             .into_iter()
             .filter_map(|item| match item {
                 TabBarLayoutItem::Tab(id) => Some(id),
                 _ => None,
             })
             .nth(number.max(1) - 1)
-        else {
-            return false;
-        };
-        self.select(id)
     }
 
     /// `selectTab(number:)`: 1-based, out of range is ignored.
     pub fn select_number(&mut self, number: usize) {
-        let index = number.max(1) - 1;
-        if let Some(tab) = self.tabs.get(index) {
-            let id = tab.id;
+        if let Some(id) = self.number_target(number) {
             self.select(id);
         }
+    }
+
+    /// The tab [`Self::select_number`] would select.
+    pub fn number_target(&self, number: usize) -> Option<TabId> {
+        self.tabs.get(number.max(1) - 1).map(|tab| tab.id)
     }
 
     /// Close a tab, remembering it for reopen. Selection follows `closeTab`:
@@ -1081,6 +1093,21 @@ mod tests {
         assert_eq!(s.selected(), Some(1));
         s.select_previous();
         assert_eq!(s.selected(), Some(3));
+    }
+
+    /// The workspace computes the target first so `select_tab` sees the
+    /// move (switch animation): the target functions must not select.
+    #[test]
+    fn selection_targets_do_not_change_the_selection() {
+        let mut s = state_with(3);
+        s.select(3);
+        assert_eq!(s.step_target(1), Some(1));
+        assert_eq!(s.step_target(-1), Some(2));
+        assert_eq!(s.number_target(2), Some(2));
+        assert_eq!(s.number_target(9), None);
+        assert_eq!(s.visible_number_target(1, 0.0), Some(1));
+        assert_eq!(s.selected(), Some(3));
+        assert_eq!(state_with(1).step_target(1), None);
     }
 
     #[test]

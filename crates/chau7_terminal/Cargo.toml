@@ -1,0 +1,27 @@
+[package]
+name = "chau7_terminal"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[lib]
+# rlib lets Chau7 Next (apps/chau7-next) use this crate directly, without FFI.
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+alacritty_terminal = "0.26"
+portable-pty = "0.9"
+thiserror = "2"
+libc = "0.2"
+log = "0.4"
+env_logger = "0.11"
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+memchr = "2"
+base64 = "0.23"
+unicode-normalization = "0.1"
+unicode-width = "0.2"
+
+[build-dependencies]
+cbindgen = "0.29"

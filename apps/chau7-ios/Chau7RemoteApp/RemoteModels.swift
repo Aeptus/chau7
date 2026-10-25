@@ -4,6 +4,7 @@
 // pending state, errors) live in `Chau7Core/Remote/RemoteWirePayloads.swift`
 // — the single Swift source of truth shared with the macOS app. This file
 // keeps iOS-local aliases, UI-facing models, and utilities.
+import ActivityKit
 import CryptoKit
 import Chau7Core
 import Foundation
@@ -142,8 +143,6 @@ struct RemoteTerminalRenderDiagnostics: Equatable {
     /// makes the current per-cell `clusterString` fold expensive; Phase 3
     /// should drive it to roughly the visible cell count once Rust pre-folds.
     var decodedCells: Int = 0
-    /// Milliseconds spent inside the last `draw(_:)`.
-    var drawMilliseconds: Double = 0
     /// Source rows that soft-wrap from the row above, as reported by the
     /// engine's wrap flag.
     var softWrappedRows: Int = 0
@@ -259,6 +258,14 @@ enum RemoteConnectionStartPolicy {
     ) -> Bool {
         !hasScheduledReconnect && shouldReconnect && hasRemainingAttempts
     }
+
+    /// A silent push also arrives while the app is on screen. Only a push that
+    /// reaches a backgrounded app may drop the stream to approvals-only and
+    /// take background time; doing so in the foreground froze the terminal the
+    /// user was looking at until the next inactive/active cycle.
+    static func pushWakeEntersBackground(applicationIsActive: Bool) -> Bool {
+        !applicationIsActive
+    }
 }
 
 enum RemoteConnectionFailureClassifier {
@@ -286,18 +293,24 @@ enum RemoteConnectionFailureClassifier {
 }
 
 /// Protects operational evidence from high-volume, privacy-sensitive input
-/// capture. Sensitive entries trim in batches to amortize the required JSONL
-/// rewrite; the global cap is then enforced against the remaining timeline.
+/// capture. Both caps trim in batches, down to a target below the limit: each
+/// trim costs a pass over the buffer and a full JSONL rewrite, so trimming one
+/// entry at a time made every record at the cap O(n) on the main actor. The
+/// global cap is enforced against the timeline left after the sensitive trim.
 enum DiagnosticsRetentionPolicy {
     static let sensitiveCategories: Set = ["input", "keystroke"]
 
     static func removalIndexes(
         categories: [String],
         maxEntries: Int,
+        entryTarget: Int? = nil,
         sensitiveLimit: Int,
         sensitiveTarget: Int
     ) -> IndexSet {
+        let entryTarget = entryTarget ?? maxEntries
         guard maxEntries >= 0,
+              entryTarget >= 0,
+              entryTarget <= maxEntries,
               sensitiveLimit >= 0,
               sensitiveTarget >= 0,
               sensitiveTarget <= sensitiveLimit else {
@@ -315,7 +328,8 @@ enum DiagnosticsRetentionPolicy {
             }
         }
 
-        var remainingOverflow = categories.count - removals.count - maxEntries
+        let retained = categories.count - removals.count
+        var remainingOverflow = retained > maxEntries ? retained - entryTarget : 0
         if remainingOverflow > 0 {
             for index in categories.indices where !removals.contains(index) {
                 removals.insert(index)
@@ -451,18 +465,6 @@ struct ApprovalRequest: Identifiable {
     var id: String {
         requestID
     }
-
-    var isProtectedRemoteAction: Bool {
-        flaggedCommand != command
-    }
-
-    var title: String {
-        isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
-    }
-
-    var subtitle: String? {
-        isProtectedRemoteAction ? flaggedCommand : nil
-    }
 }
 
 struct ApprovalHistoryEntry: Identifiable {
@@ -501,7 +503,6 @@ enum RemoteNotificationID {
         static let promptID = "prompt_id"
         static let tabID = "tab_id"
         static let openApprovals = "open_approvals"
-        static let approved = "approved"
     }
 }
 
@@ -586,5 +587,35 @@ enum RemoteMenuKeyHeuristics {
             && !text.isEmpty
             && text.count <= 3
             && text.allSatisfy { $0.isASCII && $0.isNumber }
+    }
+}
+
+/// Ask to show the Approvals tab, optionally focused on one card. Each
+/// request has its own identity, so tapping the same link twice still
+/// navigates.
+struct ApprovalsNavigationRequest: Equatable {
+    let id = UUID()
+    /// The approvals deck's page id to land on, or nil for the queue as is.
+    let decisionID: String?
+
+    static func queue() -> Self {
+        Self(decisionID: nil)
+    }
+
+    static func approval(requestID: String) -> Self {
+        Self(decisionID: "approval:\(requestID)")
+    }
+
+    static func prompt(promptID: String) -> Self {
+        Self(decisionID: "prompt:\(promptID)")
+    }
+}
+
+enum RemoteLiveActivityPolicy {
+    /// `.stale` only means no update arrived before the stale date; the
+    /// activity is still on screen. Updating it in place matters: requesting
+    /// a replacement left the stale card behind as a duplicate.
+    static func acceptsUpdates(_ state: ActivityState) -> Bool {
+        state == .active || state == .stale
     }
 }

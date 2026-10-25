@@ -1,7 +1,7 @@
 //! The API analytics proxy, without UI (`Proxy/*.swift`).
 //!
 //! The proxy itself is the Go program `chau7-proxy`
-//! (`apps/chau7-macos/chau7-proxy`), started by the app. This module has
+//! (`services/chau7-proxy`), started by the app. This module has
 //! what the app needs around it: the ports and environments (for the
 //! proxy and for shells), the newline-delimited JSON messages it sends on
 //! its IPC socket, the task lifecycle models, a small HTTP client for its
@@ -814,24 +814,47 @@ pub fn parse_message(line: &str, now: DateTime<Utc>) -> Result<ProxyMessage, Str
     })
 }
 
+/// Longest unterminated line [`LineBuffer`] keeps; proxy messages are small.
+pub const MAX_LINE_BYTES: usize = 4 * 1024 * 1024;
+
 /// Splits a byte stream into newline-terminated lines.
 #[derive(Debug, Default)]
 pub struct LineBuffer {
     buffer: Vec<u8>,
+    /// An over-long line was dropped: skip bytes up to its newline.
+    discarding: bool,
 }
 
 impl LineBuffer {
-    /// Add bytes; returns the complete, non-empty lines.
-    pub fn push(&mut self, bytes: &[u8]) -> Vec<String> {
-        self.buffer.extend_from_slice(bytes);
+    /// Add bytes; returns the complete, non-empty lines. A line longer than
+    /// [`MAX_LINE_BYTES`] is dropped whole, so a peer that never sends a
+    /// newline cannot grow the buffer without bound.
+    pub fn push(&mut self, mut bytes: &[u8]) -> Vec<String> {
         let mut lines = Vec::new();
-        while let Some(pos) = self.buffer.iter().position(|b| *b == b'\n') {
-            let line: Vec<u8> = self.buffer.drain(..=pos).collect();
-            let text = String::from_utf8_lossy(&line[..line.len() - 1])
+        while let Some(pos) = bytes.iter().position(|b| *b == b'\n') {
+            let (head, rest) = (&bytes[..pos], &bytes[pos + 1..]);
+            bytes = rest;
+            if std::mem::take(&mut self.discarding) {
+                continue;
+            }
+            self.buffer.extend_from_slice(head);
+            let line = std::mem::take(&mut self.buffer);
+            if line.len() > MAX_LINE_BYTES {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&line)
                 .trim_end_matches('\r')
                 .to_string();
             if !text.is_empty() {
                 lines.push(text);
+            }
+        }
+        if !self.discarding {
+            self.buffer.extend_from_slice(bytes);
+            if self.buffer.len() > MAX_LINE_BYTES {
+                log::warn!("proxy IPC line over {MAX_LINE_BYTES} bytes dropped");
+                self.buffer = Vec::new();
+                self.discarding = true;
             }
         }
         lines
@@ -1426,6 +1449,35 @@ mod tests {
                 .any(|(key, _)| key == "HTTPS_PROXY" || key == "CODEX_CA_CERTIFICATE")
         );
     }
+
+    /// The Go proxy's correlation tests read the same contract file, so the
+    /// project-path encoding cannot drift on one side while both suites pass.
+    #[test]
+    fn project_path_tokens_match_the_shared_proxy_contract() {
+        let contract: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../services/chau7-proxy/contracts/proxy-correlation.json"
+        ))
+        .unwrap();
+        let prefix = contract["prefix"].as_str().unwrap();
+        assert_eq!(contract["encoding"], "base64url-unpadded");
+        let cases = contract["cases"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let project = case["projectPath"].as_str().unwrap();
+            let token = case["token"].as_str().unwrap();
+            let path = proxy_project_path(project);
+            assert_eq!(path, format!("{prefix}{token}"), "{}", case["name"]);
+            assert!(
+                case["requestPath"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with(&format!("{path}/")),
+                "{}",
+                case["name"]
+            );
+        }
+    }
+
     #[test]
     fn formatting_matches_swift() {
         assert_eq!(format_cost(0.0012), "$0.0012");
@@ -1581,6 +1633,18 @@ mod tests {
             vec!["{\"a\":1}", "{\"b\":2}"]
         );
         assert_eq!(b.push(b"}\n"), vec!["{}"]);
+    }
+
+    #[test]
+    fn line_buffer_drops_an_unterminated_flood() {
+        let mut b = LineBuffer::default();
+        let chunk = vec![b'x'; 1024 * 1024];
+        for _ in 0..5 {
+            assert!(b.push(&chunk).is_empty());
+        }
+        assert!(b.buffer.len() <= MAX_LINE_BYTES);
+        // The tail of the dropped line is skipped, the next line is kept.
+        assert_eq!(b.push(b"tail\n{\"ok\":1}\n"), vec!["{\"ok\":1}"]);
     }
 
     #[test]

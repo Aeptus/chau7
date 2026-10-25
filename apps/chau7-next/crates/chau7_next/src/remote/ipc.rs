@@ -69,23 +69,33 @@ mod unix {
 
     pub struct IpcServer {
         path: PathBuf,
+        /// Identity of the socket file this server bound, so `stop` never
+        /// removes a socket another instance bound at the same path later.
+        identity: Option<chau7_next_core::file_identity::FileIdentity>,
         shared: Arc<Shared>,
         outgoing: Option<Sender<Vec<u8>>>,
     }
 
     impl IpcServer {
-        /// Bind `path` (a stale socket file is removed first) and start
-        /// accepting.
+        /// Bind `path` and start accepting. A stale socket file is removed
+        /// first; a socket another running instance still listens on is
+        /// refused, as in `platform::local_socket::Listener::bind`.
         pub fn start(path: &Path) -> std::io::Result<Self> {
+            use std::os::unix::fs::PermissionsExt;
             if let Some(dir) = path.parent() {
                 std::fs::create_dir_all(dir)?;
+                std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+            }
+            if UnixStream::connect(path).is_ok() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AddrInUse,
+                    format!("{} is in use by another running instance", path.display()),
+                ));
             }
             let _ = std::fs::remove_file(path);
             let listener = UnixListener::bind(path)?;
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-            }
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+            let identity = chau7_next_core::file_identity::for_path(path).ok();
             listener.set_nonblocking(true)?;
             let shared = Arc::new(Shared {
                 events: Mutex::new(VecDeque::new()),
@@ -109,6 +119,7 @@ mod unix {
             log::info!("Remote IPC listening at {}", path.display());
             Ok(Self {
                 path: path.to_path_buf(),
+                identity,
                 shared,
                 outgoing: Some(tx),
             })
@@ -137,7 +148,10 @@ mod unix {
             if let Some((_, stream)) = self.shared.client.lock().take() {
                 let _ = stream.shutdown(std::net::Shutdown::Both);
             }
-            let _ = std::fs::remove_file(&self.path);
+            let current = chau7_next_core::file_identity::for_path(&self.path).ok();
+            if current.is_some() && current == self.identity {
+                let _ = std::fs::remove_file(&self.path);
+            }
         }
     }
 

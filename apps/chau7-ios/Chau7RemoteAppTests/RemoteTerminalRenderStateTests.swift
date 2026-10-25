@@ -134,4 +134,19 @@ final class RemoteTerminalOutputStoreTests: XCTestCase {
         }
         XCTAssertEqual(store.visibleOutput(for: 7).utf8.count, RemoteOutputTuning.maxRetainedBytes)
     }
+
+    func testFullBufferKeepsTheNewestTailAcrossAmortizedTrims() {
+        var store = RemoteTerminalOutputStore()
+        // Many small flushes past the cap and its slack: each flush appends,
+        // and the visible tail stays exact and ends with the latest output.
+        let chunkCount = (RemoteOutputTuning.maxRetainedBytes + RemoteTerminalOutputStore.trimSlackBytes) / 1000 + 50
+        for index in 0 ..< chunkCount {
+            let chunk = String(format: "%04d", index % 10000) + String(repeating: "x", count: 996)
+            store.append(Data(chunk.utf8), to: 7)
+            _ = store.flushPendingOutput(for: 7)
+        }
+        let visible = store.visibleOutput(for: 7)
+        XCTAssertEqual(visible.utf8.count, RemoteOutputTuning.maxRetainedBytes)
+        XCTAssertTrue(visible.hasSuffix(String(format: "%04d", (chunkCount - 1) % 10000) + String(repeating: "x", count: 996)))
+    }
 }

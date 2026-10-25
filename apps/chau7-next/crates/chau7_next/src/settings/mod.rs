@@ -230,12 +230,22 @@ impl Settings {
 
     /// Write these settings to the Chau7 Next config file. Values the
     /// settings window does not edit (shell, profiles, keybindings, ...) are
-    /// kept from the existing file.
+    /// kept from the existing file, so a file that exists but cannot be read
+    /// is an error rather than replaced. The file is replaced atomically; a
+    /// symbolic link (dotfiles) is followed and stays in place.
     pub fn save(&self, root: &DataRoot) -> std::io::Result<()> {
-        let existing = std::fs::read_to_string(root.config_file()).unwrap_or_default();
+        let mut path = root.config_file();
+        if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
+            path = std::fs::canonicalize(&path)?;
+        }
+        let existing = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(err) => return Err(err),
+        };
         let text = self.to_text(&existing);
         root.ensure_dirs()?;
-        std::fs::write(root.config_file(), text)
+        chau7_next_core::atomic_file::write(&path, text.as_bytes())
     }
 
     fn to_text(&self, existing: &str) -> String {
@@ -516,6 +526,71 @@ mod tests {
         assert_eq!(
             loaded.input.keybindings,
             vec![("cmd+b".to_string(), "toggleBroadcast".to_string())]
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn save_refuses_to_replace_a_config_it_cannot_read() {
+        let home =
+            std::env::temp_dir().join(format!("chau7-next-settings-{}", uuid::Uuid::new_v4()));
+        let root = DataRoot::with_home(home.clone(), true);
+        root.ensure_dirs().unwrap();
+        // Invalid UTF-8 makes `read_to_string` fail with something other
+        // than NotFound; the user's other keys must not be dropped.
+        let original = b"[general]\nshell = \"/bin/zsh\"\n# caf\xe9\n".to_vec();
+        std::fs::write(root.config_file(), &original).unwrap();
+        assert!(Settings::default().save(&root).is_err());
+        assert_eq!(std::fs::read(root.config_file()).unwrap(), original);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn save_replaces_the_config_atomically() {
+        let home =
+            std::env::temp_dir().join(format!("chau7-next-settings-{}", uuid::Uuid::new_v4()));
+        let root = DataRoot::with_home(home.clone(), true);
+        root.ensure_dirs().unwrap();
+        std::fs::write(root.config_file(), "[general]\nshell = \"/bin/zsh\"\n").unwrap();
+        // The old inode keeps its bytes: the file is renamed over, not
+        // truncated and rewritten in place.
+        let snapshot = home.join("snapshot.toml");
+        std::fs::hard_link(root.config_file(), &snapshot).unwrap();
+        Settings::default().save(&root).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&snapshot).unwrap(),
+            "[general]\nshell = \"/bin/zsh\"\n"
+        );
+        assert!(
+            std::fs::read_to_string(root.config_file())
+                .unwrap()
+                .contains("[next]")
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_keeps_a_symlinked_config_in_place() {
+        let home =
+            std::env::temp_dir().join(format!("chau7-next-settings-{}", uuid::Uuid::new_v4()));
+        let root = DataRoot::with_home(home.clone(), true);
+        root.ensure_dirs().unwrap();
+        let dotfile = home.join("dotfiles/config.toml");
+        std::fs::create_dir_all(dotfile.parent().unwrap()).unwrap();
+        std::fs::write(&dotfile, "[general]\nshell = \"/bin/zsh\"\n").unwrap();
+        std::os::unix::fs::symlink(&dotfile, root.config_file()).unwrap();
+        Settings::default().save(&root).unwrap();
+        assert!(
+            std::fs::symlink_metadata(root.config_file())
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(
+            std::fs::read_to_string(&dotfile)
+                .unwrap()
+                .contains("[next]")
         );
         let _ = std::fs::remove_dir_all(&home);
     }

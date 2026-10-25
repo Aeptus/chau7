@@ -41,24 +41,29 @@ pub fn bind_keys(cx: &mut App) {
     editor::bind_keys(cx);
     repository::bind_keys(cx);
     if !cfg!(target_os = "macos") {
-        use crate::actions::{
-            AppendSelectionToEditor, DataExplorer, OpenDiffViewer, OpenFilePreview, OpenTextEditor,
-            ShowChangedFiles,
-        };
-        use gpui::KeyBinding;
-        cx.bind_keys([
-            KeyBinding::new("ctrl-shift-alt-e", OpenTextEditor, Some("Workspace")),
-            KeyBinding::new("ctrl-shift-alt-o", OpenFilePreview, Some("Workspace")),
-            KeyBinding::new("ctrl-shift-alt-d", OpenDiffViewer, Some("Workspace")),
-            KeyBinding::new(
-                "ctrl-shift-alt-a",
-                AppendSelectionToEditor,
-                Some("Workspace"),
-            ),
-            KeyBinding::new("ctrl-shift-alt-x", DataExplorer, None),
-            KeyBinding::new("ctrl-shift-alt-g", ShowChangedFiles, Some("Workspace")),
-        ]);
+        cx.bind_keys(other_platform_bindings());
     }
+}
+
+/// The View > Panes shortcuts off macOS.
+pub(crate) fn other_platform_bindings() -> Vec<gpui::KeyBinding> {
+    use crate::actions::{
+        AppendSelectionToEditor, DataExplorer, OpenDiffViewer, OpenFilePreview, OpenTextEditor,
+        ShowChangedFiles,
+    };
+    use gpui::KeyBinding;
+    vec![
+        KeyBinding::new("ctrl-shift-alt-e", OpenTextEditor, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-alt-o", OpenFilePreview, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-alt-d", OpenDiffViewer, Some("Workspace")),
+        KeyBinding::new(
+            "ctrl-shift-alt-a",
+            AppendSelectionToEditor,
+            Some("Workspace"),
+        ),
+        KeyBinding::new("ctrl-shift-alt-x", DataExplorer, None),
+        KeyBinding::new("ctrl-shift-alt-g", ShowChangedFiles, Some("Workspace")),
+    ]
 }
 
 /// What a side pane asks of the tree that holds it.

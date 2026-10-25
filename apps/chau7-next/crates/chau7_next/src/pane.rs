@@ -278,6 +278,43 @@ impl PaneTree {
         Self::empty()
     }
 
+    /// Panes split side by side, each a headless terminal with the
+    /// production event wiring (no shell process). The last one is focused.
+    #[cfg(all(test, unix))]
+    pub(crate) fn headless_for_test(
+        count: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut tree = Self::empty();
+        let mut leaves = Vec::new();
+        for _ in 0..count.max(1) {
+            let terminal = chau7_terminal::Chau7Terminal::new_headless(80, 24).unwrap();
+            let session =
+                cx.new(|cx| TerminalSession::from_terminal_manually_driven(terminal, None, cx));
+            let view = tree.wire_terminal(session, new_pane_id(), window, cx);
+            leaves.push(Node::Leaf(PaneItem::Terminal(view)));
+        }
+        let last = match leaves.last() {
+            Some(Node::Leaf(item)) => item.entity_id(),
+            _ => unreachable!(),
+        };
+        tree.root = Some(if leaves.len() == 1 {
+            leaves.remove(0)
+        } else {
+            let ratios = vec![1.0 / leaves.len() as f32; leaves.len()];
+            Node::Split {
+                axis: Axis::Horizontal,
+                children: leaves,
+                ratios,
+                id: 0,
+            }
+        });
+        tree.focused = Some(last);
+        tree.presentation_terminal = Some(last);
+        tree
+    }
+
     fn empty() -> Self {
         Self {
             deferred_saved: None,
@@ -773,6 +810,18 @@ impl PaneTree {
                 }
             }
         });
+        self.wire_terminal(session, pane_id, window, cx)
+    }
+
+    /// A view for `session`, with the subscriptions that turn its events into
+    /// pane events.
+    fn wire_terminal(
+        &mut self,
+        session: Entity<TerminalSession>,
+        pane_id: PaneId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<TerminalView> {
         let view = cx.new(|cx| TerminalView::new(session.clone(), window, cx));
         let view_id = view.entity_id();
         self.pane_ids.insert(view_id, pane_id);
@@ -802,7 +851,19 @@ impl PaneTree {
                     }
                     SessionEvent::Exited(_) => {
                         if Settings::get(cx).tabs.close_on_exit {
+                            // Like closing the pane by hand: when it had the
+                            // keyboard, the pane that takes its place gets it.
+                            let had_focus = this
+                                .leaves()
+                                .iter()
+                                .find(|leaf| leaf.entity_id() == view_id)
+                                .is_some_and(|leaf| {
+                                    leaf.focus_handle(cx).contains_focused(window, cx)
+                                });
                             this.remove(view_id, cx);
+                            if had_focus {
+                                this.focus_own(window, cx);
+                            }
                         } else {
                             cx.notify();
                         }
@@ -1541,8 +1602,12 @@ impl PaneTree {
             cx.spawn_in(window, async move |this, cx| {
                 if confirm.await {
                     let _ = this.update_in(cx, |this, window, cx| {
-                        this.remove(id, cx);
-                        this.focus_own(window, cx);
+                        // The tree may have changed while the editor asked:
+                        // never close a pane that left, or the last one.
+                        if this.can_close_pane(id) {
+                            this.remove(id, cx);
+                            this.focus_own(window, cx);
+                        }
                     });
                 }
             })
@@ -1551,6 +1616,11 @@ impl PaneTree {
         }
         self.remove(id, cx);
         self.focus_own(window, cx);
+    }
+
+    /// `id` is still a pane of this tree, and not its last one.
+    fn can_close_pane(&self, id: EntityId) -> bool {
+        self.pane_count() > 1 && self.leaves().iter().any(|leaf| leaf.entity_id() == id)
     }
 
     fn remove(&mut self, id: EntityId, cx: &mut Context<Self>) {
@@ -2307,6 +2377,81 @@ mod terminal_font_settings_tests {
             .update_window(window, |_, window, cx| window.render_frame(cx))
             .unwrap();
         assert_eq!(harness.update(|cx| view.read(cx).font_size()), 14.0);
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    fn init_headless(harness: &mut TestAppContext, label: &str) -> std::path::PathBuf {
+        let home = std::env::temp_dir().join(format!("chau7-{label}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).unwrap();
+        let root = DataRoot::with_home(home.clone(), true);
+        harness.update(|cx| {
+            gpui_kit::init(cx);
+            cx.set_global(Settings::default());
+            cx.set_global(AppData::new(root));
+            crate::terminal::command_guard::init(cx);
+            crate::observability::init_for_test(cx);
+        });
+        home
+    }
+
+    /// `close_on_exit`: the exited pane had the keyboard, so the pane that
+    /// takes its place gets it (as Close Pane does).
+    #[gpui::test]
+    fn exited_focused_pane_hands_focus_to_its_sibling(harness: &mut TestAppContext) {
+        let home = init_headless(harness, "exit-focus");
+        let (window, tree) = harness.update(|cx| {
+            gpui_kit::open_window(gpui::WindowOptions::default(), cx, |window, cx| {
+                cx.new(|cx| PaneTree::headless_for_test(2, window, cx))
+            })
+            .unwrap()
+        });
+        let (first, second) = harness.update(|cx| {
+            let views = tree.read(cx).views();
+            (views[0].clone(), views[1].clone())
+        });
+        harness
+            .update_window(window, |_, window, cx| {
+                let handle = second.read(cx).focus_handle(cx);
+                window.focus(&handle, cx);
+                window.render_frame(cx);
+            })
+            .unwrap();
+        harness.update(|cx| {
+            second
+                .read(cx)
+                .session
+                .clone()
+                .update(cx, |_, cx| cx.emit(SessionEvent::Exited(Some(0))));
+        });
+        harness.run_until_parked();
+        harness
+            .update_window(window, |_, window, cx| {
+                assert_eq!(tree.read(cx).pane_count(), 1);
+                assert!(first.read(cx).focus_handle(cx).is_focused(window));
+            })
+            .unwrap();
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    /// After an editor's save prompt, close only a pane still in the tree
+    /// and never the last one.
+    #[gpui::test]
+    fn deferred_close_rechecks_the_tree(harness: &mut TestAppContext) {
+        let home = init_headless(harness, "close-recheck");
+        let (_, tree) = harness.update(|cx| {
+            gpui_kit::open_window(gpui::WindowOptions::default(), cx, |window, cx| {
+                cx.new(|cx| PaneTree::headless_for_test(2, window, cx))
+            })
+            .unwrap()
+        });
+        harness.update(|cx| {
+            let views = tree.read(cx).views();
+            let (first, second) = (views[0].entity_id(), views[1].entity_id());
+            assert!(tree.read(cx).can_close_pane(second));
+            tree.update(cx, |tree, cx| tree.remove(second, cx));
+            assert!(!tree.read(cx).can_close_pane(second), "already gone");
+            assert!(!tree.read(cx).can_close_pane(first), "last pane");
+        });
         let _ = std::fs::remove_dir_all(home);
     }
 

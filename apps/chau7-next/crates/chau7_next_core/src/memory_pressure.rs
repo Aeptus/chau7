@@ -18,29 +18,72 @@ pub const MAX_TRACKER_ENTRIES: usize = 5000;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PressureLevel {
+    Normal,
     Warning,
     Critical,
 }
-#[derive(Default, Debug)]
-pub struct PressureState {
-    last_pressure: Option<Duration>,
-    last_critical: Option<Duration>,
-    last_self_trigger: Option<Duration>,
-}
-impl PressureState {
-    pub fn record(&mut self, level: PressureLevel, now: Duration) {
-        self.last_pressure = Some(now);
-        if level == PressureLevel::Critical {
-            self.last_critical = Some(now);
+impl PressureLevel {
+    /// Subscribe to recovery as well as warning and critical Dispatch events.
+    pub const MACOS_EVENT_MASK: usize = 1 | 2 | 4;
+
+    /// Dispatch may coalesce flags; preserve the highest reported severity.
+    /// An empty or unrecognized event must not manufacture a pressure warning.
+    pub fn from_macos_flags(flags: usize) -> Option<Self> {
+        if flags & 4 != 0 {
+            Some(Self::Critical)
+        } else if flags & 2 != 0 {
+            Some(Self::Warning)
+        } else if flags & 1 != 0 {
+            Some(Self::Normal)
+        } else {
+            None
         }
     }
-    pub fn is_under_pressure(&self, now: Duration) -> bool {
+}
+#[derive(Default, Debug)]
+struct PressureSignal {
+    last_pressure: Option<Duration>,
+    last_critical: Option<Duration>,
+}
+impl PressureSignal {
+    fn record(&mut self, level: PressureLevel, now: Duration) {
+        match level {
+            PressureLevel::Normal => *self = Self::default(),
+            PressureLevel::Warning => {
+                self.last_pressure = Some(now);
+                self.last_critical = None;
+            }
+            PressureLevel::Critical => {
+                self.last_pressure = Some(now);
+                self.last_critical = Some(now);
+            }
+        }
+    }
+    fn is_under_pressure(&self, now: Duration) -> bool {
         self.last_pressure
             .is_some_and(|at| now.saturating_sub(at) < Duration::from_secs(90))
     }
-    pub fn should_shed_best_effort(&self, now: Duration) -> bool {
+    fn should_shed_best_effort(&self, now: Duration) -> bool {
         self.last_critical
             .is_some_and(|at| now.saturating_sub(at) < Duration::from_secs(30))
+    }
+}
+#[derive(Default, Debug)]
+pub struct PressureState {
+    system: PressureSignal,
+    footprint: PressureSignal,
+    last_self_trigger: Option<Duration>,
+}
+impl PressureState {
+    /// A system recovery or downgrade must not clear app-footprint protection.
+    pub fn record(&mut self, level: PressureLevel, now: Duration) {
+        self.system.record(level, now);
+    }
+    pub fn is_under_pressure(&self, now: Duration) -> bool {
+        self.system.is_under_pressure(now) || self.footprint.is_under_pressure(now)
+    }
+    pub fn should_shed_best_effort(&self, now: Duration) -> bool {
+        self.system.should_shed_best_effort(now) || self.footprint.should_shed_best_effort(now)
     }
     pub fn check_footprint(
         &mut self,
@@ -49,10 +92,14 @@ impl PressureState {
         now: Duration,
     ) -> Option<PressureLevel> {
         let ceiling = footprint_ceiling(physical);
-        if used <= ceiling
-            || self
-                .last_self_trigger
-                .is_some_and(|at| now.saturating_sub(at) < Duration::from_secs(60))
+        if used <= ceiling {
+            self.footprint = PressureSignal::default();
+            self.last_self_trigger = None;
+            return None;
+        }
+        if self
+            .last_self_trigger
+            .is_some_and(|at| now.saturating_sub(at) < Duration::from_secs(60))
         {
             return None;
         }
@@ -62,7 +109,7 @@ impl PressureState {
         } else {
             PressureLevel::Warning
         };
-        self.record(level, now);
+        self.footprint.record(level, now);
         Some(level)
     }
 }
@@ -164,6 +211,79 @@ impl FlushRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn macos_subscription_and_decoding_include_recovery_without_false_warnings() {
+        assert_eq!(PressureLevel::MACOS_EVENT_MASK, 7);
+        assert_eq!(
+            PressureLevel::from_macos_flags(1),
+            Some(PressureLevel::Normal)
+        );
+        assert_eq!(
+            PressureLevel::from_macos_flags(2),
+            Some(PressureLevel::Warning)
+        );
+        assert_eq!(
+            PressureLevel::from_macos_flags(4),
+            Some(PressureLevel::Critical)
+        );
+        assert_eq!(
+            PressureLevel::from_macos_flags(7),
+            Some(PressureLevel::Critical)
+        );
+        assert_eq!(
+            PressureLevel::from_macos_flags(3),
+            Some(PressureLevel::Warning)
+        );
+        assert_eq!(PressureLevel::from_macos_flags(0), None);
+        assert_eq!(PressureLevel::from_macos_flags(8), None);
+    }
+    #[test]
+    fn system_normal_immediately_ends_pressure_and_critical_cache_shedding() {
+        for level in [PressureLevel::Warning, PressureLevel::Critical] {
+            let mut state = PressureState::default();
+            state.record(level, Duration::ZERO);
+            assert!(state.is_under_pressure(Duration::from_secs(1)));
+            state.record(PressureLevel::Normal, Duration::from_secs(1));
+            assert!(!state.is_under_pressure(Duration::from_secs(1)));
+            assert!(!state.should_shed_best_effort(Duration::from_secs(1)));
+        }
+    }
+    #[test]
+    fn system_warning_ends_critical_shedding_but_keeps_pressure_protection() {
+        let mut state = PressureState::default();
+        state.record(PressureLevel::Critical, Duration::ZERO);
+        state.record(PressureLevel::Warning, Duration::from_secs(1));
+        assert!(state.is_under_pressure(Duration::from_secs(1)));
+        assert!(!state.should_shed_best_effort(Duration::from_secs(1)));
+    }
+    #[test]
+    fn system_recovery_cannot_clear_independent_high_footprint_protection() {
+        let mut state = PressureState::default();
+        state.check_footprint(7 << 30, 8 << 30, Duration::ZERO);
+        state.record(PressureLevel::Normal, Duration::from_secs(1));
+        assert!(state.is_under_pressure(Duration::from_secs(1)));
+        assert!(state.should_shed_best_effort(Duration::from_secs(1)));
+        // High footprint cannot keep shedding after its own hint expires.
+        state.record(PressureLevel::Normal, Duration::from_secs(90));
+        assert!(!state.is_under_pressure(Duration::from_secs(90)));
+        assert!(!state.should_shed_best_effort(Duration::from_secs(90)));
+    }
+    #[test]
+    fn low_footprint_clears_only_footprint_pressure_and_rearms_its_cooldown() {
+        let mut state = PressureState::default();
+        state.check_footprint(7 << 30, 8 << 30, Duration::ZERO);
+        state.check_footprint(1 << 30, 8 << 30, Duration::from_secs(1));
+        assert!(!state.is_under_pressure(Duration::from_secs(1)));
+        assert!(!state.should_shed_best_effort(Duration::from_secs(1)));
+        assert_eq!(
+            state.check_footprint(7 << 30, 8 << 30, Duration::from_secs(2)),
+            Some(PressureLevel::Critical)
+        );
+        state.record(PressureLevel::Warning, Duration::from_secs(3));
+        state.check_footprint(1 << 30, 8 << 30, Duration::from_secs(3));
+        assert!(state.is_under_pressure(Duration::from_secs(3)));
+        assert!(!state.should_shed_best_effort(Duration::from_secs(3)));
+    }
     #[test]
     fn pressure_and_best_effort_hints_expire_without_an_os_normal_signal() {
         let mut state = PressureState::default();

@@ -11,9 +11,10 @@
 ## Checklist
 
 - [ ] `pnpm quality:prepush` passes, or `pnpm quality:prepush:full` for high-impact changes
-- [ ] `swift test` passes (if Swift changes)
+- [ ] `cargo test --workspace` passes in `apps/chau7-next` (if macOS app changes)
+- [ ] `swift test --package-path apps/chau7-ios/Chau7Core` passes (if Swift changes)
 - [ ] New tests added for new behavior
-- [ ] Documentation updated (README, FEATURES.md, CHANGELOG.md if user-facing)
+- [ ] Documentation updated (README, CHANGELOG.md if user-facing)
 
 ## Test plan
 

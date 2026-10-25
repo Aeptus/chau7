@@ -1,8 +1,16 @@
 # Shipping the Swift and Rust apps side by side on macOS
 
-Status: phase 1 is implemented. The Rust/GPUI production transition is still
-in preparation; the published stable download remains the SwiftUI/AppKit app.
-Parity inventory and revision-scoped evidence are tracked in [`PARITY.md`](PARITY.md).
+Status (2026-10-23): The legacy SwiftUI/AppKit macOS app (`apps/chau7-macos`) has been removed from
+the tree. It remains available in git history and in prior release tags.
+`apps/chau7-next` is the macOS app, and the `Release` workflow publishes its
+production build (`CHANNEL=production`) from `v*` tags. The shared Rust crates
+moved to `crates/`, the Go proxy to `services/chau7-proxy`, and `Chau7Core` to
+`apps/chau7-ios/Chau7Core`. Paths to `apps/chau7-macos` below are historical.
+The side-by-side plan below is kept as a record of the transition; users who
+still have the Swift app installed keep its separate data.
+
+Previous status: phase 1 is implemented. Parity inventory and revision-scoped
+evidence are tracked in [`PARITY.md`](PARITY.md).
 
 ## 1. Goal
 

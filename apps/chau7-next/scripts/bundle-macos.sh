@@ -145,7 +145,7 @@ if [ "$CHANNEL" = "next" ]; then
   cp "$ROOT/scripts/install-chau7-next-cli.sh" "$APP/Contents/Resources/install-chau7-next-cli.sh"
   chmod 755 "$APP/Contents/Resources/install-chau7-next-cli.sh"
 fi
-cp "$ROOT/../chau7-macos/Resources/AppDockIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+cp "$ROOT/resources/AppDockIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Ship attribution and the source audit trail for the three modified, locked
 # Apache-2.0 GPUI packages. Missing required notices fail packaging before signing.
@@ -165,12 +165,12 @@ done
 mkdir -p "$APP/Contents/Resources/licenses/ondine"
 cp "$ROOT/resources/licenses/ondine/"* "$APP/Contents/Resources/licenses/ondine/"
 
-# Token optimizer and markdown renderer (the apps/chau7-macos/rust
+# Token optimizer and markdown renderer (the top-level crates/
 # workspace), next to the app binary. The app installs them into
 # ~/.chau7-next/bin; the wrappers pass CHAU7_CTO_BIN_DIR so chau7-optim also
 # strips Chau7 Next's wrapper folder from PATH. That workspace pins its own
 # toolchain (rust-toolchain.toml), which may lack the target's standard library.
-OPTIM_DIR="$ROOT/../chau7-macos/rust"
+OPTIM_DIR="$ROOT/../../crates"
 HELPER_CARGO_COMMAND=()
 if [ -d "$OPTIM_DIR" ]; then
   # Reuse the app's private per-worktree target cache by default. Explicit
@@ -216,10 +216,10 @@ else
   echo "warning: Go not found, the app is built without the remote control agent" >&2
 fi
 
-# API analytics proxy (apps/chau7-macos/chau7-proxy), next to the app binary.
+# API analytics proxy (services/chau7-proxy), next to the app binary.
 # Chau7 Next starts it with its own ports, database and socket when "Enable
 # API Analytics" is on. Needs Go; set REQUIRE_PROXY=1 to fail without it (CI).
-PROXY_SRC="$ROOT/../chau7-macos/chau7-proxy"
+PROXY_SRC="$ROOT/../../services/chau7-proxy"
 if command -v go >/dev/null 2>&1; then
   if [ "$BUILD_MODE" = "fast" ]; then
     (cd "$PROXY_SRC" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \

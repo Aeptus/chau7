@@ -15,9 +15,12 @@
   },
   "devDependencies": {
     "prettier": "3.9.10",
-    "wrangler": "4.149.0"
+    "wrangler": "4.151.3"
   },
   "overrides": {
-    "sharp": "0.35.5"
+    "sharp": "0.35.5",
+    "miniflare": {
+      "undici": "7.30.1"
+    }
   }
 }

@@ -31,6 +31,29 @@ pub(super) struct Bookmark {
     label: Option<String>,
 }
 
+impl Bookmark {
+    /// Unique among the bookmarks of the window that holds the tab.
+    pub(super) fn id(&self) -> u64 {
+        self.id
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(id: u64, label: &str) -> Self {
+        Self {
+            id,
+            absolute_line: 0,
+            preview: String::new(),
+            time: SystemTime::UNIX_EPOCH,
+            label: Some(label.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn label(&self) -> Option<&str> {
+        self.label.as_deref()
+    }
+}
+
 pub(super) struct BookmarksPanel {
     label: Entity<InputState>,
     _subscription: Subscription,

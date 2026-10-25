@@ -1,5 +1,16 @@
 # Chau7 Next: handoff
 
+## Swift app removal (2026-10-23)
+
+The legacy SwiftUI/AppKit macOS app (`apps/chau7-macos`) has been removed from
+the tree. It remains available in git history and in prior release tags.
+`apps/chau7-next` is the macOS app, and the `Release` workflow publishes its
+production build (`CHANNEL=production`) from `v*` tags. The shared Rust crates
+moved to `crates/`, the Go proxy to `services/chau7-proxy`, and `Chau7Core` to
+`apps/chau7-ios/Chau7Core`. Paths to `apps/chau7-macos` below are historical.
+Release status statements below that call the Swift app the published stable
+build describe the state before this change.
+
 ## Application review follow-up (2026-10-15)
 
 The iOS and macOS review adds fixes for reconnect races, terminal rendering,

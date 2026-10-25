@@ -11,7 +11,7 @@ FAKE_BIN="$TMP_ROOT/fake-bin"
 FAKE_STATE="$TMP_ROOT/fake-state"
 FIXTURE_ROOT="$TMP_ROOT/repo"
 FIXTURE_APP="$FIXTURE_ROOT/apps/chau7-next"
-FIXTURE_HELPERS="$FIXTURE_ROOT/apps/chau7-macos/rust"
+FIXTURE_HELPERS="$FIXTURE_ROOT/crates"
 
 mkdir -p "$FAKE_BIN" "$FAKE_STATE"
 trap 'rm -rf "$TMP_ROOT"' EXIT
@@ -188,7 +188,7 @@ case "$PWD" in
   */apps/chau7-next)
     products=(chau7-next chau7-next-mcp-bridge chau7-next-cli)
     ;;
-  */apps/chau7-macos/rust)
+  */crates)
     products=(chau7-optim chau7-md)
     ;;
   *) exit 3 ;;
@@ -324,8 +324,7 @@ mkdir -p \
   "$FIXTURE_APP/resources/skills/chau7-next-build" \
   "$FIXTURE_APP/resources/licenses/ondine" \
   "$FIXTURE_APP/vendor/history/0.3.8" \
-  "$FIXTURE_ROOT/apps/chau7-macos/Resources" \
-  "$FIXTURE_ROOT/apps/chau7-macos/chau7-proxy" \
+  "$FIXTURE_ROOT/services/chau7-proxy" \
   "$FIXTURE_HELPERS" \
   "$FIXTURE_ROOT/services/chau7-remote"
 sed "s|/usr/bin/xcrun|$FAKE_BIN/xcrun|" "$APP_ROOT/scripts/bundle-macos.sh" > "$FIXTURE_APP/scripts/bundle-macos.sh"
@@ -335,7 +334,7 @@ cp "$APP_ROOT/scripts/install-chau7-next-cli.sh" "$FIXTURE_APP/scripts/install-c
 printf 'version = "0.1.0"\n' > "$FIXTURE_APP/Cargo.toml"
 printf 'fixture skill\n' > "$FIXTURE_APP/resources/skills/chau7-next-build/SKILL.md"
 cp "$APP_ROOT/resources/licenses/ondine/"* "$FIXTURE_APP/resources/licenses/ondine/"
-printf 'icon\n' > "$FIXTURE_ROOT/apps/chau7-macos/Resources/AppDockIcon.icns"
+printf 'icon\n' > "$FIXTURE_APP/resources/AppDockIcon.icns"
 printf 'history\n' > "$FIXTURE_APP/vendor/history/0.3.8/README.md"
 for audit in README.md gpui-provenance.json gpui-modifications.json gpui-rebase-0.3.8-to-0.3.9.json; do
   printf 'audit\n' > "$FIXTURE_APP/vendor/$audit"

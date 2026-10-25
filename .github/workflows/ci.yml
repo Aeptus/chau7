@@ -45,7 +45,7 @@ jobs:
           go-version-file: services/chau7-remote/go.mod
           cache-dependency-path: |
             services/chau7-remote/go.sum
-            apps/chau7-macos/chau7-proxy/go.sum
+            services/chau7-proxy/go.sum
 
       - name: Install golangci-lint with the selected Go toolchain
         run: |
@@ -59,13 +59,13 @@ jobs:
           components: rustfmt, clippy
 
       - name: Prepare pinned Rust toolchain and iOS targets
-        working-directory: apps/chau7-macos/rust
+        working-directory: crates
         run: |
           rustup show active-toolchain
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       - name: Install full-suite quality tools
-        run: brew install swiftformat swiftlint gitleaks shellcheck ruff periphery pip-audit
+        run: brew install swiftformat swiftlint gitleaks shellcheck ruff pip-audit
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.20.2 --locked

@@ -68,7 +68,15 @@ final class RemoteClient {
     }
 
     var activeTabID: UInt32 = 0
-    var lastError: String?
+    /// User-facing explanation of the latest problem. Any direct assignment
+    /// resets `lastErrorRecovery` to `.none`; connection failures go through
+    /// `reportConnectionFailure(_:status:)` so the recovery is set alongside.
+    var lastError: String? {
+        didSet { lastErrorRecovery = .none }
+    }
+
+    /// Recovery that drives the error banner's primary action.
+    private(set) var lastErrorRecovery: RemoteConnectionRecovery = .none
     var pendingApprovals: [ApprovalRequest] = []
     var pendingInteractivePrompts: [RemoteInteractivePrompt] = []
     var approvalHistory: [ApprovalHistoryEntry] = []
@@ -81,8 +89,10 @@ final class RemoteClient {
 
     var pairingInfo: PairingInfo? {
         didSet {
-            RemotePairingStore.savePairing(pairingInfo)
             if oldValue != pairingInfo {
+                // Every connect attempt reassigns the same pairing; only a
+                // real change is worth a Keychain write.
+                RemotePairingStore.savePairing(pairingInfo)
                 // Pending approvals and notification decisions belong to a
                 // specific paired Mac. Drop them before the new pairing can
                 // open a socket or fetch /pending.
@@ -119,7 +129,11 @@ final class RemoteClient {
     @ObservationIgnored private let transport = RemoteTransport()
     /// Crypto-session state machine: key material, handshake nonces, seq
     /// counter, replay guard (C6 extraction from this class).
-    @ObservationIgnored private let session: RemoteSessionController
+    @ObservationIgnored private var session: RemoteSessionController
+    /// Set when the device key could not be read at launch because the
+    /// Keychain was still locked (a push wake before the first unlock). The
+    /// client stays unpaired with a throwaway key until it reloads.
+    @ObservationIgnored private var keychainReloadPending = false
     /// Approval-response ledger: queued answers, in-flight sends, and send
     /// outcomes (C7 extraction from this class).
     @ObservationIgnored private let approvalCoordinator = ApprovalCoordinator()
@@ -149,7 +163,14 @@ final class RemoteClient {
     private var telemetryBuffer = RemoteTelemetryBuffer(maxEvents: RemoteClient.maxBufferedTelemetryEvents)
     /// Per-event failed-send attempts (bounded retry for the drain-on-success path).
     private var telemetrySendAttempts: [String: Int] = [:]
-    private var pendingURLActions: [RemoteActivityURLAction] = []
+    /// The latest tab navigation from a deep link, waiting for a session and
+    /// a tab inventory. Only the newest matters, so repeated opens never
+    /// accumulate.
+    private var pendingURLAction: RemoteActivityURLAction?
+    /// A request to show the Approvals tab, optionally on one card. Set by
+    /// deep links and notification taps, which can arrive before the root view
+    /// exists on a cold launch; ApprovalsView consumes it.
+    private(set) var approvalsNavigation: ApprovalsNavigationRequest?
     private var currentAppState: RemoteClientAppState = .foreground
     private var desiredStreamMode: RemoteClientStreamMode = .full
     private var desiredTerminalPresentation: RemoteTerminalPresentation =
@@ -222,8 +243,13 @@ final class RemoteClient {
     // MARK: - Init
 
     init() {
-        self.session = RemoteSessionController(iosKey: RemotePairingStore.loadOrCreateIOSKey())
-        self.pairingInfo = RemotePairingStore.loadPairing()
+        if let iosKey = RemotePairingStore.loadOrCreateIOSKey() {
+            self.session = RemoteSessionController(iosKey: iosKey)
+            self.pairingInfo = RemotePairingStore.loadPairing()
+        } else {
+            self.session = RemoteSessionController(iosKey: Curve25519.KeyAgreement.PrivateKey())
+            self.keychainReloadPending = true
+        }
 
         backgroundKeepalive.onExpire = { [weak self] in
             self?.handleBackgroundTaskExpiration()
@@ -338,8 +364,7 @@ final class RemoteClient {
 
         guard let token = RelayToken.make(pairing: pairing, role: "ios", scope: "connect") else {
             disconnect(autoReconnect: false, trigger: .connectionRestart)
-            lastError = "This pairing needs a provisioned relay credential. Scan a fresh QR code from your Mac."
-            status = .error
+            reportConnectionFailure(.staleRelayCredential, status: .error)
             return
         }
 
@@ -368,14 +393,13 @@ final class RemoteClient {
 
         var components = URLComponents(string: pairing.relayURL.strippingTrailingSlash)
         guard components?.scheme?.lowercased() == "wss" else {
-            lastError = "Relay URL must use wss:// (encrypted transport)."
-            status = .error
+            reportConnectionFailure(.insecureRelayURL, status: .error)
             return
         }
         components?.path += "/\(pairing.deviceID)"
         components?.queryItems = [URLQueryItem(name: "role", value: "ios")]
         guard let url = components?.url else {
-            lastError = "Invalid relay URL"
+            reportConnectionFailure(.invalidRelayURL, status: .error)
             return
         }
 
@@ -399,6 +423,7 @@ final class RemoteClient {
         DiagnosticsLog.shared.info(.lifecycle, "Scene phase changed", ["phase": String(describing: scenePhase)])
         switch scenePhase {
         case .active:
+            reloadKeychainStateIfNeeded()
             DiagnosticsLog.shared.markForegroundActive()
             DiagnosticsLog.shared.capturePerformanceSnapshot(reason: "scene_active")
             // Foregrounded: no background delivery is outstanding, so release
@@ -468,7 +493,19 @@ final class RemoteClient {
         sendClientStateIfPossible()
     }
 
-    func handlePushWake(userInfo: [AnyHashable: Any]) {
+    /// Retries the launch-time Keychain read that failed while the device was
+    /// locked, so a push-wake launch does not leave the app unpaired for the
+    /// rest of the process.
+    private func reloadKeychainStateIfNeeded() {
+        guard keychainReloadPending, let iosKey = RemotePairingStore.loadOrCreateIOSKey() else { return }
+        keychainReloadPending = false
+        session = RemoteSessionController(iosKey: iosKey)
+        pairingInfo = RemotePairingStore.loadPairing()
+        DiagnosticsLog.shared.info(.lifecycle, "Keychain state reloaded after unlock")
+    }
+
+    func handlePushWake(userInfo: [AnyHashable: Any], applicationIsActive: Bool) {
+        reloadKeychainStateIfNeeded()
         // The push payload names exactly what it delivered — skip local
         // notifications for those IDs only (deterministic, not time-based).
         if let requestID = userInfo[RemoteNotificationID.UserInfoKey.requestID] as? String {
@@ -477,9 +514,11 @@ final class RemoteClient {
         if let promptID = userInfo[RemoteNotificationID.UserInfoKey.promptID] as? String {
             recordPushDeliveredID(promptID)
         }
-        backgroundKeepalive.begin()
-        currentAppState = .background
-        desiredStreamMode = .approvalsOnly
+        if RemoteConnectionStartPolicy.pushWakeEntersBackground(applicationIsActive: applicationIsActive) {
+            backgroundKeepalive.begin()
+            currentAppState = .background
+            desiredStreamMode = .approvalsOnly
+        }
         if !transport.isOpen, pairingInfo != nil {
             connectIfNeeded(trigger: .pushWake)
         } else {
@@ -489,8 +528,15 @@ final class RemoteClient {
         emitTelemetry(
             type: .notificationOpened,
             status: "push_wake",
-            metadata: userInfo.reduce(into: [String: String]()) { partial, entry in
-                partial[String(describing: entry.key)] = String(describing: entry.value)
+            // Only the delivery identifiers: the rest of the push payload can
+            // carry command or notification text.
+            metadata: [
+                RemoteNotificationID.UserInfoKey.requestID,
+                RemoteNotificationID.UserInfoKey.promptID
+            ].reduce(into: [String: String]()) { partial, key in
+                if let value = userInfo[key] as? String {
+                    partial[key] = value
+                }
             }
         )
     }
@@ -527,7 +573,7 @@ final class RemoteClient {
         reconnectTask = nil
         cancelHandshakeTasks()
         transport.close()
-        approvalCoordinator.resetInFlight()
+        releaseInFlightApprovals()
         cancelPendingStateFetch()
         isConnected = false
         status = .disconnected
@@ -576,14 +622,21 @@ final class RemoteClient {
         // also runs from inside `startConnection`, so dismissing on every
         // teardown made the Dynamic Island blink off and on for each reconnect
         // backoff attempt, each cycle requesting a brand-new activity. The
-        // activity is ended from the authoritative `.activityCleared` frame and
-        // after the reconnect budget is exhausted.
+        // activity is ended from the authoritative `.activityCleared` frame,
+        // after the reconnect budget is exhausted, and on an explicit
+        // Disconnect or pairing change (below).
         if !autoReconnect {
             lastError = nil
             if clearIntent {
                 pendingApprovals = []
-                pendingURLActions.removeAll()
+                pendingURLAction = nil
             }
+        }
+        // An explicit Disconnect or a pairing change ends this Mac's session
+        // for good, so its card must not stay on the lock screen until the
+        // 8-hour cap.
+        if discardUserIntent {
+            RemoteLiveActivityManager.shared.update(with: nil)
         }
     }
 
@@ -821,12 +874,26 @@ final class RemoteClient {
 
     func handle(url: URL) {
         guard let action = RemoteActivityURLAction(url: url) else { return }
+        if case let .review(requestID) = action {
+            showApprovals(.approval(requestID: requestID))
+            return
+        }
         if !performURLAction(action) {
-            pendingURLActions.append(action)
+            pendingURLAction = action
             if !transport.isOpen, pairingInfo != nil {
                 connectIfNeeded(trigger: .urlAction)
             }
         }
+    }
+
+    func showApprovals(_ request: ApprovalsNavigationRequest) {
+        approvalsNavigation = request
+    }
+
+    /// Hands the pending navigation to the view that applies it, once.
+    func takeApprovalsNavigation() -> ApprovalsNavigationRequest? {
+        defer { approvalsNavigation = nil }
+        return approvalsNavigation
     }
 
     // MARK: - Receive Loop
@@ -912,7 +979,7 @@ final class RemoteClient {
         // mutate approval state and makes ordinary connect-if-needed callers
         // mistake a failed socket for a live one.
         transport.close()
-        approvalCoordinator.resetInFlight()
+        releaseInFlightApprovals()
         cancelPendingStateFetch()
         isConnected = false
         status = .disconnected
@@ -935,14 +1002,14 @@ final class RemoteClient {
             hasRemainingAttempts: reconnectBackoff.hasRemainingAttempts
         ) else {
             if !reconnectBackoff.hasRemainingAttempts {
-                lastError = "Reconnect limit reached (\(Self.maxReconnectAttempts) attempts)"
-                status = .connectionFailed
+                reportConnectionFailure(
+                    .reconnectLimitReached(attempts: Self.maxReconnectAttempts),
+                    status: .connectionFailed
+                )
                 // The session is over rather than merely restarting, so retire
                 // the Live Activity here instead of leaving a stale card whose
                 // actions can no longer resolve.
-                if #available(iOS 16.1, *) {
-                    RemoteLiveActivityManager.shared.update(with: nil)
-                }
+                RemoteLiveActivityManager.shared.update(with: nil)
             }
             return
         }
@@ -1021,7 +1088,7 @@ final class RemoteClient {
             transport.close()
             isConnected = false
             session.invalidateSession(clearHandshakeMaterial: false)
-            lastError = "No response from your Mac. Make sure Chau7 is open, Remote is enabled, and the pairing payload is still current."
+            reportConnectionFailure(.handshakeTimedOut)
             emitTelemetry(
                 type: .errorReceived,
                 status: "timeout",
@@ -1301,9 +1368,8 @@ private func handlePairAccept(_ data: Data) {
               expectedMacKey == keyData else {
             log.error("handlePairAccept: Mac public key does not match pairing identity")
             DiagnosticsLog.shared.error(.connection, "Pair accept identity mismatch")
-            lastError = "The Mac identity changed. Scan a fresh pairing code before reconnecting."
-            status = .error
-            shouldReconnect = false
+            endHandshakeForBrokenPairing()
+            reportConnectionFailure(.macIdentityChanged, status: .error)
             return
         }
         guard session.adoptMacPublicKey(keyData) else {
@@ -1326,13 +1392,37 @@ private func handlePairAccept(_ data: Data) {
     }
 
     private func handlePairReject(_ data: Data) {
-        if let msg = try? RemoteJSON.decoder.decode(PairRejectPayload.self, from: data) {
-            lastError = "Pairing rejected: \(msg.reason)"
-        } else {
-            lastError = "Pairing rejected"
-        }
-        status = .pairingRejected
+        let reason = (try? RemoteJSON.decoder.decode(PairRejectPayload.self, from: data))?.reason
+        endHandshakeForBrokenPairing()
+        reportConnectionFailure(.pairingRejected(reason: reason), status: .pairingRejected)
+    }
+
+    /// A rejected pairing or a changed Mac identity cannot be fixed by
+    /// retrying. Stop the HELLO/PAIR_REQUEST loop (which would keep sending
+    /// the pairing code to that peer) and close the socket, so the handshake
+    /// timeout cannot later replace the Re-pair error with a retryable one.
+    private func endHandshakeForBrokenPairing() {
         shouldReconnect = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        cancelHandshakeTasks()
+        transport.close()
+        releaseInFlightApprovals()
+        isConnected = false
+        session.invalidateSession(clearHandshakeMaterial: false)
+    }
+
+    /// Records a connection failure's message and recovery together so the
+    /// error banner offers Re-pair only when the pairing itself is unusable.
+    private func reportConnectionFailure(
+        _ failure: RemoteConnectionFailure,
+        status newStatus: RemoteConnectionStatus? = nil
+    ) {
+        lastError = failure.message
+        lastErrorRecovery = failure.recovery
+        if let newStatus {
+            status = newStatus
+        }
     }
 
     private func handleError(_ data: Data) {
@@ -1434,9 +1524,7 @@ private func handlePairAccept(_ data: Data) {
         do {
             let state = try RemoteJSON.decoder.decode(RemoteActivityState.self, from: data)
             liveActivityState = state
-            if #available(iOS 16.1, *) {
-                RemoteLiveActivityManager.shared.update(with: state)
-            }
+            RemoteLiveActivityManager.shared.update(with: state)
         } catch {
             log.error("handleActivityState: decode failed: \(error.localizedDescription)")
         }
@@ -1444,9 +1532,7 @@ private func handlePairAccept(_ data: Data) {
 
     private func clearActivityState() {
         liveActivityState = nil
-        if #available(iOS 16.1, *) {
-            RemoteLiveActivityManager.shared.update(with: nil)
-        }
+        RemoteLiveActivityManager.shared.update(with: nil)
     }
 
     private func handleInteractivePromptList(_ data: Data) {
@@ -1754,35 +1840,29 @@ private func handlePairAccept(_ data: Data) {
             guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
             switchTab(tabID)
             return true
-        case let .approve(requestID, tabID), let .deny(requestID, tabID):
-            if let tabID {
-                guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
-                switchTab(tabID)
-            }
-            guard pendingApprovals.contains(where: { $0.requestID == requestID }) else { return false }
-            let approved = if case .approve = action {
-                true
-            } else {
-                false
-            }
-            respondToApproval(requestID: requestID, approved: approved)
+        case .review:
+            // Navigation only; handled in `handle(url:)` without a session.
             return true
         }
     }
 
     private func flushPendingURLActions() {
-        guard crypto != nil, isConnected, !pendingURLActions.isEmpty else { return }
-
-        let queued = pendingURLActions
-        pendingURLActions.removeAll(keepingCapacity: true)
-
-        for action in queued where !performURLAction(action) {
-            pendingURLActions.append(action)
+        guard crypto != nil, isConnected, let action = pendingURLAction else { return }
+        if performURLAction(action) {
+            pendingURLAction = nil
         }
     }
 
     private func approvalRequest(for requestID: String) -> ApprovalRequest? {
         pendingApprovals.first(where: { $0.requestID == requestID })
+    }
+
+    /// A socket generation ended: answers that were mid-send go back to
+    /// "queued", matching what the next session will resend.
+    private func releaseInFlightApprovals() {
+        for (requestID, approved) in approvalCoordinator.resetInFlight() {
+            updateApprovalResponseState(requestID: requestID) { _ in .queued(approved) }
+        }
     }
 
     private func updateApprovalResponseState(

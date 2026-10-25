@@ -282,6 +282,10 @@ fn main() {
             proxy::init(cx);
             profiles::init(cx);
             actions::bind_keys(cx);
+            commands::bind_keys(cx);
+            panes::bind_keys(cx);
+            // Every default is bound: settings changes rebuild from here.
+            actions::capture_default_keymap(cx);
             let input = Settings::get(cx).input.clone();
             actions::bind_shortcut_settings(&input, cx);
             cx.on_keyboard_layout_change(|cx| {
@@ -289,8 +293,6 @@ fn main() {
                 actions::bind_shortcut_settings(&input, cx);
             })
             .detach();
-            commands::bind_keys(cx);
-            panes::bind_keys(cx);
             commands::register(cx);
             workspace::start_clipboard_watch(cx);
             notifications::init(cx);
@@ -561,8 +563,8 @@ pub fn open_parked_window(parked: ParkedWindow, cx: &mut App) {
                 return Workspace::new(None, window, cx);
             }
             let mut ws = Workspace::new_empty(window, cx);
-            for (i, (meta, panes)) in tabs.into_iter().enumerate() {
-                ws.adopt_tab_public(meta, panes, i == selected, cx);
+            for (i, tab) in tabs.into_iter().enumerate() {
+                ws.adopt_moved_tab(tab, i == selected, cx);
             }
             ws.focus_selected_public(window, cx);
             ws

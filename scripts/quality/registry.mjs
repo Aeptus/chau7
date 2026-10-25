@@ -1,4 +1,3 @@
-import { sharedSwiftLockPaths, sharedSwiftPinFailures } from "./shared-swift-pins.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -548,7 +547,6 @@ export const gates = [
     inputs: [
       "scripts/check-forbidden-files",
       "scripts/check-anti-slop",
-      "scripts/check-design-system",
       "scripts/check-docs-staged",
     ],
     applies: (context) => context.stagedFiles.length > 0,
@@ -557,7 +555,6 @@ export const gates = [
       for (const script of [
         "./scripts/check-forbidden-files",
         "./scripts/check-anti-slop",
-        "./scripts/check-design-system",
         "./scripts/check-docs-staged",
       ]) {
         const result = await runShellScript(context, script);
@@ -577,53 +574,6 @@ export const gates = [
     applies: (context) => context.stagedFiles.length > 0,
     rerun: "pnpm quality:staged --include=staged-precommit-review",
     run: async (context) => runShellScript(context, "./scripts/pre-commit-review"),
-  },
-  {
-    id: "staged-features-csv",
-    modes: STAGED_ONLY,
-    scope: "staged",
-    wave: "static",
-    tags: ["docs", "features-inventory"],
-    cacheable: false,
-    inputs: ["scripts/check-features-csv.mjs", "apps/chau7-macos/docs/features.csv"],
-    applies: (context) => context.stagedFiles.includes("apps/chau7-macos/docs/features.csv"),
-    rerun: "pnpm quality:staged --include=staged-features-csv",
-    run: async (context) => context.exec("node", ["scripts/check-features-csv.mjs"]),
-  },
-  {
-    id: "staged-features-csv-generated",
-    modes: STAGED_ONLY,
-    scope: "staged",
-    wave: "static",
-    tags: ["docs", "features-inventory"],
-    cacheable: false,
-    inputs: [
-      "scripts/generate-features-csv.mjs",
-      "apps/chau7-macos/docs/features.json",
-      "apps/chau7-macos/docs/features.csv",
-    ],
-    applies: (context) =>
-      context.stagedFiles.includes("apps/chau7-macos/docs/features.json") ||
-      context.stagedFiles.includes("apps/chau7-macos/docs/features.csv"),
-    rerun: "pnpm quality:staged --include=staged-features-csv-generated",
-    run: async (context) => context.exec("node", ["scripts/generate-features-csv.mjs", "--check"]),
-  },
-  {
-    id: "staged-feature-coverage",
-    modes: STAGED_ONLY,
-    scope: "staged",
-    wave: "static",
-    tags: ["docs", "features-inventory", "mcp"],
-    cacheable: false,
-    inputs: [
-      "scripts/check-feature-coverage.mjs",
-      "apps/chau7-macos/Sources/Chau7/MCP/MCPSession.swift",
-      "apps/chau7-macos/docs/features.json",
-    ],
-    applies: (context) =>
-      context.stagedFiles.includes("apps/chau7-macos/Sources/Chau7/MCP/MCPSession.swift"),
-    rerun: "pnpm quality:staged --include=staged-feature-coverage",
-    run: async (context) => context.exec("node", ["scripts/check-feature-coverage.mjs"]),
   },
   {
     id: "staged-shellcheck",
@@ -682,10 +632,10 @@ export const gates = [
       "services/chau7-relay/package-lock.json",
       "services/chau7-issues/package.json",
       "services/chau7-issues/package-lock.json",
-      "apps/chau7-macos/chau7-proxy/go.mod",
+      "services/chau7-proxy/go.mod",
       "services/chau7-remote/go.mod",
-      "apps/chau7-macos/rust/Cargo.toml",
-      "apps/chau7-macos/rust/deny.toml",
+      "crates/Cargo.toml",
+      "crates/deny.toml",
     ],
     applies: (context) =>
       hasAny(context.changedFiles, (file) => /(package(-lock)?\.json|go\.(mod|sum)|Cargo\.(toml|lock)|deny\.toml)$/.test(file)),
@@ -699,63 +649,21 @@ export const gates = [
     },
   },
   {
-    id: "swift-macos-static-build",
-    modes: PREPUSH,
-    scope: "changed",
-    wave: "build",
-    tags: ["swift", "macos"],
-    cacheable: true,
-    inputs: ["apps/chau7-macos/Sources", "apps/chau7-macos/Tests", "apps/chau7-macos/Package.swift", "apps/chau7-macos/.swiftlint.yml", "apps/chau7-macos/.swiftformat"],
-    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/") && !hasPathPrefix(context.changedFiles, "apps/chau7-macos/rust/") && !hasPathPrefix(context.changedFiles, "apps/chau7-macos/chau7-proxy/"),
-    rerun: "pnpm quality:prepush --include=swift-macos-static-build",
-    run: async (context) => {
-      for (const command of [
-        ["swiftformat", ["Sources", "Tests", "--lint"]],
-        ["swiftlint", ["lint", "--strict"]],
-        // --jobs is capped: full-parallelism swift-frontend jobs saturate
-        // memory alongside the running Chau7 app and other agents, and
-        // jetsam then SIGKILLs Chau7 itself (JetsamEvent 2026-07-03).
-        // Keep concurrency diagnostics visible as warnings, matching Package.swift
-        // and the documented migration policy; compiler errors still fail.
-        ["/usr/bin/swift", ["build", "--jobs", swiftBuildJobs()]],
-      ]) {
-        const result = await execWithoutHookGitEnv(context, command[0], command[1], { cwd: "apps/chau7-macos" });
-        if (result.status !== "passed") return result;
-      }
-      return { status: "passed", summary: "Swift macOS format, lint, and build passed" };
-    },
-  },
-  {
-    id: "swift-macos-tests",
-    modes: PREPUSH,
-    scope: "changed",
-    wave: "tests",
-    tags: ["swift", "tests"],
-    cacheable: true,
-    inputs: ["apps/chau7-macos/Sources", "apps/chau7-macos/Tests", "apps/chau7-macos/Package.swift"],
-    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/")
-      || hasPathPrefix(context.changedFiles, "apps/chau7-macos/Tests/")
-      || context.changedFiles.includes("apps/chau7-macos/Package.swift")
-      || context.changedFiles.includes("apps/chau7-macos/Scripts/test-core.sh"),
-    rerun: "pnpm quality:prepush --include=swift-macos-tests",
-    run: async (context) => execWithoutHookGitEnv(context, "/usr/bin/swift", ["test", "--jobs", swiftBuildJobs()], { cwd: "apps/chau7-macos" }),
-  },
-  {
     id: "rust-terminal-static",
     modes: PREPUSH,
     scope: "changed",
     wave: "static",
     tags: ["rust"],
     cacheable: true,
-    inputs: ["apps/chau7-macos/rust"],
-    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/rust/"),
+    inputs: ["crates"],
+    applies: (context) => hasPathPrefix(context.changedFiles, "crates/"),
     rerun: "pnpm quality:prepush --include=rust-terminal-static",
     run: async (context) => {
       for (const command of [
         ["cargo", ["fmt", "--all", "--check"]],
         ["cargo", ["clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"]],
       ]) {
-        const result = await context.exec(command[0], command[1], { cwd: "apps/chau7-macos/rust" });
+        const result = await context.exec(command[0], command[1], { cwd: "crates" });
         if (result.status !== "passed") return result;
       }
       return { status: "passed", summary: "Rust fmt and Clippy passed" };
@@ -768,10 +676,10 @@ export const gates = [
     wave: "tests",
     tags: ["rust", "tests"],
     cacheable: true,
-    inputs: ["apps/chau7-macos/rust"],
-    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/rust/"),
+    inputs: ["crates"],
+    applies: (context) => hasPathPrefix(context.changedFiles, "crates/"),
     rerun: "pnpm quality:prepush --include=rust-terminal-tests",
-    run: async (context) => context.exec("cargo", ["test", "--workspace", "--all-features"], { cwd: "apps/chau7-macos/rust" }),
+    run: async (context) => context.exec("cargo", ["test", "--workspace", "--all-features"], { cwd: "crates" }),
   },
   {
     id: "go-proxy-static-tests",
@@ -780,8 +688,8 @@ export const gates = [
     wave: "tests",
     tags: ["go", "backend"],
     cacheable: true,
-    inputs: ["apps/chau7-macos/chau7-proxy"],
-    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-macos/chau7-proxy/"),
+    inputs: ["services/chau7-proxy"],
+    applies: (context) => hasPathPrefix(context.changedFiles, "services/chau7-proxy/"),
     rerun: "pnpm quality:prepush --include=go-proxy-static-tests",
     run: async (context) => {
       for (const command of [
@@ -791,7 +699,7 @@ export const gates = [
         ["go", ["test", "-race", "./..."]],
       ]) {
         if (command[2] === "format") {
-          const files = changedFileList(context, (file) => file.startsWith("apps/chau7-macos/chau7-proxy/") && file.endsWith(".go"));
+          const files = changedFileList(context, (file) => file.startsWith("services/chau7-proxy/") && file.endsWith(".go"));
           if (files.length) {
             const result = await context.exec("gofmt", ["-l", ...files]);
             if (result.status !== "passed") return result;
@@ -801,7 +709,7 @@ export const gates = [
           }
           continue;
         }
-        const result = await context.exec(command[0], command[1], { cwd: "apps/chau7-macos/chau7-proxy" });
+        const result = await context.exec(command[0], command[1], { cwd: "services/chau7-proxy" });
         if (result.status !== "passed") return result;
       }
       return { status: "passed", summary: "Go proxy checks passed" };
@@ -838,16 +746,40 @@ export const gates = [
     },
   },
   {
+    id: "swift-core-package",
+    modes: PREPUSH,
+    scope: "changed",
+    wave: "tests",
+    tags: ["swift", "ios", "tests"],
+    cacheable: true,
+    inputs: ["apps/chau7-ios/Chau7Core"],
+    applies: (context) => hasPathPrefix(context.changedFiles, "apps/chau7-ios/Chau7Core/"),
+    rerun: "pnpm quality:prepush --include=swift-core-package",
+    run: async (context) => {
+      for (const command of [
+        ["swiftformat", ["Sources", "Tests", "--lint"]],
+        ["swiftlint", ["lint", "--strict"]],
+        // --jobs is capped: full-parallelism swift-frontend jobs saturate
+        // memory alongside the running Chau7 app and other agents.
+        ["/usr/bin/swift", ["test", "--jobs", swiftBuildJobs()]],
+      ]) {
+        const result = await execWithoutHookGitEnv(context, command[0], command[1], { cwd: "apps/chau7-ios/Chau7Core" });
+        if (result.status !== "passed") return result;
+      }
+      return { status: "passed", summary: "Chau7Core format, lint, and tests passed" };
+    },
+  },
+  {
     id: "ios-app-build",
     modes: PREPUSH,
     scope: "changed",
     wave: "tests",
     tags: ["swift", "ios"],
     cacheable: true,
-    inputs: ["apps/chau7-ios", "apps/chau7-macos/Sources/Chau7Core"],
+    inputs: ["apps/chau7-ios", "crates/chau7_terminal"],
     applies: (context) =>
       hasPathPrefix(context.changedFiles, "apps/chau7-ios/") ||
-      hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/Chau7Core/"),
+      hasPathPrefix(context.changedFiles, "crates/chau7_terminal/"),
     rerun: "pnpm quality:prepush --include=ios-app-build",
     run: async (context) =>
       execWithoutHookGitEnv(context, "xcodebuild", [
@@ -867,10 +799,10 @@ export const gates = [
     tags: ["swift", "ios", "tests"],
     cacheable: true,
     cacheEnv: ["CHAU7_IOS_TEST_DESTINATION"],
-    inputs: ["apps/chau7-ios", "apps/chau7-macos/Sources/Chau7Core", "scripts/quality/ios-simulator.mjs"],
+    inputs: ["apps/chau7-ios", "crates/chau7_terminal", "scripts/quality/ios-simulator.mjs"],
     applies: (context) =>
       hasPathPrefix(context.changedFiles, "apps/chau7-ios/") ||
-      hasPathPrefix(context.changedFiles, "apps/chau7-macos/Sources/Chau7Core/") ||
+      hasPathPrefix(context.changedFiles, "crates/chau7_terminal/") ||
       context.changedFiles.some((file) => ["scripts/quality/ios-simulator.mjs", "scripts/quality/registry.mjs", ".github/workflows/ci.yml"].includes(file)),
     rerun: "pnpm quality:prepush-full --include=ios-app-tests",
     run: async (context) =>
@@ -934,23 +866,8 @@ export const gates = [
     inputs: ["scripts/ci-local", "scripts/ci-lib.sh", "scripts/.jscpd.json", "scripts/quality/run-duplication.mjs", "apps/chau7-next/vendor"],
     applies: () => true,
     rerun: "pnpm quality:prepush:full --include=full-local-ci",
-    // ci-local runs swift build/test; see HOOK_GIT_ENV_VARS.
+    // ci-local runs swift test for Chau7Core; see HOOK_GIT_ENV_VARS.
     run: async (context) => execWithoutHookGitEnv(context, "./scripts/ci-local", [], { cwd: "." }),
-  },
-  {
-    id: "shared-swift-pins",
-    modes: ["staged", "prepush-full", "local"],
-    scope: "repo",
-    wave: "static",
-    tags: ["swift", "dependencies"],
-    cacheable: true,
-    inputs: sharedSwiftLockPaths,
-    applies: () => true,
-    rerun: "pnpm quality:staged --include=shared-swift-pins",
-    run: async (context) => {
-      const failures = sharedSwiftPinFailures((file) => getContextContent(context, file));
-      return failures.length ? { status: "failed", summary: failures.join("\n") } : { status: "passed", summary: "Shared Swift dependency pins agree" };
-    },
   },
   {
     id: "quality-runner-tests",
@@ -981,7 +898,7 @@ export const gates = [
     applies: () => true,
     rerun: "pnpm quality:prepush --include=go-dependency-audit",
     run: async (context) => {
-      for (const dir of ["apps/chau7-macos/chau7-proxy", "services/chau7-remote"]) {
+      for (const dir of ["services/chau7-proxy", "services/chau7-remote"]) {
         const result = await context.exec("go", ["run", "golang.org/x/vuln/cmd/govulncheck@v1.8.0", "./..."], { cwd: dir });
         if (result.status !== "passed") return { ...result, summary: `${result.summary}\nFix the Go advisory or scanner/toolchain/database failure; this live audit cannot be skipped.` };
       }

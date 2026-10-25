@@ -283,8 +283,8 @@ pub fn running_process_names(cx: &App) -> Vec<String> {
         names.extend(workspace.read(cx).running_process_names(cx));
     }
     for parked in hidden_windows(cx) {
-        for (_, panes) in &parked.tabs {
-            names.extend(panes.read(cx).running_process_names(cx));
+        for tab in &parked.tabs {
+            names.extend(tab.panes.read(cx).running_process_names(cx));
         }
     }
     names

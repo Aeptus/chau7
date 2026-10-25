@@ -41,13 +41,11 @@
 		4A94D79131F2A00100A1B001 /* RemoteRustTerminalPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */; };
 		4A94D79331F2A00100A1B001 /* RemoteTerminalRendererStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */; };
 		4A94D79531F2A00100A1B001 /* RemoteTerminalRendererView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */; };
-		AA01C0DE31F0A00100A1B001 /* RemoteActivityCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01C0DF31F0A00100A1B001 /* RemoteActivityCard.swift */; };
 		58B00A5CA2C678BDB76285BD /* RemoteConnectionStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE2493E228956C501D26B32E /* RemoteConnectionStatus.swift */; };
 		64F5859B561CE7AF7EDB6603 /* RemoteClientCollaboratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 840F72AE8D478EBA71D05E4D /* RemoteClientCollaboratorTests.swift */; };
 		65E060C5E28959F2B6FA70E9 /* ApprovalCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E6A0C2ED2794AA74FE8FE3 /* ApprovalCoordinator.swift */; };
 		72AC6A6715100B2F9E7E96D0 /* BackgroundKeepalive.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0CB472EB9A0B02432B4270F /* BackgroundKeepalive.swift */; };
 		84B3034D2F3107BB00A7D19E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B303492F3107BB00A7D19E /* KeychainStore.swift */; };
-		84B3034E2F3107BB00A7D19E /* RemoteCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */; };
 		84B3034F2F3107BB00A7D19E /* PairingSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034A2F3107BB00A7D19E /* PairingSheetView.swift */; };
 		84B303502F3107BB00A7D19E /* Chau7RemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B303482F3107BB00A7D19E /* Chau7RemoteApp.swift */; };
 		84B303512F3107BB00A7D19E /* RemoteClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034B2F3107BB00A7D19E /* RemoteClient.swift */; };
@@ -125,7 +123,6 @@
 		4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteRustTerminalPlayback.swift; sourceTree = "<group>"; };
 		4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRendererStore.swift; sourceTree = "<group>"; };
 		4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRendererView.swift; sourceTree = "<group>"; };
-		AA01C0DF31F0A00100A1B001 /* RemoteActivityCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteActivityCard.swift; sourceTree = "<group>"; };
 		7B157D1D2094861EF7B957EF /* Chau7RemoteAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Chau7RemoteAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		840F72AE8D478EBA71D05E4D /* RemoteClientCollaboratorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteClientCollaboratorTests.swift; sourceTree = "<group>"; };
 		84B3033A2F31076300A7D19E /* Chau7RemoteApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Chau7RemoteApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -133,7 +130,6 @@
 		84B303492F3107BB00A7D19E /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		84B3034A2F3107BB00A7D19E /* PairingSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSheetView.swift; sourceTree = "<group>"; };
 		84B3034B2F3107BB00A7D19E /* RemoteClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteClient.swift; sourceTree = "<group>"; };
-		84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCrypto.swift; sourceTree = "<group>"; };
 		8BD2F8E828F4FF717280653F /* RemotePairingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemotePairingStore.swift; sourceTree = "<group>"; };
 		999434D3389839BE95680D82 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		A39EFFF0102C0B5A1397EA93 /* RemoteNotificationScheduler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RemoteNotificationScheduler.swift; sourceTree = "<group>"; };
@@ -211,7 +207,6 @@
 				D1A6D1A6D1A6D1A6D1A61005 /* OnboardingView.swift */,
 				D1A6D1A6D1A6D1A6D1A62001 /* Assets.xcassets */,
 				D1A6D1A6D1A6D1A6D1A62003 /* PrivacyInfo.xcprivacy */,
-				84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */,
 				4A94D77131F2A00100A1B001 /* RemoteModels.swift */,
 				30230377986B3F86FE2AB97E /* RemoteTerminalComposer.swift */,
 				9371924D7764270B99EA2AA4 /* RemoteTerminalSelectionView.swift */,
@@ -220,7 +215,6 @@
 				C7A196000000000000000001 /* RemoteTerminalCellMetrics.swift */,
 				4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */,
 				4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */,
-				AA01C0DF31F0A00100A1B001 /* RemoteActivityCard.swift */,
 				4A94D78F31F2A00100A1B001 /* RemoteTerminalOutputStore.swift */,
 				4A94D77331F2A00100A1B001 /* TerminalView.swift */,
 				C7A098000000000000000001 /* RemoteTabPickerView.swift */,
@@ -382,7 +376,7 @@
 			mainGroup = 84B303312F31076300A7D19E;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */,
+				5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "Chau7Core" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 84B3033B2F31076300A7D19E /* Products */;
@@ -434,7 +428,7 @@
 			);
 			inputPaths = (
 				"$(PROJECT_DIR)/../Scripts/build-rust-terminal-ios.sh",
-				"$(PROJECT_DIR)/../../chau7-macos/rust/chau7_terminal",
+				"$(PROJECT_DIR)/../../../crates/chau7_terminal",
 			);
 			name = "Build Rust Terminal";
 			outputFileListPaths = (
@@ -490,13 +484,11 @@
 				C7A196000000000000000002 /* RemoteTerminalCellMetrics.swift in Sources */,
 				4A94D79331F2A00100A1B001 /* RemoteTerminalRendererStore.swift in Sources */,
 				4A94D79531F2A00100A1B001 /* RemoteTerminalRendererView.swift in Sources */,
-				AA01C0DE31F0A00100A1B001 /* RemoteActivityCard.swift in Sources */,
 				4A94D79031F2A00100A1B001 /* RemoteTerminalOutputStore.swift in Sources */,
 				4A94D77831F2A00100A1B001 /* SettingsView.swift in Sources */,
 				4A94D77431F2A00100A1B001 /* TerminalView.swift in Sources */,
 				C7A098000000000000000002 /* RemoteTabPickerView.swift in Sources */,
 				84B3034D2F3107BB00A7D19E /* KeychainStore.swift in Sources */,
-				84B3034E2F3107BB00A7D19E /* RemoteCrypto.swift in Sources */,
 				84B3034F2F3107BB00A7D19E /* PairingSheetView.swift in Sources */,
 				84B303502F3107BB00A7D19E /* Chau7RemoteApp.swift in Sources */,
 				84B303512F3107BB00A7D19E /* RemoteClient.swift in Sources */,
@@ -873,26 +865,26 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */ = {
+		5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "Chau7Core" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../../chau7-macos";
+			relativePath = "../Chau7Core";
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		547262E303BCF82220E49C0A /* Chau7Core */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */;
+			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "Chau7Core" */;
 			productName = Chau7Core;
 		};
 		A34D4B59796146F1BDF72F8E /* Chau7Core */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */;
+			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "Chau7Core" */;
 			productName = Chau7Core;
 		};
 		F1A4000031F2A00100A1B001 /* Chau7Core */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "chau7-macos" */;
+			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "Chau7Core" */;
 			productName = Chau7Core;
 		};
 /* End XCSwiftPackageProductDependency section */

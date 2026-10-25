@@ -15,7 +15,7 @@ license = "UNLICENSED"
 # of these without the others.
 gpui = { package = "gpui-pre", version = "=0.3.9" }
 gpui-kit = { version = "=0.7.3" }
-chau7_terminal = { path = "../chau7-macos/rust/chau7_terminal" }
+chau7_terminal = { path = "../../crates/chau7_terminal" }
 chau7_next_core = { path = "crates/chau7_next_core" }
 parking_lot = "0.12"
 futures = "0.3"
