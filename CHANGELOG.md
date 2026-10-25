@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Update the Cloudflare development toolchain and pin its local runtime's HTTP
+  client to the patched Undici 7.30.1 release in both Worker services; update
+  the relay test plugin's Zod to 4.6.6 to bound collection validation memory.
 - Stop memory-pressure cache eviction when macOS reports recovery, and stop
   critical shedding when pressure drops to a warning, while preserving
   independent protection against Chau7's own high memory use.
