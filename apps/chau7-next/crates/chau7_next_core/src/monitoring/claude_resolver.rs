@@ -26,22 +26,22 @@ struct Fingerprint {
     size: u64,
     modified: Option<SystemTime>,
     created: Option<SystemTime>,
-    file_number: Option<u64>,
+    file_identity: Option<crate::file_identity::FileIdentity>,
 }
 fn fingerprint(path: &Path) -> Option<Fingerprint> {
     let metadata = fs::metadata(path).ok()?;
     #[cfg(unix)]
-    let file_number = {
+    let file_identity = {
         use std::os::unix::fs::MetadataExt;
-        Some(metadata.ino())
+        Some((metadata.dev(), metadata.ino()))
     };
     #[cfg(not(unix))]
-    let file_number = None;
+    let file_identity = crate::file_identity::for_path(path).ok();
     Some(Fingerprint {
         size: metadata.len(),
         modified: metadata.modified().ok(),
         created: metadata.created().ok(),
-        file_number,
+        file_identity,
     })
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -524,12 +524,28 @@ mod tests {
         let mut resolver = Resolver::default();
         assert!(resolver.metadata(&home.0, "s1", None).is_none());
         let history = home.0.join(".claude/history.jsonl");
+        let original = fs::metadata(&history).unwrap();
         let replacement = home.0.join(".claude/replacement.jsonl");
         fs::write(
             &replacement,
             serde_json::json!({"sessionId":"s1","project":"/new-root","timestamp":2}).to_string(),
         )
         .unwrap();
+        // Rotation must invalidate the cache even if size and timestamps match.
+        // Windows can reuse creation times and has no Unix inode in Metadata.
+        assert_eq!(original.len(), fs::metadata(&replacement).unwrap().len());
+        let times = fs::FileTimes::new().set_modified(original.modified().unwrap());
+        #[cfg(windows)]
+        let times = {
+            use std::os::windows::fs::FileTimesExt;
+            times.set_created(original.created().unwrap())
+        };
+        fs::File::options()
+            .write(true)
+            .open(&replacement)
+            .unwrap()
+            .set_times(times)
+            .unwrap();
         fs::rename(replacement, history).unwrap();
         assert_eq!(
             resolver
