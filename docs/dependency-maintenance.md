@@ -39,6 +39,26 @@ its SHA-256 and executable version, matching `mise.toml`. Update those pins
 together. Homebrew's latest formatter can enable new rules before this
 repository intentionally adopts them.
 
+The app lockfile also selects Rustls 0.23.46 and rustls-webpki 0.103.16 for
+[the Rustls session-secret disclosure](https://rustsec.org/advisories/RUSTSEC-2026-0346),
+[ECH rejection ordering](https://rustsec.org/advisories/RUSTSEC-2026-0347),
+[certificate-decompression allocation](https://rustsec.org/advisories/RUSTSEC-2026-0348),
+[key-exchange downgrade](https://rustsec.org/advisories/RUSTSEC-2026-0349) and
+[distrusted-intermediate validation](https://rustsec.org/advisories/RUSTSEC-2026-0382)
+fixes. These are compatible patch updates within the existing TLS graph.
+
+The full local Rust audit checks `crates/`; the app graph requires its own
+check: `cargo deny --manifest-path apps/chau7-next/Cargo.toml --all-features
+check --config crates/deny.toml advisories`. After those TLS updates, this
+strict check still fails on eight unmaintained crates already present at the
+same versions on main: `instant`, `paste`, `rustls-pemfile`, `rustybuzz`,
+`ttf-parser`, `zbus_names`, `zvariant` and `zvariant_derive`. The advisory
+database provides no compatible package-version fix for these findings;
+retiring them requires upstream GPUI/font/D-Bus migrations. Do not describe
+the app's strict advisory check as passing, or exempt those findings in the
+shared audit policy. Keep that maintenance work distinct from the patched
+vulnerability findings.
+
 Both Worker services override Miniflare's Undici dependency to 7.30.1. The
 Wrangler 4.151.3 / Miniflare 5.20261019.1-beta toolchain still pins an affected
 Undici 7.x release. The scoped override keeps the same major version while
