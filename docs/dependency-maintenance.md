@@ -34,6 +34,11 @@ change and tested compatibility, not that every newer release was adopted.
 GPUI's source rebase additionally has upstream checksum, provenance and
 modification-ledger records.
 
+CI installs SwiftFormat 0.63.1 from the upstream release archive and verifies
+its SHA-256 and executable version, matching `mise.toml`. Update those pins
+together. Homebrew's latest formatter can enable new rules before this
+repository intentionally adopts them.
+
 Both Worker services override Miniflare's Undici dependency to 7.30.1. The
 Wrangler 4.151.3 / Miniflare 5.20261019.1-beta toolchain still pins an affected
 Undici 7.x release. The scoped override keeps the same major version while

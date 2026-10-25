@@ -9,12 +9,12 @@ edition = "2024"
 license = "UNLICENSED"
 
 [workspace.dependencies]
-# Pinned on purpose. gpui-kit 0.7.3 bundles the matching set: gpui-pre 0.3.9
+# Pinned on purpose. gpui-kit 0.8.0 bundles the matching set: gpui-pre 0.3.9
 # (a snapshot of Zed at 93d7456), gpui-pre-platform 0.3.9 (macOS, Linux,
-# Windows backends), gpui-base and gpui-component 0.7.3. Never upgrade one
+# Windows backends), gpui-base and gpui-component 0.8.0. Never upgrade one
 # of these without the others.
 gpui = { package = "gpui-pre", version = "=0.3.9" }
-gpui-kit = { version = "=0.7.3" }
+gpui-kit = { version = "=0.8.0" }
 chau7_terminal = { path = "../../crates/chau7_terminal" }
 chau7_next_core = { path = "crates/chau7_next_core" }
 parking_lot = "0.12"

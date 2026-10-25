@@ -26,7 +26,7 @@ jobs:
         run: sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 26.11.1
 
@@ -65,7 +65,20 @@ jobs:
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       - name: Install full-suite quality tools
-        run: brew install swiftformat swiftlint gitleaks shellcheck ruff pip-audit
+        run: brew install swiftlint gitleaks shellcheck ruff pip-audit
+
+      - name: Install pinned SwiftFormat
+        run: |
+          # Match mise.toml; Homebrew's latest release can introduce new rules.
+          tool_dir="$RUNNER_TEMP/chau7-swiftformat"
+          mkdir -p "$tool_dir"
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/nicklockwood/SwiftFormat/releases/download/0.63.1/swiftformat.zip \
+            --output "$tool_dir/swiftformat.zip"
+          echo "385ef1a263ba28685157b98c5536b9c9105e124518f28b7ef8a2bee4b167eaeb  $tool_dir/swiftformat.zip" | shasum -a 256 --check
+          unzip -q "$tool_dir/swiftformat.zip" -d "$tool_dir"
+          test "$("$tool_dir/swiftformat" --version)" = 0.63.1
+          echo "$tool_dir" >> "$GITHUB_PATH"
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.20.2 --locked

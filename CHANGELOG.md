@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Update the coordinated GPUI kit to 0.8.0, SVG test renderer, compatible Rust
+  lockfile dependencies, Python test tooling and GitHub Actions. Keep CI's
+  Swift formatter on the repository-pinned release for reproducible checks.
 - Update the Cloudflare development toolchain and pin its local runtime's HTTP
   client to the patched Undici 7.30.1 release in both Worker services; update
   the relay test plugin's Zod to 4.6.6 to bound collection validation memory.
