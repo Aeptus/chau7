@@ -82,6 +82,9 @@ final class DiagnosticsLog {
     /// Hard cap on retained entries. Performance + keystroke logging is high
     /// volume, so the cap is generous but bounded to protect memory/disk.
     private static let maxEntries = 8000
+    /// Over the cap, trim down to this in one batch (see
+    /// `DiagnosticsRetentionPolicy`).
+    private static let entryTrimTarget = 7000
     /// Sensitive input capture gets a separate budget so it cannot evict most
     /// connection/lifecycle evidence. Trim below the limit in one batch to
     /// amortize the full JSONL rewrite required by non-prefix eviction.
@@ -175,10 +178,6 @@ final class DiagnosticsLog {
         scheduleSave()
     }
 
-    func trace(_ category: Category, _ message: String, _ metadata: [String: String] = [:]) {
-        record(.trace, category, message, metadata)
-    }
-
     func debug(_ category: Category, _ message: String, _ metadata: [String: String] = [:]) {
         record(.debug, category, message, metadata)
     }
@@ -224,16 +223,6 @@ final class DiagnosticsLog {
             meta["mem_mb"] = String(format: "%.1f", Double(footprint) / 1_048_576)
         }
         record(.info, .performance, name, meta)
-    }
-
-    /// Measure the duration of a synchronous block and record it.
-    @discardableResult
-    func measure<T>(_ name: String, _ metadata: [String: String] = [:], _ body: () throws -> T) rethrows -> T {
-        let start = DispatchTime.now()
-        let result = try body()
-        let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
-        performance(name, durationMs: elapsedMs, metadata)
-        return result
     }
 
     /// Capture a point-in-time performance snapshot (memory, thermal, uptime).
@@ -301,14 +290,8 @@ final class DiagnosticsLog {
 
     /// Write the export to a temporary file and return its URL (for ShareLink).
     func exportFile() -> URL? {
-        let text = exportText()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let name = "chau7-diagnostics-\(formatter.string(from: Date())).txt"
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         do {
-            try text.data(using: .utf8)?.write(to: url, options: .atomic)
-            return url
+            return try DiagnosticsExportFile.write(exportText(), prefix: "chau7-diagnostics", fileExtension: "txt")
         } catch {
             osLog.error("Diagnostics export failed: \(error.localizedDescription)")
             return nil
@@ -396,14 +379,25 @@ final class DiagnosticsLog {
     /// debounced (off-main) and synchronous flush paths can share it off the
     /// main actor; `Data` is `Sendable`, so nothing actor-isolated crosses.
     private nonisolated static func writeData(_ data: Data, to fileURL: URL) {
-        try? data.write(to: fileURL, options: .atomic)
+        guard (try? data.write(to: fileURL, options: .atomic)) != nil else { return }
+        excludeFromBackup(fileURL)
+    }
+
+    /// The log can hold typed terminal input, so it must not travel into
+    /// device or iCloud backups. An atomic write replaces the file and its
+    /// attributes, so this is reapplied after each full write.
+    private nonisolated static func excludeFromBackup(_ fileURL: URL) {
+        var url = fileURL
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
     }
 
     /// Append pre-encoded JSONL bytes; falls back to a plain write when the
     /// file doesn't exist yet.
     private nonisolated static func appendData(_ data: Data, to fileURL: URL) {
         guard let handle = try? FileHandle(forWritingTo: fileURL) else {
-            try? data.write(to: fileURL, options: .atomic)
+            writeData(data, to: fileURL)
             return
         }
         defer { try? handle.close() }
@@ -435,13 +429,11 @@ final class DiagnosticsLog {
         let removals = DiagnosticsRetentionPolicy.removalIndexes(
             categories: loaded.map(\.category),
             maxEntries: Self.maxEntries,
+            entryTarget: Self.entryTrimTarget,
             sensitiveLimit: Self.maxSensitiveEntries,
             sensitiveTarget: Self.sensitiveTrimTarget
         )
-        for index in removals.reversed() {
-            loaded.remove(at: index)
-        }
-        entries = loaded
+        entries = Self.removing(removals, from: loaded)
         sensitiveEntryCount = loaded.lazy.filter {
             DiagnosticsRetentionPolicy.sensitiveCategories.contains($0.category)
         }.count
@@ -461,18 +453,28 @@ final class DiagnosticsLog {
         let removals = DiagnosticsRetentionPolicy.removalIndexes(
             categories: entries.map(\.category),
             maxEntries: Self.maxEntries,
+            entryTarget: Self.entryTrimTarget,
             sensitiveLimit: Self.maxSensitiveEntries,
             sensitiveTarget: Self.sensitiveTrimTarget
         )
         guard !removals.isEmpty else { return }
-        for index in removals.reversed() {
-            if DiagnosticsRetentionPolicy.sensitiveCategories.contains(entries[index].category) {
-                sensitiveEntryCount -= 1
-            }
-            entries.remove(at: index)
-        }
+        sensitiveEntryCount -= removals.lazy.filter {
+            DiagnosticsRetentionPolicy.sensitiveCategories.contains(self.entries[$0].category)
+        }.count
+        entries = Self.removing(removals, from: entries)
         needsFullRewrite = true
         persistedEntryCount = 0
+    }
+
+    /// One pass instead of an O(n) `remove(at:)` per removed entry.
+    private static func removing(_ removals: IndexSet, from entries: [Entry]) -> [Entry] {
+        guard !removals.isEmpty else { return entries }
+        var kept: [Entry] = []
+        kept.reserveCapacity(entries.count - removals.count)
+        for (index, entry) in entries.enumerated() where !removals.contains(index) {
+            kept.append(entry)
+        }
+        return kept
     }
 
     private func mirrorToOSLog(_ entry: Entry) {
@@ -527,5 +529,28 @@ final class DiagnosticsLog {
         }
         guard result == KERN_SUCCESS else { return nil }
         return info.phys_footprint
+    }
+}
+
+/// Shareable copies of the diagnostics log and issue reports. They live in one
+/// temporary folder that is emptied before each export, so a report holding
+/// typed input does not linger after it has been shared.
+enum DiagnosticsExportFile {
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter
+    }()
+
+    static func write(_ text: String, prefix: String, fileExtension: String) throws -> URL {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory.appendingPathComponent("DiagnosticsExports", isDirectory: true)
+        try? fileManager.removeItem(at: directory)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("\(prefix)-\(formatter.string(from: Date())).\(fileExtension)")
+        try Data(text.utf8).write(to: url, options: [.atomic, .completeFileProtection])
+        return url
     }
 }

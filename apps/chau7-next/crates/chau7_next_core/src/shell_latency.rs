@@ -44,6 +44,14 @@ impl LagKind {
     }
 }
 
+/// Whether typed `bytes` should start an input-to-echo measure. A line
+/// submit is answered by the command it runs (a program booting is not
+/// input lag), keys typed while the shell is still loading wait for its
+/// startup files, and password input is not echoed at all.
+pub fn measures_echo(bytes: &[u8], shell_loading: bool, echo_disabled: bool) -> bool {
+    !shell_loading && !echo_disabled && !bytes.iter().any(|b| matches!(b, b'\r' | b'\n'))
+}
+
 /// Ring buffer of the last samples (`LatencySampleBuffer`).
 #[derive(Debug, Clone)]
 pub struct SampleBuffer {
@@ -366,6 +374,18 @@ impl LatencyTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_echoed_keystrokes_start_an_input_measure() {
+        assert!(measures_echo(b"l", false, false));
+        assert!(measures_echo(b"\x1b[A", false, false));
+        // Enter runs a command: its output is not the keystroke's echo.
+        assert!(!measures_echo(b"\r", false, false));
+        assert!(!measures_echo(b"codex\n", false, false));
+        // Startup files still loading, and unechoed password input.
+        assert!(!measures_echo(b"l", true, false));
+        assert!(!measures_echo(b"secret", false, true));
+    }
 
     #[test]
     fn numeric_statistics_have_units_and_missing_values() {

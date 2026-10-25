@@ -146,12 +146,19 @@ final class RemotePureUnitTests: XCTestCase {
             .switchTab(tabID: 7)
         )
         XCTAssertEqual(
+            RemoteActivityURLAction(url: URL(string: "chau7remote://review?request_id=r1")!),
+            .review(requestID: "r1")
+        )
+    }
+
+    func testLegacyApproveAndDenyLinksOnlyOpenTheReview() {
+        XCTAssertEqual(
             RemoteActivityURLAction(url: URL(string: "chau7remote://approve?request_id=r1&tab_id=2")!),
-            .approve(requestID: "r1", tabID: 2)
+            .review(requestID: "r1")
         )
         XCTAssertEqual(
             RemoteActivityURLAction(url: URL(string: "chau7remote://deny?request_id=r2")!),
-            .deny(requestID: "r2", tabID: nil)
+            .review(requestID: "r2")
         )
     }
 
@@ -159,6 +166,7 @@ final class RemotePureUnitTests: XCTestCase {
         XCTAssertNil(RemoteActivityURLAction(url: URL(string: "https://open?tab_id=3")!), "wrong scheme")
         XCTAssertNil(RemoteActivityURLAction(url: URL(string: "chau7remote://switch")!), "switch requires tab_id")
         XCTAssertNil(RemoteActivityURLAction(url: URL(string: "chau7remote://approve?tab_id=2")!), "approve requires request_id")
+        XCTAssertNil(RemoteActivityURLAction(url: URL(string: "chau7remote://review?request_id=")!), "review requires request_id")
         XCTAssertNil(RemoteActivityURLAction(url: URL(string: "chau7remote://unknown")!), "unknown host")
     }
 
