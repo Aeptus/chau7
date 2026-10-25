@@ -20,10 +20,6 @@ final class BackgroundKeepalive {
         self.name = name
     }
 
-    var isActive: Bool {
-        taskID != .invalid
-    }
-
     func begin() {
         guard taskID == .invalid else { return }
         var requestedID: UIBackgroundTaskIdentifier = .invalid

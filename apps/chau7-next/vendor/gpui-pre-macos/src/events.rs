@@ -1,7 +1,7 @@
 use gpui::{
     Capslock, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
     MouseDownEvent, MouseExitEvent, MouseMoveEvent, MousePressureEvent, MouseUpEvent,
-    NavigationDirection, PinchEvent, Pixels, PlatformInput, PressureStage, ScrollDelta,
+    NavigationDirection, PinchEvent, Pixels, PlatformInput, Point, PressureStage, ScrollDelta,
     ScrollWheelEvent, TouchPhase, point, px,
 };
 
@@ -11,7 +11,8 @@ use crate::{
 };
 use cocoa::{
     appkit::{NSEvent, NSEventModifierFlags, NSEventPhase, NSEventType},
-    base::{YES, id},
+    base::{YES, id, nil},
+    foundation::NSPoint,
 };
 use core_foundation::data::{CFDataGetBytePtr, CFDataRef};
 use core_graphics::event::CGKeyCode;
@@ -82,6 +83,31 @@ pub fn key_to_native(key: &str) -> Cow<'_, str> {
     Cow::Owned(String::from_utf16(&[code]).unwrap())
 }
 
+/// Convert a window-base point to top-left coordinates local to the GPUI native view.
+///
+/// # Safety
+///
+/// `native_view` must be a live `NSView` belonging to the event's window, and this must run on
+/// AppKit's main thread.
+pub(crate) unsafe fn native_window_point_to_gpui(
+    native_view: id,
+    window_point: NSPoint,
+    view_height: Pixels,
+) -> Point<Pixels> {
+    let view_point: NSPoint =
+        unsafe { msg_send![native_view, convertPoint: window_point fromView: nil] };
+    view_point_to_gpui(view_point.x as f32, view_point.y as f32, view_height)
+}
+
+fn view_point_to_gpui(x: f32, y: f32, view_height: Pixels) -> Point<Pixels> {
+    point(px(x), view_height - px(y))
+}
+
+fn native_event_position(native_event: id, native_view: id, view_height: Pixels) -> Point<Pixels> {
+    let window_point: NSPoint = unsafe { msg_send![native_event, locationInWindow] };
+    unsafe { native_window_point_to_gpui(native_view, window_point, view_height) }
+}
+
 unsafe fn read_modifiers(native_event: id) -> Modifiers {
     unsafe {
         let modifiers = native_event.modifierFlags();
@@ -103,6 +129,7 @@ unsafe fn read_modifiers(native_event: id) -> Modifiers {
 
 pub(crate) unsafe fn platform_input_from_native(
     native_event: id,
+    native_view: id,
     window_height: Option<Pixels>,
 ) -> Option<PlatformInput> {
     unsafe {
@@ -151,11 +178,7 @@ pub(crate) unsafe fn platform_input_from_native(
                 window_height.map(|window_height| {
                     PlatformInput::MouseDown(MouseDownEvent {
                         button,
-                        position: point(
-                            px(native_event.locationInWindow().x as f32),
-                            // MacOS screen coordinates are relative to bottom left
-                            window_height - px(native_event.locationInWindow().y as f32),
-                        ),
+                        position: native_event_position(native_event, native_view, window_height),
                         modifiers: read_modifiers(native_event),
                         click_count: native_event.clickCount() as usize,
                         first_mouse: false,
@@ -178,10 +201,7 @@ pub(crate) unsafe fn platform_input_from_native(
                 window_height.map(|window_height| {
                     PlatformInput::MouseUp(MouseUpEvent {
                         button,
-                        position: point(
-                            px(native_event.locationInWindow().x as f32),
-                            window_height - px(native_event.locationInWindow().y as f32),
-                        ),
+                        position: native_event_position(native_event, native_view, window_height),
                         modifiers: read_modifiers(native_event),
                         click_count: native_event.clickCount() as usize,
                     })
@@ -200,10 +220,7 @@ pub(crate) unsafe fn platform_input_from_native(
                         },
                         pressure,
                         modifiers: read_modifiers(native_event),
-                        position: point(
-                            px(native_event.locationInWindow().x as f32),
-                            window_height - px(native_event.locationInWindow().y as f32),
-                        ),
+                        position: native_event_position(native_event, native_view, window_height),
                     })
                 })
             }
@@ -222,9 +239,10 @@ pub(crate) unsafe fn platform_input_from_native(
                     Some(direction) => window_height.map(|window_height| {
                         PlatformInput::MouseDown(MouseDownEvent {
                             button: MouseButton::Navigate(direction),
-                            position: point(
-                                px(native_event.locationInWindow().x as f32),
-                                window_height - px(native_event.locationInWindow().y as f32),
+                            position: native_event_position(
+                                native_event,
+                                native_view,
+                                window_height,
                             ),
                             modifiers: read_modifiers(native_event),
                             click_count: 1,
@@ -246,10 +264,7 @@ pub(crate) unsafe fn platform_input_from_native(
                 let magnification = native_event.magnification() as f32;
 
                 PlatformInput::Pinch(PinchEvent {
-                    position: point(
-                        px(native_event.locationInWindow().x as f32),
-                        window_height - px(native_event.locationInWindow().y as f32),
-                    ),
+                    position: native_event_position(native_event, native_view, window_height),
                     delta: magnification,
                     modifiers: read_modifiers(native_event),
                     phase,
@@ -276,10 +291,7 @@ pub(crate) unsafe fn platform_input_from_native(
                 };
 
                 PlatformInput::ScrollWheel(ScrollWheelEvent {
-                    position: point(
-                        px(native_event.locationInWindow().x as f32),
-                        window_height - px(native_event.locationInWindow().y as f32),
-                    ),
+                    position: native_event_position(native_event, native_view, window_height),
                     delta,
                     touch_phase: phase,
                     modifiers: read_modifiers(native_event),
@@ -301,30 +313,21 @@ pub(crate) unsafe fn platform_input_from_native(
                 window_height.map(|window_height| {
                     PlatformInput::MouseMove(MouseMoveEvent {
                         pressed_button: Some(pressed_button),
-                        position: point(
-                            px(native_event.locationInWindow().x as f32),
-                            window_height - px(native_event.locationInWindow().y as f32),
-                        ),
+                        position: native_event_position(native_event, native_view, window_height),
                         modifiers: read_modifiers(native_event),
                     })
                 })
             }
             NSEventType::NSMouseMoved => window_height.map(|window_height| {
                 PlatformInput::MouseMove(MouseMoveEvent {
-                    position: point(
-                        px(native_event.locationInWindow().x as f32),
-                        window_height - px(native_event.locationInWindow().y as f32),
-                    ),
+                    position: native_event_position(native_event, native_view, window_height),
                     pressed_button: None,
                     modifiers: read_modifiers(native_event),
                 })
             }),
             NSEventType::NSMouseExited => window_height.map(|window_height| {
                 PlatformInput::MouseExited(MouseExitEvent {
-                    position: point(
-                        px(native_event.locationInWindow().x as f32),
-                        window_height - px(native_event.locationInWindow().y as f32),
-                    ),
+                    position: native_event_position(native_event, native_view, window_height),
 
                     pressed_button: None,
                     modifiers: read_modifiers(native_event),
@@ -332,6 +335,19 @@ pub(crate) unsafe fn platform_input_from_native(
             }),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_view_points_use_view_local_top_left_coordinates() {
+        let position = view_point_to_gpui(12.0, 28.0, px(200.0));
+
+        assert_eq!(position.x, px(12.0));
+        assert_eq!(position.y, px(172.0));
     }
 }
 

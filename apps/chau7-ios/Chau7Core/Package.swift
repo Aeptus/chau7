@@ -29,7 +29,6 @@ let package = Package(
             name: "Chau7CoreTests",
             dependencies: ["Chau7Core"],
             path: "Tests/Chau7CoreTests",
-            resources: [.process("Fixtures")],
             swiftSettings: strictConcurrencySettings
         )
     ]

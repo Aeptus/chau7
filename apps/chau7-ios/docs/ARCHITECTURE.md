@@ -125,8 +125,13 @@ pixel scanout time.
 ### Live Activities
 
 `RemoteLiveActivityManager` creates and updates `Activity<Chau7RemoteActivityAttributes>`
-instances. The Dynamic Island shows the active tool, project name, and
-approve/deny buttons. Activities auto-dismiss after completion (8s) or failure (20s).
+instances. The Dynamic Island shows the active tool, project name, and, for a
+pending approval, a Review button. Its `chau7remote://review?request_id=…` link
+only opens that card in the Approvals tab: a custom-scheme URL can be opened by
+any app, and answering from the lock screen would skip the hold-to-confirm gate
+on destructive commands. Legacy `approve` and `deny` links map to `review`.
+A stale activity is updated in place, and an explicit Disconnect or pairing
+change ends it. Activities auto-dismiss after completion (8s) or failure (20s).
 
 ### Onboarding & Pairing
 

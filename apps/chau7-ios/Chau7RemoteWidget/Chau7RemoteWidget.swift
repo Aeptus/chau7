@@ -139,13 +139,11 @@ private struct ExpandedActivityActions: View {
                     actionLabel("Tab", systemImage: "rectangle.on.rectangle")
                 }
 
+                // Opens the approval card; the decision is made in the app so
+                // destructive commands keep their hold-to-confirm gate.
                 if let requestID = state.approvalRequestID {
-                    Link(destination: activityURL(host: "approve", tabID: state.tabID, requestID: requestID)) {
-                        actionLabel("Approve", systemImage: "checkmark")
-                    }
-
-                    Link(destination: activityURL(host: "deny", tabID: state.tabID, requestID: requestID)) {
-                        actionLabel("Deny", systemImage: "xmark")
+                    Link(destination: activityURL(host: "review", tabID: nil, requestID: requestID)) {
+                        actionLabel("Review", systemImage: "lock.shield")
                     }
                 }
             }

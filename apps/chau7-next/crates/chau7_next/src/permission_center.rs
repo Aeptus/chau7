@@ -147,7 +147,8 @@ fn refresh_internal(cx: &mut App, guard_pending: bool, child_root: Option<String
                     FullDiskAccess::Granted if previous == FullDiskAccess::Denied => {
                         log::info!("FullDiskAccessGuard: Full Disk Access restored")
                     }
-                    FullDiskAccess::Denied => log::warn!(
+                    FullDiskAccess::Denied => log::log!(
+                        denied_log_level(previous, child_root.is_some()),
                         "FullDiskAccessGuard: Full Disk Access probe denied (child_denial={})",
                         child_root.is_some()
                     ),
@@ -231,6 +232,16 @@ fn present_alert(status: FullDiskAccess, child_root: Option<&str>, now: f64, cx:
     .detach();
 }
 
+/// A denied probe is worth a warning when access was just lost or a child
+/// was actually refused; the periodic re-probe of an unchanged denial is not.
+fn denied_log_level(previous: FullDiskAccess, child_denial: bool) -> log::Level {
+    if child_denial || previous != FullDiskAccess::Denied {
+        log::Level::Warn
+    } else {
+        log::Level::Debug
+    }
+}
+
 #[cfg(test)]
 mod alert_detail_tests {
     use super::*;
@@ -246,5 +257,30 @@ mod alert_detail_tests {
     #[test]
     fn permission_details_without_child_use_compiled_product() {
         assert!(alert_detail(None).contains(&format!("for {APP_NAME} in System Settings.")));
+    }
+}
+
+#[cfg(test)]
+mod denied_log_tests {
+    use super::*;
+
+    #[test]
+    fn unchanged_denial_is_not_rewarned() {
+        assert_eq!(
+            denied_log_level(FullDiskAccess::Indeterminate, false),
+            log::Level::Warn
+        );
+        assert_eq!(
+            denied_log_level(FullDiskAccess::Granted, false),
+            log::Level::Warn
+        );
+        assert_eq!(
+            denied_log_level(FullDiskAccess::Denied, false),
+            log::Level::Debug
+        );
+        assert_eq!(
+            denied_log_level(FullDiskAccess::Denied, true),
+            log::Level::Warn
+        );
     }
 }
