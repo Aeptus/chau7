@@ -342,12 +342,7 @@ impl RestorePrefillIntent {
         {
             return reject(PrefillRejection::SessionChanged);
         }
-        if !state.view_presented
-            || !state.surface_visible
-            || !state.at_prompt
-            || state.loading
-            || state.ai_running
-        {
+        if !state.at_prompt || state.loading || state.ai_running {
             return PrefillDecision::Wait;
         }
         PrefillDecision::Deliver
@@ -530,10 +525,9 @@ mod tests {
         }
         s.at_prompt = true;
         s.view_presented = false;
-        assert_eq!(i.decision(&s), PrefillDecision::Wait);
-        s.view_presented = true;
         s.surface_visible = false;
-        assert_eq!(i.decision(&s), PrefillDecision::Wait);
+        assert_eq!(i.decision(&s), PrefillDecision::Deliver);
+        s.view_presented = true;
         s.surface_visible = true;
         s.loading = true;
         assert_eq!(i.decision(&s), PrefillDecision::Wait);

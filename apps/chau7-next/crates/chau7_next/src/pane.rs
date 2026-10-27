@@ -248,6 +248,8 @@ pub struct PaneTree {
     archived_context: Option<chau7_next_core::session_restore::models::ArchivedTabContext>,
     deferred_cwd: Option<PathBuf>,
     restore_selected: Cell<bool>,
+    /// Saved resume commands are prepared in background tabs during startup.
+    restore_prefill_in_background: bool,
     restore_prepared: Option<crate::restore::preparation::PreparedTab>,
     restore_activation: Option<gpui::Task<()>>,
     identity_hydration: Option<gpui::Task<()>>,
@@ -321,6 +323,7 @@ impl PaneTree {
             archived_context: None,
             deferred_cwd: None,
             restore_selected: Cell::new(false),
+            restore_prefill_in_background: false,
             restore_prepared: None,
             restore_activation: None,
             identity_hydration: None,
@@ -506,6 +509,28 @@ impl PaneTree {
     ) {
         self.restore_override = value;
     }
+    /// Restore saved prompt input for every command-bearing tab without
+    /// selecting it. The shell still validates its own prompt before receiving
+    /// bytes, and the command is written without a line terminator.
+    pub(crate) fn begin_background_resume_restore(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let has_saved_resume_command = self.deferred_saved.as_ref().is_some_and(|saved| {
+            saved.panes.iter().any(|pane| {
+                pane.ai_resume_command
+                    .as_deref()
+                    .is_some_and(|command| !command.trim().is_empty())
+            })
+        });
+        if !has_saved_resume_command {
+            return;
+        }
+        self.restore_prefill_in_background = true;
+        self.activate_deferred(window, cx);
+    }
+
     fn activate_deferred(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(saved) = self.deferred_saved.clone() else {
             return;
@@ -513,10 +538,12 @@ impl PaneTree {
         self.identity_generation = self.identity_generation.wrapping_add(1);
         self.identity_hydration = None;
         if let Some(mut prepared) = self.restore_prepared.take() {
-            if !self.restore_selected.get() || !window.is_visible() {
+            let selected = self.restore_selected.get();
+            if (!selected || !window.is_visible()) && !self.restore_prefill_in_background {
                 self.restore_prepared = Some(prepared);
                 return;
             }
+            let prefill_in_background = self.restore_prefill_in_background;
             let owner = self.owner_tab;
             if let Some(owner) = owner {
                 crate::restore::preparation::claim(
@@ -530,7 +557,8 @@ impl PaneTree {
             let cwd = self.deferred_cwd.clone().or_else(|| saved.cwd.clone());
             let mut active =
                 Self::from_saved_prepared(Some(&prepared.saved), cwd, owner, window, cx);
-            active.restore_selected.set(true);
+            active.restore_selected.set(selected);
+            active.restore_prefill_in_background = prefill_in_background;
             active.restore_release_registered = self.restore_release_registered;
             active.restored_metadata = prepared
                 .saved
@@ -546,7 +574,7 @@ impl PaneTree {
             for (pane, session) in active.pane_sessions(cx) {
                 session.update(cx, |session, cx| {
                     session.set_token_opt_override(token_override, false);
-                    session.set_restore_selected(true);
+                    session.set_restore_selected(selected);
                     session.mark_restore_surface(window.is_visible());
                     if let Some(prepared) = prepared.panes.get(&pane) {
                         if let Some(context) = &prepared.context {
@@ -580,7 +608,9 @@ impl PaneTree {
                 active.pending_restore.remove(pane);
             }
             *self = active;
-            self.focus_own(window, cx);
+            if selected && window.is_visible() {
+                self.focus_own(window, cx);
+            }
             cx.emit(PaneEvent::MetadataChanged);
             cx.notify();
             return;
