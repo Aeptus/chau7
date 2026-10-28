@@ -144,9 +144,7 @@ fn advance(cx: &mut TestAppContext, duration: Duration) {
 }
 
 #[gpui::test]
-fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
-    harness: &mut TestAppContext,
-) {
+fn production_restore_prefills_saved_resume_commands_in_background(harness: &mut TestAppContext) {
     let profile = Profile::new();
     let mut fixture = harness.new_app();
     let cx = &mut fixture;
@@ -156,6 +154,8 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
         profile.tab(&[3]),
         profile.tab(&[4]),
     ];
+    // Identity-only metadata remains parked; it has no saved input to prefill.
+    tabs[0].panes[0].ai_resume_command = None;
     // A parked identity's real artifact repairs a stale saved directory only
     // after the production 450ms identity scheduler admits its result.
     let stale = profile.home.clone();
@@ -220,15 +220,23 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
                 .collect::<Vec<_>>()
         });
         settle(cx, handle);
-        let selected_panes = cx.update(|cx| {
+        wait_for("background resume shells", || {
+            cx.update(|cx| {
+                let ws = ws.read(cx);
+                [ids[1], ids[2], ids[3]]
+                    .into_iter()
+                    .map(|id| ws.entries[&id].panes.read(cx).pane_sessions(cx).len())
+                    .sum::<usize>()
+                    == 4
+            })
+        });
+        let resume_sessions = cx.update(|cx| {
             let ws = ws.read(cx);
             assert_eq!(ws.state.selected(), Some(ids[1]));
             assert_eq!(ws.state.get(ids[1]).unwrap().uuid, selected_uuid);
-            for index in [0, 2, 3] {
-                let tree = ws.entries[&ids[index]].panes.read(cx);
-                assert!(tree.is_deferred());
-                assert!(tree.pane_sessions(cx).is_empty());
-            }
+            let parked = ws.entries[&ids[0]].panes.read(cx);
+            assert!(parked.is_deferred());
+            assert!(parked.pane_sessions(cx).is_empty());
             let tree = ws.entries[&ids[1]].panes.read(cx);
             let actual_layout = tree.export_layout(cx).unwrap();
             let expected_layout = selected_layout.clone().unwrap();
@@ -255,10 +263,14 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
             assert_eq!(ratios, expected_ratios);
             assert_eq!(children, expected_children);
             assert_eq!(tree.focused_pane_id(), Some(102));
-            tree.pane_sessions(cx)
+            let mut sessions = Vec::new();
+            for id in [ids[1], ids[2], ids[3]] {
+                sessions.extend(ws.entries[&id].panes.read(cx).pane_sessions(cx));
+            }
+            sessions
         });
-        assert_eq!(selected_panes.len(), 2);
-        for (pane, session) in &selected_panes {
+        assert_eq!(resume_sessions.len(), 4);
+        for (pane, session) in &resume_sessions {
             let index = (*pane - 100) as usize;
             cx.update(|cx| {
                 let session = session.read(cx);
@@ -282,8 +294,7 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
             assert!(elapsed > Duration::ZERO);
             assert!(!slow);
         });
-        // Exercise actual select_tab and weak preparation callbacks. The two
-        // briefly selected tabs may prepare metadata, but never acquire a PTY.
+        // Switching tabs must not cancel prompt prefill in the background shells.
         advance(cx, Duration::from_millis(180));
         select(cx, handle, &ws, ids[2]);
         select(cx, handle, &ws, ids[3]);
@@ -301,15 +312,16 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
                     .cwd,
                 Some(stale.clone())
             );
-            for index in [0, 2, 3] {
-                assert!(
-                    ws.entries[&ids[index]]
-                        .panes
-                        .read(cx)
-                        .pane_sessions(cx)
-                        .is_empty()
-                );
-            }
+            let parked = ws.entries[&ids[0]].panes.read(cx);
+            assert!(parked.pane_sessions(cx).is_empty());
+            assert_eq!(
+                ws.entries[&ids[2]].panes.read(cx).pane_sessions(cx).len(),
+                1
+            );
+            assert_eq!(
+                ws.entries[&ids[3]].panes.read(cx).pane_sessions(cx).len(),
+                1
+            );
         });
         // Delay dispatch independently of the clock: queued UI and worker work
         // must not admit parked identity before the selection quiet deadline.
@@ -375,30 +387,18 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
                 "metadata hydration must not launch a shell"
             );
         });
-        // Native prompt readiness alone cannot send bytes to an unselected tab.
+        // Keep another tab selected while every saved command reaches its own
+        // ready prompt. The fixture shell records bytes but never executes them.
         select(cx, handle, &ws, ids[3]);
         settle(cx, handle);
-        for index in [1, 2] {
+        for index in 1..=4 {
             profile.release_prompt(index);
         }
-        wait_for("native prompt", || {
-            poll(cx, &selected_panes);
-            cx.update(|cx| {
-                selected_panes
-                    .iter()
-                    .all(|(_, s)| s.read(cx).is_at_prompt())
-            })
+        wait_for("background resume bytes", || {
+            poll(cx, &resume_sessions);
+            (1..=4).all(|i| !profile.received(i).is_empty())
         });
-        for index in [1, 2] {
-            assert!(profile.received(index).is_empty());
-        }
-        select(cx, handle, &ws, ids[1]);
-        settle(cx, handle);
-        wait_for("resume bytes", || {
-            poll(cx, &selected_panes);
-            (1..=2).all(|i| !profile.received(i).is_empty())
-        });
-        for index in [1, 2] {
+        for index in 1..=4 {
             assert_eq!(
                 profile.received(index),
                 format!("claude --resume {}", profile.ids[index]).as_bytes()
@@ -410,8 +410,8 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
                     .any(|b| matches!(b, b'\r' | b'\n'))
             );
         }
-        poll(cx, &selected_panes);
-        for index in [1, 2] {
+        poll(cx, &resume_sessions);
+        for index in 1..=4 {
             assert_eq!(
                 profile.received(index),
                 format!("claude --resume {}", profile.ids[index]).as_bytes(),
@@ -421,7 +421,11 @@ fn production_selected_restore_fences_rapid_selection_and_real_resume_bytes(
         // Readiness comes from the real session, not its currently painted
         // grid. A clear-screen escape leaves (0,0) and a blank first row but
         // must not restart startup UI or its animation clock.
-        let focused = &selected_panes[1].1;
+        let focused = resume_sessions
+            .iter()
+            .find(|(pane, _)| *pane == 102)
+            .map(|(_, session)| session.clone())
+            .unwrap();
         cx.update(|cx| {
             assert!(ws.read(cx).shell_loading_state(cx).is_none());
             focused.update(cx, |session, cx| {

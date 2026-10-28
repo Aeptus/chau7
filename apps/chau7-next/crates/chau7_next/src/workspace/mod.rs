@@ -419,7 +419,7 @@ impl Workspace {
         }
         let deferred = self.restore_lifecycle.startup && saved.is_some();
         let panes = cx.new(|cx| {
-            if deferred {
+            let mut panes = if deferred {
                 PaneTree::from_saved_deferred_with_owner(
                     saved.as_ref(),
                     cwd.clone(),
@@ -429,7 +429,11 @@ impl Workspace {
                 )
             } else {
                 PaneTree::from_saved_with_owner(saved.as_ref(), cwd.clone(), meta.uuid, window, cx)
+            };
+            if deferred {
+                panes.begin_background_resume_restore(window, cx);
             }
+            panes
         });
         if deferred {
             self.restore_lifecycle.pending_identity.push(id);

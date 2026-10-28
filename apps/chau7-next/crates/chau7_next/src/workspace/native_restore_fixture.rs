@@ -1262,6 +1262,11 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
         profile.tab(&[5]),
         profile.tab(&[6]),
     ];
+    // This scenario covers shell-free identity hydration in parked tabs. The
+    // dedicated restore fixture covers eager background shells for saved input.
+    for index in [0, 2, 3, 5] {
+        tabs[index].panes[0].ai_resume_command = None;
+    }
     // A genuine ordinary shell participates in the worker retention lifecycle.
     tabs[4].panes[0].ai_provider = None;
     tabs[4].panes[0].ai_session_id = None;
@@ -1743,25 +1748,29 @@ pub(crate) async fn verify(cx: &mut AsyncApp) -> Result<serde_json::Value, Strin
             .all(|(_, session)| session.read(cx).is_at_prompt())
     })
     .await?;
-    // Wait through the actual one-second production readiness tick while the
-    // target remains unselected. No manual timer/PTY driver is used here.
+    // The actual one-second production readiness tick prefills both saved
+    // commands while their tab remains unselected. No manual timer/PTY driver
+    // is used here, and the recorder never executes the command.
     pause(cx, Duration::from_millis(1100)).await;
-    ensure(
-        profile.received(1).is_empty() && profile.received(2).is_empty(),
-        "readiness sent input to an unselected tab",
-    )?;
-    select(handle, &ws, ids[1], cx)?;
-    settle(handle, cx).await?;
-    wait_until(cx, "readiness-bound native resume bytes", |_| {
+    wait_until(cx, "background native resume bytes", |_| {
         [1, 2].into_iter().all(|i| !profile.received(i).is_empty())
     })
     .await?;
     for i in [1, 2] {
         ensure(
             profile.received(i) == profile.resume_command(i).as_bytes(),
-            "native recorder saw changed, duplicate or submitted resume bytes",
+            "background prefill changed, duplicated or submitted a resume command",
+        )?;
+        ensure(
+            !profile
+                .received(i)
+                .iter()
+                .any(|byte| matches!(byte, b'\r' | b'\n')),
+            "background prefill submitted a resume command",
         )?;
     }
+    select(handle, &ws, ids[1], cx)?;
+    settle(handle, cx).await?;
     pause(cx, Duration::from_millis(1100)).await;
     for i in [1, 2] {
         ensure(
