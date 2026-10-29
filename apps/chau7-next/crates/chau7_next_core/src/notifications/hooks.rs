@@ -188,7 +188,7 @@ impl InstallationStatus {
     pub fn label(self) -> &'static str {
         match self {
             Self::NotInstalled => "Not installed",
-            Self::Installed => "Installed for Next sessions",
+            Self::Installed => "Installed for Chau7 sessions",
             Self::Modified => "Owned installation was modified",
         }
     }
