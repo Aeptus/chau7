@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Show tokens per second for resumed Codex tabs: Codex keeps writing a resumed session to the file of the day it was created, which Chau7 now finds through the path Codex records instead of only today's and yesterday's folders.
 - Prefill saved resume commands in every restored command tab after its shell reaches a prompt, including background tabs, without submitting them.
 - Patch the app's Rust TLS dependencies to Rustls 0.23.46 and WebPKI
   0.103.16 for the current TLS and certificate-validation advisories.
