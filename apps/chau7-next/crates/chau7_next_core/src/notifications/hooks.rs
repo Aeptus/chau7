@@ -327,7 +327,9 @@ pub fn install(root: &DataRoot, provider: HookProvider) -> Result<(), String> {
         write_owned(&manifest_path(root, provider), &bytes, false)
             .map_err(|error| error.to_string())
     })();
-    if result.is_err() {
+    if result.is_ok() {
+        let _ = std::fs::remove_file(opt_out_path(root, provider));
+    } else {
         for (path, previous, executable) in snapshots {
             if let Some(bytes) = previous {
                 let _ = write_owned(&path, &bytes, executable);
@@ -339,7 +341,68 @@ pub fn install(root: &DataRoot, provider: HookProvider) -> Result<(), String> {
     result
 }
 
+/// Explicit uninstall marker: the default installation never overrides it.
+fn opt_out_path(root: &DataRoot, provider: HookProvider) -> PathBuf {
+    root.notification_hooks_dir().join(match provider {
+        HookProvider::Claude => "claude-opted-out",
+        HookProvider::Codex => "codex-opted-out",
+    })
+}
+
+fn up_to_date(root: &DataRoot, provider: HookProvider) -> bool {
+    let previous = std::fs::read(root.claude_hook_overlay()).ok();
+    artifacts(root, provider, previous.as_deref()).is_ok_and(|desired| {
+        desired.iter().all(|item| {
+            std::fs::read(&item.path).is_ok_and(|bytes| bytes == item.content.as_bytes())
+        })
+    })
+}
+
+/// Default installation: hooks are the only tab-attributed source of a CLI's
+/// native session ID, which restore needs for resume prompts. Installs or
+/// refreshes unmodified helpers unless the user uninstalled them explicitly or
+/// no working Python 3 can run them. Returns whether files were written.
+pub fn ensure_default(
+    root: &DataRoot,
+    provider: HookProvider,
+    python_available: bool,
+) -> Result<bool, String> {
+    if !python_available || opt_out_path(root, provider).exists() {
+        return Ok(false);
+    }
+    match installation_status(root, provider) {
+        InstallationStatus::Modified => Ok(false),
+        InstallationStatus::Installed if up_to_date(root, provider) => Ok(false),
+        _ => install(root, provider).map(|()| true),
+    }
+}
+
+/// Whether the helpers' `python3` runs without prompting. On macOS the
+/// `/usr/bin/python3` shim opens an installer dialog unless the Command Line
+/// Tools exist, so only a toolchain or a standalone interpreter counts.
+pub fn python3_available() -> bool {
+    use std::process::{Command, Stdio};
+    let quiet = |program: &str, args: &[&str]| {
+        Command::new(program)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+    if cfg!(target_os = "macos") {
+        quiet("/usr/bin/xcode-select", &["-p"])
+            || ["/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
+                .iter()
+                .any(|path| Path::new(path).is_file())
+    } else {
+        quiet("python3", &["-c", "pass"])
+    }
+}
+
 pub fn uninstall(root: &DataRoot, provider: HookProvider) -> Result<(), String> {
+    write_owned(&opt_out_path(root, provider), b"", false).map_err(|error| error.to_string())?;
     match installation_status(root, provider) {
         InstallationStatus::NotInstalled => return Ok(()),
         InstallationStatus::Modified => {
@@ -439,6 +502,66 @@ mod tests {
             std::fs::read(&provider_file).unwrap(),
             b"exact provider bytes\n"
         );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn default_installation_refreshes_owned_helpers_and_honours_opt_out() {
+        let directory =
+            std::env::temp_dir().join(format!("next-hooks-default-{}", uuid::Uuid::new_v4()));
+        let root = DataRoot::with_home(directory.clone(), true);
+        for provider in [HookProvider::Claude, HookProvider::Codex] {
+            // Without Python the wrappers fall back, so nothing is installed.
+            assert_eq!(ensure_default(&root, provider, false), Ok(false));
+            assert_eq!(
+                installation_status(&root, provider),
+                InstallationStatus::NotInstalled
+            );
+            // A fresh profile gets the helpers without any user action.
+            assert_eq!(ensure_default(&root, provider, true), Ok(true));
+            assert_eq!(
+                installation_status(&root, provider),
+                InstallationStatus::Installed
+            );
+            assert_eq!(ensure_default(&root, provider, true), Ok(false));
+
+            // An unmodified helper from an older build is refreshed.
+            let target = artifacts(&root, provider, None).unwrap().remove(0).path;
+            let current = std::fs::read(&target).unwrap();
+            let stale = b"#!/bin/sh\n# older owned helper\n";
+            std::fs::write(&target, stale).unwrap();
+            let manifest = manifest_path(&root, provider);
+            let mut entries: std::collections::BTreeMap<String, String> =
+                serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+            let key = target
+                .strip_prefix(root.config_dir())
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            entries.insert(key, digest(stale));
+            std::fs::write(&manifest, serde_json::to_vec(&entries).unwrap()).unwrap();
+            assert_eq!(ensure_default(&root, provider, true), Ok(true));
+            assert_eq!(std::fs::read(&target).unwrap(), current);
+
+            // User edits are never overwritten.
+            std::fs::write(&target, b"custom modified helper").unwrap();
+            assert_eq!(ensure_default(&root, provider, true), Ok(false));
+            assert_eq!(std::fs::read(&target).unwrap(), b"custom modified helper");
+            std::fs::write(&target, &current).unwrap();
+
+            // An explicit uninstall sticks until an explicit install.
+            uninstall(&root, provider).unwrap();
+            assert_eq!(ensure_default(&root, provider, true), Ok(false));
+            assert_eq!(
+                installation_status(&root, provider),
+                InstallationStatus::NotInstalled
+            );
+            install(&root, provider).unwrap();
+            uninstall(&root, provider).unwrap();
+            install(&root, provider).unwrap();
+            assert!(!opt_out_path(&root, provider).exists());
+            assert_eq!(ensure_default(&root, provider, true), Ok(false));
+        }
         std::fs::remove_dir_all(directory).unwrap();
     }
 
