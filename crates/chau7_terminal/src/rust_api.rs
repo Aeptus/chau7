@@ -224,6 +224,20 @@ impl Chau7Terminal {
         copy
     }
 
+    /// The visible grid's shape without its cells. `cells` and `clusters`
+    /// are empty; callers keep their previous cells until a [`Self::grid_copy`].
+    pub fn grid_metadata(&self) -> GridCopy {
+        let (cols, rows, cursor_visible, scrollback_rows, display_offset) = self.grid_shape();
+        GridCopy {
+            cols,
+            rows,
+            cursor_visible,
+            scrollback_rows,
+            display_offset,
+            ..GridCopy::default()
+        }
+    }
+
     /// Mirrors `chau7_terminal_get_pending_title`.
     pub fn take_pending_title(&self) -> Option<String> {
         if !self.has_pending_title.load(Ordering::Acquire) {
@@ -415,6 +429,25 @@ impl Chau7Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grid_metadata_matches_the_copy_shape_without_cells() {
+        let term = Chau7Terminal::new_headless(10, 3).unwrap();
+        term.inject_output(b"1\r\n2\r\n3\r\n4\r\n5\x1b[?25l");
+        let full = term.grid_copy();
+        let shape = term.grid_metadata();
+        assert!(full.scrollback_rows > 0);
+        assert_eq!(
+            (shape.cols, shape.rows, shape.cursor_visible),
+            (full.cols, full.rows, full.cursor_visible)
+        );
+        assert_eq!(
+            (shape.scrollback_rows, shape.display_offset),
+            (full.scrollback_rows, full.display_offset)
+        );
+        assert!(!shape.cursor_visible);
+        assert!(shape.cells.is_empty() && shape.clusters.is_empty());
+    }
 
     #[test]
     fn grid_copy_matches_injected_output() {

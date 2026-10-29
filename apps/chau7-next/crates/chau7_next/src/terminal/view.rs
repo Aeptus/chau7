@@ -521,6 +521,7 @@ impl TerminalView {
         let snapshot_size = self.bounds.map(|bounds| bounds.size);
         let state = {
             let session_entity = self.session.clone();
+            session_entity.update(cx, |session, _| session.ensure_grid());
             let session = session_entity.read(cx);
             inputs.danger_rows = self.danger_rows_for_snapshot(session, &settings);
             let size = snapshot_size.unwrap_or_else(|| {
@@ -832,9 +833,13 @@ impl Render for TerminalView {
                                     f32::from(metrics.cell_width),
                                     f32::from(metrics.line_height),
                                 );
-                            if let Some((cols, rows)) = dimensions {
-                                session.update(cx, |s, _| s.resize(cols, rows));
-                            }
+                            session.update(cx, |s, _| {
+                                if let Some((cols, rows)) = dimensions {
+                                    s.resize(cols, rows);
+                                }
+                                // A tab that was hidden kept only its grid shape.
+                                s.ensure_grid();
+                            });
                             // A busy resize may still be pending. Observe applied
                             // grid dimensions so its later successful retry re-arms
                             // the post-resize signals instead of caching a request.

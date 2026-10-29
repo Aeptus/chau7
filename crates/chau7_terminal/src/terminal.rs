@@ -2669,6 +2669,20 @@ impl Chau7Terminal {
         debug!("[terminal-{}] replay_buffer: Replay complete", self.id);
     }
 
+    /// Viewport shape and cursor visibility without copying any cell: one
+    /// short term lock, for consumers that defer the full grid copy.
+    pub fn grid_shape(&self) -> (u16, u16, bool, u32, u32) {
+        let term = self.term.lock();
+        let grid = term.grid();
+        (
+            grid.columns() as u16,
+            grid.screen_lines() as u16,
+            term.mode().contains(TermMode::SHOW_CURSOR),
+            grid.history_size() as u32,
+            grid.display_offset() as u32,
+        )
+    }
+
     /// Get the current display offset
     pub fn display_offset(&self) -> usize {
         let term = self.term.lock();
