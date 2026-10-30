@@ -85,6 +85,21 @@ impl Snapshot {
             })
         }))
     }
+    /// Observed roots and descendants, deduplicated across overlapping trees.
+    /// An unreadable root can still have observed children; PID zero is never
+    /// a terminal owner. Cycles in a racing native snapshot terminate safely.
+    pub fn subtree_pids(&self, roots: impl IntoIterator<Item = u32>) -> HashSet<u32> {
+        let mut queue: VecDeque<_> = roots.into_iter().filter(|pid| *pid > 0).collect();
+        let mut visited = HashSet::new();
+        while let Some(pid) = queue.pop_front() {
+            if visited.insert(pid) {
+                queue.extend(self.children.get(&pid).into_iter().flatten().copied());
+            }
+        }
+        visited.retain(|pid| self.rows.contains_key(pid));
+        visited
+    }
+
     pub fn resolve(&self, shell_pid: u32) -> Option<&'static str> {
         if shell_pid == 0 {
             return None;
@@ -420,5 +435,32 @@ mod tests {
             let args: Vec<_> = args.into_iter().map(str::to_string).collect();
             assert_eq!(match_process(command, &args), Some(expected));
         }
+    }
+}
+
+#[cfg(test)]
+mod subtree_tests {
+    use super::*;
+
+    fn row(pid: u32, parent_pid: u32) -> ProcessRow {
+        ProcessRow {
+            pid,
+            parent_pid,
+            command: "fixture".into(),
+            argv: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn subtree_ownership_handles_overlap_cycles_missing_roots_and_zero() {
+        let snapshot =
+            Snapshot::from_rows([row(1, 3), row(2, 1), row(3, 2), row(4, 0), row(5, 100)]);
+        assert_eq!(
+            snapshot.subtree_pids([1, 2, 1, 0]),
+            HashSet::from([1, 2, 3])
+        );
+        assert_eq!(snapshot.subtree_pids([100]), HashSet::from([5]));
+        assert!(snapshot.subtree_pids([0, 999]).is_empty());
+        assert!(snapshot.subtree_pids([]).is_empty());
     }
 }

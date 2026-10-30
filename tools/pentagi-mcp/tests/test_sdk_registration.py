@@ -10,6 +10,10 @@ from pathlib import Path
 
 from pentagi_mcp import server, state
 
+# A cold interpreter importing the MCP SDK can take ~10 s of wall time on a
+# loaded machine (parallel agent builds), so allow well past that.
+RESPONSE_TIMEOUT_S = 30
+
 
 class SdkRegistrationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
@@ -81,7 +85,7 @@ class SdkRegistrationTests(unittest.IsolatedAsyncioTestCase):
         async def response(identifier: int, stage: str) -> dict:
             while True:
                 try:
-                    line = await asyncio.wait_for(process.stdout.readline(), timeout=5)
+                    line = await asyncio.wait_for(process.stdout.readline(), timeout=RESPONSE_TIMEOUT_S)
                 except TimeoutError as error:
                     raise TimeoutError(
                         f"timed out waiting for {stage} response id={identifier}; "
