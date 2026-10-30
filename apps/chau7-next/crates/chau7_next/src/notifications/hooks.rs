@@ -16,26 +16,40 @@ pub fn snapshot(cx: &App) -> Snapshot {
     cx.try_global::<Snapshot>().cloned().unwrap_or_default()
 }
 
+/// Installs the helpers by default: without them a plain `codex`/`claude`
+/// launch never reports its session ID to its tab, so restore has no resume
+/// prompt to offer. Isolated test profiles keep their explicit fixtures.
 pub fn init(cx: &mut App) {
     cx.set_global(Snapshot::default());
-    refresh(cx);
+    let defaults = !chau7_next_core::data_root::is_isolated_test_mode();
+    run(None, defaults, cx);
 }
 
 pub fn refresh(cx: &mut App) {
-    run(None, cx);
+    run(None, false, cx);
 }
 
 pub fn change(provider: HookProvider, install: bool, cx: &mut App) {
-    run(Some((provider, install)), cx);
+    run(Some((provider, install)), false, cx);
 }
 
-fn run(action: Option<(HookProvider, bool)>, cx: &mut App) {
+fn run(action: Option<(HookProvider, bool)>, defaults: bool, cx: &mut App) {
     if cx.global::<Snapshot>().busy {
         return;
     }
     cx.global_mut::<Snapshot>().busy = true;
     let root = cx.global::<AppData>().root.clone();
     let worker = cx.background_executor().spawn(async move {
+        if defaults {
+            let python = plans::python3_available();
+            for provider in [HookProvider::Claude, HookProvider::Codex] {
+                match plans::ensure_default(&root, provider, python) {
+                    Ok(true) => log::info!("Installed {provider:?} session hooks by default"),
+                    Ok(false) => {}
+                    Err(error) => log::warn!("Default {provider:?} session hooks: {error}"),
+                }
+            }
+        }
         let result = action.map(|(provider, install)| {
             if install {
                 plans::install(&root, provider)
