@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 from native import Sampler, summarize
@@ -56,6 +57,7 @@ def main():
         "tasks": tasks,
         "launches": [],
         "tool_requests": [],
+        "proxy_stats": [],
         "requested_model": "gpt-6-luna",
         "requested_reasoning_effort": "max",
         "samples": [],
@@ -82,6 +84,10 @@ def main():
                     "latency_ms": (time.monotonic() - started) * 1000,
                 }
             )
+
+    def proxy_stats():
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/stats", timeout=5) as response:
+            result["proxy_stats"].append({"unix_s": time.time(), "stats": json.load(response)})
 
     def sample():
         sampler = Sampler()
@@ -126,6 +132,7 @@ def main():
                 {"phase": "before-launch", "unix_s": time.time(), "performance": tool("chau7_performance_snapshot")}
             )
             command = "codex -m gpt-6-luna -c 'model_reasoning_effort=\"max\"' --search --approve-for-me"
+            proxy_stats()
             for index, task in enumerate(tasks):
                 print(f"launching Luna Max {index + 1}/5", flush=True)
                 launch = tool(
@@ -145,6 +152,7 @@ def main():
             result["all_launched_at_unix_s"] = time.time()
             deadline = time.monotonic() + args.seconds
             while True:
+                proxy_stats()
                 result["snapshots"].append(
                     {
                         "phase": "live",

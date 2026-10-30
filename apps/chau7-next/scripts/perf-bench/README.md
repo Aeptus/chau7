@@ -162,7 +162,8 @@ python3 apps/chau7-next/scripts/perf-bench/live_agents.py \
 
 Finish compilation before starting. Retain launch/submission evidence, native
 app/bridge/proxy samples, host load, live lifecycle snapshots and resulting
-comment URLs. App CPU excludes CLI children. Confirm five overlapping active
+comment URLs. Retain proxy request/usage counters before and during the workload
+to establish whether model requests actually traversed the owned proxy. App CPU excludes CLI children. Confirm five overlapping active
 turns from lifecycle/transcript evidence; five CLI processes alone is
 insufficient. The collector's `captured` status means capture finished, not that
 all issue work succeeded. Check every result and permission failure.
