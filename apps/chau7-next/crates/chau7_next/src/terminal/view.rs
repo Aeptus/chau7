@@ -142,7 +142,15 @@ impl TerminalView {
         let selection_view_id = cx.entity_id();
         let selection_window = crate::platform::drop_image::window_key(window);
         let font_size = Settings::get(cx).appearance.zoomed_font_size();
-        let mut subscriptions = vec![cx.observe(&session, |_, _, cx| cx.notify())];
+        let mut subscriptions = vec![cx.observe(&session, |_, session, cx| {
+            let session = session.read(cx);
+            // Hidden sessions still drain output and emit their semantic events.
+            // Invalidating their views also dirties the native window, however,
+            // so only surfaces that can be presented need a visual notification.
+            if session.restore_surface_visible() || session.surface_prewarm_remaining().is_some() {
+                cx.notify();
+            }
+        })];
         subscriptions.push(cx.on_release(|this, cx| {
             this.overlays.release_cpu_frame(cx);
             if let Some(window) = this.selection_window {

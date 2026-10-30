@@ -7,6 +7,7 @@ use chau7_next_core::{
     tabs_state::{TabColor, TabMeta},
 };
 use gpui::{AppContext, TestAppContext};
+use gpui_kit::test::TestWindowExt;
 
 fn init(harness: &mut TestAppContext) {
     let home = std::env::temp_dir().join(format!("chau7-selection-{}", uuid::Uuid::new_v4()));
@@ -279,4 +280,156 @@ fn parked_frames_resume_for_presentations_and_nested_callbacks(cx: &mut TestAppC
         ..Default::default()
     });
     assert!(nested_ran.get());
+}
+
+/// Hidden output keeps the model current without invalidating an invisible
+/// terminal view. Selection and hover prewarming still deliver visual changes.
+#[gpui::test]
+fn hidden_terminal_updates_do_not_notify_the_view_until_revealed(harness: &mut TestAppContext) {
+    use std::cell::Cell;
+
+    init(harness);
+    let (handle, workspace, hidden, selected, view, session) = harness.update(|cx| {
+        cx.global_mut::<Settings>().tabs.close_on_exit = false;
+        let (handle, workspace) = crate::open_window_for_transfer(cx).unwrap();
+        let (hidden, view) = headless_tab(handle, &workspace, cx);
+        let (selected, selected_view) = headless_tab(handle, &workspace, cx);
+        // Headless terminals have no PTY: their first refresh emits Exited.
+        // Drain that real metadata transition before testing output-only work.
+        for view in [&view, &selected_view] {
+            let session = view.read(cx).session.clone();
+            session.update(cx, |session, cx| session.refresh(cx));
+        }
+        handle
+            .update(cx, |_, window, cx| {
+                workspace.update(cx, |workspace, cx| {
+                    workspace.select_tab(selected, window, cx);
+                    workspace.sync_restore_surfaces(window, cx);
+                    workspace.record_tab_activity(hidden, AppData::now(cx));
+                });
+            })
+            .unwrap();
+        let session = view.read(cx).session.clone();
+        assert!(!session.read(cx).restore_surface_visible());
+        (handle, workspace, hidden, selected, view, session)
+    });
+    harness.run_until_parked();
+    let platform = harness.test_window(handle);
+    platform.simulate_frame_request(gpui::RequestFrameOptions::default());
+    harness.run_until_parked();
+    // Initial layout/focus notifications belong to fixture setup, not output.
+    let notifications = Rc::new(Cell::new(0));
+    let _observer = harness.update(|cx| {
+        let notifications = notifications.clone();
+        cx.observe(&view, move |_, _| {
+            notifications.set(notifications.get() + 1)
+        })
+    });
+    harness.update(|cx| {
+        assert_eq!(workspace.read(cx).state.selected(), Some(selected));
+        assert!(!session.read(cx).restore_surface_visible());
+        assert!(session.read(cx).surface_prewarm_remaining().is_none());
+        assert!(session.read(cx).exited.is_some());
+    });
+    let wakes = platform.frame_wake_count();
+    // Drive the same session refresh and Output event as the real PTY worker.
+    harness.update(|cx| {
+        session.update(cx, |session, cx| {
+            session.with_terminal(|terminal| terminal.inject_output(b"fresh hidden output"));
+            session.refresh(cx);
+        })
+    });
+    harness.run_until_parked();
+    assert_eq!(
+        notifications.get(),
+        0,
+        "hidden output must not invalidate its view"
+    );
+    assert_eq!(
+        platform.frame_wake_count(),
+        wakes,
+        "implicit session reads in the tab bar must not wake the window either"
+    );
+    harness.update(|cx| {
+        assert!(
+            session
+                .read(cx)
+                .with_terminal(|terminal| terminal.full_buffer_ansi_text())
+                .contains("fresh hidden output")
+        );
+        handle
+            .update(cx, |_, window, cx| {
+                workspace.update(cx, |workspace, cx| workspace.select_tab(hidden, window, cx));
+            })
+            .unwrap();
+        assert!(session.read(cx).restore_surface_visible());
+        assert!(
+            session
+                .read(cx)
+                .grid
+                .cells
+                .iter()
+                .map(|cell| cell.character)
+                .collect::<String>()
+                .contains("fresh hidden output")
+        );
+        handle
+            .update(cx, |_, window, cx| window.render_frame(cx))
+            .unwrap();
+    });
+    harness.run_until_parked();
+    assert!(
+        notifications.get() > 0,
+        "selection must explicitly reveal the fresh surface"
+    );
+    let before = notifications.get();
+    harness.update(|cx| {
+        session.update(cx, |session, cx| {
+            session.with_terminal(|terminal| terminal.inject_output(b" visible"));
+            session.refresh(cx);
+        })
+    });
+    harness.run_until_parked();
+    assert!(
+        notifications.get() > before,
+        "visible output must invalidate the view"
+    );
+
+    // A hidden hover preview is an intentional, temporary presentation surface.
+    harness.update(|cx| {
+        handle
+            .update(cx, |_, window, cx| {
+                workspace.update(cx, |workspace, cx| {
+                    workspace.select_tab(selected, window, cx)
+                });
+            })
+            .unwrap();
+        assert!(!session.read(cx).restore_surface_visible());
+        session.update(cx, |session, cx| session.prewarm_surface(true, cx));
+    });
+    harness.run_until_parked();
+    let before = notifications.get();
+    harness.update(|cx| session.update(cx, |_, cx| cx.notify()));
+    harness.run_until_parked();
+    assert!(
+        notifications.get() > before,
+        "hover prewarming must still notify"
+    );
+    // Metadata must still reach a hidden tab's chrome immediately.
+    harness.update(|cx| {
+        session.update(cx, |session, cx| {
+            session.prewarm_surface(false, cx);
+            session.with_terminal(|terminal| {
+                terminal.inject_output(b"\x1b]2;hidden title\x07");
+                // The production PTY worker drains parser events before refresh.
+                let _ = terminal.poll(0);
+            });
+            session.refresh(cx);
+        })
+    });
+    harness.run_until_parked();
+    harness.update(|cx| {
+        assert_eq!(session.read(cx).title.as_deref(), Some("hidden title"));
+        close_windows(cx);
+    });
 }

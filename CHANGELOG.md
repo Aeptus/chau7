@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep hidden terminal output from invalidating the native window while preserving live output processing, tab reveals and hover previews.
+
 - Avoid whole-workspace redraws for repeated hidden-tab output while preserving activity timestamps, idle-tab revival and visible age panels.
 
 - Let file tailers sleep until their actual poll deadline and wake them immediately on shutdown.
