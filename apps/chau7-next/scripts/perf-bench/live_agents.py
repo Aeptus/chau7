@@ -164,10 +164,11 @@ def main():
                 save(args.results / f"agent-{launch['index'] + 1}-status.json", tool("tab_status", tab_id=tab_id))
                 # Owned tails stay private. Source/task contents are not exported
                 # in the compact numerical evidence.
-                save(
-                    args.results / f"agent-{launch['index'] + 1}-tail.json",
-                    tool("tab_output", tab_id=tab_id, source="pty_log", lines=40),
-                )
+                tail = tool("tab_output", tab_id=tab_id, source="pty_log", lines=40)
+                if not tail.get("output"):
+                    tail = tool("tab_output", tab_id=tab_id, source="buffer", lines=40)
+                    tail["capture_note"] = "PTY log empty; bounded current buffer only"
+                save(args.results / f"agent-{launch['index'] + 1}-tail.json", tail)
             result["status"] = "captured"
     except Exception as error:
         result["error"] = str(error)
