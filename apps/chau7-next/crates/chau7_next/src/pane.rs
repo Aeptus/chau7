@@ -159,7 +159,15 @@ impl PaneItem {
 
     fn element(&self) -> AnyElement {
         match self {
-            PaneItem::Terminal(e) => e.clone().into_any_element(),
+            // Reuse the terminal's last frame unless it was notified (its
+            // session's output, cursor blink, search) or the window refreshed
+            // (focus, settings). Without this, every repaint of the window, for
+            // example a tab-bar update from a hidden tab's output, repainted
+            // the whole visible grid.
+            PaneItem::Terminal(e) => e
+                .clone()
+                .cached(gpui::StyleRefinement::default().size_full())
+                .into_any_element(),
             PaneItem::Editor(e) => e.clone().into_any_element(),
             PaneItem::Preview(e) => e.clone().into_any_element(),
             PaneItem::Diff(e) => e.clone().into_any_element(),

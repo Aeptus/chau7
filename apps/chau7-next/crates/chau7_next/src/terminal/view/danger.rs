@@ -92,6 +92,14 @@ impl TerminalView {
         if !output_scope_allows(settings, session) {
             return;
         }
+        // Tints only matter on screen. A hidden surface marks the scan due for
+        // its next frame instead of waking (and redrawing the window, since the
+        // tab bar reads this view) after every burst.
+        if !session.restore_surface_visible() {
+            self.danger.pending = None;
+            self.danger.due = true;
+            return;
+        }
         let (input_lag, output_lag) = session.ui_lag_ms();
         let saturated = danger_highlight::is_cpu_saturated(input_lag, output_lag);
         let timing = danger_highlight::highlight_timing(

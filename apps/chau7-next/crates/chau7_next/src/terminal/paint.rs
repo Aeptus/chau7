@@ -574,6 +574,48 @@ fn text_chunks(
     chunks
 }
 
+/// Split a grid-aligned chunk at runs of blank cells. Blanks draw nothing
+/// (backgrounds are painted separately), yet GPUI walks every shaped space
+/// glyph of a line on every frame; a full-screen TUI row is mostly blank.
+/// Leading and trailing blanks are dropped; shorter gaps stay inside a segment.
+fn visible_segments(
+    cells: &[OwnedCell],
+    clusters: &HashMap<usize, String>,
+    start: usize,
+    columns: Range<usize>,
+) -> Vec<Range<usize>> {
+    const GAP: usize = 4;
+    let blank = |col: usize| {
+        let cell = &cells[col];
+        !cell.continuation
+            && matches!(cell.character, ' ' | '\0')
+            && cell.underline == 0
+            && cell.link_id == 0
+            && cell.flags & (CELL_FLAG_UNDERLINE | CELL_FLAG_STRIKETHROUGH) == 0
+            && !clusters.contains_key(&(start + col))
+    };
+    let mut segments = Vec::new();
+    let mut open: Option<usize> = None;
+    let mut blanks = 0;
+    for col in columns.clone() {
+        if blank(col) {
+            blanks += 1;
+            if blanks == GAP
+                && let Some(first) = open.take()
+            {
+                segments.push(first..col + 1 - GAP);
+            }
+        } else {
+            open.get_or_insert(col);
+            blanks = 0;
+        }
+    }
+    if let Some(first) = open {
+        segments.push(first..columns.end - blanks);
+    }
+    segments
+}
+
 fn cell_text<'a>(cell: &OwnedCell, cluster: Option<&'a String>) -> Cow<'a, str> {
     if cell.flags & CELL_FLAG_HIDDEN != 0 {
         return Cow::Borrowed(" ");
@@ -734,13 +776,12 @@ fn paint_grid_content(
     let pass_started = Instant::now();
     let mut prepared = 0;
     let mut preparation = Duration::ZERO;
-    for row in 0..state.rows as usize {
+    for (row, row_clusters) in clusters_by_row.iter().enumerate() {
         let y = bounds.top() + m.line_height * row as f32;
         let start = row * cols;
         let Some(row_cells) = state.cells.get(start..start + cols) else {
             break;
         };
-        let row_clusters = &clusters_by_row[row];
         if !rows_cache.reuse(row, row_cells, row_clusters) {
             let began = Instant::now();
             let row_paint = prepare_row(row_cells, row_clusters, &state, start, default_bg, window);
@@ -940,7 +981,22 @@ fn prepare_row(
     }
 
     let mut decorations: Vec<Decoration> = Vec::new();
-    for chunk in text_chunks(row_cells, &state.clusters, start) {
+    let segments = text_chunks(row_cells, &state.clusters, start)
+        .into_iter()
+        .flat_map(|chunk| {
+            if chunk.natural {
+                vec![chunk]
+            } else {
+                visible_segments(row_cells, &state.clusters, start, chunk.columns)
+                    .into_iter()
+                    .map(|columns| TextChunk {
+                        columns,
+                        natural: false,
+                    })
+                    .collect()
+            }
+        });
+    for chunk in segments {
         let mut text = String::with_capacity(chunk.columns.len());
         let mut runs: Vec<TextRun> = Vec::new();
         let mut any_visible = false;
@@ -1371,6 +1427,36 @@ mod tests {
         assert_eq!(chunks[0].columns, 0..1);
         assert!(chunks[0].natural);
     }
+    #[test]
+    fn blank_runs_split_lines_and_edges_are_trimmed() {
+        let row: Vec<OwnedCell> = "  ab  c    d         "
+            .chars()
+            .map(|character| OwnedCell {
+                character,
+                ..OwnedCell::default()
+            })
+            .collect();
+        let none = HashMap::new();
+        // Gaps shorter than four cells stay inside a segment.
+        assert_eq!(
+            visible_segments(&row, &none, 0, 0..row.len()),
+            vec![2..7, 11..12]
+        );
+        // An underlined or clustered blank is content, not a gap.
+        let mut underlined = row.clone();
+        underlined[8].flags |= CELL_FLAG_UNDERLINE;
+        assert_eq!(
+            visible_segments(&underlined, &none, 0, 0..row.len()),
+            vec![2..12]
+        );
+        let clustered = HashMap::from([(20 + 9, "\u{00a0}".to_string())]);
+        assert_eq!(
+            visible_segments(&row, &clustered, 20, 0..row.len()),
+            vec![2..12]
+        );
+        assert!(visible_segments(&row, &none, 0, 13..row.len()).is_empty());
+    }
+
     #[test]
     fn ascii_rows_still_shape_in_one_batch() {
         let cells = vec![OwnedCell::default(); 80];

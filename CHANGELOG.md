@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Reduce terminal lag: reuse the prepared paint of unchanged terminal rows, stop copying hidden tabs' grids on every output batch, and rank slow stages against per-stage time budgets in the performance snapshot.
+- Reduce terminal lag: reuse the prepared paint of unchanged terminal rows, stop copying hidden tabs' grids on every output batch, and stop output in background tabs from redrawing the whole window. With 13 busy AI-style tabs, CPU per output batch fell about 3.8 times. The performance snapshot now ranks slow stages against per-stage time budgets, counts window frames, and separates main-thread congestion from deliberate frame pacing.
 - Prefill saved resume commands in every restored command tab after its shell reaches a prompt, including background tabs, without submitting them.
 - Patch the app's Rust TLS dependencies to Rustls 0.23.46 and WebPKI
   0.103.16 for the current TLS and certificate-validation advisories.

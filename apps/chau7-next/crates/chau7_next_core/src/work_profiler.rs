@@ -47,8 +47,9 @@ pub fn budget_ms(key: &Key) -> Option<f64> {
         (Kind::Work, "session_refresh", "get_grid") => Some(1.5),
         (Kind::Work, "session_refresh", "get_grid_shape") => Some(0.25),
         (Kind::Work, "session_refresh", "deferred_grid_copy") => Some(2.0),
-        // Output waiting for the main thread before it is processed.
-        (Kind::Latency, "output_dispatch", "event_dispatch_wait") => Some(50.0),
+        // Output waiting for the main thread, excluding the deliberate frame
+        // pacing hold (`event_dispatch_wait` includes it and has no budget).
+        (Kind::Latency, "output_dispatch", "event_dispatch_congestion") => Some(FRAME_BUDGET_MS),
         _ => None,
     };
     explicit.or_else(|| {
