@@ -16,6 +16,7 @@ import urllib.request
 from pathlib import Path
 
 from native import Sampler, summarize
+from threads import ThreadSampler, summarize_threads
 
 HERE = Path(__file__).resolve().parent
 
@@ -162,6 +163,8 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler):
         raise RuntimeError("not all synthetic terminals started")
     samples = {name: [] for name in pids}
     latencies = []
+    thread_sampler = ThreadSampler() if args.threads else None
+    thread_samples = []
     deadline = time.monotonic() + args.measure
     next_sample = next_request = time.monotonic()
     count = 0
@@ -170,6 +173,8 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler):
         if now >= next_sample:
             for role, pid in pids.items():
                 samples[role].append(sampler.sample(pid))
+            if thread_sampler:
+                thread_samples.append(thread_sampler.sample(pids["app"]))
             next_sample = now + args.interval
         if now >= deadline:
             break
@@ -196,6 +201,10 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler):
                 - time.monotonic(),
             )
         )
+    if name in ("mcp", "proxy"):
+        target = args.measure * (args.mcp_hz if name == "mcp" else args.request_hz)
+        if not 0.8 * target <= count <= 1.2 * target:
+            raise RuntimeError(f"request workload missed its configured rate: {count} vs {target}")
     after = mcp.tool("chau7_performance_snapshot")
     validate_rendering(name, after)
     progress_after = {p.stem: json.loads(p.read_text()) for p in progress_dir.glob("*.json")}
@@ -210,6 +219,8 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler):
         elif row["frames"] != 0 or row["bytes"] != 0:
             raise RuntimeError(f"workload did not match phase {name}: {proof}")
     return {
+        "thread_samples": thread_samples,
+        "thread_cpu": summarize_threads(thread_samples) if thread_samples else None,
         "workload_proof": proof,
         "processes": {role: summarize(rows) for role, rows in samples.items()},
         "samples": samples,
@@ -254,6 +265,14 @@ def run(args, result, home, log):
             "mcp_bridge": mcp.process.pid,
             "proxy": proxy_pid,
         }
+        # Prime every TUI before timing idle: a terminal that never produced
+        # printable output is still showing its animated startup overlay.
+        phase_file.write_text("active")
+        time.sleep(args.warmup)
+        phase_file.write_text("idle")
+        result["warmup_snapshot"] = mcp.tool("chau7_performance_snapshot")
+        if result["warmup_snapshot"]["startup"]["milestones"]["terminal_ready"] is None:
+            raise RuntimeError("terminal startup did not finish during warm-up")
         sampler = Sampler()
         for phase in args.phases.split(","):
             if phase not in ("idle", "terminal", "mcp", "proxy", "recovery"):
@@ -275,7 +294,11 @@ def main():
     parser.add_argument("label")
     parser.add_argument("--tabs", type=int, default=3, help="additional hidden tabs")
     parser.add_argument("--hz", type=float, default=12.5)
+    parser.add_argument(
+        "--threads", action="store_true", help="diagnostic thread attribution; keep off for final trials"
+    )
     parser.add_argument("--font", type=float, default=12)
+    parser.add_argument("--warmup", type=float, default=5)
     parser.add_argument("--settle", type=float, default=5)
     parser.add_argument("--measure", type=float, default=30)
     parser.add_argument("--interval", type=float, default=1)
@@ -286,7 +309,9 @@ def main():
     parser.add_argument("--results", type=Path, default=Path("perf-results"))
     args = parser.parse_args()
     if (
-        args.measure < args.interval
+        args.settle < 0
+        or args.warmup < 2
+        or args.measure < args.interval
         or min(args.interval, args.request_hz, args.mcp_hz, args.hz) <= 0
         or args.mcp_hz > 2
         or not 0 <= args.tabs < 40

@@ -57,7 +57,9 @@ It terminates only the child app it started; results survive failed runs.
 5. Repeat under 1, 4 and 12 total tabs and a sustained run. Run regression checks,
    preserve a compact measured report, and publish through the broker workflow.
 
-The default phases are idle, terminal, MCP, proxy and recovery. Terminal uses a
+The default phases are idle, terminal, MCP, proxy and recovery. A five-second
+output warm-up must complete terminal startup before any phase is timed;
+silent terminals can otherwise leave the animated startup overlay running. Terminal uses a
 12.5 Hz alternate-screen TUI in one visible and three hidden tabs; `--tabs`
 counts additional tabs. MCP issues runtime-info calls through the actual bridge.
 Runtime-info stays at its sustainable limit of 2 requests/s; the server limits remain enabled.
@@ -79,7 +81,8 @@ deltas and unavailable native reads fail the run instead of becoming zero.
 The TUI receives phase/progress paths as explicit arguments: startup deliberately
 clears inherited `CHAU7_*` variables. Every worker reports frames and emitted
 bytes. Idle/recovery must have zero frame deltas; terminal phases must have
-positive deltas for every expected worker. Full snapshots bracket each phase;
+positive byte deltas and frame counts within 20% of the configured rate for every
+expected worker. Full snapshots bracket each phase;
 rolling latency percentiles must not be described as whole-phase percentiles.
 
 Starting acceptance budgets on this host are idle app CPU <1%, app interrupt
@@ -99,3 +102,34 @@ python3 -m unittest discover -s apps/chau7-next/scripts/perf-bench -p 'test_*.py
 
 The native acceptance compares the ctypes ABI with the installed C SDK, checks
 CPU units against getrusage, and verifies busy child CPU stays out of its parent.
+
+Use `--threads` for a diagnostic pass. It records best-effort native thread CPU
+attribution with nanosecond counters, excluding vanished, renamed or regressed
+handles. Opaque handles can be recycled; this is attribution evidence, not a
+substitute for process CPU totals. Leave it off for final comparisons.
+
+## Local streaming proxy fixture
+
+The app-owned proxy phase above measures control requests. Also measure the
+real forwarding/SSE/task/SQLite paths with the opt-in test executable:
+
+```sh
+go -C services/chau7-proxy test -c -trimpath -ldflags='-s -w' \
+  -o /tmp/chau7-proxy-perflab.test .
+python3 apps/chau7-next/scripts/perf-bench/proxy_run.py \
+  /tmp/chau7-proxy-perflab.test proxy-candidate-1 \
+  --results /tmp/chau7-proxy-results
+```
+
+For a baseline, build the same `perf_fixture_test.go` against the frozen baseline
+source; keep all other source bytes unchanged. Interleave two runs per build.
+The fixture redirects only its test transport to an owned loopback provider.
+Production origin selection and credentials are unaffected. Every response must
+match the complete synthetic SSE stream byte for byte. Two streams/s contain
+19 flushed events with a deliberate 5 ms inter-event delay; record first-byte
+latency separately from completion latency. Target proxy CPU <1%, footprint
+<24 MiB, first-byte p95 <10 ms, and return to <0.1% CPU after streaming stops.
+
+This separate fixture excludes the app-owned parent watcher, IPC delivery and
+provider TLS. Keep its results separate from the bundled proxy process and do
+not describe local fake-provider latency as real model latency.
