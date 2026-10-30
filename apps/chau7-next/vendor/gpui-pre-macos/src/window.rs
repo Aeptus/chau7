@@ -5275,20 +5275,22 @@ extern "C" fn step(view: *mut c_void) {
     let window_state = unsafe { get_window_state(&*view) };
     let mut lock = window_state.lock();
 
+    // Preserve the native timing signal before stopping clears it.
+    let (signal_at, signal_source) = lock
+        .frame_source
+        .as_ref()
+        .and_then(WindowFrameSource::take_signal)
+        .map_or(
+            (None, FrameRequestSource::NativeCallback),
+            |(at, source)| (Some(at), source),
+        );
+
     // Consume one demand. GPUI re-arms through frame_waker if a draw,
     // animation or sustained high-rate input still needs another frame.
     // The immortal display-link registry keeps late callbacks safe.
     lock.stop_display_link();
 
     if let Some(mut callback) = lock.request_frame_callback.take() {
-        let (signal_at, signal_source) = lock
-            .frame_source
-            .as_ref()
-            .and_then(WindowFrameSource::take_signal)
-            .map_or(
-                (None, FrameRequestSource::NativeCallback),
-                |(at, source)| (Some(at), source),
-            );
         drop(lock);
         callback(RequestFrameOptions {
             signal_at,

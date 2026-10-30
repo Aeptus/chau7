@@ -443,9 +443,15 @@
           "before_sha256": "fd1527d6427fa9de3118a42e55d0c7faccb1da90de2db22d0d3d17da9138f5df",
           "description": "Request Metal vsync only while frame demand remains; coalesce native wakeups with weak window ownership and preserve high-rate presentation on demand-driven backends",
           "kind": "semantic"
+        },
+        {
+          "after_sha256": "d0f00effeecee84145aa3380d6c04f9559321638fbb16ccfd9e8ebdd13f635da",
+          "before_sha256": "b86e6035c1cbda09dd87fd458a5c451cf2b4ed038849c1a4efb5301c9a4c1225",
+          "description": "Consume native frame timing signal before parking its demand-driven display link",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "b86e6035c1cbda09dd87fd458a5c451cf2b4ed038849c1a4efb5301c9a4c1225",
+      "current_sha256": "d0f00effeecee84145aa3380d6c04f9559321638fbb16ccfd9e8ebdd13f635da",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Limit process argument reads to subscribed terminal process trees while keeping native child detection and SSH/provider resolution live.
+
 - Keep hidden terminal output from invalidating the native window while preserving live output processing, tab reveals and hover previews.
 
 - Avoid whole-workspace redraws for repeated hidden-tab output while preserving activity timestamps, idle-tab revival and visible age panels.
