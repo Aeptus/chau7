@@ -1167,7 +1167,15 @@ impl TerminalSession {
         }
         self.memory.set_tui(self.is_ai_running());
         cx.emit(SessionEvent::Output);
-        cx.notify();
+        // The tab bar reads hidden sessions too: GPUI tracks those reads as
+        // window dependencies. Output-only changes must not invalidate that
+        // window, while metadata and surfaces that can be presented stay live.
+        if metadata_changed
+            || self.restore_surface_visible()
+            || self.surface_prewarm_remaining().is_some()
+        {
+            cx.notify();
+        }
         feature_profiler::record(
             Feature::OutputProcessing,
             started.elapsed().as_secs_f64() * 1000.0,

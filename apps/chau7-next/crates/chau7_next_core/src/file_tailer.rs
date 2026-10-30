@@ -355,16 +355,13 @@ impl TailerHandle {
                     on_item(item);
                 }
                 let interval = tailer.poll_interval();
-                let slice = Duration::from_millis(50).min(interval);
-                'outer: loop {
-                    // Sleep in short slices so stop() is quick.
-                    let mut waited = Duration::ZERO;
-                    while waited < interval {
-                        if flag.load(Ordering::Relaxed) {
-                            break 'outer;
-                        }
-                        std::thread::sleep(slice);
-                        waited += slice;
+                while !flag.load(Ordering::Acquire) {
+                    // Sleep until the actual poll deadline. stop/drop unpark
+                    // this thread; an early unpark retains its token, so a stop
+                    // between this check and park cannot be lost.
+                    std::thread::park_timeout(interval);
+                    if flag.load(Ordering::Acquire) {
+                        break;
                     }
                     for item in tailer.poll() {
                         on_item(item);
@@ -378,8 +375,9 @@ impl TailerHandle {
 
     /// Stop the thread and wait for it.
     pub fn stop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop.store(true, Ordering::Release);
         if let Some(thread) = self.thread.take() {
+            thread.thread().unpark();
             let _ = thread.join();
         }
     }
@@ -387,7 +385,10 @@ impl TailerHandle {
 
 impl Drop for TailerHandle {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.stop.store(true, Ordering::Release);
+        if let Some(thread) = &self.thread {
+            thread.thread().unpark();
+        }
     }
 }
 
@@ -553,5 +554,62 @@ mod tests {
         let got = rx.recv_timeout(Duration::from_secs(3)).unwrap();
         assert_eq!(got, "hello");
         handle.stop();
+    }
+
+    #[test]
+    fn long_poll_stop_is_prompt_even_before_the_first_wait() {
+        let path = temp("stop-before-park");
+        append(&path, "ready\n");
+        let mut cfg = TailerConfig::new(&path);
+        cfg.poll_interval = Duration::from_secs(3600);
+        let tailer = FileTailer::new(cfg, |line| Ok(line.to_string()));
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let worker_barrier = barrier.clone();
+        let mut handle = TailerHandle::spawn(tailer, 1, move |_| {
+            ready_tx.send(()).unwrap();
+            worker_barrier.wait();
+        });
+        ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        let stopped = handle.stop.clone();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let stopper = std::thread::spawn(move || {
+            handle.stop();
+            done_tx.send(()).unwrap();
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while !stopped.load(Ordering::Acquire) {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        barrier.wait();
+        done_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        stopper.join().unwrap();
+    }
+
+    #[test]
+    fn dropping_a_long_poll_handle_wakes_and_retires_its_worker() {
+        struct Retired(std::sync::mpsc::Sender<()>);
+        impl Drop for Retired {
+            fn drop(&mut self) {
+                let _ = self.0.send(());
+            }
+        }
+        let path = temp("drop-parked");
+        append(&path, "ready\n");
+        let mut cfg = TailerConfig::new(&path);
+        cfg.poll_interval = Duration::from_secs(3600);
+        let tailer = FileTailer::new(cfg, |line| Ok(line.to_string()));
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (retired_tx, retired_rx) = std::sync::mpsc::channel();
+        let retired = Retired(retired_tx);
+        let handle = TailerHandle::spawn(tailer, 1, move |_| {
+            let _keep_until_thread_exit = &retired;
+            ready_tx.send(()).unwrap();
+        });
+        ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        drop(handle);
+        retired_rx.recv_timeout(Duration::from_secs(3)).unwrap();
     }
 }

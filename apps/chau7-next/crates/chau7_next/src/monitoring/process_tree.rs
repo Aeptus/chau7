@@ -253,7 +253,20 @@ fn capture(shared: &Shared) -> Option<Snapshot> {
     if let Some(rows) = native_rows()
         && !rows.is_empty()
     {
-        return Some(Snapshot::from_rows(rows));
+        let roots: Vec<_> = shared
+            .state
+            .lock()
+            .subscribers
+            .values()
+            .map(|s| s.pid)
+            .collect();
+        let mut snapshot = Snapshot::from_rows(rows);
+        populate_owned_argv(&mut snapshot, &roots, |pid| {
+            crate::platform::process::process_args_env(pid)
+                .map(|(args, _)| args)
+                .unwrap_or_default()
+        });
+        return Some(snapshot);
     }
     // Native enumeration can be unavailable. One bounded process, never one per tab.
     #[cfg(unix)]
@@ -275,18 +288,27 @@ fn capture(shared: &Shared) -> Option<Snapshot> {
     None
 }
 fn row(pid: u32, parent_pid: u32, command: String) -> ProcessRow {
-    let argv = if should_collect_argv(&command) {
-        crate::platform::process::process_args_env(pid)
-            .map(|(args, _)| args)
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
     ProcessRow {
         pid,
         parent_pid,
         command,
-        argv,
+        argv: Vec::new(),
+    }
+}
+
+/// Resolve ancestry before reading arguments: unrelated interpreters can be
+/// numerous, and their argument/environment reads do not describe any tab.
+fn populate_owned_argv(
+    snapshot: &mut Snapshot,
+    roots: &[u32],
+    mut read_args: impl FnMut(u32) -> Vec<String>,
+) {
+    for pid in snapshot.subtree_pids(roots.iter().copied()) {
+        if let Some(row) = snapshot.rows.get_mut(&pid)
+            && should_collect_argv(&row.command)
+        {
+            row.argv = read_args(pid);
+        }
     }
 }
 
@@ -506,5 +528,51 @@ mod tests {
         let _ = child.kill();
         let _ = child.wait();
         assert_eq!(observed, Some(std::process::id()));
+    }
+}
+
+#[cfg(test)]
+mod argument_scope_tests {
+    use super::*;
+
+    #[test]
+    fn owned_arguments_keep_provider_and_ssh_resolution_without_unrelated_reads() {
+        let mut snapshot = Snapshot::from_rows([
+            row(1, 0, "zsh".into()),
+            row(2, 1, "bash".into()),
+            row(3, 2, "node".into()),
+            row(4, 2, "ssh".into()),
+            row(5, 0, "ssh".into()),
+            row(10, 9, "python3".into()),
+            row(11, 9, "ssh".into()),
+        ]);
+        let mut requested = Vec::new();
+        populate_owned_argv(&mut snapshot, &[1, 2, 5, 1], |pid| {
+            requested.push(pid);
+            match pid {
+                3 => vec![
+                    "node".into(),
+                    "/tmp/node_modules/@openai/codex/bin/codex.js".into(),
+                ],
+                4 => vec!["ssh".into(), "deploy@child.example.com".into()],
+                5 => vec!["ssh".into(), "deploy@root.example.com".into()],
+                _ => panic!("must not read arguments for unrelated or non-interpreter PID {pid}"),
+            }
+        });
+        requested.sort_unstable();
+        assert_eq!(requested, [3, 4, 5]);
+        assert_eq!(snapshot.resolve(1), Some("Codex"));
+        assert_eq!(snapshot.ssh_host(1).as_deref(), Some("child.example.com"));
+        assert_eq!(snapshot.ssh_host(5).as_deref(), Some("root.example.com"));
+        assert!(snapshot.rows[&10].argv.is_empty());
+        assert!(snapshot.rows[&11].argv.is_empty());
+        assert_eq!(snapshot.descendant_names(1), ["bash", "node", "ssh"]);
+    }
+
+    #[test]
+    fn no_subscribers_means_no_argument_reads() {
+        let mut snapshot = Snapshot::from_rows([row(1, 0, "python3".into())]);
+        populate_owned_argv(&mut snapshot, &[], |_| panic!("no terminal owners"));
+        assert!(snapshot.rows[&1].argv.is_empty());
     }
 }
