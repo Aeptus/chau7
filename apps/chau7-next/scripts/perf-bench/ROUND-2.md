@@ -45,7 +45,46 @@ shared-host contention; it is not app CPU usage or an automatic acceptance gate.
   identity is known, late identity binding, appended transcript ingestion, last
   exit cleanup/reparking, coalesced lifecycle signals and cancellation.
 
+## Live AI workload
+
+Supplement the deterministic paired trials with five concurrent `gpt-6-luna`
+providers using `model_reasoning_effort="max"`. Cover six repositories: Aethyme,
+Chau7, Aetower, Mockup, product-design and website-and-content; one provider
+handles two repositories sequentially. Freeze the ten newest issues per
+repository at task preparation, and assign one issue from each list. Fewer than
+ten existing issues is valid. A closed issue stays closed.
+
+The authorized useful work is an evidence-backed enrichment comment: inspect the
+issue and existing discussion, identify relevant current source, clarify gaps and
+acceptance criteria, and publish at most one non-duplicate findings comment per
+repository. No implementation, deployment or issue-state change is part of this
+workload. If an assigned repository has no useful issue remaining, the user
+also authorizes a replacement cybersecurity-news research/content issue in
+`Aeptus/website-and-content`. Follow its `marketing-content-creator` skill and
+content engine, deduplicate existing material, cite current original sources
+with verified dates, and propose a specific audience, editorial angle and
+acceptance criteria. Keep CMS and published content unchanged. Keep existing
+repository publication rules and provider approvals.
+
+Use an owned isolated app profile, preserve actual agent launch/submission
+results, tab/run identities and native app/bridge/proxy samples. Verify overlap
+rather than assuming that five launched CLIs means five active turns. Separate
+CLI child CPU from app CPU. Keep this observational live run separate from the
+reproducible synthetic comparison: model latency, external tools and issue
+contents vary, and repeated publication would create duplicate comments. Retain
+comment URLs and failures as task-completion evidence. Do not start compilation
+or the final paired baseline/candidate captures while this workload is running.
+
 ## Status
 
-Baseline packaging and runtime acceptance are in progress. No round-2 speedup is
-claimed yet. Final measurements and limitations will replace this status.
+The frozen baseline completed all five 30-second phases with valid workload and
+render/hang proofs. App idle CPU was 0.742%, interrupt wakeups 43.538/s, terminal
+CPU 5.521%, MCP p95 5.409 ms and proxy-control p95 6.742 ms. Final recovery
+physical footprint was 74.80 MiB. Host load was sampled throughout; the idle
+one-minute load ranged from 37.69 to 47.91 on this busy shared Mac. These are
+baseline observations, not new gains. The baseline receipt's dirty flag covers
+harness/docs changes only; runtime source remained at the stated revision.
+
+The candidate worker regression and final measurements are pending. No round-2
+speedup is claimed yet. Final measurements and limitations will replace this
+status.

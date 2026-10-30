@@ -23,13 +23,14 @@ HERE = Path(__file__).resolve().parent
 
 
 class Mcp:
-    def __init__(self, bridge, socket_path, log):
+    def __init__(self, bridge, socket_path, log, timeout=15):
         self.process = subprocess.Popen(
             [str(bridge), "--socket", str(socket_path)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=log,
         )
+        self.timeout = timeout
         self.sequence = 0
         self.buffer = b""
         self.rpc(
@@ -49,7 +50,7 @@ class Mcp:
     def rpc(self, method, params):
         self.sequence += 1
         self.send({"jsonrpc": "2.0", "id": self.sequence, "method": method, "params": params})
-        deadline = time.monotonic() + 15
+        deadline = time.monotonic() + self.timeout
         while True:
             while b"\n" not in self.buffer:
                 remaining = deadline - time.monotonic()

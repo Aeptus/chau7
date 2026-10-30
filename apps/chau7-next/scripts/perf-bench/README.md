@@ -1,7 +1,7 @@
 # Isolated macOS performance lab
 
 Build and measure the actual app, its bundled MCP bridge, and its app-owned Go
-proxy. The harness uses a fresh temporary home, synthetic terminals, private
+proxy. The default `run.py`/`loop.py` harness uses a fresh temporary home, synthetic terminals, private
 sockets, free local ports and fresh result filenames. It never accepts the
 production PID, installs into Applications, or reads production session data.
 It terminates only the child app it started; results survive failed runs.
@@ -65,7 +65,7 @@ counts additional tabs. MCP issues runtime-info calls through the actual bridge.
 Runtime-info stays at its sustainable limit of 2 requests/s; the server limits remain enabled.
 Proxy exercises the local SQLite stats endpoint at 10 requests/s; this is an
 analytics/control workload, not a measurement of upstream model streaming.
-No external API or paid model calls are made.
+The synthetic loop makes no external API or paid model calls.
 
 ## Measurement contract
 
@@ -137,3 +137,42 @@ latency separately from completion latency. Target proxy CPU <1%, footprint
 This separate fixture excludes the app-owned parent watcher, IPC delivery and
 provider TLS. Keep its results separate from the bundled proxy process and do
 not describe local fake-provider latency as real model latency.
+
+## Authorized live agent workload
+
+`live_agents.py` supplements the synthetic loop with real issue investigation.
+It starts five GPT-6-Luna Max CLIs in an owned isolated app, covering six issues
+(one agent handles two repositories). Use it only for authorized live work: it
+uses the current user's Codex credentials and session transcripts, incurs model
+usage and can publish the issue comments requested in the task prompts. The
+app's profile, restoration state and MCP socket remain private to the fixture.
+
+Prepare a JSON array with exactly five objects. Each has `directory`, `prompt`
+and `issues`; the issue lists total six entries. Freeze each assigned issue's
+URL, number and repository alongside the source list of its ten newest issues.
+Write prompts with bounded investigative work, evidence-backed findings and at
+most one non-duplicate comment per issue, respecting repository publication and
+provider approval rules. Do not implement code or alter issue state.
+
+```sh
+python3 apps/chau7-next/scripts/perf-bench/live_agents.py \
+  '/tmp/chau7-perf-candidate/Chau7 Next.app/Contents/MacOS/Chau7 Next' \
+  /tmp/authorized-live-tasks.json --results /tmp/chau7-live-load --seconds 600
+```
+
+Finish compilation before starting. Retain launch/submission evidence, native
+app/bridge/proxy samples, host load, live lifecycle snapshots and resulting
+comment URLs. App CPU excludes CLI children. Confirm five overlapping active
+turns from lifecycle/transcript evidence; five CLI processes alone is
+insufficient. The collector's `captured` status means capture finished, not that
+all issue work succeeded. Check every result and permission failure.
+
+This run retains its owned fixture and private profile so that pending issue
+work can finish. Verify completion before closing its tabs and app. It never
+authorizes stopping the installed production app or unrelated sessions. Keep
+full owned PTY tails and issue data private; publish only bounded numerical
+evidence and comment links.
+
+Live model and tool timing varies. Report this as observational stress evidence,
+separately from deterministic A/B results, and do not rerun comment publication
+to manufacture repeatability.
