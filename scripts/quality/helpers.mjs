@@ -303,12 +303,29 @@ export function resolveChangedFilesFromPrepush(input, root = repoRoot()) {
     }
     if (!base) continue;
     ranges.push({ base, head: update.localSha, update });
+    const own = branchOwnFiles(update, root);
     for (const file of changedFilesBetween(base, update.localSha, root)) {
-      files.add(file);
+      if (!own || own.has(file)) files.add(file);
     }
   }
 
   return { files: [...files].sort(), updates, ranges };
+}
+
+// Files the branch itself changed since it left origin/main, or null when
+// that can't be told (no origin/main, or the push is main itself). Changes a
+// branch only picked up by merging main were already checked on main, so a
+// catch-up merge must not re-run their gates (or trigger the full suite).
+function branchOwnFiles(update, root) {
+  if (update.remoteRef === "refs/heads/main") return null;
+  let forkPoint;
+  try {
+    forkPoint = mergeBase(update.localSha, "origin/main", root);
+  } catch {
+    return null;
+  }
+  if (!forkPoint || forkPoint === update.localSha) return null;
+  return new Set(changedFilesBetween(forkPoint, update.localSha, root));
 }
 
 export function isWorktreeDirty(root = repoRoot()) {
