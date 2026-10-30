@@ -56,6 +56,21 @@ test("pre-push stdin update lines resolve changed files", () => {
   assert.equal(resolved.updates[0].localSha, head);
 });
 
+test("pre-push ignores files a branch only picked up by merging main", () => {
+  const root = makeRepo();
+  commit(root, "a.txt", "a\n", "base");
+  const pushed = commit(root, "own.txt", "own\n", "branch work");
+  execFileSync("git", ["checkout", "-q", "-b", "upstream", "HEAD~1"], { cwd: root });
+  const main = commit(root, "go.mod", "module x\n", "main moved on");
+  execFileSync("git", ["update-ref", "refs/remotes/origin/main", main], { cwd: root });
+  execFileSync("git", ["checkout", "-q", "work"], { cwd: root });
+  execFileSync("git", ["merge", "-q", "--no-edit", "upstream"], { cwd: root, stdio: "ignore" });
+  const head = commit(root, "own.txt", "own 2\n", "more branch work");
+  const input = `refs/heads/work ${head} refs/heads/agent/work ${pushed}\n`;
+
+  assert.deepEqual(resolveChangedFilesFromPrepush(input, root).files, ["own.txt"]);
+});
+
 test("fallback diff base resolves HEAD parent when no upstream exists", () => {
   const root = makeRepo();
   const base = commit(root, "a.txt", "a\n", "base");
