@@ -29,9 +29,31 @@ It terminates only the child app it started; results survive failed runs.
    the exact same command with the candidate binary and a new label. Wait for
    builds to finish before final comparisons. Use interleaved baseline/candidate
    runs at least twice; retain raw samples, binary hashes, host load and arguments.
+   Automate the interleaved A/B/B/A run and comparison after each rebuild:
+
+   ```sh
+   python3 apps/chau7-next/scripts/perf-bench/loop.py \
+     '/tmp/chau7-perf-baseline/Chau7 Next.app/Contents/MacOS/Chau7 Next' \
+     '/tmp/chau7-perf-candidate/Chau7 Next.app/Contents/MacOS/Chau7 Next' \
+     --results /tmp/chau7-perf-iteration-1
+   ```
+
 4. Compare with `summary.py /tmp/chau7-perf-results/*.json` (select complete runs).
    Accept changes only when the repeat runs agree, workload proofs pass and
    output/request latency stays within budget. Reject regressions and repeat.
+   Enforce repeat compatibility, regressions and budgets with:
+
+   ```sh
+   python3 apps/chau7-next/scripts/perf-bench/compare.py \
+     --baseline /tmp/chau7-perf-results/baseline-{1,2}.json \
+     --candidate /tmp/chau7-perf-results/candidate-{1,2}.json \
+     --output /tmp/chau7-perf-results/comparison.json
+   ```
+
+   A failed budget exits nonzero and means another iteration is required.
+   Active phases also require recent selected-terminal paint evidence and a
+   healthy hang watchdog, so a frozen renderer cannot pass as an optimization.
+
 5. Repeat under 1, 4 and 12 total tabs and a sustained run. Run regression checks,
    preserve a compact measured report, and publish through the broker workflow.
 

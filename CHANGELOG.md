@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Stop idle Metal display callbacks and static-terminal redraws, and replace the proxy task grace-period scan with a deadline timer.
 - Add an isolated macOS performance lab with verified terminal workloads and separate app, MCP bridge and proxy CPU, physical-memory and wakeup measurements.
 
 - Show tokens per second for resumed Codex tabs: Codex keeps writing a resumed session to the file of the day it was created, which Chau7 now finds through the path Codex records instead of only today's and yesterday's folders.

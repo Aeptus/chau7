@@ -95,6 +95,7 @@ func main() {
 
 	// Initialize task manager
 	taskManager := NewTaskManager(db, ipc, config.CandidateGracePeriod, config.IdleTimeout)
+	defer taskManager.Close()
 
 	// v1.2: Wire up mockup client for analytics forwarding
 	if mockupClient != nil {

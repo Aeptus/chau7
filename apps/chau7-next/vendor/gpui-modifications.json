@@ -437,9 +437,15 @@
           "before_sha256": "a3e810b2253aa7e999c7924efce622ad947ccfce2c5fa5b2323526f7ee8be2d7",
           "description": "Track actual screen menu overlap independently of empty fullscreen auxiliary chrome; hide and restore its retained content root, defer geometry updates, and expose separate menu and toolbar occlusion diagnostics with regression coverage",
           "kind": "semantic"
+        },
+        {
+          "after_sha256": "b86e6035c1cbda09dd87fd458a5c451cf2b4ed038849c1a4efb5301c9a4c1225",
+          "before_sha256": "fd1527d6427fa9de3118a42e55d0c7faccb1da90de2db22d0d3d17da9138f5df",
+          "description": "Request Metal vsync only while frame demand remains; coalesce native wakeups with weak window ownership and preserve high-rate presentation on demand-driven backends",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "fd1527d6427fa9de3118a42e55d0c7faccb1da90de2db22d0d3d17da9138f5df",
+      "current_sha256": "b86e6035c1cbda09dd87fd458a5c451cf2b4ed038849c1a4efb5301c9a4c1225",
       "original_sha256": "2f17e4e9cdc2696388c7a3d4d546e82601b5dc3b5114255cc2579e3fe28e2c39",
       "package": "gpui-pre-macos",
       "path": "src/window.rs"
@@ -505,9 +511,15 @@
           "before_sha256": "44f32319b9385fa6dbc15c36b3edea00a26208309b37283ae4f9bd4bead674f8",
           "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
           "kind": "semantic"
+        },
+        {
+          "after_sha256": "fa546e605b6d562a9c4def57b18ae8ca39cc3326abb3c3b82028b18110eeebb8",
+          "before_sha256": "ea8cf009099856a56571b10c7585f767ffcee06fb56287a30f193ab89c5b10c8",
+          "description": "Request Metal vsync only while frame demand remains; coalesce native wakeups with weak window ownership and preserve high-rate presentation on demand-driven backends",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "ea8cf009099856a56571b10c7585f767ffcee06fb56287a30f193ab89c5b10c8",
+      "current_sha256": "fa546e605b6d562a9c4def57b18ae8ca39cc3326abb3c3b82028b18110eeebb8",
       "original_sha256": "44f32319b9385fa6dbc15c36b3edea00a26208309b37283ae4f9bd4bead674f8",
       "package": "gpui-pre",
       "path": "src/window.rs"
@@ -661,6 +673,20 @@
           "description": "Describe native quit observer completion policy and unchanged default timeout",
           "before_sha256": "b05a478fb75a5488887cb46e2ea151c5d85ea8543311aca9ac5e724200f03ecb",
           "after_sha256": "bc123b21677c19f5873afcdb9bfe159e826f047476011fabb897dd7a4791ce4d"
+        }
+      ]
+    },
+    {
+      "package": "gpui-pre",
+      "path": "src/app/test_context.rs",
+      "original_sha256": "897a16840cc23f36e125d90be35c2d0b243710ec8e67c4b41a22aa800e6624ba",
+      "current_sha256": "7ec758cb315e7ce85077719ca872c08e6161ef34eff40860d35a08b231a39985",
+      "changes": [
+        {
+          "kind": "semantic",
+          "description": "Expose the existing test-support window accessor to app regression tests; production builds do not include TestAppContext",
+          "before_sha256": "897a16840cc23f36e125d90be35c2d0b243710ec8e67c4b41a22aa800e6624ba",
+          "after_sha256": "7ec758cb315e7ce85077719ca872c08e6161ef34eff40860d35a08b231a39985"
         }
       ]
     }

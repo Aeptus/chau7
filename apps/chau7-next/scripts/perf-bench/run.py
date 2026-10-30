@@ -136,6 +136,22 @@ def percentile(values, fraction):
     return sorted(values)[min(len(values) - 1, int((len(values) - 1) * fraction))]
 
 
+def validate_rendering(name, snapshot):
+    watchdog = snapshot["hang_watchdog"]
+    if watchdog["stall_count"] or watchdog["render_circuit_breaker_open"]:
+        raise RuntimeError("app stalled during the workload")
+    selected = [t for t in snapshot["terminals"] if t["selected"] and not t["render_suspended"]]
+    if not selected:
+        raise RuntimeError("no selected live terminal")
+    if name == "terminal":
+        painted = snapshot["memory_retention"]["renderer_samples"]
+        ages = {row["session_id"]: row["renderer"]["last_paint_age_seconds"] for row in painted}
+        for terminal in selected:
+            age = ages.get(terminal["session_id"])
+            if age is None or age > 1 or not terminal["output"]["sample_count"]:
+                raise RuntimeError("output was emitted but the selected terminal stopped painting")
+
+
 def measure_phase(name, args, pids, mcp, phase_file, port, sampler):
     phase_file.write_text("active" if name == "terminal" else "idle")
     time.sleep(args.settle)
@@ -171,17 +187,27 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler):
             next_request = started + 1 / (args.mcp_hz if name == "mcp" else args.request_hz)
         time.sleep(
             max(
-                0, min(next_sample, next_request if name in ("mcp", "proxy") else deadline, deadline) - time.monotonic()
+                0,
+                min(
+                    next_sample,
+                    next_request if name in ("mcp", "proxy") else deadline,
+                    deadline,
+                )
+                - time.monotonic(),
             )
         )
     after = mcp.tool("chau7_performance_snapshot")
+    validate_rendering(name, after)
     progress_after = {p.stem: json.loads(p.read_text()) for p in progress_dir.glob("*.json")}
     proof = {
         pid: {key: progress_after[pid][key] - row[key] for key in ("frames", "bytes")}
         for pid, row in progress_before.items()
     }
     for row in proof.values():
-        if (name == "terminal" and row["frames"] == 0) or (name != "terminal" and row["frames"] != 0):
+        if name == "terminal":
+            if not 0.8 * args.measure * args.hz <= row["frames"] <= 1.2 * args.measure * args.hz or row["bytes"] <= 0:
+                raise RuntimeError(f"workload missed its configured output rate: {proof}")
+        elif row["frames"] != 0 or row["bytes"] != 0:
             raise RuntimeError(f"workload did not match phase {name}: {proof}")
     return {
         "workload_proof": proof,
@@ -223,7 +249,11 @@ def run(args, result, home, log):
             created = mcp.tool("tab_create", directory=str(home))
             if not isinstance(created, dict) or not created.get("tab_id"):
                 raise RuntimeError(f"tab_create failed: {created}")
-        result["pids"] = {"app": app.pid, "mcp_bridge": mcp.process.pid, "proxy": proxy_pid}
+        result["pids"] = {
+            "app": app.pid,
+            "mcp_bridge": mcp.process.pid,
+            "proxy": proxy_pid,
+        }
         sampler = Sampler()
         for phase in args.phases.split(","):
             if phase not in ("idle", "terminal", "mcp", "proxy", "recovery"):

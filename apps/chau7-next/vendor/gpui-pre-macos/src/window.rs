@@ -2366,8 +2366,33 @@ fn if_window_not_closed(closed: Arc<AtomicBool>, f: impl FnOnce()) {
 impl PlatformWindow for MacWindow {
     fn frame_waker(&self) -> Option<Rc<dyn Fn()>> {
         let state = self.0.lock();
-        if state.renderer.backend() != renderer::WindowBackend::Software {
-            return None;
+        if state.renderer.backend() == renderer::WindowBackend::Metal {
+            let foreground = state.foreground_executor.clone();
+            let closed = state.closed.clone();
+            drop(state);
+            let weak = Arc::downgrade(&self.0);
+            let pending = Rc::new(std::cell::Cell::new(false));
+            return Some(Rc::new(move || {
+                if closed.load(Ordering::Acquire) || pending.replace(true) {
+                    return;
+                }
+                let weak = weak.clone();
+                let pending = pending.clone();
+                let closed = closed.clone();
+                foreground
+                    .spawn(async move {
+                        // Defer beyond the App borrow requesting a frame and
+                        // coalesce invalidations into one native vsync request.
+                        pending.set(false);
+                        if closed.load(Ordering::Acquire) {
+                            return;
+                        }
+                        if let Some(state) = weak.upgrade() {
+                            state.lock().start_display_link();
+                        }
+                    })
+                    .detach();
+            }));
         }
         let foreground = state.foreground_executor.clone();
         let background = state.background_executor.clone();
@@ -5249,6 +5274,11 @@ extern "C" fn step(view: *mut c_void) {
     let view = view as id;
     let window_state = unsafe { get_window_state(&*view) };
     let mut lock = window_state.lock();
+
+    // Consume one demand. GPUI re-arms through frame_waker if a draw,
+    // animation or sustained high-rate input still needs another frame.
+    // The immortal display-link registry keeps late callbacks safe.
+    lock.stop_display_link();
 
     if let Some(mut callback) = lock.request_frame_callback.take() {
         let (signal_at, signal_source) = lock

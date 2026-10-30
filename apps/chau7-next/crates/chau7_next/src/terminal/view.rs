@@ -481,10 +481,12 @@ impl TerminalView {
         } else {
             false
         };
+        // Match the painter: an emulator-hidden cursor has no blinking pixels.
+        // Keep its phase advancing so showing it again preserves normal blink.
         let transition = cursor_blink_transition(
             self.cursor_on,
             appearance.cursor_blink,
-            self.cursor_focused,
+            self.cursor_focused && session.grid.cursor_visible,
             blink_hold,
         );
         if transition.cursor_on != self.cursor_on {
@@ -1051,7 +1053,7 @@ mod tests {
             .split("    fn metrics(")
             .next()
             .unwrap();
-        assert!(blink.contains("self.cursor_focused"));
+        assert!(blink.contains("self.cursor_focused && session.grid.cursor_visible"));
         assert!(blink.contains("cursor_blink_transition("));
         assert!(blink.contains("if transition.notify"));
 
