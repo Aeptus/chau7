@@ -147,6 +147,11 @@ def run(args, result, directory, log):
                 "first_byte_p95_ms": percentile(first_bytes, 0.95),
                 "completion_p95_ms": percentile(completions, 0.95),
             }
+            if (
+                phase == "streaming"
+                and not 0.8 * args.measure * args.request_hz <= len(first_bytes) <= 1.2 * args.measure * args.request_hz
+            ):
+                raise RuntimeError("streaming workload missed its configured request rate")
     finally:
         if connection:
             connection.close()

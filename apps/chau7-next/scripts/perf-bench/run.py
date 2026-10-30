@@ -8,6 +8,7 @@ import os
 import platform
 import select
 import shlex
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -137,7 +138,9 @@ def percentile(values, fraction):
     return sorted(values)[min(len(values) - 1, int((len(values) - 1) * fraction))]
 
 
-def validate_rendering(name, snapshot):
+def validate_rendering(name, snapshot, expected_count=None):
+    if expected_count is not None and len(snapshot["terminals"]) != expected_count:
+        raise RuntimeError("terminal surfaces disappeared during the workload")
     watchdog = snapshot["hang_watchdog"]
     if watchdog["stall_count"] or watchdog["render_circuit_breaker_open"]:
         raise RuntimeError("app stalled during the workload")
@@ -153,7 +156,7 @@ def validate_rendering(name, snapshot):
                 raise RuntimeError("output was emitted but the selected terminal stopped painting")
 
 
-def measure_phase(name, args, pids, mcp, phase_file, port, sampler):
+def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases):
     phase_file.write_text("active" if name == "terminal" else "idle")
     time.sleep(args.settle)
     before = mcp.tool("chau7_performance_snapshot")
@@ -201,24 +204,13 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler):
                 - time.monotonic(),
             )
         )
-    if name in ("mcp", "proxy"):
-        target = args.measure * (args.mcp_hz if name == "mcp" else args.request_hz)
-        if not 0.8 * target <= count <= 1.2 * target:
-            raise RuntimeError(f"request workload missed its configured rate: {count} vs {target}")
     after = mcp.tool("chau7_performance_snapshot")
-    validate_rendering(name, after)
     progress_after = {p.stem: json.loads(p.read_text()) for p in progress_dir.glob("*.json")}
     proof = {
-        pid: {key: progress_after[pid][key] - row[key] for key in ("frames", "bytes")}
-        for pid, row in progress_before.items()
+        pid: {key: progress_after[pid][key] - worker[key] for key in ("frames", "bytes")}
+        for pid, worker in progress_before.items()
     }
-    for row in proof.values():
-        if name == "terminal":
-            if not 0.8 * args.measure * args.hz <= row["frames"] <= 1.2 * args.measure * args.hz or row["bytes"] <= 0:
-                raise RuntimeError(f"workload missed its configured output rate: {proof}")
-        elif row["frames"] != 0 or row["bytes"] != 0:
-            raise RuntimeError(f"workload did not match phase {name}: {proof}")
-    return {
+    row = {
         "thread_samples": thread_samples,
         "thread_cpu": summarize_threads(thread_samples) if thread_samples else None,
         "workload_proof": proof,
@@ -233,6 +225,21 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler):
         "first_snapshot": before,
         "last_snapshot": after,
     }
+
+    # Preserve complete phase evidence even when an acceptance check rejects it.
+    phases[name] = row
+    validate_rendering(name, after, args.tabs + 1)
+    if name in ("mcp", "proxy"):
+        target = args.measure * (args.mcp_hz if name == "mcp" else args.request_hz)
+        if not 0.8 * target <= count <= 1.2 * target:
+            raise RuntimeError(f"request workload missed its configured rate: {count} vs {target}")
+    for row in proof.values():
+        if name == "terminal":
+            if not 0.8 * args.measure * args.hz <= row["frames"] <= 1.2 * args.measure * args.hz or row["bytes"] <= 0:
+                raise RuntimeError(f"workload missed its configured output rate: {proof}")
+        elif row["frames"] != 0 or row["bytes"] != 0:
+            raise RuntimeError(f"workload did not match phase {name}: {proof}")
+    return phases[name]
 
 
 def run(args, result, home, log):
@@ -278,7 +285,9 @@ def run(args, result, home, log):
             if phase not in ("idle", "terminal", "mcp", "proxy", "recovery"):
                 raise ValueError(f"unknown phase: {phase}")
             print(f"measuring {phase}", flush=True)
-            result["phases"][phase] = measure_phase(phase, args, result["pids"], mcp, phase_file, port, sampler)
+            result["phases"][phase] = measure_phase(
+                phase, args, result["pids"], mcp, phase_file, port, sampler, result["phases"]
+            )
     finally:
         if mcp:
             mcp.close()
@@ -335,6 +344,10 @@ def main():
             "started_at_unix_s": time.time(),
         },
         "binary_sha256": hashlib.sha256(args.binary.read_bytes()).hexdigest(),
+        "harness_sha256": {
+            name: hashlib.sha256((HERE / name).read_bytes()).hexdigest()
+            for name in ("run.py", "tui.py", "native.py", "threads.py")
+        },
         "helper_sha256": {
             name: hashlib.sha256((args.binary.parent / name).read_bytes()).hexdigest()
             for name in ("chau7-next-mcp-bridge", "chau7-proxy")
@@ -342,15 +355,15 @@ def main():
         "arguments": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         "phases": {},
     }
+    temporary = Path(tempfile.mkdtemp(prefix="c7perf-", dir="/tmp"))
     try:
-        with (
-            tempfile.TemporaryDirectory(prefix="c7perf-", dir="/tmp") as temporary,
-            (args.results / f"{args.label}.log").open("w") as log,
-        ):
-            run(args, result, Path(temporary), log)
+        with (args.results / f"{args.label}.log").open("w") as log:
+            run(args, result, temporary, log)
         result["status"] = "complete"
+        shutil.rmtree(temporary)
     except Exception as error:
         result["error"] = str(error)
+        result["failed_profile"] = str(temporary)
         raise
     finally:
         destination.write_text(json.dumps(result, indent=2) + "\n")

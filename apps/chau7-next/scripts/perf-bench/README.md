@@ -82,7 +82,11 @@ The TUI receives phase/progress paths as explicit arguments: startup deliberatel
 clears inherited `CHAU7_*` variables. Every worker reports frames and emitted
 bytes. Idle/recovery must have zero frame deltas; terminal phases must have
 positive byte deltas and frame counts within 20% of the configured rate for every
-expected worker. Full snapshots bracket each phase;
+expected worker. The external TUI generator uses user-initiated QoS and absolute
+frame deadlines, without catch-up bursts; measured app/helper scheduling is unchanged.
+Rejected phases retain their raw samples, snapshots and synthetic private profile
+(`failed_profile` in JSON) for diagnosis. Harness source hashes must match between
+compared trials; keep the scripts unchanged until the paired run finishes. Full snapshots bracket each phase;
 rolling latency percentiles must not be described as whole-phase percentiles.
 
 Starting acceptance budgets on this host are idle app CPU <1%, app interrupt

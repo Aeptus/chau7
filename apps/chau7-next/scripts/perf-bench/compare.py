@@ -19,7 +19,7 @@ def load_runs(paths):
         if run["status"] != "complete" or run["schema_version"] != 2:
             raise ValueError("only complete v2 runs can be compared")
         for phase, row in run["phases"].items():
-            validate_rendering(phase, row["last_snapshot"])
+            validate_rendering(phase, row["last_snapshot"], run["arguments"]["tabs"] + 1)
     if len({run["binary_sha256"] for run in runs}) != 1:
         raise ValueError("a repeat group contains different app binaries")
     if any(run["helper_sha256"] != runs[0]["helper_sha256"] for run in runs):
@@ -36,7 +36,7 @@ def signature(run):
         )
         for phase, row in run["phases"].items()
     }
-    return args, grids, run["host"]["platform"], run["host"]["logical_cpus"]
+    return args, grids, run["host"]["platform"], run["host"]["logical_cpus"], run.get("harness_sha256")
 
 
 def compare(baselines, candidates):

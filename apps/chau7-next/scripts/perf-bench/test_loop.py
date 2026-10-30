@@ -6,9 +6,11 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from compare import load_runs, signature
-from run import HERE, validate_rendering
+from run import HERE, measure_phase, validate_rendering
 
 
 class WorkloadAcceptance(unittest.TestCase):
@@ -59,6 +61,28 @@ class WorkloadAcceptance(unittest.TestCase):
                 child.terminate()
                 child.wait(timeout=5)
 
+    def test_rejected_phase_keeps_raw_capture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "progress").mkdir()
+            (root / "progress" / "1.json").write_text('{"frames":0,"bytes":0}')
+            control = root / "phase"
+            phases = {}
+            snapshot = {"terminals": [{}], "hang_watchdog": {"stall_count": 1, "render_circuit_breaker_open": False}}
+            args = SimpleNamespace(settle=0, tabs=0, threads=False, measure=0, interval=1)
+            sampler = Mock()
+            sampler.sample.return_value = {"pid": 1}
+            mcp = Mock()
+            mcp.tool.return_value = snapshot
+            with (
+                patch("run.summarize", return_value={"cpu_percent": 0}),
+                self.assertRaisesRegex(RuntimeError, "app stalled"),
+            ):
+                measure_phase("terminal", args, {"app": 1}, mcp, control, 0, sampler, phases)
+            self.assertEqual(phases["terminal"]["samples"]["app"], [{"pid": 1}])
+            self.assertEqual(phases["terminal"]["last_snapshot"], snapshot)
+            self.assertEqual(phases["terminal"]["workload_proof"], {"1": {"frames": 0, "bytes": 0}})
+
     def test_stopped_renderer_and_hang_cannot_pass_as_low_cpu(self):
         healthy = {
             "hang_watchdog": {"stall_count": 0, "render_circuit_breaker_open": False},
@@ -73,6 +97,8 @@ class WorkloadAcceptance(unittest.TestCase):
             "memory_retention": {"renderer_samples": [{"session_id": 1, "renderer": {"last_paint_age_seconds": 0.02}}]},
         }
         validate_rendering("terminal", healthy)
+        with self.assertRaisesRegex(RuntimeError, "surfaces disappeared"):
+            validate_rendering("terminal", healthy, expected_count=4)
         frozen = copy.deepcopy(healthy)
         frozen["memory_retention"]["renderer_samples"][0]["renderer"]["last_paint_age_seconds"] = 30
         with self.assertRaises(RuntimeError):
