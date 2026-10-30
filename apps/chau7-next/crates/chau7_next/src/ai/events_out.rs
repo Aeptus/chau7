@@ -75,6 +75,7 @@ pub fn publish(mut event: AiEvent, notify: bool, cx: &mut App) {
 
 /// The sole spine pump calls this after ordered ingestion.
 pub(crate) fn project(mut event: AiEvent, notify: bool, cx: &mut App) {
+    crate::terminal::session::adopt_tab_reported_identity(&event, cx);
     if !crate::terminal::session::reconcile_feedback_route(&mut event, cx) {
         return;
     }

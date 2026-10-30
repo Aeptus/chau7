@@ -228,6 +228,10 @@ pub struct ShellSession {
     status: CommandStatus,
     is_at_prompt: bool,
     is_shell_loading: bool,
+    /// A line was typed before the shell drew its first prompt (an MCP or
+    /// runtime launch queued into a new tab). The shell has not read it yet,
+    /// so the startup's own finish and first prompt are not its completion.
+    typed_while_loading: bool,
     has_shell_integration: bool,
     saw_osc7: bool,
     has_pending_command: bool,
@@ -275,6 +279,7 @@ impl ShellSession {
             status: CommandStatus::Idle,
             is_at_prompt: false,
             is_shell_loading: true,
+            typed_while_loading: false,
             has_shell_integration: false,
             saw_osc7: false,
             has_pending_command: false,
@@ -549,6 +554,9 @@ impl ShellSession {
             return;
         }
         let trimmed = trimmed.to_string();
+        if self.is_shell_loading {
+            self.typed_while_loading = true;
+        }
         let resume_metadata = resume::extract_metadata(&trimmed);
         if resume_metadata.is_none() {
             self.suppress_waiting_fallback = false;
@@ -706,6 +714,37 @@ impl ShellSession {
         }
         self.reset_feedback_for_identity(normalized.as_deref(), Some(session_id));
         self.last_ai_provider = normalized;
+        self.last_ai_session_id = Some(session_id.to_owned());
+        true
+    }
+
+    /// An identity reported by an agent hook that ran inside this tab (its
+    /// event carries this tab's ID). Unlike a history or transcript match,
+    /// it names the agent this tab is running, so it replaces a stale or
+    /// different provider and session instead of requiring them to match;
+    /// otherwise one wrong provider would make the tab unresumable for good.
+    /// Reports older than the current command's launch are ignored.
+    pub fn adopt_tab_reported_ai_identity(
+        &mut self,
+        provider: &str,
+        session_id: &str,
+        observed_at: f64,
+    ) -> bool {
+        let Some(provider) = resume::normalize_provider_name(provider) else {
+            return false;
+        };
+        let session_id = session_id.trim();
+        if self.status == CommandStatus::Exited
+            || !resume::is_valid_session_id(session_id)
+            || !observed_at.is_finite()
+            || observed_at < self.command_started_at
+            || (self.last_ai_provider.as_deref() == Some(provider.as_str())
+                && self.ai_session_id() == Some(session_id))
+        {
+            return false;
+        }
+        self.reset_feedback_for_identity(Some(&provider), Some(session_id));
+        self.last_ai_provider = Some(provider);
         self.last_ai_session_id = Some(session_id.to_owned());
         true
     }
@@ -930,6 +969,13 @@ impl ShellSession {
 
     /// The prompt came back (`handlePromptDetected`).
     fn handle_prompt_detected(&mut self, now: f64) {
+        if self.is_shell_loading && self.typed_while_loading {
+            // The first prompt of a new shell, which reads the queued line next.
+            self.is_shell_loading = false;
+            self.typed_while_loading = false;
+            self.is_at_prompt = false;
+            return;
+        }
         let previous = self.status;
         self.is_shell_loading = false;
         self.is_at_prompt = true;
@@ -1048,7 +1094,10 @@ impl ShellSession {
                 });
             }
             ShellMark::CommandFinished(code) => {
-                if self.command_finished_notified {
+                // The startup's own exit status, before the queued line ran.
+                if self.command_finished_notified
+                    || (self.is_shell_loading && self.typed_while_loading)
+                {
                     return;
                 }
                 self.command_finished_notified = true;
@@ -1357,6 +1406,40 @@ mod tests {
     }
 
     #[test]
+    fn tab_reported_identity_replaces_a_stale_provider_for_any_agent() {
+        let mut s = session();
+        // A tab once saved as Codex without a session now runs Claude: the
+        // provider gate of observed identities refuses Claude's session...
+        s.restore_ai_metadata(Some("codex"), None);
+        assert!(!s.can_adopt_observed_ai_identity("claude", "claude-session", 10.0, false));
+        // ...but the tab's own hook names it, for any provider.
+        assert!(s.adopt_tab_reported_ai_identity("claude", "claude-session", 10.0));
+        assert_eq!(s.effective_provider().as_deref(), Some("claude"));
+        assert_eq!(s.ai_session_id(), Some("claude-session"));
+        assert!(!s.adopt_tab_reported_ai_identity("claude", "claude-session", 11.0));
+        assert!(s.adopt_tab_reported_ai_identity("codex", "codex-thread", 12.0));
+        assert_eq!(s.effective_provider().as_deref(), Some("codex"));
+        assert_eq!(s.ai_session_id(), Some("codex-thread"));
+        assert!(s.adopt_tab_reported_ai_identity("opencode", "opencode-session", 13.0));
+        assert_eq!(s.effective_provider().as_deref(), Some("opencode"));
+    }
+
+    #[test]
+    fn tab_reported_identity_ignores_invalid_old_and_exited_reports() {
+        let mut s = session();
+        s.restore_ai_metadata(Some("codex"), Some("codex-thread"));
+        assert!(!s.adopt_tab_reported_ai_identity("not-an-agent", "id", 10.0));
+        assert!(!s.adopt_tab_reported_ai_identity("claude", "bad id/with spaces", 10.0));
+        assert!(!s.adopt_tab_reported_ai_identity("claude", "claude-session", f64::NAN));
+        s.command_started_at = 50.0;
+        // A late report from an agent that ran before the current command.
+        assert!(!s.adopt_tab_reported_ai_identity("claude", "claude-session", 40.0));
+        s.status = CommandStatus::Exited;
+        assert!(!s.adopt_tab_reported_ai_identity("claude", "claude-session", 60.0));
+        assert_eq!(s.ai_session_id(), Some("codex-thread"));
+    }
+
+    #[test]
     fn live_process_identity_repairs_restore_and_preserves_same_provider_resume() {
         let mut s = session();
         s.restore_ai_metadata(Some("claude"), Some("native-session"));
@@ -1496,6 +1579,7 @@ mod tests {
     #[test]
     fn prompt_osc7_completes_heuristic_command() {
         let mut s = session();
+        s.handle_output(b"\x1b]7;file://h/home/me\x07$ ", &Ctx, 0.0);
         s.handle_input("make\r", false, &Ctx, 0.0);
         s.take_events();
         s.handle_output(b"done\r\n\x1b]7;file://h/tmp\x07$ ", &Ctx, 2.0);
@@ -1509,6 +1593,70 @@ mod tests {
                 .any(|e| matches!(e, ShellSessionEvent::CommandFinished { .. }))
         );
         assert!(!s.is_shell_loading());
+    }
+
+    #[test]
+    fn a_line_queued_during_shell_startup_is_not_finished_by_the_first_prompt() {
+        let mut s = session();
+        // A runtime launch typed into a new tab before its shell has started.
+        s.handle_input("codex\r", false, &Ctx, 1.0);
+        assert_eq!(s.status(), CommandStatus::Running);
+        s.take_events();
+        // zsh startup: its precmd reports the startup status, then a prompt.
+        s.handle_mark(ShellMark::CommandFinished(0), 0, 1.2);
+        s.handle_mark(ShellMark::PromptStart, 0, 1.2);
+        assert_eq!(s.status(), CommandStatus::Running);
+        assert!(!s.is_shell_loading());
+        assert!(!s.is_at_prompt());
+        assert!(
+            !s.take_events()
+                .iter()
+                .any(|e| matches!(e, ShellSessionEvent::CommandFinished { .. }))
+        );
+        // The shell reads the queued line: its real lifecycle is reported.
+        s.handle_mark(ShellMark::CommandStart, 1, 1.3);
+        s.handle_mark(ShellMark::CommandExecuted, 1, 1.3);
+        assert_eq!(s.status(), CommandStatus::Running);
+        s.handle_mark(ShellMark::CommandFinished(0), 9, 30.0);
+        s.handle_mark(ShellMark::PromptStart, 9, 30.0);
+        assert!(s.is_at_prompt());
+        let finished: Vec<_> = s
+            .take_events()
+            .into_iter()
+            .filter(|e| matches!(e, ShellSessionEvent::CommandFinished { .. }))
+            .collect();
+        assert_eq!(finished.len(), 1);
+    }
+
+    #[test]
+    fn a_line_queued_during_startup_survives_the_first_osc7_prompt() {
+        let mut s = session();
+        s.handle_input("codex\r", false, &Ctx, 0.0);
+        s.take_events();
+        s.handle_output(b"\x1b]7;file://h/home/me\x07$ ", &Ctx, 0.5);
+        assert_eq!(s.status(), CommandStatus::Running);
+        assert!(
+            !s.take_events()
+                .iter()
+                .any(|e| matches!(e, ShellSessionEvent::CommandFinished { .. }))
+        );
+        s.handle_output(b"bye\r\n\x1b]7;file://h/home/me\x07$ ", &Ctx, 9.0);
+        assert_ne!(s.status(), CommandStatus::Running);
+        assert!(
+            s.take_events()
+                .iter()
+                .any(|e| matches!(e, ShellSessionEvent::CommandFinished { .. }))
+        );
+    }
+
+    #[test]
+    fn a_shell_started_without_queued_input_finishes_startup_normally() {
+        let mut s = session();
+        s.handle_mark(ShellMark::CommandFinished(0), 0, 0.5);
+        s.handle_mark(ShellMark::PromptStart, 0, 0.5);
+        assert!(s.is_at_prompt());
+        assert!(!s.is_shell_loading());
+        assert_eq!(s.status(), CommandStatus::Idle);
     }
 
     #[test]

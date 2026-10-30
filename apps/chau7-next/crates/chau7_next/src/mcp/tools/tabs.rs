@@ -495,9 +495,17 @@ fn send_to_tab(tab: &McpTab, bytes: &[u8], cx: &mut App) -> bool {
     PaneTree::send_input(&panes, bytes, cx)
 }
 
-fn input_held() -> String {
+fn input_held(tab: &McpTab, cx: &App) -> String {
+    let reason = tab
+        .window
+        .workspace
+        .read(cx)
+        .mcp_panes(tab.tab)
+        .and_then(|panes| PaneTree::input_hold(&panes, cx))
+        .unwrap_or_else(|| "the command guard refused it".into());
+    log::warn!("MCP input not delivered: {reason}");
     encode_sorted(
-        &json!({"ok": false, "delivered": false, "error": "Input not delivered: terminal unavailable or command approval pending/blocked"}),
+        &json!({"ok": false, "delivered": false, "error": format!("Input not delivered: {reason}")}),
     )
 }
 
@@ -685,7 +693,7 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
             if loading {
                 // The shell reads it once started (`sendOrQueueInput`).
                 if !send_to_tab(&tab, format!("{command}\n").as_bytes(), cx) {
-                    return input_held();
+                    return input_held(&tab, cx);
                 }
                 set_pending_input(&tab_id, String::new(), cx);
                 log::info!("MCP: queued exec in {tab_id}: {preview}");
@@ -697,7 +705,7 @@ pub(crate) fn exec(tab_id: &str, command: &str, ctx: &ToolContext) -> String {
                 );
             }
             if !send_to_tab(&tab, format!("{command}\n").as_bytes(), cx) {
-                return input_held();
+                return input_held(&tab, cx);
             }
             set_pending_input(&tab_id, String::new(), cx);
             log::info!("MCP: exec in {tab_id}: {preview}");
@@ -729,7 +737,7 @@ pub(crate) fn send_input(tab_id: &str, input: &str, ctx: &ToolContext) -> String
                 return error;
             }
             if !send_to_tab(&tab, input.as_bytes(), cx) {
-                return input_held();
+                return input_held(&tab, cx);
             }
             set_pending_input(&tab_id, staged.after, cx);
             log::info!(

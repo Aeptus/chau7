@@ -1,5 +1,8 @@
-# Builds and tests Chau7 Next (apps/chau7-next) on macOS, Linux and Windows.
-# The macOS job also produces "Chau7 Next.app" as a downloadable artifact.
+# Builds and tests Chau7 Next (apps/chau7-next). Pull requests and pushes
+# run Linux only, so work merges fast and breaks are repaired on main; the
+# full macOS, Linux and Windows matrix runs when dispatched (and in
+# release.yml). The macOS job also produces "Chau7 Next.app" as a
+# downloadable artifact.
 name: Chau7 Next
 
 on:
@@ -44,13 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: macOS
-            os: macos-latest
-          - name: Linux
-            os: ubuntu-latest
-          - name: Windows
-            os: windows-latest
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[{"name":"macOS","os":"macos-latest"},{"name":"Linux","os":"ubuntu-latest"},{"name":"Windows","os":"windows-latest"}]' || '[{"name":"Linux","os":"ubuntu-latest"}]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
