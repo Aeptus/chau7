@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Reduce terminal lag: reuse the prepared paint of unchanged terminal rows, stop copying hidden tabs' grids on every output batch, and stop output in background tabs from redrawing the whole window. With 13 busy AI-style tabs, CPU per output batch fell about 3.8 times. The performance snapshot now ranks slow stages against per-stage time budgets, counts window frames, and separates main-thread congestion from deliberate frame pacing.
+- Reduce terminal lag: reuse the prepared paint of unchanged terminal rows, and stop copying hidden tabs' grids on every output batch. With 13 busy AI-style tabs, CPU per output batch fell about 3.8 times. The performance snapshot now ranks slow stages against per-stage time budgets, counts window frames, and separates main-thread congestion from deliberate frame pacing.
+- Watch the macOS proxy parent with a native process-exit event instead of permanent polling, preserving reparenting detection and a portable fallback.
+
+- Park hidden terminal cursor timers until visibility, hover prewarming or settings changes require them; keep visible blink and suspension deadlines live.
+
+- Limit process argument reads to subscribed terminal process trees while keeping native child detection and SSH/provider resolution live.
+
+- Keep hidden terminal output from invalidating the native window while preserving live output processing, tab reveals and hover previews.
+
+- Avoid whole-workspace redraws for repeated hidden-tab output while preserving activity timestamps, idle-tab revival and visible age panels.
+
+- Let file tailers sleep until their actual poll deadline and wake them immediately on shutdown.
+- Stop idle Metal display callbacks and static-terminal redraws, and replace the proxy task grace-period scan with a deadline timer.
+- Add an isolated macOS performance lab with verified terminal workloads and separate app, MCP bridge and proxy CPU, physical-memory and wakeup measurements.
+
 - Show tokens per second for resumed Codex tabs: Codex keeps writing a resumed session to the file of the day it was created, which Chau7 now finds through the path Codex records instead of only today's and yesterday's folders.
 - Install Chau7's session-only Codex and Claude Code hooks by default so plain `codex`/`claude` launches record their session in their tab and restore offers a resume prompt again. An explicit uninstall in Settings is remembered; modified helpers are left alone. Settings now reports them as installed for Chau7 sessions.
 - Prefill saved resume commands in every restored command tab after its shell reaches a prompt, including background tabs, without submitting them.

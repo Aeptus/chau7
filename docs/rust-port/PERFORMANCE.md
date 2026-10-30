@@ -252,15 +252,10 @@ the TUIs produce, compare per output batch:
 | + activity redraws only on idle exit | 1.36 | 0.69 | 0.155 |
 | + hidden danger scans without timers | 1.12 | 0.53 | 0.110 |
 
-Reproduce or extend it with `apps/chau7-next/scripts/perf-bench`: build each
-variant (`BUILD_MODE=diagnostic` keeps symbols for `--sample`), then
-
-    python3 run.py <binary> <label> [--tabs 12 --hz 12.5 --measure 60 --sample 10]
-    python3 summary.py perf-results/a.json perf-results/b.json
-
-`run.py` starts an isolated instance (own home root under `/tmp`, its own MCP
-socket, the TUI as its shell), never the installed app, and removes it after
-the run. Do not measure while compiling.
+Reproduce or extend it with the isolated macOS performance lab in
+`apps/chau7-next/scripts/perf-bench` (see its `README.md`): it runs each build
+in its own temporary home, never the installed app. Do not measure while
+compiling.
 
 In the last build the main thread was 88 % idle in a 10 s stack sample; GPU
 glyph submission (2.4 %), window layout (1.4 %) and the scene sort (1.2 %)

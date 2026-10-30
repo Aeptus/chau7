@@ -130,23 +130,6 @@ fn refresh_wait(interval: Duration, suspended: bool, elapsed: Duration) -> Durat
     interval.saturating_sub(elapsed)
 }
 
-/// Hidden sessions waiting for the shared notify flush.
-#[derive(Default)]
-struct DeferredNotifies {
-    pending: Vec<gpui::WeakEntity<TerminalSession>>,
-    scheduled: bool,
-}
-impl Global for DeferredNotifies {}
-
-/// Time until the next whole wall-clock second, shared by every hidden session.
-fn hidden_notify_delay(now: std::time::SystemTime) -> Duration {
-    let millis = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_millis();
-    Duration::from_millis(u64::from(1000 - millis))
-}
-
 /// Update a deferred grid's shape. Cells keep `cols * rows` entries (blank
 /// after a resize) so every reader's indexing stays in bounds.
 fn apply_grid_shape(grid: &mut GridCopy, shape: GridCopy) {
@@ -309,8 +292,6 @@ pub struct TerminalSession {
     /// (`grid_stale`); [`Self::ensure_grid`] copies the cells before use.
     pub grid: GridCopy,
     grid_stale: bool,
-    /// A hidden surface's output notify waiting for the shared flush.
-    notify_deferred: bool,
     /// Time the refresh pump deliberately held this batch for frame pacing.
     pacing_hold: Duration,
     pub cursor: (u16, u16),
@@ -886,7 +867,6 @@ impl TerminalSession {
             echo_fd,
             grid,
             grid_stale: false,
-            notify_deferred: false,
             pacing_hold: Duration::ZERO,
             cursor: (0, 0),
             title: None,
@@ -1120,9 +1100,6 @@ impl TerminalSession {
         // prompt, or the command would complete without its exit code.
         self.process_pending_input(now);
         let line = self.grid.scrollback_rows as i64 + self.cursor.1 as i64;
-        // Anything besides cells that the tab bar or other observers show.
-        let mut urgent =
-            !events.is_empty() || bell || closed || clipboard.is_some() || clipboard_load;
         for event in events {
             let mark = match event {
                 ShellIntegrationEvent::PromptStart => ShellMark::PromptStart,
@@ -1161,7 +1138,6 @@ impl TerminalSession {
                 feature_profiler::measure(Feature::AiDetect, output.len(), || {
                     self.monitor.output(&output, now)
                 });
-            urgent |= !events.is_empty() || ai_exit.is_some();
             for event in events {
                 self.emit_ai(shell_ai_event(event), true, cx);
             }
@@ -1252,10 +1228,10 @@ impl TerminalSession {
         }
         self.memory.set_tui(self.is_ai_running());
         cx.emit(SessionEvent::Output);
-        if defer_cells && !(urgent || metadata_changed) {
-            self.defer_notify(cx);
-        } else {
-            self.notify_deferred = false;
+        // The tab bar reads hidden sessions too: GPUI tracks those reads as
+        // window dependencies. Output-only changes must not invalidate that
+        // window, while metadata and surfaces that can be presented stay live.
+        if metadata_changed || !defer_cells {
             cx.notify();
         }
         feature_profiler::record(
@@ -2441,42 +2417,6 @@ impl TerminalSession {
     /// Cells are needed while the surface is on screen or being prewarmed.
     fn surface_needs_cells(&self) -> bool {
         self.restore_surface_visible() || self.surface_prewarm_remaining().is_some()
-    }
-
-    /// Every view that read this session during its last render is redrawn on
-    /// `notify`, and the tab bar reads every tab's session. A hidden tab whose
-    /// output changed only its (unseen) cells therefore joins one shared flush
-    /// instead: every deferred session is notified in the same update at the
-    /// next whole second, so their redraws make one window frame per second.
-    fn defer_notify(&mut self, cx: &mut Context<Self>) {
-        if std::mem::replace(&mut self.notify_deferred, true) {
-            return;
-        }
-        let this = cx.entity().downgrade();
-        let flush = cx.default_global::<DeferredNotifies>();
-        flush.pending.push(this);
-        if std::mem::replace(&mut flush.scheduled, true) {
-            return;
-        }
-        let delay = hidden_notify_delay(std::time::SystemTime::now());
-        cx.spawn(async move |_, cx| {
-            cx.background_executor().timer(delay).await;
-            cx.update(|cx| {
-                let pending = {
-                    let flush = cx.default_global::<DeferredNotifies>();
-                    flush.scheduled = false;
-                    std::mem::take(&mut flush.pending)
-                };
-                for session in pending {
-                    let _ = session.update(cx, |session, cx| {
-                        if std::mem::take(&mut session.notify_deferred) {
-                            cx.notify();
-                        }
-                    });
-                }
-            });
-        })
-        .detach();
     }
 
     fn apply_grid_shape(&mut self, shape: GridCopy) {
@@ -3738,18 +3678,6 @@ mod startup_presentation_tests {
 #[cfg(test)]
 mod deferred_grid_tests {
     use super::*;
-
-    #[test]
-    fn hidden_notifies_share_the_next_whole_second() {
-        let at = |millis| std::time::UNIX_EPOCH + Duration::from_millis(millis);
-        assert_eq!(hidden_notify_delay(at(5_000)), Duration::from_secs(1));
-        assert_eq!(hidden_notify_delay(at(5_250)), Duration::from_millis(750));
-        assert_eq!(hidden_notify_delay(at(5_999)), Duration::from_millis(1));
-        // Two sessions deferring at different moments flush at the same instant.
-        let first = at(7_100) + hidden_notify_delay(at(7_100));
-        let second = at(7_820) + hidden_notify_delay(at(7_820));
-        assert_eq!(first, second);
-    }
 
     #[test]
     fn a_hidden_grid_follows_the_shape_and_its_cells_stay_in_bounds() {

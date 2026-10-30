@@ -92,10 +92,9 @@ impl TerminalView {
         if !output_scope_allows(settings, session) {
             return;
         }
-        // Tints only matter on screen. A hidden surface marks the scan due for
-        // its next frame instead of waking (and redrawing the window, since the
-        // tab bar reads this view) after every burst.
-        if !session.restore_surface_visible() {
+        if !session.restore_surface_visible() && session.surface_prewarm_remaining().is_none() {
+            // A scan only produces row tints for a displayed frame. Keep it
+            // due for reveal instead of waking the window from a hidden timer.
             self.danger.pending = None;
             self.danger.due = true;
             return;

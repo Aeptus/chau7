@@ -50,6 +50,24 @@ def agg(entries, kind, caller, op):
 def summarize(path):
     with open(path) as handle:
         run = json.load(handle)
+    if run.get("schema_version") == 2:
+        if run["status"] != "complete":
+            raise ValueError(f"incomplete run: {path}")
+        rows = {}
+        for phase, data in run["phases"].items():
+            for role, measurements in data["processes"].items():
+                for metric in ("cpu_percent", "interrupt_wakeups_per_s", "footprint_peak_bytes", "rss_peak_bytes"):
+                    value = measurements[metric]
+                    unit = ""
+                    if metric.endswith("_bytes"):
+                        value /= 1048576
+                        unit = " MiB"
+                    rows[f"{phase}/{role}/{metric}"] = f"{value:.3f}{unit}"
+            requests = data["requests"]
+            if requests["count"]:
+                rows[f"{phase}/requests"] = str(requests["count"])
+                rows[f"{phase}/latency_p95_ms"] = f"{requests['latency_p95_ms']:.3f}"
+        return run["label"], rows
     first, last = run["first"], run["last"]
     wall = run["measure_s"]
     cpu = (last["process"]["cpu_time_seconds"] - first["process"]["cpu_time_seconds"]) / wall * 100
