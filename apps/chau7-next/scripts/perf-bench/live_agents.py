@@ -31,7 +31,7 @@ def main():
     if len(tasks) != 5 or sum(len(t["issues"]) for t in tasks) != 6:
         parser.error("exactly five task groups covering six issues are required")
     args.binary = args.binary.resolve(strict=True)
-    args.results.mkdir(parents=True, exist_ok=False)
+    args.results.mkdir(mode=0o700, parents=True, exist_ok=False)
     home = Path(tempfile.mkdtemp(prefix="c7-live-agents-", dir="/tmp"))
     # CLI credentials/configuration remain under the real user HOME. Only the
     # transcript reader follows this discovery link; it reads existing logs.
@@ -177,6 +177,8 @@ def main():
                     tail = tool("tab_output", tab_id=tab_id, source="buffer", lines=40)
                     tail["capture_note"] = "PTY log empty; bounded current buffer only"
                 save(args.results / f"agent-{launch['index'] + 1}-tail.json", tail)
+            if sampler_errors or app.poll() is not None:
+                raise RuntimeError("owned process sampling failed; inspect sampler_errors and app log")
             result["status"] = "captured"
     except Exception as error:
         result["error"] = str(error)
