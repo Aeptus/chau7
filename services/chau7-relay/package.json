@@ -16,13 +16,13 @@
     "test:integration": "vitest run"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "1.4.6",
-    "@cloudflare/workers-types": "5.20261019.1",
+    "@cloudflare/vitest-plugin": "1.4.8",
+    "@cloudflare/workers-types": "5.20261027.1",
     "prettier": "3.9.10",
     "typescript": "7.0.2",
-    "vite": "8.3.4",
+    "vite": "8.3.5",
     "vitest": "5.0.5",
-    "wrangler": "4.151.3"
+    "wrangler": "4.153.0"
   },
   "overrides": {
     "sharp": "0.35.5",
