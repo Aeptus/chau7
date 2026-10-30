@@ -31,4 +31,4 @@ libc = "0.2"
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
-resvg = "=0.48.1"
+resvg = "=0.49.0"
