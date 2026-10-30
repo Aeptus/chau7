@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Keep every AI tab resumable: a Claude Code or Codex hook that reports its session from inside a tab now binds that provider and session to the tab, even when the tab was saved under a different or stale provider, instead of being refused and leaving restore with no resume command.
+- Keep every AI tab resumable: a Claude Code or Codex hook that reports its session from inside a tab now binds that provider and session to the tab, even when the tab was saved under a different or stale provider, instead of being refused and leaving restore with no resume command. Events routed to a tab by its directory never bind a session.
 - Show tokens per second for resumed Codex tabs: Codex keeps writing a resumed session to the file of the day it was created, which Chau7 now finds through the path Codex records instead of only today's and yesterday's folders.
 - Install Chau7's session-only Codex and Claude Code hooks by default so plain `codex`/`claude` launches record their session in their tab and restore offers a resume prompt again. An explicit uninstall in Settings is remembered; modified helpers are left alone. Settings now reports them as installed for Chau7 sessions.
 - Prefill saved resume commands in every restored command tab after its shell reaches a prompt, including background tabs, without submitting them.

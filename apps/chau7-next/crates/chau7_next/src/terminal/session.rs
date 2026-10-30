@@ -3240,7 +3240,12 @@ fn reported_tab_panes(
 /// so this runs for all of them and for every event kind, before routing:
 /// the provider-matched owner lookup below would otherwise refuse the tab
 /// whenever its saved provider is stale, and it could never be resumed.
+/// Only authoritative events qualify: fallback and heuristic events get their
+/// tab by directory routing, and several tabs can share a directory.
 pub(crate) fn adopt_tab_reported_identity(event: &AiEvent, cx: &mut gpui::App) {
+    if event.reliability != AiEventReliability::Authoritative {
+        return;
+    }
     let (Some(target), Some(session_id), Some(provider), Some(date)) = (
         event.tab_id,
         event
