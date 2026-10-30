@@ -107,7 +107,7 @@ jobs:
           cache-dependency-path: |
             services/chau7-remote/go.sum
             services/chau7-proxy/go.sum
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
       - name: Add the production target
         run: rustup target add aarch64-apple-darwin
       - name: Build production bundle and receipt once
