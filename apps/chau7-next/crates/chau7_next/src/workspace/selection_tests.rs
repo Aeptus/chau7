@@ -195,6 +195,40 @@ fn clock_redraw_preserves_idle_transitions_and_visible_ages(harness: &mut TestAp
     });
 }
 
+/// Background output keeps timestamps and revives idle tabs, but repeated
+/// output must not repaint an otherwise static workspace.
+#[gpui::test]
+fn hidden_activity_preserves_idle_revival_without_continuous_redraw(harness: &mut TestAppContext) {
+    init(harness);
+    harness.update(|cx| {
+        let (handle, workspace) = crate::open_window_for_transfer(cx).unwrap();
+        let (hidden, _) = headless_tab(handle, &workspace, cx);
+        let (selected, _) = headless_tab(handle, &workspace, cx);
+        workspace.update(cx, |workspace, _| {
+            workspace.state.group_idle_tabs = true;
+            workspace.state.idle_threshold_secs = 10.0;
+            workspace.state.get_mut(hidden).unwrap().last_activity = 0.0;
+            assert!(!workspace.record_tab_activity(hidden, 2.0));
+            assert_eq!(workspace.state.get(hidden).unwrap().last_activity, 2.0);
+            assert!(!workspace.record_tab_activity(hidden, 3.0));
+            assert!(workspace.state.idle_ids(14.0).contains(&hidden));
+            assert!(workspace.record_tab_activity(hidden, 14.0));
+            assert!(!workspace.state.idle_ids(14.0).contains(&hidden));
+            assert!(!workspace.record_tab_activity(hidden, 15.0));
+            workspace.state.force_idle(hidden);
+            assert!(workspace.record_tab_activity(hidden, 16.0));
+            assert!(!workspace.state.idle_ids(16.0).contains(&hidden));
+            workspace.idle_open = true;
+            assert!(workspace.record_tab_activity(hidden, 17.0));
+            assert!(!workspace.record_tab_activity(selected, 17.0));
+            workspace.idle_open = false;
+            workspace.state.group_idle_tabs = false;
+            assert!(!workspace.record_tab_activity(hidden, 100.0));
+        });
+        close_windows(cx);
+    });
+}
+
 /// Exercise the public frame-demand contract in the app's supported test
 /// target; the registry package's full upstream test target needs absent assets.
 #[gpui::test]
