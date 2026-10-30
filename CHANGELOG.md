@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Watch the macOS proxy parent with a native process-exit event instead of permanent polling, preserving reparenting detection and a portable fallback.
+
 - Park hidden terminal cursor timers until visibility, hover prewarming or settings changes require them; keep visible blink and suspension deadlines live.
 
 - Limit process argument reads to subscribed terminal process trees while keeping native child detection and SSH/provider resolution live.
