@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep every AI tab resumable: a Claude Code or Codex hook that reports its session from inside a tab now binds that provider and session to the tab, even when the tab was saved under a different or stale provider, instead of being refused and leaving restore with no resume command. Events routed to a tab by its directory never bind a session.
 - Watch the macOS proxy parent with a native process-exit event instead of permanent polling, preserving reparenting detection and a portable fallback.
 
 - Park hidden terminal cursor timers until visibility, hover prewarming or settings changes require them; keep visible blink and suspension deadlines live.

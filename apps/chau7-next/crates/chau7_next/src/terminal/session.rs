@@ -3207,6 +3207,81 @@ pub(crate) fn reconcile_feedback_route(event: &mut AiEvent, cx: &mut gpui::App) 
     false
 }
 
+/// The canonical event tab of the live tab an agent hook reported running
+/// in (its `CHAU7_NEXT_TAB_ID`), when exactly one pane matches.
+pub(crate) fn reported_event_tab(target: uuid::Uuid, cx: &mut gpui::App) -> Option<uuid::Uuid> {
+    match reported_tab_panes(target, cx).as_slice() {
+        [(tab, _)] => Some(crate::ai::events_out::tab_uuid(*tab)),
+        _ => None,
+    }
+}
+
+fn reported_tab_panes(
+    target: uuid::Uuid,
+    cx: &mut gpui::App,
+) -> Vec<(crate::tab_bar::TabId, gpui::Entity<TerminalSession>)> {
+    let mut panes_found = Vec::new();
+    for window in crate::mcp::windows::windows(cx) {
+        let workspace = window.workspace.read(cx);
+        for uuid in workspace.mcp_tab_uuids() {
+            let Some(tab) = workspace.mcp_find(uuid) else {
+                continue;
+            };
+            let Some(panes) = workspace.mcp_panes(tab) else {
+                continue;
+            };
+            for (_, entity) in panes.read(cx).pane_sessions(cx) {
+                let session = entity.read(cx);
+                if session.exited.is_none()
+                    && feedback_target_matches(Some(target), uuid, tab, &session.tab_identifier)
+                {
+                    panes_found.push((tab, entity.clone()));
+                }
+            }
+        }
+    }
+    panes_found
+}
+
+/// Bind the identity an agent hook reported from inside a tab to that tab.
+/// Every hook-equipped provider stamps its events with the tab it runs in,
+/// so this runs for all of them and for every event kind, before routing:
+/// the provider-matched owner lookup below would otherwise refuse the tab
+/// whenever its saved provider is stale, and it could never be resumed.
+/// Only authoritative events qualify: fallback and heuristic events get their
+/// tab by directory routing, and several tabs can share a directory.
+pub(crate) fn adopt_tab_reported_identity(event: &AiEvent, cx: &mut gpui::App) {
+    if event.reliability != AiEventReliability::Authoritative {
+        return;
+    }
+    let (Some(target), Some(session_id), Some(provider), Some(date)) = (
+        event.tab_id,
+        event
+            .session_id
+            .as_deref()
+            .filter(|id| !id.trim().is_empty()),
+        feedback_provider(event),
+        chau7_next_core::telemetry::date_codec::parse_iso8601(Some(&event.ts)),
+    ) else {
+        return;
+    };
+    let observed_at = date.timestamp_millis() as f64 / 1000.0;
+    // A tab-level ID shared by split panes cannot say which pane reported.
+    let panes = reported_tab_panes(target, cx);
+    let [(_, owner)] = panes.as_slice() else {
+        return;
+    };
+    owner.update(cx, |session, cx| {
+        if session
+            .tracker
+            .adopt_tab_reported_ai_identity(&provider, session_id, observed_at)
+        {
+            cx.emit(SessionEvent::MetadataChanged);
+            cx.notify();
+        }
+    });
+}
+
 pub(crate) fn apply_agent_feedback(event: &AiEvent, cx: &mut gpui::App) {
     if event.reliability != AiEventReliability::Authoritative || feedback_kind(event).is_none() {
         return;
