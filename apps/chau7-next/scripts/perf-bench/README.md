@@ -75,7 +75,7 @@ as percent of one logical CPU. Physical footprint and RSS are distinct byte
 counters. Wakeups are interrupt and package-idle wakeup deltas per second, not
 context switches or an estimate of whole-machine energy. A zero package-wakeup
 reading on a busy machine does not prove that an app has no energy cost.
-Disk bytes and page-ins are cumulative deltas. PID/start-time changes, negative
+Host load averages are sampled alongside native process counters throughout each phase; retain them when interpreting trials on a shared developer Mac. Load average is contention context, not process CPU usage. Disk bytes and page-ins are cumulative deltas. PID/start-time changes, negative
 deltas and unavailable native reads fail the run instead of becoming zero.
 
 The TUI receives phase/progress paths as explicit arguments: startup deliberately

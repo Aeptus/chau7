@@ -168,12 +168,14 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases):
     latencies = []
     thread_sampler = ThreadSampler() if args.threads else None
     thread_samples = []
+    host_samples = []
     deadline = time.monotonic() + args.measure
     next_sample = next_request = time.monotonic()
     count = 0
     while True:
         now = time.monotonic()
         if now >= next_sample:
+            host_samples.append({"monotonic_s": now, "load_average": os.getloadavg()})
             for role, pid in pids.items():
                 samples[role].append(sampler.sample(pid))
             if thread_sampler:
@@ -211,6 +213,7 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases):
         for pid, worker in progress_before.items()
     }
     row = {
+        "host_samples": host_samples,
         "thread_samples": thread_samples,
         "thread_cpu": summarize_threads(thread_samples) if thread_samples else None,
         "workload_proof": proof,

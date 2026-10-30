@@ -76,11 +76,14 @@ class WorkloadAcceptance(unittest.TestCase):
             mcp.tool.return_value = snapshot
             with (
                 patch("run.summarize", return_value={"cpu_percent": 0}),
+                patch("run.os.getloadavg", return_value=(3, 2, 1)),
                 self.assertRaisesRegex(RuntimeError, "app stalled"),
             ):
                 measure_phase("terminal", args, {"app": 1}, mcp, control, 0, sampler, phases)
             self.assertEqual(phases["terminal"]["samples"]["app"], [{"pid": 1}])
             self.assertEqual(phases["terminal"]["last_snapshot"], snapshot)
+            self.assertEqual(phases["terminal"]["host_samples"][0]["load_average"], (3, 2, 1))
+            self.assertGreater(phases["terminal"]["host_samples"][0]["monotonic_s"], 0)
             self.assertEqual(phases["terminal"]["workload_proof"], {"1": {"frames": 0, "bytes": 0}})
 
     def test_stopped_renderer_and_hang_cannot_pass_as_low_cpu(self):
