@@ -1088,6 +1088,13 @@ mod tests {
                 {
                     continue;
                 }
+                // The perf bench seeds both channels' config inside its own
+                // throwaway home root; it never reaches the user's folders.
+                if path.ends_with("scripts/perf-bench/run.py")
+                    && line.trim() == "for relative in (\".chau7-next\", \".chau7/rust-v1\"):"
+                {
+                    continue;
+                }
                 for needle in forbidden {
                     // The packaging fixture asserts metadata for both channels.
                     if needle == "com.chau7.app"

@@ -130,6 +130,24 @@ fn refresh_wait(interval: Duration, suspended: bool, elapsed: Duration) -> Durat
     interval.saturating_sub(elapsed)
 }
 
+/// Update a deferred grid's shape. Cells keep `cols * rows` entries (blank
+/// after a resize) so every reader's indexing stays in bounds.
+fn apply_grid_shape(grid: &mut GridCopy, shape: GridCopy) {
+    let resized = (grid.cols, grid.rows) != (shape.cols, shape.rows);
+    grid.cols = shape.cols;
+    grid.rows = shape.rows;
+    grid.cursor_visible = shape.cursor_visible;
+    grid.scrollback_rows = shape.scrollback_rows;
+    grid.display_offset = shape.display_offset;
+    let total = usize::from(shape.cols) * usize::from(shape.rows);
+    if resized || grid.cells.len() != total {
+        grid.cells.clear();
+        grid.cells
+            .resize(total, chau7_terminal::OwnedCell::default());
+        grid.clusters.clear();
+    }
+}
+
 static NEXT_SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// Monotonic command-finish order shared across terminal sessions. Git scans
@@ -270,7 +288,12 @@ pub struct TerminalSession {
     /// Typed input not yet given to the tracker, with the echo state.
     pending_input: RefCell<Vec<(Vec<u8>, bool)>>,
     echo_fd: i32,
+    /// The visible grid. A hidden surface keeps only its shape current
+    /// (`grid_stale`); [`Self::ensure_grid`] copies the cells before use.
     pub grid: GridCopy,
+    grid_stale: bool,
+    /// Time the refresh pump deliberately held this batch for frame pacing.
+    pacing_hold: Duration,
     pub cursor: (u16, u16),
     pub title: Option<String>,
     pub cwd: Option<PathBuf>,
@@ -731,6 +754,7 @@ impl TerminalSession {
                 // Focus/settings changes only interrupt a pending deadline.
                 // They do not invent output or reset session activity.
                 if notifications == 0 { continue; }
+                let mut held = Duration::ZERO;
                 loop {
                     let wait = last_refresh.map_or(Duration::ZERO, |at| refresh_wait(
                         Duration::from_nanos(pacing.load(Ordering::Relaxed)),
@@ -738,6 +762,7 @@ impl TerminalSession {
                     if wait.is_zero() { break; }
                     let delay = cx.background_executor().timer(wait).fuse();
                     let next = rx.next().fuse();
+                    let holding = Instant::now();
                     futures::pin_mut!(delay, next);
                     futures::select_biased! {
                         event = next => match event {
@@ -746,6 +771,8 @@ impl TerminalSession {
                         },
                         _ = delay => {},
                     }
+                    // A late timer is main-thread congestion, not pacing.
+                    held += holding.elapsed().min(wait);
                 }
                 while let Ok(next) = rx.try_recv() {
                     notifications += usize::from(matches!(next, RefreshWake::Output));
@@ -754,6 +781,7 @@ impl TerminalSession {
                     let mut wake = work_profiler::begin(WorkKey::wakeup(
                         "output_dispatch", this.profiling_phase(), WorkQueue::Main));
                     wake.items(notifications);
+                    this.pacing_hold = held;
                     this.refresh(cx);
                 }).is_err() { break; }
                 last_refresh = Some(Instant::now());
@@ -838,6 +866,8 @@ impl TerminalSession {
             prefill_scheduled: false,
             echo_fd,
             grid,
+            grid_stale: false,
+            pacing_hold: Duration::ZERO,
             cursor: (0, 0),
             title: None,
             cwd,
@@ -934,6 +964,7 @@ impl TerminalSession {
             "refresh_interactive":self.poll_interactive.load(Ordering::Relaxed),
             "pty_readiness_max_wait_ms":PTY_READINESS_MAX_WAIT_MS,
             "render_suspended":self.is_render_suspended(),
+            "grid_cells_deferred":self.grid_stale,
             "native_pending_image_bytes":serde_json::Value::Null,
             "unavailable_reason":"Native pending images and private GPUI GPU resources expose no allocation accessor; native ring bytes are estimated. Known capacities exclude allocator/HashMap overhead."
         })
@@ -954,10 +985,24 @@ impl TerminalSession {
         let started = Instant::now();
         self.memory.set_tui(self.is_ai_running());
         let mut metadata_changed = self.retry_resize();
+        // Nobody can see a hidden surface's cells: copying the whole grid on
+        // every output batch of every background tab saturated the UI thread.
+        let defer_cells = !self.surface_needs_cells();
         let (grid, cursor, title, closed, events, bell, clipboard, clipboard_load) = {
             let term = self.term.read();
             (
-                {
+                if defer_cells {
+                    work_profiler::measure(
+                        WorkKey::work(
+                            "get_grid_shape",
+                            "drain",
+                            self.profiling_phase(),
+                            "session_refresh",
+                            WorkQueue::Main,
+                        ),
+                        || term.grid_metadata(),
+                    )
+                } else {
                     let mut capture = work_profiler::begin(WorkKey::work(
                         "get_grid",
                         "drain",
@@ -1007,9 +1052,15 @@ impl TerminalSession {
                 WorkQueue::Main,
             );
             key.kind = WorkKind::Latency;
+            let waited = at.elapsed();
+            work_profiler::record(key, waited.as_secs_f64() * 1000.0, output.len(), 1, false);
+            // The same wait without the deliberate pacing hold: what the main
+            // thread alone cost this output before it was processed.
+            key.operation = "event_dispatch_congestion";
+            let congestion = waited.saturating_sub(std::mem::take(&mut self.pacing_hold));
             work_profiler::record(
                 key,
-                at.elapsed().as_secs_f64() * 1000.0,
+                congestion.as_secs_f64() * 1000.0,
                 output.len(),
                 1,
                 false,
@@ -1025,7 +1076,12 @@ impl TerminalSession {
             }
         }
         let display_offset_before = self.grid.display_offset;
-        self.grid = grid;
+        if defer_cells {
+            self.apply_grid_shape(grid);
+        } else {
+            self.grid = grid;
+            self.grid_stale = false;
+        }
         self.cursor = cursor;
         self.last_activity = Instant::now();
         let now = now_secs();
@@ -1101,7 +1157,12 @@ impl TerminalSession {
                 && (display_offset_before > 0 || self.grid.display_offset > 0)
             {
                 self.scroll_to_bottom();
-                self.grid = self.term.read().grid_copy();
+                if defer_cells {
+                    let shape = self.term.read().grid_metadata();
+                    self.apply_grid_shape(shape);
+                } else {
+                    self.grid = self.term.read().grid_copy();
+                }
             }
         }
         metadata_changed |= self.drain_tracker_events(cx);
@@ -1170,10 +1231,7 @@ impl TerminalSession {
         // The tab bar reads hidden sessions too: GPUI tracks those reads as
         // window dependencies. Output-only changes must not invalidate that
         // window, while metadata and surfaces that can be presented stay live.
-        if metadata_changed
-            || self.restore_surface_visible()
-            || self.surface_prewarm_remaining().is_some()
-        {
+        if metadata_changed || !defer_cells {
             cx.notify();
         }
         feature_profiler::record(
@@ -1829,6 +1887,7 @@ impl TerminalSession {
         let term = self.term.write();
         replay_restored_terminal(&term, context);
         self.grid = term.grid_copy();
+        self.grid_stale = false;
         self.cursor = term.cursor_position();
         drop(term);
         cx.emit(SessionEvent::Output);
@@ -2351,7 +2410,41 @@ impl TerminalSession {
         drop(term);
         self.pending_resize = None;
         self.grid = self.term.read().grid_copy();
+        self.grid_stale = false;
         true
+    }
+
+    /// Cells are needed while the surface is on screen or being prewarmed.
+    fn surface_needs_cells(&self) -> bool {
+        self.restore_surface_visible() || self.surface_prewarm_remaining().is_some()
+    }
+
+    fn apply_grid_shape(&mut self, shape: GridCopy) {
+        apply_grid_shape(&mut self.grid, shape);
+        self.grid_stale = true;
+    }
+
+    /// Copy the cells a hidden surface skipped. Called before painting or
+    /// snapshotting; a no-op while the grid is current.
+    pub fn ensure_grid(&mut self) -> bool {
+        if !self.grid_stale {
+            return false;
+        }
+        let mut capture = work_profiler::begin(WorkKey::work(
+            "deferred_grid_copy",
+            "reveal",
+            self.profiling_phase(),
+            "session_refresh",
+            WorkQueue::Main,
+        ));
+        self.grid = self.term.read().grid_copy();
+        capture.items(self.grid.cells.len());
+        self.grid_stale = false;
+        true
+    }
+
+    pub fn grid_is_deferred(&self) -> bool {
+        self.grid_stale
     }
 
     pub fn scroll_lines(&self, lines: i32) {
@@ -3654,5 +3747,32 @@ mod startup_presentation_tests {
     fn exit_frame_releases_the_splash() {
         assert!(startup_frame_ready(true, false, true));
         assert!(startup_frame_ready(true, false, false));
+    }
+}
+
+#[cfg(test)]
+mod deferred_grid_tests {
+    use super::*;
+
+    #[test]
+    fn a_hidden_grid_follows_the_shape_and_its_cells_stay_in_bounds() {
+        let term = Chau7Terminal::new_headless(10, 3).unwrap();
+        term.inject_output(b"visible text");
+        let mut grid = term.grid_copy();
+        let before = grid.cells.clone();
+        term.inject_output(b"\r\nmore\r\nand more\r\nscrolled");
+        apply_grid_shape(&mut grid, term.grid_metadata());
+        let current = term.grid_copy();
+        assert_eq!(grid.scrollback_rows, current.scrollback_rows);
+        assert!(grid.scrollback_rows > 0);
+        // Same shape: the old cells are kept (stale, never painted) until a copy.
+        assert_eq!(grid.cells, before);
+
+        term.resize(12, 4);
+        apply_grid_shape(&mut grid, term.grid_metadata());
+        assert_eq!((grid.cols, grid.rows), (12, 4));
+        assert_eq!(grid.cells.len(), 48);
+        assert!(grid.cells.iter().all(|cell| cell.character == ' '));
+        assert!(grid.clusters.is_empty());
     }
 }

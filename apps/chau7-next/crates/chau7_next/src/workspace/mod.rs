@@ -1731,6 +1731,16 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The root view re-renders on every window frame that redraws anything,
+        // so its sample count is the window frame count.
+        let _frame =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                "workspace_render",
+                "layout",
+                "application",
+                "window_frame",
+                chau7_next_core::work_profiler::Queue::Main,
+            ));
         self.screen_bounds = global_bounds(window, cx);
         self.sync_restore_surfaces(window, cx);
         self.window_active = window.is_window_active();

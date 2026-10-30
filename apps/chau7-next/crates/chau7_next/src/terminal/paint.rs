@@ -13,12 +13,15 @@
 
 #[path = "cpu_renderer.rs"]
 mod cpu_renderer;
+#[path = "row_cache.rs"]
+mod row_cache;
 
 pub(crate) use cpu_renderer::CpuBitmap;
 pub use cpu_renderer::init as init_cpu_text_system;
 use cpu_renderer::{FrameCache, GridCanvas};
 pub(crate) use cpu_renderer::{glyph_cache_bytes, glyph_cache_entries, release_glyph_cache};
 use parking_lot::Mutex;
+use row_cache::{PreparedRow, RowCache, RowStyle};
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -135,6 +138,7 @@ pub struct Overlays {
     pub last_paint: Instant,
     last_history: u32,
     cpu_frame: Arc<Mutex<FrameCache>>,
+    rows: Arc<Mutex<RowCache>>,
 }
 
 impl Default for Overlays {
@@ -147,6 +151,7 @@ impl Default for Overlays {
             last_paint: now,
             last_history: 0,
             cpu_frame: Arc::new(Mutex::new(FrameCache::default())),
+            rows: Arc::new(Mutex::new(RowCache::default())),
         }
     }
 }
@@ -155,10 +160,11 @@ impl Overlays {
     pub fn renderer_diagnostics(&self) -> serde_json::Value {
         let mut value = self.cpu_frame.lock().diagnostics();
         value["inline_images"] = self.images.allocation_snapshot();
+        value["row_cache"] = self.rows.lock().diagnostics();
         value
     }
     pub fn cache_bytes(&self) -> u64 {
-        self.cpu_frame.lock().bytes()
+        self.cpu_frame.lock().bytes() + self.rows.lock().bytes()
     }
     pub fn reclaim_cache(&mut self, cx: &mut App) -> u64 {
         let mut work =
@@ -170,6 +176,8 @@ impl Overlays {
                 chau7_next_core::work_profiler::Queue::Main,
             ));
         let (bytes, items) = self.cpu_frame.lock().reclaim_footprint();
+        let bytes = bytes + self.rows.lock().bytes();
+        self.rows.lock().clear();
         work.bytes(usize::try_from(bytes).unwrap_or(usize::MAX));
         work.items(items);
         self.release_cpu_frame(cx);
@@ -329,6 +337,8 @@ pub fn link_color(dark: bool) -> Hsla {
 pub struct PaintState {
     visibility: &'static str,
     cpu_frame: Arc<Mutex<FrameCache>>,
+    /// The view's prepared rows; a private one for offscreen snapshots.
+    rows_cache: Arc<Mutex<RowCache>>,
     inputs: FrameInputs,
     cols: u16,
     rows: u16,
@@ -462,6 +472,11 @@ fn prepaint_inner(
     PaintState {
         visibility,
         cpu_frame: overlays.cpu_frame.clone(),
+        rows_cache: if commit_view_state {
+            overlays.rows.clone()
+        } else {
+            Arc::default()
+        },
         clusters,
         cols: grid.cols,
         rows: grid.rows,
@@ -557,6 +572,48 @@ fn text_chunks(
         }
     }
     chunks
+}
+
+/// Split a grid-aligned chunk at runs of blank cells. Blanks draw nothing
+/// (backgrounds are painted separately), yet GPUI walks every shaped space
+/// glyph of a line on every frame; a full-screen TUI row is mostly blank.
+/// Leading and trailing blanks are dropped; shorter gaps stay inside a segment.
+fn visible_segments(
+    cells: &[OwnedCell],
+    clusters: &HashMap<usize, String>,
+    start: usize,
+    columns: Range<usize>,
+) -> Vec<Range<usize>> {
+    const GAP: usize = 4;
+    let blank = |col: usize| {
+        let cell = &cells[col];
+        !cell.continuation
+            && matches!(cell.character, ' ' | '\0')
+            && cell.underline == 0
+            && cell.link_id == 0
+            && cell.flags & (CELL_FLAG_UNDERLINE | CELL_FLAG_STRIKETHROUGH) == 0
+            && !clusters.contains_key(&(start + col))
+    };
+    let mut segments = Vec::new();
+    let mut open: Option<usize> = None;
+    let mut blanks = 0;
+    for col in columns.clone() {
+        if blank(col) {
+            blanks += 1;
+            if blanks == GAP
+                && let Some(first) = open.take()
+            {
+                segments.push(first..col + 1 - GAP);
+            }
+        } else {
+            open.get_or_insert(col);
+            blanks = 0;
+        }
+    }
+    if let Some(first) = open {
+        segments.push(first..columns.end - blanks);
+    }
+    segments
 }
 
 fn cell_text<'a>(cell: &OwnedCell, cluster: Option<&'a String>) -> Cow<'a, str> {
@@ -705,27 +762,40 @@ fn paint_grid_content(
         )
     };
 
-    for row in 0..state.rows as usize {
+    let style = RowStyle {
+        font: m.font.clone(),
+        font_size: m.font_size,
+        cell_width: m.cell_width,
+        link_color: inputs.link_color,
+        default_bg,
+    };
+    let rows_cache = state.rows_cache.clone();
+    let mut rows_cache = rows_cache.lock();
+    rows_cache.begin_frame(&style, state.rows as usize);
+    let clusters_by_row = row_cache::clusters_by_row(&state.clusters, cols, state.rows as usize);
+    let pass_started = Instant::now();
+    let mut prepared = 0;
+    let mut preparation = Duration::ZERO;
+    for (row, row_clusters) in clusters_by_row.iter().enumerate() {
         let y = bounds.top() + m.line_height * row as f32;
         let start = row * cols;
         let Some(row_cells) = state.cells.get(start..start + cols) else {
             break;
         };
-
-        // Backgrounds: merge runs of the same non-default color.
-        let mut col = 0;
-        while col < cols {
-            let (_, bg) = cell_colors(&row_cells[col]);
-            let mut end = col + 1;
-            while end < cols && cell_colors(&row_cells[end]).1 == bg {
-                end += 1;
-            }
-            if bg != default_bg {
-                window.paint_quad(fill(cell_rect(col, row, end - col), rgb_tuple(bg)));
-            }
-            col = end;
+        if !rows_cache.reuse(row, row_cells, row_clusters) {
+            let began = Instant::now();
+            let row_paint = prepare_row(row_cells, row_clusters, &state, start, default_bg, window);
+            rows_cache.store(row, row_paint);
+            preparation += began.elapsed();
+            prepared += 1;
         }
+        let Some(row_paint) = rows_cache.get(row) else {
+            continue;
+        };
 
+        for &(col, len, bg) in &row_paint.backgrounds {
+            window.paint_quad(fill(cell_rect(col, row, len), rgb_tuple(bg)));
+        }
         if state.danger_rows.contains(&row) {
             window.paint_quad(fill(
                 Bounds::new(
@@ -762,122 +832,48 @@ fn paint_grid_content(
             window.paint_quad(fill(rect, color));
         }
 
-        // Text runs.
-        let mut decorations: Vec<Decoration> = Vec::new();
-        for chunk in text_chunks(row_cells, &state.clusters, start) {
-            let mut text = String::with_capacity(chunk.columns.len());
-            let mut runs: Vec<TextRun> = Vec::new();
-            let mut any_visible = false;
-            for col in chunk.columns.clone() {
-                let cell = &row_cells[col];
-                if cell.continuation {
-                    continue;
-                }
-                let contents = cell_text(cell, state.clusters.get(&(start + col)));
-                // One extended grapheme uses its leading cell style. Style
-                // boundaries inside a ZWJ sequence must not split its shaping.
-                let cell = if chunk.natural {
-                    &row_cells[chunk.columns.start]
-                } else {
-                    cell
-                };
-                let (fg, bg) = cell_colors(cell);
-                let mut color = rgb_tuple(if cell.flags & CELL_FLAG_HIDDEN != 0 {
-                    bg
-                } else {
-                    fg
-                });
-                if cell.flags & CELL_FLAG_DIM != 0 {
-                    color.a *= 0.6;
-                }
-                let mut run_font = m.font.clone();
-                if chunk.natural {
-                    run_font.features = FontFeatures::default();
-                }
-                if cell.flags & CELL_FLAG_BOLD != 0 {
-                    run_font.weight = FontWeight(run_font.weight.0.max(FontWeight::BOLD.0));
-                }
-                if cell.flags & CELL_FLAG_ITALIC != 0 {
-                    run_font.style = FontStyle::Italic;
-                }
-                let (underline, hand_drawn) = underline_for(cell, color, inputs.link_color);
-                if hand_drawn != 0 {
-                    match decorations.last_mut() {
-                        Some(d)
-                            if d.style == hand_drawn
-                                && d.color == color
-                                && d.col + d.len == col =>
-                        {
-                            d.len += usize::from(cell.width.max(1))
-                        }
-                        _ => decorations.push(Decoration {
-                            col,
-                            len: usize::from(cell.width.max(1)),
-                            style: hand_drawn,
-                            color,
-                        }),
-                    }
-                }
-                let strikethrough =
-                    (cell.flags & CELL_FLAG_STRIKETHROUGH != 0).then(|| StrikethroughStyle {
-                        thickness: px(1.0),
-                        color: Some(color),
-                    });
-                let len = contents.len();
-                any_visible |=
-                    contents.as_ref() != " " || underline.is_some() || strikethrough.is_some();
-                text.push_str(contents.as_ref());
-                match runs.last_mut() {
-                    Some(last)
-                        if last.color == color
-                            && last.font == run_font
-                            && last.underline == underline
-                            && last.strikethrough == strikethrough =>
-                    {
-                        last.len += len;
-                    }
-                    _ => runs.push(TextRun {
-                        len,
-                        font: run_font,
-                        color,
-                        background_color: None,
-                        underline,
-                        strikethrough,
-                    }),
-                }
-            }
-            if any_visible {
-                let shape = chau7_next_core::work_profiler::begin(
-                    chau7_next_core::work_profiler::Key::work(
-                        "shape_line",
-                        "draw",
-                        state.visibility,
-                        "terminal_painter",
-                        chau7_next_core::work_profiler::Queue::Main,
-                    ),
-                );
-                let line = window.text_system().shape_line(
-                    text.into(),
-                    m.font_size,
-                    &runs,
-                    // Full clusters are shaped naturally, independently of the
-                    // next chunk's position. Normal runs keep the fast grid layout.
-                    (!chunk.natural).then_some(m.cell_width),
-                );
-                drop(shape);
-                let _ = window.paint_line(
-                    &line,
-                    point(bounds.left() + m.cell_width * chunk.columns.start as f32, y),
-                    m.line_height,
-                    &runs,
-                    cx,
-                );
-            }
+        for (col, line, runs) in &row_paint.lines {
+            let _ = window.paint_line(
+                line,
+                point(bounds.left() + m.cell_width * *col as f32, y),
+                m.line_height,
+                runs,
+                cx,
+            );
         }
-        for d in decorations {
-            paint_decoration(&d, bounds.left(), y, m, window);
+        for d in &row_paint.decorations {
+            paint_decoration(d, bounds.left(), y, m, window);
         }
     }
+    drop(rows_cache);
+    // One sample per frame: how many rows changed and what preparing them
+    // cost, against the whole row pass (reuse plus primitive submission).
+    chau7_next_core::work_profiler::record(
+        chau7_next_core::work_profiler::Key::work(
+            "row_prepare",
+            "draw",
+            state.visibility,
+            "terminal_painter",
+            chau7_next_core::work_profiler::Queue::Main,
+        ),
+        preparation.as_secs_f64() * 1000.0,
+        0,
+        prepared,
+        prepared == 0,
+    );
+    chau7_next_core::work_profiler::record(
+        chau7_next_core::work_profiler::Key::work(
+            "row_pass",
+            "draw",
+            state.visibility,
+            "terminal_painter",
+            chau7_next_core::work_profiler::Queue::Main,
+        ),
+        pass_started.elapsed().as_secs_f64() * 1000.0,
+        0,
+        state.rows as usize,
+        false,
+    );
 
     // Images over the text, clipped to the grid.
     for placement in &state.images {
@@ -953,6 +949,156 @@ fn paint_grid_content(
             cx,
         );
     }
+}
+
+/// Background runs, shaped text and hand-drawn underlines of one row: the
+/// per-row work [`RowCache`] skips while the row is unchanged.
+fn prepare_row(
+    row_cells: &[OwnedCell],
+    row_clusters: &[(usize, &String)],
+    state: &PaintState,
+    start: usize,
+    default_bg: (u8, u8, u8),
+    window: &mut GridCanvas<'_>,
+) -> PreparedRow {
+    let inputs = &state.inputs;
+    let m = &inputs.metrics;
+    let cols = row_cells.len();
+    let mut row_paint = PreparedRow::new(row_cells, row_clusters);
+
+    // Backgrounds: merge runs of the same non-default color.
+    let mut col = 0;
+    while col < cols {
+        let (_, bg) = cell_colors(&row_cells[col]);
+        let mut end = col + 1;
+        while end < cols && cell_colors(&row_cells[end]).1 == bg {
+            end += 1;
+        }
+        if bg != default_bg {
+            row_paint.backgrounds.push((col, end - col, bg));
+        }
+        col = end;
+    }
+
+    let mut decorations: Vec<Decoration> = Vec::new();
+    let segments = text_chunks(row_cells, &state.clusters, start)
+        .into_iter()
+        .flat_map(|chunk| {
+            if chunk.natural {
+                vec![chunk]
+            } else {
+                visible_segments(row_cells, &state.clusters, start, chunk.columns)
+                    .into_iter()
+                    .map(|columns| TextChunk {
+                        columns,
+                        natural: false,
+                    })
+                    .collect()
+            }
+        });
+    for chunk in segments {
+        let mut text = String::with_capacity(chunk.columns.len());
+        let mut runs: Vec<TextRun> = Vec::new();
+        let mut any_visible = false;
+        for col in chunk.columns.clone() {
+            let cell = &row_cells[col];
+            if cell.continuation {
+                continue;
+            }
+            let contents = cell_text(cell, state.clusters.get(&(start + col)));
+            // One extended grapheme uses its leading cell style. Style
+            // boundaries inside a ZWJ sequence must not split its shaping.
+            let cell = if chunk.natural {
+                &row_cells[chunk.columns.start]
+            } else {
+                cell
+            };
+            let (fg, bg) = cell_colors(cell);
+            let mut color = rgb_tuple(if cell.flags & CELL_FLAG_HIDDEN != 0 {
+                bg
+            } else {
+                fg
+            });
+            if cell.flags & CELL_FLAG_DIM != 0 {
+                color.a *= 0.6;
+            }
+            let mut run_font = m.font.clone();
+            if chunk.natural {
+                run_font.features = FontFeatures::default();
+            }
+            if cell.flags & CELL_FLAG_BOLD != 0 {
+                run_font.weight = FontWeight(run_font.weight.0.max(FontWeight::BOLD.0));
+            }
+            if cell.flags & CELL_FLAG_ITALIC != 0 {
+                run_font.style = FontStyle::Italic;
+            }
+            let (underline, hand_drawn) = underline_for(cell, color, inputs.link_color);
+            if hand_drawn != 0 {
+                match decorations.last_mut() {
+                    Some(d)
+                        if d.style == hand_drawn && d.color == color && d.col + d.len == col =>
+                    {
+                        d.len += usize::from(cell.width.max(1))
+                    }
+                    _ => decorations.push(Decoration {
+                        col,
+                        len: usize::from(cell.width.max(1)),
+                        style: hand_drawn,
+                        color,
+                    }),
+                }
+            }
+            let strikethrough =
+                (cell.flags & CELL_FLAG_STRIKETHROUGH != 0).then(|| StrikethroughStyle {
+                    thickness: px(1.0),
+                    color: Some(color),
+                });
+            let len = contents.len();
+            any_visible |=
+                contents.as_ref() != " " || underline.is_some() || strikethrough.is_some();
+            text.push_str(contents.as_ref());
+            match runs.last_mut() {
+                Some(last)
+                    if last.color == color
+                        && last.font == run_font
+                        && last.underline == underline
+                        && last.strikethrough == strikethrough =>
+                {
+                    last.len += len;
+                }
+                _ => runs.push(TextRun {
+                    len,
+                    font: run_font,
+                    color,
+                    background_color: None,
+                    underline,
+                    strikethrough,
+                }),
+            }
+        }
+        if any_visible {
+            let shape =
+                chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                    "shape_line",
+                    "draw",
+                    state.visibility,
+                    "terminal_painter",
+                    chau7_next_core::work_profiler::Queue::Main,
+                ));
+            let line = window.text_system().shape_line(
+                text.into(),
+                m.font_size,
+                &runs,
+                // Full clusters are shaped naturally, independently of the
+                // next chunk's position. Normal runs keep the fast grid layout.
+                (!chunk.natural).then_some(m.cell_width),
+            );
+            drop(shape);
+            row_paint.lines.push((chunk.columns.start, line, runs));
+        }
+    }
+    row_paint.decorations = decorations;
+    row_paint
 }
 
 fn scheme_fg_muted(background: Hsla) -> Hsla {
@@ -1281,6 +1427,36 @@ mod tests {
         assert_eq!(chunks[0].columns, 0..1);
         assert!(chunks[0].natural);
     }
+    #[test]
+    fn blank_runs_split_lines_and_edges_are_trimmed() {
+        let row: Vec<OwnedCell> = "  ab  c    d         "
+            .chars()
+            .map(|character| OwnedCell {
+                character,
+                ..OwnedCell::default()
+            })
+            .collect();
+        let none = HashMap::new();
+        // Gaps shorter than four cells stay inside a segment.
+        assert_eq!(
+            visible_segments(&row, &none, 0, 0..row.len()),
+            vec![2..7, 11..12]
+        );
+        // An underlined or clustered blank is content, not a gap.
+        let mut underlined = row.clone();
+        underlined[8].flags |= CELL_FLAG_UNDERLINE;
+        assert_eq!(
+            visible_segments(&underlined, &none, 0, 0..row.len()),
+            vec![2..12]
+        );
+        let clustered = HashMap::from([(20 + 9, "\u{00a0}".to_string())]);
+        assert_eq!(
+            visible_segments(&row, &clustered, 20, 0..row.len()),
+            vec![2..12]
+        );
+        assert!(visible_segments(&row, &none, 0, 13..row.len()).is_empty());
+    }
+
     #[test]
     fn ascii_rows_still_shape_in_one_batch() {
         let cells = vec![OwnedCell::default(); 80];
