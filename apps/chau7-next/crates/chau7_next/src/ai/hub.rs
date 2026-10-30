@@ -528,7 +528,12 @@ fn handle_claude_event(
     ai.notification_type = event.notification_type.clone();
     ai.directory = Some(event.cwd.clone()).filter(|d| !d.is_empty());
     ai.session_id = Some(event.session_id.clone()).filter(|s| !s.is_empty());
-    ai.tab_id = owned_tab
+    // The hook names the tab it ran in: that beats the directory-based owner,
+    // which a stale saved provider can make miss (the identity is then bound
+    // to the tab when the event is projected).
+    ai.tab_id = next_tab_identifier
+        .and_then(|tab| crate::terminal::session::reported_event_tab(tab, cx))
+        .or(owned_tab)
         .or_else(|| crate::runtime::notification_tab_for_claude_session(&event.session_id, cx));
     crate::remote::ingest_claude_event(&event, ai.tab_id.and_then(events_out::tab_from_uuid), cx);
     ai.producer = Some("claude_code_monitor".into());
