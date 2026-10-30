@@ -228,6 +228,10 @@ pub struct ShellSession {
     status: CommandStatus,
     is_at_prompt: bool,
     is_shell_loading: bool,
+    /// A line was typed before the shell drew its first prompt (an MCP or
+    /// runtime launch queued into a new tab). The shell has not read it yet,
+    /// so the startup's own finish and first prompt are not its completion.
+    typed_while_loading: bool,
     has_shell_integration: bool,
     saw_osc7: bool,
     has_pending_command: bool,
@@ -275,6 +279,7 @@ impl ShellSession {
             status: CommandStatus::Idle,
             is_at_prompt: false,
             is_shell_loading: true,
+            typed_while_loading: false,
             has_shell_integration: false,
             saw_osc7: false,
             has_pending_command: false,
@@ -549,6 +554,9 @@ impl ShellSession {
             return;
         }
         let trimmed = trimmed.to_string();
+        if self.is_shell_loading {
+            self.typed_while_loading = true;
+        }
         let resume_metadata = resume::extract_metadata(&trimmed);
         if resume_metadata.is_none() {
             self.suppress_waiting_fallback = false;
@@ -930,6 +938,13 @@ impl ShellSession {
 
     /// The prompt came back (`handlePromptDetected`).
     fn handle_prompt_detected(&mut self, now: f64) {
+        if self.is_shell_loading && self.typed_while_loading {
+            // The first prompt of a new shell, which reads the queued line next.
+            self.is_shell_loading = false;
+            self.typed_while_loading = false;
+            self.is_at_prompt = false;
+            return;
+        }
         let previous = self.status;
         self.is_shell_loading = false;
         self.is_at_prompt = true;
@@ -1048,7 +1063,10 @@ impl ShellSession {
                 });
             }
             ShellMark::CommandFinished(code) => {
-                if self.command_finished_notified {
+                // The startup's own exit status, before the queued line ran.
+                if self.command_finished_notified
+                    || (self.is_shell_loading && self.typed_while_loading)
+                {
                     return;
                 }
                 self.command_finished_notified = true;
@@ -1496,6 +1514,7 @@ mod tests {
     #[test]
     fn prompt_osc7_completes_heuristic_command() {
         let mut s = session();
+        s.handle_output(b"\x1b]7;file://h/home/me\x07$ ", &Ctx, 0.0);
         s.handle_input("make\r", false, &Ctx, 0.0);
         s.take_events();
         s.handle_output(b"done\r\n\x1b]7;file://h/tmp\x07$ ", &Ctx, 2.0);
@@ -1509,6 +1528,70 @@ mod tests {
                 .any(|e| matches!(e, ShellSessionEvent::CommandFinished { .. }))
         );
         assert!(!s.is_shell_loading());
+    }
+
+    #[test]
+    fn a_line_queued_during_shell_startup_is_not_finished_by_the_first_prompt() {
+        let mut s = session();
+        // A runtime launch typed into a new tab before its shell has started.
+        s.handle_input("codex\r", false, &Ctx, 1.0);
+        assert_eq!(s.status(), CommandStatus::Running);
+        s.take_events();
+        // zsh startup: its precmd reports the startup status, then a prompt.
+        s.handle_mark(ShellMark::CommandFinished(0), 0, 1.2);
+        s.handle_mark(ShellMark::PromptStart, 0, 1.2);
+        assert_eq!(s.status(), CommandStatus::Running);
+        assert!(!s.is_shell_loading());
+        assert!(!s.is_at_prompt());
+        assert!(
+            !s.take_events()
+                .iter()
+                .any(|e| matches!(e, ShellSessionEvent::CommandFinished { .. }))
+        );
+        // The shell reads the queued line: its real lifecycle is reported.
+        s.handle_mark(ShellMark::CommandStart, 1, 1.3);
+        s.handle_mark(ShellMark::CommandExecuted, 1, 1.3);
+        assert_eq!(s.status(), CommandStatus::Running);
+        s.handle_mark(ShellMark::CommandFinished(0), 9, 30.0);
+        s.handle_mark(ShellMark::PromptStart, 9, 30.0);
+        assert!(s.is_at_prompt());
+        let finished: Vec<_> = s
+            .take_events()
+            .into_iter()
+            .filter(|e| matches!(e, ShellSessionEvent::CommandFinished { .. }))
+            .collect();
+        assert_eq!(finished.len(), 1);
+    }
+
+    #[test]
+    fn a_line_queued_during_startup_survives_the_first_osc7_prompt() {
+        let mut s = session();
+        s.handle_input("codex\r", false, &Ctx, 0.0);
+        s.take_events();
+        s.handle_output(b"\x1b]7;file://h/home/me\x07$ ", &Ctx, 0.5);
+        assert_eq!(s.status(), CommandStatus::Running);
+        assert!(
+            !s.take_events()
+                .iter()
+                .any(|e| matches!(e, ShellSessionEvent::CommandFinished { .. }))
+        );
+        s.handle_output(b"bye\r\n\x1b]7;file://h/home/me\x07$ ", &Ctx, 9.0);
+        assert_ne!(s.status(), CommandStatus::Running);
+        assert!(
+            s.take_events()
+                .iter()
+                .any(|e| matches!(e, ShellSessionEvent::CommandFinished { .. }))
+        );
+    }
+
+    #[test]
+    fn a_shell_started_without_queued_input_finishes_startup_normally() {
+        let mut s = session();
+        s.handle_mark(ShellMark::CommandFinished(0), 0, 0.5);
+        s.handle_mark(ShellMark::PromptStart, 0, 0.5);
+        assert!(s.is_at_prompt());
+        assert!(!s.is_shell_loading());
+        assert_eq!(s.status(), CommandStatus::Idle);
     }
 
     #[test]

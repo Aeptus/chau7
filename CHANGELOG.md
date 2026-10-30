@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Deliver a runtime agent's first prompt only once the agent is really running: a launch typed into a new tab is no longer marked finished by the shell's first prompt, an agent session counts as ready only when its own process runs in the tab (never at a shell prompt), and input the command guard holds is logged and reported to MCP and runtime callers with the reason, including in tab status.
 - Show tokens per second for resumed Codex tabs: Codex keeps writing a resumed session to the file of the day it was created, which Chau7 now finds through the path Codex records instead of only today's and yesterday's folders.
 - Install Chau7's session-only Codex and Claude Code hooks by default so plain `codex`/`claude` launches record their session in their tab and restore offers a resume prompt again. An explicit uninstall in Settings is remembered; modified helpers are left alone. Settings now reports them as installed for Chau7 sessions.
 - Prefill saved resume commands in every restored command tab after its shell reaches a prompt, including background tabs, without submitting them.
