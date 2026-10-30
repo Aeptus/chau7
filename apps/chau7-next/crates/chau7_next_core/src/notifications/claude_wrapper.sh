@@ -18,7 +18,7 @@ if [ -z "$_real" ]; then
   printf '%s\n' 'Chau7 Next: Claude executable not found on PATH.' >&2
   exit 127
 fi
-if [ "${TERM_PROGRAM:-}" != Chau7Next ] || [ -z "${CHAU7_NEXT_TAB_ID:-}" ]; then
+if [ "${TERM_PROGRAM:-}" != Chau7Next ] || [ -z "${CHAU7_NEXT_TAB_ID:-}" ] || ! command -v python3 >/dev/null 2>&1; then
   exec "$_real" "$@"
 fi
 export CHAU7_TAB_ID=
