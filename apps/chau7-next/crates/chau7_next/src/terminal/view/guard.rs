@@ -104,6 +104,24 @@ impl TerminalView {
 
     /// Remote body and delayed Enter form one admission. A held or blocked plan
     /// returns false and has performed no PTY write, including clear-line bytes.
+    /// Why input sent to this terminal is not being delivered right now, for
+    /// callers that cannot see the tab (MCP, runtime turns).
+    pub(crate) fn input_hold(&self, cx: &gpui::App) -> Option<String> {
+        if let Some(prompt) = &self.guard_prompt {
+            let why = prompt
+                .reason
+                .clone()
+                .or_else(|| prompt.pattern.as_ref().map(|p| format!("matches `{p}`")))
+                .unwrap_or_else(|| "blocked".into());
+            return Some(format!(
+                "held for command-guard confirmation in the tab ({why}); confirm or cancel it there"
+            ));
+        }
+        let session = self.session.read(cx);
+        (session.exited.is_some() || session.shell_pid() == 0)
+            .then(|| "terminal unavailable: its shell is not running".into())
+    }
+
     pub fn send_guarded_steps(&mut self, steps: Vec<InputStep>, cx: &mut Context<Self>) -> bool {
         self.admit_steps(steps, false, cx)
     }
@@ -208,6 +226,13 @@ impl TerminalView {
                 matched_pattern,
             } => (command, Some(matched_pattern)),
         };
+        log::warn!(
+            "Input held for command-guard confirmation: terminal={} pattern={} reason={} bytes={}",
+            context.terminal_id,
+            pattern.as_deref().unwrap_or("-"),
+            reason.as_deref().unwrap_or("-"),
+            pending.iter().map(|step| step.bytes.len()).sum::<usize>(),
+        );
         self.guard_prompt = Some(GuardPrompt {
             command,
             pattern,

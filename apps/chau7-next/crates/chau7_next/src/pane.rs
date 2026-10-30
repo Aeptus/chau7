@@ -1870,6 +1870,11 @@ impl PaneTree {
             .is_some_and(|view| view.update(cx, |v, cx| v.write_without_broadcast(bytes, cx)))
     }
 
+    /// Why the focused terminal is not accepting input, if it is not.
+    pub fn input_hold(panes: &Entity<PaneTree>, cx: &App) -> Option<String> {
+        panes.read(cx).focused_view()?.read(cx).input_hold(cx)
+    }
+
     /// A synthesized key press (MCP `tab_press_key`, KBD-017) to the focused
     /// pane, encoded with its current cursor mode (`sendKeyPress`). `false`
     /// when there is no terminal or the key cannot be encoded.
