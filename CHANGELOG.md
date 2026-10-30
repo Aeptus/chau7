@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Reduce terminal lag: reuse the prepared paint of unchanged terminal rows, stop copying hidden tabs' grids on every output batch, and stop output in background tabs from redrawing the whole window. With 13 busy AI-style tabs, CPU per output batch fell about 3.8 times. The performance snapshot now ranks slow stages against per-stage time budgets, counts window frames, and separates main-thread congestion from deliberate frame pacing.
+- Show tokens per second for resumed Codex tabs: Codex keeps writing a resumed session to the file of the day it was created, which Chau7 now finds through the path Codex records instead of only today's and yesterday's folders.
+- Install Chau7's session-only Codex and Claude Code hooks by default so plain `codex`/`claude` launches record their session in their tab and restore offers a resume prompt again. An explicit uninstall in Settings is remembered; modified helpers are left alone. Settings now reports them as installed for Chau7 sessions.
 - Prefill saved resume commands in every restored command tab after its shell reaches a prompt, including background tabs, without submitting them.
 - Patch the app's Rust TLS dependencies to Rustls 0.23.46 and WebPKI
   0.103.16 for the current TLS and certificate-validation advisories.
