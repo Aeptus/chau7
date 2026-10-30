@@ -25,6 +25,16 @@ func watchParentProcess() {
 			expected = pid
 		}
 	}
+	stillParent := func() bool {
+		ppid := os.Getppid()
+		return ppid > 1 && (expected <= 1 || ppid == expected)
+	}
+	// A native process-exit event has no periodic timer. Retain the portable
+	// reparenting check if registration or event delivery is unavailable.
+	if !stillParent() || waitForProcessExit(expected, stillParent) {
+		log.Printf("[INFO] Parent process gone (ppid=%d, expected=%d) — exiting", os.Getppid(), expected)
+		os.Exit(0)
+	}
 	for {
 		time.Sleep(2 * time.Second)
 		ppid := os.Getppid()
@@ -95,6 +105,7 @@ func main() {
 
 	// Initialize task manager
 	taskManager := NewTaskManager(db, ipc, config.CandidateGracePeriod, config.IdleTimeout)
+	defer taskManager.Close()
 
 	// v1.2: Wire up mockup client for analytics forwarding
 	if mockupClient != nil {

@@ -1684,3 +1684,60 @@ fn disabled_alternate_scroll_and_primary_screen_wheel_stay_local(harness: &mut T
     );
     close_fixture(harness, raw.fixture);
 }
+
+#[gpui::test]
+fn hidden_blink_timer_parks_and_reveal_restarts_it(harness: &mut TestAppContext) {
+    let fixture = fixture(harness);
+    harness.update(|cx| {
+        cx.global_mut::<Settings>()
+            .appearance
+            .rendering
+            .suspend_background = false;
+        fixture.session.read(cx).set_restore_selected(false);
+    });
+    // Let setup signals and the previously scheduled timer drain before
+    // checking the parked state. Other session timers remain active.
+    harness.executor().advance_clock(Duration::from_secs(1));
+    harness.run_until_parked();
+    let blink_samples = || {
+        chau7_next_core::work_profiler::snapshot()["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["operation"] == "cursor_blink_timer")
+            .map(|e| e["lifetime"]["sample_count"].as_u64().unwrap_or(0))
+            .sum::<u64>()
+    };
+    let parked = blink_samples();
+    assert!(parked > 0, "fixture must exercise the real timer");
+    for _ in 0..4 {
+        harness.executor().advance_clock(Duration::from_secs(1));
+        harness.run_until_parked();
+    }
+    assert_eq!(
+        blink_samples(),
+        parked,
+        "hidden cursor timers must stay parked"
+    );
+    harness.update(|cx| fixture.session.read(cx).set_restore_selected(true));
+    harness
+        .update_window(fixture.window, |_, window, cx| {
+            fixture
+                .terminal
+                .update(cx, |view, cx| view.update_refresh_pacing(window, cx));
+        })
+        .unwrap();
+    harness.run_until_parked();
+    let revealed = blink_samples();
+    assert!(
+        revealed > parked,
+        "revealing must wake the parked timer immediately"
+    );
+    harness.executor().advance_clock(Duration::from_millis(500));
+    harness.run_until_parked();
+    assert!(
+        blink_samples() > revealed,
+        "visible blink cadence must resume"
+    );
+    close_fixture(harness, fixture);
+}

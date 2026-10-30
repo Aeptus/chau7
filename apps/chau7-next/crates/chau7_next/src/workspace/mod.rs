@@ -212,6 +212,50 @@ pub struct Workspace {
     known_repo_roots: Vec<String>,
 }
 
+impl Workspace {
+    fn record_tab_activity(&mut self, id: TabId, now: f64) -> bool {
+        let was_idle = self.state.idle_ids(now).contains(&id);
+        self.state.touch(id, now);
+        // Hidden output changes the bar only when it revives an idle tab.
+        // Keep visible activity/age surfaces current without repainting the
+        // selected terminal for every background output batch.
+        self.state.selected() != Some(id)
+            && (was_idle
+                || self.idle_open
+                || self.hover.is_some()
+                || self.picker.is_some()
+                || self.bookmarks_panel.is_some()
+                || self.timeline_panel.is_some())
+    }
+
+    fn clock_redraw_needed(&self, previous: f64, now: f64, cx: &App) -> bool {
+        // These surfaces show ages, elapsed times, or cached provider readings.
+        // Session and settings events already invalidate their own changes.
+        self.hover.is_some()
+            || self.idle_open
+            || self.picker.is_some()
+            || self.bookmarks_panel.is_some()
+            || self.timeline_panel.is_some()
+            || self.state.idle_ids(previous) != self.state.idle_ids(now)
+            || cx
+                .try_global::<crate::proxy::ProxyManager>()
+                .is_some_and(|proxy| {
+                    !proxy.pending_candidates.is_empty() || !proxy.active_tasks.is_empty()
+                })
+            || self.entries.values().any(|entry| {
+                entry
+                    .panes
+                    .read(cx)
+                    .pane_sessions(cx)
+                    .iter()
+                    .any(|(_, session)| {
+                        let session = session.read(cx);
+                        session.is_ai_running() || session.shell().effective_provider().is_some()
+                    })
+            })
+    }
+}
+
 impl Focusable for Workspace {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -265,9 +309,21 @@ impl Workspace {
         })
         .detach();
         let ticker = cx.spawn(async move |this, cx| {
+            let mut previous = None;
             loop {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                if this
+                    .update(cx, |this, cx| {
+                        let now = AppData::now(cx);
+                        if previous
+                            .is_none_or(|previous| this.clock_redraw_needed(previous, now, cx))
+                        {
+                            cx.notify();
+                        }
+                        previous = Some(now);
+                    })
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -581,8 +637,7 @@ impl Workspace {
             }
             PaneEvent::Activity => {
                 let now = AppData::now(cx);
-                this.state.touch(id, now);
-                if this.state.selected() != Some(id) {
+                if this.record_tab_activity(id, now) {
                     cx.notify();
                 }
             }
