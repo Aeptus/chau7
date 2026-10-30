@@ -718,6 +718,37 @@ impl ShellSession {
         true
     }
 
+    /// An identity reported by an agent hook that ran inside this tab (its
+    /// event carries this tab's ID). Unlike a history or transcript match,
+    /// it names the agent this tab is running, so it replaces a stale or
+    /// different provider and session instead of requiring them to match;
+    /// otherwise one wrong provider would make the tab unresumable for good.
+    /// Reports older than the current command's launch are ignored.
+    pub fn adopt_tab_reported_ai_identity(
+        &mut self,
+        provider: &str,
+        session_id: &str,
+        observed_at: f64,
+    ) -> bool {
+        let Some(provider) = resume::normalize_provider_name(provider) else {
+            return false;
+        };
+        let session_id = session_id.trim();
+        if self.status == CommandStatus::Exited
+            || !resume::is_valid_session_id(session_id)
+            || !observed_at.is_finite()
+            || observed_at < self.command_started_at
+            || (self.last_ai_provider.as_deref() == Some(provider.as_str())
+                && self.ai_session_id() == Some(session_id))
+        {
+            return false;
+        }
+        self.reset_feedback_for_identity(Some(&provider), Some(session_id));
+        self.last_ai_provider = Some(provider);
+        self.last_ai_session_id = Some(session_id.to_owned());
+        true
+    }
+
     /// Restores AI metadata of a saved tab (`restoreAIMetadata`).
     pub fn restore_ai_metadata(&mut self, provider: Option<&str>, session_id: Option<&str>) {
         let normalized = resume::normalize_provider_name(provider.unwrap_or_default());
@@ -1372,6 +1403,40 @@ mod tests {
         assert!(!s.has_pending_input());
         s.handle_input("submitted\r", false, &Ctx, 0.4);
         assert!(!s.has_pending_input());
+    }
+
+    #[test]
+    fn tab_reported_identity_replaces_a_stale_provider_for_any_agent() {
+        let mut s = session();
+        // A tab once saved as Codex without a session now runs Claude: the
+        // provider gate of observed identities refuses Claude's session...
+        s.restore_ai_metadata(Some("codex"), None);
+        assert!(!s.can_adopt_observed_ai_identity("claude", "claude-session", 10.0, false));
+        // ...but the tab's own hook names it, for any provider.
+        assert!(s.adopt_tab_reported_ai_identity("claude", "claude-session", 10.0));
+        assert_eq!(s.effective_provider().as_deref(), Some("claude"));
+        assert_eq!(s.ai_session_id(), Some("claude-session"));
+        assert!(!s.adopt_tab_reported_ai_identity("claude", "claude-session", 11.0));
+        assert!(s.adopt_tab_reported_ai_identity("codex", "codex-thread", 12.0));
+        assert_eq!(s.effective_provider().as_deref(), Some("codex"));
+        assert_eq!(s.ai_session_id(), Some("codex-thread"));
+        assert!(s.adopt_tab_reported_ai_identity("opencode", "opencode-session", 13.0));
+        assert_eq!(s.effective_provider().as_deref(), Some("opencode"));
+    }
+
+    #[test]
+    fn tab_reported_identity_ignores_invalid_old_and_exited_reports() {
+        let mut s = session();
+        s.restore_ai_metadata(Some("codex"), Some("codex-thread"));
+        assert!(!s.adopt_tab_reported_ai_identity("not-an-agent", "id", 10.0));
+        assert!(!s.adopt_tab_reported_ai_identity("claude", "bad id/with spaces", 10.0));
+        assert!(!s.adopt_tab_reported_ai_identity("claude", "claude-session", f64::NAN));
+        s.command_started_at = 50.0;
+        // A late report from an agent that ran before the current command.
+        assert!(!s.adopt_tab_reported_ai_identity("claude", "claude-session", 40.0));
+        s.status = CommandStatus::Exited;
+        assert!(!s.adopt_tab_reported_ai_identity("claude", "claude-session", 60.0));
+        assert_eq!(s.ai_session_id(), Some("codex-thread"));
     }
 
     #[test]
