@@ -25,6 +25,18 @@ observe host stability before another admission. Never weaken a safety limit
 to complete a capture. Increase load only after a successful small comparison
 and an explicit capacity check. Use one build job if another build is needed.
 
+When the operator confirms spare CPU capacity on a busy shared host, use
+`--resource-policy owned-budget` on both `loop.py` and `run.py`. This records
+whole-host CPU/load as contention evidence without using them as admission
+stops. The fixture still stops above 35% of one logical CPU, 200 interrupt
+wakeups/s or 384 MiB, and memory reserve/swap-growth checks remain unchanged.
+On a ten-core machine this app/helper CPU ceiling is 3.5% of total host CPU,
+well below a confirmed 20% headroom. Keep one fixture active at a time, with
+no build or AI-agent workload. Strict host admission remains the default;
+the selected policy and effective limits are retained in every capture.
+Performance acceptance budgets are unchanged, and busy-host latency remains
+part of the evidence rather than a reason to declare a speedup.
+
 ## Loop
 
 1. Build a baseline with the normal packaging workflow and a dedicated cache:

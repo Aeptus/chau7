@@ -265,8 +265,9 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
 
 
 def run(args, result, home, log):
-    result["resource_safety"] = {"limits": ResourceGuard.limits, "samples": []}
-    guard = ResourceGuard(result["resource_safety"]["samples"])
+    evidence = []
+    guard = ResourceGuard(evidence, policy=getattr(args, "resource_policy", "strict-host"))
+    result["resource_safety"] = {"policy": guard.policy, "limits": guard.limits, "samples": evidence}
     # Establish stable host pressure before starting any owned application.
     guard.wait(60)
     port = available_port_pair()
@@ -345,6 +346,12 @@ def main():
     parser.add_argument("--mcp-hz", type=float, default=0.5, help="sustainable runtime-info tool limit")
     parser.add_argument("--python", default=os.sys.executable)
     parser.add_argument("--phases", default="idle,terminal,mcp,proxy,recovery")
+    parser.add_argument(
+        "--resource-policy",
+        choices=("strict-host", "owned-budget"),
+        default="strict-host",
+        help="owned-budget requires operator-confirmed CPU headroom; pressure and fixture limits stay active",
+    )
     parser.add_argument("--results", type=Path, default=Path("perf-results"))
     args = parser.parse_args()
     if (

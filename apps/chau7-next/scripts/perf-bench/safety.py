@@ -42,6 +42,7 @@ class ResourceGuard:
         "memory_free_min_percent": 25,
         "swap_growth_30s_max_mib": 256,
         "host_cpu_max_percent": 75,
+        "host_load_limit_enabled": True,
         "fixture_cpu_max_percent": 35,
         "fixture_interrupt_wakeups_max_per_s": 200,
         "fixture_footprint_max_mib": 384,
@@ -49,7 +50,16 @@ class ResourceGuard:
         "sustained_samples": 2,
     }
 
-    def __init__(self, evidence, read_host=host_sample):
+    def __init__(self, evidence, read_host=host_sample, policy="strict-host"):
+        if policy not in ("strict-host", "owned-budget"):
+            raise ValueError(f"unknown resource policy: {policy}")
+        self.policy = policy
+        self.limits = dict(type(self).limits)
+        if policy == "owned-budget":
+            # Explicit operator-confirmed headroom: bound this fixture instead
+            # of rejecting unrelated CPU activity. Keep pressure stops intact.
+            self.limits["host_cpu_max_percent"] = None
+            self.limits["host_load_limit_enabled"] = False
         self.evidence = evidence
         self.read_host = read_host
         self.sampler = Sampler()
@@ -71,7 +81,7 @@ class ResourceGuard:
         row["swap_growth_30s_mib"] = row["swap_used_mib"] - min(r["swap_used_mib"] for r in window)
         if row["swap_growth_30s_mib"] > self.limits["swap_growth_30s_max_mib"]:
             reasons.append("swap grew over 256 MiB within 30 seconds")
-        if row["load_average"][0] > (os.cpu_count() or 1):
+        if self.limits["host_load_limit_enabled"] and row["load_average"][0] > (os.cpu_count() or 1):
             reasons.append("one-minute host load exceeds logical CPU count")
         sustained = {}
         if previous_host:
@@ -79,7 +89,9 @@ class ResourceGuard:
             if min(deltas) < 0 or sum(deltas) <= 0:
                 raise ResourceLimit("host CPU counters regressed or stopped")
             row["host_cpu_percent"] = 100 * (1 - deltas[2] / sum(deltas))
-            sustained["host CPU above 75%"] = row["host_cpu_percent"] > self.limits["host_cpu_max_percent"]
+            maximum = self.limits["host_cpu_max_percent"]
+            if maximum is not None:
+                sustained["host CPU above 75%"] = row["host_cpu_percent"] > maximum
         current = {role: self.sampler.sample(pid) for role, pid in (pids or {}).items()}
         row["fixture_samples"] = current
         if current:
