@@ -20,9 +20,9 @@ class SafetyAcceptance(unittest.TestCase):
             **changes,
         }
 
-    def guard(self, rows):
+    def guard(self, rows, policy="strict-host"):
         evidence = []
-        guard = ResourceGuard(evidence, read_host=Mock(side_effect=rows))
+        guard = ResourceGuard(evidence, read_host=Mock(side_effect=rows), policy=policy)
         guard.sampler = Mock()
         return guard, evidence
 
@@ -65,32 +65,65 @@ class SafetyAcceptance(unittest.TestCase):
                 guard.check()
         self.assertGreater(evidence[-1]["host_cpu_percent"], 75)
 
-    def test_fixture_cpu_and_wakeup_caps_use_owned_native_deltas(self):
-        guard, evidence = self.guard([self.host(t) for t in [0, 5, 10]])
-
-        def sample(pid):
-            t = len(evidence) * 5
-            return {
-                "pid": pid,
-                "monotonic_s": t,
-                "start_ticks": 1,
-                "cpu_s": t,
-                "interrupt_wakeups": t * 300,
-                "package_wakeups": 0,
-                "rss": 1024,
-                "footprint": 2048,
-                "pageins": 0,
-                "read_bytes": 0,
-                "write_bytes": 0,
-            }
-
-        guard.sampler.sample.side_effect = sample
+    def test_owned_budget_records_busy_host_without_rejecting_unrelated_cpu(self):
+        rows = [self.host(t, load_average=(100, 100, 100)) for t in (0, 5, 10)]
+        rows[1]["cpu_ticks"] = [50, 0, 1, 0]
+        rows[2]["cpu_ticks"] = [100, 0, 2, 0]
+        guard, evidence = self.guard(rows, policy="owned-budget")
         with patch("safety.time.monotonic", side_effect=[0, 5, 10]):
-            guard.check({"app": 123})
-            guard.check({"app": 123})
-            with self.assertRaisesRegex(ResourceLimit, "fixture CPU.*fixture wakeups"):
+            guard.check()
+            guard.check()
+            guard.check()
+        self.assertGreater(evidence[-1]["host_cpu_percent"], 95)
+        self.assertEqual(evidence[-1]["load_average"], (100, 100, 100))
+        self.assertEqual(guard.limits["fixture_cpu_max_percent"], 35)
+        self.assertEqual(ResourceGuard.limits["host_cpu_max_percent"], 75)
+
+    def test_owned_budget_still_stops_memory_reserve_and_swap_growth(self):
+        for rows, reason in (
+            ([self.host(0, memory_free_percent=24)], "memory reserve"),
+            ([self.host(0), self.host(5, swap_used_mib=12257)], "swap grew"),
+        ):
+            with self.subTest(reason=reason):
+                guard, evidence = self.guard(rows, policy="owned-budget")
+                with (
+                    patch(
+                        "safety.time.monotonic",
+                        side_effect=[r["monotonic_s"] for r in rows],
+                    ),
+                    self.assertRaisesRegex(ResourceLimit, reason),
+                ):
+                    for _ in rows:
+                        guard.check()
+                self.assertTrue(evidence[-1]["stop_reasons"])
+
+    def test_fixture_cpu_and_wakeup_caps_use_owned_native_deltas(self):
+        for policy in ("strict-host", "owned-budget"):
+            guard, evidence = self.guard([self.host(t) for t in [0, 5, 10]], policy=policy)
+
+            def sample(pid, evidence=evidence):
+                t = len(evidence) * 5
+                return {
+                    "pid": pid,
+                    "monotonic_s": t,
+                    "start_ticks": 1,
+                    "cpu_s": t,
+                    "interrupt_wakeups": t * 300,
+                    "package_wakeups": 0,
+                    "rss": 1024,
+                    "footprint": 2048,
+                    "pageins": 0,
+                    "read_bytes": 0,
+                    "write_bytes": 0,
+                }
+
+            guard.sampler.sample.side_effect = sample
+            with patch("safety.time.monotonic", side_effect=[0, 5, 10]):
                 guard.check({"app": 123})
-        self.assertEqual(guard.sampler.sample.call_args.args, (123,))
+                guard.check({"app": 123})
+                with self.assertRaisesRegex(ResourceLimit, "fixture CPU.*fixture wakeups"):
+                    guard.check({"app": 123})
+            self.assertEqual(guard.sampler.sample.call_args.args, (123,))
 
     def test_native_identity_change_is_a_failure(self):
         guard, evidence = self.guard([self.host(0), self.host(5)])

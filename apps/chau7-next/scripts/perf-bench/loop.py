@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--hz", type=float, default=3)
     parser.add_argument("--mcp-hz", type=float, default=0.5)
     parser.add_argument("--request-hz", type=float, default=1)
+    parser.add_argument("--resource-policy", choices=("strict-host", "owned-budget"), default="strict-host")
     args = parser.parse_args()
     if args.repeats < 2:
         parser.error("at least two repeats required")
@@ -52,6 +53,8 @@ def main():
                     str(args.mcp_hz),
                     "--request-hz",
                     str(args.request_hz),
+                    "--resource-policy",
+                    args.resource_policy,
                 ],
                 check=True,
             )
