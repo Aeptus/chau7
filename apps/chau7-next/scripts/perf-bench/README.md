@@ -6,6 +6,25 @@ sockets, free local ports and fresh result filenames. It never accepts the
 production PID, installs into Applications, or reads production session data.
 It terminates only the child app it started; results survive failed runs.
 
+## Resource limits
+
+Start with one total tab, terminal output at 3 Hz, MCP at 0.5 Hz and proxy
+control at 1 Hz. Run one fixture at a time, with no concurrent compilation,
+tests or live agents. `run.py` first observes host pressure for 60 seconds and
+checks it every five seconds throughout startup, settling and measurement.
+It stops if memory reserve falls below 25%, swap grows over 256 MiB in 30
+seconds, or one-minute load exceeds the logical CPU count. Two consecutive
+samples above 75% whole-host CPU, 35% of one core for the owned app/helpers,
+or 200 owned interrupt wakeups/s also stop the run. Owned physical footprint
+above 384 MiB stops immediately. These are safety limits, not acceptance
+budgets. Existing swap alone is not a reason to reject a stable machine.
+
+Stops preserve pressure samples and incomplete phase evidence, close the owned
+bridge and terminate only the owned fixture. Verify all owned PIDs exited and
+observe host stability before another admission. Never weaken a safety limit
+to complete a capture. Increase load only after a successful small comparison
+and an explicit capacity check. Use one build job if another build is needed.
+
 ## Loop
 
 1. Build a baseline with the normal packaging workflow and a dedicated cache:
@@ -54,16 +73,17 @@ It terminates only the child app it started; results survive failed runs.
    Active phases also require recent selected-terminal paint evidence and a
    healthy hang watchdog, so a frozen renderer cannot pass as an optimization.
 
-5. Repeat under 1, 4 and 12 total tabs and a sustained run. Run regression checks,
+5. Repeat under 4/12 tabs and a sustained run only when capacity permits. Run regression checks,
    preserve a compact measured report, and publish through the broker workflow.
 
 The default phases are idle, terminal, MCP, proxy and recovery. A five-second
 output warm-up must complete terminal startup before any phase is timed;
-silent terminals can otherwise leave the animated startup overlay running. Terminal uses a
-12.5 Hz alternate-screen TUI in one visible and three hidden tabs; `--tabs`
+silent terminals can otherwise leave the animated startup overlay running. The safe default uses a
+3 Hz alternate-screen TUI in one visible tab; `--tabs`
 counts additional tabs. MCP issues runtime-info calls through the actual bridge.
-Runtime-info stays at its sustainable limit of 2 requests/s; the server limits remain enabled.
-Proxy exercises the local SQLite stats endpoint at 10 requests/s; this is an
+Runtime-info has a sustainable server limit of 2 requests/s; the default is
+0.5/s and server limits remain enabled.
+Proxy exercises the local SQLite stats endpoint at 1 request/s by default; this is an
 analytics/control workload, not a measurement of upstream model streaming.
 The synthetic loop makes no external API or paid model calls.
 
@@ -141,8 +161,10 @@ not describe local fake-provider latency as real model latency.
 ## Authorized live agent workload
 
 `live_agents.py` supplements the synthetic loop with real issue investigation.
-It starts five GPT-6-Luna Max CLIs in an owned isolated app, covering six issues
-(one agent handles two repositories). Use it only for authorized live work: it
+The five task groups cover six issues, with one agent handling two repositories.
+Each invocation starts exactly one GPT-6-Luna Max CLI in an owned isolated app.
+It requires `--task-index 0..4` and a 60-second pressure admission check. Verify
+completion and close the previous owned fixture before starting another group. Use it only for authorized live work: it
 uses the current user's Codex credentials and session transcripts, incurs model
 usage and can publish the issue comments requested in the task prompts. The
 app's profile, restoration state and MCP socket remain private to the fixture.
@@ -157,18 +179,19 @@ provider approval rules. Do not implement code or alter issue state.
 ```sh
 python3 apps/chau7-next/scripts/perf-bench/live_agents.py \
   '/tmp/chau7-perf-candidate/Chau7 Next.app/Contents/MacOS/Chau7 Next' \
-  /tmp/authorized-live-tasks.json --results /tmp/chau7-live-load --seconds 600
+  /tmp/authorized-live-tasks.json --results /tmp/chau7-live-load-1 --task-index 0 --seconds 600
 ```
 
 Finish compilation before starting. Retain launch/submission evidence, native
 app/bridge/proxy samples, host load, live lifecycle snapshots and resulting
 comment URLs. Retain proxy request/usage counters before and during the workload
-to establish whether model requests actually traversed the owned proxy. App CPU excludes CLI children. Confirm five overlapping active
-turns from lifecycle/transcript evidence; five CLI processes alone is
-insufficient. The collector's `captured` status means capture finished, not that
+to establish whether model requests actually traversed the owned proxy. App CPU excludes CLI children. Retain lifecycle/transcript evidence
+for each serial turn; a CLI process alone does not establish active work. The collector's `captured` status means capture finished, not that
 all issue work succeeded. Check every result and permission failure.
 
-This run retains its owned fixture and private profile so that pending issue
+The live admission check does not interrupt an in-flight publishing turn on
+pressure. Admit no further work when pressure rises; resolve the current turn
+and verify cleanup first. This run retains its owned fixture and private profile so that pending issue
 work can finish. Verify completion before closing its tabs and app. It never
 authorizes stopping the installed production app or unrelated sessions. Keep
 full owned PTY tails and issue data private; publish only bounded numerical

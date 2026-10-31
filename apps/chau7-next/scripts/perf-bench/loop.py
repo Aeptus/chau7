@@ -18,8 +18,11 @@ def main():
     parser.add_argument("--results", type=Path, required=True, help="new directory for this iteration")
     parser.add_argument("--repeats", type=int, default=2)
     parser.add_argument("--measure", type=float, default=30)
-    parser.add_argument("--settle", type=float, default=5)
-    parser.add_argument("--tabs", type=int, default=3)
+    parser.add_argument("--settle", type=float, default=10)
+    parser.add_argument("--tabs", type=int, default=0)
+    parser.add_argument("--hz", type=float, default=3)
+    parser.add_argument("--mcp-hz", type=float, default=0.5)
+    parser.add_argument("--request-hz", type=float, default=1)
     args = parser.parse_args()
     if args.repeats < 2:
         parser.error("at least two repeats required")
@@ -43,6 +46,12 @@ def main():
                     str(args.measure),
                     "--settle",
                     str(args.settle),
+                    "--hz",
+                    str(args.hz),
+                    "--mcp-hz",
+                    str(args.mcp_hz),
+                    "--request-hz",
+                    str(args.request_hz),
                 ],
                 check=True,
             )

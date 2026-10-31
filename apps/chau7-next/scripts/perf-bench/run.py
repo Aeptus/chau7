@@ -17,6 +17,7 @@ import urllib.request
 from pathlib import Path
 
 from native import Sampler, summarize
+from safety import ResourceGuard
 from threads import ThreadSampler, summarize_threads
 
 HERE = Path(__file__).resolve().parent
@@ -157,9 +158,12 @@ def validate_rendering(name, snapshot, expected_count=None):
                 raise RuntimeError("output was emitted but the selected terminal stopped painting")
 
 
-def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases):
+def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guard=None):
     phase_file.write_text("active" if name == "terminal" else "idle")
-    time.sleep(args.settle)
+    if guard:
+        guard.wait(args.settle, pids)
+    else:
+        time.sleep(args.settle)
     before = mcp.tool("chau7_performance_snapshot")
     progress_dir = phase_file.parent / "progress"
     progress_before = {p.stem: json.loads(p.read_text()) for p in progress_dir.glob("*.json")}
@@ -170,6 +174,13 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases):
     thread_sampler = ThreadSampler() if args.threads else None
     thread_samples = []
     host_samples = []
+    phases[name] = {
+        "capture_state": "incomplete",
+        "samples": samples,
+        "host_samples": host_samples,
+        "thread_samples": thread_samples,
+        "first_snapshot": before,
+    }
     deadline = time.monotonic() + args.measure
     next_sample = next_request = time.monotonic()
     count = 0
@@ -182,6 +193,8 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases):
             if thread_sampler:
                 thread_samples.append(thread_sampler.sample(pids["app"]))
             next_sample = now + args.interval
+            if guard:
+                guard.check(pids)
         if now >= deadline:
             break
         if name in ("mcp", "proxy") and now >= next_request:
@@ -247,6 +260,10 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases):
 
 
 def run(args, result, home, log):
+    result["resource_safety"] = {"limits": ResourceGuard.limits, "samples": []}
+    guard = ResourceGuard(result["resource_safety"]["samples"])
+    # Establish stable host pressure before starting any owned application.
+    guard.wait(60)
     port = available_port_pair()
     phase_file = prepare_home(home, args, port)
     env = {k: v for k, v in os.environ.items() if not k.startswith(("CHAU7_", "ANTHROPIC_", "OPENAI_"))}
@@ -262,7 +279,8 @@ def run(args, result, home, log):
                 break
             if app.poll() is not None or time.monotonic() >= deadline:
                 raise RuntimeError("app exited or owned MCP/proxy did not start; inspect lab log")
-            time.sleep(0.25)
+            guard.check({"app": app.pid})
+            time.sleep(1)
         mcp = Mcp(args.binary.parent / "chau7-next-mcp-bridge", sockets[0], log)
         result["runtime_info"] = mcp.tool("chau7_runtime_info")
         if result["runtime_info"]["process_id"] != app.pid:
@@ -279,7 +297,7 @@ def run(args, result, home, log):
         # Prime every TUI before timing idle: a terminal that never produced
         # printable output is still showing its animated startup overlay.
         phase_file.write_text("active")
-        time.sleep(args.warmup)
+        guard.wait(args.warmup, result["pids"])
         phase_file.write_text("idle")
         result["warmup_snapshot"] = mcp.tool("chau7_performance_snapshot")
         if result["warmup_snapshot"]["startup"]["milestones"]["terminal_ready"] is None:
@@ -290,33 +308,36 @@ def run(args, result, home, log):
                 raise ValueError(f"unknown phase: {phase}")
             print(f"measuring {phase}", flush=True)
             result["phases"][phase] = measure_phase(
-                phase, args, result["pids"], mcp, phase_file, port, sampler, result["phases"]
+                phase, args, result["pids"], mcp, phase_file, port, sampler, result["phases"], guard
             )
     finally:
-        if mcp:
-            mcp.close()
-        # Only terminate the child we created. Production PIDs are never accepted.
-        if app.poll() is None:
-            app.terminate()
-            app.wait(timeout=15)
+        try:
+            if mcp:
+                mcp.close()
+        finally:
+            # Even a broken bridge must not leave the owned app running.
+            # Production PIDs are never accepted.
+            if app.poll() is None:
+                app.terminate()
+                app.wait(timeout=15)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=Path)
     parser.add_argument("label")
-    parser.add_argument("--tabs", type=int, default=3, help="additional hidden tabs")
-    parser.add_argument("--hz", type=float, default=12.5)
+    parser.add_argument("--tabs", type=int, default=0, help="additional hidden tabs; start with one total tab")
+    parser.add_argument("--hz", type=float, default=3)
     parser.add_argument(
         "--threads", action="store_true", help="diagnostic thread attribution; keep off for final trials"
     )
     parser.add_argument("--font", type=float, default=12)
     parser.add_argument("--warmup", type=float, default=5)
-    parser.add_argument("--settle", type=float, default=5)
+    parser.add_argument("--settle", type=float, default=10)
     parser.add_argument("--measure", type=float, default=30)
     parser.add_argument("--interval", type=float, default=1)
-    parser.add_argument("--request-hz", type=float, default=10)
-    parser.add_argument("--mcp-hz", type=float, default=2, help="sustainable runtime-info tool limit")
+    parser.add_argument("--request-hz", type=float, default=1)
+    parser.add_argument("--mcp-hz", type=float, default=0.5, help="sustainable runtime-info tool limit")
     parser.add_argument("--python", default=os.sys.executable)
     parser.add_argument("--phases", default="idle,terminal,mcp,proxy,recovery")
     parser.add_argument("--results", type=Path, default=Path("perf-results"))
@@ -350,7 +371,7 @@ def main():
         "binary_sha256": hashlib.sha256(args.binary.read_bytes()).hexdigest(),
         "harness_sha256": {
             name: hashlib.sha256((HERE / name).read_bytes()).hexdigest()
-            for name in ("run.py", "tui.py", "native.py", "threads.py")
+            for name in ("run.py", "tui.py", "native.py", "threads.py", "safety.py")
         },
         "helper_sha256": {
             name: hashlib.sha256((args.binary.parent / name).read_bytes()).hexdigest()

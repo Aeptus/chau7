@@ -1,0 +1,407 @@
+{
+  "status": "safety-stopped-not-a-performance-comparison",
+  "date": "2026-10-31",
+  "baseline_binary_sha256": "8b3071c03ea8e18cdb40db7d40c9b500ade3195b6b5ec97971ec3881f653993c",
+  "candidate_binary_sha256": "877a8d3dc75374eef3b72fd661a3a08ce1c61437605ff2ec30f0d39756a48150",
+  "workload": {
+    "tabs": 0,
+    "hz": 3.0,
+    "mcp_hz": 0.5,
+    "request_hz": 1.0,
+    "settle": 10.0,
+    "measure": 30.0
+  },
+  "completed_phases": [],
+  "stop_reason": "swap grew over 256 MiB within 30 seconds",
+  "owned_app_bridge_proxy_verified_exited": true,
+  "trigger": {
+    "monotonic_s": 205730.737033458,
+    "memory_free_percent": 29,
+    "swap_used_mib": 13515.81,
+    "load_average": [
+      6.0732421875,
+      5.7275390625,
+      4.70751953125
+    ],
+    "cpu_ticks": [
+      86333792,
+      65521522,
+      53291431,
+      0
+    ],
+    "swap_growth_30s_mib": 347.8099999999995,
+    "host_cpu_percent": 59.98799039231385,
+    "fixture_samples": {
+      "app": {
+        "pid": 94777,
+        "monotonic_s": 205730.737133958,
+        "start_ticks": 4937148790447,
+        "cpu_s": 0.96478625,
+        "rss": 60555264,
+        "footprint": 75383864,
+        "max_footprint": 131269688,
+        "interrupt_wakeups": 699,
+        "package_wakeups": 0,
+        "pageins": 12304,
+        "read_bytes": 151810048,
+        "write_bytes": 1118208
+      },
+      "mcp_bridge": {
+        "pid": 94842,
+        "monotonic_s": 205730.737144916,
+        "start_ticks": 4937199798850,
+        "cpu_s": 0.004137458333333333,
+        "rss": 4308992,
+        "footprint": 1802672,
+        "max_footprint": 1802672,
+        "interrupt_wakeups": 7,
+        "package_wakeups": 0,
+        "pageins": 20,
+        "read_bytes": 348160,
+        "write_bytes": 0
+      },
+      "proxy": {
+        "pid": 94839,
+        "monotonic_s": 205730.737149583,
+        "start_ticks": 4937188516985,
+        "cpu_s": 0.021078999999999997,
+        "rss": 4767744,
+        "footprint": 10797680,
+        "max_footprint": 10830448,
+        "interrupt_wakeups": 81,
+        "package_wakeups": 0,
+        "pageins": 0,
+        "read_bytes": 286720,
+        "write_bytes": 614400
+      }
+    },
+    "fixture_footprint_mib": 83.90828704833984,
+    "fixture_cpu_percent": 1.7377894583414943,
+    "fixture_interrupt_wakeups_per_s": 43.91006038122034,
+    "stop_reasons": [
+      "swap grew over 256 MiB within 30 seconds"
+    ]
+  },
+  "passive_observation": {
+    "test_processes_running": false,
+    "duration_s": 90.3080399580067,
+    "swap_growth_mib": 1906.5599999999995,
+    "memory_free_percent_range": [
+      29,
+      46
+    ],
+    "samples": [
+      {
+        "monotonic_s": 205779.238977125,
+        "memory_free_percent": 37,
+        "swap_used_mib": 15323.06,
+        "load_average": [
+          9.0732421875,
+          6.79736328125,
+          5.171875
+        ],
+        "cpu_ticks": [
+          86355068,
+          65537163,
+          53302837,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205784.254061125,
+        "memory_free_percent": 36,
+        "swap_used_mib": 15290.94,
+        "load_average": [
+          8.50634765625,
+          6.71728515625,
+          5.15283203125
+        ],
+        "cpu_ticks": [
+          86356325,
+          65537885,
+          53305843,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205789.280390625,
+        "memory_free_percent": 30,
+        "swap_used_mib": 15479.31,
+        "load_average": [
+          8.22509765625,
+          6.6884765625,
+          5.15185546875
+        ],
+        "cpu_ticks": [
+          86357759,
+          65538717,
+          53308560,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205794.295032958,
+        "memory_free_percent": 30,
+        "swap_used_mib": 16472.19,
+        "load_average": [
+          8.046875,
+          6.6767578125,
+          5.15673828125
+        ],
+        "cpu_ticks": [
+          86359332,
+          65540038,
+          53310633,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205799.315545708,
+        "memory_free_percent": 38,
+        "swap_used_mib": 16513.12,
+        "load_average": [
+          7.962890625,
+          6.681640625,
+          5.16748046875
+        ],
+        "cpu_ticks": [
+          86360775,
+          65541294,
+          53312911,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205804.331124166,
+        "memory_free_percent": 35,
+        "swap_used_mib": 16489.12,
+        "load_average": [
+          7.5654296875,
+          6.6201171875,
+          5.154296875
+        ],
+        "cpu_ticks": [
+          86362207,
+          65542349,
+          53315401,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205809.358409916,
+        "memory_free_percent": 36,
+        "swap_used_mib": 16473.12,
+        "load_average": [
+          7.43994140625,
+          6.609375,
+          5.1591796875
+        ],
+        "cpu_ticks": [
+          86364553,
+          65543034,
+          53317362,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205814.370267916,
+        "memory_free_percent": 41,
+        "swap_used_mib": 16465.12,
+        "load_average": [
+          7.00390625,
+          6.53271484375,
+          5.140625
+        ],
+        "cpu_ticks": [
+          86366325,
+          65543676,
+          53319933,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205819.380750875,
+        "memory_free_percent": 44,
+        "swap_used_mib": 16449.12,
+        "load_average": [
+          6.52294921875,
+          6.4404296875,
+          5.1162109375
+        ],
+        "cpu_ticks": [
+          86367511,
+          65544465,
+          53322929,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205824.397915375,
+        "memory_free_percent": 45,
+        "swap_used_mib": 16441.12,
+        "load_average": [
+          6.16064453125,
+          6.36669921875,
+          5.09765625
+        ],
+        "cpu_ticks": [
+          86368817,
+          65545118,
+          53325956,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205829.409842958,
+        "memory_free_percent": 46,
+        "swap_used_mib": 16417.12,
+        "load_average": [
+          5.7470703125,
+          6.27734375,
+          5.0732421875
+        ],
+        "cpu_ticks": [
+          86369853,
+          65545500,
+          53329532,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205834.424810291,
+        "memory_free_percent": 38,
+        "swap_used_mib": 16417.12,
+        "load_average": [
+          5.76708984375,
+          6.2724609375,
+          5.07861328125
+        ],
+        "cpu_ticks": [
+          86371452,
+          65546391,
+          53332011,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205839.433754125,
+        "memory_free_percent": 38,
+        "swap_used_mib": 16409.12,
+        "load_average": [
+          5.78564453125,
+          6.267578125,
+          5.083984375
+        ],
+        "cpu_ticks": [
+          86373941,
+          65547600,
+          53333276,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205844.451279208,
+        "memory_free_percent": 33,
+        "swap_used_mib": 16393.12,
+        "load_average": [
+          6.5234375,
+          6.412109375,
+          5.1416015625
+        ],
+        "cpu_ticks": [
+          86376047,
+          65548945,
+          53334796,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205849.468586708,
+        "memory_free_percent": 29,
+        "swap_used_mib": 16438.06,
+        "load_average": [
+          6.3212890625,
+          6.37158203125,
+          5.134765625
+        ],
+        "cpu_ticks": [
+          86377931,
+          65550350,
+          53336479,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205854.492980333,
+        "memory_free_percent": 29,
+        "swap_used_mib": 16568.81,
+        "load_average": [
+          6.37548828125,
+          6.3818359375,
+          5.1455078125
+        ],
+        "cpu_ticks": [
+          86379847,
+          65551776,
+          53338115,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205859.516296875,
+        "memory_free_percent": 35,
+        "swap_used_mib": 17135.31,
+        "load_average": [
+          7.86669921875,
+          6.69091796875,
+          5.26171875
+        ],
+        "cpu_ticks": [
+          86382529,
+          65553384,
+          53338826,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205864.533141666,
+        "memory_free_percent": 33,
+        "swap_used_mib": 17242.81,
+        "load_average": [
+          8.677734375,
+          6.87841796875,
+          5.3359375
+        ],
+        "cpu_ticks": [
+          86385345,
+          65554959,
+          53339432,
+          0
+        ]
+      },
+      {
+        "monotonic_s": 205869.547017083,
+        "memory_free_percent": 35,
+        "swap_used_mib": 17229.62,
+        "load_average": [
+          8.462890625,
+          6.86376953125,
+          5.33935546875
+        ],
+        "cpu_ticks": [
+          86387981,
+          65556102,
+          53340640,
+          0
+        ]
+      }
+    ]
+  },
+  "validation": {
+    "collector_tests_passed": 17,
+    "telemetry_tests_previously_passed": 29,
+    "strict_app_and_test_clippy_previously_passed": true
+  },
+  "live_agents_launched": 0,
+  "limits": "No paired native performance gain established. Larger workloads and live agents held for host capacity."
+}

@@ -14,6 +14,7 @@ from pathlib import Path
 
 from native import Sampler, summarize
 from run import Mcp, available_port_pair, child_proxy
+from safety import ResourceGuard
 
 
 def save(path, value):
@@ -26,6 +27,13 @@ def main():
     parser.add_argument("tasks", type=Path, help="five task groups covering six issues")
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--seconds", type=int, default=600)
+    parser.add_argument(
+        "--task-index",
+        type=int,
+        required=True,
+        choices=range(5),
+        help="run only this task; verify and close the previous fixture first",
+    )
     args = parser.parse_args()
     tasks = json.loads(args.tasks.read_text())
     if len(tasks) != 5 or sum(len(t["issues"]) for t in tasks) != 6:
@@ -55,6 +63,8 @@ def main():
         "binary_sha256": hashlib.sha256(args.binary.read_bytes()).hexdigest(),
         "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "tasks": tasks,
+        "selected_task_index": args.task_index,
+        "resource_safety": {"limits": ResourceGuard.limits, "samples": []},
         "launches": [],
         "tool_requests": [],
         "proxy_stats": [],
@@ -107,6 +117,10 @@ def main():
             stop.wait(1)
 
     try:
+        # Admission only: an in-flight publishing turn must not be killed on a
+        # pressure signal. Never admit another task in this invocation.
+        guard = ResourceGuard(result["resource_safety"]["samples"])
+        guard.wait(60)
         with (args.results / "app.log").open("w") as log:
             env = {k: v for k, v in os.environ.items() if not k.startswith("CHAU7_")}
             env.update(CHAU7_NEXT_HOME_ROOT=str(home), CHAU7_NEXT_ISOLATED_TEST_MODE="1")
@@ -133,8 +147,8 @@ def main():
             )
             command = "codex -m gpt-6-luna -c 'model_reasoning_effort=\"max\"' --search --approve-for-me"
             proxy_stats()
-            for index, task in enumerate(tasks):
-                print(f"launching Luna Max {index + 1}/5", flush=True)
+            for index, task in [(args.task_index, tasks[args.task_index])]:
+                print(f"launching sole Luna Max task {index + 1}/5", flush=True)
                 launch = tool(
                     "agent_launch",
                     directory=task["directory"],
@@ -149,7 +163,7 @@ def main():
                     raise RuntimeError(f"agent {index + 1} dispatch failed; see retained launch result")
                 tab_id = launch["agents"][0]["tab_id"]
                 tool("tab_rename", tab_id=tab_id, title=f"Perf Luna {index + 1}")
-            result["all_launched_at_unix_s"] = time.time()
+            result["selected_launched_at_unix_s"] = time.time()
             deadline = time.monotonic() + args.seconds
             while True:
                 proxy_stats()
