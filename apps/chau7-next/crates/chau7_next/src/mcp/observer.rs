@@ -7,8 +7,9 @@ use chau7_next_core::mcp::output::encode_sorted;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 use std::sync::{
-    Arc, Condvar, Mutex,
+    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
+    mpsc::{Receiver, SyncSender},
 };
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -208,14 +209,15 @@ impl Health {
 struct Subscription {
     id: String,
     alive: Arc<AtomicBool>,
-    gate: Arc<(Mutex<bool>, Condvar)>,
+    armed: Arc<AtomicBool>,
+    wake: Arc<SyncSender<()>>,
     health: Arc<Mutex<Health>>,
     worker: Option<JoinHandle<()>>,
 }
 impl Subscription {
     fn stop(&mut self) {
         self.alive.store(false, Ordering::Release);
-        self.gate.1.notify_all();
+        let _ = self.wake.try_send(());
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
@@ -252,13 +254,10 @@ impl Observer {
         }
     }
     pub fn arm(&self) {
-        if let Some(subscription) = &self.subscription {
-            *subscription
-                .gate
-                .0
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = true;
-            subscription.gate.1.notify_all();
+        if let Some(subscription) = &self.subscription
+            && !subscription.armed.swap(true, Ordering::AcqRel)
+        {
+            let _ = subscription.wake.try_send(());
         }
     }
     pub fn call(&mut self, name: &str, args: &Map<String, Value>) -> Option<String> {
@@ -360,7 +359,10 @@ impl Observer {
             lag: "healthy",
         }));
         let alive = Arc::new(AtomicBool::new(true));
-        let gate = Arc::new((Mutex::new(false), Condvar::new()));
+        let armed = Arc::new(AtomicBool::new(false));
+        // Register before the worker's replay to cover publication racing with
+        // replay or entering the wait. The cursor, not the wake token, owns data.
+        let (wake, changes) = journal.watch_changes();
         let timer = self.timers.as_ref().map(|t| {
             t.register(
                 &format!("mcp.subscription.{id}"),
@@ -381,7 +383,8 @@ impl Observer {
             cursor: next,
             heartbeat: Duration::from_millis(heartbeat),
             alive: alive.clone(),
-            gate: gate.clone(),
+            armed: armed.clone(),
+            changes,
             health: health.clone(),
             timer,
         };
@@ -405,7 +408,8 @@ impl Observer {
         self.subscription = Some(Subscription {
             id,
             alive,
-            gate,
+            armed,
+            wake,
             health,
             worker: Some(worker),
         });
@@ -422,7 +426,8 @@ struct Worker {
     cursor: u64,
     heartbeat: Duration,
     alive: Arc<AtomicBool>,
-    gate: Arc<(Mutex<bool>, Condvar)>,
+    armed: Arc<AtomicBool>,
+    changes: Receiver<()>,
     health: Arc<Mutex<Health>>,
     timer: Option<TimerGuard>,
 }
@@ -450,16 +455,11 @@ impl Worker {
     }
     fn run(mut self) {
         let _timer = self.timer.take();
-        let mut gate = self.gate.0.lock().unwrap_or_else(|e| e.into_inner());
-        while !*gate && self.alive.load(Ordering::Acquire) {
-            gate = self
-                .gate
-                .1
-                .wait_timeout(gate, Duration::from_millis(100))
-                .unwrap_or_else(|e| e.into_inner())
-                .0;
+        while !self.armed.load(Ordering::Acquire) && self.alive.load(Ordering::Acquire) {
+            if self.changes.recv().is_err() {
+                return;
+            }
         }
-        drop(gate);
         let mut heartbeat = Instant::now() + self.heartbeat;
         while self.alive.load(Ordering::Acquire) && super::control::is_connected(&self.owner) {
             if stale(self.cursor, self.journal.oldest_seq()) {
@@ -485,8 +485,13 @@ impl Worker {
                 heartbeat = Instant::now() + self.heartbeat;
             }
             if !batch.has_more {
-                let guard = self.gate.0.lock().unwrap_or_else(|e| e.into_inner());
-                let _ = self.gate.1.wait_timeout(guard, Duration::from_millis(100));
+                match self
+                    .changes
+                    .recv_timeout(heartbeat.saturating_duration_since(Instant::now()))
+                {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                }
             }
         }
     }
@@ -495,6 +500,156 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    struct WorkerFixture {
+        subscription: Subscription,
+        reader: std::io::BufReader<std::os::unix::net::UnixStream>,
+        spine: Arc<chau7_next_core::events::EventSpine>,
+        main: MainThread,
+        owner: String,
+    }
+    #[cfg(unix)]
+    impl WorkerFixture {
+        fn new(heartbeat: Duration) -> Self {
+            let spine = Arc::new(chau7_next_core::events::EventSpine::new(8, 0));
+            spine.finish();
+            drop(spine.take_stream());
+            let journal = Journal::for_tests(spine.clone());
+            let (wake, changes) = journal.watch_changes();
+            let alive = Arc::new(AtomicBool::new(true));
+            let armed = Arc::new(AtomicBool::new(false));
+            let health = Arc::new(Mutex::new(Health {
+                next_delivery: 1,
+                emitted: 0,
+                dropped: 0,
+                last_at: None,
+                created_at: 1,
+                heartbeat_ms: heartbeat.as_millis() as u64,
+                lag: "healthy",
+            }));
+            let (writer, reader) = std::os::unix::net::UnixStream::pair().unwrap();
+            reader
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let (jobs, _rx) = futures::channel::mpsc::unbounded();
+            let main = MainThread::for_tests(jobs);
+            let owner = uuid::Uuid::new_v4().to_string();
+            super::super::control::connect(&owner).unwrap();
+            let worker = Worker {
+                main: main.clone(),
+                owner: owner.clone(),
+                journal,
+                writer: Arc::new(Mutex::new(Box::new(writer))),
+                topics: vec!["tab-state".into()],
+                id: "test-sub".into(),
+                cursor: 0,
+                heartbeat,
+                alive: alive.clone(),
+                armed: armed.clone(),
+                changes,
+                health: health.clone(),
+                timer: None,
+            };
+            let worker = std::thread::spawn(move || worker.run());
+            Self {
+                subscription: Subscription {
+                    id: "test-sub".into(),
+                    alive,
+                    armed,
+                    wake,
+                    health,
+                    worker: Some(worker),
+                },
+                reader: std::io::BufReader::new(reader),
+                spine,
+                main,
+                owner,
+            }
+        }
+        fn arm(&self) {
+            self.subscription.armed.store(true, Ordering::Release);
+            let _ = self.subscription.wake.try_send(());
+        }
+        fn event(&self) {
+            self.spine.ingest_structural(
+                chau7_next_core::events::StructuralEvent::new("tab_created", "tabs"),
+                None,
+                None,
+                None,
+            );
+        }
+        fn next(&mut self) -> Value {
+            use std::io::BufRead;
+            let mut line = String::new();
+            assert!(self.reader.read_line(&mut line).unwrap() > 0);
+            serde_json::from_str::<Value>(&line).unwrap()["params"].clone()
+        }
+    }
+    #[cfg(unix)]
+    impl Drop for WorkerFixture {
+        fn drop(&mut self) {
+            self.subscription.stop();
+            super::super::control::disconnect(&self.owner, &self.main);
+        }
+    }
+    #[cfg(unix)]
+    #[test]
+    fn worker_waits_for_response_arm_then_delivers_racing_events_in_order() {
+        use std::io::BufRead;
+        let mut fixture = WorkerFixture::new(Duration::from_secs(60));
+        fixture
+            .reader
+            .get_ref()
+            .set_read_timeout(Some(Duration::from_millis(120)))
+            .unwrap();
+        fixture.event();
+        let error = fixture.reader.read_line(&mut String::new()).unwrap_err();
+        assert!(matches!(
+            error.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        ));
+        fixture
+            .reader
+            .get_ref()
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        fixture.arm();
+        assert_eq!(fixture.next()["seq"], 1);
+        // Let the consumer enter its long wait, then publish a coalesced burst.
+        for _ in 0..7 {
+            fixture.event();
+        }
+        for expected in 2..=8 {
+            let notification = fixture.next();
+            assert_eq!(notification["seq"], expected);
+            assert_eq!(notification["delivery_seq"], expected);
+            assert_eq!(
+                notification["subscription_health"]["dropped_notification_count"],
+                0
+            );
+        }
+        let start = Instant::now();
+        fixture.subscription.stop();
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "cancellation waited for the 60s heartbeat"
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn worker_heartbeats_without_events_and_reports_expired_replay() {
+        let mut fixture = WorkerFixture::new(Duration::from_millis(30));
+        fixture.arm();
+        assert_eq!(fixture.next()["type"], "heartbeat");
+        assert_eq!(fixture.next()["delivery_seq"], 2);
+        drop(fixture);
+        let mut fixture = WorkerFixture::new(Duration::from_secs(60));
+        for _ in 0..9 {
+            fixture.event();
+        }
+        fixture.arm();
+        assert_eq!(fixture.next()["error"], "snapshot_required");
+    }
     #[test]
     fn topic_normalization_and_replay_gap_are_explicit() {
         let args = json!({"topics":[" TAB-STATE ","unknown","tab-state"]});
