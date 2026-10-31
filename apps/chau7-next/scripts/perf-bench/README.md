@@ -219,6 +219,10 @@ to manufacture repeatability.
 
 ## MCP server subscription fixture
 
+[Measured observations and acceptance status](MCP-SUBSCRIPTIONS.md) retain the
+partial native comparison, including pressure-blocked admissions and the
+unresolved proxy recovery budget.
+
 `mcp_run.py` exercises the real app server through two owned bridge connections,
 with one synthetic tab and no provider turns or terminal input. Unlike tool-only
 polling, its reader drains event notifications continuously. It validates serial
