@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Process proxy streaming usage and token-rate events incrementally, avoiding a full response copy and repeated SSE line copies while preserving forwarding and accounting.
+
 - Park transcript token-rate monitoring when no AI run exists, and wake it on run admission, identity changes and exit while retaining active CLI polling and historical readings.
 
 - Reduce terminal lag: reuse the prepared paint of unchanged terminal rows, and stop copying hidden tabs' grids on every output batch. With 13 busy AI-style tabs, CPU per output batch fell about 3.8 times. The performance snapshot now ranks slow stages against per-stage time budgets, counts window frames, and separates main-thread congestion from deliberate frame pacing.

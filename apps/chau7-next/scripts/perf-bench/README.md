@@ -6,7 +6,8 @@ sockets, free local ports and fresh result filenames. It never accepts the
 production PID, installs into Applications, or reads production session data.
 It terminates only the child app it started; results survive failed runs.
 
-Latest measured results: [round 3](ROUND-3.md) (four completed idle trials;
+Latest standalone forwarding results: [Go proxy SSE accounting](PROXY-SSE.md).
+Latest GUI results: [round 3](ROUND-3.md) (four completed idle trials;
 full comparison stopped on swap pressure, no native gain established).
 
 ## Resource limits
@@ -168,6 +169,14 @@ match the complete synthetic SSE stream byte for byte. Two streams/s contain
 19 flushed events with a deliberate 5 ms inter-event delay; record first-byte
 latency separately from completion latency. Target proxy CPU <1%, footprint
 <24 MiB, first-byte p95 <10 ms, and return to <0.1% CPU after streaming stops.
+
+The standalone collector uses the same 60-second admission and resource stops
+as the app collector. Pass `--resource-policy owned-budget` only with confirmed
+host CPU headroom; memory and swap stops remain active. `--text-bytes 65536`
+produces a stream over 1 MiB (16 text deltas) to expose capture-buffer costs.
+Start at `--request-hz 1`, keep the payload and harness hashes fixed across
+paired trials, and retain rejected partial samples. The collector verifies
+complete response bytes before recording a successful request.
 
 This separate fixture excludes the app-owned parent watcher, IPC delivery and
 provider TLS. Keep its results separate from the bundled proxy process and do
