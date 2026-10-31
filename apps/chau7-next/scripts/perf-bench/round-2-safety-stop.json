@@ -398,9 +398,10 @@
     ]
   },
   "validation": {
-    "collector_tests_passed": 17,
+    "collector_tests_passed": 18,
     "telemetry_tests_previously_passed": 29,
-    "strict_app_and_test_clippy_previously_passed": true
+    "strict_app_and_test_clippy_previously_passed": true,
+    "current_path_guard_static_reproduction": "passed; native Linux CI pending"
   },
   "live_agents_launched": 0,
   "limits": "No paired native performance gain established. Larger workloads and live agents held for host capacity."

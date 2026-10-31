@@ -13,7 +13,7 @@ import urllib.request
 from pathlib import Path
 
 from native import Sampler, summarize
-from run import Mcp, available_port_pair, child_proxy
+from run import Mcp, available_port_pair, child_proxy, seed_channel_configs
 from safety import ResourceGuard
 
 
@@ -47,14 +47,12 @@ def main():
     sessions.parent.mkdir()
     sessions.symlink_to(Path.home() / ".codex" / "sessions", target_is_directory=True)
     port = available_port_pair()
-    for relative in (".chau7-next", ".chau7/rust-v1"):
-        config = home / relative
-        config.mkdir(parents=True)
-        (config / "config.toml").write_text(
-            '[general]\nshell = "/bin/zsh"\n'
-            "[next]\nmcp_max_tabs = 10\nmcp_requires_approval = false\n"
-            f"api_analytics_enabled = true\napi_analytics_port = {port}\n"
-        )
+    seed_channel_configs(
+        home,
+        '[general]\nshell = "/bin/zsh"\n'
+        "[next]\nmcp_max_tabs = 10\nmcp_requires_approval = false\n"
+        f"api_analytics_enabled = true\napi_analytics_port = {port}\n",
+    )
     result = {
         "status": "incomplete",
         "kind": "observational-live-issue-work",

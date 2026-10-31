@@ -112,17 +112,22 @@ def prepare_home(home, args, port):
     controls = " ".join(shlex.quote(str(p)) for p in (phase_file, home / "progress"))
     shell.write_text(f"#!/bin/sh\nexec {command} {args.hz} 1 2 {controls}\n")
     shell.chmod(0o700)
-    # Both channels share the workload; only the binary's channel is used.
+    seed_channel_configs(
+        home,
+        f"[general]\nshell = {json.dumps(str(shell))}\n"
+        f"[appearance]\nfont_size = {args.font}\n"
+        "[next]\nmcp_max_tabs = 50\nmcp_requires_approval = false\n"
+        f"api_analytics_enabled = true\napi_analytics_port = {port}\n",
+    )
+    return phase_file
+
+
+def seed_channel_configs(home, content):
+    # Both channels write only beneath the caller's isolated throwaway home.
     for relative in (".chau7-next", ".chau7/rust-v1"):
         config = home / relative
         config.mkdir(parents=True)
-        (config / "config.toml").write_text(
-            f"[general]\nshell = {json.dumps(str(shell))}\n"
-            f"[appearance]\nfont_size = {args.font}\n"
-            "[next]\nmcp_max_tabs = 50\nmcp_requires_approval = false\n"
-            f"api_analytics_enabled = true\napi_analytics_port = {port}\n"
-        )
-    return phase_file
+        (config / "config.toml").write_text(content)
 
 
 def child_proxy(app):

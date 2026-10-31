@@ -1,10 +1,11 @@
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from run import measure_phase, run
+from run import measure_phase, run, seed_channel_configs
 from safety import ResourceGuard, ResourceLimit
 
 
@@ -33,6 +34,17 @@ class SafetyAcceptance(unittest.TestCase):
                 guard.check()
         self.assertEqual(evidence[-1]["swap_growth_30s_mib"], 257)
         self.assertTrue(evidence[-1]["stop_reasons"])
+
+    def test_shared_profile_setup_stays_within_owned_home(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            content = '[general]\nshell = "/bin/zsh"\n[next]\napi_analytics_port = 12345\n'
+            seed_channel_configs(home, content)
+            paths = list(home.rglob("config.toml"))
+            self.assertEqual(len(paths), 2)
+            for path in paths:
+                self.assertTrue(path.resolve().is_relative_to(home.resolve()))
+                self.assertEqual(tomllib.loads(path.read_text())["general"]["shell"], "/bin/zsh")
 
     def test_memory_floor_rejects_before_launch(self):
         guard, evidence = self.guard([self.host(0, memory_free_percent=24)])

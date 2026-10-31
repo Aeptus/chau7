@@ -95,7 +95,7 @@ with roughly five callbacks/s in the baseline. This proves worker parking,
 not a whole-app CPU, wakeup or memory gain; paired measurements remain required.
 
 After the user reported saturation, the protocol switched to serial admissions
-and the resource limits documented in README. Seven safety regression tests pass alongside the ten existing collector
+and the resource limits documented in README. Eight safety/profile regression tests pass alongside the ten existing collector
 checks. On October 31 the first gentle
 one-tab baseline stopped before timing idle: swap grew 347.81 MiB within 30
 seconds. The last owned app/helper interval used 1.74% of one CPU, 43.91 interrupt
@@ -116,3 +116,12 @@ trial or live agent was admitted. The admission window was extended to 60 second
 and cleanup now still terminates the owned app if closing its bridge raises.
 See `round-2-safety-stop.json` for bounded numerical evidence. No compilation or
 production relaunch was performed during this restart.
+
+
+The earlier Linux run failed only `data_root::tests::no_swift_app_paths_outside_data_root`
+because `live_agents.py` duplicated the isolated channel paths. Both drivers now
+reuse the existing configuration writer in `run.py`; the Rust rule is unchanged.
+An added test verifies both config files remain beneath the owned home. A static
+reproduction of the current rule passes. Native Linux CI must still confirm the
+new head. A cached macOS core executable was excluded: its compiled manifest
+points at an older, different worktree, so it cannot validate this source.
