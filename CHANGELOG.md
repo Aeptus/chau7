@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Avoid whole-workspace redraws for repeated hidden-tab output while preserving activity timestamps, idle-tab revival and visible age panels.
 
+- Wake MCP subscriptions on actual journal changes or their heartbeat deadline instead of polling every 100 ms; coalesce wake tokens while preserving ordered replay and immediate cancellation.
 - Let file tailers sleep until their actual poll deadline and wake them immediately on shutdown.
 - Stop idle Metal display callbacks and static-terminal redraws, and replace the proxy task grace-period scan with a deadline timer.
 - Add an isolated macOS performance lab with verified terminal workloads and separate app, MCP bridge and proxy CPU, physical-memory and wakeup measurements.

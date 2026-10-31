@@ -32,6 +32,28 @@ impl Journal {
     pub fn replay(&self, cursor: u64, limit: usize) -> chau7_next_core::events::Replay {
         self.spine.replay(cursor, limit)
     }
+    pub fn watch_changes(
+        &self,
+    ) -> (
+        Arc<std::sync::mpsc::SyncSender<()>>,
+        std::sync::mpsc::Receiver<()>,
+    ) {
+        self.spine.watch_changes()
+    }
+    #[cfg(test)]
+    pub(crate) fn for_tests(spine: Arc<EventSpine>) -> Self {
+        Self {
+            spine,
+            store: None,
+            progress: Arc::new((
+                Mutex::new(PersistenceState {
+                    processed: 0,
+                    error: None,
+                }),
+                Condvar::new(),
+            )),
+        }
+    }
     /// Called on a client/background thread, never on the GPUI thread.
     pub fn persisted_events(&self, after: u64, limit: usize) -> Result<Vec<EventEnvelope>, String> {
         let Some(store) = &self.store else {
@@ -79,17 +101,7 @@ pub(crate) fn init_for_test(cx: &mut App) {
     spine.finish();
     drop(spine.take_stream());
     cx.set_global(Observability {
-        journal: Journal {
-            spine,
-            store: None,
-            progress: Arc::new((
-                Mutex::new(PersistenceState {
-                    processed: 0,
-                    error: None,
-                }),
-                Condvar::new(),
-            )),
-        },
+        journal: Journal::for_tests(spine),
         worker: None,
         events: VecDeque::new(),
         timers: Arc::default(),

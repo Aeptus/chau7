@@ -215,3 +215,31 @@ evidence and comment links.
 Live model and tool timing varies. Report this as observational stress evidence,
 separately from deterministic A/B results, and do not rerun comment publication
 to manufacture repeatability.
+
+
+## MCP server subscription fixture
+
+`mcp_run.py` exercises the real app server through two owned bridge connections,
+with one synthetic tab and no provider turns or terminal input. Unlike tool-only
+polling, its reader drains event notifications continuously. It validates serial
+delivery and zero dropped notifications, retains bounded notification evidence,
+and fails explicitly on frame/evidence overflow or disconnect.
+
+```sh
+python3 apps/chau7-next/scripts/perf-bench/mcp_run.py \
+  '/tmp/chau7-mcp-candidate/Chau7 Next.app/Contents/MacOS/Chau7 Next' \
+  candidate-1 --results /tmp/chau7-mcp-results --measure 20 --settle 3
+```
+
+The five phases are unsubscribed idle, subscribed idle (15 s heartbeat), controlled
+subscription changes, runtime-info tools at 0.5 Hz, and unsubscribed recovery.
+The second client creates/cancels one subscription every two seconds; its actual
+timer registration/cancellation journal events prove notification delivery to the
+first client. This adds no artificial production event-injection API and never
+requires control of an existing tab. Native app, proxy and both bridge counters,
+notification latency, tool latency, unsubscribe duration, health, pressure and
+cleanup are retained. Notifications must stop after completed unsubscribe.
+
+Use identical arguments and frozen harness hashes for paired runs. The same
+60-second admission, memory/swap/wakeup stops and explicit `owned-budget` option
+apply. Run no compilation, other fixture or agent workload during captures.

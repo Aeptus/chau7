@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::{
-    Mutex,
-    mpsc::{self, Receiver, Sender},
+    Arc, Mutex, Weak,
+    mpsc::{self, Receiver, Sender, SyncSender, TrySendError},
 };
 use uuid::Uuid;
 
@@ -159,6 +159,7 @@ struct State {
     next_seq: u64,
     envelopes: VecDeque<EventEnvelope>,
     sender: Option<Sender<EventEnvelope>>,
+    change_listeners: Vec<Weak<SyncSender<()>>>,
 }
 /// One allocation/delivery lock fixes global order across concurrent producers.
 /// Exactly one stream consumer may take the receiver; replay does not consume it.
@@ -183,6 +184,7 @@ impl EventSpine {
                 next_seq: start_seq,
                 envelopes: VecDeque::with_capacity(capacity),
                 sender: Some(sender),
+                change_listeners: Vec::new(),
             }),
             receiver: Mutex::new(Some(receiver)),
         }
@@ -192,6 +194,19 @@ impl EventSpine {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take()
+    }
+    /// Register before replaying. A pending token covers all changes until the
+    /// consumer drains replay; payloads stay in the bounded authoritative ring.
+    /// The returned sender also wakes the consumer for arming or cancellation.
+    pub fn watch_changes(&self) -> (Arc<SyncSender<()>>, Receiver<()>) {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let sender = Arc::new(sender);
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state
+            .change_listeners
+            .retain(|listener| listener.strong_count() > 0);
+        state.change_listeners.push(Arc::downgrade(&sender));
+        (sender, receiver)
     }
     pub fn finish(&self) {
         self.state.lock().unwrap_or_else(|e| e.into_inner()).sender = None;
@@ -261,6 +276,14 @@ impl EventSpine {
         if let Some(sender) = &state.sender {
             let _ = sender.send(envelope.clone());
         }
+        // Nonblocking and coalesced: slow subscribers never queue payloads or
+        // delay producers. Weak senders disappear when subscriptions stop.
+        state.change_listeners.retain(|listener| {
+            let Some(sender) = listener.upgrade() else {
+                return false;
+            };
+            matches!(sender.try_send(()), Ok(()) | Err(TrySendError::Full(())))
+        });
         envelope
     }
     pub fn latest_cursor(&self) -> u64 {
@@ -307,7 +330,59 @@ impl EventSpine {
 mod tests {
     use super::*;
     use crate::ai::event::{AiEventReliability, AiEventSource};
-    use std::sync::Arc;
+    #[test]
+    fn change_wakes_coalesce_without_losing_ordered_replay() {
+        let spine = EventSpine::new(4096, 0);
+        spine.finish();
+        let (_wake, changes) = spine.watch_changes();
+        for _ in 0..4096 {
+            spine.ingest_structural(
+                StructuralEvent::new("tab_created", "tabs"),
+                None,
+                None,
+                None,
+            );
+        }
+        assert_eq!(changes.try_recv(), Ok(()));
+        assert_eq!(changes.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let replay = spine.replay(0, 4096);
+        assert_eq!(
+            replay.envelopes.iter().map(|e| e.seq).collect::<Vec<_>>(),
+            (1..=4096).collect::<Vec<_>>()
+        );
+        assert!(!replay.has_more);
+        // A change after draining replay is still pending before the next wait.
+        spine.ingest_structural(StructuralEvent::new("tab_closed", "tabs"), None, None, None);
+        assert_eq!(changes.try_recv(), Ok(()));
+        assert_eq!(spine.replay(replay.cursor, 1).envelopes[0].seq, 4097);
+    }
+    #[test]
+    fn change_watchers_are_independent_and_reclaimed_during_idle_churn() {
+        let spine = EventSpine::new(8, 0);
+        spine.finish();
+        let (wake, first) = spine.watch_changes();
+        let (other_wake, second) = spine.watch_changes();
+        assert_eq!(first.try_recv(), Err(mpsc::TryRecvError::Empty));
+        spine.ingest_structural(
+            StructuralEvent::new("tab_created", "tabs"),
+            None,
+            None,
+            None,
+        );
+        assert_eq!(first.try_recv(), Ok(()));
+        assert_eq!(second.try_recv(), Ok(()));
+        drop((wake, first, other_wake, second));
+        // Registration must prune even when no further event is published.
+        for _ in 0..1000 {
+            drop(spine.watch_changes());
+        }
+        assert_eq!(spine.state.lock().unwrap().change_listeners.len(), 1);
+        let (wake, receiver) = spine.watch_changes();
+        drop(receiver);
+        spine.ingest_structural(StructuralEvent::new("tab_closed", "tabs"), None, None, None);
+        assert!(spine.state.lock().unwrap().change_listeners.is_empty());
+        drop(wake);
+    }
     #[test]
     fn concurrent_ingest_stream_and_replay_have_the_same_dense_order() {
         let spine = Arc::new(EventSpine::new(2000, 0));
