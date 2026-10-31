@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Park transcript token-rate monitoring when no AI run exists, and wake it on run admission, identity changes and exit while retaining active CLI polling and historical readings.
+
 - Reduce terminal lag: reuse the prepared paint of unchanged terminal rows, and stop copying hidden tabs' grids on every output batch. With 13 busy AI-style tabs, CPU per output batch fell about 3.8 times. The performance snapshot now ranks slow stages against per-stage time budgets, counts window frames, and separates main-thread congestion from deliberate frame pacing.
 - Deliver a runtime agent's first prompt only once the agent is really running: a launch typed into a new tab is no longer marked finished by the shell's first prompt, an agent session counts as ready only when its own process runs in the tab (never at a shell prompt), and input the command guard holds is logged and reported to MCP and runtime callers with the reason, including in tab status.
 - Keep every AI tab resumable: a Claude Code or Codex hook that reports its session from inside a tab now binds that provider and session to the tab, even when the tab was saved under a different or stale provider, instead of being refused and leaving restore with no resume command. Events routed to a tab by its directory never bind a session.
