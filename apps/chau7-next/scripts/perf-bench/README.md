@@ -6,6 +6,9 @@ sockets, free local ports and fresh result filenames. It never accepts the
 production PID, installs into Applications, or reads production session data.
 It terminates only the child app it started; results survive failed runs.
 
+Latest measured results: [round 3](ROUND-3.md) (four completed idle trials;
+full comparison stopped on swap pressure, no native gain established).
+
 ## Resource limits
 
 Start with one total tab, terminal output at 3 Hz, MCP at 0.5 Hz and proxy
