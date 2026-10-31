@@ -351,93 +351,83 @@ func ExtractModelFromPath(path string) string {
 //   - OpenAI: final chunk has usage (prompt_tokens, completion_tokens) if stream_options.include_usage
 //   - Gemini: usageMetadata appears in the final chunk
 func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
-	lines := strings.Split(string(chunks), "\n")
+	observer := streamingMetadataObserver{provider: provider}
+	_, _ = observer.Write(chunks)
+	return observer.finish()
+}
 
-	var result ResponseMetadata
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if data == "[DONE]" {
-			continue
-		}
-
-		switch provider {
-		case ProviderAnthropic:
-			// Anthropic streams as typed events:
-			//   message_start → { message: { model, usage: { input_tokens, cache_* } } }
-			//   content_block_delta → { delta: { text } }  (no usage)
-			//   message_delta → { usage: { output_tokens } }
-			var envelope struct {
-				Type    string `json:"type"`
-				Model   string `json:"model"`
-				Message struct {
-					Model string         `json:"model"`
-					Usage anthropicUsage `json:"usage"`
-				} `json:"message"`
+// Each complete SSE data line updates the same cumulative accounting projection.
+func mergeStreamingData(provider Provider, data []byte, result *ResponseMetadata) {
+	switch provider {
+	case ProviderAnthropic:
+		// Anthropic streams as typed events:
+		//   message_start → { message: { model, usage: { input_tokens, cache_* } } }
+		//   content_block_delta → { delta: { text } }  (no usage)
+		//   message_delta → { usage: { output_tokens } }
+		var envelope struct {
+			Type    string `json:"type"`
+			Model   string `json:"model"`
+			Message struct {
+				Model string         `json:"model"`
 				Usage anthropicUsage `json:"usage"`
-			}
-			if err := json.Unmarshal([]byte(data), &envelope); err != nil {
-				continue
-			}
-			if envelope.Model != "" {
-				result.Model = envelope.Model
-			}
-			if envelope.Message.Model != "" {
-				result.Model = envelope.Message.Model
-			}
-			// Usage fields are cumulative in Anthropic events. Accept them
-			// wherever present so SSE-compatible gateways that omit or rewrite
-			// the event type cannot erase otherwise authoritative accounting.
-			if envelope.Message.Usage.InputTokens > 0 {
-				result.InputTokens = envelope.Message.Usage.InputTokens
-			}
-			if envelope.Message.Usage.CacheCreationInputTokens != nil {
-				result.CacheCreationReported = true
-				result.CacheCreationInputTokens = counterValue(envelope.Message.Usage.CacheCreationInputTokens)
-			}
-			if envelope.Message.Usage.CacheReadInputTokens != nil {
-				result.CacheReadReported = true
-				result.CacheReadInputTokens = counterValue(envelope.Message.Usage.CacheReadInputTokens)
-			}
-			if envelope.Usage.InputTokens > 0 {
-				result.InputTokens = envelope.Usage.InputTokens
-			}
-			if envelope.Usage.OutputTokens > 0 {
-				result.OutputTokens = envelope.Usage.OutputTokens
-			}
-			if envelope.Usage.CacheCreationInputTokens != nil {
-				result.CacheCreationReported = true
-				result.CacheCreationInputTokens = counterValue(envelope.Usage.CacheCreationInputTokens)
-			}
-			if envelope.Usage.CacheReadInputTokens != nil {
-				result.CacheReadReported = true
-				result.CacheReadInputTokens = counterValue(envelope.Usage.CacheReadInputTokens)
-			}
+			} `json:"message"`
+			Usage anthropicUsage `json:"usage"`
+		}
+		if err := json.Unmarshal(data, &envelope); err != nil {
+			return
+		}
+		if envelope.Model != "" {
+			result.Model = envelope.Model
+		}
+		if envelope.Message.Model != "" {
+			result.Model = envelope.Message.Model
+		}
+		// Usage fields are cumulative in Anthropic events. Accept them
+		// wherever present so SSE-compatible gateways that omit or rewrite
+		// the event type cannot erase otherwise authoritative accounting.
+		if envelope.Message.Usage.InputTokens > 0 {
+			result.InputTokens = envelope.Message.Usage.InputTokens
+		}
+		if envelope.Message.Usage.CacheCreationInputTokens != nil {
+			result.CacheCreationReported = true
+			result.CacheCreationInputTokens = counterValue(envelope.Message.Usage.CacheCreationInputTokens)
+		}
+		if envelope.Message.Usage.CacheReadInputTokens != nil {
+			result.CacheReadReported = true
+			result.CacheReadInputTokens = counterValue(envelope.Message.Usage.CacheReadInputTokens)
+		}
+		if envelope.Usage.InputTokens > 0 {
+			result.InputTokens = envelope.Usage.InputTokens
+		}
+		if envelope.Usage.OutputTokens > 0 {
+			result.OutputTokens = envelope.Usage.OutputTokens
+		}
+		if envelope.Usage.CacheCreationInputTokens != nil {
+			result.CacheCreationReported = true
+			result.CacheCreationInputTokens = counterValue(envelope.Usage.CacheCreationInputTokens)
+		}
+		if envelope.Usage.CacheReadInputTokens != nil {
+			result.CacheReadReported = true
+			result.CacheReadInputTokens = counterValue(envelope.Usage.CacheReadInputTokens)
+		}
 
-		case ProviderOpenAI:
-			// OpenAI puts usage in the final chunk (when stream_options.include_usage is set),
-			// or the model in every chunk. Scan all chunks, keep the last non-zero values.
-			var chunk openAIResponse
-			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				continue
-			}
-			mergeResponseMetadata(&result, openAIResponseMetadata(chunk.payload()))
+	case ProviderOpenAI:
+		// OpenAI puts usage in the final chunk (when stream_options.include_usage is set),
+		// or the model in every chunk. Scan all chunks, keep the last non-zero values.
+		var chunk openAIResponse
+		if err := json.Unmarshal(data, &chunk); err != nil {
+			return
+		}
+		mergeResponseMetadata(result, openAIResponseMetadata(chunk.payload()))
 
-		case ProviderGemini:
-			// Gemini non-streaming only (streaming detected by path, not here).
-			// If called, fall back to full-response parser on last chunk.
-			meta := extractGeminiResponse([]byte(data))
-			if meta.InputTokens > 0 || meta.OutputTokens > 0 {
-				result = meta
-			}
+	case ProviderGemini:
+		// Gemini non-streaming only (streaming detected by path, not here).
+		// If called, fall back to full-response parser on last chunk.
+		meta := extractGeminiResponse(data)
+		if meta.InputTokens > 0 || meta.OutputTokens > 0 {
+			*result = meta
 		}
 	}
-
-	return result
 }
 
 func counterValue(value *int) int {
