@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Align the selected tab to the left edge of the tab bar when switching tabs, using fresh fixed-viewport measurements and enough scroll room for the last tab. Keep manual scrolling responsive and hidden tab bars idle.
+
 - Skip scrollback maintenance jobs for already-archived background sessions and protected TUI tiers; park the retention worker until work or explicit shutdown arrives, while retaining history after an alternate-screen TUI exits.
 - Park idle PTY readers until output, disconnection or explicit input/focus/shutdown signals arrive, removing their one-second timeout wakeups without changing terminal output pacing.
 

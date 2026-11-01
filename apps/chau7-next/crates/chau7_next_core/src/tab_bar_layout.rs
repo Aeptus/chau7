@@ -93,10 +93,15 @@ impl Rect {
 
 // MARK: - TabBarLayout
 
-/// Reveal a tab with the smallest horizontal scroll, preserving the offset
-/// when it is already visible. Both ranges are in the same window coordinates;
-/// scroll offsets are non-positive, as in GPUI. A tab wider than the viewport
-/// stays put while it covers the viewport, avoiding alternating edge alignment.
+/// Leave enough trailing room to align the last tab at the leading edge.
+/// Retain at least 24 pixels of the trailing control at maximum manual scroll.
+pub fn tab_bar_trailing_space(viewport_width: f32) -> f32 {
+    (viewport_width - 24.0).max(8.0)
+}
+
+/// Align the selected tab's leading edge with the fixed viewport's leading edge.
+/// Both ranges must come from the same layout and use window coordinates.
+/// Scroll offsets are non-positive, as in GPUI.
 pub fn scroll_offset_to_reveal_tab(
     current_offset: f32,
     max_offset: f32,
@@ -108,15 +113,7 @@ pub fn scroll_offset_to_reveal_tab(
     if tab.is_empty() || viewport.is_empty() {
         return current_offset;
     }
-    let leading_delta = tab.start - viewport.start;
-    let trailing_delta = tab.end - viewport.end;
-    // Zero is allowed when either range contains the other. Otherwise choose
-    // the nearest edge instead of centering the tab on every selection.
-    let delta = 0.0_f32.clamp(
-        leading_delta.min(trailing_delta),
-        leading_delta.max(trailing_delta),
-    );
-    (current_offset - delta).clamp(-max_offset, 0.0)
+    (current_offset - (tab.start - viewport.start)).clamp(-max_offset, 0.0)
 }
 
 /// A tab as seen by the tab bar layout.
@@ -390,22 +387,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn selecting_visible_tabs_preserves_the_viewport() {
-        for tab in [100.0..180.0, 310.0..490.0, 520.0..600.0, 100.0..600.0] {
-            assert_eq!(
-                scroll_offset_to_reveal_tab(-450.0, 1200.0, tab, 100.0..600.0),
-                -450.0
-            );
-        }
-    }
-
-    #[test]
-    fn clipped_tabs_reveal_only_the_missing_edge() {
+    fn selecting_visible_tabs_aligns_the_leading_edge() {
         for (tab, expected) in [
-            (60.0..240.0, -410.0),
-            (460.0..640.0, -490.0),
-            (-200.0..-20.0, -150.0),
-            (720.0..900.0, -750.0),
+            (100.0..180.0, -450.0),
+            (310.0..490.0, -660.0),
+            (520.0..600.0, -870.0),
+            (100.0..600.0, -450.0),
         ] {
             assert_eq!(
                 scroll_offset_to_reveal_tab(-450.0, 1200.0, tab, 100.0..600.0),
@@ -415,17 +402,32 @@ mod tests {
     }
 
     #[test]
-    fn switching_tabs_after_a_reveal_does_not_recenter_the_row() {
+    fn clipped_tabs_align_the_leading_edge() {
+        for (tab, expected) in [
+            (60.0..240.0, -410.0),
+            (460.0..640.0, -810.0),
+            (-200.0..-20.0, -150.0),
+            (720.0..900.0, -1070.0),
+        ] {
+            assert_eq!(
+                scroll_offset_to_reveal_tab(-450.0, 1200.0, tab, 100.0..600.0),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn switching_tabs_after_a_reveal_keeps_the_selection_leftmost() {
         let viewport = 100.0..600.0;
         let mut offset = -450.0;
         // Content positions stay fixed while selection changes. Measure each
         // tab at the current scroll offset, as the rendered bar does.
         for (content, expected) in [
-            (620.0..720.0, -450.0),
-            (1000.0..1120.0, -520.0),
-            (760.0..880.0, -520.0),
+            (620.0..720.0, -520.0),
+            (1000.0..1120.0, -900.0),
+            (760.0..880.0, -660.0),
             (400.0..520.0, -300.0),
-            (760.0..880.0, -300.0),
+            (760.0..880.0, -660.0),
         ] {
             offset = scroll_offset_to_reveal_tab(
                 offset,
@@ -438,11 +440,11 @@ mod tests {
     }
 
     #[test]
-    fn oversized_tabs_use_the_nearest_edge_and_do_not_oscillate() {
+    fn oversized_tabs_align_left_and_do_not_oscillate() {
         for (tab, expected) in [
-            (80.0..640.0, -450.0),
+            (80.0..640.0, -430.0),
             (120.0..680.0, -470.0),
-            (20.0..580.0, -430.0),
+            (20.0..580.0, -370.0),
         ] {
             let offset = scroll_offset_to_reveal_tab(-450.0, 1200.0, tab.clone(), 100.0..600.0);
             assert_eq!(offset, expected);
@@ -456,6 +458,25 @@ mod tests {
                 ),
                 offset
             );
+        }
+    }
+
+    #[test]
+    fn trailing_space_allows_the_last_tab_to_align_even_in_a_wide_viewport() {
+        for width in [24.0, 180.0, 700.0] {
+            for viewport_width in [80.0, 500.0, 1100.0] {
+                let content_start = 1200.0;
+                let current = -100.0;
+                let content_end = content_start + width + 40.0; // trailing new-tab button/gap
+                let max = content_end + tab_bar_trailing_space(viewport_width) - viewport_width;
+                let target = scroll_offset_to_reveal_tab(
+                    current,
+                    max,
+                    100.0 + content_start + current..100.0 + content_start + current + width,
+                    100.0..100.0 + viewport_width,
+                );
+                assert_eq!(target, -content_start);
+            }
         }
     }
 

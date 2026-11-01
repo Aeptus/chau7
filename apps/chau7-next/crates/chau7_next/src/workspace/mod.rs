@@ -1770,7 +1770,10 @@ impl Render for Workspace {
         if self.window_active {
             self.sync_window_menu(cx);
         }
-        if self.anims.tick() | self.switch_anim.tick() | self.tick_scroll() {
+        // A hidden row has no layout to measure. Keep its selection request
+        // pending without requesting frames until the bar is shown again.
+        let scroll_animating = self.tab_bar_visible(cx) && self.tick_scroll();
+        if self.anims.tick() | self.switch_anim.tick() | scroll_animating {
             window.request_animation_frame();
         }
         let chrome = Chrome::get(cx);
