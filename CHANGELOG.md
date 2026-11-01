@@ -10,7 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Park idle PTY readers until output, disconnection or explicit input/focus/shutdown signals arrive, removing their one-second timeout wakeups without changing terminal output pacing.
 
 ||||||| parent of abf72024 (perf(remote): wake UI work on events and actual deadlines)
-- Wake remote control on settings, IPC and grid-completion events; park it when disabled and schedule live metadata, output batching and agent supervision at their actual deadlines.
 - Add a shared authenticated loopback HTTP MCP endpoint for Codex and Claude Code, avoiding per-client bridge processes while preserving permission and subscription isolation. Other clients retain the stdio bridge. Closing or replacing an event stream releases its connection promptly, including stalled clients; closed sessions immediately release backend sockets and capacity.
 
 - Replace MCP bridge liveness polling with OS process and pipe events, removing periodic idle wakeups while preserving prompt client cleanup.
@@ -35,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Avoid whole-workspace redraws for repeated hidden-tab output while preserving activity timestamps, idle-tab revival and visible age panels.
 
 - Remove the remote IPC listener's idle 50 ms accept polling. Wait for incoming connections or an explicit shutdown signal while preserving client replacement, frame delivery and socket ownership.
+- Wake remote control on settings, IPC and grid-completion events; park it when disabled and schedule live metadata, output batching and agent supervision at their actual deadlines.
 - Wake MCP subscriptions on actual journal changes or their heartbeat deadline instead of polling every 100 ms; coalesce wake tokens while preserving ordered replay and immediate cancellation.
 - Let file tailers sleep until their actual poll deadline and wake them immediately on shutdown.
 - Stop idle Metal display callbacks and static-terminal redraws, and replace the proxy task grace-period scan with a deadline timer.
