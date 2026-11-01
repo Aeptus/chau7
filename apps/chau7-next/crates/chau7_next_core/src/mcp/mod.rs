@@ -8,6 +8,8 @@ pub mod client_config;
 pub mod command_filter;
 pub mod control_plane;
 pub mod handshake;
+#[cfg(unix)]
+pub mod http;
 pub mod output;
 pub mod protocol;
 pub mod rate_limiter;

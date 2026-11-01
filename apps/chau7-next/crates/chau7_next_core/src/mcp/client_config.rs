@@ -29,15 +29,92 @@ pub struct ServerEntry {
     pub args: Vec<String>,
 }
 
-impl ServerEntry {
-    fn json(&self) -> Value {
-        let mut map = Map::new();
-        map.insert("command".into(), Value::String(self.command.clone()));
-        map.insert(
-            "args".into(),
-            Value::Array(self.args.iter().cloned().map(Value::String).collect()),
-        );
-        Value::Object(map)
+/// A direct HTTP endpoint. The bearer credential must never appear in logs.
+#[derive(Clone)]
+pub struct HttpEntry {
+    pub url: String,
+    pub(crate) authorization: String,
+}
+
+#[derive(Clone, Copy)]
+enum Transport<'a> {
+    Stdio(&'a ServerEntry),
+    Http(&'a HttpEntry),
+}
+
+const TRANSPORT_KEYS: &[&str] = &[
+    "command",
+    "args",
+    "type",
+    "url",
+    "headers",
+    "http_headers",
+    "bearer_token_env_var",
+];
+
+impl Transport<'_> {
+    fn json(self) -> Value {
+        match self {
+            Self::Stdio(entry) => serde_json::json!({"command":entry.command,"args":entry.args}),
+            Self::Http(entry) => {
+                serde_json::json!({"type":"http","url":entry.url,"headers":{"Authorization":entry.authorization}})
+            }
+        }
+    }
+
+    fn matches(self, server: &dyn TableLike) -> bool {
+        let wanted = self.toml(server.get("args").and_then(Item::as_array));
+        if TRANSPORT_KEYS
+            .iter()
+            .any(|key| server.get(key).is_some() && !wanted.iter().any(|(wanted, _)| wanted == key))
+        {
+            return false;
+        }
+        match self {
+            Self::Stdio(entry) => {
+                server.get("command").and_then(Item::as_str) == Some(entry.command.as_str())
+                    && server
+                        .get("args")
+                        .and_then(Item::as_array)
+                        .is_some_and(|args| {
+                            args.len() == entry.args.len()
+                                && args.iter().zip(&entry.args).all(|(actual, wanted)| {
+                                    actual.as_str() == Some(wanted.as_str())
+                                })
+                        })
+            }
+            Self::Http(entry) => {
+                server.get("url").and_then(Item::as_str) == Some(entry.url.as_str())
+                    && server
+                        .get("http_headers")
+                        .and_then(Item::as_table_like)
+                        .is_some_and(|headers| {
+                            headers.len() == 1
+                                && headers.get("Authorization").and_then(Item::as_str)
+                                    == Some(entry.authorization.as_str())
+                        })
+            }
+        }
+    }
+
+    fn toml(self, previous_args: Option<&Array>) -> Vec<(&'static str, TomlValue)> {
+        match self {
+            Self::Stdio(entry) => vec![
+                ("command", entry.command.as_str().into()),
+                (
+                    "args",
+                    TomlValue::Array(replacement_args(previous_args, &entry.args)),
+                ),
+            ],
+            Self::Http(entry) => {
+                let mut headers = InlineTable::new();
+                headers.insert("Authorization", entry.authorization.as_str().into());
+                vec![
+                    ("url", entry.url.as_str().into()),
+                    ("http_headers", TomlValue::InlineTable(headers)),
+                ]
+            }
+        }
     }
 }
 
@@ -121,6 +198,14 @@ pub fn merge_json(
     name: &str,
     entry: &ServerEntry,
 ) -> Result<Option<String>, MergeError> {
+    merge_json_transport(existing, name, Transport::Stdio(entry))
+}
+
+fn merge_json_transport(
+    existing: Option<&str>,
+    name: &str,
+    entry: Transport<'_>,
+) -> Result<Option<String>, MergeError> {
     let mut root = match existing {
         None => Map::new(),
         Some(text) => match serde_json::from_str::<Value>(text) {
@@ -128,7 +213,17 @@ pub fn merge_json(
             _ => return Err(MergeError::NotAnObject),
         },
     };
-    let wanted = entry.json();
+    let mut wanted = root
+        .get("mcpServers")
+        .and_then(|servers| servers.get(name))
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    for key in TRANSPORT_KEYS {
+        wanted.remove(*key);
+    }
+    wanted.extend(entry.json().as_object().expect("transport object").clone());
+    let wanted = Value::Object(wanted);
     let servers = root
         .entry("mcpServers")
         .or_insert_with(|| Value::Object(Map::new()));
@@ -152,13 +247,15 @@ pub fn merge_json(
 /// commented headers, multiline strings/arrays and inline tables cannot be
 /// mistaken for section boundaries. Invalid TOML or server shapes are untouched.
 pub fn merge_codex_toml(content: &str, name: &str, entry: &ServerEntry) -> Option<String> {
-    try_merge_codex_toml(content, name, entry).ok().flatten()
+    try_merge_codex_toml(content, name, Transport::Stdio(entry))
+        .ok()
+        .flatten()
 }
 
 fn try_merge_codex_toml(
     content: &str,
     name: &str,
-    entry: &ServerEntry,
+    entry: Transport<'_>,
 ) -> Result<Option<String>, ()> {
     let mut document = content.parse::<DocumentMut>().map_err(|_| ())?;
     let servers = document
@@ -168,18 +265,7 @@ fn try_merge_codex_toml(
     let existing = servers.and_then(|servers| servers.get(name));
     if let Some(server) = existing {
         let server = server.as_table_like().ok_or(())?;
-        if server.get("command").and_then(Item::as_str) == Some(entry.command.as_str())
-            && server
-                .get("args")
-                .and_then(Item::as_array)
-                .is_some_and(|args| {
-                    args.len() == entry.args.len()
-                        && args
-                            .iter()
-                            .zip(&entry.args)
-                            .all(|(actual, wanted)| actual.as_str() == Some(wanted.as_str()))
-                })
-        {
+        if entry.matches(server) {
             return Ok(None);
         }
     }
@@ -232,9 +318,15 @@ fn try_merge_codex_toml(
         .get_mut(name)
         .and_then(Item::as_table_like_mut)
         .ok_or(())?;
-    let args = replacement_args(server.get("args").and_then(Item::as_array), &entry.args);
-    replace_owned_value(server, "command", TomlValue::from(entry.command.as_str()));
-    replace_owned_value(server, "args", TomlValue::Array(args));
+    let wanted = entry.toml(server.get("args").and_then(Item::as_array));
+    for key in TRANSPORT_KEYS {
+        if !wanted.iter().any(|(wanted, _)| wanted == key) {
+            server.remove(key);
+        }
+    }
+    for (key, value) in wanted {
+        replace_owned_value(server, key, value);
+    }
     let output = document.to_string();
     // Defensive shape/layout validation, without logging user config content.
     output.parse::<DocumentMut>().map_err(|_| ())?;
@@ -296,7 +388,7 @@ fn replacement_args(previous: Option<&Array>, args: &[String]) -> Array {
 /// (permissions copied from the existing file), then a rename. A symbolic
 /// link is followed so the link itself stays in place.
 pub fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
-    write_checked(path, text, None)
+    write_checked(path, text, None, false)
 }
 
 /// Like [`write_atomically`], but the file is read again right before the
@@ -305,10 +397,15 @@ pub fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
 /// often) changed it since it was read. That case is a `WouldBlock` error, so
 /// the caller merges again.
 pub fn write_if_unchanged(path: &Path, expected: Option<&str>, text: &str) -> std::io::Result<()> {
-    write_checked(path, text, Some(expected))
+    write_checked(path, text, Some(expected), false)
 }
 
-fn write_checked(path: &Path, text: &str, expected: Option<Option<&str>>) -> std::io::Result<()> {
+fn write_checked(
+    path: &Path,
+    text: &str,
+    expected: Option<Option<&str>>,
+    private: bool,
+) -> std::io::Result<()> {
     let target = match std::fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => std::fs::canonicalize(path)?,
         _ => path.to_path_buf(),
@@ -327,11 +424,21 @@ fn write_checked(path: &Path, text: &str, expected: Option<Option<&str>>) -> std
         std::process::id()
     ));
     let result = (|| {
-        let mut file = std::fs::File::create(&tmp)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&tmp)?;
         file.write_all(text.as_bytes())?;
         file.sync_all()?;
-        if let Ok(meta) = std::fs::metadata(&target) {
+        if !private && let Ok(meta) = std::fs::metadata(&target) {
             std::fs::set_permissions(&tmp, meta.permissions())?;
+        }
+        if private {
+            make_private(&tmp)?;
         }
         if let Some(expected) = expected {
             let current = match std::fs::read_to_string(&target) {
@@ -354,8 +461,32 @@ fn write_checked(path: &Path, text: &str, expected: Option<Option<&str>>) -> std
     result
 }
 
+fn make_private(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
+/// Register compatible clients directly; other clients retain their stdio bridge.
+pub fn register_http(client: Client, home: &Path, name: &str, entry: &HttpEntry) -> Outcome {
+    if !matches!(client, Client::ClaudeCode | Client::Codex) {
+        return Outcome::NotInstalled;
+    }
+    register_transport(client, home, name, Transport::Http(entry))
+}
+
 /// Register `entry` under `name` in one tool's config.
 pub fn register(client: Client, home: &Path, name: &str, entry: &ServerEntry) -> Outcome {
+    register_transport(client, home, name, Transport::Stdio(entry))
+}
+
+fn register_transport(client: Client, home: &Path, name: &str, entry: Transport<'_>) -> Outcome {
+    let private = matches!(entry, Transport::Http(_));
     if !client.is_installed(home) {
         return Outcome::NotInstalled;
     }
@@ -378,7 +509,7 @@ pub fn register(client: Client, home: &Path, name: &str, entry: &ServerEntry) ->
                     Err(()) => return Outcome::SkippedInvalid,
                 }
             }
-            _ => match merge_json(existing.as_deref(), name, entry) {
+            _ => match merge_json_transport(existing.as_deref(), name, entry) {
                 Ok(text) => text,
                 Err(MergeError::NotAnObject) => return Outcome::SkippedInvalid,
                 Err(MergeError::ServersNotAnObject) => {
@@ -391,9 +522,12 @@ pub fn register(client: Client, home: &Path, name: &str, entry: &ServerEntry) ->
             },
         };
         let Some(text) = new_text else {
+            if private && let Err(err) = make_private(&path) {
+                return Outcome::Failed(err.to_string());
+            }
             return Outcome::Unchanged;
         };
-        match write_if_unchanged(&path, existing.as_deref(), &text) {
+        match write_checked(&path, &text, Some(existing.as_deref()), private) {
             Ok(()) => return Outcome::Written,
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -872,5 +1006,95 @@ args = ["untouched]", "--flag"] # other note
             .count();
         assert_eq!(leftovers, 0);
         let _ = std::fs::remove_dir_all(&home);
+    }
+}
+
+#[cfg(test)]
+mod http_tests {
+    use super::*;
+
+    #[test]
+    fn codex_round_trip_preserves_policy_and_removes_obsolete_transport_fields() {
+        let original = "# keep\n[mcp_servers.chau7-next]\ncommand = \"bridge\"\nargs = []\nstartup_timeout_sec = 40 # policy\n[mcp_servers.other]\ncommand = \"other\"\n";
+        let http = HttpEntry {
+            url: "http://127.0.0.1:1234/mcp".into(),
+            authorization: "Bearer private".into(),
+        };
+        let updated = try_merge_codex_toml(original, "chau7-next", Transport::Http(&http))
+            .unwrap()
+            .unwrap();
+        assert!(updated.contains("# keep"));
+        assert!(updated.contains("40 # policy"));
+        let document: DocumentMut = updated.parse().unwrap();
+        let entry = &document["mcp_servers"]["chau7-next"];
+        assert_eq!(entry["url"].as_str(), Some(http.url.as_str()));
+        assert!(entry.get("command").is_none());
+        assert!(entry.get("args").is_none());
+        assert_eq!(
+            entry["http_headers"]["Authorization"].as_str(),
+            Some("Bearer private")
+        );
+        assert_eq!(
+            try_merge_codex_toml(&updated, "chau7-next", Transport::Http(&http)),
+            Ok(None)
+        );
+        let stdio = ServerEntry {
+            command: "bridge".into(),
+            args: vec![],
+        };
+        let restored = merge_codex_toml(&updated, "chau7-next", &stdio).unwrap();
+        let document: DocumentMut = restored.parse().unwrap();
+        assert!(
+            document["mcp_servers"]["chau7-next"]
+                .get("http_headers")
+                .is_none()
+        );
+        assert!(document["mcp_servers"]["chau7-next"].get("url").is_none());
+        assert_eq!(
+            document["mcp_servers"]["other"]["command"].as_str(),
+            Some("other")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn http_json_registration_keeps_policy_and_makes_existing_configs_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = std::env::temp_dir().join(format!("chau7-http-config-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).unwrap();
+        let path = home.join(".claude.json");
+        std::fs::write(&path, r#"{"mcpServers":{"chau7-next":{"command":"old","args":[],"disabled":false},"other":{"command":"other"}}}"#).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let http = HttpEntry {
+            url: "http://127.0.0.1:1234/mcp".into(),
+            authorization: "Bearer private".into(),
+        };
+        assert_eq!(
+            register_http(Client::ClaudeCode, &home, "chau7-next", &http),
+            Outcome::Written
+        );
+        let value: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(value["mcpServers"]["chau7-next"]["type"], "http");
+        assert_eq!(
+            value["mcpServers"]["chau7-next"]["headers"]["Authorization"],
+            "Bearer private"
+        );
+        assert_eq!(value["mcpServers"]["chau7-next"]["disabled"], false);
+        assert!(value["mcpServers"]["chau7-next"].get("command").is_none());
+        assert_eq!(value["mcpServers"]["other"]["command"], "other");
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(
+            register_http(Client::ClaudeCode, &home, "chau7-next", &http),
+            Outcome::Unchanged
+        );
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        std::fs::remove_dir_all(home).unwrap();
     }
 }
