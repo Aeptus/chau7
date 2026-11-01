@@ -186,6 +186,38 @@ pub fn should_flush(from: RenderPhase, to: RenderPhase) -> bool {
 pub fn should_reload(from: RenderPhase, to: RenderPhase) -> bool {
     from == RenderPhase::Hidden && to != RenderPhase::Hidden
 }
+/// Queue admission for the serial retention worker, matching its retention tiers.
+pub struct RetentionWork {
+    pub phase: RenderPhase,
+    pub phase_changed: bool,
+    pub archived: bool,
+    pub tui: bool,
+    pub tui_compacted: bool,
+    pub idle: Duration,
+    pub forced: bool,
+}
+impl RetentionWork {
+    pub fn due(&self) -> bool {
+        if self.phase.visible() {
+            return if self.archived {
+                !self.tui
+            } else {
+                self.phase_changed
+            };
+        }
+        if self.archived || self.tui && (self.phase == RenderPhase::Hidden || self.tui_compacted) {
+            return false;
+        }
+        self.forced
+            || self.phase == RenderPhase::Hidden
+            || self.idle
+                >= if self.tui {
+                    TUI_IDLE_DELAY
+                } else {
+                    WARM_IDLE_DELAY
+                }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FlushKind {
@@ -211,6 +243,74 @@ impl FlushRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn retention(phase: RenderPhase) -> RetentionWork {
+        RetentionWork {
+            phase,
+            phase_changed: false,
+            archived: false,
+            tui: false,
+            tui_compacted: false,
+            idle: WARM_IDLE_DELAY,
+            forced: false,
+        }
+    }
+    #[test]
+    fn retention_admission_skips_archived_background_and_protected_tui() {
+        let mut archived = retention(RenderPhase::Warm);
+        archived.archived = true;
+        archived.forced = true;
+        assert!(
+            !archived.due(),
+            "already archived background history is no work"
+        );
+        let mut tui = retention(RenderPhase::Warm);
+        tui.tui = true;
+        assert!(!tui.due(), "TUI retention uses its longer deadline");
+        tui.phase = RenderPhase::Hidden;
+        tui.phase_changed = true;
+        tui.idle = TUI_IDLE_DELAY;
+        assert!(
+            !tui.due(),
+            "hidden TUI is protected even on a phase transition"
+        );
+    }
+    #[test]
+    fn retention_admission_keeps_promotion_deadlines_and_backstops() {
+        let mut work = retention(RenderPhase::Warm);
+        work.idle = WARM_IDLE_DELAY - Duration::from_secs(1);
+        assert!(!work.due());
+        work.forced = true;
+        assert!(work.due());
+        work.forced = false;
+        work.idle = WARM_IDLE_DELAY;
+        assert!(work.due());
+        work.tui = true;
+        work.idle = TUI_IDLE_DELAY;
+        assert!(work.due());
+        work.tui_compacted = true;
+        assert!(!work.due(), "alternate-screen compaction is one-shot");
+        work.phase = RenderPhase::Active;
+        work.phase_changed = true;
+        work.tui = false;
+        work.archived = true;
+        assert!(work.due(), "promotion restores archived history");
+        work.phase_changed = false;
+        assert!(
+            work.due(),
+            "failed restore remains eligible for bounded retries"
+        );
+        work.tui = true;
+        assert!(!work.due(), "reload must wait for the TUI to exit");
+        work.tui = false;
+        work.archived = false;
+        assert!(!work.due());
+        work.phase_changed = true;
+        assert!(work.due(), "visible promotion restores configured capacity");
+        work.phase = RenderPhase::Hidden;
+        work.phase_changed = false;
+        work.idle = Duration::ZERO;
+        assert!(work.due(), "pressure hides ordinary history immediately");
+    }
     #[test]
     fn macos_subscription_and_decoding_include_recovery_without_false_warnings() {
         assert_eq!(PressureLevel::MACOS_EVENT_MASK, 7);
