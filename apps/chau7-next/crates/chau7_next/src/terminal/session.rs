@@ -46,6 +46,8 @@ use futures::{FutureExt, StreamExt};
 use gpui::{AppContext, Context, EventEmitter, Global, Task};
 use parking_lot::{Mutex, RwLock};
 
+mod maintenance;
+
 use super::pty_writer::{CloseMode, PtyWriter, Signal, signal_group};
 use crate::monitoring::session::{SessionMonitor, shell_ai_event};
 use crate::platform::process as procinfo;
@@ -356,7 +358,8 @@ pub struct TerminalSession {
     /// so the mouse always selects (TRM-018).
     mouse_reporting_enabled: std::cell::Cell<bool>,
     _pump: Task<()>,
-    _ticker: Task<()>,
+    #[cfg(test)]
+    maintenance_ticks: usize,
     process_subscription: Option<crate::monitoring::process_tree::Subscription>,
 }
 
@@ -781,17 +784,8 @@ impl TerminalSession {
                 last_refresh = Some(Instant::now());
             }
         });
-        // Once a second: idle/stuck timers, startup notice, cwd and branch.
-        let ticker = cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(1000))
-                    .await;
-                if this.update(cx, |this, cx| this.tick(cx)).is_err() {
-                    break;
-                }
-            }
-        });
+        // One shared deadline retains each session's housekeeping cadence.
+        maintenance::register(cx.entity().downgrade(), cx);
 
         if has_pty {
             register_shell(id, pid);
@@ -908,7 +902,8 @@ impl TerminalSession {
             dev_checks: None,
             mouse_reporting_enabled: std::cell::Cell::new(false),
             _pump: pump,
-            _ticker: ticker,
+            #[cfg(test)]
+            maintenance_ticks: 0,
             process_subscription,
         }
     }
@@ -1528,9 +1523,15 @@ impl TerminalSession {
 
     /// Once a second.
     fn tick(&mut self, cx: &mut Context<Self>) {
-        let mut wake = work_profiler::begin(WorkKey::wakeup(
+        #[cfg(test)]
+        {
+            self.maintenance_ticks += 1;
+        }
+        let mut wake = work_profiler::begin(WorkKey::work(
             "session_timer",
+            "tick",
             self.profiling_phase(),
+            "session_maintenance_timer",
             WorkQueue::Main,
         ));
         wake.idle(self.last_activity.elapsed() >= Duration::from_secs(1));
