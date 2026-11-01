@@ -55,23 +55,36 @@ impl OutputReadiness {
         )
     }
 
-    /// Wait until output or an interrupt is ready. This never removes PTY
-    /// messages, including the closed message and disconnection notification.
+    /// Park until output, disconnection or an explicit input/focus/stop signal.
+    /// There is no periodic deadline, and PTY messages are never consumed.
+    pub fn wait_for_event(&self) -> OutputReady {
+        self.wait_until(None)
+    }
+
+    /// Bounded non-consuming readiness for callers that need a deadline.
     /// A headless terminal returns immediately so its caller can observe close.
     pub fn wait(&self, timeout: Duration) -> OutputReady {
+        self.wait_until(Some(timeout))
+    }
+
+    fn wait_until(&self, timeout: Option<Duration>) -> OutputReady {
         let Some(output) = &self.output else {
             return OutputReady::Output;
         };
         let mut select = Select::new();
         let output_index = select.recv(output);
         select.recv(&self.interrupt);
-        match select.ready_timeout(timeout) {
-            Ok(index) if index == output_index => OutputReady::Output,
-            Ok(_) => {
+        let ready = match timeout {
+            Some(timeout) => select.ready_timeout(timeout).ok(),
+            None => Some(select.ready()),
+        };
+        match ready {
+            Some(index) if index == output_index => OutputReady::Output,
+            Some(_) => {
                 let _ = self.interrupt.try_recv();
                 OutputReady::Interrupted
             }
-            Err(_) => OutputReady::Timeout,
+            None => OutputReady::Timeout,
         }
     }
 }
@@ -573,6 +586,60 @@ mod tests {
         assert_eq!(images.len(), 1);
         assert_eq!(images[0].args, "File=name=eA==;inline=1");
         assert_eq!(images[0].rgba, b"aGk=");
+    }
+
+    #[test]
+    #[ignore = "owned native idle fixture; run explicitly with --ignored --exact --nocapture"]
+    fn event_wait_idle_native_fixture() {
+        use std::io::Write;
+        let (_output, receiver) = crossbeam_channel::unbounded();
+        let (ready, interrupt) = OutputReadiness::new(Some(receiver));
+        let stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop = stopped.clone();
+        let baseline = std::env::var_os("CHAU7_READINESS_BASELINE").is_some();
+        let worker = std::thread::spawn(move || {
+            while !stop.load(Ordering::Acquire) {
+                if baseline {
+                    ready.wait(Duration::from_secs(1));
+                } else {
+                    ready.wait_for_event();
+                }
+            }
+        });
+        println!("PTY_IDLE_READY {}", std::process::id());
+        std::io::stdout().flush().unwrap();
+        std::thread::sleep(Duration::from_secs(10));
+        stopped.store(true, Ordering::Release);
+        interrupt.wake();
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn event_wait_stays_parked_until_explicit_interrupt() {
+        let (_output, receiver) = crossbeam_channel::unbounded();
+        let (ready, interrupt) = OutputReadiness::new(Some(receiver));
+        let (result, results) = crossbeam_channel::bounded(1);
+        let worker = std::thread::spawn(move || result.send(ready.wait_for_event()).unwrap());
+        let premature = results.recv_timeout(Duration::from_millis(1100));
+        interrupt.wake();
+        let completion = match premature {
+            Ok(value) => value,
+            Err(_) => results.recv_timeout(Duration::from_secs(1)).unwrap(),
+        };
+        worker.join().unwrap();
+        assert!(premature.is_err(), "idle event wait expired: {premature:?}");
+        assert_eq!(completion, OutputReady::Interrupted);
+    }
+
+    #[test]
+    fn event_wait_observes_output_and_disconnect_without_consuming() {
+        let (output, receiver) = crossbeam_channel::unbounded();
+        let (ready, _interrupt) = OutputReadiness::new(Some(receiver.clone()));
+        output.send(PtyMessage::Data(b"event".to_vec())).unwrap();
+        assert_eq!(ready.wait_for_event(), OutputReady::Output);
+        assert!(matches!(receiver.try_recv(), Ok(PtyMessage::Data(bytes)) if bytes == b"event"));
+        drop(output);
+        assert_eq!(ready.wait_for_event(), OutputReady::Output);
     }
 
     #[test]

@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Share one one-second housekeeping timer across terminal sessions, retaining sessions weakly and parking it after the last session closes.
+||||||| d1454cef
+- Park idle PTY readers until output, disconnection or explicit input/focus/shutdown signals arrive, removing their one-second timeout wakeups without changing terminal output pacing.
+
 - Add a shared authenticated loopback HTTP MCP endpoint for Codex and Claude Code, avoiding per-client bridge processes while preserving permission and subscription isolation. Other clients retain the stdio bridge. Closing or replacing an event stream releases its connection promptly, including stalled clients; closed sessions immediately release backend sockets and capacity.
 
 - Replace MCP bridge liveness polling with OS process and pipe events, removing periodic idle wakeups while preserving prompt client cleanup.
@@ -25,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Park hidden terminal cursor timers until visibility, hover prewarming or settings changes require them; keep visible blink and suspension deadlines live.
 
+- Share one one-second housekeeping timer across terminal sessions, retaining sessions weakly and parking it after the last session closes.
 - Limit process argument reads to subscribed terminal process trees while keeping native child detection and SSH/provider resolution live.
 
 - Keep hidden terminal output from invalidating the native window while preserving live output processing, tab reveals and hover previews.
