@@ -3,12 +3,16 @@
 //! repo groups, the idle chip and its popover, the git branch capsule, and
 //! scrolling the selected tab into view. The hover card is in `hover_card.rs`.
 
+use std::cell::Cell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use chau7_next_core::l10n::{self, Lang};
-use chau7_next_core::tab_bar_layout::{TabBarLayoutItem, scroll_offset_to_reveal_tab};
+use chau7_next_core::tab_bar_layout::{
+    TabBarLayoutItem, scroll_offset_to_reveal_tab, tab_bar_trailing_space,
+};
 use chau7_next_core::tab_bar_text::{command_badge, idle_duration, truncate_middle};
 use chau7_next_core::tabs_state::{TabColor, repo_group_color, repo_group_name};
 use gpui::{
@@ -499,11 +503,21 @@ fn idle_repo_identity(repo_group_id: Option<&str>, git_root: Option<&str>) -> Op
         .map(str::to_string)
 }
 
-/// Scroll animation of the tab row (reveal clipped tabs, 0.25 s ease).
+/// Geometry from one completed prepaint; offsets and chip frames share this epoch.
+#[derive(Clone, Copy, Default)]
+struct TabScrollFrame {
+    generation: u64,
+    offset: f32,
+    viewport: Bounds<Pixels>,
+    trailing_space: f32,
+}
+
+/// Scroll animation of the tab row (align the selection left, 0.25 s ease).
 pub(super) struct TabScroll {
     pub(super) handle: ScrollHandle,
     /// Tab to bring into view once its frame is known.
-    pending: Option<TabId>,
+    pending: Option<(TabId, u64)>,
+    frame: Rc<Cell<TabScrollFrame>>,
     anim: Option<(f32, f32, Instant)>,
 }
 
@@ -512,6 +526,7 @@ impl Default for TabScroll {
         Self {
             handle: ScrollHandle::new(),
             pending: None,
+            frame: Rc::default(),
             anim: None,
         }
     }
@@ -524,10 +539,8 @@ impl TabScroll {
     }
 
     fn reveal(&mut self, tab: Option<TabId>) {
-        // A visible new selection must also stop an older animation, even
-        // when its own visibility check requires no movement.
         self.cancel();
-        self.pending = tab;
+        self.pending = tab.map(|id| (id, self.frame.get().generation));
     }
 }
 
@@ -539,20 +552,66 @@ mod tab_scroll_tests {
     fn selecting_another_tab_cancels_the_previous_animation() {
         let mut scroll = TabScroll {
             anim: Some((-100.0, -500.0, Instant::now())),
-            pending: Some(1),
+            pending: Some((1, 0)),
             ..Default::default()
         };
         scroll.reveal(Some(2));
         assert!(scroll.anim.is_none());
-        assert_eq!(scroll.pending, Some(2));
+        assert_eq!(scroll.pending, Some((2, 0)));
         scroll.reveal(Some(3));
-        assert_eq!(scroll.pending, Some(3));
+        assert_eq!(scroll.pending, Some((3, 0)));
+    }
+
+    #[cfg(unix)]
+    #[gpui::test]
+    fn selected_tab_aligns_left_in_the_real_scrolled_row(harness: &mut gpui::TestAppContext) {
+        use super::super::selection_tests::{headless_tab, init};
+        use gpui_kit::test::TestWindowExt;
+        init(harness);
+        harness.update(|cx| {
+            let (handle, workspace) = crate::open_window_for_transfer(cx).unwrap();
+            let ids = (0..18)
+                .map(|_| headless_tab(handle, &workspace, cx).0)
+                .collect::<Vec<_>>();
+            handle.update(cx, |_, window, cx| {
+                // Include the last tab, switches in both directions and a
+                // selection which was already on screen after the last move.
+                for index in [0, 17, 2, 12, 13, 0, 17] {
+                    let id = ids[index];
+                    workspace.update(cx, |workspace, cx| workspace.select_tab(id, window, cx));
+                    workspace.update(cx, |workspace, _| {
+                        let before = workspace.scroll.handle.offset();
+                        assert!(workspace.tick_scroll());
+                        assert_eq!(workspace.scroll.handle.offset(), before, "wait for fresh layout");
+                    });
+                    // Advance animation timestamps directly; GPUI's simulated
+                    // executor clock does not advance std::time::Instant.
+                    for _ in 0..5 {
+                        window.render_frame(cx);
+                        workspace.update(cx, |workspace, _| {
+                            if let Some((_, _, start)) = workspace.scroll.anim.as_mut() {
+                                *start = Instant::now() - Duration::from_secs(1);
+                            }
+                        });
+                    }
+                    let workspace = workspace.read(cx);
+                    let viewport = workspace.scroll.handle.bounds();
+                    let tab = workspace.frames.borrow().tabs[&id];
+                    assert!(viewport.size.width > px(0.0));
+                    assert!((f32::from(tab.left() - viewport.left())).abs() < 1.0,
+                        "selected tab {index} must be leftmost: tab={tab:?}, viewport={viewport:?}");
+                    assert!(workspace.scroll.pending.is_none());
+                    assert!(workspace.scroll.anim.is_none());
+                }
+                window.remove_window();
+            }).unwrap();
+        });
     }
 
     #[test]
     fn manual_scrolling_cancels_pending_and_running_reveals() {
         let mut scroll = TabScroll {
-            pending: Some(1),
+            pending: Some((1, 0)),
             anim: Some((-100.0, -500.0, Instant::now())),
             ..Default::default()
         };
@@ -782,26 +841,37 @@ impl Workspace {
 
     // ----- scrolling ----------------------------------------------------
 
-    /// Reveal the selected tab only when clipped, on the next frame once its
-    /// frame is known. Already visible tabs keep their position in the bar.
+    /// Align the selection to the left edge after its new layout is measured.
     pub(super) fn scroll_to_selected(&mut self) {
         self.scroll.reveal(self.state.selected());
     }
 
     /// Advance the scroll animation; true while it runs.
     pub(super) fn tick_scroll(&mut self) -> bool {
-        if let Some(id) = self.scroll.pending.take() {
+        if let Some((id, after)) = self.scroll.pending {
+            let frame = self.scroll.frame.get();
+            // Selection can change widths/grouping, and resize can change the
+            // trailing scroll room. Never resolve against an older layout.
+            if frame.generation <= after
+                || (frame.trailing_space
+                    - tab_bar_trailing_space(f32::from(frame.viewport.size.width)))
+                .abs()
+                    > 0.5
+            {
+                return true;
+            }
             let frames = self.frames.borrow();
             match (frames.tabs.get(&id), frames.bar) {
                 (Some(tab), Some(bar)) => {
                     let current = f32::from(self.scroll.handle.offset().x);
                     let max = f32::from(self.scroll.handle.max_offset().x);
                     let target = scroll_offset_to_reveal_tab(
-                        current,
+                        frame.offset,
                         max,
                         f32::from(tab.left())..f32::from(tab.right()),
                         f32::from(bar.left())..f32::from(bar.right()),
                     );
+                    self.scroll.pending = None;
                     if (target - current).abs() > 0.5 {
                         self.scroll.anim = Some((current, target, Instant::now()));
                     }
@@ -809,7 +879,6 @@ impl Workspace {
                 _ => {
                     // Not laid out yet (new tab): try again next frame.
                     drop(frames);
-                    self.scroll.pending = Some(id);
                     return true;
                 }
             }
@@ -1269,6 +1338,8 @@ impl Workspace {
         let now = AppData::now(cx);
         let items = self.state.display_items(now);
         let idle_count = self.state.idle_ids(now).len();
+        let trailing_space =
+            tab_bar_trailing_space(f32::from(self.scroll.handle.bounds().size.width));
         let mut row = div()
             .id("tab-bar")
             .flex()
@@ -1281,7 +1352,7 @@ impl Workspace {
             .overflow_x_scroll()
             .track_scroll(&self.scroll.handle)
             .on_scroll_wheel(cx.listener(|this, _, _, _| this.scroll.cancel()))
-            .pr_2();
+            .pr(px(trailing_space));
         let mut index = 0;
         while index < items.len() {
             match &items[index] {
@@ -1341,10 +1412,27 @@ impl Workspace {
             }
         }
         let frames = self.frames.clone();
+        let handle = self.scroll.handle.clone();
+        let scroll_frame = self.scroll.frame.clone();
         let row = row.child(
             canvas(
-                move |bounds, _, _| {
-                    frames.borrow_mut().bar = Some(bounds);
+                move |_, window, _| {
+                    // This overlay moves with the content. The scroll handle
+                    // owns the fixed viewport, updated before child prepaint.
+                    let viewport = handle.bounds();
+                    frames.borrow_mut().bar = Some(viewport);
+                    scroll_frame.set(TabScrollFrame {
+                        generation: scroll_frame.get().generation.wrapping_add(1),
+                        offset: f32::from(handle.offset().x),
+                        viewport,
+                        trailing_space,
+                    });
+                    if (trailing_space - tab_bar_trailing_space(f32::from(viewport.size.width)))
+                        .abs()
+                        > 0.5
+                    {
+                        window.request_animation_frame();
+                    }
                 },
                 |_, _, _, _| {},
             )
