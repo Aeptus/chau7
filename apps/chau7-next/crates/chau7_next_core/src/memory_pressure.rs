@@ -192,6 +192,7 @@ pub struct RetentionWork {
     pub phase_changed: bool,
     pub archived: bool,
     pub tui: bool,
+    pub alternate_screen: bool,
     pub tui_compacted: bool,
     pub idle: Duration,
     pub forced: bool,
@@ -205,7 +206,11 @@ impl RetentionWork {
                 self.phase_changed
             };
         }
-        if self.archived || self.tui && (self.phase == RenderPhase::Hidden || self.tui_compacted) {
+        if self.archived
+            || self.tui
+                && (self.phase == RenderPhase::Hidden
+                    || self.alternate_screen && self.tui_compacted)
+        {
             return false;
         }
         self.forced
@@ -249,6 +254,7 @@ mod tests {
             phase_changed: false,
             archived: false,
             tui: false,
+            alternate_screen: false,
             tui_compacted: false,
             idle: WARM_IDLE_DELAY,
             forced: false,
@@ -287,8 +293,14 @@ mod tests {
         work.tui = true;
         work.idle = TUI_IDLE_DELAY;
         assert!(work.due());
+        work.alternate_screen = true;
         work.tui_compacted = true;
         assert!(!work.due(), "alternate-screen compaction is one-shot");
+        work.alternate_screen = false;
+        assert!(
+            work.due(),
+            "normal-screen history still needs retention while a TUI runs"
+        );
         work.phase = RenderPhase::Active;
         work.phase_changed = true;
         work.tui = false;

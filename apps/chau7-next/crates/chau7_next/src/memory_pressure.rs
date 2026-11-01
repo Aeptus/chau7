@@ -40,12 +40,19 @@ struct State {
     tui_compacted: bool,
 }
 impl State {
-    fn maintenance_due(&self, phase_changed: bool, tui: bool, forced: bool) -> bool {
+    fn maintenance_due(
+        &self,
+        phase_changed: bool,
+        tui: bool,
+        alternate_screen: bool,
+        forced: bool,
+    ) -> bool {
         policy::RetentionWork {
             phase: self.phase,
             phase_changed,
             archived: self.flushed.is_some(),
             tui,
+            alternate_screen,
             tui_compacted: self.tui_compacted,
             idle: self.idle_since.elapsed(),
             forced,
@@ -170,6 +177,7 @@ impl SessionMemory {
     pub fn activate(self: &Arc<Self>, cx: &App) {
         let mut state = self.state.lock();
         state.phase = RenderPhase::Active;
+        state.tui_compacted = false;
         state.retry_after = None;
         if state.flushed.is_some()
             && !state.queued
@@ -702,6 +710,7 @@ fn tick(cx: &mut App) {
         let due = state.maintenance_due(
             old != state.phase,
             memory.tui.load(Ordering::Relaxed) || term.is_alternate_screen_active(),
+            term.is_alternate_screen_active(),
             backstop,
         );
         if due && !state.queued && state.retry_after.is_none_or(|at| Instant::now() >= at) {
@@ -1143,7 +1152,7 @@ mod tests {
                 .memory
                 .state
                 .lock()
-                .maintenance_due(false, false, false)
+                .maintenance_due(false, false, false, false)
         );
         fixture.memory.maintain();
         assert!(fixture.memory.state.lock().flushed.is_some());
@@ -1152,7 +1161,7 @@ mod tests {
                 .memory
                 .state
                 .lock()
-                .maintenance_due(false, false, true)
+                .maintenance_due(false, false, false, true)
         );
         fixture.phase(RenderPhase::Active, Duration::ZERO);
         assert!(
@@ -1160,7 +1169,7 @@ mod tests {
                 .memory
                 .state
                 .lock()
-                .maintenance_due(true, false, false)
+                .maintenance_due(true, false, false, false)
         );
         fixture.memory.maintain();
         assert_eq!(fixture.memory.metrics.lock().reloads, 1);
@@ -1169,7 +1178,7 @@ mod tests {
                 .memory
                 .state
                 .lock()
-                .maintenance_due(false, false, false)
+                .maintenance_due(false, false, false, false)
         );
     }
     #[test]
@@ -1182,7 +1191,7 @@ mod tests {
                 .memory
                 .state
                 .lock()
-                .maintenance_due(false, true, false)
+                .maintenance_due(false, true, true, false)
         );
         fixture.memory.maintain();
         assert!(fixture.memory.state.lock().tui_compacted);
@@ -1191,7 +1200,7 @@ mod tests {
                 .memory
                 .state
                 .lock()
-                .maintenance_due(false, true, false)
+                .maintenance_due(false, true, true, false)
         );
         fixture.memory.configure(4000);
         assert!(
@@ -1199,7 +1208,33 @@ mod tests {
                 .memory
                 .state
                 .lock()
-                .maintenance_due(false, true, false)
+                .maintenance_due(false, true, true, false)
+        );
+    }
+    #[test]
+    fn compacted_tui_retains_history_after_leaving_the_alternate_screen() {
+        let fixture = Fixture::new(3000);
+        fixture.memory.set_tui(true);
+        fixture.terminal.read().inject_output(b"\x1b[?1049h");
+        fixture.phase(RenderPhase::Warm, policy::TUI_IDLE_DELAY);
+        fixture.memory.maintain();
+        assert!(fixture.memory.state.lock().tui_compacted);
+        fixture.terminal.read().inject_output(b"\x1b[?1049l");
+        let alternate = fixture.terminal.read().is_alternate_screen_active();
+        assert!(!alternate);
+        assert!(
+            fixture
+                .memory
+                .state
+                .lock()
+                .maintenance_due(false, true, alternate, false)
+        );
+        fixture.memory.maintain();
+        assert_eq!(fixture.memory.metrics.lock().flushes, 1);
+        assert!(fixture.memory.cache.exists());
+        assert_eq!(
+            fixture.memory.state.lock().flushed.unwrap().kind,
+            FlushKind::TuiCompact
         );
     }
     #[test]
