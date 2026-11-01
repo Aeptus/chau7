@@ -38,7 +38,7 @@ use chau7_next_core::shell_session::{
 use chau7_next_core::work_profiler::{self, Key as WorkKey, Kind as WorkKind, Queue as WorkQueue};
 use chau7_next_core::{shell_env, shell_integration, shell_tips};
 use chau7_terminal::{
-    Chau7Terminal, GridCopy, OutputInterrupt, OutputReady, StyledScreen, StyledSelection,
+    Chau7Terminal, GridCopy, OutputInterrupt, StyledScreen, StyledSelection,
     graphics::ShellIntegrationEvent,
 };
 use futures::channel::{mpsc, oneshot};
@@ -50,8 +50,6 @@ use super::pty_writer::{CloseMode, PtyWriter, Signal, signal_group};
 use crate::monitoring::session::{SessionMonitor, shell_ai_event};
 use crate::platform::process as procinfo;
 use crate::settings::{ActivePollingRateCap, BellSound, Settings};
-
-const PTY_READINESS_MAX_WAIT_MS: u64 = 1_000;
 
 /// App-scoped fixture policy: production shell construction and the real PTY
 /// writer remain intact, while native output is driven by the test scheduler.
@@ -674,18 +672,12 @@ impl TerminalSession {
                             "pty_poll",
                             WorkQueue::Background,
                         );
-                        let ready = work_profiler::measure(wait_key, || {
-                            readiness.wait(Duration::from_millis(PTY_READINESS_MAX_WAIT_MS))
-                        });
+                        work_profiler::measure(wait_key, || readiness.wait_for_event());
                         if stop.load(Ordering::Acquire) {
                             break;
                         }
-                        // Readiness wakes for output, close and explicit
-                        // interrupts. A timeout needs no native poll or output
-                        // extraction, eliminating idle parser-lock work.
-                        if ready == OutputReady::Timeout {
-                            continue;
-                        }
+                        // Output, close, input and focus/stop signals resume this
+                        // worker directly; idle terminals have no timeout wake.
                         let visibility = profile_memory
                             .get()
                             .and_then(std::sync::Weak::upgrade)
@@ -965,7 +957,8 @@ impl TerminalSession {
             "refresh_cap_interval_ms":self.refresh_interval_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0,
             "display_native_refresh":self.refresh_interval_ns.load(Ordering::Relaxed) == 0,
             "refresh_interactive":self.poll_interactive.load(Ordering::Relaxed),
-            "pty_readiness_max_wait_ms":PTY_READINESS_MAX_WAIT_MS,
+            "pty_readiness_max_wait_ms":serde_json::Value::Null,
+            "pty_readiness_wait":"event_driven",
             "render_suspended":self.is_render_suspended(),
             "grid_cells_deferred":self.grid_stale,
             "native_pending_image_bytes":serde_json::Value::Null,
