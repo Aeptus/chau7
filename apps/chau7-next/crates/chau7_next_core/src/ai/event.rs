@@ -168,6 +168,9 @@ pub struct AiEvent {
     pub session_id: Option<String>,
     /// Which subsystem emitted the event (for audit and debugging).
     pub producer: Option<String>,
+    /// Native CLI process that launched the notify helper; not a tab owner by itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_process_id: Option<u32>,
     pub reliability: AiEventReliability,
 }
 
@@ -197,6 +200,7 @@ impl AiEvent {
             tab_id: None,
             session_id: None,
             producer: None,
+            provider_process_id: None,
             reliability,
         }
     }
@@ -406,6 +410,11 @@ pub fn parse_line(line: &str) -> Result<AiEvent, AiEventParseError> {
     event.title = first_string(&dict, &["title"]);
     event.notification_type = first_string(&dict, &["notificationType", "notification_type"]);
     event.producer = first_string(&dict, &["producer"]);
+    event.provider_process_id = ["providerProcessID", "provider_process_id"]
+        .into_iter()
+        .find_map(|key| dict.get(key).and_then(Value::as_u64))
+        .and_then(|pid| u32::try_from(pid).ok())
+        .filter(|pid| *pid > 0);
     if let Some(value) = dict
         .get("reliability")
         .cloned()
@@ -572,6 +581,26 @@ mod tests {
     fn parse_empty_type_string() {
         let event = parse_line(r#"{"type":""}"#).unwrap();
         assert_eq!(event.event_type, "");
+    }
+
+    #[test]
+    fn provider_process_identity_is_optional_validated_and_round_trips() {
+        let old = parse_line(r#"{"type":"finished"}"#).unwrap();
+        assert_eq!(old.provider_process_id, None);
+        for value in ["0", "-1", "4294967296", "\"42\"", "null"] {
+            let line = format!(r#"{{"type":"finished","providerProcessID":{value}}}"#);
+            assert_eq!(parse_line(&line).unwrap().provider_process_id, None);
+        }
+        let event = parse_line(r#"{"type":"finished","providerProcessID":42}"#).unwrap();
+        assert_eq!(event.provider_process_id, Some(42));
+        let stored = serde_json::to_string(&event).unwrap();
+        assert_eq!(serde_json::from_str::<AiEvent>(&stored).unwrap(), event);
+        assert_eq!(
+            parse_line(r#"{"type":"finished","provider_process_id":42}"#)
+                .unwrap()
+                .provider_process_id,
+            Some(42)
+        );
     }
 
     #[test]

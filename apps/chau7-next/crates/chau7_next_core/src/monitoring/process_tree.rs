@@ -101,6 +101,14 @@ impl Snapshot {
     }
 
     pub fn resolve(&self, shell_pid: u32) -> Option<&'static str> {
+        self.resolve_process(shell_pid)
+            .map(|(_, provider)| provider)
+    }
+
+    /// The nearest live provider and its native process, excluding nested CLI
+    /// work. Codex's Node launcher directly owns one native Codex child; hooks
+    /// are invoked by that child, not by the JavaScript launcher.
+    pub fn resolve_process(&self, shell_pid: u32) -> Option<(u32, &'static str)> {
         if shell_pid == 0 {
             return None;
         }
@@ -119,7 +127,28 @@ impl Snapshot {
             if let Some(row) = self.rows.get(&pid)
                 && let Some(provider) = match_process(&row.command, &row.argv)
             {
-                return Some(provider);
+                let owner = if provider == "Codex"
+                    && SCRIPT_RUNTIME_PATHS.contains(&process_token(&row.command).as_str())
+                {
+                    let children: Vec<_> = self
+                        .children
+                        .get(&pid)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|child| self.rows.get(child))
+                        .filter(|child| {
+                            !SCRIPT_RUNTIME_PATHS.contains(&process_token(&child.command).as_str())
+                                && match_process(&child.command, &child.argv) == Some(provider)
+                        })
+                        .collect();
+                    match children.as_slice() {
+                        [child] => child.pid,
+                        _ => pid,
+                    }
+                } else {
+                    pid
+                };
+                return Some((owner, provider));
             }
             queue.extend(self.children.get(&pid).into_iter().flatten().copied());
         }
@@ -260,6 +289,41 @@ mod tests {
             argv: argv.iter().map(|s| s.to_string()).collect(),
         }
     }
+    #[test]
+    fn primary_native_codex_owner_excludes_nested_and_unrelated_clis() {
+        let snapshot = Snapshot::from_rows([
+            row(1, 0, "zsh", &[]),
+            row(2, 1, "codex", &[]),
+            row(3, 2, "sh", &[]),
+            row(4, 3, "codex", &[]),
+            row(5, 0, "codex", &[]),
+        ]);
+        assert_eq!(snapshot.resolve_process(1), Some((2, "Codex")));
+        assert_eq!(snapshot.resolve(1), Some("Codex"));
+        assert_eq!(snapshot.resolve_process(0), None);
+    }
+
+    #[test]
+    fn codex_node_launcher_uses_only_its_unique_direct_native_child() {
+        let rows = [
+            row(1, 0, "zsh", &[]),
+            row(2, 1, "node", &["node", "/pkg/codex/bin/codex.js"]),
+            row(3, 2, "codex", &[]),
+            row(4, 3, "sh", &[]),
+            row(5, 4, "codex", &[]),
+        ];
+        assert_eq!(
+            Snapshot::from_rows(rows.clone()).resolve_process(1),
+            Some((3, "Codex"))
+        );
+        // Ambiguous children cannot promote one nested identity to primary.
+        assert_eq!(
+            Snapshot::from_rows(rows.into_iter().chain([row(6, 2, "codex", &[])]))
+                .resolve_process(1),
+            Some((2, "Codex"))
+        );
+    }
+
     #[test]
     fn observed_descendant_names_exclude_other_shells_and_terminate_cycles() {
         let snapshot = Snapshot::from_rows([

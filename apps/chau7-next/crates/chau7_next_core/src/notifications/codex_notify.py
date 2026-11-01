@@ -238,6 +238,9 @@ def event_for(payload):
         "sessionID": first(payload.get("thread-id"), payload.get("thread_id")),
         "tabID": os.environ["CHAU7_NEXT_TAB_ID"].strip(),
         "producer": "codex_notify_hook",
+        # The native Codex process invokes this helper directly. Child CLIs
+        # inherit the tab environment, but have a different process owner.
+        "providerProcessID": os.getppid(),
         "reliability": "authoritative",
     }
     if title:
