@@ -7,7 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-||||||| d1454cef
 - Park idle PTY readers until output, disconnection or explicit input/focus/shutdown signals arrive, removing their one-second timeout wakeups without changing terminal output pacing.
 
 - Add a shared authenticated loopback HTTP MCP endpoint for Codex and Claude Code, avoiding per-client bridge processes while preserving permission and subscription isolation. Other clients retain the stdio bridge. Closing or replacing an event stream releases its connection promptly, including stalled clients; closed sessions immediately release backend sockets and capacity.
