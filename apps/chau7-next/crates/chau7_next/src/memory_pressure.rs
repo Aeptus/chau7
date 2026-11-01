@@ -37,6 +37,28 @@ struct State {
     queued: bool,
     retry_after: Option<Instant>,
     force_pending: bool,
+    tui_compacted: bool,
+}
+impl State {
+    fn maintenance_due(
+        &self,
+        phase_changed: bool,
+        tui: bool,
+        alternate_screen: bool,
+        forced: bool,
+    ) -> bool {
+        policy::RetentionWork {
+            phase: self.phase,
+            phase_changed,
+            archived: self.flushed.is_some(),
+            tui,
+            alternate_screen,
+            tui_compacted: self.tui_compacted,
+            idle: self.idle_since.elapsed(),
+            forced,
+        }
+        .due()
+    }
 }
 pub(crate) struct SessionMemory {
     pub id: u64,
@@ -49,8 +71,12 @@ pub(crate) struct SessionMemory {
     restore_preview: Mutex<Option<String>>,
 }
 static REGISTRY: Mutex<Vec<Weak<SessionMemory>>> = Mutex::new(Vec::new());
+enum RetentionJob {
+    Maintain(Arc<SessionMemory>),
+    Stop,
+}
 struct Service {
-    sender: mpsc::Sender<Arc<SessionMemory>>,
+    sender: mpsc::Sender<RetentionJob>,
     pressure: Arc<Mutex<PressureState>>,
     epoch: Instant,
     stop: Arc<AtomicBool>,
@@ -96,6 +122,7 @@ impl Global for PendingViews {}
 impl Drop for Service {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
+        let _ = self.sender.send(RetentionJob::Stop);
     }
 }
 
@@ -121,6 +148,7 @@ pub(crate) fn register(
             queued: false,
             retry_after: None,
             force_pending: false,
+            tui_compacted: false,
         }),
         tui: AtomicBool::new(false),
         metrics: Mutex::new(Metrics::default()),
@@ -149,20 +177,23 @@ impl SessionMemory {
     pub fn activate(self: &Arc<Self>, cx: &App) {
         let mut state = self.state.lock();
         state.phase = RenderPhase::Active;
+        state.tui_compacted = false;
         state.retry_after = None;
         if state.flushed.is_some()
             && !state.queued
             && let Some(service) = cx.try_global::<Service>()
         {
             state.queued = true;
-            let _ = service.sender.send(self.clone());
+            let _ = service.sender.send(RetentionJob::Maintain(self.clone()));
         }
     }
     pub fn take_refresh(&self) -> bool {
         self.refresh_needed.swap(false, Ordering::AcqRel)
     }
     pub fn configure(&self, lines: usize) {
-        self.state.lock().configured = policy::configured_lines(lines);
+        let mut state = self.state.lock();
+        state.configured = policy::configured_lines(lines);
+        state.tui_compacted = false;
     }
     pub fn set_tui(&self, tui: bool) {
         self.tui.store(tui, Ordering::Relaxed);
@@ -314,6 +345,7 @@ impl SessionMemory {
             let before = term.debug_state().estimated_grid_bytes;
             if term.is_alternate_screen_active() {
                 term.set_scrollback_size(policy::TUI_TIER_LINES);
+                self.state.lock().tui_compacted = true;
                 self.metrics.lock().reclaimed_bytes +=
                     before.saturating_sub(term.debug_state().estimated_grid_bytes);
                 return;
@@ -431,17 +463,19 @@ pub fn start(cx: &mut App) {
     if cx.try_global::<Service>().is_some() {
         return;
     }
-    let (sender, receiver) = mpsc::channel::<Arc<SessionMemory>>();
+    let (sender, receiver) = mpsc::channel::<RetentionJob>();
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
     let worker = std::thread::Builder::new()
         .name("next-scrollback-retention".into())
         .spawn(move || {
-            while !worker_stop.load(Ordering::Acquire) {
-                match receiver.recv_timeout(Duration::from_secs(1)) {
-                    Ok(memory) => memory.maintain(),
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            while let Ok(job) = receiver.recv() {
+                if worker_stop.load(Ordering::Acquire) {
+                    break;
+                }
+                match job {
+                    RetentionJob::Maintain(memory) => memory.maintain(),
+                    RetentionJob::Stop => break,
                 }
             }
         })
@@ -669,17 +703,19 @@ fn tick(cx: &mut App) {
             state.idle_since = Instant::now() - policy::TUI_IDLE_DELAY;
             state.force_pending = true;
         }
-        let due = state.phase == RenderPhase::Hidden && state.flushed.is_none()
-            || old != state.phase
-            || state.flushed.is_some() && state.phase.visible()
-            || !state.phase.visible()
-                && (backstop || state.idle_since.elapsed() >= policy::WARM_IDLE_DELAY);
         if old != state.phase && state.phase.visible() {
             state.retry_after = None;
+            state.tui_compacted = false;
         }
+        let due = state.maintenance_due(
+            old != state.phase,
+            memory.tui.load(Ordering::Relaxed) || term.is_alternate_screen_active(),
+            term.is_alternate_screen_active(),
+            backstop,
+        );
         if due && !state.queued && state.retry_after.is_none_or(|at| Instant::now() >= at) {
             state.queued = true;
-            let _ = sender.send(memory.clone());
+            let _ = sender.send(RetentionJob::Maintain(memory.clone()));
         }
     }
 }
@@ -1106,6 +1142,100 @@ mod tests {
         assert!(!fixture.memory.cache.exists());
         assert!(fixture.memory.take_refresh());
         assert!(!fixture.memory.take_refresh());
+    }
+    #[test]
+    fn archived_idle_history_is_not_requeued_but_promotion_restores_it() {
+        let fixture = Fixture::new(300);
+        fixture.phase(RenderPhase::Warm, policy::WARM_IDLE_DELAY);
+        assert!(
+            fixture
+                .memory
+                .state
+                .lock()
+                .maintenance_due(false, false, false, false)
+        );
+        fixture.memory.maintain();
+        assert!(fixture.memory.state.lock().flushed.is_some());
+        assert!(
+            !fixture
+                .memory
+                .state
+                .lock()
+                .maintenance_due(false, false, false, true)
+        );
+        fixture.phase(RenderPhase::Active, Duration::ZERO);
+        assert!(
+            fixture
+                .memory
+                .state
+                .lock()
+                .maintenance_due(true, false, false, false)
+        );
+        fixture.memory.maintain();
+        assert_eq!(fixture.memory.metrics.lock().reloads, 1);
+        assert!(
+            !fixture
+                .memory
+                .state
+                .lock()
+                .maintenance_due(false, false, false, false)
+        );
+    }
+    #[test]
+    fn alternate_screen_compaction_is_not_requeued_until_reconfigured() {
+        let fixture = Fixture::new(3000);
+        fixture.terminal.read().inject_output(b"\x1b[?1049h");
+        fixture.phase(RenderPhase::Warm, policy::TUI_IDLE_DELAY);
+        assert!(
+            fixture
+                .memory
+                .state
+                .lock()
+                .maintenance_due(false, true, true, false)
+        );
+        fixture.memory.maintain();
+        assert!(fixture.memory.state.lock().tui_compacted);
+        assert!(
+            !fixture
+                .memory
+                .state
+                .lock()
+                .maintenance_due(false, true, true, false)
+        );
+        fixture.memory.configure(4000);
+        assert!(
+            fixture
+                .memory
+                .state
+                .lock()
+                .maintenance_due(false, true, true, false)
+        );
+    }
+    #[test]
+    fn compacted_tui_retains_history_after_leaving_the_alternate_screen() {
+        let fixture = Fixture::new(3000);
+        fixture.memory.set_tui(true);
+        fixture.terminal.read().inject_output(b"\x1b[?1049h");
+        fixture.phase(RenderPhase::Warm, policy::TUI_IDLE_DELAY);
+        fixture.memory.maintain();
+        assert!(fixture.memory.state.lock().tui_compacted);
+        fixture.terminal.read().inject_output(b"\x1b[?1049l");
+        let alternate = fixture.terminal.read().is_alternate_screen_active();
+        assert!(!alternate);
+        assert!(
+            fixture
+                .memory
+                .state
+                .lock()
+                .maintenance_due(false, true, alternate, false)
+        );
+        fixture.memory.maintain();
+        assert_eq!(fixture.memory.metrics.lock().flushes, 1);
+        assert!(fixture.memory.cache.exists());
+        assert_eq!(
+            fixture.memory.state.lock().flushed.unwrap().kind,
+            FlushKind::TuiCompact
+        );
     }
     #[test]
     fn disk_failure_and_corrupt_reload_leave_authoritative_history_intact() {
