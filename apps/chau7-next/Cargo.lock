@@ -1010,6 +1010,7 @@ dependencies = [
  "flate2",
  "libc",
  "log",
+ "parking_lot",
  "plist",
  "quick-xml 0.42.0",
  "regex",

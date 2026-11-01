@@ -25,12 +25,12 @@ pub use unix::IpcServer;
 mod unix {
     use std::collections::VecDeque;
     use std::io::{Read, Write};
+    use std::os::fd::AsRawFd;
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::mpsc::{Receiver, Sender, channel};
-    use std::time::Duration;
 
     use chau7_next_core::remote::frame::RemoteFrame;
     use chau7_next_core::remote::frame_parser::{
@@ -46,6 +46,8 @@ mod unix {
         client: Mutex<Option<(u64, UnixStream)>>,
         next_conn: AtomicU64,
         stop: AtomicBool,
+        #[cfg(test)]
+        wait_entries: AtomicU64,
     }
 
     impl Shared {
@@ -74,6 +76,8 @@ mod unix {
         identity: Option<chau7_next_core::file_identity::FileIdentity>,
         shared: Arc<Shared>,
         outgoing: Option<Sender<Vec<u8>>>,
+        shutdown: UnixStream,
+        _accept_thread: Option<std::thread::JoinHandle<()>>,
     }
 
     impl IpcServer {
@@ -102,14 +106,17 @@ mod unix {
                 client: Mutex::new(None),
                 next_conn: AtomicU64::new(1),
                 stop: AtomicBool::new(false),
+                #[cfg(test)]
+                wait_entries: AtomicU64::new(0),
             });
+            let (shutdown, stopped) = UnixStream::pair()?;
             let (tx, rx) = channel::<Vec<u8>>();
-            {
+            let accept_thread = {
                 let shared = shared.clone();
                 std::thread::Builder::new()
                     .name("remote-ipc-accept".into())
-                    .spawn(move || accept_loop(listener, shared))?;
-            }
+                    .spawn(move || accept_loop(listener, stopped, shared))?
+            };
             {
                 let shared = shared.clone();
                 std::thread::Builder::new()
@@ -122,6 +129,8 @@ mod unix {
                 identity,
                 shared,
                 outgoing: Some(tx),
+                shutdown,
+                _accept_thread: Some(accept_thread),
             })
         }
 
@@ -144,6 +153,9 @@ mod unix {
             if self.shared.stop.swap(true, Ordering::SeqCst) {
                 return;
             }
+            // Wakes the blocking accept wait without connecting to a possibly
+            // replaced socket path. No periodic shutdown/liveness check is needed.
+            let _ = self.shutdown.shutdown(std::net::Shutdown::Both);
             self.outgoing = None;
             if let Some((_, stream)) = self.shared.client.lock().take() {
                 let _ = stream.shutdown(std::net::Shutdown::Both);
@@ -161,8 +173,43 @@ mod unix {
         }
     }
 
-    fn accept_loop(listener: UnixListener, shared: Arc<Shared>) {
+    fn accept_loop(listener: UnixListener, stopped: UnixStream, shared: Arc<Shared>) {
         while !shared.stop.load(Ordering::SeqCst) {
+            #[cfg(test)]
+            shared.wait_entries.fetch_add(1, Ordering::Release);
+            let mut descriptors = [
+                libc::pollfd {
+                    fd: listener.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+                libc::pollfd {
+                    fd: stopped.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+            ];
+            // SAFETY: both owned sockets and the two-element descriptor array
+            // stay alive for the entire blocking call. No timeout or busy loop.
+            let ready = unsafe { libc::poll(descriptors.as_mut_ptr(), descriptors.len() as _, -1) };
+            if ready < 0 {
+                let error = std::io::Error::last_os_error();
+                if error.kind() == std::io::ErrorKind::Interrupted {
+                    continue;
+                }
+                log::warn!("Remote IPC: accept wait failed: {error}");
+                break;
+            }
+            if shared.stop.load(Ordering::SeqCst) || descriptors[1].revents != 0 {
+                break;
+            }
+            if descriptors[0].revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0 {
+                log::warn!("Remote IPC: listener closed");
+                break;
+            }
+            if descriptors[0].revents & libc::POLLIN == 0 {
+                continue;
+            }
             match listener.accept() {
                 Ok((stream, _)) => {
                     if let Err(err) = stream.set_nonblocking(false) {
@@ -173,22 +220,31 @@ mod unix {
                     let Ok(reader) = stream.try_clone() else {
                         continue;
                     };
-                    // A new client replaces the old one.
-                    if let Some((_, old)) = shared.client.lock().replace((conn, stream)) {
+                    // Admission and stop serialize on this lock. A connection
+                    // accepted concurrently with stop must not outlive shutdown.
+                    let mut client = shared.client.lock();
+                    if shared.stop.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    if let Some((_, old)) = client.replace((conn, stream)) {
                         let _ = old.shutdown(std::net::Shutdown::Both);
                     }
+                    drop(client);
                     shared.push(IpcEvent::Connected);
                     let shared = shared.clone();
                     let _ = std::thread::Builder::new()
                         .name("remote-ipc-read".into())
                         .spawn(move || read_loop(reader, conn, shared));
                 }
-                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(50));
-                }
+                Err(err)
+                    if matches!(
+                        err.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                    ) => {}
                 Err(err) => {
                     log::warn!("Remote IPC: failed to accept connection: {err}");
-                    std::thread::sleep(Duration::from_millis(200));
+                    // Retain recovery from transient descriptor/resource errors.
+                    std::thread::sleep(std::time::Duration::from_millis(200));
                 }
             }
         }
@@ -235,6 +291,168 @@ mod unix {
                 log::error!("Remote IPC write failed: {err}");
                 shared.disconnect(conn);
             }
+        }
+    }
+    #[cfg(test)]
+    mod idle_regression {
+        use super::*;
+        use std::time::{Duration, Instant};
+        struct Fixture {
+            root: PathBuf,
+            server: IpcServer,
+        }
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                self.server.stop();
+                let _ = std::fs::remove_dir_all(&self.root);
+            }
+        }
+        #[test]
+        fn idle_listener_wait_is_not_periodic() {
+            let root =
+                PathBuf::from("/tmp").join(format!("c7-idle-{}", uuid::Uuid::new_v4().simple()));
+            let server = IpcServer::start(&root.join("remote.sock")).unwrap();
+            let fixture = Fixture { root, server };
+            let started = Instant::now();
+            while fixture.server.shared.wait_entries.load(Ordering::Acquire) == 0 {
+                assert!(started.elapsed() < Duration::from_secs(1));
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            std::thread::sleep(Duration::from_millis(180));
+            assert_eq!(
+                fixture.server.shared.wait_entries.load(Ordering::Acquire),
+                1,
+                "an idle listener must stay in its initial blocking wait"
+            );
+        }
+    }
+    #[cfg(all(test, unix))]
+    mod tests {
+        use super::*;
+        use chau7_next_core::remote::frame_parser::pack_for_transport;
+        use std::io::{Read, Write};
+        use std::os::unix::net::{UnixListener, UnixStream};
+        use std::path::PathBuf;
+        use std::time::{Duration, Instant};
+
+        struct Fixture {
+            root: PathBuf,
+            server: IpcServer,
+        }
+        impl Fixture {
+            fn new() -> Self {
+                let root =
+                    PathBuf::from("/tmp").join(format!("c7-ipc-{}", uuid::Uuid::new_v4().simple()));
+                let server = IpcServer::start(&root.join("remote.sock")).unwrap();
+                Self { root, server }
+            }
+            fn connect(&self) -> UnixStream {
+                let stream = UnixStream::connect(self.root.join("remote.sock")).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                stream
+            }
+            fn event(&self) -> Vec<IpcEvent> {
+                let start = Instant::now();
+                loop {
+                    let events = self.server.drain();
+                    if !events.is_empty() {
+                        return events;
+                    }
+                    assert!(
+                        start.elapsed() < Duration::from_secs(1),
+                        "IPC event not delivered"
+                    );
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+            fn stopped(&mut self) {
+                self.server.stop();
+                let start = Instant::now();
+                while !self.server._accept_thread.as_ref().unwrap().is_finished() {
+                    assert!(
+                        start.elapsed() < Duration::from_secs(1),
+                        "blocking accept did not stop"
+                    );
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                self.server._accept_thread.take().unwrap().join().unwrap();
+            }
+        }
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                self.server.stop();
+                let _ = std::fs::remove_dir_all(&self.root);
+            }
+        }
+        fn frame() -> RemoteFrame {
+            RemoteFrame {
+                version: 1,
+                type_: 2,
+                flags: 0,
+                reserved: 0,
+                tab_id: 3,
+                seq: 4,
+                payload: b"fixture".to_vec(),
+            }
+        }
+
+        #[test]
+        fn idle_listener_stops_promptly_and_stop_is_idempotent() {
+            let mut fixture = Fixture::new();
+            fixture.stopped();
+            fixture.server.stop();
+            assert!(!fixture.root.join("remote.sock").exists());
+        }
+
+        #[test]
+        fn partial_frames_and_bidirectional_delivery_survive_blocking_accept() {
+            let mut fixture = Fixture::new();
+            let mut client = fixture.connect();
+            assert_eq!(fixture.event(), vec![IpcEvent::Connected]);
+            let frame = frame();
+            let bytes = pack_for_transport(&frame);
+            client.write_all(&bytes[..3]).unwrap();
+            client.write_all(&bytes[3..]).unwrap();
+            assert_eq!(fixture.event(), vec![IpcEvent::Frame(frame.clone())]);
+            fixture.server.send(&frame);
+            let mut reply = vec![0; bytes.len()];
+            client.read_exact(&mut reply).unwrap();
+            assert_eq!(reply, bytes);
+            drop(client);
+            assert_eq!(fixture.event(), vec![IpcEvent::Disconnected]);
+            fixture.stopped();
+        }
+
+        #[test]
+        fn replacement_client_stays_connected_when_old_reader_exits() {
+            let mut fixture = Fixture::new();
+            let mut old = fixture.connect();
+            assert_eq!(fixture.event(), vec![IpcEvent::Connected]);
+            let mut current = fixture.connect();
+            assert_eq!(fixture.event(), vec![IpcEvent::Connected]);
+            assert_eq!(old.read(&mut [0]).unwrap(), 0);
+            drop(old);
+            let bytes = pack_for_transport(&frame());
+            fixture.server.send(&frame());
+            let mut reply = vec![0; bytes.len()];
+            current.read_exact(&mut reply).unwrap();
+            assert_eq!(reply, bytes);
+            fixture.stopped();
+            assert_eq!(current.read(&mut [0]).unwrap(), 0);
+        }
+
+        #[test]
+        fn stop_does_not_touch_a_replacement_socket_at_the_same_path() {
+            let mut fixture = Fixture::new();
+            let path = fixture.root.join("remote.sock");
+            std::fs::rename(&path, fixture.root.join("old.sock")).unwrap();
+            let replacement = UnixListener::bind(&path).unwrap();
+            fixture.stopped();
+            assert!(path.exists());
+            let _client = UnixStream::connect(&path).unwrap();
+            replacement.accept().unwrap();
         }
     }
 }
