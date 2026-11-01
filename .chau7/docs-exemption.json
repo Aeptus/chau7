@@ -1,6 +1,7 @@
 {
-  "reason": "This follow-up only applies Rust1.99 rustfmt whitespace to the HTTP runtime and documents the already-tested session cleanup guarantee. No runtime behavior changes; the behavioral change is already recorded in CHANGELOG.md.",
+  "reason": "Test-only fixture socket names are isolated from the reserved legacy app namespace. Production IPC behavior and DataRoot routing are unchanged; the feature changelog is already in the preceding commit.",
   "paths": [
-    "apps/chau7-next/crates/chau7_next_core/src/mcp/http/mod.rs"
+    "apps/chau7-next/crates/chau7_next/src/remote/ipc.rs",
+    "apps/chau7-next/crates/chau7_next_core/tests/remote_ipc.rs"
   ]
 }
