@@ -241,6 +241,7 @@ pub fn ingest_claude_event(
 
 pub fn record_output(session: u64, data: &[u8], cx: &mut App) {
     let Some(entity) = handle(cx) else { return };
+    let batching = output_batching_enabled();
     let full = entity.update(cx, |rc, _| {
         if rc.viewer.should_broadcast() {
             log::trace!(
@@ -250,13 +251,13 @@ pub fn record_output(session: u64, data: &[u8], cx: &mut App) {
             );
         }
         let full = rc.host.record_output(session, data);
-        if rc.host.has_pending_output() && rc.output_due.is_none() {
+        if batching && !full && rc.host.has_pending_output() && rc.output_due.is_none() {
             rc.output_due = Some(Instant::now() + OUTPUT_BATCH);
             rc.wake.notify();
         }
         full
     });
-    if full || (entity.read(cx).host.has_pending_output() && !output_batching_enabled()) {
+    if full || (entity.read(cx).host.has_pending_output() && !batching) {
         // The session is being updated: send once it is done.
         cx.defer(move |cx| {
             entity.update(cx, |rc, cx| rc.flush_output(cx));
@@ -855,6 +856,27 @@ mod startup_tests {
             let rc = entity.read(cx);
             assert_eq!(rc.ticks, before + 1);
             assert_eq!(rc.viewer.enabled, Settings::get(cx).remote.viewer_enabled);
+        });
+        // Reuse the protocol fixture's selected session without launching an agent.
+        // A threshold flush already has its own deferred UI action; it needs no
+        // batching deadline or second remote-loop callback.
+        cx.update(|cx| {
+            let entity = handle(cx).unwrap();
+            entity.update(cx, |rc, _| {
+                let mut env = host::tests::FakeEnv::new();
+                rc.host.on_connected(&mut env, &mut Vec::new());
+            });
+            record_output(100, &vec![b'x'; 40_000], cx);
+            let rc = entity.read(cx);
+            assert!(rc.host.has_pending_output());
+            assert!(rc.output_due.is_none());
+        });
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let entity = handle(cx).unwrap();
+            let rc = entity.read(cx);
+            assert_eq!(rc.ticks, before + 1);
+            assert!(!rc.host.has_pending_output());
         });
     }
 
