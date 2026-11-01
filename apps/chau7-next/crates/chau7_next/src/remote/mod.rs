@@ -822,6 +822,7 @@ fn start_is_current(
 #[cfg(test)]
 mod startup_tests {
     use super::*;
+    use gpui::BorrowAppContext;
     #[gpui::test]
     fn disabled_remote_parks_and_settings_changes_wake_it(cx: &mut gpui::TestAppContext) {
         let home = std::env::temp_dir().join(format!("chau7-remote-tick-{}", uuid::Uuid::new_v4()));
