@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add a shared authenticated loopback HTTP MCP endpoint for Codex and Claude Code, avoiding per-client bridge processes while preserving permission and subscription isolation. Other clients retain the stdio bridge.
+
 - Replace MCP bridge liveness polling with OS process and pipe events, removing periodic idle wakeups while preserving prompt client cleanup.
 
 - Keep nested Codex notify hooks from replacing a live tab’s conversation identity. Bind reported threads to the primary native CLI process from the existing process snapshot, preserving foreground session changes and resumable parent conversations.

@@ -118,6 +118,23 @@ folder below; set `CHAU7_NEXT_LOG_STDOUT=1` to also print them).
 | Per-tab shell history | `~/.chau7/history/` | the shell's own default |
 | AI run telemetry | `~/.chau7/telemetry/runs.db` | `~/.chau7-next/telemetry/runs.db` |
 
+On Unix hosts, Codex and Claude Code connect directly to one authenticated
+loopback Streamable HTTP MCP listener in the app. This avoids a bridge process
+per client while retaining each client's permission and subscription session.
+Cursor and Windsurf keep the stdio bridge. If HTTP startup fails, registration
+falls back to the bridge where it is installed. Existing clients must reconnect
+or restart to load the updated configuration; running bridges are not killed.
+
+The HTTP listener binds only `127.0.0.1`, validates Host and Origin, and requires a
+bearer token. Its stable port and token live in `mcp.http.json` beside the profile's
+`mcp.sock`, with owner-only permissions. Client configs containing the token are
+also made owner-only. Do not share either file. The endpoint implements MCP
+2025-11-25 and 2025-06-18, including JSON replies, SSE notifications and session
+DELETE. Sessions expire after 30 idle minutes; notification overflow closes the
+session so the client can reconnect. SSE event replay is not implemented.
+At most 32 sessions, 32 in-flight POSTs and 64 HTTP connections are admitted.
+There is no periodic HTTP connection poll or SSE heartbeat timer.
+
 Open Help > Debug Console or press ⌥⌘L. In Perf, **Copy Performance JSON**
 copies the current numeric snapshot, **Save Latest Snapshot** queues
 `latest.json`, and **Open Performance Folder** opens the default performance

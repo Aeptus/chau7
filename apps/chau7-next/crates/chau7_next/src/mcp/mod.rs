@@ -148,6 +148,15 @@ impl ReadError {
 /// The running server.
 struct McpServer {
     socket: PathBuf,
+    #[cfg(unix)]
+    http: std::sync::Arc<std::sync::Mutex<HttpRuntime>>,
+}
+
+#[cfg(unix)]
+#[derive(Default)]
+struct HttpRuntime {
+    stopped: bool,
+    server: Option<chau7_next_core::mcp::http::HttpServer>,
 }
 
 impl Global for McpServer {}
@@ -158,13 +167,6 @@ pub fn start(cx: &mut App) {
     let main = MainThread::start(cx);
     windows::start(cx);
     let socket = root.mcp_socket();
-    let install_root = root.clone();
-    let spawned = std::thread::Builder::new()
-        .name("chau7-next-mcp-install".into())
-        .spawn(move || install::install_and_register(&install_root));
-    if let Err(err) = spawned {
-        log::error!("MCPServer: install thread: {err}");
-    }
     server::spawn(
         socket.clone(),
         main,
@@ -173,12 +175,60 @@ pub fn start(cx: &mut App) {
         root.bin_dir()
             .join(chau7_next_core::mcp::BRIDGE_BINARY_NAME),
     );
-    cx.set_global(McpServer { socket });
+    #[cfg(unix)]
+    let http = std::sync::Arc::new(std::sync::Mutex::new(HttpRuntime::default()));
+    #[cfg(unix)]
+    let install_http = http.clone();
+    let install_root = root.clone();
+    let spawned = std::thread::Builder::new()
+        .name("chau7-next-mcp-install".into())
+        .spawn(move || {
+            #[cfg(unix)]
+            let entry = {
+                let server =
+                    chau7_next_core::mcp::http::HttpServer::start(&install_root.mcp_socket());
+                let mut runtime = install_http.lock().unwrap_or_else(|e| e.into_inner());
+                if runtime.stopped {
+                    return;
+                }
+                match server {
+                    Ok(server) => {
+                        let entry = server.entry().clone();
+                        log::info!("MCPServer: shared HTTP listener at {}", entry.url);
+                        runtime.server = Some(server);
+                        Some(entry)
+                    }
+                    Err(err) => {
+                        log::warn!("MCPServer: HTTP unavailable, using stdio: {err}");
+                        None
+                    }
+                }
+            };
+            #[cfg(not(unix))]
+            let entry = None;
+            install::install_and_register(&install_root, entry.as_ref());
+        });
+    if let Err(err) = spawned {
+        log::error!("MCPServer: install thread: {err}");
+    }
+    cx.set_global(McpServer {
+        socket,
+        #[cfg(unix)]
+        http,
+    });
 }
 
 /// Remove the socket file at quit (`_stop`).
 pub fn stop(cx: &App) {
     if let Some(server) = cx.try_global::<McpServer>() {
+        #[cfg(unix)]
+        {
+            let mut runtime = server.http.lock().unwrap_or_else(|e| e.into_inner());
+            runtime.stopped = true;
+            if let Some(http) = runtime.server.take() {
+                http.stop();
+            }
+        }
         crate::platform::local_socket::remove(&server.socket);
         log::info!("MCPServer: stopped");
     }
