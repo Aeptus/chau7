@@ -311,7 +311,7 @@ mod unix {
         fn idle_listener_wait_is_not_periodic() {
             let root =
                 PathBuf::from("/tmp").join(format!("c7-idle-{}", uuid::Uuid::new_v4().simple()));
-            let server = IpcServer::start(&root.join("remote.sock")).unwrap();
+            let server = IpcServer::start(&root.join("fixture.sock")).unwrap();
             let fixture = Fixture { root, server };
             let started = Instant::now();
             while fixture.server.shared.wait_entries.load(Ordering::Acquire) == 0 {
@@ -343,11 +343,11 @@ mod unix {
             fn new() -> Self {
                 let root =
                     PathBuf::from("/tmp").join(format!("c7-ipc-{}", uuid::Uuid::new_v4().simple()));
-                let server = IpcServer::start(&root.join("remote.sock")).unwrap();
+                let server = IpcServer::start(&root.join("fixture.sock")).unwrap();
                 Self { root, server }
             }
             fn connect(&self) -> UnixStream {
-                let stream = UnixStream::connect(self.root.join("remote.sock")).unwrap();
+                let stream = UnixStream::connect(self.root.join("fixture.sock")).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(1)))
                     .unwrap();
@@ -403,7 +403,7 @@ mod unix {
             let mut fixture = Fixture::new();
             fixture.stopped();
             fixture.server.stop();
-            assert!(!fixture.root.join("remote.sock").exists());
+            assert!(!fixture.root.join("fixture.sock").exists());
         }
 
         #[test]
@@ -446,7 +446,7 @@ mod unix {
         #[test]
         fn stop_does_not_touch_a_replacement_socket_at_the_same_path() {
             let mut fixture = Fixture::new();
-            let path = fixture.root.join("remote.sock");
+            let path = fixture.root.join("fixture.sock");
             std::fs::rename(&path, fixture.root.join("old.sock")).unwrap();
             let replacement = UnixListener::bind(&path).unwrap();
             fixture.stopped();
