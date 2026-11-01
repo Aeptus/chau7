@@ -118,7 +118,7 @@ fn temp_socket(name: &str) -> (PathBuf, PathBuf) {
 #[test]
 fn fake_agent_drives_the_host_over_the_socket() {
     let (dir, path) = temp_socket("e2e");
-    let mut server = IpcServer::start(&path).unwrap();
+    let mut server = IpcServer::start(&path, None).unwrap();
     let mut host = RemoteHost::new();
     let mut env = FakeEnv::new();
 
@@ -214,7 +214,7 @@ fn fake_agent_drives_the_host_over_the_socket() {
 fn real_go_agent_pairs_with_its_own_state() {
     let (dir, _) = temp_socket("go");
     let root = DataRoot::with_home(dir.join("h"), true);
-    let mut server = IpcServer::start(&root.remote_socket()).unwrap();
+    let mut server = IpcServer::start(&root.remote_socket(), None).unwrap();
     let binary = dir.join("chau7-remote");
     let source =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../services/chau7-remote");
@@ -255,8 +255,8 @@ fn real_go_agent_pairs_with_its_own_state() {
 #[test]
 fn a_second_server_neither_steals_nor_removes_a_live_socket() {
     let (dir, path) = temp_socket("steal");
-    let mut first = IpcServer::start(&path).unwrap();
-    let err = IpcServer::start(&path)
+    let mut first = IpcServer::start(&path, None).unwrap();
+    let err = IpcServer::start(&path, None)
         .err()
         .expect("live socket must be refused");
     assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse);
@@ -265,7 +265,7 @@ fn a_second_server_neither_steals_nor_removes_a_live_socket() {
 
     // A server stopping after its file was replaced leaves the new one alone.
     std::fs::remove_file(&path).unwrap();
-    let mut second = IpcServer::start(&path).unwrap();
+    let mut second = IpcServer::start(&path, None).unwrap();
     first.stop();
     assert!(path.exists());
     second.stop();
