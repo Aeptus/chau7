@@ -4,13 +4,13 @@
 //! On every launch the bridge built next to the app binary (inside the app
 //! bundle, or `target/<profile>/` for `cargo run`) is copied to
 //! `DataRoot::bin_dir` (mode 755), then registered as `chau7-next` with its
-//! socket in `args`. Without a bundled bridge nothing is installed or
-//! registered (Swift dev builds behave the same).
+//! socket in `args` for stdio-only clients. Codex and Claude Code use the
+//! shared authenticated HTTP listener when available, without launching a bridge.
 
 use std::path::{Path, PathBuf};
 
 use chau7_next_core::data_root::{DataRoot, MCP_SERVER_NAME};
-use chau7_next_core::mcp::client_config::{self, Outcome, ServerEntry};
+use chau7_next_core::mcp::client_config::{self, Client, HttpEntry, Outcome, ServerEntry};
 use chau7_next_core::mcp::{BRIDGE_BINARY_NAME, bridge_args};
 
 fn bridge_file_name() -> String {
@@ -45,35 +45,35 @@ fn install_file(source: &Path, dest: &Path) -> std::io::Result<()> {
     })
 }
 
-pub(super) fn install_and_register(root: &DataRoot) {
+pub(super) fn install_and_register(root: &DataRoot, http: Option<&HttpEntry>) {
     if !cfg!(unix) {
         // No Unix sockets: the bridge could not connect, so AI CLIs are
         // not pointed at it.
         log::info!("MCPServer: not registered (no Unix domain sockets on this OS)");
         return;
     }
-    let Some(source) = bundled_bridge() else {
-        log::info!("MCPServer: {BRIDGE_BINARY_NAME} not found next to the app (dev build?)");
-        return;
-    };
     let dest = root.bin_dir().join(bridge_file_name());
-    match install_file(&source, &dest) {
-        Ok(()) => log::info!(
-            "MCPServer: installed {BRIDGE_BINARY_NAME} to {}",
-            dest.display()
-        ),
-        Err(err) => {
+    if let Some(source) = bundled_bridge() {
+        if let Err(err) = install_file(&source, &dest) {
             log::error!("MCPServer: failed to install {BRIDGE_BINARY_NAME}: {err}");
-            if !dest.is_file() {
-                return;
-            }
         }
+    } else {
+        log::info!("MCPServer: {BRIDGE_BINARY_NAME} not found next to the app (dev build?)");
     }
     let entry = ServerEntry {
         command: dest.to_string_lossy().into_owned(),
         args: bridge_args(&root.mcp_socket()),
     };
-    for (client, outcome) in client_config::register_all(root.home(), MCP_SERVER_NAME, &entry) {
+    for client in Client::ALL {
+        let outcome = if let Some(http) =
+            http.filter(|_| matches!(client, Client::Codex | Client::ClaudeCode))
+        {
+            client_config::register_http(client, root.home(), MCP_SERVER_NAME, http)
+        } else if dest.is_file() {
+            client_config::register(client, root.home(), MCP_SERVER_NAME, &entry)
+        } else {
+            continue;
+        };
         let path = client.config_path(root.home());
         match outcome {
             Outcome::Written => log::info!(
@@ -84,7 +84,7 @@ pub(super) fn install_and_register(root: &DataRoot) {
             Outcome::Unchanged => log::debug!("MCPServer: {} config up to date", client.name()),
             Outcome::NotInstalled => {}
             Outcome::SkippedInvalid => log::warn!(
-                "MCPServer: skipping {} - file exists but is not valid JSON",
+                "MCPServer: skipping {} - file exists but is not a valid config",
                 path.display()
             ),
             Outcome::Failed(err) => log::error!(
