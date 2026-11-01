@@ -241,6 +241,7 @@ struct Mailbox {
 struct Shared {
     state: Mutex<Mailbox>,
     ready: Condvar,
+    notify: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 /// Lazy, event-driven worker. There is one pending request and one latest result.
 /// Dropping/stopping signals cancellation without joining disk/parser work on UI.
@@ -254,6 +255,7 @@ impl Default for GridSnapshotWorker {
             shared: Arc::new(Shared {
                 state: Mutex::new(Mailbox::default()),
                 ready: Condvar::new(),
+                notify: None,
             }),
             started: false,
         }
@@ -269,6 +271,12 @@ impl Drop for GridSnapshotWorker {
     }
 }
 impl GridSnapshotWorker {
+    pub fn set_completion_notifier(&mut self, notify: Arc<dyn Fn() + Send + Sync>) {
+        // Installed before the lazy worker can be started.
+        Arc::get_mut(&mut self.shared)
+            .expect("grid notifier precedes requests")
+            .notify = Some(notify);
+    }
     pub fn request(
         &mut self,
         scope: GridCaptureScope,
@@ -423,6 +431,10 @@ fn run_worker(shared: Arc<Shared>) {
         state.retained_bytes = cache.retained_bytes();
         if !state.stopped && state.version == job_version {
             state.result = Some(latest_result(state.result.take(), result));
+            drop(state);
+            if let Some(notify) = &shared.notify {
+                notify();
+            }
         } else {
             state.discarded += 1;
         }
@@ -551,6 +563,30 @@ mod tests {
             .payload
             .is_none()
         );
+    }
+    #[test]
+    fn completed_grid_notifies_the_parked_ui() {
+        let term = Arc::new(RwLock::new(Chau7Terminal::new_headless(20, 3).unwrap()));
+        term.read().inject_output(b"notified-grid");
+        let mut worker = GridSnapshotWorker::default();
+        let (send, ready) = std::sync::mpsc::sync_channel(1);
+        worker.set_completion_notifier(Arc::new(move || {
+            let _ = send.try_send(());
+        }));
+        assert!(ready.try_recv().is_err());
+        assert!(worker.request(
+            GridCaptureScope {
+                epoch: 1,
+                tab: 2,
+                session: 3
+            },
+            term,
+            true
+        ));
+        ready
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .unwrap();
+        assert!(worker.take_result().unwrap().payload.is_some());
     }
     #[test]
     fn worker_is_lazy_cancels_inflight_and_coalesces_only_one_pending_request() {

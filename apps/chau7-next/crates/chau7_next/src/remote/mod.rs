@@ -20,9 +20,12 @@ pub mod agent;
 mod env;
 pub mod host;
 pub mod ipc;
+mod scheduling;
 pub mod snapshot;
 pub mod viewer_ui;
 
+use self::scheduling::{OUTPUT_BATCH, REFRESH_EVERY, Wake};
+use futures::{FutureExt, StreamExt};
 use std::time::{Duration, Instant};
 
 use chau7_next_core::app_shell::URL_SCHEME;
@@ -42,13 +45,6 @@ use self::host::{FrameSink, RemoteHost, ViewerInbound};
 use self::ipc::{IpcEvent, IpcServer};
 use crate::settings::{RemoteSettings, Settings};
 use crate::workspace::AppData;
-
-/// Timer while remote control is on: output batches go out at this pace.
-const TICK_ON: Duration = Duration::from_millis(33);
-/// Timer while it is off (only watches the setting).
-const TICK_OFF: Duration = Duration::from_millis(500);
-/// Tabs, activity and prompts are refreshed this often (Swift: 150 ms debounce).
-const REFRESH_EVERY: Duration = Duration::from_millis(150);
 
 /// Answers MCP command approvals from the phone (`TerminalControlService
 /// .resolveApproval`). Set by the MCP module.
@@ -119,9 +115,13 @@ pub struct RemoteControl {
     devices: Vec<AgentPairedDevice>,
     viewer: RemoteViewerMode,
     last_refresh: Instant,
+    output_due: Option<Instant>,
+    wake: Wake,
     approval_resolver: Option<ApprovalResolver>,
     telemetry_sink: Option<TelemetrySink>,
     last_status: Option<RemoteStatus>,
+    #[cfg(test)]
+    ticks: usize,
 }
 
 struct RemoteHandle(Entity<RemoteControl>);
@@ -134,10 +134,13 @@ fn handle(cx: &App) -> Option<Entity<RemoteControl>> {
 /// Start remote control (the agent runs only while the setting is on).
 pub fn init(cx: &mut App) {
     let root = cx.global::<AppData>().root.clone();
+    let (wake, mut events) = Wake::channel();
+    let mut grid_worker = snapshot::GridSnapshotWorker::default();
+    grid_worker.set_completion_notifier(wake.callback());
     let entity = cx.new(|_| RemoteControl {
         root,
         host: RemoteHost::new(),
-        grid_worker: snapshot::GridSnapshotWorker::default(),
+        grid_worker,
         grid_epoch: 0,
         grid_context: None,
         ipc: None,
@@ -152,18 +155,38 @@ pub fn init(cx: &mut App) {
         devices: Vec::new(),
         viewer: RemoteViewerMode::default(),
         last_refresh: Instant::now(),
+        output_due: None,
+        wake,
         approval_resolver: None,
         telemetry_sink: None,
         last_status: None,
+        #[cfg(test)]
+        ticks: 0,
     });
     cx.set_global(RemoteHandle(entity.clone()));
+    entity
+        .update(cx, |_, cx| {
+            cx.observe_global::<Settings>(|rc, _| rc.wake.notify())
+        })
+        .detach();
     let weak = entity.downgrade();
     cx.spawn(async move |cx| {
         loop {
             let Ok(delay) = weak.update(cx, |rc, cx| rc.tick(cx)) else {
                 break;
             };
-            cx.background_executor().timer(delay).await;
+            if let Some(delay) = delay {
+                let timer = cx.background_executor().timer(delay).fuse();
+                let event = events.next().fuse();
+                futures::pin_mut!(timer, event);
+                futures::select_biased! {
+                    event = event => if event.is_none() { break; },
+                    _ = timer => {},
+                }
+            } else if events.next().await.is_none() {
+                break;
+            }
+            while events.try_recv().is_ok() {}
         }
     })
     .detach();
@@ -218,6 +241,7 @@ pub fn ingest_claude_event(
 
 pub fn record_output(session: u64, data: &[u8], cx: &mut App) {
     let Some(entity) = handle(cx) else { return };
+    let batching = output_batching_enabled();
     let full = entity.update(cx, |rc, _| {
         if rc.viewer.should_broadcast() {
             log::trace!(
@@ -226,9 +250,14 @@ pub fn record_output(session: u64, data: &[u8], cx: &mut App) {
                 rc.viewer.connected.len()
             );
         }
-        rc.host.record_output(session, data)
+        let full = rc.host.record_output(session, data);
+        if batching && !full && rc.host.has_pending_output() && rc.output_due.is_none() {
+            rc.output_due = Some(Instant::now() + OUTPUT_BATCH);
+            rc.wake.notify();
+        }
+        full
     });
-    if full || (entity.read(cx).host.has_pending_output() && !output_batching_enabled()) {
+    if full || (entity.read(cx).host.has_pending_output() && !batching) {
         // The session is being updated: send once it is done.
         cx.defer(move |cx| {
             entity.update(cx, |rc, cx| rc.flush_output(cx));
@@ -428,7 +457,11 @@ impl RemoteControl {
         result
     }
 
-    fn tick(&mut self, cx: &mut Context<Self>) -> Duration {
+    fn tick(&mut self, cx: &mut Context<Self>) -> Option<Duration> {
+        #[cfg(test)]
+        {
+            self.ticks += 1;
+        }
         let mut wake =
             chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::wakeup(
                 "remote_timer",
@@ -488,7 +521,9 @@ impl RemoteControl {
                 }
             });
         }
-        if self.host.has_pending_output() {
+        if !self.host.has_pending_output() {
+            self.output_due = None;
+        } else if self.output_due.is_none_or(|due| Instant::now() >= due) {
             self.flush_output(cx);
         }
         if self.host.ipc_connected && self.last_refresh.elapsed() >= REFRESH_EVERY {
@@ -508,7 +543,13 @@ impl RemoteControl {
             self.last_status = Some(status);
             cx.refresh_windows();
         }
-        if settings.enabled { TICK_ON } else { TICK_OFF }
+        scheduling::next_delay(
+            Instant::now(),
+            settings.enabled,
+            self.host.ipc_connected,
+            self.last_refresh,
+            self.output_due,
+        )
     }
 
     fn send_viewer_frames(&mut self, frames: Vec<viewer_protocol::ViewerFrame>) {
@@ -517,6 +558,7 @@ impl RemoteControl {
     }
 
     fn flush_output(&mut self, cx: &mut Context<Self>) {
+        self.output_due = None;
         self.with_host(cx, |host, env, sink| host.flush_output(env, sink));
     }
 
@@ -589,7 +631,7 @@ impl RemoteControl {
                     // Binding a Unix socket is small. Expensive binary sync, identity
                     // preparation and process startup are delegated to workers.
                     if rc.ipc.is_none() {
-                        match IpcServer::start(&rc.root.remote_socket()) {
+                        match IpcServer::start(&rc.root.remote_socket(), Some(rc.wake.callback())) {
                             Ok(server) => rc.ipc = Some(server),
                             Err(error) => {
                                 rc.start_pending = false;
@@ -616,6 +658,7 @@ impl RemoteControl {
                     return;
                 }
                 rc.start_pending = false;
+                rc.wake.notify();
                 match result {
                     Ok(process) => {
                         rc.agent = Some(process);
@@ -780,6 +823,63 @@ fn start_is_current(
 #[cfg(test)]
 mod startup_tests {
     use super::*;
+    use gpui::BorrowAppContext;
+    #[gpui::test]
+    fn disabled_remote_parks_and_settings_changes_wake_it(cx: &mut gpui::TestAppContext) {
+        let home = std::env::temp_dir().join(format!("chau7-remote-tick-{}", uuid::Uuid::new_v4()));
+        cx.on_quit({
+            let home = home.clone();
+            move || {
+                let _ = std::fs::remove_dir_all(home);
+            }
+        });
+        cx.update(|cx| {
+            let mut settings = Settings::default();
+            settings.remote.enabled = false;
+            cx.set_global(settings);
+            cx.set_global(AppData::new(DataRoot::with_home(home, true)));
+            init(cx);
+        });
+        cx.run_until_parked();
+        let before = cx.update(|cx| handle(cx).unwrap().read(cx).ticks);
+        cx.executor().advance_clock(Duration::from_secs(5));
+        cx.run_until_parked();
+        cx.update(|cx| assert_eq!(handle(cx).unwrap().read(cx).ticks, before));
+        cx.update(|cx| {
+            cx.update_global::<Settings, _>(|settings, _| {
+                settings.remote.viewer_enabled = !settings.remote.viewer_enabled;
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let entity = handle(cx).unwrap();
+            let rc = entity.read(cx);
+            assert_eq!(rc.ticks, before + 1);
+            assert_eq!(rc.viewer.enabled, Settings::get(cx).remote.viewer_enabled);
+        });
+        // Reuse the protocol fixture's selected session without launching an agent.
+        // A threshold flush already has its own deferred UI action; it needs no
+        // batching deadline or second remote-loop callback.
+        cx.update(|cx| {
+            let entity = handle(cx).unwrap();
+            entity.update(cx, |rc, _| {
+                let mut env = host::tests::FakeEnv::new();
+                rc.host.on_connected(&mut env, &mut Vec::new());
+            });
+            record_output(100, &vec![b'x'; 40_000], cx);
+            let rc = entity.read(cx);
+            assert!(rc.host.has_pending_output());
+            assert!(rc.output_due.is_none());
+        });
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let entity = handle(cx).unwrap();
+            let rc = entity.read(cx);
+            assert_eq!(rc.ticks, before + 1);
+            assert!(!rc.host.has_pending_output());
+        });
+    }
+
     #[test]
     fn grid_epoch_changes_on_connection_mode_tab_and_pane_session_transitions() {
         let initial = GridContext {
