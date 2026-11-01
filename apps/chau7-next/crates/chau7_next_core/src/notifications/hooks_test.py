@@ -236,6 +236,14 @@ class Hooks(unittest.TestCase):
         )
         self.assertEqual(self.events()[0]["type"], "permission_request")
 
+    def test_codex_report_identifies_the_actual_invoking_process(self):
+        result = self.run_py(
+            self.codex,
+            json.dumps({"type": "agent-turn-complete", "thread-id": "thread"}),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.events()[-1]["providerProcessID"], os.getpid())
+
     def test_codex_current_payload_types_aliases_raw_evidence(self):
         for kind, subtype in [
             ("agent-turn-complete", None),

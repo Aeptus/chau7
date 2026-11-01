@@ -302,6 +302,8 @@ pub struct TerminalSession {
     pub ai_app: Option<String>,
     /// Live destination of an OpenSSH process below this tab's shell.
     ssh_host: Option<String>,
+    /// Primary native AI process from the existing off-thread process snapshot.
+    live_agent_pid: Option<u32>,
     /// Id the token optimizer knows this shell by (`CHAU7_CTO_SESSION`, the
     /// flag file name).
     cto_id: String,
@@ -875,6 +877,7 @@ impl TerminalSession {
             git_branch,
             ai_app: None,
             ssh_host: None,
+            live_agent_pid: None,
             cto_id: uuid::Uuid::new_v4().to_string().to_uppercase(),
             exited: None,
             last_activity: now,
@@ -2744,6 +2747,7 @@ impl TerminalSession {
     pub(crate) fn apply_live_process_snapshot(
         &mut self,
         provider: Option<&str>,
+        provider_pid: Option<u32>,
         ssh_host: Option<&str>,
         cx: &mut Context<Self>,
     ) {
@@ -2755,6 +2759,7 @@ impl TerminalSession {
         if ssh_changed {
             self.ssh_host = ssh_host.map(str::to_owned);
         }
+        self.live_agent_pid = provider_pid;
         let provider_changed = self.tracker.update_live_agent(provider);
         if provider_changed {
             self.memory.set_tui(self.is_ai_running());
@@ -3365,10 +3370,13 @@ pub(crate) fn adopt_tab_reported_identity(event: &AiEvent, cx: &mut gpui::App) {
         return;
     };
     owner.update(cx, |session, cx| {
-        if session
-            .tracker
-            .adopt_tab_reported_ai_identity(&provider, session_id, observed_at)
-        {
+        if session.tracker.adopt_tab_reported_ai_identity_from_process(
+            &provider,
+            session_id,
+            observed_at,
+            event.provider_process_id,
+            session.live_agent_pid,
+        ) {
             cx.emit(SessionEvent::MetadataChanged);
             cx.notify();
         }

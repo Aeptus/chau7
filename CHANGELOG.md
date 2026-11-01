@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep nested Codex notify hooks from replacing a live tab’s conversation identity. Bind reported threads to the primary native CLI process from the existing process snapshot, preserving foreground session changes and resumable parent conversations.
+
 - Process proxy streaming usage and token-rate events incrementally, avoiding a full response copy and repeated SSE line copies while preserving forwarding and accounting.
 
 - Park transcript token-rate monitoring when no AI run exists, and wake it on run admission, identity changes and exit while retaining active CLI polling and historical readings.

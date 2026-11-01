@@ -730,9 +730,43 @@ impl ShellSession {
         session_id: &str,
         observed_at: f64,
     ) -> bool {
+        self.adopt_tab_reported_ai_identity_from_process(
+            provider,
+            session_id,
+            observed_at,
+            None,
+            None,
+        )
+    }
+
+    /// New Codex hooks identify their reporting process. A tab environment can
+    /// be inherited by a nested CLI, so only the primary process may change the
+    /// foreground thread. Legacy hooks may fill an unbound ID, never replace
+    /// an already live conversation. Explicit shell launches still clear it.
+    pub fn adopt_tab_reported_ai_identity_from_process(
+        &mut self,
+        provider: &str,
+        session_id: &str,
+        observed_at: f64,
+        reporter_pid: Option<u32>,
+        primary_pid: Option<u32>,
+    ) -> bool {
         let Some(provider) = resume::normalize_provider_name(provider) else {
             return false;
         };
+        if provider == "codex" {
+            match reporter_pid {
+                Some(pid) if pid == 0 || primary_pid != Some(pid) => return false,
+                None if self.is_ai_running()
+                    && self
+                        .ai_session_id()
+                        .is_some_and(|old| old != session_id.trim()) =>
+                {
+                    return false;
+                }
+                _ => {}
+            }
+        }
         let session_id = session_id.trim();
         if self.status == CommandStatus::Exited
             || !resume::is_valid_session_id(session_id)
@@ -1422,6 +1456,73 @@ mod tests {
         assert_eq!(s.ai_session_id(), Some("codex-thread"));
         assert!(s.adopt_tab_reported_ai_identity("opencode", "opencode-session", 13.0));
         assert_eq!(s.effective_provider().as_deref(), Some("opencode"));
+    }
+
+    #[test]
+    fn tab_reported_codex_hook_cannot_replace_a_live_parent_thread() {
+        let mut s = session();
+        s.track_resume_metadata("codex resume parent-thread");
+        s.update_live_agent(Some("Codex"));
+        assert!(s.is_ai_running());
+        // A nested CLI can inherit this tab's environment. Its authoritative
+        // hook is not proof that the foreground conversation changed.
+        assert!(!s.adopt_tab_reported_ai_identity("codex", "child-thread", 10.0));
+        assert_eq!(s.ai_session_id(), Some("parent-thread"));
+    }
+
+    #[test]
+    fn primary_codex_can_change_threads_but_nested_and_unknown_processes_cannot() {
+        let mut s = session();
+        s.track_resume_metadata("codex resume parent-thread");
+        s.update_live_agent(Some("Codex"));
+        assert!(!s.adopt_tab_reported_ai_identity_from_process(
+            "codex",
+            "child-thread",
+            10.0,
+            Some(42),
+            Some(7),
+        ));
+        assert!(!s.adopt_tab_reported_ai_identity_from_process(
+            "codex",
+            "child-thread",
+            10.0,
+            Some(42),
+            None,
+        ));
+        assert_eq!(s.ai_session_id(), Some("parent-thread"));
+        // /new inside the same foreground TUI is a legitimate identity change.
+        assert!(s.adopt_tab_reported_ai_identity_from_process(
+            "codex",
+            "new-thread",
+            11.0,
+            Some(7),
+            Some(7),
+        ));
+        assert_eq!(s.ai_session_id(), Some("new-thread"));
+        // A fresh shell launch may bind a legacy hook after clearing its ID.
+        s.track_resume_metadata("codex");
+        assert_eq!(s.ai_session_id(), None);
+        assert!(s.adopt_tab_reported_ai_identity("codex", "fresh-thread", 12.0));
+    }
+
+    #[test]
+    fn nested_codex_cannot_bind_an_unidentified_parent() {
+        let mut s = session();
+        s.update_live_agent(Some("Codex"));
+        assert!(!s.adopt_tab_reported_ai_identity_from_process(
+            "codex",
+            "child-thread",
+            10.0,
+            Some(42),
+            Some(7),
+        ));
+        assert!(s.adopt_tab_reported_ai_identity_from_process(
+            "codex",
+            "parent-thread",
+            10.0,
+            Some(7),
+            Some(7),
+        ));
     }
 
     #[test]
