@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::os::fd::{AsRawFd, RawFd};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -32,11 +33,14 @@ pub(super) struct Session {
     stream_epoch: AtomicU64,
     closed_notify: Notify,
     stream_changed: Notify,
-    _capacity: OwnedSemaphorePermit,
+    capacity: Mutex<Option<OwnedSemaphorePermit>>,
+    socket_fd: RawFd,
+    stream_connection: Mutex<Option<Arc<ConnectionCancel>>>,
 }
 
 impl Session {
     pub fn new(stream: UnixStream, protocol: String, capacity: OwnedSemaphorePermit) -> Arc<Self> {
+        let socket_fd = stream.as_raw_fd();
         let (reader, writer) = stream.into_split();
         let (notifications, receiver) = mpsc::channel(MAX_NOTIFICATIONS);
         let session = Arc::new(Self {
@@ -52,7 +56,9 @@ impl Session {
             stream_epoch: AtomicU64::new(0),
             closed_notify: Notify::new(),
             stream_changed: Notify::new(),
-            _capacity: capacity,
+            capacity: Mutex::new(Some(capacity)),
+            socket_fd,
+            stream_connection: Mutex::new(None),
         });
         let active = session.clone();
         tokio::spawn(async move {
@@ -107,7 +113,24 @@ impl Session {
     }
 
     pub fn close(&self) {
-        self.closed.store(true, Ordering::Release);
+        if self.closed.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        // SAFETY: writer owns this socket for the entire lifetime of self.
+        // shutdown interrupts pending IO without closing or reusing its descriptor.
+        unsafe { libc::shutdown(self.socket_fd, libc::SHUT_RDWR) };
+        self.capacity
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        if let Some(connection) = self
+            .stream_connection
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            connection.cancel();
+        }
         self.closed_notify.notify_waiters();
         self.stream_changed.notify_waiters();
         let pending = std::mem::take(&mut *self.pending.lock().unwrap_or_else(|e| e.into_inner()));
@@ -182,7 +205,17 @@ impl Session {
         }
     }
 
-    pub fn open_stream(&self) -> u64 {
+    pub fn open_stream(&self, connection: Arc<ConnectionCancel>) -> u64 {
+        let mut active = self
+            .stream_connection
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(previous) = active.replace(connection.clone()) {
+            previous.cancel();
+        }
+        if self.closed.load(Ordering::Acquire) {
+            connection.cancel();
+        }
         let epoch = self.stream_epoch.fetch_add(1, Ordering::AcqRel) + 1;
         self.stream_changed.notify_waiters();
         epoch
@@ -234,6 +267,31 @@ impl Session {
                 self.close();
                 return;
             }
+        }
+    }
+}
+
+/// Cancels the connection itself, even when Hyper is blocked writing an SSE
+/// frame and cannot poll the response body to observe a session change.
+#[derive(Default)]
+pub(super) struct ConnectionCancel {
+    cancelled: AtomicBool,
+    changed: Notify,
+}
+
+impl ConnectionCancel {
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        self.changed.notify_waiters();
+    }
+
+    pub async fn wait(&self) {
+        loop {
+            let changed = self.changed.notified();
+            if self.cancelled.load(Ordering::Acquire) {
+                return;
+            }
+            changed.await;
         }
     }
 }

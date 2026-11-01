@@ -386,11 +386,16 @@ fn subscription_queue_overflow_closes_session_and_stream_handoff_keeps_messages(
                 PROTOCOLS[0].into(),
                 capacity.clone().acquire_owned().await.unwrap(),
             );
-            let first = session.open_stream();
+            let first_connection = Arc::new(ConnectionCancel::default());
+            let first = session.open_stream(first_connection.clone());
             let old = session.clone();
             let old_stream = tokio::spawn(async move { old.next_notification(first).await });
             tokio::task::yield_now().await;
-            let second = session.open_stream();
+            let second_connection = Arc::new(ConnectionCancel::default());
+            let second = session.open_stream(second_connection.clone());
+            tokio::time::timeout(Duration::from_secs(1), first_connection.wait())
+                .await
+                .unwrap();
             tokio::io::AsyncWriteExt::write_all(
                 &mut backend,
                 b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/fixture\"}\n",
@@ -423,8 +428,47 @@ fn subscription_queue_overflow_closes_session_and_stream_handoff_keeps_messages(
                 .await
                 .unwrap();
             assert!(session.closed.load(Ordering::Acquire));
+            tokio::time::timeout(Duration::from_secs(1), second_connection.wait())
+                .await
+                .unwrap();
             drop(session);
             tokio::task::yield_now().await;
             assert_eq!(capacity.available_permits(), 1);
+        });
+}
+
+#[test]
+fn closing_retained_session_releases_backend_and_capacity() {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let (client, mut backend) = tokio::net::UnixStream::pair().unwrap();
+            let capacity = Arc::new(Semaphore::new(1));
+            let session = Session::new(
+                client,
+                PROTOCOLS[0].into(),
+                capacity.clone().acquire_owned().await.unwrap(),
+            );
+            session.close();
+            session.close(); // Idempotent while response bodies still retain the session.
+            let late_connection = Arc::new(ConnectionCancel::default());
+            session.open_stream(late_connection.clone());
+            tokio::time::timeout(Duration::from_secs(1), late_connection.wait())
+                .await
+                .unwrap();
+            let mut byte = [0];
+            let read = tokio::time::timeout(
+                Duration::from_secs(1),
+                tokio::io::AsyncReadExt::read(&mut backend, &mut byte),
+            )
+            .await;
+            assert!(
+                matches!(read, Ok(Ok(0))),
+                "retained closed session keeps backend open: {read:?}"
+            );
+            assert_eq!(capacity.available_permits(), 1);
+            assert!(session.closed.load(Ordering::Acquire));
         });
 }

@@ -30,7 +30,7 @@ use tokio::sync::{Semaphore, oneshot};
 
 use super::client_config::HttpEntry;
 use endpoint_state::Credentials;
-use session::Session;
+use session::{ConnectionCancel, Session};
 
 type Body = UnsyncBoxBody<Bytes, Infallible>;
 const MAX_BODY: usize = 2 * 1024 * 1024;
@@ -74,51 +74,59 @@ impl HttpServer {
             .enable_all()
             .build()?;
         let (stop, stopped) = oneshot::channel();
-        let thread = std::thread::Builder::new()
-            .name("chau7-mcp-http".into())
-            .spawn(move || {
-                runtime.block_on(async move {
-                    let Ok(listener) = tokio::net::TcpListener::from_std(listener) else {
-                        return;
-                    };
-                    let connections = Arc::new(Semaphore::new(64));
-                    tokio::pin!(stopped);
-                    loop {
-                        let accepted = tokio::select! {
-                            _ = &mut stopped => break,
-                            accepted = listener.accept() => accepted,
+        let thread =
+            std::thread::Builder::new()
+                .name("chau7-mcp-http".into())
+                .spawn(move || {
+                    runtime.block_on(async move {
+                        let Ok(listener) = tokio::net::TcpListener::from_std(listener) else {
+                            return;
                         };
-                        let Ok((stream, _)) = accepted else { break };
-                        let Ok(permit) = connections.clone().try_acquire_owned() else {
-                            continue;
-                        };
-                        let state = state.clone();
-                        tokio::spawn(async move {
-                            let _permit = permit;
-                            let service = service_fn(move |request| {
-                                let state = state.clone();
-                                async move { Ok::<_, Infallible>(state.handle(request).await) }
+                        let connections = Arc::new(Semaphore::new(64));
+                        tokio::pin!(stopped);
+                        loop {
+                            let accepted = tokio::select! {
+                                _ = &mut stopped => break,
+                                accepted = listener.accept() => accepted,
+                            };
+                            let Ok((stream, _)) = accepted else { break };
+                            let Ok(permit) = connections.clone().try_acquire_owned() else {
+                                continue;
+                            };
+                            let state = state.clone();
+                            tokio::spawn(async move {
+                                let _permit = permit;
+                                let connection = Arc::new(ConnectionCancel::default());
+                                let active = connection.clone();
+                                let service = service_fn(move |request| {
+                                    let state = state.clone();
+                                    let active = active.clone();
+                                    async move {
+                                        Ok::<_, Infallible>(state.handle(request, active).await)
+                                    }
+                                });
+                                let mut http = http1::Builder::new();
+                                http.timer(TokioTimer::new())
+                                    .header_read_timeout(Duration::from_secs(10))
+                                    .max_headers(64)
+                                    .max_buf_size(32 * 1024);
+                                tokio::select! {
+                                    _ = connection.wait() => {},
+                                    _ = http.serve_connection(TokioIo::new(stream), service) => {},
+                                }
                             });
-                            let _ = http1::Builder::new()
-                                .timer(TokioTimer::new())
-                                .header_read_timeout(Duration::from_secs(10))
-                                .max_headers(64)
-                                .max_buf_size(32 * 1024)
-                                .serve_connection(TokioIo::new(stream), service)
-                                .await;
-                        });
-                    }
-                    for session in state
-                        .sessions
-                        .lock()
-                        .await
-                        .drain()
-                        .map(|(_, session)| session)
-                    {
-                        session.close();
-                    }
-                });
-            })?;
+                        }
+                        for session in state
+                            .sessions
+                            .lock()
+                            .await
+                            .drain()
+                            .map(|(_, session)| session)
+                        {
+                            session.close();
+                        }
+                    });
+                })?;
         Ok(Self {
             entry,
             stop: Mutex::new(Some(stop)),
@@ -157,7 +165,11 @@ struct State {
 }
 
 impl State {
-    async fn handle(self: Arc<Self>, request: Request<Incoming>) -> Response<Body> {
+    async fn handle(
+        self: Arc<Self>,
+        request: Request<Incoming>,
+        connection: Arc<ConnectionCancel>,
+    ) -> Response<Body> {
         if request.uri().path() != "/mcp" || request.uri().query().is_some() {
             return status(StatusCode::NOT_FOUND);
         }
@@ -222,7 +234,7 @@ impl State {
                     return status(StatusCode::NOT_ACCEPTABLE);
                 }
                 session.touch();
-                let epoch = session.open_stream();
+                let epoch = session.open_stream(connection);
                 let body = StreamBody::new(stream::unfold(
                     (session, epoch),
                     |(session, epoch)| async move {
