@@ -74,11 +74,10 @@ impl HttpServer {
             .enable_all()
             .build()?;
         let (stop, stopped) = oneshot::channel();
-        let thread =
-            std::thread::Builder::new()
-                .name("chau7-mcp-http".into())
-                .spawn(move || {
-                    runtime.block_on(async move {
+        let thread = std::thread::Builder::new()
+            .name("chau7-mcp-http".into())
+            .spawn(move || {
+                runtime.block_on(async move {
                         let Ok(listener) = tokio::net::TcpListener::from_std(listener) else {
                             return;
                         };
@@ -126,7 +125,7 @@ impl HttpServer {
                             session.close();
                         }
                     });
-                })?;
+            })?;
         Ok(Self {
             entry,
             stop: Mutex::new(Some(stop)),

@@ -1,16 +1,6 @@
 {
-  "reason": "Removes iOS app code with no callers in the app, widget or tests (two unused files and unread symbols). No user-visible behaviour changes, so there is nothing to add to the changelog.",
+  "reason": "This follow-up only applies Rust1.99 rustfmt whitespace to the HTTP runtime and documents the already-tested session cleanup guarantee. No runtime behavior changes; the behavioral change is already recorded in CHANGELOG.md.",
   "paths": [
-    "apps/chau7-ios/Chau7RemoteApp/BackgroundKeepalive.swift",
-    "apps/chau7-ios/Chau7RemoteApp/Chau7RemoteApp.xcodeproj/project.pbxproj",
-    "apps/chau7-ios/Chau7RemoteApp/DiagnosticsLog.swift",
-    "apps/chau7-ios/Chau7RemoteApp/RemoteActivityCard.swift",
-    "apps/chau7-ios/Chau7RemoteApp/RemoteConnectionStatus.swift",
-    "apps/chau7-ios/Chau7RemoteApp/RemoteCrypto.swift",
-    "apps/chau7-ios/Chau7RemoteApp/RemoteModels.swift",
-    "apps/chau7-ios/Chau7RemoteApp/RemoteSessionController.swift",
-    "apps/chau7-ios/Chau7RemoteApp/RemoteTerminalCellMetrics.swift",
-    "apps/chau7-ios/Chau7RemoteApp/RemoteTerminalRendererView.swift",
-    "apps/chau7-ios/Chau7RemoteApp/TerminalView.swift"
+    "apps/chau7-next/crates/chau7_next_core/src/mcp/http/mod.rs"
   ]
 }

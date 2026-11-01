@@ -133,7 +133,9 @@ also made owner-only. Do not share either file. The endpoint implements MCP
 DELETE. Sessions expire after 30 idle minutes; notification overflow closes the
 session so the client can reconnect. SSE event replay is not implemented.
 At most 32 sessions, 32 in-flight POSTs and 64 HTTP connections are admitted.
-There is no periodic HTTP connection poll or SSE heartbeat timer.
+Closing a session immediately releases its backend socket and admission slot.
+Closing or replacing an SSE stream cancels its connection even if the client
+stops reading. There is no periodic HTTP connection poll or SSE heartbeat timer.
 
 Open Help > Debug Console or press ⌥⌘L. In Perf, **Copy Performance JSON**
 copies the current numeric snapshot, **Save Latest Snapshot** queues
