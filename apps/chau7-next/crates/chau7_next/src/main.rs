@@ -626,6 +626,23 @@ pub(crate) fn save_after_terminal_window_close(cx: &mut App) {
 }
 
 fn capture_session(cx: &mut App, terminating: bool, clear_empty: bool) -> bool {
+    // Include all UI-side window/pane capture, normalization, metadata and
+    // queue admission. The background writer and buffer-export spans exclude
+    // this work and cannot explain an autosave stall on their own.
+    let mut capture =
+        chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+            "capture_session",
+            if terminating {
+                "termination"
+            } else if clear_empty {
+                "close"
+            } else {
+                "autosave"
+            },
+            "application",
+            "session_restore",
+            chau7_next_core::work_profiler::Queue::Main,
+        ));
     let known_workspaces = cx
         .global::<AppData>()
         .workspaces
@@ -633,6 +650,7 @@ fn capture_session(cx: &mut App, terminating: bool, clear_empty: bool) -> bool {
         .filter(|(_, workspace)| workspace.upgrade().is_some())
         .count();
     let workspaces = AppData::live(cx);
+    capture.items(workspaces.len());
     if workspaces.len() != known_workspaces {
         log::warn!("Cannot capture every session window; keeping the prior restore snapshot");
         return false;
@@ -748,6 +766,31 @@ pub(crate) const DEFAULT_CONFIG: &str = r#"# Chau7 Next settings. Same format as
 
 #[cfg(test)]
 mod startup_order_tests {
+    #[gpui::test]
+    fn entire_ui_session_capture_has_its_own_main_thread_timing(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let root = chau7_next_core::data_root::DataRoot::with_home(
+                std::env::temp_dir().join(format!("capture-timing-{}", uuid::Uuid::new_v4())),
+                true,
+            );
+            cx.set_global(crate::workspace::AppData::new(root));
+            assert!(super::capture_session(cx, false, false));
+            if chau7_next_core::work_profiler::enabled() {
+                let snapshot = chau7_next_core::work_profiler::snapshot();
+                let entry = snapshot["entries"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|entry| {
+                        entry["operation"] == "capture_session" && entry["phase"] == "autosave"
+                    })
+                    .expect("complete UI capture must be measured, including early returns");
+                assert_eq!(entry["queue"], "main");
+                assert!(entry["lifetime"]["sample_count"].as_u64().unwrap() >= 1);
+            }
+        });
+    }
+
     #[test]
     fn isolated_launch_preserves_the_global_url_handler() {
         assert!(!super::global_url_registration_allowed(true));

@@ -203,7 +203,24 @@ pub struct ContextBuffer {
     pub version: u64,
     pub text: Option<Arc<String>>,
 }
+/// Fingerprint of the raw exported buffer and capture policy. Retains no history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScrollbackCaptureKey {
+    digest: [u8; 32],
+    max_lines: usize,
+}
+impl ScrollbackCaptureKey {
+    pub fn new(source: &str, max_lines: usize) -> Self {
+        use sha2::{Digest, Sha256};
+        Self {
+            digest: Sha256::digest(source.as_bytes()).into(),
+            max_lines,
+        }
+    }
+}
+
 struct BufferEntry {
+    capture_key: Option<ScrollbackCaptureKey>,
     version: u64,
     hash: Option<u64>,
     text: Option<Arc<String>>,
@@ -219,6 +236,28 @@ pub struct BufferLedger {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CaptureBoundExceeded;
 impl BufferLedger {
+    /// Reuse only accepted captures still pending or successfully persisted.
+    pub fn reuse_capture(&self, pane: u64, key: ScrollbackCaptureKey) -> Option<bool> {
+        self.entries
+            .get(&pane)
+            .filter(|entry| entry.capture_key == Some(key) && (entry.pending || entry.persisted))
+            .map(|entry| entry.hash.is_some())
+    }
+
+    pub fn record_capture(
+        &mut self,
+        pane: u64,
+        key: ScrollbackCaptureKey,
+        text: Option<String>,
+    ) -> Result<bool, CaptureBoundExceeded> {
+        let present = self.record(pane, text)?;
+        self.entries
+            .get_mut(&pane)
+            .expect("accepted capture")
+            .capture_key = Some(key);
+        Ok(present)
+    }
+
     pub fn record(
         &mut self,
         pane: u64,
@@ -249,6 +288,10 @@ impl BufferLedger {
             .get(&pane)
             .is_some_and(|entry| entry.hash == hash && (entry.pending || entry.persisted))
         {
+            self.entries
+                .get_mut(&pane)
+                .expect("existing capture")
+                .capture_key = None;
             return Ok(hash.is_some());
         }
         let previous_bytes = self
@@ -267,6 +310,7 @@ impl BufferLedger {
         self.entries.insert(
             pane,
             BufferEntry {
+                capture_key: None,
                 version: self.next_version,
                 hash,
                 text: text.map(Arc::new),
@@ -351,6 +395,72 @@ impl BufferLedger {
 #[cfg(test)]
 mod ledger_tests {
     use super::*;
+
+    #[test]
+    fn unchanged_capture_survives_ack_but_retries_after_failed_persistence() {
+        let mut ledger = BufferLedger::default();
+        let key = ScrollbackCaptureKey::new("raw ANSI", 500);
+        assert_eq!(ledger.reuse_capture(1, key), None);
+        ledger.record_capture(1, key, Some("clean".into())).unwrap();
+        assert_eq!(ledger.reuse_capture(1, key), Some(true));
+        assert_eq!(ledger.reuse_capture(2, key), None);
+        assert_eq!(
+            ledger.reuse_capture(1, ScrollbackCaptureKey::new("new ANSI", 500)),
+            None
+        );
+        assert_eq!(
+            ledger.reuse_capture(1, ScrollbackCaptureKey::new("raw ANSI", 10)),
+            None
+        );
+        let pending = ledger.snapshot();
+        ledger.acknowledge(&pending);
+        assert_eq!(ledger.pending_bytes(), 0);
+        assert_eq!(ledger.reuse_capture(1, key), Some(true));
+        ledger.invalidate_persisted(&HashSet::from([1]));
+        assert_eq!(ledger.reuse_capture(1, key), None);
+        ledger.record_capture(1, key, Some("clean".into())).unwrap();
+        assert!(ledger.snapshot().contains_key(&1));
+    }
+
+    #[test]
+    fn capture_reuse_handles_tombstones_rejections_and_newer_generations() {
+        let mut ledger = BufferLedger::default();
+        let old_key = ScrollbackCaptureKey::new("old", 500);
+        let new_key = ScrollbackCaptureKey::new("new", 500);
+        ledger
+            .record_capture(1, old_key, Some("old".into()))
+            .unwrap();
+        let old_pending = ledger.snapshot();
+        assert!(
+            ledger
+                .record_capture(
+                    1,
+                    new_key,
+                    Some("x".repeat(super::super::MAX_SCROLLBACK_BYTES + 1))
+                )
+                .is_err()
+        );
+        assert_eq!(ledger.reuse_capture(1, new_key), None);
+        assert_eq!(ledger.reuse_capture(1, old_key), Some(true));
+        ledger
+            .record_capture(1, new_key, Some("new".into()))
+            .unwrap();
+        ledger.acknowledge(&old_pending);
+        assert_eq!(ledger.reuse_capture(1, new_key), Some(true));
+        assert_eq!(ledger.reuse_capture(1, old_key), None);
+        ledger.record_capture(1, old_key, None).unwrap();
+        assert_eq!(ledger.reuse_capture(1, old_key), Some(false));
+        let pending = ledger.snapshot();
+        ledger.acknowledge(&pending);
+        assert_eq!(ledger.reuse_capture(1, old_key), Some(false));
+        ledger
+            .record(1, Some("external replacement".into()))
+            .unwrap();
+        assert_eq!(ledger.reuse_capture(1, old_key), None);
+        ledger.acknowledge(&ledger.snapshot());
+        ledger.retain(&HashSet::new());
+        assert_eq!(ledger.reuse_capture(1, old_key), None);
+    }
     #[test]
     fn acknowledgement_cannot_discard_a_newer_capture() {
         let mut ledger = BufferLedger::default();
