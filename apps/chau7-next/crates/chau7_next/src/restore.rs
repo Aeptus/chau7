@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::session_restore::{
-    REPLAY_FILE_PREFIX, SavedSplitNode, build_ai_resume_command, capture_styled_scrollback,
+    REPLAY_FILE_PREFIX, SavedSplitNode, build_ai_resume_command, capture_scrollback,
     strip_restore_commands,
 };
 use gpui::{App, Entity};
@@ -89,18 +89,35 @@ pub fn capture_tab(
             .cwd
             .as_ref()
             .map(|p| p.to_string_lossy().to_string());
-        let scrollback = if max_lines > 0 {
-            let styled = session.styled_buffer_for_restore();
-            let styled = strip_restore_commands(&styled);
-            capture_styled_scrollback(
-                Some(&styled),
-                || strip_restore_commands(&session.buffer_text()),
+        let has_file = if max_lines > 0 {
+            let mut capture =
+                chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                    "capture_scrollback",
+                    "autosave",
+                    "unobserved",
+                    "session_restore",
+                    chau7_next_core::work_profiler::Queue::Main,
+                ));
+            capture.items(1);
+            let styled = strip_restore_commands(&session.styled_buffer_for_restore());
+            // Observe the effective source before fingerprinting: an empty
+            // ANSI export (including one containing only restore commands)
+            // can fall back to plain text that has changed independently.
+            let source = if styled.is_empty() {
+                strip_restore_commands(&session.buffer_text())
+            } else {
+                styled
+            };
+            writer::record_capture(
+                id,
+                &source,
                 max_lines,
+                || capture_scrollback(&source, max_lines),
+                cx,
             )
         } else {
-            None
+            writer::record(id, None, cx)
         };
-        let has_file = writer::record(id, scrollback, cx);
 
         // Persistence uses already captured identity only. Transcript validation
         // happens off UI during restore preparation. A fresh launch that clears

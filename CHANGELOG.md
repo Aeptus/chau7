@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reduce autosave lag by matching startup-tip artifacts at their measured border width, skipping ineligible interior boxes, and reusing unchanged scrollback captures without another retained history copy. Measure the complete UI capture and normalization separately from background writes, while preserving write retries and fresh session metadata.
+
 - Align the selected tab to the left edge of the tab bar when switching tabs, using fresh fixed-viewport measurements and enough scroll room for the last tab. Keep manual scrolling responsive and hidden tab bars idle.
 
 - Skip scrollback maintenance jobs for already-archived background sessions and protected TUI tiers; park the retention worker until work or explicit shutdown arrives, while retaining history after an alternate-screen TUI exits.
