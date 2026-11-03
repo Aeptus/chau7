@@ -49,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Avoid whole-workspace redraws for repeated hidden-tab output while preserving activity timestamps, idle-tab revival and visible age panels.
 
+- Reduce remote idle refreshes from every 150 ms to once per second while retaining agent supervision and output deadlines. Poll terminal grids at 150 ms for a ready phone or active viewer, skip output batching without a consumer, and apply remote settings only when they change.
+
 - Remove the remote IPC listener's idle 50 ms accept polling. Wait for incoming connections or an explicit shutdown signal while preserving client replacement, frame delivery and socket ownership.
 - Wake remote control on settings, IPC and grid-completion events; park it when disabled and schedule live metadata, output batching and agent supervision at their actual deadlines, without adding timer callbacks to immediately flushed output.
 - Wake MCP subscriptions on actual journal changes or their heartbeat deadline instead of polling every 100 ms; coalesce wake tokens while preserving ordered replay and immediate cancellation.
