@@ -5,7 +5,7 @@
 //! One client at a time: a new connection replaces the old one. Frames are
 //! length-prefixed (`FrameParser`), at most 5 MB; bad frames are skipped and
 //! logged. Reading, accepting and writing run on background threads; the app
-//! drains [`IpcEvent`]s from its timer, so a stalled agent never blocks the UI.
+//! drains [`IpcEvent`]s after an event notification, so a stalled agent never blocks the UI.
 
 use chau7_next_core::remote::frame::RemoteFrame;
 
@@ -42,6 +42,7 @@ mod unix {
 
     struct Shared {
         events: Mutex<VecDeque<IpcEvent>>,
+        notify: Option<Arc<dyn Fn() + Send + Sync>>,
         /// The connected client and its connection number.
         client: Mutex<Option<(u64, UnixStream)>>,
         next_conn: AtomicU64,
@@ -52,7 +53,14 @@ mod unix {
 
     impl Shared {
         fn push(&self, event: IpcEvent) {
-            self.events.lock().push_back(event);
+            self.push_all(std::iter::once(event));
+        }
+
+        fn push_all(&self, events: impl IntoIterator<Item = IpcEvent>) {
+            self.events.lock().extend(events);
+            if let Some(notify) = &self.notify {
+                notify();
+            }
         }
 
         /// Close connection `conn` if it is still the current one, and
@@ -84,7 +92,10 @@ mod unix {
         /// Bind `path` and start accepting. A stale socket file is removed
         /// first; a socket another running instance still listens on is
         /// refused, as in `platform::local_socket::Listener::bind`.
-        pub fn start(path: &Path) -> std::io::Result<Self> {
+        pub fn start(
+            path: &Path,
+            notify: Option<Arc<dyn Fn() + Send + Sync>>,
+        ) -> std::io::Result<Self> {
             use std::os::unix::fs::PermissionsExt;
             if let Some(dir) = path.parent() {
                 std::fs::create_dir_all(dir)?;
@@ -103,6 +114,7 @@ mod unix {
             listener.set_nonblocking(true)?;
             let shared = Arc::new(Shared {
                 events: Mutex::new(VecDeque::new()),
+                notify,
                 client: Mutex::new(None),
                 next_conn: AtomicU64::new(1),
                 stop: AtomicBool::new(false),
@@ -263,8 +275,7 @@ mod unix {
                         log::warn!("Remote IPC frame error: {error}");
                     }
                     if !result.frames.is_empty() {
-                        let mut events = shared.events.lock();
-                        events.extend(result.frames.into_iter().map(IpcEvent::Frame));
+                        shared.push_all(result.frames.into_iter().map(IpcEvent::Frame));
                     }
                 }
             }
@@ -308,10 +319,39 @@ mod unix {
             }
         }
         #[test]
+        fn queued_events_notify_without_a_ui_poll() {
+            let root =
+                PathBuf::from("/tmp").join(format!("c7-notify-{}", uuid::Uuid::new_v4().simple()));
+            let (wake, wakes) = std::sync::mpsc::sync_channel(1);
+            let notify = Arc::new(move || {
+                let _ = wake.try_send(());
+            });
+            let server = IpcServer::start(&root.join("fixture.sock"), Some(notify)).unwrap();
+            let fixture = Fixture { root, server };
+            let mut stream = UnixStream::connect(fixture.root.join("fixture.sock")).unwrap();
+            wakes.recv_timeout(Duration::from_secs(1)).unwrap();
+            assert_eq!(fixture.server.drain(), vec![IpcEvent::Connected]);
+            let frame = RemoteFrame {
+                version: 1,
+                type_: 2,
+                flags: 0,
+                reserved: 0,
+                tab_id: 3,
+                seq: 4,
+                payload: b"notified".to_vec(),
+            };
+            stream.write_all(&pack_for_transport(&frame)).unwrap();
+            wakes.recv_timeout(Duration::from_secs(1)).unwrap();
+            assert_eq!(fixture.server.drain(), vec![IpcEvent::Frame(frame)]);
+            drop(stream);
+            wakes.recv_timeout(Duration::from_secs(1)).unwrap();
+            assert_eq!(fixture.server.drain(), vec![IpcEvent::Disconnected]);
+        }
+        #[test]
         fn idle_listener_wait_is_not_periodic() {
             let root =
                 PathBuf::from("/tmp").join(format!("c7-idle-{}", uuid::Uuid::new_v4().simple()));
-            let server = IpcServer::start(&root.join("fixture.sock")).unwrap();
+            let server = IpcServer::start(&root.join("fixture.sock"), None).unwrap();
             let fixture = Fixture { root, server };
             let started = Instant::now();
             while fixture.server.shared.wait_entries.load(Ordering::Acquire) == 0 {
@@ -343,7 +383,7 @@ mod unix {
             fn new() -> Self {
                 let root =
                     PathBuf::from("/tmp").join(format!("c7-ipc-{}", uuid::Uuid::new_v4().simple()));
-                let server = IpcServer::start(&root.join("fixture.sock")).unwrap();
+                let server = IpcServer::start(&root.join("fixture.sock"), None).unwrap();
                 Self { root, server }
             }
             fn connect(&self) -> UnixStream {
@@ -463,7 +503,10 @@ pub struct IpcServer;
 
 #[cfg(not(unix))]
 impl IpcServer {
-    pub fn start(_path: &std::path::Path) -> std::io::Result<Self> {
+    pub fn start(
+        _path: &std::path::Path,
+        _notify: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    ) -> std::io::Result<Self> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "remote control needs Unix sockets",

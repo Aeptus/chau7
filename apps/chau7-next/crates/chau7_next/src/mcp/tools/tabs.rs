@@ -818,6 +818,9 @@ pub(crate) fn status(tab_id: &str, ctx: &ToolContext) -> String {
         };
         let s = session.read(cx);
         summary.insert("shell_loading".into(), json!(s.is_loading()));
+        if let Some(issue) = s.restore_resume_issue() {
+            summary.insert("restore_resume_issue".into(), json!(issue.code()));
+        }
         let pid = if s.exited.is_some() {
             0
         } else {

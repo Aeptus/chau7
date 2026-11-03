@@ -38,7 +38,7 @@ use chau7_next_core::shell_session::{
 use chau7_next_core::work_profiler::{self, Key as WorkKey, Kind as WorkKind, Queue as WorkQueue};
 use chau7_next_core::{shell_env, shell_integration, shell_tips};
 use chau7_terminal::{
-    Chau7Terminal, GridCopy, OutputInterrupt, OutputReady, StyledScreen, StyledSelection,
+    Chau7Terminal, GridCopy, OutputInterrupt, StyledScreen, StyledSelection,
     graphics::ShellIntegrationEvent,
 };
 use futures::channel::{mpsc, oneshot};
@@ -46,12 +46,12 @@ use futures::{FutureExt, StreamExt};
 use gpui::{AppContext, Context, EventEmitter, Global, Task};
 use parking_lot::{Mutex, RwLock};
 
+mod maintenance;
+
 use super::pty_writer::{CloseMode, PtyWriter, Signal, signal_group};
 use crate::monitoring::session::{SessionMonitor, shell_ai_event};
 use crate::platform::process as procinfo;
 use crate::settings::{ActivePollingRateCap, BellSound, Settings};
-
-const PTY_READINESS_MAX_WAIT_MS: u64 = 1_000;
 
 /// App-scoped fixture policy: production shell construction and the real PTY
 /// writer remain intact, while native output is driven by the test scheduler.
@@ -277,6 +277,7 @@ pub struct TerminalSession {
     restore_intent: Option<chau7_next_core::session_restore::lifecycle::RestorePrefillIntent>,
     restore_token: u64,
     restore_input_generation: Cell<u64>,
+    restore_resume_issue: Option<chau7_next_core::session_restore::preparation::ResumeIssue>,
     restore_presented: Cell<bool>,
     restore_selected: Cell<bool>,
     restore_window_visible: Cell<bool>,
@@ -358,7 +359,8 @@ pub struct TerminalSession {
     /// so the mouse always selects (TRM-018).
     mouse_reporting_enabled: std::cell::Cell<bool>,
     _pump: Task<()>,
-    _ticker: Task<()>,
+    #[cfg(test)]
+    maintenance_ticks: usize,
     process_subscription: Option<crate::monitoring::process_tree::Subscription>,
 }
 
@@ -674,18 +676,12 @@ impl TerminalSession {
                             "pty_poll",
                             WorkQueue::Background,
                         );
-                        let ready = work_profiler::measure(wait_key, || {
-                            readiness.wait(Duration::from_millis(PTY_READINESS_MAX_WAIT_MS))
-                        });
+                        work_profiler::measure(wait_key, || readiness.wait_for_event());
                         if stop.load(Ordering::Acquire) {
                             break;
                         }
-                        // Readiness wakes for output, close and explicit
-                        // interrupts. A timeout needs no native poll or output
-                        // extraction, eliminating idle parser-lock work.
-                        if ready == OutputReady::Timeout {
-                            continue;
-                        }
+                        // Output, close, input and focus/stop signals resume this
+                        // worker directly; idle terminals have no timeout wake.
                         let visibility = profile_memory
                             .get()
                             .and_then(std::sync::Weak::upgrade)
@@ -789,17 +785,8 @@ impl TerminalSession {
                 last_refresh = Some(Instant::now());
             }
         });
-        // Once a second: idle/stuck timers, startup notice, cwd and branch.
-        let ticker = cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(1000))
-                    .await;
-                if this.update(cx, |this, cx| this.tick(cx)).is_err() {
-                    break;
-                }
-            }
-        });
+        // One shared deadline retains each session's housekeeping cadence.
+        maintenance::register(cx.entity().downgrade(), cx);
 
         if has_pty {
             register_shell(id, pid);
@@ -858,6 +845,7 @@ impl TerminalSession {
             restore_intent: None,
             restore_token: 0,
             restore_input_generation: Cell::new(0),
+            restore_resume_issue: None,
             restore_presented: Cell::new(false),
             restore_selected: Cell::new(false),
             restore_window_visible: Cell::new(false),
@@ -916,7 +904,8 @@ impl TerminalSession {
             dev_checks: None,
             mouse_reporting_enabled: std::cell::Cell::new(false),
             _pump: pump,
-            _ticker: ticker,
+            #[cfg(test)]
+            maintenance_ticks: 0,
             process_subscription,
         }
     }
@@ -965,7 +954,8 @@ impl TerminalSession {
             "refresh_cap_interval_ms":self.refresh_interval_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0,
             "display_native_refresh":self.refresh_interval_ns.load(Ordering::Relaxed) == 0,
             "refresh_interactive":self.poll_interactive.load(Ordering::Relaxed),
-            "pty_readiness_max_wait_ms":PTY_READINESS_MAX_WAIT_MS,
+            "pty_readiness_max_wait_ms":serde_json::Value::Null,
+            "pty_readiness_wait":"event_driven",
             "render_suspended":self.is_render_suspended(),
             "grid_cells_deferred":self.grid_stale,
             "native_pending_image_bytes":serde_json::Value::Null,
@@ -1535,9 +1525,15 @@ impl TerminalSession {
 
     /// Once a second.
     fn tick(&mut self, cx: &mut Context<Self>) {
-        let mut wake = work_profiler::begin(WorkKey::wakeup(
+        #[cfg(test)]
+        {
+            self.maintenance_ticks += 1;
+        }
+        let mut wake = work_profiler::begin(WorkKey::work(
             "session_timer",
+            "tick",
             self.profiling_phase(),
+            "session_maintenance_timer",
             WorkQueue::Main,
         ));
         wake.idle(self.last_activity.elapsed() >= Duration::from_secs(1));
@@ -1896,6 +1892,27 @@ impl TerminalSession {
         cx.emit(SessionEvent::Output);
         cx.notify();
     }
+    pub(crate) fn set_restore_resume_issue(
+        &mut self,
+        issue: Option<chau7_next_core::session_restore::preparation::ResumeIssue>,
+        cx: &mut Context<Self>,
+    ) {
+        self.restore_resume_issue = issue;
+        if let Some(issue) = issue {
+            // No command, path or native identity is written to the log.
+            log::warn!("restore resume unavailable: {}", issue.code());
+        }
+        cx.notify();
+    }
+    pub(crate) fn restore_resume_issue(
+        &self,
+    ) -> Option<chau7_next_core::session_restore::preparation::ResumeIssue> {
+        // Deliberate input starts a new interaction; old recovery metadata
+        // remains preserved by the pane tree, without covering the new work.
+        self.restore_resume_issue
+            .filter(|_| self.restore_input_generation.get() == 0)
+    }
+
     pub(crate) fn queue_restored_resume(
         &mut self,
         command: String,

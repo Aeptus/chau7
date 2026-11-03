@@ -9,7 +9,7 @@ use chau7_next_core::{
 use gpui::{AppContext, TestAppContext};
 use gpui_kit::test::TestWindowExt;
 
-fn init(harness: &mut TestAppContext) {
+pub(super) fn init(harness: &mut TestAppContext) {
     let home = std::env::temp_dir().join(format!("chau7-selection-{}", uuid::Uuid::new_v4()));
     harness.update(|cx| {
         gpui_kit::init(cx);
@@ -23,7 +23,7 @@ fn init(harness: &mut TestAppContext) {
 }
 
 /// A tab whose one pane is a headless terminal (no shell process).
-fn headless_tab(
+pub(super) fn headless_tab(
     handle: AnyWindowHandle,
     workspace: &Entity<Workspace>,
     cx: &mut App,

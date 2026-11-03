@@ -10,6 +10,26 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+/// Outcome of a saved identity which could not be admitted. Recovery data is
+/// retained separately and never acquires command execution authority.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResumeIssue {
+    UnavailableHistory,
+    IdentityInUse,
+    InvalidMetadata,
+    MissingIdentity,
+}
+impl ResumeIssue {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::UnavailableHistory => "unavailable_history",
+            Self::IdentityInUse => "identity_in_use",
+            Self::InvalidMetadata => "invalid_metadata",
+            Self::MissingIdentity => "missing_identity",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PreparedPane {
     pub directory: PathBuf,
@@ -18,6 +38,7 @@ pub struct PreparedPane {
     pub command: Option<String>,
     /// True only when directory history supplied the missing persisted ID.
     pub discovered_identity: bool,
+    pub resume_issue: Option<ResumeIssue>,
 }
 pub struct PreparedTab {
     pub saved: SavedTab,
@@ -161,9 +182,11 @@ pub fn admit_identity_metadata(
                     .get(&identity.session_id)
                     .is_some_and(|owners| owners.iter().any(|id| *id != owner)))
         {
+            archive_resume_metadata(pane);
             pane.ai_provider = item.discovered_identity.then(|| identity.provider.clone());
             item.identity = None;
             item.command = None;
+            item.resume_issue = Some(ResumeIssue::IdentityInUse);
             pane.ai_session_id = None;
             pane.ai_resume_command = None;
         }
@@ -199,9 +222,11 @@ pub fn claim(root: &DataRoot, owner: uuid::Uuid, prepared: &mut PreparedTab) {
                     .and_then(|hints| hints.owners.get(&identity.session_id))
                     .is_some_and(|owners| owners.iter().any(|id| *id != owner)))
         {
+            archive_resume_metadata(pane);
             pane.ai_provider = item.discovered_identity.then(|| identity.provider.clone());
             item.identity = None;
             item.command = None;
+            item.resume_issue = Some(ResumeIssue::IdentityInUse);
             pane.ai_session_id = None;
             pane.ai_resume_command = None;
         } else {
@@ -243,6 +268,20 @@ fn read_context(root: &DataRoot, pane: &SavedPane) -> Option<String> {
         return None;
     }
     String::from_utf8(bytes).ok()
+}
+fn archive_resume_metadata(pane: &mut SavedPane) {
+    if pane.archived_ai_resume.is_none()
+        && (pane.ai_session_id.is_some() || pane.ai_resume_command.is_some())
+    {
+        // Failed validation/admission removes execution authority, not recovery data.
+        // This archive is inert and never participates in candidates().
+        pane.archived_ai_resume = Some(crate::session_restore::models::ArchivedAIResumeMetadata {
+            provider: pane.ai_provider.clone(),
+            session_id: pane.ai_session_id.clone(),
+            session_id_source: pane.ai_session_id_source.clone(),
+            resume_command: pane.ai_resume_command.clone(),
+        });
+    }
 }
 fn candidates(pane: &SavedPane) -> Vec<ResumeIdentity> {
     // One authoritative identity: explicit fields first, then agreeing legacy
@@ -401,19 +440,39 @@ fn prepare_profile(
         // Directory and timing are not ownership evidence. Several tabs may
         // share a cwd, and provider history may belong to another application.
         // Keep a provider-only pane unresolved until its own session is known.
+        let mut resume_issue = None;
         let identity = resume_candidates.into_iter().find_map(|m| {
-            let valid = validate(
+            let Some(valid) = validate(
                 root.home(),
                 &m,
                 &directory,
                 reference,
                 synthetic,
                 &mut codex,
-            )?;
-            (identity_available(root, owner, pane.id, &valid, false)
-                && claims.insert((valid.provider.clone(), valid.session_id.clone())))
-            .then_some(valid)
+            ) else {
+                resume_issue = Some(ResumeIssue::UnavailableHistory);
+                return None;
+            };
+            if identity_available(root, owner, pane.id, &valid, false)
+                && claims.insert((valid.provider.clone(), valid.session_id.clone()))
+            {
+                Some(valid)
+            } else {
+                resume_issue = Some(ResumeIssue::IdentityInUse);
+                None
+            }
         });
+        if identity.is_none() && resume_issue.is_none() {
+            resume_issue = if pane.ai_session_id.is_some() || pane.ai_resume_command.is_some() {
+                Some(ResumeIssue::InvalidMetadata)
+            } else if pane.archived_ai_resume.is_some() {
+                Some(ResumeIssue::UnavailableHistory)
+            } else if provider_only.is_some() {
+                Some(ResumeIssue::MissingIdentity)
+            } else {
+                None
+            };
+        }
         if let Some(identity) = &identity
             && identity.provider == "claude"
             && !synthetic
@@ -439,19 +498,8 @@ fn prepare_profile(
                 None => read_context(root, pane),
             }
         };
-        if identity.is_none()
-            && pane.archived_ai_resume.is_none()
-            && (pane.ai_session_id.is_some() || pane.ai_resume_command.is_some())
-        {
-            // Failed validation removes execution authority, not recovery data.
-            // This archive is inert and never participates in candidates().
-            pane.archived_ai_resume =
-                Some(crate::session_restore::models::ArchivedAIResumeMetadata {
-                    provider: pane.ai_provider.clone(),
-                    session_id: pane.ai_session_id.clone(),
-                    session_id_source: pane.ai_session_id_source.clone(),
-                    resume_command: pane.ai_resume_command.clone(),
-                });
+        if identity.is_none() {
+            archive_resume_metadata(pane);
         }
         pane.directory = Some(directory.to_string_lossy().into_owned());
         pane.ai_provider = identity
@@ -469,6 +517,7 @@ fn prepare_profile(
                 identity,
                 command,
                 discovered_identity: false,
+                resume_issue,
             },
         );
     }
@@ -684,6 +733,19 @@ mod tests {
         ));
         assert!(late.panes[&1].identity.is_none());
         assert!(late.saved.panes[0].ai_resume_command.is_none());
+        assert_eq!(
+            late.panes[&1].resume_issue,
+            Some(ResumeIssue::IdentityInUse)
+        );
+        assert_eq!(
+            late.saved.panes[0]
+                .archived_ai_resume
+                .as_ref()
+                .unwrap()
+                .session_id
+                .as_deref(),
+            Some("thread-live")
+        );
     }
     #[test]
     fn pending_context_and_tombstone_override_old_durable_file() {
@@ -709,6 +771,134 @@ mod tests {
             "old durable"
         );
     }
+    #[test]
+    fn unavailable_native_history_is_reported_on_every_restore_without_executing_archive() {
+        let f = Fixture::new();
+        let missing = uuid::Uuid::new_v4().to_string();
+        let saved = f.tab(vec![f.pane(1, "codex", &missing)]);
+        let first = prepare(&f.root, saved, None);
+        assert_eq!(
+            first.panes[&1].resume_issue,
+            Some(ResumeIssue::UnavailableHistory)
+        );
+        assert!(first.panes[&1].command.is_none());
+        let again = prepare(&f.root, first.saved, None);
+        assert_eq!(
+            again.panes[&1].resume_issue,
+            Some(ResumeIssue::UnavailableHistory)
+        );
+        assert!(again.panes[&1].identity.is_none());
+        assert!(again.panes[&1].command.is_none());
+        assert_eq!(
+            again.saved.panes[0]
+                .archived_ai_resume
+                .as_ref()
+                .unwrap()
+                .session_id
+                .as_deref(),
+            Some(missing.as_str())
+        );
+    }
+
+    #[test]
+    fn provider_without_identity_reports_the_gap_without_guessing_history() {
+        let f = Fixture::new();
+        let prepared = prepare(
+            &f.root,
+            f.tab(vec![SavedPane {
+                id: 1,
+                ai_provider: Some("codex".into()),
+                ..Default::default()
+            }]),
+            None,
+        );
+        assert_eq!(
+            prepared.panes[&1].resume_issue,
+            Some(ResumeIssue::MissingIdentity)
+        );
+        assert!(prepared.panes[&1].identity.is_none());
+        assert!(prepared.panes[&1].command.is_none());
+    }
+
+    #[test]
+    fn duplicate_identity_reports_conflict_instead_of_missing_history() {
+        let f = Fixture::new();
+        let prepared = prepare(
+            &f.root,
+            f.tab(vec![
+                f.pane(1, "codex", "thread-shared"),
+                f.pane(2, "codex", "thread-shared"),
+            ]),
+            None,
+        );
+        assert!(prepared.panes[&1].resume_issue.is_none());
+        assert_eq!(
+            prepared.panes[&2].resume_issue,
+            Some(ResumeIssue::IdentityInUse)
+        );
+        assert!(prepared.panes[&2].command.is_none());
+    }
+
+    #[test]
+    fn late_live_claim_preserves_recovery_identity_without_a_resume_command() {
+        let f = Fixture::new();
+        let mut first = prepare(
+            &f.root,
+            f.tab(vec![f.pane(1, "codex", "thread-race")]),
+            None,
+        );
+        let mut second = prepare(
+            &f.root,
+            f.tab(vec![f.pane(2, "codex", "thread-race")]),
+            None,
+        );
+        let owner = uuid::Uuid::new_v4();
+        claim(&f.root, owner, &mut first);
+        claim(&f.root, uuid::Uuid::new_v4(), &mut second);
+        assert_eq!(
+            second.panes[&2].resume_issue,
+            Some(ResumeIssue::IdentityInUse)
+        );
+        assert!(second.panes[&2].command.is_none());
+        assert_eq!(
+            second.saved.panes[0]
+                .archived_ai_resume
+                .as_ref()
+                .unwrap()
+                .session_id
+                .as_deref(),
+            Some("thread-race")
+        );
+        release_owner(&f.root, owner);
+    }
+
+    #[test]
+    fn shell_only_and_valid_new_identity_do_not_show_archived_failure() {
+        let f = Fixture::new();
+        let mut pane = f.pane(2, "codex", "current-thread");
+        pane.archived_ai_resume = Some(crate::session_restore::models::ArchivedAIResumeMetadata {
+            provider: Some("codex".into()),
+            session_id: Some("older-thread".into()),
+            ..Default::default()
+        });
+        let prepared = prepare(
+            &f.root,
+            f.tab(vec![
+                SavedPane {
+                    id: 1,
+                    ..Default::default()
+                },
+                pane,
+            ]),
+            None,
+        );
+        assert!(prepared.panes.values().all(|p| p.resume_issue.is_none()));
+        assert_eq!(
+            prepared.panes[&2].identity.as_ref().unwrap().session_id,
+            "current-thread"
+        );
+    }
+
     struct Fixture {
         root: DataRoot,
         directory: PathBuf,
