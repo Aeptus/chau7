@@ -274,6 +274,51 @@ PLIST
 # quarantine flag: see apps/chau7-next/README.md. The helpers next to the app
 # binary are signed one by one first (--deep does not cover Contents/MacOS),
 # then the app, which seals them.
+SYMBOL_MAP=''
+SYMBOL_UUID=''
+SYMBOL_ARCH=''
+if [ "$BUILD_MODE" = fast ]; then
+  XCRUN="/usr/bin/xcrun"
+  SYMBOL_NM="$("$XCRUN" --find nm)"
+  SYMBOL_STRIP="$("$XCRUN" --find strip)"
+  SYMBOL_DWARFDUMP="$("$XCRUN" --find dwarfdump)"
+  for apple_tool in "$SYMBOL_NM" "$SYMBOL_STRIP" "$SYMBOL_DWARFDUMP"; do
+    case "$apple_tool" in /*) ;; *) echo "error: non-absolute symbol tool path" >&2; exit 1 ;; esac
+    [ -x "$apple_tool" ] || exit 1
+  done
+  SYMBOL_BINARY="$APP/Contents/MacOS/$APP_NAME"
+  SYMBOL_UUID_ROWS="$("$SYMBOL_DWARFDUMP" --uuid "$SYMBOL_BINARY")"
+  case "$TARGET" in
+    aarch64-apple-darwin) SYMBOL_ARCH=arm64 ;;
+    x86_64-apple-darwin) SYMBOL_ARCH=x86_64 ;;
+    *) echo "error: unsupported symbol map architecture" >&2; exit 1 ;;
+  esac
+  SYMBOL_UUID="$(printf '%s\n' "$SYMBOL_UUID_ROWS" | sed -nE "s/^UUID: ([[:xdigit:]-]+) \\($SYMBOL_ARCH\\) .*/\\1/p")"
+  if ! printf '%s\n' "$SYMBOL_UUID" | grep -Eq '^[[:xdigit:]]{8}(-[[:xdigit:]]{4}){3}-[[:xdigit:]]{12}$'; then
+    echo "error: symbol map requires exactly one matching Mach-O UUID" >&2
+    exit 1
+  fi
+  SYMBOL_MAP="$(cd "$OUT_DIR" && pwd -P)/$APP_NAME.symbols.txt"
+  SYMBOL_STAGE="$(mktemp "$OUT_DIR/.symbols.XXXXXX")"
+  if ! "$SYMBOL_NM" -n -U "$SYMBOL_BINARY" > "$SYMBOL_STAGE" \
+    || ! grep -Eq '^[[:xdigit:]]+[[:space:]]+[tT][[:space:]]+.' "$SYMBOL_STAGE"; then
+    rm -f "$SYMBOL_STAGE"
+    echo "error: empty or invalid Rust symbol map" >&2
+    exit 1
+  fi
+  mv "$SYMBOL_STAGE" "$SYMBOL_MAP"
+  # Strip the copied Rust products only; compiler-cache artifacts and Go
+  # runtime tables are unchanged. Signing and receipt hashing follow this.
+  for rust_product in "$APP_NAME" chau7-next-mcp-bridge chau7-next-cli chau7-optim chau7-md; do
+    if [ -f "$APP/Contents/MacOS/$rust_product" ]; then
+      "$SYMBOL_STRIP" -S -x "$APP/Contents/MacOS/$rust_product"
+    fi
+  done
+  if [ "$("$SYMBOL_DWARFDUMP" --uuid "$SYMBOL_BINARY")" != "$SYMBOL_UUID_ROWS" ]; then
+    echo "error: stripping changed symbol map UUID" >&2
+    exit 1
+  fi
+fi
 for helper in "$APP/Contents/MacOS/"*; do
   [ "$(basename "$helper")" = "$APP_NAME" ] && continue
   codesign --force --sign - --timestamp=none "$helper"
@@ -363,6 +408,11 @@ artifact_sha256() {
 
 APP_BINARY="$APP/Contents/MacOS/$APP_NAME"
 APP_SHA256="$(artifact_sha256 "$APP_BINARY")"
+RUST_SYMBOLS_JSON=null
+if [ -n "$SYMBOL_MAP" ]; then
+  SYMBOL_SHA256="$(shasum -a 256 "$SYMBOL_MAP" | awk '{print $1}')"
+  RUST_SYMBOLS_JSON="{\"path\":$(json_string "$SYMBOL_MAP"),\"uuid\":$(json_string "$SYMBOL_UUID"),\"architecture\":$(json_string "$SYMBOL_ARCH"),\"sha256\":$(json_string "$SYMBOL_SHA256"),\"format\":\"apple-nm\"}"
+fi
 
 # Diagnostic Rust symbols are emitted as a sidecar for the main app binary.
 # Resolve Apple's tools through the active Xcode toolchain, never PATH.
@@ -535,6 +585,7 @@ cat > "$MANIFEST_TMP" <<JSON
     "clang": $(json_string "$CLANG_VERSION")
   },
   "rustDsym": $RUST_DSYM_JSON,
+  "rustSymbols": $RUST_SYMBOLS_JSON,
   "artifacts": {
     $(json_string "$APP_NAME"): {"path": $(json_string "Contents/MacOS/$APP_NAME"), "sha256": $APP_SHA256},
     "chau7-next-mcp-bridge": {"path": "Contents/MacOS/chau7-next-mcp-bridge", "sha256": $BRIDGE_SHA256},

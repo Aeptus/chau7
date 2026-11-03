@@ -118,6 +118,7 @@ pub struct Repositories {
     inner: Arc<Mutex<Inner>>,
     jobs: Arc<(Mutex<Jobs>, Condvar)>,
     identity_writer: Arc<IdentityWriter>,
+    worker: Mutex<Option<std::thread::JoinHandle<()>>>,
     quitting: AtomicBool,
 }
 
@@ -133,13 +134,17 @@ pub fn init(cx: &mut App) {
     let inner = Arc::new(Mutex::new(Inner::default()));
     let jobs = Arc::new((Mutex::new(Jobs::default()), Condvar::new()));
     let identity_writer = Arc::new(IdentityWriter::new(root.clone()));
+    let thread = {
+        let (inner, jobs, identities) = (inner.clone(), jobs.clone(), identity_writer.clone());
+        std::thread::spawn(move || worker(root, inner, jobs, identities))
+    };
     cx.set_global(Repositories {
         inner: inner.clone(),
         jobs: jobs.clone(),
         identity_writer: identity_writer.clone(),
+        worker: Mutex::new(Some(thread)),
         quitting: AtomicBool::new(false),
     });
-    std::thread::spawn(move || worker(root, inner, jobs, identity_writer));
     let timer = crate::observability::register_timer(
         cx,
         "repository.persistence",
@@ -159,7 +164,9 @@ pub fn init(cx: &mut App) {
                     "callback",
                     chau7_next_core::work_profiler::Queue::Main,
                 );
-                if let Some(registry) = registry(cx) {
+                if let Some(registry) = registry(cx)
+                    && !registry.quitting.load(Ordering::Acquire)
+                {
                     let (saves, recent_changed) = {
                         let mut state = registry.inner.lock();
                         (
@@ -456,6 +463,9 @@ fn write_saves(data: &chau7_next_core::data_root::DataRoot, saves: Vec<(String, 
 }
 fn enqueue_recent(jobs: &(Mutex<Jobs>, Condvar), root: String, generation: u64) {
     let mut pending = jobs.0.lock();
+    if pending.closed {
+        return;
+    }
     pending.recent.retain(|(_, path)| path != &root);
     pending.recent.push((generation, root));
     if pending.recent.len() > known_identity::MAX_IDENTITIES {
@@ -479,6 +489,9 @@ pub fn reset_discovered_repositories(cx: &App) {
 }
 
 fn reset_registry(registry: &Repositories) {
+    if registry.quitting.load(Ordering::Acquire) {
+        return;
+    }
     let mut state = registry.inner.lock();
     state.history_generation = state.history_generation.wrapping_add(1);
     state.shell_report_generation = state.shell_report_generation.wrapping_add(1);
@@ -516,6 +529,9 @@ pub fn import_recent_roots(roots: Vec<String>, cx: &App) {
 }
 
 fn import_recent_registry(registry: &Repositories, roots: Vec<String>) {
+    if registry.quitting.load(Ordering::Acquire) {
+        return;
+    }
     let mut state = registry.inner.lock();
     state.history_generation = state.history_generation.wrapping_add(1);
     state.shell_report_generation = state.shell_report_generation.wrapping_add(1);
@@ -539,6 +555,9 @@ pub fn known_roots(cx: &App) -> Vec<String> {
 }
 /// Queue an explicit settings edit without filesystem work on the UI thread.
 pub fn save_metadata(root: &str, metadata: RepoMetadata, cx: &App) {
+    if registry(cx).is_none_or(|registry| registry.quitting.load(Ordering::Acquire)) {
+        return;
+    }
     adopt_metadata(root, metadata.clone(), cx);
     if let Some(registry) = registry(cx) {
         registry
@@ -551,21 +570,55 @@ pub fn save_metadata(root: &str, metadata: RepoMetadata, cx: &App) {
     }
 }
 
-/// Drain pending metadata and identity writes at quit, after ordinary UI work ends.
-pub fn flush(cx: &App) {
-    if let Some(registry) = registry(cx) {
-        registry.quitting.store(true, Ordering::Relaxed);
-        let saves = registry.inner.lock().cache.take_all_saves();
-        let mut jobs = registry.jobs.0.lock();
-        jobs.metadata.extend(saves);
-        jobs.probes.clear();
-        jobs.closed = true;
-        registry.jobs.1.notify_all();
+/// Owned persistence barrier. Waiting on disk belongs to the quit worker,
+/// never to the main-thread quit callback.
+pub(crate) struct Shutdown {
+    jobs: Arc<(Mutex<Jobs>, Condvar)>,
+    identities: Arc<IdentityWriter>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+impl Shutdown {
+    pub(crate) fn finish(self) -> Result<(), String> {
+        // Bootstrap also publishes identities before entering the jobs loop.
+        // Join it even when the job queue was empty at admission close.
+        if let Some(worker) = self.worker {
+            worker
+                .join()
+                .map_err(|_| "Repository worker panicked".to_owned())?;
+        }
+        let mut jobs = self.jobs.0.lock();
         while !jobs.is_empty() || jobs.writing {
-            registry.jobs.1.wait(&mut jobs);
+            self.jobs.1.wait(&mut jobs);
         }
         drop(jobs);
-        registry.identity_writer.flush();
+        self.identities.flush();
+        self.identities.take_error().map_or(Ok(()), Err)
+    }
+}
+
+fn close_admission(registry: &Repositories) -> Shutdown {
+    registry.quitting.store(true, Ordering::Release);
+    let saves = registry.inner.lock().cache.take_all_saves();
+    let mut jobs = registry.jobs.0.lock();
+    jobs.metadata.extend(saves);
+    jobs.probes.clear();
+    jobs.closed = true;
+    registry.jobs.1.notify_all();
+    Shutdown {
+        jobs: registry.jobs.clone(),
+        identities: registry.identity_writer.clone(),
+        worker: registry.worker.lock().take(),
+    }
+}
+
+pub(crate) fn shutdown(cx: &App) -> Option<Shutdown> {
+    registry(cx).map(close_admission)
+}
+
+#[cfg(all(feature = "native-parity-fixture", target_os = "macos"))]
+pub fn flush(cx: &App) {
+    if let Some(shutdown) = shutdown(cx) {
+        shutdown.finish().expect("repository fixture persistence");
     }
 }
 
@@ -609,6 +662,9 @@ pub fn resolve(dir: &Path, cx: &App) -> Option<String> {
 /// reported filesystem path, including protected repositories.
 pub fn report_shell_root(root: &str, branch: Option<&str>, cx: &App) -> Option<String> {
     let registry = registry(cx)?;
+    if registry.quitting.load(Ordering::Acquire) {
+        return None;
+    }
     let mut state = registry.inner.lock();
     let root = state.report_shell_root(root, branch)?;
     registry.identity_writer.save(state.identities.clone());
@@ -634,7 +690,9 @@ pub fn metadata(root: &str, cx: &App) -> Option<RepoMetadata> {
 
 /// The settings editor saved `metadata` to disk: share it with the tabs.
 pub fn adopt_metadata(root: &str, metadata: RepoMetadata, cx: &App) {
-    if let Some(registry) = registry(cx) {
+    if let Some(registry) = registry(cx)
+        && !registry.quitting.load(Ordering::Acquire)
+    {
         let mut state = registry.inner.lock();
         state
             .metadata_overrides
@@ -842,6 +900,7 @@ mod identity_tests {
             inner: Arc::new(Mutex::new(Inner::default())),
             jobs: Arc::new((Mutex::new(Jobs::default()), Condvar::new())),
             identity_writer: Arc::new(IdentityWriter::new(data.clone())),
+            worker: Mutex::new(None),
             quitting: AtomicBool::new(false),
         };
         let before = registry.inner.lock().shell_report_generation;
@@ -915,6 +974,7 @@ mod identity_tests {
                     inner: Arc::new(Mutex::new(Inner::default())),
                     jobs: Arc::new((Mutex::new(Jobs::default()), Condvar::new())),
                     identity_writer: Arc::new(IdentityWriter::new(data)),
+                    worker: Mutex::new(None),
                     quitting: AtomicBool::new(false),
                 },
                 thread: None,
@@ -953,6 +1013,42 @@ mod identity_tests {
             self.registry.identity_writer.flush();
             std::fs::remove_dir_all(&self.home).unwrap();
         }
+    }
+
+    #[test]
+    fn quit_admission_does_not_wait_for_busy_writer_but_finish_does() {
+        let fixture = RecentFixture::new();
+        fixture.registry.jobs.0.lock().writing = true;
+        let barrier = close_admission(&fixture.registry);
+        assert!(fixture.registry.quitting.load(Ordering::Acquire));
+        assert!(fixture.registry.jobs.0.lock().closed);
+        let generation = fixture.registry.inner.lock().history_generation;
+        enqueue_recent(&fixture.registry.jobs, fixture.root("late"), generation);
+        reset_registry(&fixture.registry);
+        import_recent_registry(&fixture.registry, vec![fixture.root("late")]);
+        assert!(fixture.registry.jobs.0.lock().is_empty());
+        assert_eq!(fixture.registry.inner.lock().history_generation, generation);
+        let (done, received) = std::sync::mpsc::channel();
+        let (started, ready) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            started.send(()).unwrap();
+            done.send(barrier.finish()).unwrap();
+        });
+        ready.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(
+            received.recv_timeout(Duration::from_millis(50)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        );
+        {
+            let mut jobs = fixture.registry.jobs.0.lock();
+            jobs.writing = false;
+            fixture.registry.jobs.1.notify_all();
+        }
+        received
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        worker.join().unwrap();
     }
 
     #[test]
