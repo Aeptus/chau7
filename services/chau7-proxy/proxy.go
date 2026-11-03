@@ -155,7 +155,12 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
 	var responseBuffer bytes.Buffer
 	fbr := &firstByteReader{reader: resp.Body, start: startTime}
+	var streamingMetadata *streamingMetadataObserver
 	captureWriters := []io.Writer{&responseBuffer}
+	if isStreaming {
+		streamingMetadata = &streamingMetadataObserver{provider: provider}
+		captureWriters[0] = streamingMetadata
+	}
 	if isStreaming && headers.TabID != "" && headers.TabID != "default" && p.ipc != nil {
 		captureWriters = append(captureWriters, newStreamingRateObserver(
 			provider, headers.TabID, model, p.ipc,
@@ -181,13 +186,14 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ttftMs := fbr.ttftMs()
 
 	// Extract response metadata
-	respBody := responseBuffer.Bytes()
+	respBodyBytes := responseBuffer.Len()
 	var respMeta ResponseMetadata
 
 	if isStreaming {
-		respMeta = ParseStreamingChunks(provider, respBody)
+		respMeta = streamingMetadata.finish()
+		respBodyBytes = streamingMetadata.totalBytes
 	} else {
-		respMeta = ExtractResponseMetadata(provider, respBody)
+		respMeta = ExtractResponseMetadata(provider, responseBuffer.Bytes())
 	}
 
 	// Use model from response if not already set
@@ -205,13 +211,13 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode == 200 && IsTokenBillableEndpoint(provider, r.URL.Path) {
 		if model == "" {
 			diagnosticLogf("[WARN] %s %s: model not extracted (streaming=%v, bodyLen=%d)",
-				provider, r.URL.Path, isStreaming, len(respBody))
+				provider, r.URL.Path, isStreaming, respBodyBytes)
 		}
 		if respMeta.InputTokens == 0 && respMeta.OutputTokens == 0 {
 			// Estimate tokens from body sizes (~4 chars per token).
 			// For streaming, apply 0.6x to account for SSE framing overhead.
 			estimatedInput := len(bodyBytes) / 4
-			estimatedOutput := len(respBody) / 4
+			estimatedOutput := respBodyBytes / 4
 			if isStreaming && estimatedOutput > 0 {
 				estimatedOutput = estimatedOutput * 6 / 10
 			}
@@ -224,7 +230,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		key := string(provider) + " " + r.URL.Path
 		if summary, shouldReport := p.tokenUsage.Observe(key, usedTokenEstimate, time.Now()); shouldReport {
 			diagnosticLogf("[WARN] token usage extraction summary: provider=%s endpoint=%s total=%d estimated=%d estimated_pct=%.1f streaming=%v req_bytes=%d resp_bytes=%d",
-				provider, r.URL.Path, summary.Total, summary.Estimated, summary.EstimatedPercent(), isStreaming, len(bodyBytes), len(respBody))
+				provider, r.URL.Path, summary.Total, summary.Estimated, summary.EstimatedPercent(), isStreaming, len(bodyBytes), respBodyBytes)
 		}
 	}
 	usagePresent := respMeta.InputTokens > 0 ||

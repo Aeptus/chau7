@@ -3,7 +3,9 @@
 //! repo groups, the idle chip and its popover, the git branch capsule, and
 //! scrolling the selected tab into view. The hover card is in `hover_card.rs`.
 
+use std::cell::Cell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -499,11 +501,21 @@ fn idle_repo_identity(repo_group_id: Option<&str>, git_root: Option<&str>) -> Op
         .map(str::to_string)
 }
 
-/// Scroll animation of the tab row (reveal clipped tabs, 0.25 s ease).
+/// Geometry from one completed prepaint; offsets and chip frames share this epoch.
+#[derive(Clone, Copy, Default)]
+struct TabScrollFrame {
+    generation: u64,
+    offset: f32,
+    viewport: Bounds<Pixels>,
+    content_width: f32,
+}
+
+/// Scroll animation of the tab row (first viewport or later leading edge).
 pub(super) struct TabScroll {
     pub(super) handle: ScrollHandle,
     /// Tab to bring into view once its frame is known.
-    pending: Option<TabId>,
+    pending: Option<(TabId, u64)>,
+    frame: Rc<Cell<TabScrollFrame>>,
     anim: Option<(f32, f32, Instant)>,
 }
 
@@ -512,6 +524,7 @@ impl Default for TabScroll {
         Self {
             handle: ScrollHandle::new(),
             pending: None,
+            frame: Rc::default(),
             anim: None,
         }
     }
@@ -524,10 +537,8 @@ impl TabScroll {
     }
 
     fn reveal(&mut self, tab: Option<TabId>) {
-        // A visible new selection must also stop an older animation, even
-        // when its own visibility check requires no movement.
         self.cancel();
-        self.pending = tab;
+        self.pending = tab.map(|id| (id, self.frame.get().generation));
     }
 }
 
@@ -539,20 +550,136 @@ mod tab_scroll_tests {
     fn selecting_another_tab_cancels_the_previous_animation() {
         let mut scroll = TabScroll {
             anim: Some((-100.0, -500.0, Instant::now())),
-            pending: Some(1),
+            pending: Some((1, 0)),
             ..Default::default()
         };
         scroll.reveal(Some(2));
         assert!(scroll.anim.is_none());
-        assert_eq!(scroll.pending, Some(2));
+        assert_eq!(scroll.pending, Some((2, 0)));
         scroll.reveal(Some(3));
-        assert_eq!(scroll.pending, Some(3));
+        assert_eq!(scroll.pending, Some((3, 0)));
+    }
+
+    #[cfg(unix)]
+    #[gpui::test]
+    fn selected_tab_uses_first_view_or_clamped_leading_edge_in_the_real_row(
+        harness: &mut gpui::TestAppContext,
+    ) {
+        use super::super::selection_tests::{headless_tab, init};
+        use gpui_kit::test::TestWindowExt;
+        init(harness);
+        harness.update(|cx| {
+            let (handle, workspace) = crate::open_window_for_transfer(cx).unwrap();
+            let ids = (0..18)
+                .map(|_| headless_tab(handle, &workspace, cx).0)
+                .collect::<Vec<_>>();
+            handle.update(cx, |_, window, cx| {
+                // Include the last tab, switches in both directions and a
+                // selection which was already on screen after the last move.
+                for index in [0, 17, 2, 12, 13, 0, 17] {
+                    let id = ids[index];
+                    workspace.update(cx, |workspace, cx| workspace.select_tab(id, window, cx));
+                    workspace.update(cx, |workspace, _| {
+                        let before = workspace.scroll.handle.offset();
+                        assert!(workspace.tick_scroll());
+                        assert_eq!(workspace.scroll.handle.offset(), before, "wait for fresh layout");
+                    });
+                    // Advance animation timestamps directly; GPUI's simulated
+                    // executor clock does not advance std::time::Instant.
+                    for _ in 0..5 {
+                        window.render_frame(cx);
+                        workspace.update(cx, |workspace, _| {
+                            if let Some((_, _, start)) = workspace.scroll.anim.as_mut() {
+                                *start = Instant::now() - Duration::from_secs(1);
+                            }
+                        });
+                    }
+                    let workspace = workspace.read(cx);
+                    let viewport = workspace.scroll.handle.bounds();
+                    let tab = workspace.frames.borrow().tabs[&id];
+                    assert!(viewport.size.width > px(0.0));
+                    let offset = f32::from(workspace.scroll.handle.offset().x);
+                    let frame = workspace.scroll.frame.get();
+                    let max = f32::from(workspace.scroll.handle.max_offset().x);
+                    let natural_max = (frame.content_width - f32::from(viewport.size.width)).max(0.0);
+                    assert!((max - natural_max).abs() < 1.0, "no scroll room beyond the final control");
+                    assert!(frame.content_width + offset >= f32::from(viewport.size.width) - 1.0,
+                        "the content end must not scroll inside the viewport");
+                    let fits_first_view = f32::from(tab.right()) - offset
+                        <= f32::from(viewport.right()) + 0.5;
+                    if fits_first_view {
+                        assert!(offset.abs() < 1.0, "first-view tab {index} must keep the strip at zero");
+                    } else {
+                        let unscrolled_start = f32::from(tab.left() - viewport.left()) - offset;
+                        let expected = (-unscrolled_start).max(-max);
+                        assert!((offset - expected).abs() < 1.0,
+                            "later tab {index} must align left within the content limit: tab={tab:?}, viewport={viewport:?}");
+                        assert!(tab.left() >= viewport.left() - px(1.0));
+                        if tab.size.width <= viewport.size.width {
+                            assert!(tab.right() <= viewport.right() + px(1.0));
+                        }
+                    }
+                    assert!(workspace.scroll.pending.is_none());
+                    assert!(workspace.scroll.anim.is_none());
+                }
+                // A stale animation from a wider content range must also
+                // stop at the current content end, before the next layout.
+                workspace.update(cx, |workspace, _| {
+                    let max = f32::from(workspace.scroll.handle.max_offset().x);
+                    workspace.scroll.anim = Some((
+                        -max - 1000.0,
+                        -max - 2000.0,
+                        Instant::now() - Duration::from_secs(1),
+                    ));
+                    assert!(!workspace.tick_scroll());
+                    assert!((f32::from(workspace.scroll.handle.offset().x) + max).abs() < 1.0);
+                    assert!(workspace.scroll.anim.is_none());
+                });
+                window.remove_window();
+            }).unwrap();
+        });
+    }
+
+    #[cfg(unix)]
+    #[gpui::test]
+    fn fitting_tabs_remain_visible_when_selection_changes(harness: &mut gpui::TestAppContext) {
+        use super::super::selection_tests::{headless_tab, init};
+        use gpui_kit::test::TestWindowExt;
+        init(harness);
+        harness.update(|cx| {
+            let (handle, workspace) = crate::open_window_for_transfer(cx).unwrap();
+            let ids = (0..2)
+                .map(|_| headless_tab(handle, &workspace, cx).0)
+                .collect::<Vec<_>>();
+            handle
+                .update(cx, |_, window, cx| {
+                    for id in ids.into_iter().rev() {
+                        workspace.update(cx, |workspace, cx| workspace.select_tab(id, window, cx));
+                        for _ in 0..5 {
+                            window.render_frame(cx);
+                        }
+                        let workspace = workspace.read(cx);
+                        let frame = workspace.scroll.frame.get();
+                        assert!(frame.content_width <= f32::from(frame.viewport.size.width));
+                        assert_eq!(workspace.scroll.handle.offset().x, px(0.0));
+                        assert_eq!(workspace.scroll.handle.max_offset().x, px(0.0));
+                        for tab in workspace.frames.borrow().tabs.values() {
+                            assert!(tab.left() >= frame.viewport.left());
+                            assert!(tab.right() <= frame.viewport.right());
+                        }
+                        assert!(workspace.scroll.pending.is_none());
+                        assert!(workspace.scroll.anim.is_none());
+                    }
+                    window.remove_window();
+                })
+                .unwrap();
+        });
     }
 
     #[test]
     fn manual_scrolling_cancels_pending_and_running_reveals() {
         let mut scroll = TabScroll {
-            pending: Some(1),
+            pending: Some((1, 0)),
             anim: Some((-100.0, -500.0, Instant::now())),
             ..Default::default()
         };
@@ -782,26 +909,48 @@ impl Workspace {
 
     // ----- scrolling ----------------------------------------------------
 
-    /// Reveal the selected tab only when clipped, on the next frame once its
-    /// frame is known. Already visible tabs keep their position in the bar.
+    /// Reveal the selection after its new layout is measured.
     pub(super) fn scroll_to_selected(&mut self) {
         self.scroll.reveal(self.state.selected());
     }
 
     /// Advance the scroll animation; true while it runs.
     pub(super) fn tick_scroll(&mut self) -> bool {
-        if let Some(id) = self.scroll.pending.take() {
+        let frame = self.scroll.frame.get();
+        if self
+            .scroll
+            .pending
+            .is_some_and(|(_, after)| frame.generation <= after)
+        {
+            return true;
+        }
+        if frame.generation > 0 {
+            let viewport_width = f32::from(frame.viewport.size.width);
+            if frame.content_width <= viewport_width + 0.5 {
+                // Resize, closed tabs or shorter labels can make every tab fit
+                // without a selection event. Discard any old animation too.
+                self.scroll.cancel();
+                let offset = self.scroll.handle.offset();
+                if offset.x != px(0.0) {
+                    self.scroll.handle.set_offset(point(px(0.0), offset.y));
+                    return true;
+                }
+                return false;
+            }
+        }
+        if let Some((id, _)) = self.scroll.pending {
             let frames = self.frames.borrow();
             match (frames.tabs.get(&id), frames.bar) {
                 (Some(tab), Some(bar)) => {
                     let current = f32::from(self.scroll.handle.offset().x);
                     let max = f32::from(self.scroll.handle.max_offset().x);
                     let target = scroll_offset_to_reveal_tab(
-                        current,
+                        frame.offset,
                         max,
                         f32::from(tab.left())..f32::from(tab.right()),
                         f32::from(bar.left())..f32::from(bar.right()),
                     );
+                    self.scroll.pending = None;
                     if (target - current).abs() > 0.5 {
                         self.scroll.anim = Some((current, target, Instant::now()));
                     }
@@ -809,7 +958,6 @@ impl Workspace {
                 _ => {
                     // Not laid out yet (new tab): try again next frame.
                     drop(frames);
-                    self.scroll.pending = Some(id);
                     return true;
                 }
             }
@@ -823,7 +971,10 @@ impl Workspace {
         } else {
             (start.elapsed().as_secs_f32() / 0.25).min(1.0)
         };
-        let x = from + (to - from) * ease_in_out(t);
+        // An in-flight reveal can outlive a resize or a closed tab. Keep
+        // every animation step within the current natural scroll range too.
+        let max = f32::from(self.scroll.handle.max_offset().x).max(0.0);
+        let x = (from + (to - from) * ease_in_out(t)).clamp(-max, 0.0);
         let y = self.scroll.handle.offset().y;
         self.scroll.handle.set_offset(point(px(x), y));
         if t >= 1.0 {
@@ -1280,8 +1431,7 @@ impl Workspace {
             .min_w_0()
             .overflow_x_scroll()
             .track_scroll(&self.scroll.handle)
-            .on_scroll_wheel(cx.listener(|this, _, _, _| this.scroll.cancel()))
-            .pr_2();
+            .on_scroll_wheel(cx.listener(|this, _, _, _| this.scroll.cancel()));
         let mut index = 0;
         while index < items.len() {
             match &items[index] {
@@ -1341,10 +1491,28 @@ impl Workspace {
             }
         }
         let frames = self.frames.clone();
+        let handle = self.scroll.handle.clone();
+        let scroll_frame = self.scroll.frame.clone();
         let row = row.child(
             canvas(
-                move |bounds, _, _| {
-                    frames.borrow_mut().bar = Some(bounds);
+                move |_, _, _| {
+                    // This overlay moves with the content. The scroll handle
+                    // owns the fixed viewport, updated before child prepaint.
+                    let viewport = handle.bounds();
+                    frames.borrow_mut().bar = Some(viewport);
+                    // ScrollHandle child bounds are unscrolled layout bounds.
+                    // Exclude this absolute overlay: its viewport-sized box
+                    // would otherwise turn fitting content into overflow.
+                    let content_width = (0..handle.children_count().saturating_sub(1))
+                        .filter_map(|index| handle.bounds_for_item(index))
+                        .map(|child| f32::from(child.right() - viewport.left()))
+                        .fold(0.0_f32, f32::max);
+                    scroll_frame.set(TabScrollFrame {
+                        generation: scroll_frame.get().generation.wrapping_add(1),
+                        offset: f32::from(handle.offset().x),
+                        viewport,
+                        content_width,
+                    });
                 },
                 |_, _, _, _| {},
             )

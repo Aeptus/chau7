@@ -167,6 +167,101 @@ excluding the preceding executor timer wait. Capture, worker and apply phases
 retain their actual queue labels. This covers instrumented producers; it does
 not claim complete attribution for every runtime or third-party callback.
 
+### Budgets: where to start optimizing
+
+Every stage has a per-sample wall-time budget (`work_profiler::budget_ms`).
+Main-thread work without its own budget gets one 60 Hz frame (16.7 ms);
+background work and waits other than output dispatch have none. Each aggregate
+reports `over_budget_samples`, `over_budget_ms` (time past the budget) and
+`p50_ms`/`p95_ms`/`p99_ms` (upper bounds of a 15-bucket histogram, capped by the
+maximum), and each entry its `budget_ms`.
+
+`work_profile.budgets.worst_last_60s` ranks the stages by `over_budget_ms` in
+the last minute. Start at the top: it is the work that most delays frames and
+input right now. Explicit budgets:
+
+| Stage | Budget |
+|---|---:|
+| `terminal_painter/grid_paint` | 8 ms |
+| `terminal_painter/row_pass` (all rows: reuse and submission) | 6 ms |
+| `terminal_painter/row_prepare` (changed rows only) | 3 ms |
+| `terminal_painter/prepaint_snapshot`, `terminal_view/view_build`, `session_refresh/deferred_grid_copy` | 2 ms |
+| `session_refresh/output_processing` | 4 ms |
+| `session_refresh/get_grid` | 1.5 ms |
+| `session_refresh/get_grid_shape` | 0.25 ms |
+| `output_dispatch/event_dispatch_congestion` (latency) | 16.7 ms |
+
+`event_dispatch_wait` is the whole delay from PTY capture to processing,
+including the refresh pump's deliberate pacing hold (up to one interval of
+the active or inactive frame-rate cap), so it has no budget.
+`event_dispatch_congestion` subtracts that hold: it is the main thread's own
+cost to the output.
+
+A budget is a target for a stage's share of a frame, not a guarantee: GPU
+glyph submission inside `grid_paint` has no cheaper path in GPUI.
+
+### Incremental row painting and hidden grids
+
+GPUI emits every primitive each frame, but a row's text runs, grapheme
+segmentation and shaping are prepared once and reused while its cells,
+clusters and style are unchanged (`terminal/row_cache.rs`, compared exactly).
+`row_prepare` samples one per frame with `total_items` = rows prepared, so
+`total_items / sample_count` is the average number of changed rows per frame.
+Per-pane renderer diagnostics include `row_cache` with `rows_reused`,
+`rows_prepared` and `reuse_ratio`.
+
+A surface that is neither on screen nor prewarmed reads only its grid shape
+(`get_grid_shape`) on output; its cells are copied once
+(`deferred_grid_copy`) before it is next painted or snapshotted. Per-pane memory
+diagnostics report `grid_cells_deferred`.
+
+### Window frames and what invalidates them
+
+GPUI redraws a window when any view rendered in it, or any entity such a view
+read while rendering, is notified. `window_frame/workspace_render` samples the
+root view's render, so its count is the number of window frames. Compare it
+with `terminal_painter/grid_paint` (terminal repaints) and
+`session_refresh/output_processing` (output batches): frames per batch is the
+quickest check that background work is not redrawing the window.
+
+The tab bar reads every tab's terminal view and session, so a notify from a
+hidden tab redraws the whole window. Rules that keep hidden tabs from doing so:
+
+- A terminal view is embedded as a cached view: unless it was notified or the
+  window refreshed (focus, settings), its previous frame is replayed.
+- A hidden session's output notify joins one shared flush at the next whole
+  second; title, status, shell, AI, bell, clipboard and exit changes still
+  notify at once.
+- Output on a tab redraws the window only when it moves the tab out of the
+  idle group (`TabsState::touch`).
+- A hidden view marks its dangerous-output scan due for its next frame instead
+  of scheduling a timer that notifies.
+
+### Measured with an isolated instance (2026-10-30)
+
+A synthetic AI-agent TUI (alternate screen, a panel redrawn at 12.5 Hz, a
+transcript line every 2 s) ran as the profile shell in 13 tabs, one visible
+at 201x58 cells, in an isolated diagnostic release build, 60 s per run, on a
+machine with a load average of 22 to 36. Because load changes how much output
+the TUIs produce, compare per output batch:
+
+| Build | CPU ms per batch | Main-thread ms per batch | Window frames per batch |
+|---|---:|---:|---:|
+| main before this change | 4.21 | 5.52 | (not measured) |
+| row cache, hidden grids, cached terminal view | 3.24 | 0.61 | |
+| + activity redraws only on idle exit | 1.36 | 0.69 | 0.155 |
+| + hidden danger scans without timers | 1.12 | 0.53 | 0.110 |
+
+Reproduce or extend it with the isolated macOS performance lab in
+`apps/chau7-next/scripts/perf-bench` (see its `README.md`): it runs each build
+in its own temporary home, never the installed app. Do not measure while
+compiling.
+
+In the last build the main thread was 88 % idle in a 10 s stack sample; GPU
+glyph submission (2.4 %), window layout (1.4 %) and the scene sort (1.2 %)
+remained. Repainting unchanged rows from cached row bands instead of
+resubmitting their glyphs is the next step if more is needed.
+
 Call `chau7_timer_inventory` separately for registered timer lifetimes. Its
 bounded inventory retains active registrations and recent inactive lifetimes;
 prior deactivations remain in the event journal. A timer registration establishes

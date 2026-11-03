@@ -238,10 +238,15 @@ fn run(shared: Arc<Shared>, main: MainThread) {
                 if !projection.state.lock().subscribers.contains_key(&id) {
                     continue;
                 }
-                let provider = snapshot.resolve(subscriber.pid);
+                let provider = snapshot.resolve_process(subscriber.pid);
                 let ssh_host = snapshot.ssh_host(subscriber.pid);
                 let _ = subscriber.session.update(cx, |session, cx| {
-                    session.apply_live_process_snapshot(provider, ssh_host.as_deref(), cx);
+                    session.apply_live_process_snapshot(
+                        provider.map(|(_, name)| name),
+                        provider.map(|(pid, _)| pid),
+                        ssh_host.as_deref(),
+                        cx,
+                    );
                 });
             }
         }) {

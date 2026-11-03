@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"strings"
@@ -30,7 +29,7 @@ type streamingRateObserver struct {
 	model    string
 	notifier *IPCNotifier
 
-	pending         []byte
+	lines           sseLineBuffer
 	textRunes       int
 	samples         []streamRateSample
 	lastEmittedAt   time.Time
@@ -53,31 +52,19 @@ func newStreamingRateObserver(
 
 func (o *streamingRateObserver) Write(chunk []byte) (int, error) {
 	length := len(chunk)
-	o.pending = append(o.pending, chunk...)
-	for {
-		newline := bytes.IndexByte(o.pending, '\n')
-		if newline < 0 {
-			break
-		}
-		line := strings.TrimSpace(string(o.pending[:newline]))
-		o.pending = o.pending[newline+1:]
-		o.consumeSSELine(line)
-	}
-	if len(o.pending) > maxPendingSSELineBytes {
-		o.pending = nil
+	o.lines.consume(chunk, o.consumeSSELine)
+	if len(o.lines.pending) > maxPendingSSELineBytes {
+		o.lines.pending = nil
 	}
 	return length, nil
 }
 
-func (o *streamingRateObserver) consumeSSELine(line string) {
-	if !strings.HasPrefix(line, "data:") {
+func (o *streamingRateObserver) consumeSSELine(line []byte) {
+	data := sseData(line)
+	if len(data) == 0 {
 		return
 	}
-	data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-	if data == "" || data == "[DONE]" {
-		return
-	}
-	text := streamingTextDelta(o.provider, []byte(data))
+	text := streamingTextDelta(o.provider, data)
 	if text == "" {
 		return
 	}

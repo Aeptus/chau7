@@ -30,6 +30,7 @@ use chau7_next_core::telemetry::run::{TelemetryRun, TelemetryRunFilter};
 use chau7_next_core::telemetry::store::{StoreReadiness, TelemetryStore};
 use chau7_next_core::telemetry::turn::{TelemetryToolCall, TelemetryTurn};
 use chrono::{DateTime, Utc};
+use futures::{FutureExt as _, StreamExt as _};
 use gpui::{App, Global};
 use parking_lot::Mutex;
 use serde_json::{Map, Value};
@@ -40,6 +41,7 @@ use crate::workspace::AppData;
 /// Runs listed by the Debug Console "Rebuild Transcript Metrics".
 const REPAIR_LIMIT: i64 = 500;
 struct TranscriptMonitor {
+    wake: Mutex<futures::channel::mpsc::Sender<()>>,
     task: Option<gpui::Task<()>>,
     activity: Arc<cache::Activity>,
 }
@@ -262,22 +264,30 @@ pub fn init(cx: &mut App) {
         });
     })
     .detach();
-    let home = root.home().to_owned();
+    start_transcript_monitor(root.home().to_owned(), recorder, rates, cx);
+}
+
+/// The active CLI owns transcript cadence, including silent reasoning/tool waits.
+/// Start, identity update and exit signals wake the idle worker without polling.
+fn start_transcript_monitor(
+    home: PathBuf,
+    recorder: Arc<TelemetryRecorder>,
+    rates: Arc<Mutex<chau7_next_core::telemetry::token_rate::TokenRateStore>>,
+    cx: &mut App,
+) {
     let rate_executor = cx.background_executor().clone();
-    let timer = crate::observability::register_background_timer(
-        cx,
-        "telemetry.transcript_rate",
-        "Transcript token rate observations",
-        "telemetry",
-        200,
-    );
+    let timers = crate::observability::timer_registry(cx).expect("observability initialized");
+    let (mut wake, mut events) = futures::channel::mpsc::channel(1);
+    // Initial discovery also handles a recorder that already has active runs.
+    let _ = wake.try_send(());
     let activity = cache::Activity::new(1);
     let active = activity
         .begin()
         .expect("new transcript lifecycle accepts its worker");
     let task = cx.background_executor().spawn(async move {
         let _active = active;
-        let _timer = timer;
+        let mut timer = None;
+        let mut polling = false;
         use chau7_next_core::telemetry::{jsonl_tail::JsonlTail, token_rate::TranscriptRateState};
         let claude = chau7_next_core::telemetry::providers::ClaudeCodeContentProvider::new(&home);
         let codex = chau7_next_core::telemetry::providers::CodexContentProvider::new(&home);
@@ -290,15 +300,40 @@ pub fn init(cx: &mut App) {
             (String, std::time::Instant, Vec<PathBuf>),
         > = std::collections::HashMap::new();
         loop {
-            rate_executor
-                .timer(std::time::Duration::from_millis(200))
-                .await;
+            if polling {
+                let delay = rate_executor
+                    .timer(std::time::Duration::from_millis(200))
+                    .fuse();
+                let event = events.next().fuse();
+                futures::pin_mut!(delay, event);
+                futures::select_biased! {
+                    event = event => if event.is_none() { break; },
+                    _ = delay => {},
+                }
+            } else if events.next().await.is_none() {
+                break;
+            }
+            // Lifecycle changes coalesce; a parked worker has no timer.
+            while events.try_recv().is_ok() {}
             let mut callback = chau7_next_core::work_profiler::timer_callback(
                 "telemetry.transcript_rate",
                 "poll",
                 chau7_next_core::work_profiler::Queue::Background,
             );
             let runs = recorder.all_active_runs();
+            polling = !runs.is_empty();
+            if polling && timer.is_none() {
+                timer = Some(timers.register(
+                    "telemetry.transcript_rate",
+                    "Transcript token rate observations",
+                    "telemetry",
+                    200,
+                    "background_task",
+                    "gpui-background-executor",
+                ));
+            } else if !polling {
+                drop(timer.take());
+            }
             callback.items(runs.len());
             callback.idle(runs.is_empty() && files.is_empty() && paths_cache.is_empty());
             let active: std::collections::HashSet<_> = runs
@@ -359,9 +394,16 @@ pub fn init(cx: &mut App) {
         }
     });
     cx.set_global(TranscriptMonitor {
+        wake: Mutex::new(wake),
         task: Some(task),
         activity,
     });
+}
+
+fn wake_transcript_monitor(cx: &App) {
+    if let Some(monitor) = cx.try_global::<TranscriptMonitor>() {
+        let _ = monitor.wake.lock().try_send(());
+    }
 }
 
 /// Bounded, memory-only telemetry for the existing MCP/performance diagnostics.
@@ -651,6 +693,7 @@ pub fn run_started(
         log::warn!("Telemetry run admission rejected: {error}");
     }
     bind_token_rate(tab_id, cx);
+    wake_transcript_monitor(cx);
 }
 
 /// TEL-002, TEL-006: the AI CLI exited. The transcript is read on a
@@ -684,6 +727,7 @@ pub fn run_ended(
     if let Some(rates) = cx.try_global::<TokenRates>() {
         rates.0.lock().unbind(tab_id);
     }
+    wake_transcript_monitor(cx);
     // The owned writer captures this completion before returning. Its drain
     // includes the off-UI PTY delay, transcript read and final transaction.
     if let Err(error) = recorder.enqueue_completion(run, buffer, pty_log) {
@@ -696,15 +740,21 @@ pub fn update_session_id(tab_id: &str, session_id: &str, cx: &App) {
     if !chau7_next_core::ai::resume::is_valid_session_id(session_id) {
         return;
     }
+    let mut changed = false;
     if let Some(recorder) = recorder(cx)
         && recorder
             .active_run_for_tab(tab_id)
             .is_some_and(|r| r.session_id.as_deref() != Some(session_id))
-        && let Err(error) = recorder.update_session_id(tab_id, session_id)
     {
-        log::warn!("Telemetry session update rejected: {error}");
+        match recorder.update_session_id(tab_id, session_id) {
+            Ok(_) => changed = true,
+            Err(error) => log::warn!("Telemetry session update rejected: {error}"),
+        }
     }
     bind_token_rate(tab_id, cx);
+    if changed {
+        wake_transcript_monitor(cx);
+    }
 }
 
 /// The AI session row of a tab's hover card (TEL-011, OVL-060): the run in
@@ -1337,5 +1387,178 @@ mod shutdown_tests {
         );
         assert_eq!(store.readiness(), StoreReadiness::Closed);
         store.close().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod transcript_monitor_tests {
+    use super::*;
+    use chau7_next_core::telemetry::token_rate::{TokenRateSource, TokenRateStore};
+    use std::time::Duration;
+
+    fn callbacks() -> u64 {
+        chau7_next_core::work_profiler::snapshot()["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["operation"] == "telemetry.transcript_rate")
+            .map(|e| e["lifetime"]["sample_count"].as_u64().unwrap_or(0))
+            .sum()
+    }
+
+    fn timer_active(cx: &App) -> bool {
+        crate::observability::timer_inventory(cx)["timers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["id"] == "telemetry.transcript_rate" && t["active"] == true)
+    }
+
+    #[gpui::test]
+    fn idle_transcript_monitor_parks_resumes_and_keeps_active_cadence(
+        harness: &mut gpui::TestAppContext,
+    ) {
+        let home =
+            std::env::temp_dir().join(format!("c7-transcript-demand-{}", uuid::Uuid::new_v4()));
+        let day = home
+            .join(".codex/sessions")
+            .join(chrono::Local::now().format("%Y/%m/%d").to_string());
+        std::fs::create_dir_all(&day).unwrap();
+        harness.on_quit({
+            let home = home.clone();
+            move || {
+                let _ = std::fs::remove_dir_all(home);
+            }
+        });
+        let native = uuid::Uuid::new_v4().to_string();
+        let path = day.join(format!("rollout-test-{native}.jsonl"));
+        let at = Utc::now();
+        let event = |seconds, payload: Value| {
+            serde_json::json!({
+                "type": "event_msg",
+                "timestamp": (at + chrono::Duration::seconds(seconds)).to_rfc3339(),
+                "payload": payload,
+            })
+            .to_string()
+                + "\n"
+        };
+        let tokens = |total| {
+            serde_json::json!({"type":"token_count", "info":{
+                "last_token_usage":{"output_tokens":20}, "total_token_usage":{"output_tokens":total},
+            }})
+        };
+        std::fs::write(
+            &path,
+            event(0, serde_json::json!({"type":"task_started"})) + &event(1, tokens(20)),
+        )
+        .unwrap();
+        let before = callbacks();
+        harness.update(|cx| {
+            crate::observability::init_for_test(cx);
+            let recorder = Arc::new(TelemetryRecorder::new(
+                Arc::new(TelemetryStore::in_memory()),
+                vec![],
+            ));
+            let rates = Arc::new(Mutex::new(TokenRateStore::default()));
+            cx.set_global(TelemetryGlobal(recorder.clone()));
+            cx.set_global(TokenRates(rates.clone()));
+            start_transcript_monitor(home, recorder, rates, cx);
+        });
+        harness.run_until_parked();
+        let parked = callbacks();
+        assert!(
+            parked > before,
+            "exercise initial discovery before asserting a parked worker"
+        );
+        harness.executor().advance_clock(Duration::from_secs(2));
+        harness.run_until_parked();
+        assert_eq!(callbacks(), parked, "no timer callbacks without AI runs");
+        assert!(!harness.update(|cx| timer_active(cx)));
+
+        // Missing native identity must not park a live CLI or prevent later binding.
+        harness.update(|cx| run_started("TAB", "codex", "/fixture", None, None, cx));
+        harness.run_until_parked();
+        let started = callbacks();
+        assert!(started > parked, "new run must wake discovery immediately");
+        assert!(harness.update(|cx| timer_active(cx)));
+        harness.executor().advance_clock(Duration::from_millis(200));
+        harness.run_until_parked();
+        assert!(
+            callbacks() > started,
+            "a silent active CLI retains its polling cadence"
+        );
+
+        harness.update(|cx| update_session_id("TAB", &native, cx));
+        harness.run_until_parked();
+        let reading = harness
+            .update(|cx| token_rate("TAB", cx))
+            .expect("late identity must read its transcript");
+        assert_eq!(reading.source, TokenRateSource::CodexTranscript);
+        assert_eq!(reading.output_tokens, 20);
+        let bound = callbacks();
+        for _ in 0..32 {
+            harness.update(|cx| update_session_id("TAB", &native, cx));
+            harness.run_until_parked();
+        }
+        assert_eq!(
+            callbacks(),
+            bound,
+            "unchanged identity must not trigger reads"
+        );
+
+        use std::io::Write as _;
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(event(2, tokens(40)).as_bytes())
+            .unwrap();
+        harness.executor().advance_clock(Duration::from_millis(200));
+        harness.run_until_parked();
+        let reading = harness.update(|cx| token_rate("TAB", cx)).unwrap();
+        assert_eq!(reading.updated_at, at + chrono::Duration::seconds(2));
+
+        harness.update(|cx| run_ended("TAB", Some(0), Some(&native), None, None, cx));
+        harness.run_until_parked();
+        assert!(!harness.update(|cx| timer_active(cx)));
+        let ended = callbacks();
+        harness.executor().advance_clock(Duration::from_secs(2));
+        harness.run_until_parked();
+        assert_eq!(
+            callbacks(),
+            ended,
+            "last exit must clear caches and park again"
+        );
+        assert_eq!(
+            harness
+                .update(|cx| token_rate("TAB", cx))
+                .unwrap()
+                .updated_at,
+            reading.updated_at,
+            "exit retains the historical reading without further writes"
+        );
+
+        // A bounded burst coalesces, then another run can wake the same worker.
+        harness.update(|cx| {
+            for _ in 0..4096 {
+                wake_transcript_monitor(cx);
+            }
+            run_started("TAB", "codex", "/fixture", None, Some(&native), cx);
+        });
+        harness.run_until_parked();
+        assert!(callbacks() > ended);
+        assert!(harness.update(|cx| token_rate("TAB", cx)).is_some());
+        harness.update(|cx| {
+            drop(cx.global_mut::<TranscriptMonitor>().task.take());
+        });
+        harness.run_until_parked();
+        assert!(
+            !harness.update(|cx| timer_active(cx)),
+            "cancellation must retire the timer"
+        );
+        let cancelled = callbacks();
+        harness.executor().advance_clock(Duration::from_secs(2));
+        harness.run_until_parked();
+        assert_eq!(callbacks(), cancelled);
     }
 }

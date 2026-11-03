@@ -566,6 +566,7 @@ impl TerminalView {
         let snapshot_size = self.bounds.map(|bounds| bounds.size);
         let state = {
             let session_entity = self.session.clone();
+            session_entity.update(cx, |session, _| session.ensure_grid());
             let session = session_entity.read(cx);
             inputs.danger_rows = self.danger_rows_for_snapshot(session, &settings);
             let size = snapshot_size.unwrap_or_else(|| {
@@ -815,6 +816,25 @@ impl Render for TerminalView {
             ));
         let metrics = self.metrics(window, cx);
         let guard_overlay = self.render_guard(cx);
+        let restore_notice = self.session.read(cx).restore_resume_issue().map(|issue| {
+            use chau7_next_core::session_restore::preparation::ResumeIssue;
+            let message = match issue {
+                ResumeIssue::UnavailableHistory => "Saved conversation unavailable: its local history could not be verified. Recovery details have been kept.",
+                ResumeIssue::IdentityInUse => "Saved conversation is already open in another pane. Recovery details have been kept.",
+                ResumeIssue::InvalidMetadata => "Saved conversation details could not be verified. Recovery details have been kept.",
+                ResumeIssue::MissingIdentity => "No confirmed conversation ID was saved. Use the agent’s session picker to choose the conversation to resume.",
+            };
+            let chrome = crate::theme::Chrome::get(cx);
+            div().absolute().top_2().left_2().right_2()
+                .flex().items_center().gap_2().px_3().py_2().rounded_md()
+                .bg(chrome.tab_bg).text_color(chrome.text).text_xs()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(div().flex_1().min_w_0().child(message))
+                .child(div().id("dismiss-restore-notice").cursor_pointer().child("×")
+                    .on_click(cx.listener(|view, _, _, cx| {
+                        view.session.update(cx, |session, cx| session.set_restore_resume_issue(None, cx));
+                    })))
+        });
         let settings = Settings::get(cx);
         let focused = self.focus_handle.is_focused(window);
         let view = cx.entity();
@@ -877,9 +897,13 @@ impl Render for TerminalView {
                                     f32::from(metrics.cell_width),
                                     f32::from(metrics.line_height),
                                 );
-                            if let Some((cols, rows)) = dimensions {
-                                session.update(cx, |s, _| s.resize(cols, rows));
-                            }
+                            session.update(cx, |s, _| {
+                                if let Some((cols, rows)) = dimensions {
+                                    s.resize(cols, rows);
+                                }
+                                // A tab that was hidden kept only its grid shape.
+                                s.ensure_grid();
+                            });
                             // A busy resize may still be pending. Observe applied
                             // grid dimensions so its later successful retry re-arms
                             // the post-resize signals instead of caching a request.
@@ -948,6 +972,7 @@ impl Render for TerminalView {
                 )
                 .size_full(),
             )
+            .children(restore_notice)
             .children(guard_overlay)
     }
 }

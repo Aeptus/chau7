@@ -837,11 +837,20 @@ impl TabsState {
         }
     }
 
-    pub fn touch(&mut self, id: TabId, now: f64) {
+    /// Record activity. Returns whether the tab was idle until now, the only
+    /// case in which activity changes the tab bar (it leaves the idle group).
+    pub fn touch(&mut self, id: TabId, now: f64) -> bool {
+        let was_idle = self.group_idle_tabs
+            && Some(id) != self.selected
+            && (self.forced_idle.contains(&id)
+                || self
+                    .get(id)
+                    .is_some_and(|tab| now - tab.last_activity > self.idle_threshold_secs));
         if let Some(tab) = self.get_mut(id) {
             tab.last_activity = now;
         }
         self.forced_idle.remove(&id);
+        was_idle
     }
 
     /// `forceTabIdle`: never the selected tab.
@@ -1188,6 +1197,24 @@ mod tests {
         assert_eq!(s.idle_ids(701.0), [1, 2].into_iter().collect());
         s.group_idle_tabs = false;
         assert!(s.idle_ids(701.0).is_empty());
+    }
+
+    #[test]
+    fn touch_reports_only_activity_that_leaves_the_idle_group() {
+        let mut s = state_with(2);
+        s.select(2);
+        s.touch(1, 0.0);
+        // Activity on an already active tab changes nothing the tab bar shows.
+        assert!(!s.touch(1, 10.0));
+        assert!(s.touch(1, 10.0 + s.idle_threshold_secs + 1.0));
+        s.force_idle(1);
+        assert!(s.touch(1, 2000.0));
+        assert!(!s.touch(1, 2001.0));
+        // The selected tab is never idle; nor is any tab without idle grouping.
+        assert!(!s.touch(2, 9_999.0));
+        s.group_idle_tabs = false;
+        s.force_idle(1);
+        assert!(!s.touch(1, 99_999.0));
     }
 
     #[test]

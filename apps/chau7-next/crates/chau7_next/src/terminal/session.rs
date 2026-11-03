@@ -38,7 +38,7 @@ use chau7_next_core::shell_session::{
 use chau7_next_core::work_profiler::{self, Key as WorkKey, Kind as WorkKind, Queue as WorkQueue};
 use chau7_next_core::{shell_env, shell_integration, shell_tips};
 use chau7_terminal::{
-    Chau7Terminal, GridCopy, OutputInterrupt, OutputReady, StyledScreen, StyledSelection,
+    Chau7Terminal, GridCopy, OutputInterrupt, StyledScreen, StyledSelection,
     graphics::ShellIntegrationEvent,
 };
 use futures::channel::{mpsc, oneshot};
@@ -46,12 +46,12 @@ use futures::{FutureExt, StreamExt};
 use gpui::{AppContext, Context, EventEmitter, Global, Task};
 use parking_lot::{Mutex, RwLock};
 
+mod maintenance;
+
 use super::pty_writer::{CloseMode, PtyWriter, Signal, signal_group};
 use crate::monitoring::session::{SessionMonitor, shell_ai_event};
 use crate::platform::process as procinfo;
 use crate::settings::{ActivePollingRateCap, BellSound, Settings};
-
-const PTY_READINESS_MAX_WAIT_MS: u64 = 1_000;
 
 /// App-scoped fixture policy: production shell construction and the real PTY
 /// writer remain intact, while native output is driven by the test scheduler.
@@ -128,6 +128,24 @@ fn refresh_wait(interval: Duration, suspended: bool, elapsed: Duration) -> Durat
         interval
     };
     interval.saturating_sub(elapsed)
+}
+
+/// Update a deferred grid's shape. Cells keep `cols * rows` entries (blank
+/// after a resize) so every reader's indexing stays in bounds.
+fn apply_grid_shape(grid: &mut GridCopy, shape: GridCopy) {
+    let resized = (grid.cols, grid.rows) != (shape.cols, shape.rows);
+    grid.cols = shape.cols;
+    grid.rows = shape.rows;
+    grid.cursor_visible = shape.cursor_visible;
+    grid.scrollback_rows = shape.scrollback_rows;
+    grid.display_offset = shape.display_offset;
+    let total = usize::from(shape.cols) * usize::from(shape.rows);
+    if resized || grid.cells.len() != total {
+        grid.cells.clear();
+        grid.cells
+            .resize(total, chau7_terminal::OwnedCell::default());
+        grid.clusters.clear();
+    }
 }
 
 static NEXT_SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -259,6 +277,7 @@ pub struct TerminalSession {
     restore_intent: Option<chau7_next_core::session_restore::lifecycle::RestorePrefillIntent>,
     restore_token: u64,
     restore_input_generation: Cell<u64>,
+    restore_resume_issue: Option<chau7_next_core::session_restore::preparation::ResumeIssue>,
     restore_presented: Cell<bool>,
     restore_selected: Cell<bool>,
     restore_window_visible: Cell<bool>,
@@ -270,7 +289,12 @@ pub struct TerminalSession {
     /// Typed input not yet given to the tracker, with the echo state.
     pending_input: RefCell<Vec<(Vec<u8>, bool)>>,
     echo_fd: i32,
+    /// The visible grid. A hidden surface keeps only its shape current
+    /// (`grid_stale`); [`Self::ensure_grid`] copies the cells before use.
     pub grid: GridCopy,
+    grid_stale: bool,
+    /// Time the refresh pump deliberately held this batch for frame pacing.
+    pacing_hold: Duration,
     pub cursor: (u16, u16),
     pub title: Option<String>,
     pub cwd: Option<PathBuf>,
@@ -279,6 +303,8 @@ pub struct TerminalSession {
     pub ai_app: Option<String>,
     /// Live destination of an OpenSSH process below this tab's shell.
     ssh_host: Option<String>,
+    /// Primary native AI process from the existing off-thread process snapshot.
+    live_agent_pid: Option<u32>,
     /// Id the token optimizer knows this shell by (`CHAU7_CTO_SESSION`, the
     /// flag file name).
     cto_id: String,
@@ -333,7 +359,8 @@ pub struct TerminalSession {
     /// so the mouse always selects (TRM-018).
     mouse_reporting_enabled: std::cell::Cell<bool>,
     _pump: Task<()>,
-    _ticker: Task<()>,
+    #[cfg(test)]
+    maintenance_ticks: usize,
     process_subscription: Option<crate::monitoring::process_tree::Subscription>,
 }
 
@@ -649,18 +676,12 @@ impl TerminalSession {
                             "pty_poll",
                             WorkQueue::Background,
                         );
-                        let ready = work_profiler::measure(wait_key, || {
-                            readiness.wait(Duration::from_millis(PTY_READINESS_MAX_WAIT_MS))
-                        });
+                        work_profiler::measure(wait_key, || readiness.wait_for_event());
                         if stop.load(Ordering::Acquire) {
                             break;
                         }
-                        // Readiness wakes for output, close and explicit
-                        // interrupts. A timeout needs no native poll or output
-                        // extraction, eliminating idle parser-lock work.
-                        if ready == OutputReady::Timeout {
-                            continue;
-                        }
+                        // Output, close, input and focus/stop signals resume this
+                        // worker directly; idle terminals have no timeout wake.
                         let visibility = profile_memory
                             .get()
                             .and_then(std::sync::Weak::upgrade)
@@ -731,6 +752,7 @@ impl TerminalSession {
                 // Focus/settings changes only interrupt a pending deadline.
                 // They do not invent output or reset session activity.
                 if notifications == 0 { continue; }
+                let mut held = Duration::ZERO;
                 loop {
                     let wait = last_refresh.map_or(Duration::ZERO, |at| refresh_wait(
                         Duration::from_nanos(pacing.load(Ordering::Relaxed)),
@@ -738,6 +760,7 @@ impl TerminalSession {
                     if wait.is_zero() { break; }
                     let delay = cx.background_executor().timer(wait).fuse();
                     let next = rx.next().fuse();
+                    let holding = Instant::now();
                     futures::pin_mut!(delay, next);
                     futures::select_biased! {
                         event = next => match event {
@@ -746,6 +769,8 @@ impl TerminalSession {
                         },
                         _ = delay => {},
                     }
+                    // A late timer is main-thread congestion, not pacing.
+                    held += holding.elapsed().min(wait);
                 }
                 while let Ok(next) = rx.try_recv() {
                     notifications += usize::from(matches!(next, RefreshWake::Output));
@@ -754,22 +779,14 @@ impl TerminalSession {
                     let mut wake = work_profiler::begin(WorkKey::wakeup(
                         "output_dispatch", this.profiling_phase(), WorkQueue::Main));
                     wake.items(notifications);
+                    this.pacing_hold = held;
                     this.refresh(cx);
                 }).is_err() { break; }
                 last_refresh = Some(Instant::now());
             }
         });
-        // Once a second: idle/stuck timers, startup notice, cwd and branch.
-        let ticker = cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(1000))
-                    .await;
-                if this.update(cx, |this, cx| this.tick(cx)).is_err() {
-                    break;
-                }
-            }
-        });
+        // One shared deadline retains each session's housekeeping cadence.
+        maintenance::register(cx.entity().downgrade(), cx);
 
         if has_pty {
             register_shell(id, pid);
@@ -828,6 +845,7 @@ impl TerminalSession {
             restore_intent: None,
             restore_token: 0,
             restore_input_generation: Cell::new(0),
+            restore_resume_issue: None,
             restore_presented: Cell::new(false),
             restore_selected: Cell::new(false),
             restore_window_visible: Cell::new(false),
@@ -838,6 +856,8 @@ impl TerminalSession {
             prefill_scheduled: false,
             echo_fd,
             grid,
+            grid_stale: false,
+            pacing_hold: Duration::ZERO,
             cursor: (0, 0),
             title: None,
             cwd,
@@ -845,6 +865,7 @@ impl TerminalSession {
             git_branch,
             ai_app: None,
             ssh_host: None,
+            live_agent_pid: None,
             cto_id: uuid::Uuid::new_v4().to_string().to_uppercase(),
             exited: None,
             last_activity: now,
@@ -883,7 +904,8 @@ impl TerminalSession {
             dev_checks: None,
             mouse_reporting_enabled: std::cell::Cell::new(false),
             _pump: pump,
-            _ticker: ticker,
+            #[cfg(test)]
+            maintenance_ticks: 0,
             process_subscription,
         }
     }
@@ -932,8 +954,10 @@ impl TerminalSession {
             "refresh_cap_interval_ms":self.refresh_interval_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0,
             "display_native_refresh":self.refresh_interval_ns.load(Ordering::Relaxed) == 0,
             "refresh_interactive":self.poll_interactive.load(Ordering::Relaxed),
-            "pty_readiness_max_wait_ms":PTY_READINESS_MAX_WAIT_MS,
+            "pty_readiness_max_wait_ms":serde_json::Value::Null,
+            "pty_readiness_wait":"event_driven",
             "render_suspended":self.is_render_suspended(),
+            "grid_cells_deferred":self.grid_stale,
             "native_pending_image_bytes":serde_json::Value::Null,
             "unavailable_reason":"Native pending images and private GPUI GPU resources expose no allocation accessor; native ring bytes are estimated. Known capacities exclude allocator/HashMap overhead."
         })
@@ -954,10 +978,24 @@ impl TerminalSession {
         let started = Instant::now();
         self.memory.set_tui(self.is_ai_running());
         let mut metadata_changed = self.retry_resize();
+        // Nobody can see a hidden surface's cells: copying the whole grid on
+        // every output batch of every background tab saturated the UI thread.
+        let defer_cells = !self.surface_needs_cells();
         let (grid, cursor, title, closed, events, bell, clipboard, clipboard_load) = {
             let term = self.term.read();
             (
-                {
+                if defer_cells {
+                    work_profiler::measure(
+                        WorkKey::work(
+                            "get_grid_shape",
+                            "drain",
+                            self.profiling_phase(),
+                            "session_refresh",
+                            WorkQueue::Main,
+                        ),
+                        || term.grid_metadata(),
+                    )
+                } else {
                     let mut capture = work_profiler::begin(WorkKey::work(
                         "get_grid",
                         "drain",
@@ -1007,9 +1045,15 @@ impl TerminalSession {
                 WorkQueue::Main,
             );
             key.kind = WorkKind::Latency;
+            let waited = at.elapsed();
+            work_profiler::record(key, waited.as_secs_f64() * 1000.0, output.len(), 1, false);
+            // The same wait without the deliberate pacing hold: what the main
+            // thread alone cost this output before it was processed.
+            key.operation = "event_dispatch_congestion";
+            let congestion = waited.saturating_sub(std::mem::take(&mut self.pacing_hold));
             work_profiler::record(
                 key,
-                at.elapsed().as_secs_f64() * 1000.0,
+                congestion.as_secs_f64() * 1000.0,
                 output.len(),
                 1,
                 false,
@@ -1025,7 +1069,12 @@ impl TerminalSession {
             }
         }
         let display_offset_before = self.grid.display_offset;
-        self.grid = grid;
+        if defer_cells {
+            self.apply_grid_shape(grid);
+        } else {
+            self.grid = grid;
+            self.grid_stale = false;
+        }
         self.cursor = cursor;
         self.last_activity = Instant::now();
         let now = now_secs();
@@ -1101,7 +1150,12 @@ impl TerminalSession {
                 && (display_offset_before > 0 || self.grid.display_offset > 0)
             {
                 self.scroll_to_bottom();
-                self.grid = self.term.read().grid_copy();
+                if defer_cells {
+                    let shape = self.term.read().grid_metadata();
+                    self.apply_grid_shape(shape);
+                } else {
+                    self.grid = self.term.read().grid_copy();
+                }
             }
         }
         metadata_changed |= self.drain_tracker_events(cx);
@@ -1170,10 +1224,7 @@ impl TerminalSession {
         // The tab bar reads hidden sessions too: GPUI tracks those reads as
         // window dependencies. Output-only changes must not invalidate that
         // window, while metadata and surfaces that can be presented stay live.
-        if metadata_changed
-            || self.restore_surface_visible()
-            || self.surface_prewarm_remaining().is_some()
-        {
+        if metadata_changed || !defer_cells {
             cx.notify();
         }
         feature_profiler::record(
@@ -1474,9 +1525,15 @@ impl TerminalSession {
 
     /// Once a second.
     fn tick(&mut self, cx: &mut Context<Self>) {
-        let mut wake = work_profiler::begin(WorkKey::wakeup(
+        #[cfg(test)]
+        {
+            self.maintenance_ticks += 1;
+        }
+        let mut wake = work_profiler::begin(WorkKey::work(
             "session_timer",
+            "tick",
             self.profiling_phase(),
+            "session_maintenance_timer",
             WorkQueue::Main,
         ));
         wake.idle(self.last_activity.elapsed() >= Duration::from_secs(1));
@@ -1829,11 +1886,33 @@ impl TerminalSession {
         let term = self.term.write();
         replay_restored_terminal(&term, context);
         self.grid = term.grid_copy();
+        self.grid_stale = false;
         self.cursor = term.cursor_position();
         drop(term);
         cx.emit(SessionEvent::Output);
         cx.notify();
     }
+    pub(crate) fn set_restore_resume_issue(
+        &mut self,
+        issue: Option<chau7_next_core::session_restore::preparation::ResumeIssue>,
+        cx: &mut Context<Self>,
+    ) {
+        self.restore_resume_issue = issue;
+        if let Some(issue) = issue {
+            // No command, path or native identity is written to the log.
+            log::warn!("restore resume unavailable: {}", issue.code());
+        }
+        cx.notify();
+    }
+    pub(crate) fn restore_resume_issue(
+        &self,
+    ) -> Option<chau7_next_core::session_restore::preparation::ResumeIssue> {
+        // Deliberate input starts a new interaction; old recovery metadata
+        // remains preserved by the pane tree, without covering the new work.
+        self.restore_resume_issue
+            .filter(|_| self.restore_input_generation.get() == 0)
+    }
+
     pub(crate) fn queue_restored_resume(
         &mut self,
         command: String,
@@ -2351,7 +2430,41 @@ impl TerminalSession {
         drop(term);
         self.pending_resize = None;
         self.grid = self.term.read().grid_copy();
+        self.grid_stale = false;
         true
+    }
+
+    /// Cells are needed while the surface is on screen or being prewarmed.
+    fn surface_needs_cells(&self) -> bool {
+        self.restore_surface_visible() || self.surface_prewarm_remaining().is_some()
+    }
+
+    fn apply_grid_shape(&mut self, shape: GridCopy) {
+        apply_grid_shape(&mut self.grid, shape);
+        self.grid_stale = true;
+    }
+
+    /// Copy the cells a hidden surface skipped. Called before painting or
+    /// snapshotting; a no-op while the grid is current.
+    pub fn ensure_grid(&mut self) -> bool {
+        if !self.grid_stale {
+            return false;
+        }
+        let mut capture = work_profiler::begin(WorkKey::work(
+            "deferred_grid_copy",
+            "reveal",
+            self.profiling_phase(),
+            "session_refresh",
+            WorkQueue::Main,
+        ));
+        self.grid = self.term.read().grid_copy();
+        capture.items(self.grid.cells.len());
+        self.grid_stale = false;
+        true
+    }
+
+    pub fn grid_is_deferred(&self) -> bool {
+        self.grid_stale
     }
 
     pub fn scroll_lines(&self, lines: i32) {
@@ -2651,6 +2764,7 @@ impl TerminalSession {
     pub(crate) fn apply_live_process_snapshot(
         &mut self,
         provider: Option<&str>,
+        provider_pid: Option<u32>,
         ssh_host: Option<&str>,
         cx: &mut Context<Self>,
     ) {
@@ -2662,6 +2776,7 @@ impl TerminalSession {
         if ssh_changed {
             self.ssh_host = ssh_host.map(str::to_owned);
         }
+        self.live_agent_pid = provider_pid;
         let provider_changed = self.tracker.update_live_agent(provider);
         if provider_changed {
             self.memory.set_tui(self.is_ai_running());
@@ -3207,6 +3322,84 @@ pub(crate) fn reconcile_feedback_route(event: &mut AiEvent, cx: &mut gpui::App) 
     false
 }
 
+/// The canonical event tab of the live tab an agent hook reported running
+/// in (its `CHAU7_NEXT_TAB_ID`), when exactly one pane matches.
+pub(crate) fn reported_event_tab(target: uuid::Uuid, cx: &mut gpui::App) -> Option<uuid::Uuid> {
+    match reported_tab_panes(target, cx).as_slice() {
+        [(tab, _)] => Some(crate::ai::events_out::tab_uuid(*tab)),
+        _ => None,
+    }
+}
+
+fn reported_tab_panes(
+    target: uuid::Uuid,
+    cx: &mut gpui::App,
+) -> Vec<(crate::tab_bar::TabId, gpui::Entity<TerminalSession>)> {
+    let mut panes_found = Vec::new();
+    for window in crate::mcp::windows::windows(cx) {
+        let workspace = window.workspace.read(cx);
+        for uuid in workspace.mcp_tab_uuids() {
+            let Some(tab) = workspace.mcp_find(uuid) else {
+                continue;
+            };
+            let Some(panes) = workspace.mcp_panes(tab) else {
+                continue;
+            };
+            for (_, entity) in panes.read(cx).pane_sessions(cx) {
+                let session = entity.read(cx);
+                if session.exited.is_none()
+                    && feedback_target_matches(Some(target), uuid, tab, &session.tab_identifier)
+                {
+                    panes_found.push((tab, entity.clone()));
+                }
+            }
+        }
+    }
+    panes_found
+}
+
+/// Bind the identity an agent hook reported from inside a tab to that tab.
+/// Every hook-equipped provider stamps its events with the tab it runs in,
+/// so this runs for all of them and for every event kind, before routing:
+/// the provider-matched owner lookup below would otherwise refuse the tab
+/// whenever its saved provider is stale, and it could never be resumed.
+/// Only authoritative events qualify: fallback and heuristic events get their
+/// tab by directory routing, and several tabs can share a directory.
+pub(crate) fn adopt_tab_reported_identity(event: &AiEvent, cx: &mut gpui::App) {
+    if event.reliability != AiEventReliability::Authoritative {
+        return;
+    }
+    let (Some(target), Some(session_id), Some(provider), Some(date)) = (
+        event.tab_id,
+        event
+            .session_id
+            .as_deref()
+            .filter(|id| !id.trim().is_empty()),
+        feedback_provider(event),
+        chau7_next_core::telemetry::date_codec::parse_iso8601(Some(&event.ts)),
+    ) else {
+        return;
+    };
+    let observed_at = date.timestamp_millis() as f64 / 1000.0;
+    // A tab-level ID shared by split panes cannot say which pane reported.
+    let panes = reported_tab_panes(target, cx);
+    let [(_, owner)] = panes.as_slice() else {
+        return;
+    };
+    owner.update(cx, |session, cx| {
+        if session.tracker.adopt_tab_reported_ai_identity_from_process(
+            &provider,
+            session_id,
+            observed_at,
+            event.provider_process_id,
+            session.live_agent_pid,
+        ) {
+            cx.emit(SessionEvent::MetadataChanged);
+            cx.notify();
+        }
+    });
+}
+
 pub(crate) fn apply_agent_feedback(event: &AiEvent, cx: &mut gpui::App) {
     if event.reliability != AiEventReliability::Authoritative || feedback_kind(event).is_none() {
         return;
@@ -3579,5 +3772,32 @@ mod startup_presentation_tests {
     fn exit_frame_releases_the_splash() {
         assert!(startup_frame_ready(true, false, true));
         assert!(startup_frame_ready(true, false, false));
+    }
+}
+
+#[cfg(test)]
+mod deferred_grid_tests {
+    use super::*;
+
+    #[test]
+    fn a_hidden_grid_follows_the_shape_and_its_cells_stay_in_bounds() {
+        let term = Chau7Terminal::new_headless(10, 3).unwrap();
+        term.inject_output(b"visible text");
+        let mut grid = term.grid_copy();
+        let before = grid.cells.clone();
+        term.inject_output(b"\r\nmore\r\nand more\r\nscrolled");
+        apply_grid_shape(&mut grid, term.grid_metadata());
+        let current = term.grid_copy();
+        assert_eq!(grid.scrollback_rows, current.scrollback_rows);
+        assert!(grid.scrollback_rows > 0);
+        // Same shape: the old cells are kept (stale, never painted) until a copy.
+        assert_eq!(grid.cells, before);
+
+        term.resize(12, 4);
+        apply_grid_shape(&mut grid, term.grid_metadata());
+        assert_eq!((grid.cols, grid.rows), (12, 4));
+        assert_eq!(grid.cells.len(), 48);
+        assert!(grid.cells.iter().all(|cell| cell.character == ' '));
+        assert!(grid.clusters.is_empty());
     }
 }

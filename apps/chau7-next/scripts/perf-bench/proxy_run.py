@@ -16,6 +16,7 @@ from pathlib import Path
 
 from native import Sampler, summarize
 from run import percentile
+from safety import ResourceGuard
 
 CHUNKS = [
     b'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":32,"output_tokens":0}}}\n\n'
@@ -29,6 +30,19 @@ CHUNKS += [
 ]
 
 
+def stream_chunks(text_bytes):
+    chunks = list(CHUNKS)
+    data = json.dumps(
+        {
+            "type": "content_block_delta",
+            "delta": {"type": "text_delta", "text": "x" * text_bytes},
+        },
+        separators=(",", ":"),
+    ).encode()
+    chunks[1:17] = [b"event: content_block_delta\ndata: " + data + b"\n\n"] * 16
+    return chunks
+
+
 class Provider(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     disable_nagle_algorithm = True
@@ -37,9 +51,9 @@ class Provider(BaseHTTPRequestHandler):
         self.rfile.read(int(self.headers["Content-Length"]))
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Content-Length", str(sum(map(len, CHUNKS))))
+        self.send_header("Content-Length", str(sum(map(len, self.server.chunks))))
         self.end_headers()
-        for chunk in CHUNKS:
+        for chunk in self.server.chunks:
             self.wfile.write(chunk)
             self.wfile.flush()
             time.sleep(0.005)
@@ -48,7 +62,7 @@ class Provider(BaseHTTPRequestHandler):
         pass
 
 
-def request(connection):
+def request(connection, chunks):
     body = json.dumps(
         {
             "model": "claude-perflab",
@@ -73,13 +87,23 @@ def request(connection):
     first = response.read(1)
     first_ms = (time.monotonic() - started) * 1000
     rest = response.read()
-    if response.status != 200 or first + rest != b"".join(CHUNKS):
+    if response.status != 200 or first + rest != b"".join(chunks):
         raise RuntimeError("proxy did not preserve the complete SSE stream")
     return first_ms, (time.monotonic() - started) * 1000
 
 
 def run(args, result, directory, log):
+    evidence = []
+    guard = ResourceGuard(evidence, policy=args.resource_policy)
+    result["resource_safety"] = {
+        "policy": guard.policy,
+        "limits": guard.limits,
+        "samples": evidence,
+    }
+    guard.wait(60)
+    chunks = stream_chunks(args.text_bytes)
     upstream = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+    upstream.chunks = chunks
     worker = threading.Thread(target=upstream.serve_forever, daemon=True)
     worker.start()
     env = {k: v for k, v in os.environ.items() if not k.startswith("CHAU7_")}
@@ -89,7 +113,13 @@ def run(args, result, directory, log):
         CHAU7_DB_PATH=str(directory / "proxy.db"),
     )
     proxy = subprocess.Popen(
-        [str(args.binary), "-test.run", "^TestProxyPerformanceFixture$", "-test.timeout", "30m"],
+        [
+            str(args.binary),
+            "-test.run",
+            "^TestProxyPerformanceFixture$",
+            "-test.timeout",
+            "30m",
+        ],
         env=env,
         stdout=subprocess.PIPE,
         stderr=log,
@@ -111,36 +141,48 @@ def run(args, result, directory, log):
             raise RuntimeError("fixture PID mismatch")
         result["pid"] = proxy.pid
         connection = http.client.HTTPConnection(info["perflab_proxy"], timeout=5)
-        request(connection)
+        request(connection, chunks)
         # Allow the initial task candidate and provider warm-up to finish.
-        time.sleep(6)
+        guard.wait(6, {"proxy": proxy.pid})
         sampler = Sampler()
         for phase in ("idle", "streaming", "recovery"):
             print(f"{args.label}: measuring {phase}", flush=True)
-            time.sleep(args.settle)
+            guard.wait(args.settle, {"proxy": proxy.pid})
             samples, first_bytes, completions = [], [], []
+            result["phases"][phase] = {
+                "capture_state": "incomplete",
+                "samples": samples,
+                "first_byte_ms": first_bytes,
+                "completion_ms": completions,
+            }
             next_sample = next_request = time.monotonic()
             deadline = next_sample + args.measure
             while True:
                 now = time.monotonic()
+                guard.check({"proxy": proxy.pid})
                 if now >= next_sample:
                     samples.append(sampler.sample(proxy.pid))
                     next_sample = now + 1
                 if now >= deadline:
                     break
                 if phase == "streaming" and now >= next_request:
-                    first_ms, full_ms = request(connection)
+                    first_ms, full_ms = request(connection, chunks)
                     first_bytes.append(first_ms)
                     completions.append(full_ms)
                     next_request = now + 1 / args.request_hz
                 time.sleep(
                     max(
                         0,
-                        min(next_sample, next_request if phase == "streaming" else deadline, deadline)
+                        min(
+                            next_sample,
+                            next_request if phase == "streaming" else deadline,
+                            deadline,
+                        )
                         - time.monotonic(),
                     )
                 )
             result["phases"][phase] = {
+                "capture_state": "complete",
                 "process": summarize(samples),
                 "samples": samples,
                 "requests": len(first_bytes),
@@ -162,6 +204,7 @@ def run(args, result, directory, log):
         upstream.shutdown()
         upstream.server_close()
         worker.join(timeout=5)
+        result["owned_cleanup"] = {"pid": proxy.pid, "exited": proxy.poll() is not None}
     if proxy.returncode != 0:
         raise RuntimeError(f"proxy fixture shutdown failed: {proxy.returncode}")
 
@@ -174,7 +217,20 @@ def main():
     parser.add_argument("--measure", type=float, default=30)
     parser.add_argument("--settle", type=float, default=5)
     parser.add_argument("--request-hz", type=float, default=2)
+    parser.add_argument(
+        "--resource-policy",
+        choices=("strict-host", "owned-budget"),
+        default="strict-host",
+    )
+    parser.add_argument(
+        "--text-bytes",
+        type=int,
+        default=14,
+        help="synthetic text bytes per SSE delta (16 deltas)",
+    )
     args = parser.parse_args()
+    if not 1 <= args.text_bytes <= 65536:
+        parser.error("text-bytes must be between 1 and 65536")
     if args.measure < 2 or args.settle < 0 or not 0 < args.request_hz <= 5 or Path(args.label).name != args.label:
         parser.error("invalid duration, rate or label")
     args.binary = args.binary.resolve(strict=True)
@@ -188,6 +244,11 @@ def main():
         "status": "incomplete",
         "phases": {},
         "binary_sha256": hashlib.sha256(args.binary.read_bytes()).hexdigest(),
+        "harness_sha256": {
+            name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+            for name in ("proxy_run.py", "native.py", "run.py", "safety.py")
+        },
+        "response_bytes": sum(map(len, stream_chunks(args.text_bytes))),
         "arguments": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         "load_average": os.getloadavg(),
         "started_at_unix_s": time.time(),

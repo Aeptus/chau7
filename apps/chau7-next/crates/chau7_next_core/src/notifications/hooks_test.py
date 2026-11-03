@@ -1,11 +1,14 @@
+import datetime
 import json
 import os
 import pathlib
 import runpy
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
 from unittest import mock
 
 SRC = pathlib.Path(os.environ["NEXT_TEST_SOURCE"])
@@ -236,7 +239,78 @@ class Hooks(unittest.TestCase):
         )
         self.assertEqual(self.events()[0]["type"], "permission_request")
 
+    def test_codex_report_identifies_the_actual_invoking_process(self):
+        result = self.run_py(
+            self.codex,
+            json.dumps({"type": "agent-turn-complete", "thread-id": "thread"}),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.events()[-1]["providerProcessID"], os.getpid())
+
+    def codex_history(self, session_id, *, source="cli", recorded_id=None):
+        identity = uuid.UUID(session_id)
+        created = datetime.datetime.fromtimestamp(int(identity.hex[:12], 16) / 1000, datetime.timezone.utc)  # noqa: UP017 - Python 3.9 macOS compatibility
+        folder = self.root / "codex/sessions" / created.strftime("%Y/%m/%d")
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"rollout-date-{session_id}.jsonl"
+        path.write_text(
+            json.dumps(
+                {"type": "session_meta", "payload": {"id": recorded_id or session_id, "source": source, "cwd": "/repo"}}
+            )
+            + "\nprivate body\n"
+        )
+        return path
+
+    def test_codex_unpersisted_or_subagent_thread_never_gets_identity_authority(self):
+        session_id = "01a1a055-4d4c-7e01-9bda-58c7f4076285"
+        raw = json.dumps({"type": "agent-turn-complete", "thread-id": session_id})
+        self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
+        self.assertEqual(self.events()[-1]["reliability"], "fallback")
+        path = self.codex_history(session_id, source={"subagent": {"other": "guardian"}})
+        self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
+        self.assertEqual(self.events()[-1]["reliability"], "fallback")
+        self.codex_history(session_id, recorded_id=str(uuid.uuid4()))
+        self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
+        self.assertEqual(self.events()[-1]["reliability"], "fallback")
+        self.codex_history(session_id)
+        before = path.read_bytes()
+        self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
+        self.assertEqual(self.events()[-1]["reliability"], "authoritative")
+        self.assertEqual(path.read_bytes(), before)
+        self.codex_history(session_id, source="exec")
+        self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
+        self.assertEqual(self.events()[-1]["reliability"], "authoritative")
+        path.write_bytes(b"x" * 65537)
+        self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
+        self.assertEqual(self.events()[-1]["reliability"], "fallback")
+
+    def test_codex_legacy_uuid_uses_exact_read_only_index_and_refuses_foreign_path(self):
+        session_id = str(uuid.uuid4())
+        folder = self.root / "codex/sessions/2020/01/01"
+        folder.mkdir(parents=True)
+        transcript = folder / f"rollout-date-{session_id}.jsonl"
+        transcript.write_text(
+            json.dumps({"type": "session_meta", "payload": {"id": session_id, "source": "cli"}}) + "\n"
+        )
+        database = self.root / "codex/state_5.sqlite"
+        with sqlite3.connect(database) as connection:
+            connection.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT)")
+            connection.execute("INSERT INTO threads VALUES (?, ?)", (session_id, str(transcript)))
+        before = database.read_bytes()
+        raw = json.dumps({"type": "agent-turn-complete", "thread-id": session_id})
+        self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
+        self.assertEqual(self.events()[-1]["reliability"], "authoritative")
+        self.assertEqual(database.read_bytes(), before)
+        foreign = self.root / "foreign.jsonl"
+        foreign.write_bytes(transcript.read_bytes())
+        with sqlite3.connect(database) as connection:
+            connection.execute("UPDATE threads SET rollout_path = ?", (str(foreign),))
+        self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
+        self.assertEqual(self.events()[-1]["reliability"], "fallback")
+
     def test_codex_current_payload_types_aliases_raw_evidence(self):
+        session_id = "01a1a055-4d4c-7e01-9bda-58c7f4076285"
+        self.codex_history(session_id)
         for kind, subtype in [
             ("agent-turn-complete", None),
             ("approval-requested", "permission_prompt"),
@@ -246,7 +320,7 @@ class Hooks(unittest.TestCase):
             raw = json.dumps(
                 {
                     "type": kind,
-                    "thread_id": "thread-id",
+                    "thread_id": session_id,
                     "turn-id": "turn-3",
                     "last_assistant_message": "done detail",
                 }
@@ -254,7 +328,7 @@ class Hooks(unittest.TestCase):
             self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
             event = self.events()[-1]
             self.assertEqual(event["rawType"], kind)
-            self.assertEqual(event["sessionID"], "thread-id")
+            self.assertEqual(event["sessionID"], session_id)
             self.assertEqual(event["turnID"], "turn-3")
             self.assertEqual(event["message"], "done detail")
             self.assertEqual(event.get("notificationType"), subtype)

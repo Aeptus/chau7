@@ -70,6 +70,104 @@ class ProductionUpdaterTests(unittest.TestCase):
             "artifacts": artifacts,
         }
 
+    def native_resume_state(self, session_id, *, archived=False):
+        metadata = {"ai_provider": "codex", "ai_session_id": session_id}
+        if archived:
+            metadata = {"archived_ai_resume": {"provider": "codex", "session_id": session_id}}
+        return {"identity": {"panes": {1: metadata}}}
+
+    def native_history(self, session_id, *, recorded_id=None):
+        path = self.root / ".codex/sessions/2026/11/03" / f"rollout-date-{session_id}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"type": "session_meta", "payload": {"id": recorded_id or session_id, "cwd": "/repo"}})
+            + "\nprivate transcript body\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def test_native_resume_audit_rejects_missing_active_history_before_quit(self):
+        session_id = str(uuid.uuid4())
+        with self.assertRaisesRegex(CORE.UpdateError, "No quit was requested"):
+            CORE.require_codex_resume_histories(self.native_resume_state(session_id), self.root)
+
+    def test_update_native_history_failure_never_requests_quit_and_marks_safe_retry(self):
+        session_id = str(uuid.uuid4())
+        tab = self.saved_tab("00000000-0000-0000-0000-000000000199", 199, session_id)
+        tab["panes"][0]["ai_provider"] = "codex"
+        tab["panes"][0]["ai_resume_command"] = f"codex resume {session_id}"
+        self.write_restore_state([self.saved_window(tab)], str(uuid.uuid4()))
+        state = self.root / CORE.STATE_RELATIVES[0]
+        before = CORE.tree_manifest(state)
+        ask = mock.Mock()
+        with (
+            mock.patch.object(CORE, "require_terminal"),
+            mock.patch.object(CORE, "ask_for_normal_quit", ask),
+            self.assertRaisesRegex(CORE.UpdateError, "unavailable|no verified local history"),
+        ):
+            CORE.apply_update(self.app, self.root / "receipt.json", REVISION, 30, {}, self.root.resolve())
+        ask.assert_not_called()
+        self.assertEqual(CORE.tree_manifest(state), before)
+        backup = next((self.root / CORE.UPDATE_BACKUP_RELATIVE).iterdir())
+        self.assertTrue((backup / CORE.RESTORE_GUARD_BLOCKED_MARKER).is_file())
+        self.assertTrue((backup / "native-resume-audit.json").is_file())
+        self.assertFalse((backup / CORE.RESTORE_LOSS_MARKER).exists())
+
+    def test_native_resume_audit_requires_exact_metadata_not_filename_or_directory(self):
+        session_id = str(uuid.uuid4())
+        self.native_history(session_id, recorded_id=str(uuid.uuid4()))
+        with self.assertRaises(CORE.UpdateError):
+            CORE.require_codex_resume_histories(self.native_resume_state(session_id), self.root)
+        self.native_history(session_id)
+        result = CORE.require_codex_resume_histories(self.native_resume_state(session_id), self.root)
+        self.assertEqual(result[0]["status"], "available")
+
+    def test_native_resume_audit_checks_legacy_command_without_explicit_identity(self):
+        session_id = str(uuid.uuid4())
+        state = {"identity": {"panes": {1: {"ai_resume_command": f"codex resume {session_id}"}}}}
+        with self.assertRaises(CORE.UpdateError):
+            CORE.require_codex_resume_histories(state, self.root)
+        self.native_history(session_id)
+        self.assertEqual(CORE.require_codex_resume_histories(state, self.root)[0]["status"], "available")
+        state["identity"]["panes"][1] = {"ai_provider": "codex", "ai_resume_command": "codex resume '"}
+        with self.assertRaises(CORE.UpdateError):
+            CORE.require_codex_resume_histories(state, self.root)
+
+    def test_native_resume_audit_rejects_provider_without_confirmed_identity(self):
+        state = {"identity": {"panes": {1: {"ai_provider": "codex"}}}}
+        with self.assertRaises(CORE.UpdateError):
+            CORE.require_codex_resume_histories(state, self.root)
+        self.assertEqual(CORE.audit_codex_resume_histories(state, self.root)[0]["status"], "missing_identity")
+
+    def test_native_resume_audit_reports_archived_recovery_without_reactivating_it(self):
+        result = CORE.require_codex_resume_histories(
+            self.native_resume_state(str(uuid.uuid4()), archived=True), self.root
+        )
+        self.assertFalse(result[0]["active"])
+        self.assertEqual(result[0]["status"], "unavailable")
+
+    def test_native_resume_audit_is_bounded_and_keeps_transcripts_read_only(self):
+        session_id = str(uuid.uuid4())
+        path = self.native_history(session_id)
+        before = path.read_bytes()
+        report = self.root / "private-audit.json"
+        CORE.require_codex_resume_histories(self.native_resume_state(session_id), self.root, report)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(report.stat().st_mode & 0o777, 0o600)
+        self.assertNotIn("private transcript body", report.read_text())
+        path.write_bytes(b"x" * 65537)
+        with self.assertRaises(CORE.UpdateError):
+            CORE.require_codex_resume_histories(self.native_resume_state(session_id), self.root)
+
+    def test_native_resume_audit_rejects_symlinked_session_artifact(self):
+        session_id = str(uuid.uuid4())
+        path = self.native_history(session_id)
+        target = self.root / "provider-history.jsonl"
+        path.rename(target)
+        path.symlink_to(target)
+        with self.assertRaisesRegex(CORE.UpdateError, "symlink"):
+            CORE.require_codex_resume_histories(self.native_resume_state(session_id), self.root)
+
     def transaction_folders(self):
         root = self.root / "transaction"
         root.mkdir()

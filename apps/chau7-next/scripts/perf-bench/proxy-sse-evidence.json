@@ -1,0 +1,980 @@
+{
+  "schema_version": 1,
+  "scope": "Standalone loopback proxy fixture and single-core production-handler benchmarks. No GUI app, provider TLS, parent watcher or live model requests.",
+  "runtime_candidate_revision": "e2f254de699b49cd80d5e0c1ff9a37768cf9d823",
+  "build_receipt": {
+    "baseline_runtime_revision": "3da1fa81168c1060ba3a0f32ff2cfaaae4af3905",
+    "candidate_revision": "e2f254de699b",
+    "build_flags": [
+      "-p",
+      "1",
+      "-c",
+      "-trimpath",
+      "-ldflags=-s -w"
+    ],
+    "go": "go1.27.3",
+    "build_GOMAXPROCS": 2,
+    "benchmark_GOMAXPROCS": 1,
+    "sha256": {
+      "baseline": "927444130e9f33c6b152318f6477825408b8eab6a036e14daa87c151912c7ee4",
+      "candidate": "aa6c0fc1d6de15766f7ae42e0d20a8ac4e2657051be89e6b898d50197ab5e280"
+    }
+  },
+  "benchmark_source_sha256": "c92adb1644a47a5326de3a293182d249121649f14c561d3023c96c4884e4c825",
+  "comparison": {
+    "scope": "Standalone local SSE forwarding; no GUI, parent watcher, provider TLS or live model load.",
+    "baseline_sha256": "927444130e9f33c6b152318f6477825408b8eab6a036e14daa87c151912c7ee4",
+    "candidate_sha256": "aa6c0fc1d6de15766f7ae42e0d20a8ac4e2657051be89e6b898d50197ab5e280",
+    "metrics": {
+      "idle": {
+        "cpu_percent": {
+          "baseline_median": 0.000465644135276876,
+          "candidate_median": 0.0005387360204400239,
+          "baseline_range": [
+            0.00038739617281406485,
+            0.0005438920977396871
+          ],
+          "candidate_range": [
+            0.00018776254611143007,
+            0.0008897094947686177
+          ]
+        },
+        "interrupt_wakeups_per_s": {
+          "baseline_median": 0.20955733970430118,
+          "candidate_median": 0.2358234999192374,
+          "baseline_range": [
+            0.20935702238576137,
+            0.20975765702284102
+          ],
+          "candidate_range": [
+            0.20983939961230869,
+            0.2618076002261661
+          ]
+        },
+        "footprint_peak_bytes": {
+          "baseline_median": 16958076.0,
+          "candidate_median": 13042312.0,
+          "baseline_range": [
+            16482928,
+            17433224
+          ],
+          "candidate_range": [
+            12518024,
+            13566600
+          ]
+        },
+        "footprint_final_bytes": {
+          "baseline_median": 16958076.0,
+          "candidate_median": 13042312.0,
+          "baseline_range": [
+            16482928,
+            17433224
+          ],
+          "candidate_range": [
+            12518024,
+            13566600
+          ]
+        }
+      },
+      "streaming": {
+        "cpu_percent": {
+          "baseline_median": 0.6018275359993419,
+          "candidate_median": 0.5066541885027044,
+          "baseline_range": [
+            0.5887079389382446,
+            0.6149471330604392
+          ],
+          "candidate_range": [
+            0.4902778558221063,
+            0.5230305211833024
+          ]
+        },
+        "interrupt_wakeups_per_s": {
+          "baseline_median": 120.09502232835092,
+          "candidate_median": 106.85950978942347,
+          "baseline_range": [
+            108.00373752565365,
+            132.18630713104818
+          ],
+          "candidate_range": [
+            104.08347829040306,
+            109.63554128844386
+          ]
+        },
+        "footprint_peak_bytes": {
+          "baseline_median": 17932924.0,
+          "candidate_median": 13738632.0,
+          "baseline_range": [
+            17908336,
+            17957512
+          ],
+          "candidate_range": [
+            13648520,
+            13828744
+          ]
+        },
+        "footprint_final_bytes": {
+          "baseline_median": 16810632.0,
+          "candidate_median": 13369992.0,
+          "baseline_range": [
+            16728736,
+            16892528
+          ],
+          "candidate_range": [
+            12911240,
+            13828744
+          ]
+        }
+      },
+      "recovery": {
+        "cpu_percent": {
+          "baseline_median": 0.0,
+          "candidate_median": 5.976877147303907e-05,
+          "baseline_range": [
+            0.0,
+            0.0
+          ],
+          "candidate_range": [
+            0.0,
+            0.00011953754294607814
+          ]
+        },
+        "interrupt_wakeups_per_s": {
+          "baseline_median": 0.0,
+          "candidate_median": 0.10489583293260131,
+          "baseline_range": [
+            0.0,
+            0.0
+          ],
+          "candidate_range": [
+            0.0,
+            0.20979166586520262
+          ]
+        },
+        "footprint_peak_bytes": {
+          "baseline_median": 16810632.0,
+          "candidate_median": 13369992.0,
+          "baseline_range": [
+            16728736,
+            16892528
+          ],
+          "candidate_range": [
+            12911240,
+            13828744
+          ]
+        },
+        "footprint_final_bytes": {
+          "baseline_median": 16802440.0,
+          "candidate_median": 13369992.0,
+          "baseline_range": [
+            16728736,
+            16876144
+          ],
+          "candidate_range": [
+            12911240,
+            13828744
+          ]
+        }
+      }
+    },
+    "findings": [],
+    "accepted": true
+  },
+  "native_runs": [
+    {
+      "label": "baseline-1",
+      "status": "complete",
+      "error": null,
+      "pid": 71410,
+      "binary_sha256": "927444130e9f33c6b152318f6477825408b8eab6a036e14daa87c151912c7ee4",
+      "harness_sha256": {
+        "proxy_run.py": "18582e5cb4b10ba1479b59a00f29849a121ecbb483ef822397c65bbc8c8c37a2",
+        "native.py": "7548c7cd30793f853f5f9ffc11949968d20c76e83a38fd08af33ebb5e28d55c7",
+        "run.py": "1a1e2257d96d893d0b5efd6d24b0bdcc6da653267067f28fd5b3f4f333983143",
+        "safety.py": "cc652dfc34147e92def47051ba4f12bba7c8c8e9c33085a447d0730428d94b25"
+      },
+      "arguments": {
+        "binary": "/private/tmp/chau7-proxy-mcp-loop/proxy-baseline.test",
+        "label": "baseline-1",
+        "results": "/private/tmp/chau7-proxy-mcp-loop/proxy-abba",
+        "measure": 20.0,
+        "settle": 5.0,
+        "request_hz": 0.5,
+        "resource_policy": "owned-budget",
+        "text_bytes": 65536
+      },
+      "response_bytes": 1050500,
+      "owned_cleanup": {
+        "pid": 71410,
+        "exited": true
+      },
+      "artifact": "/private/tmp/chau7-proxy-mcp-loop/proxy-abba/baseline-1.json",
+      "artifact_sha256": "1d69f42f50c137684db6e00bd55e45adcdab81b358033f4ecfb80c67c3743919",
+      "pressure": {
+        "policy": "owned-budget",
+        "limits": {
+          "memory_free_min_percent": 25,
+          "swap_growth_30s_max_mib": 256,
+          "host_cpu_max_percent": null,
+          "host_load_limit_enabled": false,
+          "fixture_cpu_max_percent": 35,
+          "fixture_interrupt_wakeups_max_per_s": 200,
+          "fixture_footprint_max_mib": 384,
+          "poll_seconds": 5,
+          "sustained_samples": 2
+        },
+        "sample_count": 27,
+        "reserve_min_percent": 46,
+        "fixture_cpu_percent": 0.6520529522126954,
+        "fixture_footprint_mib": 17.078720092773438,
+        "fixture_interrupt_wakeups_per_s": 119.34270450559532,
+        "swap_growth_30s_mib": 0.0,
+        "host_cpu_percent": 100.0
+      },
+      "phases": {
+        "idle": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.069625665986678,
+            "cpu_percent": 0.00038739617281406485,
+            "interrupt_wakeups_per_s": 0.20975765702284102,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 28672000,
+            "footprint_peak_bytes": 16482928,
+            "footprint_final_bytes": 16482928,
+            "footprint_change_bytes": 0,
+            "deltas": {
+              "cpu_s": 7.387500000000102e-05,
+              "interrupt_wakeups": 4,
+              "package_wakeups": 0,
+              "pageins": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            }
+          },
+          "requests": 0,
+          "first_byte_p95_ms": null,
+          "completion_p95_ms": null
+        },
+        "streaming": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.175262333010323,
+            "cpu_percent": 0.5887079389382446,
+            "interrupt_wakeups_per_s": 108.00373752565365,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 27230208,
+            "footprint_peak_bytes": 17908336,
+            "footprint_final_bytes": 16892528,
+            "footprint_change_bytes": 409600,
+            "deltas": {
+              "cpu_s": 0.11288629166666664,
+              "interrupt_wakeups": 2071,
+              "package_wakeups": 0,
+              "pageins": 4,
+              "read_bytes": 106496,
+              "write_bytes": 450560
+            }
+          },
+          "requests": 10,
+          "first_byte_p95_ms": 1.1428330035414547,
+          "completion_p95_ms": 122.11595801636577
+        },
+        "recovery": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.072059416997945,
+            "cpu_percent": 0.0,
+            "interrupt_wakeups_per_s": 0.0,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 19349504,
+            "footprint_peak_bytes": 16892528,
+            "footprint_final_bytes": 16876144,
+            "footprint_change_bytes": -16384,
+            "deltas": {
+              "cpu_s": 0.0,
+              "interrupt_wakeups": 0,
+              "package_wakeups": 0,
+              "pageins": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            }
+          },
+          "requests": 0,
+          "first_byte_p95_ms": null,
+          "completion_p95_ms": null
+        }
+      }
+    },
+    {
+      "label": "baseline-2-pressure-retry-1",
+      "status": "complete",
+      "error": null,
+      "pid": 77638,
+      "binary_sha256": "927444130e9f33c6b152318f6477825408b8eab6a036e14daa87c151912c7ee4",
+      "harness_sha256": {
+        "proxy_run.py": "18582e5cb4b10ba1479b59a00f29849a121ecbb483ef822397c65bbc8c8c37a2",
+        "native.py": "7548c7cd30793f853f5f9ffc11949968d20c76e83a38fd08af33ebb5e28d55c7",
+        "run.py": "1a1e2257d96d893d0b5efd6d24b0bdcc6da653267067f28fd5b3f4f333983143",
+        "safety.py": "cc652dfc34147e92def47051ba4f12bba7c8c8e9c33085a447d0730428d94b25"
+      },
+      "arguments": {
+        "binary": "/private/tmp/chau7-proxy-mcp-loop/proxy-baseline.test",
+        "label": "baseline-2-pressure-retry-1",
+        "results": "/private/tmp/chau7-proxy-mcp-loop/proxy-abba",
+        "measure": 20.0,
+        "settle": 5.0,
+        "request_hz": 0.5,
+        "resource_policy": "owned-budget",
+        "text_bytes": 65536
+      },
+      "response_bytes": 1050500,
+      "owned_cleanup": {
+        "pid": 77638,
+        "exited": true
+      },
+      "artifact": "/private/tmp/chau7-proxy-mcp-loop/proxy-abba/baseline-2-pressure-retry-1.json",
+      "artifact_sha256": "e1717c18581f42cb4bc64b493ac74e5d0e17f75a141059b0b9b4e2c77f9e8007",
+      "pressure": {
+        "policy": "owned-budget",
+        "limits": {
+          "memory_free_min_percent": 25,
+          "swap_growth_30s_max_mib": 256,
+          "host_cpu_max_percent": null,
+          "host_load_limit_enabled": false,
+          "fixture_cpu_max_percent": 35,
+          "fixture_interrupt_wakeups_max_per_s": 200,
+          "fixture_footprint_max_mib": 384,
+          "poll_seconds": 5,
+          "sustained_samples": 2
+        },
+        "sample_count": 27,
+        "reserve_min_percent": 44,
+        "fixture_cpu_percent": 0.6997817865168489,
+        "fixture_footprint_mib": 17.12561798095703,
+        "fixture_interrupt_wakeups_per_s": 156.7126447064291,
+        "swap_growth_30s_mib": 0.0,
+        "host_cpu_percent": 98.27825054423116
+      },
+      "phases": {
+        "idle": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.10611812499701,
+            "cpu_percent": 0.0005438920977396871,
+            "interrupt_wakeups_per_s": 0.20935702238576137,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 18628608,
+            "footprint_peak_bytes": 17433224,
+            "footprint_final_bytes": 17433224,
+            "footprint_change_bytes": 0,
+            "deltas": {
+              "cpu_s": 0.00010391666666666882,
+              "interrupt_wakeups": 4,
+              "package_wakeups": 0,
+              "pageins": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            }
+          },
+          "requests": 0,
+          "first_byte_p95_ms": null,
+          "completion_p95_ms": null
+        },
+        "streaming": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.230433584016282,
+            "cpu_percent": 0.6149471330604392,
+            "interrupt_wakeups_per_s": 132.18630713104818,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 27033600,
+            "footprint_peak_bytes": 17957512,
+            "footprint_final_bytes": 16728736,
+            "footprint_change_bytes": -704488,
+            "deltas": {
+              "cpu_s": 0.118257,
+              "interrupt_wakeups": 2542,
+              "package_wakeups": 0,
+              "pageins": 1,
+              "read_bytes": 57344,
+              "write_bytes": 450560
+            }
+          },
+          "requests": 10,
+          "first_byte_p95_ms": 1.4855829940643162,
+          "completion_p95_ms": 130.08999999146909
+        },
+        "recovery": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.09450941698742,
+            "cpu_percent": 0.0,
+            "interrupt_wakeups_per_s": 0.0,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 27033600,
+            "footprint_peak_bytes": 16728736,
+            "footprint_final_bytes": 16728736,
+            "footprint_change_bytes": 0,
+            "deltas": {
+              "cpu_s": 0.0,
+              "interrupt_wakeups": 0,
+              "package_wakeups": 0,
+              "pageins": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            }
+          },
+          "requests": 0,
+          "first_byte_p95_ms": null,
+          "completion_p95_ms": null
+        }
+      }
+    },
+    {
+      "label": "baseline-2",
+      "status": "incomplete",
+      "error": "swap grew over 256 MiB within 30 seconds",
+      "pid": 85444,
+      "binary_sha256": "927444130e9f33c6b152318f6477825408b8eab6a036e14daa87c151912c7ee4",
+      "harness_sha256": {
+        "proxy_run.py": "18582e5cb4b10ba1479b59a00f29849a121ecbb483ef822397c65bbc8c8c37a2",
+        "native.py": "7548c7cd30793f853f5f9ffc11949968d20c76e83a38fd08af33ebb5e28d55c7",
+        "run.py": "1a1e2257d96d893d0b5efd6d24b0bdcc6da653267067f28fd5b3f4f333983143",
+        "safety.py": "cc652dfc34147e92def47051ba4f12bba7c8c8e9c33085a447d0730428d94b25"
+      },
+      "arguments": {
+        "binary": "/private/tmp/chau7-proxy-mcp-loop/proxy-baseline.test",
+        "label": "baseline-2",
+        "results": "/private/tmp/chau7-proxy-mcp-loop/proxy-abba",
+        "measure": 20.0,
+        "settle": 5.0,
+        "request_hz": 0.5,
+        "resource_policy": "owned-budget",
+        "text_bytes": 65536
+      },
+      "response_bytes": 1050500,
+      "owned_cleanup": {
+        "pid": 85444,
+        "exited": true
+      },
+      "artifact": "/private/tmp/chau7-proxy-mcp-loop/proxy-abba/baseline-2.json",
+      "artifact_sha256": "dc40bf39a02d904f23774c674da5985f98469f9c8ec2c523fa338e40d60038b2",
+      "pressure": {
+        "policy": "owned-budget",
+        "limits": {
+          "memory_free_min_percent": 25,
+          "swap_growth_30s_max_mib": 256,
+          "host_cpu_max_percent": null,
+          "host_load_limit_enabled": false,
+          "fixture_cpu_max_percent": 35,
+          "fixture_interrupt_wakeups_max_per_s": 200,
+          "fixture_footprint_max_mib": 384,
+          "poll_seconds": 5,
+          "sustained_samples": 2
+        },
+        "sample_count": 25,
+        "reserve_min_percent": 29,
+        "fixture_cpu_percent": 0.7360405865838409,
+        "fixture_footprint_mib": 16.62561798095703,
+        "fixture_interrupt_wakeups_per_s": 124.20859810298798,
+        "swap_growth_30s_mib": 754.2599999999984,
+        "host_cpu_percent": 100.0
+      },
+      "phases": {
+        "idle": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.065790416992968,
+            "cpu_percent": 0.0005791350070031674,
+            "interrupt_wakeups_per_s": 0.2097998515936102,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 17448960,
+            "footprint_peak_bytes": 17416840,
+            "footprint_final_bytes": 17416840,
+            "footprint_change_bytes": 0,
+            "deltas": {
+              "cpu_s": 0.00011041666666666144,
+              "interrupt_wakeups": 4,
+              "package_wakeups": 0,
+              "pageins": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            }
+          },
+          "requests": 0,
+          "first_byte_p95_ms": null,
+          "completion_p95_ms": null
+        },
+        "streaming": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.208840292005334,
+            "cpu_percent": 0.6203493540224889,
+            "interrupt_wakeups_per_s": 98.96485009515077,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 27181056,
+            "footprint_peak_bytes": 18039432,
+            "footprint_final_bytes": 17367688,
+            "footprint_change_bytes": -49152,
+            "deltas": {
+              "cpu_s": 0.11916191666666666,
+              "interrupt_wakeups": 1901,
+              "package_wakeups": 0,
+              "pageins": 23,
+              "read_bytes": 438272,
+              "write_bytes": 450560
+            }
+          },
+          "requests": 10,
+          "first_byte_p95_ms": 4.237749992171302,
+          "completion_p95_ms": 132.77470797766
+        },
+        "recovery": {
+          "capture_state": "incomplete"
+        }
+      }
+    },
+    {
+      "label": "candidate-1",
+      "status": "complete",
+      "error": null,
+      "pid": 3214,
+      "binary_sha256": "aa6c0fc1d6de15766f7ae42e0d20a8ac4e2657051be89e6b898d50197ab5e280",
+      "harness_sha256": {
+        "proxy_run.py": "18582e5cb4b10ba1479b59a00f29849a121ecbb483ef822397c65bbc8c8c37a2",
+        "native.py": "7548c7cd30793f853f5f9ffc11949968d20c76e83a38fd08af33ebb5e28d55c7",
+        "run.py": "1a1e2257d96d893d0b5efd6d24b0bdcc6da653267067f28fd5b3f4f333983143",
+        "safety.py": "cc652dfc34147e92def47051ba4f12bba7c8c8e9c33085a447d0730428d94b25"
+      },
+      "arguments": {
+        "binary": "/private/tmp/chau7-proxy-mcp-loop/proxy-candidate.test",
+        "label": "candidate-1",
+        "results": "/private/tmp/chau7-proxy-mcp-loop/proxy-abba",
+        "measure": 20.0,
+        "settle": 5.0,
+        "request_hz": 0.5,
+        "resource_policy": "owned-budget",
+        "text_bytes": 65536
+      },
+      "response_bytes": 1050500,
+      "owned_cleanup": {
+        "pid": 3214,
+        "exited": true
+      },
+      "artifact": "/private/tmp/chau7-proxy-mcp-loop/proxy-abba/candidate-1.json",
+      "artifact_sha256": "2e8bd3c70345c0063d7e65496594af1425a6ac6000a7dd2205d57c18203ea08f",
+      "pressure": {
+        "policy": "owned-budget",
+        "limits": {
+          "memory_free_min_percent": 25,
+          "swap_growth_30s_max_mib": 256,
+          "host_cpu_max_percent": null,
+          "host_load_limit_enabled": false,
+          "fixture_cpu_max_percent": 35,
+          "fixture_interrupt_wakeups_max_per_s": 200,
+          "fixture_footprint_max_mib": 384,
+          "poll_seconds": 5,
+          "sustained_samples": 2
+        },
+        "sample_count": 27,
+        "reserve_min_percent": 38,
+        "fixture_cpu_percent": 0.5580960987938168,
+        "fixture_footprint_mib": 13.016242980957031,
+        "fixture_interrupt_wakeups_per_s": 121.16224082363475,
+        "swap_growth_30s_mib": 0.0,
+        "host_cpu_percent": 100.0
+      },
+      "phases": {
+        "idle": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.09799408298568,
+            "cpu_percent": 0.0008897094947686177,
+            "interrupt_wakeups_per_s": 0.2618076002261661,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 21463040,
+            "footprint_peak_bytes": 12518024,
+            "footprint_final_bytes": 12518024,
+            "footprint_change_bytes": 0,
+            "deltas": {
+              "cpu_s": 0.00016991666666667238,
+              "interrupt_wakeups": 5,
+              "package_wakeups": 0,
+              "pageins": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            }
+          },
+          "requests": 0,
+          "first_byte_p95_ms": null,
+          "completion_p95_ms": null
+        },
+        "streaming": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.157699499977753,
+            "cpu_percent": 0.4902778558221063,
+            "interrupt_wakeups_per_s": 104.08347829040306,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 22462464,
+            "footprint_peak_bytes": 13648520,
+            "footprint_final_bytes": 12911240,
+            "footprint_change_bytes": 393216,
+            "deltas": {
+              "cpu_s": 0.09392595833333331,
+              "interrupt_wakeups": 1994,
+              "package_wakeups": 0,
+              "pageins": 2,
+              "read_bytes": 86016,
+              "write_bytes": 450560
+            }
+          },
+          "requests": 10,
+          "first_byte_p95_ms": 3.7204999825917184,
+          "completion_p95_ms": 123.72733300435357
+        },
+        "recovery": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.080253791995347,
+            "cpu_percent": 0.0,
+            "interrupt_wakeups_per_s": 0.0,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 21561344,
+            "footprint_peak_bytes": 12911240,
+            "footprint_final_bytes": 12911240,
+            "footprint_change_bytes": 0,
+            "deltas": {
+              "cpu_s": 0.0,
+              "interrupt_wakeups": 0,
+              "package_wakeups": 0,
+              "pageins": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            }
+          },
+          "requests": 0,
+          "first_byte_p95_ms": null,
+          "completion_p95_ms": null
+        }
+      }
+    },
+    {
+      "label": "candidate-2",
+      "status": "complete",
+      "error": null,
+      "pid": 30260,
+      "binary_sha256": "aa6c0fc1d6de15766f7ae42e0d20a8ac4e2657051be89e6b898d50197ab5e280",
+      "harness_sha256": {
+        "proxy_run.py": "18582e5cb4b10ba1479b59a00f29849a121ecbb483ef822397c65bbc8c8c37a2",
+        "native.py": "7548c7cd30793f853f5f9ffc11949968d20c76e83a38fd08af33ebb5e28d55c7",
+        "run.py": "1a1e2257d96d893d0b5efd6d24b0bdcc6da653267067f28fd5b3f4f333983143",
+        "safety.py": "cc652dfc34147e92def47051ba4f12bba7c8c8e9c33085a447d0730428d94b25"
+      },
+      "arguments": {
+        "binary": "/private/tmp/chau7-proxy-mcp-loop/proxy-candidate.test",
+        "label": "candidate-2",
+        "results": "/private/tmp/chau7-proxy-mcp-loop/proxy-abba",
+        "measure": 20.0,
+        "settle": 5.0,
+        "request_hz": 0.5,
+        "resource_policy": "owned-budget",
+        "text_bytes": 65536
+      },
+      "response_bytes": 1050500,
+      "owned_cleanup": {
+        "pid": 30260,
+        "exited": true
+      },
+      "artifact": "/private/tmp/chau7-proxy-mcp-loop/proxy-abba/candidate-2.json",
+      "artifact_sha256": "c111e4144d6586d9d40e786321b4f3313be440bc39242c90fb2798a9f782ebce",
+      "pressure": {
+        "policy": "owned-budget",
+        "limits": {
+          "memory_free_min_percent": 25,
+          "swap_growth_30s_max_mib": 256,
+          "host_cpu_max_percent": null,
+          "host_load_limit_enabled": false,
+          "fixture_cpu_max_percent": 35,
+          "fixture_interrupt_wakeups_max_per_s": 200,
+          "fixture_footprint_max_mib": 384,
+          "poll_seconds": 5,
+          "sustained_samples": 2
+        },
+        "sample_count": 27,
+        "reserve_min_percent": 35,
+        "fixture_cpu_percent": 0.6104170934828872,
+        "fixture_footprint_mib": 13.188117980957031,
+        "fixture_interrupt_wakeups_per_s": 145.61603358541277,
+        "swap_growth_30s_mib": 0.0,
+        "host_cpu_percent": 100.0
+      },
+      "phases": {
+        "idle": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.062197124992963,
+            "cpu_percent": 0.00018776254611143007,
+            "interrupt_wakeups_per_s": 0.20983939961230869,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 25133056,
+            "footprint_peak_bytes": 13566600,
+            "footprint_final_bytes": 13566600,
+            "footprint_change_bytes": 0,
+            "deltas": {
+              "cpu_s": 3.579166666666661e-05,
+              "interrupt_wakeups": 4,
+              "package_wakeups": 0,
+              "pageins": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            }
+          },
+          "requests": 0,
+          "first_byte_p95_ms": null,
+          "completion_p95_ms": null
+        },
+        "streaming": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.181735915975878,
+            "cpu_percent": 0.5230305211833024,
+            "interrupt_wakeups_per_s": 109.63554128844386,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 22937600,
+            "footprint_peak_bytes": 13828744,
+            "footprint_final_bytes": 13828744,
+            "footprint_change_bytes": 262144,
+            "deltas": {
+              "cpu_s": 0.10032633333333332,
+              "interrupt_wakeups": 2103,
+              "package_wakeups": 0,
+              "pageins": 17,
+              "read_bytes": 442368,
+              "write_bytes": 450560
+            }
+          },
+          "requests": 10,
+          "first_byte_p95_ms": 3.0988340149633586,
+          "completion_p95_ms": 119.81425000703894
+        },
+        "recovery": {
+          "capture_state": "complete",
+          "process": {
+            "duration_s": 19.066534333018353,
+            "cpu_percent": 0.00011953754294607814,
+            "interrupt_wakeups_per_s": 0.20979166586520262,
+            "package_wakeups_per_s": 0.0,
+            "rss_peak_bytes": 22937600,
+            "footprint_peak_bytes": 13828744,
+            "footprint_final_bytes": 13828744,
+            "footprint_change_bytes": 0,
+            "deltas": {
+              "cpu_s": 2.2791666666660548e-05,
+              "interrupt_wakeups": 4,
+              "package_wakeups": 0,
+              "pageins": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            }
+          },
+          "requests": 0,
+          "first_byte_p95_ms": null,
+          "completion_p95_ms": null
+        }
+      }
+    }
+  ],
+  "rejected_discovery": {
+    "label": "discovery-baseline",
+    "status": "incomplete",
+    "error": "fixture wakeups above 200/s",
+    "pid": 92042,
+    "binary_sha256": "927444130e9f33c6b152318f6477825408b8eab6a036e14daa87c151912c7ee4",
+    "harness_sha256": {
+      "proxy_run.py": "18582e5cb4b10ba1479b59a00f29849a121ecbb483ef822397c65bbc8c8c37a2",
+      "native.py": "7548c7cd30793f853f5f9ffc11949968d20c76e83a38fd08af33ebb5e28d55c7",
+      "run.py": "1a1e2257d96d893d0b5efd6d24b0bdcc6da653267067f28fd5b3f4f333983143",
+      "safety.py": "cc652dfc34147e92def47051ba4f12bba7c8c8e9c33085a447d0730428d94b25"
+    },
+    "arguments": {
+      "binary": "/private/tmp/chau7-proxy-mcp-loop/proxy-baseline.test",
+      "label": "discovery-baseline",
+      "results": "/private/tmp/chau7-proxy-mcp-loop/discovery",
+      "measure": 20.0,
+      "settle": 5.0,
+      "request_hz": 1.0,
+      "resource_policy": "owned-budget",
+      "text_bytes": 65536
+    },
+    "response_bytes": 1050500,
+    "owned_cleanup": {
+      "pid": 92042,
+      "exited": true
+    },
+    "artifact": "/private/tmp/chau7-proxy-mcp-loop/discovery/discovery-baseline.json",
+    "artifact_sha256": "b8350756dfd8037f8dc762f6e3cffa5ffcf78a66be8242f8fb16dacf529e3c5e",
+    "pressure": {
+      "policy": "owned-budget",
+      "limits": {
+        "memory_free_min_percent": 25,
+        "swap_growth_30s_max_mib": 256,
+        "host_cpu_max_percent": null,
+        "host_load_limit_enabled": false,
+        "fixture_cpu_max_percent": 35,
+        "fixture_interrupt_wakeups_max_per_s": 200,
+        "fixture_footprint_max_mib": 384,
+        "poll_seconds": 5,
+        "sustained_samples": 2
+      },
+      "sample_count": 21,
+      "reserve_min_percent": 39,
+      "fixture_cpu_percent": 1.0924022377688112,
+      "fixture_footprint_mib": 17.03186798095703,
+      "fixture_interrupt_wakeups_per_s": 220.76427859891726,
+      "swap_growth_30s_mib": 0.0,
+      "host_cpu_percent": 100.0
+    },
+    "phases": {
+      "idle": {
+        "capture_state": "complete",
+        "process": {
+          "duration_s": 19.054410708980868,
+          "cpu_percent": 0.0004506830534492672,
+          "interrupt_wakeups_per_s": 0.5248128715566484,
+          "package_wakeups_per_s": 0.0,
+          "rss_peak_bytes": 29736960,
+          "footprint_peak_bytes": 17564296,
+          "footprint_final_bytes": 17564296,
+          "footprint_change_bytes": 0,
+          "deltas": {
+            "cpu_s": 8.587499999999915e-05,
+            "interrupt_wakeups": 10,
+            "package_wakeups": 0,
+            "pageins": 0,
+            "read_bytes": 0,
+            "write_bytes": 0
+          }
+        },
+        "requests": 0,
+        "first_byte_p95_ms": null,
+        "completion_p95_ms": null
+      },
+      "streaming": {
+        "capture_state": "incomplete"
+      }
+    }
+  },
+  "benchmarks": {
+    "baseline": {
+      "artifact": "/private/tmp/chau7-proxy-mcp-loop/proxy-baseline-bench.txt",
+      "sha256": "9f07f11fe91a56a5208883a4a0cf07db04d7731f21fba8167fad8d0a8b3ebe85",
+      "repeats": {
+        "16": [
+          {
+            "ns_per_op": 451814,
+            "allocated_bytes_per_op": 177166,
+            "allocations_per_op": 212
+          },
+          {
+            "ns_per_op": 2148723,
+            "allocated_bytes_per_op": 177064,
+            "allocations_per_op": 211
+          },
+          {
+            "ns_per_op": 365048,
+            "allocated_bytes_per_op": 177026,
+            "allocations_per_op": 212
+          }
+        ],
+        "1024": [
+          {
+            "ns_per_op": 11621862,
+            "allocated_bytes_per_op": 11652516,
+            "allocations_per_op": 6319
+          },
+          {
+            "ns_per_op": 7864976,
+            "allocated_bytes_per_op": 11652582,
+            "allocations_per_op": 6319
+          },
+          {
+            "ns_per_op": 9723694,
+            "allocated_bytes_per_op": 11652562,
+            "allocations_per_op": 6319
+          }
+        ]
+      },
+      "medians": {
+        "16": {
+          "ns_per_op": 451814,
+          "allocated_bytes_per_op": 177064,
+          "allocations_per_op": 212
+        },
+        "1024": {
+          "ns_per_op": 9723694,
+          "allocated_bytes_per_op": 11652562,
+          "allocations_per_op": 6319
+        }
+      }
+    },
+    "candidate": {
+      "artifact": "/private/tmp/chau7-proxy-mcp-loop/proxy-candidate-bench.txt",
+      "sha256": "4e677751325f6f40ff7c98e9a28ba7ae63d728337c90444bc78b78982ad07140",
+      "repeats": {
+        "16": [
+          {
+            "ns_per_op": 400687,
+            "allocated_bytes_per_op": 65728,
+            "allocations_per_op": 155
+          },
+          {
+            "ns_per_op": 493471,
+            "allocated_bytes_per_op": 65565,
+            "allocations_per_op": 155
+          },
+          {
+            "ns_per_op": 738078,
+            "allocated_bytes_per_op": 65588,
+            "allocations_per_op": 154
+          }
+        ],
+        "1024": [
+          {
+            "ns_per_op": 26497568,
+            "allocated_bytes_per_op": 1381234,
+            "allocations_per_op": 3194
+          },
+          {
+            "ns_per_op": 6569530,
+            "allocated_bytes_per_op": 1380520,
+            "allocations_per_op": 3191
+          },
+          {
+            "ns_per_op": 5897807,
+            "allocated_bytes_per_op": 1380466,
+            "allocations_per_op": 3190
+          }
+        ]
+      },
+      "medians": {
+        "16": {
+          "ns_per_op": 493471,
+          "allocated_bytes_per_op": 65588,
+          "allocations_per_op": 155
+        },
+        "1024": {
+          "ns_per_op": 6569530,
+          "allocated_bytes_per_op": 1380520,
+          "allocations_per_op": 3191
+        }
+      }
+    }
+  },
+  "limitations": [
+    "Short CPU timings vary under shared-host contention; allocation bytes and native footprint are distinct metrics.",
+    "Native phases use 16 large deltas per stream; handler microbenchmarks use 16 or 1024 smaller deltas.",
+    "Raw native samples and CPU/allocation profiles remain at the listed private artifact paths."
+  ]
+}
