@@ -133,6 +133,12 @@ class ProductionUpdaterTests(unittest.TestCase):
         with self.assertRaises(CORE.UpdateError):
             CORE.require_codex_resume_histories(state, self.root)
 
+    def test_native_resume_audit_rejects_provider_without_confirmed_identity(self):
+        state = {"identity": {"panes": {1: {"ai_provider": "codex"}}}}
+        with self.assertRaises(CORE.UpdateError):
+            CORE.require_codex_resume_histories(state, self.root)
+        self.assertEqual(CORE.audit_codex_resume_histories(state, self.root)[0]["status"], "missing_identity")
+
     def test_native_resume_audit_reports_archived_recovery_without_reactivating_it(self):
         result = CORE.require_codex_resume_histories(
             self.native_resume_state(str(uuid.uuid4()), archived=True), self.root

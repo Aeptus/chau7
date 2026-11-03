@@ -822,6 +822,7 @@ impl Render for TerminalView {
                 ResumeIssue::UnavailableHistory => "Saved conversation unavailable: its local history could not be verified. Recovery details have been kept.",
                 ResumeIssue::IdentityInUse => "Saved conversation is already open in another pane. Recovery details have been kept.",
                 ResumeIssue::InvalidMetadata => "Saved conversation details could not be verified. Recovery details have been kept.",
+                ResumeIssue::MissingIdentity => "No confirmed conversation ID was saved. Use the agent’s session picker to choose the conversation to resume.",
             };
             let chrome = crate::theme::Chrome::get(cx);
             div().absolute().top_2().left_2().right_2()

@@ -955,6 +955,11 @@ def audit_codex_resume_histories(state, home):
     entries = []
     for pane_id, pane in state["identity"]["panes"].items():
         active = bool(pane.get("ai_session_id") or pane.get("ai_resume_command"))
+        if (not active and not pane.get("archived_ai_resume")
+                and str(pane.get("ai_provider") or "").strip().lower() == "codex"):
+            entries.append({"pane_id": pane_id, "session_id": None, "active": True,
+                            "status": "missing_identity"})
+            continue
         metadata = pane if active else pane.get("archived_ai_resume") or {}
         command = metadata.get("resume_command", metadata.get("ai_resume_command")) or ""
         try:

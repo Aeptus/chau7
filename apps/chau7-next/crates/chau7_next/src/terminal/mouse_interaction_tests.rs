@@ -1755,7 +1755,7 @@ fn resume_failure_notice_does_not_bind_identity_and_yields_to_new_input(
                 session.restore_resume_issue(),
                 Some(ResumeIssue::UnavailableHistory)
             );
-            assert!(session.tracker.ai_session_id().is_none());
+            assert!(session.shell().ai_session_id().is_none());
             assert!(!session.has_pending_restore_resume());
         });
     });
@@ -1766,7 +1766,7 @@ fn resume_failure_notice_does_not_bind_identity_and_yields_to_new_input(
         fixture.session.update(cx, |session, _| {
             session.write_input(b"echo new work");
             assert!(session.restore_resume_issue().is_none());
-            assert!(session.tracker.ai_session_id().is_none());
+            assert!(session.shell().ai_session_id().is_none());
             assert!(!session.has_pending_restore_resume());
         });
     });

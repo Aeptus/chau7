@@ -17,6 +17,7 @@ pub enum ResumeIssue {
     UnavailableHistory,
     IdentityInUse,
     InvalidMetadata,
+    MissingIdentity,
 }
 impl ResumeIssue {
     pub fn code(self) -> &'static str {
@@ -24,6 +25,7 @@ impl ResumeIssue {
             Self::UnavailableHistory => "unavailable_history",
             Self::IdentityInUse => "identity_in_use",
             Self::InvalidMetadata => "invalid_metadata",
+            Self::MissingIdentity => "missing_identity",
         }
     }
 }
@@ -465,6 +467,8 @@ fn prepare_profile(
                 Some(ResumeIssue::InvalidMetadata)
             } else if pane.archived_ai_resume.is_some() {
                 Some(ResumeIssue::UnavailableHistory)
+            } else if provider_only.is_some() {
+                Some(ResumeIssue::MissingIdentity)
             } else {
                 None
             };
@@ -794,6 +798,26 @@ mod tests {
                 .as_deref(),
             Some(missing.as_str())
         );
+    }
+
+    #[test]
+    fn provider_without_identity_reports_the_gap_without_guessing_history() {
+        let f = Fixture::new();
+        let prepared = prepare(
+            &f.root,
+            f.tab(vec![SavedPane {
+                id: 1,
+                ai_provider: Some("codex".into()),
+                ..Default::default()
+            }]),
+            None,
+        );
+        assert_eq!(
+            prepared.panes[&1].resume_issue,
+            Some(ResumeIssue::MissingIdentity)
+        );
+        assert!(prepared.panes[&1].identity.is_none());
+        assert!(prepared.panes[&1].command.is_none());
     }
 
     #[test]
