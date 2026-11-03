@@ -510,9 +510,10 @@ struct TabScrollFrame {
     offset: f32,
     viewport: Bounds<Pixels>,
     trailing_space: f32,
+    content_width: f32,
 }
 
-/// Scroll animation of the tab row (align the selection left, 0.25 s ease).
+/// Scroll animation of the tab row (first viewport or later leading edge).
 pub(super) struct TabScroll {
     pub(super) handle: ScrollHandle,
     /// Tab to bring into view once its frame is known.
@@ -564,7 +565,9 @@ mod tab_scroll_tests {
 
     #[cfg(unix)]
     #[gpui::test]
-    fn selected_tab_aligns_left_in_the_real_scrolled_row(harness: &mut gpui::TestAppContext) {
+    fn selected_tab_uses_first_view_or_leading_edge_in_the_real_row(
+        harness: &mut gpui::TestAppContext,
+    ) {
         use super::super::selection_tests::{headless_tab, init};
         use gpui_kit::test::TestWindowExt;
         init(harness);
@@ -598,13 +601,57 @@ mod tab_scroll_tests {
                     let viewport = workspace.scroll.handle.bounds();
                     let tab = workspace.frames.borrow().tabs[&id];
                     assert!(viewport.size.width > px(0.0));
-                    assert!((f32::from(tab.left() - viewport.left())).abs() < 1.0,
-                        "selected tab {index} must be leftmost: tab={tab:?}, viewport={viewport:?}");
+                    let offset = f32::from(workspace.scroll.handle.offset().x);
+                    let fits_first_view = f32::from(tab.right()) - offset
+                        <= f32::from(viewport.right()) + 0.5;
+                    if fits_first_view {
+                        assert!(offset.abs() < 1.0, "first-view tab {index} must keep the strip at zero");
+                    } else {
+                        assert!((f32::from(tab.left() - viewport.left())).abs() < 1.0,
+                            "later tab {index} must align left: tab={tab:?}, viewport={viewport:?}");
+                    }
                     assert!(workspace.scroll.pending.is_none());
                     assert!(workspace.scroll.anim.is_none());
                 }
                 window.remove_window();
             }).unwrap();
+        });
+    }
+
+    #[cfg(unix)]
+    #[gpui::test]
+    fn fitting_tabs_remain_visible_when_selection_changes(harness: &mut gpui::TestAppContext) {
+        use super::super::selection_tests::{headless_tab, init};
+        use gpui_kit::test::TestWindowExt;
+        init(harness);
+        harness.update(|cx| {
+            let (handle, workspace) = crate::open_window_for_transfer(cx).unwrap();
+            let ids = (0..2)
+                .map(|_| headless_tab(handle, &workspace, cx).0)
+                .collect::<Vec<_>>();
+            handle
+                .update(cx, |_, window, cx| {
+                    for id in ids.into_iter().rev() {
+                        workspace.update(cx, |workspace, cx| workspace.select_tab(id, window, cx));
+                        for _ in 0..5 {
+                            window.render_frame(cx);
+                        }
+                        let workspace = workspace.read(cx);
+                        let frame = workspace.scroll.frame.get();
+                        assert!(frame.content_width <= f32::from(frame.viewport.size.width));
+                        assert_eq!(frame.trailing_space, 0.0);
+                        assert_eq!(workspace.scroll.handle.offset().x, px(0.0));
+                        assert_eq!(workspace.scroll.handle.max_offset().x, px(0.0));
+                        for tab in workspace.frames.borrow().tabs.values() {
+                            assert!(tab.left() >= frame.viewport.left());
+                            assert!(tab.right() <= frame.viewport.right());
+                        }
+                        assert!(workspace.scroll.pending.is_none());
+                        assert!(workspace.scroll.anim.is_none());
+                    }
+                    window.remove_window();
+                })
+                .unwrap();
         });
     }
 
@@ -841,25 +888,42 @@ impl Workspace {
 
     // ----- scrolling ----------------------------------------------------
 
-    /// Align the selection to the left edge after its new layout is measured.
+    /// Reveal the selection after its new layout is measured.
     pub(super) fn scroll_to_selected(&mut self) {
         self.scroll.reveal(self.state.selected());
     }
 
     /// Advance the scroll animation; true while it runs.
     pub(super) fn tick_scroll(&mut self) -> bool {
-        if let Some((id, after)) = self.scroll.pending {
-            let frame = self.scroll.frame.get();
-            // Selection can change widths/grouping, and resize can change the
-            // trailing scroll room. Never resolve against an older layout.
-            if frame.generation <= after
-                || (frame.trailing_space
-                    - tab_bar_trailing_space(f32::from(frame.viewport.size.width)))
+        let frame = self.scroll.frame.get();
+        if self
+            .scroll
+            .pending
+            .is_some_and(|(_, after)| frame.generation <= after)
+        {
+            return true;
+        }
+        if frame.generation > 0 {
+            let viewport_width = f32::from(frame.viewport.size.width);
+            if (frame.trailing_space - tab_bar_trailing_space(viewport_width, frame.content_width))
                 .abs()
-                    > 0.5
+                > 0.5
             {
                 return true;
             }
+            if frame.content_width <= viewport_width + 0.5 {
+                // Resize, closed tabs or shorter labels can make every tab fit
+                // without a selection event. Discard any old animation too.
+                self.scroll.cancel();
+                let offset = self.scroll.handle.offset();
+                if offset.x != px(0.0) {
+                    self.scroll.handle.set_offset(point(px(0.0), offset.y));
+                    return true;
+                }
+                return false;
+            }
+        }
+        if let Some((id, _)) = self.scroll.pending {
             let frames = self.frames.borrow();
             match (frames.tabs.get(&id), frames.bar) {
                 (Some(tab), Some(bar)) => {
@@ -1338,8 +1402,10 @@ impl Workspace {
         let now = AppData::now(cx);
         let items = self.state.display_items(now);
         let idle_count = self.state.idle_ids(now).len();
-        let trailing_space =
-            tab_bar_trailing_space(f32::from(self.scroll.handle.bounds().size.width));
+        let trailing_space = tab_bar_trailing_space(
+            f32::from(self.scroll.handle.bounds().size.width),
+            self.scroll.frame.get().content_width,
+        );
         let mut row = div()
             .id("tab-bar")
             .flex()
@@ -1421,14 +1487,23 @@ impl Workspace {
                     // owns the fixed viewport, updated before child prepaint.
                     let viewport = handle.bounds();
                     frames.borrow_mut().bar = Some(viewport);
+                    // ScrollHandle child bounds are unscrolled layout bounds.
+                    // Exclude this absolute overlay: its viewport-sized box
+                    // would otherwise turn fitting content into overflow.
+                    let content_width = (0..handle.children_count().saturating_sub(1))
+                        .filter_map(|index| handle.bounds_for_item(index))
+                        .map(|child| f32::from(child.right() - viewport.left()))
+                        .fold(0.0_f32, f32::max);
                     scroll_frame.set(TabScrollFrame {
                         generation: scroll_frame.get().generation.wrapping_add(1),
                         offset: f32::from(handle.offset().x),
                         viewport,
                         trailing_space,
+                        content_width,
                     });
-                    if (trailing_space - tab_bar_trailing_space(f32::from(viewport.size.width)))
-                        .abs()
+                    if (trailing_space
+                        - tab_bar_trailing_space(f32::from(viewport.size.width), content_width))
+                    .abs()
                         > 0.5
                     {
                         window.request_animation_frame();
