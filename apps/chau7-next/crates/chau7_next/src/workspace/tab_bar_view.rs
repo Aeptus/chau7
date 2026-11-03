@@ -916,8 +916,11 @@ impl Workspace {
                 // without a selection event. Discard any old animation too.
                 self.scroll.cancel();
                 let offset = self.scroll.handle.offset();
-                self.scroll.handle.set_offset(point(px(0.0), offset.y));
-                return f32::from(offset.x).abs() > 0.5;
+                if offset.x != px(0.0) {
+                    self.scroll.handle.set_offset(point(px(0.0), offset.y));
+                    return true;
+                }
+                return false;
             }
         }
         if let Some((id, _)) = self.scroll.pending {
