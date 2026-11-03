@@ -585,6 +585,7 @@ impl PaneTree {
                     session.set_restore_selected(selected);
                     session.mark_restore_surface(window.is_visible());
                     if let Some(prepared) = prepared.panes.get(&pane) {
+                        session.set_restore_resume_issue(prepared.resume_issue, cx);
                         if let Some(context) = &prepared.context {
                             session.replay_restored_context(context, cx);
                         }

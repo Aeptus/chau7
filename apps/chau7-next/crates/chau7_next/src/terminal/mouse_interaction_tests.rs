@@ -1741,3 +1741,34 @@ fn hidden_blink_timer_parks_and_reveal_restarts_it(harness: &mut TestAppContext)
     );
     close_fixture(harness, fixture);
 }
+
+#[gpui::test]
+fn resume_failure_notice_does_not_bind_identity_and_yields_to_new_input(
+    harness: &mut TestAppContext,
+) {
+    use chau7_next_core::session_restore::preparation::ResumeIssue;
+    let fixture = fixture(harness);
+    harness.update(|cx| {
+        fixture.session.update(cx, |session, cx| {
+            session.set_restore_resume_issue(Some(ResumeIssue::UnavailableHistory), cx);
+            assert_eq!(
+                session.restore_resume_issue(),
+                Some(ResumeIssue::UnavailableHistory)
+            );
+            assert!(session.tracker.ai_session_id().is_none());
+            assert!(!session.has_pending_restore_resume());
+        });
+    });
+    harness
+        .update_window(fixture.window, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    harness.update(|cx| {
+        fixture.session.update(cx, |session, cx| {
+            session.write_input(b"echo new work");
+            assert!(session.restore_resume_issue().is_none());
+            assert!(session.tracker.ai_session_id().is_none());
+            assert!(!session.has_pending_restore_resume());
+        });
+    });
+    close_fixture(harness, fixture);
+}

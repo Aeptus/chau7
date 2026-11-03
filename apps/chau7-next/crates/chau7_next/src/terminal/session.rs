@@ -277,6 +277,7 @@ pub struct TerminalSession {
     restore_intent: Option<chau7_next_core::session_restore::lifecycle::RestorePrefillIntent>,
     restore_token: u64,
     restore_input_generation: Cell<u64>,
+    restore_resume_issue: Option<chau7_next_core::session_restore::preparation::ResumeIssue>,
     restore_presented: Cell<bool>,
     restore_selected: Cell<bool>,
     restore_window_visible: Cell<bool>,
@@ -844,6 +845,7 @@ impl TerminalSession {
             restore_intent: None,
             restore_token: 0,
             restore_input_generation: Cell::new(0),
+            restore_resume_issue: None,
             restore_presented: Cell::new(false),
             restore_selected: Cell::new(false),
             restore_window_visible: Cell::new(false),
@@ -1890,6 +1892,27 @@ impl TerminalSession {
         cx.emit(SessionEvent::Output);
         cx.notify();
     }
+    pub(crate) fn set_restore_resume_issue(
+        &mut self,
+        issue: Option<chau7_next_core::session_restore::preparation::ResumeIssue>,
+        cx: &mut Context<Self>,
+    ) {
+        self.restore_resume_issue = issue;
+        if let Some(issue) = issue {
+            // No command, path or native identity is written to the log.
+            log::warn!("restore resume unavailable: {}", issue.code());
+        }
+        cx.notify();
+    }
+    pub(crate) fn restore_resume_issue(
+        &self,
+    ) -> Option<chau7_next_core::session_restore::preparation::ResumeIssue> {
+        // Deliberate input starts a new interaction; old recovery metadata
+        // remains preserved by the pane tree, without covering the new work.
+        self.restore_resume_issue
+            .filter(|_| self.restore_input_generation.get() == 0)
+    }
+
     pub(crate) fn queue_restored_resume(
         &mut self,
         command: String,

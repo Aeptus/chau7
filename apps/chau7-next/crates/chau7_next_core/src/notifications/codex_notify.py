@@ -5,9 +5,14 @@ import datetime
 import json
 import os
 import re
+import sqlite3
+import stat
 import subprocess
 import sys
 import uuid
+from contextlib import closing
+from itertools import islice
+from pathlib import Path
 
 try:
     import tomllib
@@ -200,6 +205,66 @@ def wrap(real, args):
     )
 
 
+def foreground_session(session_id):
+    """Bounded exact-ID proof, off the UI thread, without transcript body reads.
+
+    A notify hook can run for a subagent in the same native CLI process, even
+    for ephemeral threads with no resumable history. A PID or cwd alone cannot
+    grant that thread the foreground tab's persistence identity.
+    """
+    try:
+        identity = uuid.UUID(session_id)
+    except (ValueError, TypeError, AttributeError):
+        return False
+    home = Path(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"))
+    sessions = home / "sessions"
+    candidates = []
+    if identity.version == 7:
+        created = int(identity.hex[:12], 16) / 1000
+        for offset in (0, -86400, 86400):
+            day = datetime.datetime.fromtimestamp(created + offset, datetime.timezone.utc)  # noqa: UP017 - Python 3.9 macOS compatibility
+            folder = sessions / day.strftime("%Y/%m/%d")
+            candidates.extend(islice(folder.glob(f"*-{identity}.jsonl"), 4))
+    else:
+        # Legacy UUIDs have no creation date. Ask only the provider's indexed
+        # exact ID; never scan directory history or choose a nearby session.
+        databases = sorted(home.glob("state_*.sqlite"), reverse=True)[:4]
+        for database in databases:
+            try:
+                with closing(sqlite3.connect(database.absolute().as_uri() + "?mode=ro", timeout=0.01)) as connection:
+                    row = connection.execute(
+                        "SELECT rollout_path FROM threads WHERE id = ?", (str(identity),)
+                    ).fetchone()
+                if row:
+                    candidates.append(Path(row[0]))
+                    break
+            except (OSError, sqlite3.Error, ValueError):
+                continue
+    for path in candidates:
+        try:
+            if os.path.commonpath((path.resolve(), sessions.resolve())) != str(sessions.resolve()):
+                continue
+            descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+            with os.fdopen(descriptor, "rb") as transcript:
+                if not stat.S_ISREG(os.fstat(transcript.fileno()).st_mode):
+                    continue
+                line = transcript.readline(65537)
+            if len(line) > 65536:
+                continue
+            record = json.loads(line)
+            metadata = record.get("payload") if isinstance(record, dict) else None
+            if (
+                record.get("type") == "session_meta"
+                and isinstance(metadata, dict)
+                and metadata.get("id") == str(identity)
+                and metadata.get("source") in ("cli", "exec")
+            ):
+                return True
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+    return False
+
+
 def event_for(payload):
     raw_type = first(payload.get("type")) or "notification"
     message = first(
@@ -225,6 +290,8 @@ def event_for(payload):
         ),
     }
     title, default, subtype = metadata.get(raw_type, (None, "Codex emitted a notification event.", None))
+    session_id = first(payload.get("thread-id"), payload.get("thread_id"))
+    verified = foreground_session(session_id)
     event = {
         "source": "codex",
         "type": raw_type,
@@ -235,13 +302,13 @@ def event_for(payload):
         .isoformat()
         .replace("+00:00", "Z"),
         "directory": first(payload.get("cwd"), os.environ.get("CHAU7_NEXT_PROJECT")),
-        "sessionID": first(payload.get("thread-id"), payload.get("thread_id")),
+        "sessionID": session_id,
         "tabID": os.environ["CHAU7_NEXT_TAB_ID"].strip(),
         "producer": "codex_notify_hook",
         # The native Codex process invokes this helper directly. Child CLIs
         # inherit the tab environment, but have a different process owner.
         "providerProcessID": os.getppid(),
-        "reliability": "authoritative",
+        "reliability": "authoritative" if verified else "fallback",
     }
     if title:
         event["title"] = title
