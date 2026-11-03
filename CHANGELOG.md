@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reduce remote idle refreshes from every 150 ms to once per second while retaining agent supervision and output deadlines. Poll terminal grids at 150 ms for a ready phone or active viewer, skip output batching without a consumer, and apply remote settings only when they change.
+
 - Stop tab-bar scrolling at the final tab control. Clamp later-tab reveals and in-flight animations to the natural content end, keeping the first viewport anchored without allowing an empty scrolled tab bar.
 
 - Keep all fitting tabs visible with no artificial trailing scroll space. Anchor selections from the first viewport at the start; align later tabs to the left only when the strip overflows, and reset stale scrolling when tabs fit again without rewriting a settled offset.
