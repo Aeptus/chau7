@@ -34,6 +34,7 @@ mod native_fixture;
 mod native_locale;
 mod notification_triggers;
 mod notifications;
+mod pairing_qr;
 mod panes;
 mod permission_center;
 mod proxy;
@@ -900,6 +901,20 @@ impl Render for SettingsView {
             sidebar.test_support()
         };
         let settings = Settings::get(cx).clone();
+        let remote = crate::remote::status(cx);
+        let pairing_info = if self.navigation.selection == SettingsSection::RemoteControl
+            && settings.remote.enabled
+        {
+            remote
+                .as_ref()
+                .filter(|status| status.agent_running && status.ipc_connected)
+                .and_then(|status| status.pairing_info.clone())
+        } else {
+            None
+        };
+        self.remote_inputs
+            .pairing
+            .update(cx, |view, cx| view.set_info(pairing_info, cx));
         let root = cx.global::<AppData>().root.clone();
         let files = cx.global::<ConfigFiles>();
         let sync = cx.try_global::<SyncState>();
@@ -931,7 +946,7 @@ impl Render for SettingsView {
                 logs::LogsData::default()
             },
             confirm_clear: logs::confirm_pending(cx),
-            remote: crate::remote::status(cx),
+            remote,
             proxy_status: Some(crate::proxy::status(cx)),
             proxy_stats: if self.navigation.selection == SettingsSection::ApiProxy {
                 crate::proxy::today_stats(cx)

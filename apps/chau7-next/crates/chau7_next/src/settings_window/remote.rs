@@ -19,6 +19,7 @@ use crate::settings::Settings;
 /// The relay URL field.
 pub(crate) struct RemoteInputs {
     relay: Entity<InputState>,
+    pub(super) pairing: Entity<super::pairing_qr::PairingQrView>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -36,6 +37,7 @@ impl RemoteInputs {
         });
         Self {
             relay,
+            pairing: cx.new(|_| super::pairing_qr::PairingQrView::default()),
             _subscriptions: vec![subscription],
         }
     }
@@ -126,10 +128,10 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
 
     // Pairing
     let mut pairing = titled("Pairing", chrome);
+    pairing = pairing.child(ctx.view.remote_inputs.pairing.clone());
     match &status.pairing_info {
         Some(info) => {
             let json = info.qr_payload_string();
-            let code = info.pairing_code.clone();
             pairing = pairing
                 .child(
                     div()
@@ -151,15 +153,11 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                         .flex()
                         .gap_2()
                         .child(
-                            button("remote-copy-json", "Copy Pairing JSON", chrome)
+                            button("remote-copy-json", "Copy Device Details", chrome)
                                 .on_click(move |_, _, cx| copy(json.clone(), cx)),
                         )
                         .child(
-                            button("remote-copy-code", "Copy Pairing Code", chrome)
-                                .on_click(move |_, _, cx| copy(code.clone(), cx)),
-                        )
-                        .child(
-                            button("remote-regenerate", "Regenerate", chrome)
+                            button("remote-regenerate", "Refresh QR Code", chrome)
                                 .on_click(|_, _, cx| remote::regenerate(cx)),
                         ),
                 );

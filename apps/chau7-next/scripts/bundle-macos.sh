@@ -165,6 +165,10 @@ done
 mkdir -p "$APP/Contents/Resources/licenses/ondine"
 cp "$ROOT/resources/licenses/ondine/"* "$APP/Contents/Resources/licenses/ondine/"
 
+# Local QR pairing uses Nayuki's MIT-licensed encoder.
+mkdir -p "$APP/Contents/Resources/licenses/qrcodegen"
+cp "$ROOT/resources/licenses/qrcodegen/LICENSE-MIT" "$APP/Contents/Resources/licenses/qrcodegen/LICENSE-MIT"
+
 # Token optimizer and markdown renderer (the top-level crates/
 # workspace), next to the app binary. The app installs them into
 # ~/.chau7-next/bin; the wrappers pass CHAU7_CTO_BIN_DIR so chau7-optim also

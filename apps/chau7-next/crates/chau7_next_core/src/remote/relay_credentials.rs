@@ -33,7 +33,7 @@ pub fn valid_identifier(value: &str, maximum: usize) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
 }
 
-fn strong_secret(value: &str) -> bool {
+pub(crate) fn valid_role_secret(value: &str) -> bool {
     value.len() == 43
         && URL_SAFE_NO_PAD
             .decode(value)
@@ -48,8 +48,8 @@ pub fn validate_bytes(bytes: &[u8], device_id: &str) -> Result<ValidatedCredenti
         serde_json::from_slice(bytes).map_err(|_| PROVISIONING_ERROR)?;
     if credentials.device_id != device_id
         || !valid_identifier(&credentials.key_id, 32)
-        || !strong_secret(&credentials.mac_secret)
-        || !strong_secret(&credentials.ios_secret)
+        || !valid_role_secret(&credentials.mac_secret)
+        || !valid_role_secret(&credentials.ios_secret)
         || credentials.mac_secret == credentials.ios_secret
     {
         return Err(PROVISIONING_ERROR);

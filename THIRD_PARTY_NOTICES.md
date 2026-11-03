@@ -37,3 +37,7 @@ If you distribute Chau7 source archives, binaries, or app bundles that include `
 Chau7 Next links the MIT-licensed Rust compiler from <https://github.com/wevm/ondine>, pinned to commit `6a1586e5af980e67c104239593ae931837157b8b`. Ondine contains MIT-licensed code derived from Pele by kepano (<https://github.com/obsidianmd/pele>).
 
 The upstream licenses and revision record are preserved in `apps/chau7-next/resources/licenses/ondine/` and copied to `Contents/Resources/licenses/ondine/` when packaging the native app. No JavaScript renderer is bundled.
+
+### qrcodegen / QR pairing
+
+Chau7 uses Project Nayuki’s MIT-licensed `qrcodegen` 1.8.0 to generate pairing codes locally (<https://www.nayuki.io/page/qr-code-generator-library>). Its upstream license is preserved in `apps/chau7-next/resources/licenses/qrcodegen/LICENSE-MIT` and shipped in `Contents/Resources/licenses/qrcodegen/LICENSE-MIT`.
