@@ -54,8 +54,8 @@ mod tests {
         let image = PairingQrImage::render(&info, now).unwrap();
         assert!(image.width <= 400);
         assert_eq!(image.pixels.len(), (image.width * image.width * 4) as usize);
-        assert!(image.pixels.chunks_exact(4).all(|p| p[3] == 255));
-        assert!(image.pixels.chunks_exact(4).any(|p| p == [0, 0, 0, 255]));
+        assert!(image.pixels.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
+        assert!(image.pixels.as_chunks::<4>().0.contains(&[0, 0, 0, 255]));
         let stride = image.width as usize * 4;
         assert!(image.pixels[..stride * 8].iter().all(|v| *v == 255));
         assert!(
