@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 use chau7_next_core::key_encoding;
 use chau7_terminal::StyledSelection;
+use futures::{FutureExt as _, StreamExt as _};
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementInputHandler, Entity, EntityId,
     EventEmitter, FocusHandle, Focusable, Pixels, Point, Render, Task, Window, canvas, div,
@@ -115,6 +116,8 @@ pub struct TerminalView {
     winsize_state: chau7_next_core::session_restore::lifecycle::WinsizeNudgeState,
     /// Dropping/replacing these tasks cancels pending signals on hide/dispose.
     winsize_nudges: Vec<Task<()>>,
+    blink_wake: futures::channel::mpsc::Sender<()>,
+    blink_surface_awake: bool,
     _blink: Task<()>,
     _subscriptions: Vec<gpui::Subscription>,
 }
@@ -142,7 +145,16 @@ impl TerminalView {
         let selection_view_id = cx.entity_id();
         let selection_window = crate::platform::drop_image::window_key(window);
         let font_size = Settings::get(cx).appearance.zoomed_font_size();
-        let mut subscriptions = vec![cx.observe(&session, |_, _, cx| cx.notify())];
+        let mut subscriptions = vec![cx.observe(&session, |this, session, cx| {
+            this.sync_blink_visibility(cx);
+            let session = session.read(cx);
+            // Hidden sessions still drain output and emit their semantic events.
+            // Invalidating their views also dirties the native window, however,
+            // so only surfaces that can be presented need a visual notification.
+            if session.restore_surface_visible() || session.surface_prewarm_remaining().is_some() {
+                cx.notify();
+            }
+        })];
         subscriptions.push(cx.on_release(|this, cx| {
             this.overlays.release_cpu_frame(cx);
             if let Some(window) = this.selection_window {
@@ -208,12 +220,29 @@ impl TerminalView {
             this.update_refresh_pacing(window, cx);
             cx.notify();
         }));
+        let (blink_wake, mut blink_events) = futures::channel::mpsc::channel(1);
+        subscriptions.push(cx.observe_global::<Settings>(|this, cx| {
+            let _ = this.blink_wake.try_send(());
+            this.sync_blink_visibility(cx);
+        }));
         let blink = cx.spawn(async move |this, cx| {
-            let mut interval = Duration::from_millis(500);
+            let mut interval = Some(Duration::from_millis(500));
             loop {
-                cx.background_executor().timer(interval).await;
-                let next = this.update(cx, |this, cx| this.blink_tick(cx));
-                match next {
+                if let Some(interval) = interval {
+                    let delay = cx.background_executor().timer(interval).fuse();
+                    let event = blink_events.next().fuse();
+                    futures::pin_mut!(delay, event);
+                    futures::select_biased! {
+                        event = event => if event.is_none() { break; },
+                        _ = delay => {},
+                    }
+                } else if blink_events.next().await.is_none() {
+                    break;
+                }
+                // Visibility/settings signals coalesce; hidden Output does not
+                // send a signal or recreate a periodic blink timer.
+                while blink_events.try_recv().is_ok() {}
+                match this.update(cx, |this, cx| this.blink_tick(cx)) {
                     Ok(next) => interval = next,
                     Err(_) => break,
                 }
@@ -247,6 +276,8 @@ impl TerminalView {
             selection_window,
             winsize_state: Default::default(),
             winsize_nudges: Vec::new(),
+            blink_wake,
+            blink_surface_awake: false,
             _blink: blink,
             _subscriptions: subscriptions,
         };
@@ -293,6 +324,7 @@ impl TerminalView {
         self.session
             .read(cx)
             .mark_restore_surface(window.is_visible());
+        self.sync_blink_visibility(cx);
         let focused = self.focus_handle.is_focused(window);
         self.cursor_on = cursor_on_after_focus_change(self.cursor_on, self.cursor_focused, focused);
         self.cursor_focused = focused;
@@ -422,12 +454,22 @@ impl TerminalView {
         cx.notify();
     }
 
+    fn sync_blink_visibility(&mut self, cx: &App) {
+        let session = self.session.read(cx);
+        let awake =
+            session.restore_surface_visible() || session.surface_prewarm_remaining().is_some();
+        if awake != self.blink_surface_awake {
+            self.blink_surface_awake = awake;
+            let _ = self.blink_wake.try_send(());
+        }
+    }
+
     /// Cursor blink (`handleBlinkTick`): toggles every blink interval (500 ms
     /// unless `terminal.cursorBlinkRate` is set), solid for 1 s after output
     /// or typing, paused while the tab is hidden. Also suspends rendering of
     /// hidden tabs when Suspend Background Rendering is on. Returns the next
     /// interval.
-    fn blink_tick(&mut self, cx: &mut Context<Self>) -> Duration {
+    fn blink_tick(&mut self, cx: &mut Context<Self>) -> Option<Duration> {
         self.sync_winsize_nudges(None, cx);
         let mut wake =
             chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::wakeup(
@@ -446,6 +488,7 @@ impl TerminalView {
             Duration::from_secs(5)
         };
         let prewarm = self.session.read(cx).surface_prewarm_remaining();
+        self.blink_surface_awake = visible || prewarm.is_some();
         let suspend = prewarm.is_none()
             && chau7_next_core::session_restore::lifecycle::suspend_hidden_surface(
                 visible,
@@ -464,7 +507,7 @@ impl TerminalView {
         }
         if !visible {
             if let Some(remaining) = prewarm {
-                return interval.min(remaining.max(Duration::from_millis(1)));
+                return Some(interval.min(remaining.max(Duration::from_millis(1))));
             }
             // Wake at the configured suspension deadline rather than adding an
             // arbitrary cursor-blink interval to the actual hidden duration.
@@ -472,19 +515,21 @@ impl TerminalView {
                 && !suspend
                 && let Some(age) = session.surface_hidden_for()
             {
-                return interval.min(delay.saturating_sub(age).max(Duration::from_millis(1)));
+                return Some(delay.saturating_sub(age).max(Duration::from_millis(1)));
             }
-            return interval;
+            return None;
         }
         let blink_hold = if appearance.cursor_blink {
             self.overlays.blink_hold()
         } else {
             false
         };
+        // Match the painter: an emulator-hidden cursor has no blinking pixels.
+        // Keep its phase advancing so showing it again preserves normal blink.
         let transition = cursor_blink_transition(
             self.cursor_on,
             appearance.cursor_blink,
-            self.cursor_focused,
+            self.cursor_focused && session.grid.cursor_visible,
             blink_hold,
         );
         if transition.cursor_on != self.cursor_on {
@@ -493,7 +538,7 @@ impl TerminalView {
                 cx.notify();
             }
         }
-        interval
+        Some(interval)
     }
 
     /// Build an immutable, CPU-rendered snapshot for the Print command. The
@@ -521,6 +566,7 @@ impl TerminalView {
         let snapshot_size = self.bounds.map(|bounds| bounds.size);
         let state = {
             let session_entity = self.session.clone();
+            session_entity.update(cx, |session, _| session.ensure_grid());
             let session = session_entity.read(cx);
             inputs.danger_rows = self.danger_rows_for_snapshot(session, &settings);
             let size = snapshot_size.unwrap_or_else(|| {
@@ -770,6 +816,25 @@ impl Render for TerminalView {
             ));
         let metrics = self.metrics(window, cx);
         let guard_overlay = self.render_guard(cx);
+        let restore_notice = self.session.read(cx).restore_resume_issue().map(|issue| {
+            use chau7_next_core::session_restore::preparation::ResumeIssue;
+            let message = match issue {
+                ResumeIssue::UnavailableHistory => "Saved conversation unavailable: its local history could not be verified. Recovery details have been kept.",
+                ResumeIssue::IdentityInUse => "Saved conversation is already open in another pane. Recovery details have been kept.",
+                ResumeIssue::InvalidMetadata => "Saved conversation details could not be verified. Recovery details have been kept.",
+                ResumeIssue::MissingIdentity => "No confirmed conversation ID was saved. Use the agent’s session picker to choose the conversation to resume.",
+            };
+            let chrome = crate::theme::Chrome::get(cx);
+            div().absolute().top_2().left_2().right_2()
+                .flex().items_center().gap_2().px_3().py_2().rounded_md()
+                .bg(chrome.tab_bg).text_color(chrome.text).text_xs()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(div().flex_1().min_w_0().child(message))
+                .child(div().id("dismiss-restore-notice").cursor_pointer().child("×")
+                    .on_click(cx.listener(|view, _, _, cx| {
+                        view.session.update(cx, |session, cx| session.set_restore_resume_issue(None, cx));
+                    })))
+        });
         let settings = Settings::get(cx);
         let focused = self.focus_handle.is_focused(window);
         let view = cx.entity();
@@ -832,9 +897,13 @@ impl Render for TerminalView {
                                     f32::from(metrics.cell_width),
                                     f32::from(metrics.line_height),
                                 );
-                            if let Some((cols, rows)) = dimensions {
-                                session.update(cx, |s, _| s.resize(cols, rows));
-                            }
+                            session.update(cx, |s, _| {
+                                if let Some((cols, rows)) = dimensions {
+                                    s.resize(cols, rows);
+                                }
+                                // A tab that was hidden kept only its grid shape.
+                                s.ensure_grid();
+                            });
                             // A busy resize may still be pending. Observe applied
                             // grid dimensions so its later successful retry re-arms
                             // the post-resize signals instead of caching a request.
@@ -903,6 +972,7 @@ impl Render for TerminalView {
                 )
                 .size_full(),
             )
+            .children(restore_notice)
             .children(guard_overlay)
     }
 }
@@ -1051,7 +1121,7 @@ mod tests {
             .split("    fn metrics(")
             .next()
             .unwrap();
-        assert!(blink.contains("self.cursor_focused"));
+        assert!(blink.contains("self.cursor_focused && session.grid.cursor_visible"));
         assert!(blink.contains("cursor_blink_transition("));
         assert!(blink.contains("if transition.notify"));
 

@@ -99,6 +99,8 @@ type TaskManager struct {
 	// Configuration
 	gracePeriod time.Duration
 	idleTimeout time.Duration
+	graceTimer  *time.Timer
+	closed      bool
 
 	// Dependencies
 	db     *Database
@@ -119,9 +121,6 @@ func NewTaskManager(db *Database, ipc *IPCNotifier, gracePeriod, idleTimeout tim
 		db:           db,
 		ipc:          ipc,
 	}
-
-	// Start background goroutine for auto-confirming candidates
-	go tm.runGracePeriodChecker()
 
 	return tm
 }
@@ -231,6 +230,7 @@ func (tm *TaskManager) createCandidateLocked(tabID string, headers *CorrelationH
 	}
 
 	tm.candidates[tabID] = candidate
+	tm.scheduleGraceCheckLocked()
 
 	// Emit task_candidate event
 	_ = tm.ipc.NotifyTaskCandidate(candidate)
@@ -251,6 +251,7 @@ func (tm *TaskManager) createTaskLocked(tabID string, headers *CorrelationHeader
 
 	// Clear any pending candidate
 	delete(tm.candidates, tabID)
+	tm.scheduleGraceCheckLocked()
 
 	taskName := deriveTaskName(promptPreview, headers.TaskName)
 	task := &Task{
@@ -315,6 +316,7 @@ func (tm *TaskManager) confirmCandidate(tabID string, candidateID string, startM
 
 	tm.tasks[tabID] = task
 	delete(tm.candidates, tabID)
+	tm.scheduleGraceCheckLocked()
 
 	// Save to database
 	_ = tm.db.InsertTask(task)
@@ -344,6 +346,7 @@ func (tm *TaskManager) dismissCandidateLocked(tabID, candidateID, method string)
 	_ = tm.ipc.NotifyTaskCandidateDismissed(candidate, method)
 
 	delete(tm.candidates, tabID)
+	tm.scheduleGraceCheckLocked()
 	return reassigned
 }
 
@@ -497,13 +500,35 @@ func (tm *TaskManager) UpdateTaskName(taskID, newName string) error {
 	return ErrTaskNotFound
 }
 
-// runGracePeriodChecker periodically checks for candidates that should be auto-confirmed
-func (tm *TaskManager) runGracePeriodChecker() {
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
+// Close cancels pending deadline work before the database is closed.
+func (tm *TaskManager) Close() {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	tm.closed = true
+	if tm.graceTimer != nil {
+		tm.graceTimer.Stop()
+		tm.graceTimer = nil
+	}
+}
 
-	for range ticker.C {
-		tm.checkGracePeriods()
+// scheduleGraceCheckLocked arms only the earliest pending deadline. An idle
+// manager has no ticker, goroutine or timer. The caller must hold tm.mu.
+func (tm *TaskManager) scheduleGraceCheckLocked() {
+	if tm.graceTimer != nil {
+		tm.graceTimer.Stop()
+		tm.graceTimer = nil
+	}
+	if tm.closed {
+		return
+	}
+	var earliest time.Time
+	for _, candidate := range tm.candidates {
+		if earliest.IsZero() || candidate.GracePeriodEnd.Before(earliest) {
+			earliest = candidate.GracePeriodEnd
+		}
+	}
+	if !earliest.IsZero() {
+		tm.graceTimer = time.AfterFunc(time.Until(earliest), tm.checkGracePeriods)
 	}
 }
 
@@ -511,10 +536,13 @@ func (tm *TaskManager) runGracePeriodChecker() {
 func (tm *TaskManager) checkGracePeriods() {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
+	if tm.closed {
+		return
+	}
 
 	now := time.Now()
 	for tabID, candidate := range tm.candidates {
-		if now.After(candidate.GracePeriodEnd) {
+		if !now.Before(candidate.GracePeriodEnd) {
 			// Auto-confirm the candidate
 			task := &Task{
 				ID:          generateID("task"),
@@ -549,6 +577,7 @@ func (tm *TaskManager) checkGracePeriods() {
 			_ = tm.ipc.NotifyTaskStarted(task)
 		}
 	}
+	tm.scheduleGraceCheckLocked()
 }
 
 // AddPendingCall associates an API call with a pending candidate

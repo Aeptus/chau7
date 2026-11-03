@@ -125,6 +125,7 @@ func TestTaskManager_ManualTrigger(t *testing.T) {
 	db := testDB(t)
 	ipc := testIPC(db)
 	tm := NewTaskManager(db, ipc, 5*time.Second, 30*time.Minute)
+	t.Cleanup(tm.Close)
 
 	headers := &CorrelationHeaders{
 		TabID:     "tab_1",
@@ -165,6 +166,7 @@ func TestTaskManager_NewSessionTrigger(t *testing.T) {
 	db := testDB(t)
 	ipc := testIPC(db)
 	tm := NewTaskManager(db, ipc, 5*time.Second, 30*time.Minute)
+	t.Cleanup(tm.Close)
 
 	headers := &CorrelationHeaders{
 		TabID:     "tab_1",
@@ -195,6 +197,7 @@ func TestTaskManager_IdleGapTrigger(t *testing.T) {
 	ipc := testIPC(db)
 	// Use very short idle timeout for testing
 	tm := NewTaskManager(db, ipc, 5*time.Second, 1*time.Millisecond)
+	t.Cleanup(tm.Close)
 
 	// First call - creates candidate for new session
 	headers := &CorrelationHeaders{
@@ -235,6 +238,7 @@ func TestTaskManager_RepoSwitchTrigger(t *testing.T) {
 	db := testDB(t)
 	ipc := testIPC(db)
 	tm := NewTaskManager(db, ipc, 5*time.Second, 30*time.Minute)
+	t.Cleanup(tm.Close)
 
 	// First call with project A
 	headers := &CorrelationHeaders{
@@ -268,6 +272,7 @@ func TestTaskManager_CandidateConfirmation(t *testing.T) {
 	db := testDB(t)
 	ipc := testIPC(db)
 	tm := NewTaskManager(db, ipc, 5*time.Second, 30*time.Minute)
+	t.Cleanup(tm.Close)
 
 	// Create a candidate
 	headers := &CorrelationHeaders{
@@ -311,6 +316,7 @@ func TestTaskManager_CandidateDismissal(t *testing.T) {
 	db := testDB(t)
 	ipc := testIPC(db)
 	tm := NewTaskManager(db, ipc, 5*time.Second, 30*time.Minute)
+	t.Cleanup(tm.Close)
 
 	// Create a candidate
 	headers := &CorrelationHeaders{
@@ -344,6 +350,7 @@ func TestTaskManager_DismissNonExistent(t *testing.T) {
 	db := testDB(t)
 	ipc := testIPC(db)
 	tm := NewTaskManager(db, ipc, 5*time.Second, 30*time.Minute)
+	t.Cleanup(tm.Close)
 
 	// Try to dismiss non-existent candidate
 	dismissed, reassigned := tm.DismissCandidate("tab_1", "cand_nonexistent", "test")
@@ -360,6 +367,7 @@ func TestTaskManager_DismissWrongID(t *testing.T) {
 	db := testDB(t)
 	ipc := testIPC(db)
 	tm := NewTaskManager(db, ipc, 5*time.Second, 30*time.Minute)
+	t.Cleanup(tm.Close)
 
 	// Create a candidate
 	headers := &CorrelationHeaders{
@@ -386,6 +394,7 @@ func TestTaskManager_TaskAssessment(t *testing.T) {
 	db := testDB(t)
 	ipc := testIPC(db)
 	tm := NewTaskManager(db, ipc, 5*time.Second, 30*time.Minute)
+	t.Cleanup(tm.Close)
 
 	// Create a task
 	headers := &CorrelationHeaders{
@@ -421,6 +430,7 @@ func TestTaskManager_AssessNonExistent(t *testing.T) {
 	db := testDB(t)
 	ipc := testIPC(db)
 	tm := NewTaskManager(db, ipc, 5*time.Second, 30*time.Minute)
+	t.Cleanup(tm.Close)
 
 	err := tm.AssessTask("task_nonexistent", true, "")
 	if err != ErrTaskNotFound {
@@ -433,6 +443,7 @@ func TestTaskManager_UpdateTaskName(t *testing.T) {
 	db := testDB(t)
 	ipc := testIPC(db)
 	tm := NewTaskManager(db, ipc, 5*time.Second, 30*time.Minute)
+	t.Cleanup(tm.Close)
 
 	// Create a task
 	headers := &CorrelationHeaders{
@@ -460,6 +471,7 @@ func TestTaskManager_MultipleTabsIndependent(t *testing.T) {
 	db := testDB(t)
 	ipc := testIPC(db)
 	tm := NewTaskManager(db, ipc, 5*time.Second, 30*time.Minute)
+	t.Cleanup(tm.Close)
 
 	// Create task in tab 1
 	headers1 := &CorrelationHeaders{
@@ -559,4 +571,73 @@ func TestExtractVerbPhrase(t *testing.T) {
 // Helper function to check if task ID indicates a candidate
 func isCandidate(taskID string) bool {
 	return len(taskID) > 10 && taskID[:10] == "candidate:"
+}
+
+// Exercise actual timer delivery, including a newly earlier candidate and
+// cancellation. No test calls checkGracePeriods to manufacture completion.
+func TestTaskManager_DeadlineTimer(t *testing.T) {
+	db := testDB(t)
+	tm := NewTaskManager(db, testIPC(db), time.Hour, time.Minute)
+	t.Cleanup(tm.Close)
+	if tm.graceTimer != nil {
+		t.Fatal("idle manager armed a timer")
+	}
+	add := func(tab string, deadline time.Time) {
+		tm.mu.Lock()
+		candidate := tm.createCandidateLocked(tab, &CorrelationHeaders{TabID: tab}, TriggerNewSession, "test")
+		candidate.GracePeriodEnd = deadline
+		tm.scheduleGraceCheckLocked()
+		tm.mu.Unlock()
+	}
+	now := time.Now()
+	add("later", now.Add(150*time.Millisecond))
+	add("earlier", now.Add(30*time.Millisecond))
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		tm.mu.RLock()
+		early := tm.tasks["earlier"]
+		late := tm.tasks["later"]
+		done := early != nil && late != nil && tm.graceTimer == nil
+		tm.mu.RUnlock()
+		if done {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timer failed to confirm both deadlines or return to idle")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	tm.mu.Lock()
+	candidate := tm.createCandidateLocked("dismissed", &CorrelationHeaders{TabID: "dismissed"}, TriggerNewSession, "test")
+	candidate.GracePeriodEnd = time.Now().Add(time.Millisecond)
+	tm.scheduleGraceCheckLocked()
+	tm.dismissCandidateLocked("dismissed", candidate.ID, "test")
+	if tm.graceTimer != nil {
+		t.Error("last dismissal left a timer armed")
+	}
+	tm.mu.Unlock()
+	tm.Close()
+	tm.checkGracePeriods() // A callback already queued before Close must be inert.
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.tasks["dismissed"] != nil {
+		t.Error("dismissed candidate became a task")
+	}
+}
+
+func TestTaskManager_CloseCancelsPendingDeadline(t *testing.T) {
+	db := testDB(t)
+	tm := NewTaskManager(db, testIPC(db), time.Hour, time.Minute)
+	tm.mu.Lock()
+	candidate := tm.createCandidateLocked("closed", &CorrelationHeaders{TabID: "closed"}, TriggerNewSession, "test")
+	// Make a queued callback due without racing a one-millisecond timer.
+	candidate.GracePeriodEnd = time.Now().Add(-time.Second)
+	tm.mu.Unlock()
+	tm.Close()
+	tm.checkGracePeriods()
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	if tm.graceTimer != nil || tm.tasks["closed"] != nil {
+		t.Fatal("closed manager delivered deadline work")
+	}
 }

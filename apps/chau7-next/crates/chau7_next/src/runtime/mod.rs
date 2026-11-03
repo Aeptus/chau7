@@ -399,6 +399,7 @@ pub fn launch_snapshot(
             ai_provider: provider,
             active_run_provider,
             process_names: Vec::new(),
+            live_agent: shell.live_agent_name().map(str::to_owned),
             status_observed_at: matched.and_then(|(_, seen)| {
                 chrono::DateTime::from_timestamp_millis((seen * 1000.0) as i64)
             }),

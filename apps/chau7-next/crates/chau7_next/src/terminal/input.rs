@@ -142,7 +142,11 @@ impl TerminalView {
             .read(cx)
             .with_terminal(|t| t.set_kitty_keyboard(true, scrollback));
         let events = cx.subscribe(&self.session, |this, session, event, cx| match event {
-            SessionEvent::Output if !this.input.local_echo.is_empty() => {
+            // A deferred grid holds blank cells, not the echoed text: confirm
+            // once the surface is visible and its cells are copied again.
+            SessionEvent::Output
+                if !this.input.local_echo.is_empty() && !session.read(cx).grid_is_deferred() =>
+            {
                 let session = session.read(cx);
                 let grid = &session.grid;
                 let offset = grid.display_offset as i32;

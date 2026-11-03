@@ -92,6 +92,13 @@ impl TerminalView {
         if !output_scope_allows(settings, session) {
             return;
         }
+        if !session.restore_surface_visible() && session.surface_prewarm_remaining().is_none() {
+            // A scan only produces row tints for a displayed frame. Keep it
+            // due for reveal instead of waking the window from a hidden timer.
+            self.danger.pending = None;
+            self.danger.due = true;
+            return;
+        }
         let (input_lag, output_lag) = session.ui_lag_ms();
         let saturated = danger_highlight::is_cpu_saturated(input_lag, output_lag);
         let timing = danger_highlight::highlight_timing(

@@ -30,7 +30,7 @@ export PATH="$clean_path"
 
 # Optional owned hook installation applies even when API analytics is disabled.
 run_codex() {
-  if [ "${TERM_PROGRAM:-}" = Chau7Next ] && [ -n "${CHAU7_NEXT_TAB_ID:-}" ] && [ -f "$wrapper_dir/chau7-next-codex-notify" ]; then
+  if [ "${TERM_PROGRAM:-}" = Chau7Next ] && [ -n "${CHAU7_NEXT_TAB_ID:-}" ] && [ -f "$wrapper_dir/chau7-next-codex-notify" ] && command -v python3 >/dev/null 2>&1; then
     export CHAU7_TAB_ID=
     exec python3 "$wrapper_dir/chau7-next-codex-notify" --wrap "$real_codex" "$@"
   fi

@@ -22,6 +22,7 @@ import plistlib
 import platform
 import pwd
 import shutil
+import shlex
 import re
 import stat
 import subprocess
@@ -945,6 +946,98 @@ def _fsync_directory(directory, label):
         raise UpdateError(f"cannot sync {label} directory: {error}") from error
 
 
+def audit_codex_resume_histories(state, home):
+    """Verify exact native IDs, using the same store as Rust restore preparation.
+
+    No directory/time fallback, provider mutation or transcript body read.
+    Only first-line session metadata is read, capped at 64 KiB per candidate.
+    """
+    entries = []
+    for pane_id, pane in state["identity"]["panes"].items():
+        active = bool(pane.get("ai_session_id") or pane.get("ai_resume_command"))
+        if (not active and not pane.get("archived_ai_resume")
+                and str(pane.get("ai_provider") or "").strip().lower() == "codex"):
+            entries.append({"pane_id": pane_id, "session_id": None, "active": True,
+                            "status": "missing_identity"})
+            continue
+        metadata = pane if active else pane.get("archived_ai_resume") or {}
+        command = metadata.get("resume_command", metadata.get("ai_resume_command")) or ""
+        try:
+            words = shlex.split(command)
+        except ValueError:
+            words = []
+        canonical_codex = len(words) == 3 and Path(words[0]).name == "codex" and words[1] == "resume"
+        provider = metadata.get("provider", metadata.get("ai_provider")) or ("codex" if canonical_codex else "")
+        if not isinstance(provider, str) or provider.strip().lower() != "codex":
+            continue
+        session_id = metadata.get("session_id", metadata.get("ai_session_id"))
+        if not session_id and canonical_codex:
+            session_id = words[2]
+        if not session_id and command:
+            entries.append({"pane_id": pane_id, "session_id": None, "active": active,
+                            "status": "unresolved_command"})
+            continue
+        try:
+            native_id = str(uuid.UUID(session_id))
+        except (ValueError, AttributeError, TypeError):
+            continue  # Rust accepts opaque non-native test/provider IDs.
+        entries.append({"pane_id": pane_id, "session_id": native_id,
+                        "active": active, "status": "unavailable"})
+    pending = {entry["session_id"] for entry in entries if entry["session_id"] is not None}
+    if pending:
+        sessions = plain_path(home / ".codex/sessions", "Codex session store", must_exist=False)
+        if sessions.exists():
+            require(sessions.is_dir(), "Codex session store is not a directory")
+            for directory, subdirectories, files in os.walk(sessions, followlinks=False):
+                subdirectories[:] = [name for name in subdirectories
+                                     if name.isdigit() and not (Path(directory) / name).is_symlink()]
+                for name in files:
+                    matched = next((sid for sid in pending if name.endswith(f"-{sid}.jsonl")), None)
+                    if matched is None:
+                        continue
+                    path = plain_path(Path(directory) / name, "Codex session artifact")
+                    require(path.is_file(), "Codex session artifact is not a regular file")
+                    try:
+                        with path.open("rb") as transcript:
+                            line = transcript.readline(65537)
+                        if len(line) > 65536:
+                            continue
+                        record = json.loads(line)
+                        if (not isinstance(record, dict) or record.get("type") != "session_meta"
+                                or not isinstance(record.get("payload"), dict)
+                                or record["payload"].get("id") != matched):
+                            continue
+                    except (OSError, UnicodeError, ValueError):
+                        continue
+                    for entry in entries:
+                        if entry["session_id"] == matched:
+                            entry["status"] = "available"
+                    pending.remove(matched)
+                if not pending:
+                    break
+    return entries
+
+
+def require_codex_resume_histories(state, home, report_path=None):
+    entries = audit_codex_resume_histories(state, home)
+    if report_path is not None:
+        _write_snapshot_file(
+            json.dumps({"schema_version": 1, "codex_resume_histories": entries},
+                       sort_keys=True, indent=2).encode("utf-8") + b"\n",
+            report_path, "native resume history audit",
+        )
+    missing = sum(entry["active"] and entry["status"] != "available" for entry in entries)
+    archived = sum(not entry["active"] for entry in entries)
+    print(f"Native Codex resume check: {len(entries) - archived - missing} verified, "
+          f"{missing} unavailable active, {archived} archived recovery identities.", flush=True)
+    require(missing == 0,
+            f"{missing} active saved Codex conversation(s) have no verified local history. "
+            "No quit was requested. Restore the exact provider histories or deliberately "
+            "start a new conversation in the affected panes before retrying. "
+            + (f"Private audit: {report_path}" if report_path else ""))
+    return entries
+
+
 def capture_prequit_restore(state_root, backup, home):
     """Atomically publish a verified restore transaction before asking the user to quit."""
     home = plain_path(home, "home directory")
@@ -1677,6 +1770,7 @@ def apply_update(candidate, receipt_path, expected_sha, wait_seconds, info, home
         ) from error
     try:
         require_prior_restore_losses_resolved(home, prequit, backup)
+        require_codex_resume_histories(prequit, home, backup / "native-resume-audit.json")
     except UpdateError as error:
         try:
             _record_blocked_before_quit(backup, run_id, prequit)
@@ -1908,6 +2002,7 @@ def main(argv=None):
             )
             current_state = read_restore_state(state_root, "live Rust restore state")
             current_state["snapshot_root"] = state_root
+            require_codex_resume_histories(current_state, home)
             try:
                 recovered_count = inspect_prior_restore_losses(home, current_state)
             except UpdateError:

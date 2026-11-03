@@ -221,7 +221,8 @@ impl CodexContentProvider {
             .join(format!("{:02}", date.day()))
     }
 
-    /// The rollout of `session_id` on the run's day, else the day before.
+    /// The rollout of `session_id` on the run's day or the day before, else
+    /// the path Codex recorded for it.
     pub fn find_rollout(&self, session_id: &str, started_at: DateTime<Utc>) -> Option<PathBuf> {
         let local = started_at.with_timezone(&Local);
         let suffix = format!("-{session_id}.jsonl");
@@ -233,7 +234,33 @@ impl CodexContentProvider {
                     .filter(|file| file_name(file).ends_with(&suffix)),
             );
         }
-        (matches.len() == 1).then(|| matches.remove(0))
+        match matches.len() {
+            1 => Some(matches.remove(0)),
+            0 => self.recorded_rollout(session_id, &suffix),
+            _ => None,
+        }
+    }
+
+    /// `codex resume` keeps appending to the rollout of the day the session
+    /// was created, which Codex records in its `threads` table.
+    fn recorded_rollout(&self, session_id: &str, suffix: &str) -> Option<PathBuf> {
+        if !self.state_db.is_file() {
+            return None;
+        }
+        let conn =
+            Connection::open_with_flags(&self.state_db, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+        let path = conn
+            .query_row(
+                "SELECT rollout_path FROM threads WHERE id = ? LIMIT 1",
+                [session_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
+            .flatten()
+            .map(PathBuf::from)?;
+        (path.is_file() && file_name(&path).ends_with(suffix)).then_some(path)
     }
 
     fn read_jsonl(
@@ -283,13 +310,8 @@ impl CodexContentProvider {
             .ok()
             .flatten()?;
         drop(conn);
+        // `read_jsonl` already tried the recorded rollout path.
         let (tokens_used, first_message, rollout_path) = row;
-        if let Some(path) = &rollout_path
-            && Path::new(path).exists()
-            && let Some(result) = self.read_jsonl(run_id, session_id, DateTime::<Utc>::MIN_UTC)
-        {
-            return Some(result);
-        }
         let mut turns = Vec::new();
         if let Some(message) = first_message.filter(|m| !m.is_empty()) {
             let mut turn = TelemetryTurn::new(run_id, 0, TurnRole::Human);
@@ -504,6 +526,62 @@ mod tests {
                 .extract_content("RUN", None, "/x", started)
                 .is_none()
         );
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn codex_resumed_rollout_is_found_through_the_recorded_path() {
+        let home = temp_home("codex-resumed");
+        let started =
+            crate::telemetry::date_codec::parse_iso8601(Some("2026-10-29T09:00:00Z")).unwrap();
+        let provider = CodexContentProvider::new(&home);
+        // Created three weeks before this run, and still written by `codex resume`.
+        let created = home.join(".codex/sessions/2026/10/08");
+        std::fs::create_dir_all(&created).unwrap();
+        let rollout = created.join("rollout-2026-10-08T06-57-39-OLD1.jsonl");
+        std::fs::write(
+            &rollout,
+            r#"{"type":"turn_context","timestamp":"2026-10-29T10:00:00Z","payload":{"model":"gpt-5"}}
+{"type":"response_item","timestamp":"2026-10-29T10:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"again"}]}}"#,
+        )
+        .unwrap();
+        assert_eq!(provider.find_rollout("OLD1", started), None);
+
+        let conn = Connection::open(home.join(".codex/state_5.sqlite")).unwrap();
+        conn.execute(
+            "CREATE TABLE threads (id TEXT, tokens_used INTEGER, first_user_message TEXT, rollout_path TEXT)",
+            [],
+        )
+        .unwrap();
+        for (id, path) in [
+            ("OLD1", rollout.to_string_lossy().into_owned()),
+            ("GONE", "/nowhere/rollout-GONE.jsonl".into()),
+            ("OTHER", rollout.to_string_lossy().into_owned()),
+        ] {
+            conn.execute(
+                "INSERT INTO threads VALUES (?, 0, 'hello', ?)",
+                [id, path.as_str()],
+            )
+            .unwrap();
+        }
+        drop(conn);
+
+        assert_eq!(
+            provider.find_rollout("OLD1", started),
+            Some(rollout.clone())
+        );
+        assert_eq!(provider.find_rollout("GONE", started), None);
+        // A recorded path must name the session it is recorded for.
+        assert_eq!(provider.find_rollout("OTHER", started), None);
+        let content = provider
+            .extract_content("RUN", Some("OLD1"), "/x", started)
+            .expect("rollout");
+        assert_eq!(content.model.as_deref(), Some("gpt-5"));
+        // The SQLite fallback no longer re-reads with an out-of-range date.
+        let fallback = provider
+            .extract_content("RUN", Some("OTHER"), "/x", started)
+            .expect("sqlite");
+        assert_eq!(fallback.turns.len(), 1);
         let _ = std::fs::remove_dir_all(home);
     }
 }

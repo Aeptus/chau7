@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Stop tab-bar scrolling at the final tab control. Clamp later-tab reveals and in-flight animations to the natural content end, keeping the first viewport anchored without allowing an empty scrolled tab bar.
+
+- Keep all fitting tabs visible with no artificial trailing scroll space. Anchor selections from the first viewport at the start; align later tabs to the left only when the strip overflows, and reset stale scrolling when tabs fit again without rewriting a settled offset.
+
+- Reduce autosave lag by matching startup-tip artifacts at their measured border width, skipping ineligible interior boxes, and reusing unchanged scrollback captures without another retained history copy. Measure the complete UI capture and normalization separately from background writes, while preserving write retries and fresh session metadata.
+
+- Align the selected tab to the left edge of the tab bar when switching tabs, using fresh fixed-viewport measurements and enough scroll room for the last tab. Keep manual scrolling responsive and hidden tab bars idle.
+
+- Skip scrollback maintenance jobs for already-archived background sessions and protected TUI tiers; park the retention worker until work or explicit shutdown arrives, while retaining history after an alternate-screen TUI exits.
+- Park idle PTY readers until output, disconnection or explicit input/focus/shutdown signals arrive, removing their one-second timeout wakeups without changing terminal output pacing.
+
+- Add a shared authenticated loopback HTTP MCP endpoint for Codex and Claude Code, avoiding per-client bridge processes while preserving permission and subscription isolation. Other clients retain the stdio bridge. Closing or replacing an event stream releases its connection promptly, including stalled clients; closed sessions immediately release backend sockets and capacity.
+
+- Replace MCP bridge liveness polling with OS process and pipe events, removing periodic idle wakeups while preserving prompt client cleanup.
+
+- Keep nested Codex notify hooks from replacing a live tab’s conversation identity. Bind reported threads to the primary native CLI process from the existing process snapshot, preserving foreground session changes and resumable parent conversations.
+
+- Keep unverified and subagent Codex notify reports from replacing a tab’s resumable foreground identity, even when the report comes from the same native CLI process. Verify exact first-line session metadata off the UI thread.
+
+- Explain unavailable saved conversations in their restored terminal and MCP status instead of silently omitting the resume command. Keep recovery identities inert even when live ownership changes after preparation, and distinguish missing history, missing conversation IDs and conversations already open in another pane. Before a production update asks to quit, verify active native Codex IDs against their exact local history metadata and retain a private audit; existing archived recovery IDs stay inactive.
+
+- Process proxy streaming usage and token-rate events incrementally, avoiding a full response copy and repeated SSE line copies while preserving forwarding and accounting.
+
+- Park transcript token-rate monitoring when no AI run exists, and wake it on run admission, identity changes and exit while retaining active CLI polling and historical readings.
+
+- Reduce terminal lag: reuse the prepared paint of unchanged terminal rows, and stop copying hidden tabs' grids on every output batch. With 13 busy AI-style tabs, CPU per output batch fell about 3.8 times. The performance snapshot now ranks slow stages against per-stage time budgets, counts window frames, and separates main-thread congestion from deliberate frame pacing.
+- Deliver a runtime agent's first prompt only once the agent is really running: a launch typed into a new tab is no longer marked finished by the shell's first prompt, an agent session counts as ready only when its own process runs in the tab (never at a shell prompt), and input the command guard holds is logged and reported to MCP and runtime callers with the reason, including in tab status.
+- Keep every AI tab resumable: a Claude Code or Codex hook that reports its session from inside a tab now binds that provider and session to the tab, even when the tab was saved under a different or stale provider, instead of being refused and leaving restore with no resume command. Events routed to a tab by its directory never bind a session.
+- Watch the macOS proxy parent with a native process-exit event instead of permanent polling, preserving reparenting detection and a portable fallback.
+
+- Park hidden terminal cursor timers until visibility, hover prewarming or settings changes require them; keep visible blink and suspension deadlines live.
+
+- Share one one-second housekeeping timer across terminal sessions, retaining sessions weakly and parking it after the last session closes.
+- Limit process argument reads to subscribed terminal process trees while keeping native child detection and SSH/provider resolution live.
+
+- Keep hidden terminal output from invalidating the native window while preserving live output processing, tab reveals and hover previews.
+
+- Avoid whole-workspace redraws for repeated hidden-tab output while preserving activity timestamps, idle-tab revival and visible age panels.
+
+- Remove the remote IPC listener's idle 50 ms accept polling. Wait for incoming connections or an explicit shutdown signal while preserving client replacement, frame delivery and socket ownership.
+- Wake remote control on settings, IPC and grid-completion events; park it when disabled and schedule live metadata, output batching and agent supervision at their actual deadlines, without adding timer callbacks to immediately flushed output.
+- Wake MCP subscriptions on actual journal changes or their heartbeat deadline instead of polling every 100 ms; coalesce wake tokens while preserving ordered replay and immediate cancellation.
+- Let file tailers sleep until their actual poll deadline and wake them immediately on shutdown.
+- Stop idle Metal display callbacks and static-terminal redraws, and replace the proxy task grace-period scan with a deadline timer.
+- Add an isolated macOS performance lab with verified terminal workloads and separate app, MCP bridge and proxy CPU, physical-memory and wakeup measurements.
+
+- Show tokens per second for resumed Codex tabs: Codex keeps writing a resumed session to the file of the day it was created, which Chau7 now finds through the path Codex records instead of only today's and yesterday's folders.
+- Install Chau7's session-only Codex and Claude Code hooks by default so plain `codex`/`claude` launches record their session in their tab and restore offers a resume prompt again. An explicit uninstall in Settings is remembered; modified helpers are left alone. Settings now reports them as installed for Chau7 sessions.
 - Prefill saved resume commands in every restored command tab after its shell reaches a prompt, including background tabs, without submitting them.
 - Patch the app's Rust TLS dependencies to Rustls 0.23.46 and WebPKI
   0.103.16 for the current TLS and certificate-validation advisories.

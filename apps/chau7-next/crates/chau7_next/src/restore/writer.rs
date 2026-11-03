@@ -4,7 +4,7 @@ use crate::session_store::SavedSession;
 use crate::workspace::AppData;
 use chau7_next_core::data_root::DataRoot;
 use chau7_next_core::session_restore::writer::{
-    BufferLedger, ContextBuffer, RestoreWriter, SubmitResult, WriterStats,
+    BufferLedger, ContextBuffer, RestoreWriter, ScrollbackCaptureKey, SubmitResult, WriterStats,
 };
 use gpui::{App, Global};
 use std::collections::{HashMap, HashSet};
@@ -40,6 +40,60 @@ pub(crate) fn record(pane: u64, text: Option<String>, cx: &App) -> bool {
     };
     let mut buffers = service.buffers.lock().unwrap_or_else(|e| e.into_inner());
     match buffers.record(pane, text) {
+        Ok(present) => present,
+        Err(_) => {
+            log::warn!("Restore capture bound reached for pane {pane}");
+            buffers.has_context(pane)
+        }
+    }
+}
+
+/// Export has already observed current native content. Skip pure cleanup for
+/// an identical source/policy, without retaining a second history copy. Never
+/// hold the ledger lock across normalization or native terminal access.
+pub(crate) fn record_capture(
+    pane: u64,
+    source: &str,
+    max_lines: usize,
+    capture: impl FnOnce() -> Option<String>,
+    cx: &App,
+) -> bool {
+    let Some(service) = cx.try_global::<Service>() else {
+        return false;
+    };
+    let key = ScrollbackCaptureKey::new(source, max_lines);
+    let reused = service
+        .buffers
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .reuse_capture(pane, key);
+    if let Some(present) = reused {
+        let mut hit =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                "reuse_scrollback_capture",
+                "autosave",
+                "unobserved",
+                "session_restore",
+                chau7_next_core::work_profiler::Queue::Main,
+            ));
+        hit.items(1);
+        return present;
+    }
+    let text = {
+        let mut work =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                "normalize_scrollback",
+                "autosave",
+                "unobserved",
+                "session_restore",
+                chau7_next_core::work_profiler::Queue::Main,
+            ));
+        work.bytes(source.len());
+        work.items(1);
+        capture()
+    };
+    let mut buffers = service.buffers.lock().unwrap_or_else(|e| e.into_inner());
+    match buffers.record_capture(pane, key, text) {
         Ok(present) => present,
         Err(_) => {
             log::warn!("Restore capture bound reached for pane {pane}");
@@ -202,6 +256,47 @@ mod tests {
             true,
         )
     }
+    #[gpui::test]
+    fn unchanged_capture_skips_cleanup_and_failed_writes_rearm_it(cx: &mut gpui::TestAppContext) {
+        let root = root();
+        let worker = cx.update(|cx| {
+            cx.set_global(AppData::new(root.clone()));
+            init(cx);
+            let calls = std::cell::Cell::new(0);
+            let capture = || {
+                calls.set(calls.get() + 1);
+                Some("clean".to_owned())
+            };
+            assert!(record_capture(1, "raw", 500, capture, cx));
+            assert!(record_capture(1, "raw", 500, capture, cx));
+            assert_eq!(calls.get(), 1);
+            let buffers = &cx.global::<Service>().buffers;
+            let pending = buffers.lock().unwrap().snapshot();
+            buffers.lock().unwrap().acknowledge(&pending);
+            assert!(record_capture(1, "raw", 500, capture, cx));
+            assert_eq!(
+                calls.get(),
+                1,
+                "committed captures retain only their fingerprint"
+            );
+            buffers
+                .lock()
+                .unwrap()
+                .invalidate_persisted(&HashSet::from([1]));
+            assert!(record_capture(1, "raw", 500, capture, cx));
+            assert_eq!(calls.get(), 2);
+            assert!(record_capture(1, "new", 500, capture, cx));
+            assert!(record_capture(1, "new", 10, capture, cx));
+            assert_eq!(calls.get(), 4, "output and line-policy changes recapture");
+            assert!(!record(1, None, cx));
+            assert!(record_capture(1, "new", 10, capture, cx));
+            assert_eq!(calls.get(), 5, "an explicit clear invalidates reuse");
+            shutdown(cx).unwrap()
+        });
+        assert_eq!(worker.join().unwrap().failed, 0);
+        let _ = std::fs::remove_dir_all(root.home());
+    }
+
     fn session() -> SavedSession {
         SavedSession {
             version: 1,

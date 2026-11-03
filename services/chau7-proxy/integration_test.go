@@ -80,6 +80,7 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 	ipc := NewIPCNotifier("")
 	ipc.SetDatabase(db)
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
+	t.Cleanup(taskManager.Close)
 	baseline := NewBaselineEstimator(db, nil)
 	mockup, err := NewMockupClient("", "")
 	if err != nil {
@@ -329,6 +330,7 @@ func TestIntegration_ManualTaskTrigger(t *testing.T) {
 	ipc := NewIPCNotifier("")
 	ipc.SetDatabase(db)
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
+	t.Cleanup(taskManager.Close)
 	baseline := NewBaselineEstimator(db, nil)
 	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil, nil)
 
@@ -414,6 +416,7 @@ func TestIntegration_CandidateDismissal(t *testing.T) {
 	ipc := NewIPCNotifier("")
 	ipc.SetDatabase(db)
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
+	t.Cleanup(taskManager.Close)
 	baseline := NewBaselineEstimator(db, nil)
 	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil, nil)
 	taskEndpoints := NewTaskEndpoints(taskManager, db)
@@ -525,6 +528,7 @@ func TestIntegration_HeaderBasedDismiss(t *testing.T) {
 	ipc := NewIPCNotifier("")
 	ipc.SetDatabase(db)
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
+	t.Cleanup(taskManager.Close)
 	baseline := NewBaselineEstimator(db, nil)
 	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil, nil)
 
@@ -649,6 +653,7 @@ func TestIntegration_MultipleProviders(t *testing.T) {
 	ipc := NewIPCNotifier("")
 	ipc.SetDatabase(db)
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
+	t.Cleanup(taskManager.Close)
 	baseline := NewBaselineEstimator(db, nil)
 	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, nil, nil)
 
@@ -732,6 +737,7 @@ func TestIntegration_EventsEndpoint(t *testing.T) {
 	ipc := NewIPCNotifier("")
 	ipc.SetDatabase(db)
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
+	t.Cleanup(taskManager.Close)
 	taskEndpoints := NewTaskEndpoints(taskManager, db)
 
 	// Create some events by starting a task

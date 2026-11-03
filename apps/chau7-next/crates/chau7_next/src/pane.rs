@@ -159,7 +159,15 @@ impl PaneItem {
 
     fn element(&self) -> AnyElement {
         match self {
-            PaneItem::Terminal(e) => e.clone().into_any_element(),
+            // Reuse the terminal's last frame unless it was notified (its
+            // session's output, cursor blink, search) or the window refreshed
+            // (focus, settings). Without this, every repaint of the window, for
+            // example a tab-bar update from a hidden tab's output, repainted
+            // the whole visible grid.
+            PaneItem::Terminal(e) => e
+                .clone()
+                .cached(gpui::StyleRefinement::default().size_full())
+                .into_any_element(),
             PaneItem::Editor(e) => e.clone().into_any_element(),
             PaneItem::Preview(e) => e.clone().into_any_element(),
             PaneItem::Diff(e) => e.clone().into_any_element(),
@@ -577,6 +585,7 @@ impl PaneTree {
                     session.set_restore_selected(selected);
                     session.mark_restore_surface(window.is_visible());
                     if let Some(prepared) = prepared.panes.get(&pane) {
+                        session.set_restore_resume_issue(prepared.resume_issue, cx);
                         if let Some(context) = &prepared.context {
                             session.replay_restored_context(context, cx);
                         }
@@ -1868,6 +1877,11 @@ impl PaneTree {
             .read(cx)
             .focused_view()
             .is_some_and(|view| view.update(cx, |v, cx| v.write_without_broadcast(bytes, cx)))
+    }
+
+    /// Why the focused terminal is not accepting input, if it is not.
+    pub fn input_hold(panes: &Entity<PaneTree>, cx: &App) -> Option<String> {
+        panes.read(cx).focused_view()?.read(cx).input_hold(cx)
     }
 
     /// A synthesized key press (MCP `tab_press_key`, KBD-017) to the focused

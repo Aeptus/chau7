@@ -1911,6 +1911,7 @@ impl Window {
                     .update(&mut cx, |_, window, _| {
                         if window.invalidator.is_dirty()
                             || !window.next_frame_callbacks.borrow().is_empty()
+                            || needs_present
                         {
                             window.platform_window.schedule_frame();
                         }
@@ -1922,7 +1923,10 @@ impl Window {
                 // after this frame (the window was re-invalidated mid-draw, or
                 // animations scheduled next-frame callbacks), re-arm the frame
                 // source explicitly.
-                if invalidator.is_dirty() || !next_frame_callbacks.borrow().is_empty() {
+                if invalidator.is_dirty()
+                    || !next_frame_callbacks.borrow().is_empty()
+                    || needs_present
+                {
                     invalidator.wake_platform();
                 }
                 #[cfg(feature = "profiler")]

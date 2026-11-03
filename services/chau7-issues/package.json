@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "prettier": "3.9.10",
-    "wrangler": "4.151.3"
+    "wrangler": "4.153.0"
   },
   "overrides": {
     "sharp": "0.35.5",

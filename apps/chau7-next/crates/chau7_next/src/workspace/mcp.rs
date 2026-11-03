@@ -176,6 +176,10 @@ impl Workspace {
         }
         let at_prompt = effective.is_some_and(|(_, p)| p);
         out.insert("is_at_prompt".into(), json!(at_prompt));
+        let input_hold = self
+            .mcp_panes(id)
+            .and_then(|panes| crate::pane::PaneTree::input_hold(&panes, cx));
+        out.insert("input_hold".into(), json!(input_hold));
         out.insert(
             "is_mcp_controlled".into(),
             json!(deferred_saved.is_none() && meta.mcp_controlled),
