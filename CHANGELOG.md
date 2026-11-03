@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keep unverified and subagent Codex notify reports from replacing a tab’s resumable foreground identity, even when the report comes from the same native CLI process. Verify exact first-line session metadata off the UI thread.
 
-- Explain unavailable saved conversations in their restored terminal and MCP status instead of silently omitting the resume command. Keep recovery identities inert and distinguish missing history from a conversation already open in another pane. Before a production update asks to quit, verify active native Codex IDs against their exact local history metadata and retain a private audit; existing archived recovery IDs stay inactive.
+- Explain unavailable saved conversations in their restored terminal and MCP status instead of silently omitting the resume command. Keep recovery identities inert even when live ownership changes after preparation, and distinguish missing history from a conversation already open in another pane. Before a production update asks to quit, verify active native Codex IDs against their exact local history metadata and retain a private audit; existing archived recovery IDs stay inactive.
 
 - Reduce autosave lag by matching startup-tip artifacts at their measured border width, skipping ineligible interior boxes, and reusing unchanged scrollback captures without another retained history copy. Measure the complete UI capture and normalization separately from background writes, while preserving write retries and fresh session metadata.
 

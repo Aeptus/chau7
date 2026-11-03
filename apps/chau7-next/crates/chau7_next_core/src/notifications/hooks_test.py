@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import runpy
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -280,6 +281,30 @@ class Hooks(unittest.TestCase):
         self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
         self.assertEqual(self.events()[-1]["reliability"], "authoritative")
         path.write_bytes(b"x" * 65537)
+        self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
+        self.assertEqual(self.events()[-1]["reliability"], "fallback")
+
+    def test_codex_legacy_uuid_uses_exact_read_only_index_and_refuses_foreign_path(self):
+        session_id = str(uuid.uuid4())
+        folder = self.root / "codex/sessions/2020/01/01"
+        folder.mkdir(parents=True)
+        transcript = folder / f"rollout-date-{session_id}.jsonl"
+        transcript.write_text(
+            json.dumps({"type": "session_meta", "payload": {"id": session_id, "source": "cli"}}) + "\n"
+        )
+        database = self.root / "codex/state_5.sqlite"
+        with sqlite3.connect(database) as connection:
+            connection.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT)")
+            connection.execute("INSERT INTO threads VALUES (?, ?)", (session_id, str(transcript)))
+        before = database.read_bytes()
+        raw = json.dumps({"type": "agent-turn-complete", "thread-id": session_id})
+        self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
+        self.assertEqual(self.events()[-1]["reliability"], "authoritative")
+        self.assertEqual(database.read_bytes(), before)
+        foreign = self.root / "foreign.jsonl"
+        foreign.write_bytes(transcript.read_bytes())
+        with sqlite3.connect(database) as connection:
+            connection.execute("UPDATE threads SET rollout_path = ?", (str(foreign),))
         self.assertEqual(self.run_py(self.codex, raw).returncode, 0)
         self.assertEqual(self.events()[-1]["reliability"], "fallback")
 

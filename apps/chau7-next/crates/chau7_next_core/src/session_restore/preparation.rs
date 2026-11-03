@@ -180,6 +180,7 @@ pub fn admit_identity_metadata(
                     .get(&identity.session_id)
                     .is_some_and(|owners| owners.iter().any(|id| *id != owner)))
         {
+            archive_resume_metadata(pane);
             pane.ai_provider = item.discovered_identity.then(|| identity.provider.clone());
             item.identity = None;
             item.command = None;
@@ -219,6 +220,7 @@ pub fn claim(root: &DataRoot, owner: uuid::Uuid, prepared: &mut PreparedTab) {
                     .and_then(|hints| hints.owners.get(&identity.session_id))
                     .is_some_and(|owners| owners.iter().any(|id| *id != owner)))
         {
+            archive_resume_metadata(pane);
             pane.ai_provider = item.discovered_identity.then(|| identity.provider.clone());
             item.identity = None;
             item.command = None;
@@ -264,6 +266,20 @@ fn read_context(root: &DataRoot, pane: &SavedPane) -> Option<String> {
         return None;
     }
     String::from_utf8(bytes).ok()
+}
+fn archive_resume_metadata(pane: &mut SavedPane) {
+    if pane.archived_ai_resume.is_none()
+        && (pane.ai_session_id.is_some() || pane.ai_resume_command.is_some())
+    {
+        // Failed validation/admission removes execution authority, not recovery data.
+        // This archive is inert and never participates in candidates().
+        pane.archived_ai_resume = Some(crate::session_restore::models::ArchivedAIResumeMetadata {
+            provider: pane.ai_provider.clone(),
+            session_id: pane.ai_session_id.clone(),
+            session_id_source: pane.ai_session_id_source.clone(),
+            resume_command: pane.ai_resume_command.clone(),
+        });
+    }
 }
 fn candidates(pane: &SavedPane) -> Vec<ResumeIdentity> {
     // One authoritative identity: explicit fields first, then agreeing legacy
@@ -478,19 +494,8 @@ fn prepare_profile(
                 None => read_context(root, pane),
             }
         };
-        if identity.is_none()
-            && pane.archived_ai_resume.is_none()
-            && (pane.ai_session_id.is_some() || pane.ai_resume_command.is_some())
-        {
-            // Failed validation removes execution authority, not recovery data.
-            // This archive is inert and never participates in candidates().
-            pane.archived_ai_resume =
-                Some(crate::session_restore::models::ArchivedAIResumeMetadata {
-                    provider: pane.ai_provider.clone(),
-                    session_id: pane.ai_session_id.clone(),
-                    session_id_source: pane.ai_session_id_source.clone(),
-                    resume_command: pane.ai_resume_command.clone(),
-                });
+        if identity.is_none() {
+            archive_resume_metadata(pane);
         }
         pane.directory = Some(directory.to_string_lossy().into_owned());
         pane.ai_provider = identity
@@ -724,6 +729,19 @@ mod tests {
         ));
         assert!(late.panes[&1].identity.is_none());
         assert!(late.saved.panes[0].ai_resume_command.is_none());
+        assert_eq!(
+            late.panes[&1].resume_issue,
+            Some(ResumeIssue::IdentityInUse)
+        );
+        assert_eq!(
+            late.saved.panes[0]
+                .archived_ai_resume
+                .as_ref()
+                .unwrap()
+                .session_id
+                .as_deref(),
+            Some("thread-live")
+        );
     }
     #[test]
     fn pending_context_and_tombstone_override_old_durable_file() {
@@ -795,6 +813,39 @@ mod tests {
             Some(ResumeIssue::IdentityInUse)
         );
         assert!(prepared.panes[&2].command.is_none());
+    }
+
+    #[test]
+    fn late_live_claim_preserves_recovery_identity_without_a_resume_command() {
+        let f = Fixture::new();
+        let mut first = prepare(
+            &f.root,
+            f.tab(vec![f.pane(1, "codex", "thread-race")]),
+            None,
+        );
+        let mut second = prepare(
+            &f.root,
+            f.tab(vec![f.pane(2, "codex", "thread-race")]),
+            None,
+        );
+        let owner = uuid::Uuid::new_v4();
+        claim(&f.root, owner, &mut first);
+        claim(&f.root, uuid::Uuid::new_v4(), &mut second);
+        assert_eq!(
+            second.panes[&2].resume_issue,
+            Some(ResumeIssue::IdentityInUse)
+        );
+        assert!(second.panes[&2].command.is_none());
+        assert_eq!(
+            second.saved.panes[0]
+                .archived_ai_resume
+                .as_ref()
+                .unwrap()
+                .session_id
+                .as_deref(),
+            Some("thread-race")
+        );
+        release_owner(&f.root, owner);
     }
 
     #[test]

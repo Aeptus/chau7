@@ -1763,7 +1763,7 @@ fn resume_failure_notice_does_not_bind_identity_and_yields_to_new_input(
         .update_window(fixture.window, |_, window, cx| window.render_frame(cx))
         .unwrap();
     harness.update(|cx| {
-        fixture.session.update(cx, |session, cx| {
+        fixture.session.update(cx, |session, _| {
             session.write_input(b"echo new work");
             assert!(session.restore_resume_issue().is_none());
             assert!(session.tracker.ai_session_id().is_none());
