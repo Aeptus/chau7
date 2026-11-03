@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add an opt-in cloud production-candidate build with a source receipt for guarded local installation, so a busy Mac can avoid native compilation without publishing a release.
+
 - Restore Mac-to-iPhone QR pairing in Remote settings with complete v3 relay credentials, local background encoding, cached rendering and expiry handling. Keep admission credentials out of diagnostic and clipboard serialization, and preserve an opaque white quiet zone for scanning.
 
 - Stop tab-bar scrolling at the final tab control. Clamp later-tab reveals and in-flight animations to the natural content end, keeping the first viewport anchored without allowing an empty scrolled tab bar.
