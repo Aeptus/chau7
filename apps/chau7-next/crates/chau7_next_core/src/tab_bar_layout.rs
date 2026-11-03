@@ -93,18 +93,8 @@ impl Rect {
 
 // MARK: - TabBarLayout
 
-/// Reserve alignment room only when the actual tabs and controls overflow.
-/// Fitting content must have no artificial scroll range or hidden first tabs.
-pub fn tab_bar_trailing_space(viewport_width: f32, content_width: f32) -> f32 {
-    if content_width <= viewport_width + 0.5 {
-        0.0
-    } else {
-        // Retain 24 pixels of the trailing control at maximum manual scroll.
-        (viewport_width - 24.0).max(8.0)
-    }
-}
-
-/// Keep the first viewport anchored at zero; align later selections left.
+/// Keep the first viewport anchored at zero; align later selections left,
+/// clamped to the natural content end so the strip never scrolls into blank space.
 /// Both ranges must come from the same layout and use window coordinates.
 /// Scroll offsets are non-positive, as in GPUI.
 pub fn scroll_offset_to_reveal_tab(
@@ -470,16 +460,6 @@ mod tests {
     }
 
     #[test]
-    fn fitting_content_has_no_alignment_padding_including_after_resize() {
-        for width in [0.0, 100.0, 500.0] {
-            assert_eq!(tab_bar_trailing_space(500.0, width), 0.0);
-        }
-        assert_eq!(tab_bar_trailing_space(500.0, 501.0), 476.0);
-        assert_eq!(tab_bar_trailing_space(1000.0, 501.0), 0.0);
-        assert_eq!(tab_bar_trailing_space(500.0, 501.0), 476.0);
-    }
-
-    #[test]
     fn oversized_tabs_align_left_and_do_not_oscillate() {
         for (tab, expected) in [
             (80.0..640.0, -430.0),
@@ -502,21 +482,30 @@ mod tests {
     }
 
     #[test]
-    fn trailing_space_allows_the_last_tab_to_align_even_in_a_wide_viewport() {
-        for width in [24.0, 180.0, 700.0] {
+    fn last_tab_alignment_stops_at_the_natural_content_end() {
+        for width in [24.0_f32, 180.0, 700.0] {
             for viewport_width in [80.0, 500.0, 1100.0] {
                 let content_start = 1200.0;
                 let current = -100.0;
                 let content_end = content_start + width + 40.0; // trailing new-tab button/gap
-                let max = content_end + tab_bar_trailing_space(viewport_width, content_end)
-                    - viewport_width;
+                let max = (content_end - viewport_width).max(0.0);
                 let target = scroll_offset_to_reveal_tab(
                     current,
                     max,
                     100.0 + content_start + current..100.0 + content_start + current + width,
                     100.0..100.0 + viewport_width,
                 );
-                assert_eq!(target, -content_start);
+                assert_eq!(target, (-content_start).max(-max));
+                assert!(content_end + target >= viewport_width);
+                assert_eq!(
+                    scroll_offset_to_reveal_tab(
+                        target,
+                        max,
+                        100.0 + content_start + target..100.0 + content_start + target + width,
+                        100.0..100.0 + viewport_width,
+                    ),
+                    target,
+                );
             }
         }
     }

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Stop tab-bar scrolling at the final tab control. Clamp later-tab reveals and in-flight animations to the natural content end, keeping the first viewport anchored without allowing an empty scrolled tab bar.
+
 - Keep all fitting tabs visible with no artificial trailing scroll space. Anchor selections from the first viewport at the start; align later tabs to the left only when the strip overflows, and reset stale scrolling when tabs fit again without rewriting a settled offset.
 
 - Reduce autosave lag by matching startup-tip artifacts at their measured border width, skipping ineligible interior boxes, and reusing unchanged scrollback captures without another retained history copy. Measure the complete UI capture and normalization separately from background writes, while preserving write retries and fresh session metadata.
