@@ -1050,7 +1050,7 @@ dependencies = [
  "libc",
  "log",
  "memchr",
- "parking_lot 0.12.5",
+ "parking_lot 0.13.0",
  "portable-pty",
  "thiserror 2.0.21",
  "unicode-normalization",
