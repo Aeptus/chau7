@@ -2600,6 +2600,13 @@ impl TerminalSession {
             .unwrap_or_else(|| self.term.read().full_buffer_ansi_text())
     }
 
+    pub fn restoration_revision(&self) -> [u64; 3] {
+        self.memory.restoration_revision().unwrap_or_else(|| {
+            let [id, revision] = self.term.read().restoration_revision();
+            [id, revision, 0]
+        })
+    }
+
     pub fn buffer_text(&self) -> String {
         let mut capture = work_profiler::begin(WorkKey::work(
             "full_buffer_text",

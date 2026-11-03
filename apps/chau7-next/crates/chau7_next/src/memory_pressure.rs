@@ -14,7 +14,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
     time::{Duration, Instant},
@@ -69,6 +69,7 @@ pub(crate) struct SessionMemory {
     metrics: Mutex<Metrics>,
     refresh_needed: AtomicBool,
     restore_preview: Mutex<Option<String>>,
+    restore_epoch: AtomicU64,
 }
 static REGISTRY: Mutex<Vec<Weak<SessionMemory>>> = Mutex::new(Vec::new());
 enum RetentionJob {
@@ -154,11 +155,20 @@ pub(crate) fn register(
         metrics: Mutex::new(Metrics::default()),
         refresh_needed: AtomicBool::new(false),
         restore_preview: Mutex::new(None),
+        restore_epoch: AtomicU64::new(0),
     });
     REGISTRY.lock().push(Arc::downgrade(&memory));
     memory
 }
 impl SessionMemory {
+    pub fn restoration_revision(&self) -> Option<[u64; 3]> {
+        let terminal = self.terminal.upgrade()?;
+        // Maintenance publishes previews and trims/replays under this outer
+        // write lock. Never combine a new preview epoch with an old terminal.
+        let terminal = terminal.read();
+        let [id, revision] = terminal.restoration_revision();
+        Some([id, revision, self.restore_epoch.load(Ordering::Acquire)])
+    }
     pub fn restoration_preview_capacity_bytes(&self) -> usize {
         self.restore_preview
             .lock()
@@ -305,6 +315,7 @@ impl SessionMemory {
                         );
                         self.state.lock().flushed = None;
                         *self.restore_preview.lock() = None;
+                        self.restore_epoch.fetch_add(1, Ordering::Release);
                         self.metrics.lock().reloads += 1;
                         self.refresh_needed.store(true, Ordering::Release);
                         drop(term);
@@ -392,6 +403,7 @@ impl SessionMemory {
             kind,
             bytes_received: Some(counter),
         });
+        self.restore_epoch.fetch_add(1, Ordering::Release);
         state.retry_after = None;
         state.force_pending = false;
         drop(state);
@@ -1104,8 +1116,15 @@ mod tests {
     #[test]
     fn verified_flush_compacts_then_promotion_restores_ansi_and_new_tail() {
         let fixture = Fixture::new(300);
+        let original_revision = fixture.memory.restoration_revision().unwrap();
         fixture.phase(RenderPhase::Hidden, Duration::ZERO);
         fixture.memory.maintain();
+        let retained_revision = fixture.memory.restoration_revision().unwrap();
+        assert_ne!(retained_revision, original_revision);
+        assert_eq!(
+            retained_revision,
+            fixture.memory.restoration_revision().unwrap()
+        );
         assert_eq!(fixture.memory.metrics.lock().flushes, 1);
         assert!(fixture.terminal.read().debug_state().history_size <= 50);
         assert!(
@@ -1139,6 +1158,10 @@ mod tests {
         assert!(text.contains("row-0000"));
         assert!(text.contains("after-flush"));
         assert!(fixture.memory.state.lock().flushed.is_none());
+        assert_ne!(
+            fixture.memory.restoration_revision().unwrap(),
+            retained_revision
+        );
         assert!(!fixture.memory.cache.exists());
         assert!(fixture.memory.take_refresh());
         assert!(!fixture.memory.take_refresh());

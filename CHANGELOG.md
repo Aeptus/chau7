@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep repository and recording persistence drains and log flushing off the UI quit callback; retain a repository durability barrier before marking shutdown clean.
 - Retain a UUID-bound Rust function/address map outside fast macOS bundles before stripping and signing their installed executables, so production hang stacks can be mapped without shipping debug data.
 
+- Skip unchanged autosave exports before walking or hashing terminal history. Track terminal mutations and retained-history changes, keep session metadata fresh, and retry captures after failed persistence without retaining a second history copy.
+
 - Stop tab-bar scrolling at the final tab control. Clamp later-tab reveals and in-flight animations to the natural content end, keeping the first viewport anchored without allowing an empty scrolled tab bar.
 
 - Keep all fitting tabs visible with no artificial trailing scroll space. Anchor selections from the first viewport at the start; align later tabs to the left only when the strip overflows, and reset stale scrolling when tabs fit again without rewriting a settled offset.

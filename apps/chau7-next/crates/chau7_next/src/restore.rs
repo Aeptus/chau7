@@ -99,20 +99,19 @@ pub fn capture_tab(
                     chau7_next_core::work_profiler::Queue::Main,
                 ));
             capture.items(1);
-            let styled = strip_restore_commands(&session.styled_buffer_for_restore());
-            // Observe the effective source before fingerprinting: an empty
-            // ANSI export (including one containing only restore commands)
-            // can fall back to plain text that has changed independently.
-            let source = if styled.is_empty() {
-                strip_restore_commands(&session.buffer_text())
-            } else {
-                styled
-            };
             writer::record_capture(
                 id,
-                &source,
+                session.restoration_revision(),
                 max_lines,
-                || capture_scrollback(&source, max_lines),
+                || {
+                    let styled = strip_restore_commands(&session.styled_buffer_for_restore());
+                    if styled.is_empty() {
+                        strip_restore_commands(&session.buffer_text())
+                    } else {
+                        styled
+                    }
+                },
+                |source| capture_scrollback(source, max_lines),
                 cx,
             )
         } else {
