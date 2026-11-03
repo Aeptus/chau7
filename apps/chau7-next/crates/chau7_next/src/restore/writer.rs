@@ -48,25 +48,44 @@ pub(crate) fn record(pane: u64, text: Option<String>, cx: &App) -> bool {
     }
 }
 
-/// Export has already observed current native content. Skip pure cleanup for
-/// an identical source/policy, without retaining a second history copy. Never
-/// hold the ledger lock across normalization or native terminal access.
+/// Skip the entire export and cleanup for an accepted unchanged revision.
+/// Never hold the ledger lock across native terminal access or normalization.
 pub(crate) fn record_capture(
     pane: u64,
-    source: &str,
+    revision: [u64; 3],
     max_lines: usize,
-    capture: impl FnOnce() -> Option<String>,
+    export: impl FnOnce() -> String,
+    capture: impl FnOnce(&str) -> Option<String>,
     cx: &App,
 ) -> bool {
     let Some(service) = cx.try_global::<Service>() else {
         return false;
     };
-    let key = ScrollbackCaptureKey::new(source, max_lines);
+    let key = ScrollbackCaptureKey::from_revision(revision, max_lines);
     let reused = service
         .buffers
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .reuse_capture(pane, key);
+        .reuse_export(pane, key);
+    if let Some(present) = reused {
+        let mut hit =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                "reuse_scrollback_export",
+                "autosave",
+                "unobserved",
+                "session_restore",
+                chau7_next_core::work_profiler::Queue::Main,
+            ));
+        hit.items(1);
+        return present;
+    }
+    let source = export();
+    let source_key = ScrollbackCaptureKey::new(&source, max_lines);
+    let reused = service
+        .buffers
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .reuse_source(pane, key, source_key);
     if let Some(present) = reused {
         let mut hit =
             chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
@@ -90,10 +109,10 @@ pub(crate) fn record_capture(
             ));
         work.bytes(source.len());
         work.items(1);
-        capture()
+        capture(&source)
     };
     let mut buffers = service.buffers.lock().unwrap_or_else(|e| e.into_inner());
-    match buffers.record_capture(pane, key, text) {
+    match buffers.record_export(pane, key, source_key, text) {
         Ok(present) => present,
         Err(_) => {
             log::warn!("Restore capture bound reached for pane {pane}");
@@ -257,40 +276,50 @@ mod tests {
         )
     }
     #[gpui::test]
-    fn unchanged_capture_skips_cleanup_and_failed_writes_rearm_it(cx: &mut gpui::TestAppContext) {
+    fn unchanged_capture_skips_export_and_failed_writes_rearm_it(cx: &mut gpui::TestAppContext) {
         let root = root();
         let worker = cx.update(|cx| {
             cx.set_global(AppData::new(root.clone()));
             init(cx);
-            let calls = std::cell::Cell::new(0);
-            let capture = || {
-                calls.set(calls.get() + 1);
+            let exports = std::cell::Cell::new(0);
+            let normalizations = std::cell::Cell::new(0);
+            let source = std::cell::Cell::new("raw");
+            let export = || {
+                exports.set(exports.get() + 1);
+                source.get().to_owned()
+            };
+            let capture = |_: &str| {
+                normalizations.set(normalizations.get() + 1);
                 Some("clean".to_owned())
             };
-            assert!(record_capture(1, "raw", 500, capture, cx));
-            assert!(record_capture(1, "raw", 500, capture, cx));
-            assert_eq!(calls.get(), 1);
+            assert!(record_capture(1, [7, 1, 0], 500, export, capture, cx));
+            assert!(record_capture(1, [7, 1, 0], 500, export, capture, cx));
+            assert_eq!((exports.get(), normalizations.get()), (1, 1));
             let buffers = &cx.global::<Service>().buffers;
             let pending = buffers.lock().unwrap().snapshot();
             buffers.lock().unwrap().acknowledge(&pending);
-            assert!(record_capture(1, "raw", 500, capture, cx));
-            assert_eq!(
-                calls.get(),
-                1,
-                "committed captures retain only their fingerprint"
-            );
+            assert!(record_capture(1, [7, 1, 0], 500, export, capture, cx));
+            assert_eq!((exports.get(), normalizations.get()), (1, 1));
             buffers
                 .lock()
                 .unwrap()
                 .invalidate_persisted(&HashSet::from([1]));
-            assert!(record_capture(1, "raw", 500, capture, cx));
-            assert_eq!(calls.get(), 2);
-            assert!(record_capture(1, "new", 500, capture, cx));
-            assert!(record_capture(1, "new", 10, capture, cx));
-            assert_eq!(calls.get(), 4, "output and line-policy changes recapture");
+            assert!(record_capture(1, [7, 1, 0], 500, export, capture, cx));
+            assert_eq!((exports.get(), normalizations.get()), (2, 2));
+            assert!(record_capture(1, [7, 2, 0], 500, export, capture, cx));
+            assert!(record_capture(1, [7, 2, 0], 500, export, capture, cx));
+            assert_eq!(
+                (exports.get(), normalizations.get()),
+                (3, 2),
+                "parser-only changes retain source reuse"
+            );
+            source.set("new");
+            assert!(record_capture(1, [7, 3, 0], 500, export, capture, cx));
+            assert!(record_capture(1, [7, 3, 0], 10, export, capture, cx));
+            assert_eq!((exports.get(), normalizations.get()), (5, 4));
             assert!(!record(1, None, cx));
-            assert!(record_capture(1, "new", 10, capture, cx));
-            assert_eq!(calls.get(), 5, "an explicit clear invalidates reuse");
+            assert!(record_capture(1, [7, 3, 0], 10, export, capture, cx));
+            assert_eq!((exports.get(), normalizations.get()), (6, 5));
             shutdown(cx).unwrap()
         });
         assert_eq!(worker.join().unwrap().failed, 0);
