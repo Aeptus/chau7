@@ -10,9 +10,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use chau7_next_core::l10n::{self, Lang};
-use chau7_next_core::tab_bar_layout::{
-    TabBarLayoutItem, scroll_offset_to_reveal_tab, tab_bar_trailing_space,
-};
+use chau7_next_core::tab_bar_layout::{TabBarLayoutItem, scroll_offset_to_reveal_tab};
 use chau7_next_core::tab_bar_text::{command_badge, idle_duration, truncate_middle};
 use chau7_next_core::tabs_state::{TabColor, repo_group_color, repo_group_name};
 use gpui::{
@@ -509,7 +507,6 @@ struct TabScrollFrame {
     generation: u64,
     offset: f32,
     viewport: Bounds<Pixels>,
-    trailing_space: f32,
     content_width: f32,
 }
 
@@ -565,7 +562,7 @@ mod tab_scroll_tests {
 
     #[cfg(unix)]
     #[gpui::test]
-    fn selected_tab_uses_first_view_or_leading_edge_in_the_real_row(
+    fn selected_tab_uses_first_view_or_clamped_leading_edge_in_the_real_row(
         harness: &mut gpui::TestAppContext,
     ) {
         use super::super::selection_tests::{headless_tab, init};
@@ -602,17 +599,42 @@ mod tab_scroll_tests {
                     let tab = workspace.frames.borrow().tabs[&id];
                     assert!(viewport.size.width > px(0.0));
                     let offset = f32::from(workspace.scroll.handle.offset().x);
+                    let frame = workspace.scroll.frame.get();
+                    let max = f32::from(workspace.scroll.handle.max_offset().x);
+                    let natural_max = (frame.content_width - f32::from(viewport.size.width)).max(0.0);
+                    assert!((max - natural_max).abs() < 1.0, "no scroll room beyond the final control");
+                    assert!(frame.content_width + offset >= f32::from(viewport.size.width) - 1.0,
+                        "the content end must not scroll inside the viewport");
                     let fits_first_view = f32::from(tab.right()) - offset
                         <= f32::from(viewport.right()) + 0.5;
                     if fits_first_view {
                         assert!(offset.abs() < 1.0, "first-view tab {index} must keep the strip at zero");
                     } else {
-                        assert!((f32::from(tab.left() - viewport.left())).abs() < 1.0,
-                            "later tab {index} must align left: tab={tab:?}, viewport={viewport:?}");
+                        let unscrolled_start = f32::from(tab.left() - viewport.left()) - offset;
+                        let expected = (-unscrolled_start).max(-max);
+                        assert!((offset - expected).abs() < 1.0,
+                            "later tab {index} must align left within the content limit: tab={tab:?}, viewport={viewport:?}");
+                        assert!(tab.left() >= viewport.left() - px(1.0));
+                        if tab.size.width <= viewport.size.width {
+                            assert!(tab.right() <= viewport.right() + px(1.0));
+                        }
                     }
                     assert!(workspace.scroll.pending.is_none());
                     assert!(workspace.scroll.anim.is_none());
                 }
+                // A stale animation from a wider content range must also
+                // stop at the current content end, before the next layout.
+                workspace.update(cx, |workspace, _| {
+                    let max = f32::from(workspace.scroll.handle.max_offset().x);
+                    workspace.scroll.anim = Some((
+                        -max - 1000.0,
+                        -max - 2000.0,
+                        Instant::now() - Duration::from_secs(1),
+                    ));
+                    assert!(!workspace.tick_scroll());
+                    assert!((f32::from(workspace.scroll.handle.offset().x) + max).abs() < 1.0);
+                    assert!(workspace.scroll.anim.is_none());
+                });
                 window.remove_window();
             }).unwrap();
         });
@@ -639,7 +661,6 @@ mod tab_scroll_tests {
                         let workspace = workspace.read(cx);
                         let frame = workspace.scroll.frame.get();
                         assert!(frame.content_width <= f32::from(frame.viewport.size.width));
-                        assert_eq!(frame.trailing_space, 0.0);
                         assert_eq!(workspace.scroll.handle.offset().x, px(0.0));
                         assert_eq!(workspace.scroll.handle.max_offset().x, px(0.0));
                         for tab in workspace.frames.borrow().tabs.values() {
@@ -905,12 +926,6 @@ impl Workspace {
         }
         if frame.generation > 0 {
             let viewport_width = f32::from(frame.viewport.size.width);
-            if (frame.trailing_space - tab_bar_trailing_space(viewport_width, frame.content_width))
-                .abs()
-                > 0.5
-            {
-                return true;
-            }
             if frame.content_width <= viewport_width + 0.5 {
                 // Resize, closed tabs or shorter labels can make every tab fit
                 // without a selection event. Discard any old animation too.
@@ -956,7 +971,10 @@ impl Workspace {
         } else {
             (start.elapsed().as_secs_f32() / 0.25).min(1.0)
         };
-        let x = from + (to - from) * ease_in_out(t);
+        // An in-flight reveal can outlive a resize or a closed tab. Keep
+        // every animation step within the current natural scroll range too.
+        let max = f32::from(self.scroll.handle.max_offset().x).max(0.0);
+        let x = (from + (to - from) * ease_in_out(t)).clamp(-max, 0.0);
         let y = self.scroll.handle.offset().y;
         self.scroll.handle.set_offset(point(px(x), y));
         if t >= 1.0 {
@@ -1402,10 +1420,6 @@ impl Workspace {
         let now = AppData::now(cx);
         let items = self.state.display_items(now);
         let idle_count = self.state.idle_ids(now).len();
-        let trailing_space = tab_bar_trailing_space(
-            f32::from(self.scroll.handle.bounds().size.width),
-            self.scroll.frame.get().content_width,
-        );
         let mut row = div()
             .id("tab-bar")
             .flex()
@@ -1417,8 +1431,7 @@ impl Workspace {
             .min_w_0()
             .overflow_x_scroll()
             .track_scroll(&self.scroll.handle)
-            .on_scroll_wheel(cx.listener(|this, _, _, _| this.scroll.cancel()))
-            .pr(px(trailing_space));
+            .on_scroll_wheel(cx.listener(|this, _, _, _| this.scroll.cancel()));
         let mut index = 0;
         while index < items.len() {
             match &items[index] {
@@ -1482,7 +1495,7 @@ impl Workspace {
         let scroll_frame = self.scroll.frame.clone();
         let row = row.child(
             canvas(
-                move |_, window, _| {
+                move |_, _, _| {
                     // This overlay moves with the content. The scroll handle
                     // owns the fixed viewport, updated before child prepaint.
                     let viewport = handle.bounds();
@@ -1498,16 +1511,8 @@ impl Workspace {
                         generation: scroll_frame.get().generation.wrapping_add(1),
                         offset: f32::from(handle.offset().x),
                         viewport,
-                        trailing_space,
                         content_width,
                     });
-                    if (trailing_space
-                        - tab_bar_trailing_space(f32::from(viewport.size.width), content_width))
-                    .abs()
-                        > 0.5
-                    {
-                        window.request_animation_frame();
-                    }
                 },
                 |_, _, _, _| {},
             )
