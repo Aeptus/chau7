@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Reduce remote idle refreshes from every 150 ms to once per second while retaining agent supervision and output deadlines. Poll terminal grids at 150 ms for a ready phone or active viewer, skip output batching without a consumer, and apply remote settings only when they change.
+- Keep repository and recording persistence drains and log flushing off the UI quit callback; retain a repository durability barrier before marking shutdown clean.
+- Retain a UUID-bound Rust function/address map outside fast macOS bundles before stripping and signing their installed executables, so production hang stacks can be mapped without shipping debug data.
 
 - Stop tab-bar scrolling at the final tab control. Clamp later-tab reveals and in-flight animations to the natural content end, keeping the first viewport anchored without allowing an empty scrolled tab bar.
 
@@ -47,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep hidden terminal output from invalidating the native window while preserving live output processing, tab reveals and hover previews.
 
 - Avoid whole-workspace redraws for repeated hidden-tab output while preserving activity timestamps, idle-tab revival and visible age panels.
+
+- Reduce remote idle refreshes from every 150 ms to once per second while retaining agent supervision and output deadlines. Poll terminal grids at 150 ms for a ready phone or active viewer, skip output batching without a consumer, and apply remote settings only when they change.
 
 - Remove the remote IPC listener's idle 50 ms accept polling. Wait for incoming connections or an explicit shutdown signal while preserving client replacement, frame delivery and socket ownership.
 - Wake remote control on settings, IPC and grid-completion events; park it when disabled and schedule live metadata, output batching and agent supervision at their actual deadlines, without adding timer callbacks to immediately flushed output.
