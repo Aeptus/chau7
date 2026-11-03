@@ -8,6 +8,7 @@ use std::{thread::JoinHandle, time::Instant};
 #[repr(u8)]
 pub(crate) enum Phase {
     Producers,
+    Repositories,
     Performance,
     Watchdog,
     Observability,
@@ -22,6 +23,7 @@ impl Phase {
     fn name(self) -> &'static str {
         match self {
             Self::Producers => "producer_stop_requested",
+            Self::Repositories => "repositories_drained",
             Self::Performance => "performance_joined",
             Self::Watchdog => "watchdog_joined",
             Self::Observability => "observability_joined",
@@ -89,6 +91,7 @@ mod tests {
     fn later_success_never_erases_a_failed_phase() {
         let phases = [
             Phase::Producers,
+            Phase::Repositories,
             Phase::Performance,
             Phase::Watchdog,
             Phase::Observability,
@@ -120,9 +123,10 @@ mod tests {
         assert!(!progress.can_mark_clean());
     }
 
-    fn required_phases() -> [Phase; 9] {
+    fn required_phases() -> [Phase; 10] {
         [
             Phase::Producers,
+            Phase::Repositories,
             Phase::Performance,
             Phase::Watchdog,
             Phase::Observability,

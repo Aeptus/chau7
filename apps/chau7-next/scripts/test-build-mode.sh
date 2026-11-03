@@ -47,7 +47,7 @@ assert_file_contains() {
   [[ "$CARGO_PROFILE_RELEASE_LTO" == off ]]
   [[ "$CARGO_PROFILE_RELEASE_INCREMENTAL" == true ]]
   [[ "$CARGO_PROFILE_RELEASE_DEBUG" == 0 ]]
-  [[ "$CARGO_PROFILE_RELEASE_STRIP" == symbols ]]
+  [[ "$CARGO_PROFILE_RELEASE_STRIP" == none ]]
   [[ "$CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG" == 0 ]]
   [[ "$CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP" == none ]]
   [[ " ${CARGO_BUILD_ARGS[*]} " == *" --locked "* ]]
@@ -261,8 +261,23 @@ printf '%s\n' "$*" >> "$FAKE_STATE/xcrun.log"
 case "$2" in
   dsymutil) printf '%s\n' "$FAKE_BIN/dsymutil" ;;
   dwarfdump) printf '%s\n' "$FAKE_BIN/dwarfdump" ;;
+  nm) printf '%s\n' "$FAKE_BIN/nm" ;;
+  strip) printf '%s\n' "$FAKE_BIN/strip" ;;
   *) exit 2 ;;
 esac
+FAKE
+
+cat > "$FAKE_BIN/nm" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ ! -e "$FAKE_STATE/nm-empty" ]] || exit 0
+printf '0000000100001000 T _fixture_rust_function\n'
+FAKE
+cat > "$FAKE_BIN/strip" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == -S && "$2" == -x && -f "$3" ]] || exit 2
+printf '\nfake-stripped\n' >> "$3"
 FAKE
 
 cat > "$FAKE_BIN/clang" <<'FAKE'
@@ -297,6 +312,8 @@ chmod 755 \
   "$FAKE_BIN/go" \
   "$FAKE_BIN/dsymutil" \
   "$FAKE_BIN/dwarfdump" \
+  "$FAKE_BIN/nm" \
+  "$FAKE_BIN/strip" \
   "$FAKE_BIN/xcrun" \
   "$FAKE_BIN/clang" \
   "$FAKE_BIN/codesign"
@@ -458,7 +475,17 @@ installer = bundle / "Contents/Resources/install-chau7-next-cli.sh"
 assert installer.exists() == (channel == "next")
 if mode == "fast":
     assert manifest["rustDsym"] is None
+    symbols = manifest["rustSymbols"]
+    symbol_file = pathlib.Path(symbols["path"]).resolve()
+    assert symbol_file.parent == bundle.parent
+    assert symbols["uuid"] == "01234567-89AB-CDEF-0123-456789ABCDEF"
+    assert symbols["architecture"] == "arm64"
+    assert symbols["format"] == "apple-nm"
+    assert hashlib.sha256(symbol_file.read_bytes()).hexdigest() == symbols["sha256"]
+    assert "_fixture_rust_function" in symbol_file.read_text()
+    assert b"fake-stripped" in (bundle / f"Contents/MacOS/{app_name}").read_bytes()
 else:
+    assert manifest["rustSymbols"] is None
     dsym = manifest["rustDsym"]
     dsym_bundle = pathlib.Path(dsym["path"]).resolve()
     dwarf_file = dsym_bundle / f"Contents/Resources/DWARF/{app_name}"
@@ -497,7 +524,7 @@ assert manifest["profile"]["cargoVerbose"] == str(verbose)
 assert manifest["cargoBuildJobsEnv"] == (jobs or "unset")
 if mode == "fast":
     assert manifest["profile"]["debugLevel"] == 0
-    assert manifest["profile"]["strip"] == "symbols"
+    assert manifest["profile"]["strip"] == "none"
     assert manifest["profile"]["buildOverrideDebug"] == "0"
     assert manifest["goBuild"]["ldflags"] == ["-s", "-w"]
 else:
@@ -549,12 +576,20 @@ rm "$FAKE_STATE/dwarfdump-mismatch"
 expect_diagnostic_failure diagnostic-empty-dsym 'did not produce DWARF data'
 rm "$FAKE_STATE/dsymutil-empty"
 
+: > "$FAKE_STATE/nm-empty"
+if run_fake_bundle default fast-empty-symbols '' '' 0 '' >/dev/null 2>&1; then
+  fail 'fast packaging accepted an empty symbol map'
+fi
+assert_file_contains "$FAKE_STATE/fast-empty-symbols-package.log" 'empty or invalid Rust symbol map'
+rm "$FAKE_STATE/nm-empty"
+
 # Default fast packaging shares the per-worktree cache across Rust workspaces
 # and hashes bytes after fake codesign changes every executable.
 : > "$FAKE_STATE/go-args.log"
 : > "$FAKE_STATE/xcrun.log"
 fast_paths="$(run_fake_bundle default fast '' '' 0 '')"
-[[ ! -s "$FAKE_STATE/xcrun.log" ]] || fail 'fast mode unexpectedly invoked Apple symbol tools'
+assert_file_contains "$FAKE_STATE/xcrun.log" '--find nm'
+assert_file_contains "$FAKE_STATE/xcrun.log" '--find strip'
 fast_bundle="$(printf '%s\n' "$fast_paths" | sed -n '1p')"
 fast_manifest="$(printf '%s\n' "$fast_paths" | sed -n '2p')"
 validate_bundle "$fast_bundle" "$fast_manifest" fast "$FIXTURE_APP/target" "$FIXTURE_APP/target" 0 ''
@@ -565,6 +600,7 @@ assert_file_contains "$FAKE_STATE/go-args.log" '-s -w'
 # Diagnostic mode gets its own default app and helper cache, with package
 # evidence still checking the expected target and all seven signed artifacts.
 : > "$FAKE_STATE/go-args.log"
+: > "$FAKE_STATE/xcrun.log"
 diagnostic_default_paths="$(run_fake_bundle diagnostic diagnostic-default '' '' 0 '')"
 [[ "$(wc -l < "$FAKE_STATE/xcrun.log" | tr -d ' ')" -eq 2 ]] \
   || fail 'diagnostic mode did not resolve exactly dsymutil and dwarfdump'

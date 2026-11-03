@@ -369,8 +369,8 @@ fn main() {
                 permission_center::stop(cx);
                 save_session(cx, true);
                 let restore_worker = restore::writer::shutdown(cx);
-                repository::flush(cx);
-                history::recorder::flush_on_quit();
+                let repository_writer = repository::shutdown(cx);
+                let recording = history::recorder::take_for_quit();
                 monitoring::aethyme_delivery::stop(cx);
                 monitoring::process_tree::stop(cx);
                 mcp::stop(cx);
@@ -382,7 +382,6 @@ fn main() {
                 terminal::session::terminate_all_for_quit();
                 let history_writer = history::shutdown(cx);
                 let telemetry_writer = telemetry::shutdown(cx);
-                logging::flush();
                 let performance_worker = performance::stop(cx);
                 let hang_worker = hang_watchdog::stop(cx);
                 let worker = observability::shutdown(cx);
@@ -390,6 +389,16 @@ fn main() {
                 cx.background_spawn(async move {
                     // Stop and admission-close calls precede this barrier. The actual
                     // thread joins and SQLite close run on this background task.
+                    let repository_drained = repository_writer
+                        .map(|writer| writer.finish())
+                        .unwrap_or(Ok(()));
+                    if let Err(error) = &repository_drained {
+                        log::warn!("Repository shutdown incomplete: {error}");
+                    }
+                    progress.complete(shutdown::Phase::Repositories, repository_drained.is_ok());
+                    if let Some(mut recording) = recording {
+                        recording.stop_recording();
+                    }
                     progress.complete(
                         shutdown::Phase::Performance,
                         shutdown::join_worker(performance_worker).is_ok(),

@@ -6,7 +6,9 @@ BUILD_MODE="${BUILD_MODE:-fast}"
 case "$BUILD_MODE" in
   fast)
     export CARGO_PROFILE_RELEASE_DEBUG=0
-    export CARGO_PROFILE_RELEASE_STRIP=symbols
+    # Packaging retains a UUID-bound name/address map before stripping the
+    # installed executable. No DWARF generation is needed for fast builds.
+    export CARGO_PROFILE_RELEASE_STRIP=none
     export CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=0
     ;;
   diagnostic)

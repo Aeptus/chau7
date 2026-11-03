@@ -122,9 +122,43 @@ pub fn delete(id: Uuid) {
     with(|r| r.delete_recording(id));
 }
 
-/// Save a running recording when the app quits.
-pub fn flush_on_quit() {
-    if recording_session().is_some() {
-        stop();
+/// Stop admission before terminal teardown, then transfer recording I/O to
+/// the existing quit worker. No poll/drop path can contend with its disk save.
+pub fn take_for_quit() -> Option<SessionRecorder> {
+    take_recording(&TARGET, &RECORDER)
+}
+
+fn take_recording(
+    target: &AtomicU64,
+    recorder: &Mutex<Option<SessionRecorder>>,
+) -> Option<SessionRecorder> {
+    target.store(0, Ordering::Release);
+    recorder.lock().take()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quit_transfers_accepted_frames_without_saving_under_the_shared_lock() {
+        let dir = std::env::temp_dir().join(format!("c7n-quit-recording-{}", Uuid::new_v4()));
+        let mut recording = SessionRecorder::new(dir.clone());
+        recording.start_recording("fixture", None);
+        assert!(recording.record_frame(b"accepted", FrameEventType::Output));
+        let target = AtomicU64::new(42);
+        let recorder = Mutex::new(Some(recording));
+        let mut owned = take_recording(&target, &recorder).unwrap();
+        assert_eq!(target.load(Ordering::Acquire), 0);
+        assert!(recorder.try_lock().unwrap().is_none());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        assert!(take_recording(&target, &recorder).is_none());
+        let meta = std::thread::spawn(move || owned.stop_recording().unwrap())
+            .join()
+            .unwrap();
+        let frames = SessionRecorder::new(dir.clone()).load_frames(meta.id);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].data, b"accepted");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
