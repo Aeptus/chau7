@@ -79,7 +79,9 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 
 	ipc := NewIPCNotifier("")
 	ipc.SetDatabase(db)
-	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
+	// This test drives transitions manually; timer expiry is covered in task_test.go.
+	// Keep automatic confirmation and idle completion outside its execution window.
+	taskManager := NewTaskManager(db, ipc, 24*time.Hour, 24*time.Hour)
 	t.Cleanup(taskManager.Close)
 	baseline := NewBaselineEstimator(db, nil)
 	mockup, err := NewMockupClient("", "")
@@ -151,7 +153,12 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 		}
 
 		var resp StartTaskResponse
-		_ = json.NewDecoder(rr.Body).Decode(&resp)
+		if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+			t.Fatalf("Decode start task response: %v", err)
+		}
+		if resp.TaskID == "" {
+			t.Fatal("Start task response has no task ID")
+		}
 		taskID = resp.TaskID
 		t.Logf("Task started: %s - %s", resp.TaskID, resp.TaskName)
 
