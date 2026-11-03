@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keep nested Codex notify hooks from replacing a live tab’s conversation identity. Bind reported threads to the primary native CLI process from the existing process snapshot, preserving foreground session changes and resumable parent conversations.
 
+- Keep unverified and subagent Codex notify reports from replacing a tab’s resumable foreground identity, even when the report comes from the same native CLI process. Verify exact first-line session metadata off the UI thread.
+
+- Explain unavailable saved conversations in their restored terminal and MCP status instead of silently omitting the resume command. Keep recovery identities inert even when live ownership changes after preparation, and distinguish missing history, missing conversation IDs and conversations already open in another pane. Before a production update asks to quit, verify active native Codex IDs against their exact local history metadata and retain a private audit; existing archived recovery IDs stay inactive.
+
 - Process proxy streaming usage and token-rate events incrementally, avoiding a full response copy and repeated SSE line copies while preserving forwarding and accounting.
 
 - Park transcript token-rate monitoring when no AI run exists, and wake it on run admission, identity changes and exit while retaining active CLI polling and historical readings.
