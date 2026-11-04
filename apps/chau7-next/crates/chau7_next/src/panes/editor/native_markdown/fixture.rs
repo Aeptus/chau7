@@ -1571,6 +1571,89 @@ pub(in crate::panes::editor) async fn verify(
     ordinary_keydown_phase("before", &application, &native_window, &native, &typed);
     application.sendEvent(&typed);
     ordinary_keydown_phase("after", &application, &native_window, &native, &typed);
+
+    // Exercise the actual AppKit event route, not direct movement selectors or
+    // the GPUI mirror. Navigation must neither edit text nor corrupt native undo.
+    let source = format!("{initial}日本x");
+    let end = source.encode_utf16().count();
+    let second_line = initial.encode_utf16().count();
+    let arrow_flags = NSEventModifierFlags::Function | NSEventModifierFlags::NumericPad;
+    for (chars, code, modifiers, expected) in [
+        ("\u{f702}", 123, arrow_flags, NSRange::new(end - 1, 0)),
+        (
+            "\u{f702}",
+            123,
+            arrow_flags | NSEventModifierFlags::Shift,
+            NSRange::new(end - 2, 1),
+        ),
+        ("\u{f703}", 124, arrow_flags, NSRange::new(end - 1, 0)),
+        (
+            "\u{f702}",
+            123,
+            arrow_flags | NSEventModifierFlags::Command,
+            NSRange::new(second_line, 0),
+        ),
+        (
+            "\u{f703}",
+            124,
+            arrow_flags | NSEventModifierFlags::Command,
+            NSRange::new(end, 0),
+        ),
+    ] {
+        let event = event(&native, chars, modifiers, code)?;
+        application.sendEvent(&event);
+        ensure(
+            native.text.selectedRange() == expected,
+            &format!(
+                "native navigation {chars:?}/{modifiers:?}: {:?}, expected {expected:?}",
+                native.text.selectedRange()
+            ),
+        )?;
+    }
+    let up = event(&native, "\u{f700}", arrow_flags, 126)?;
+    application.sendEvent(&up);
+    ensure(
+        native.text.selectedRange().location < second_line,
+        "Up did not move to preceding line",
+    )?;
+    let down = event(&native, "\u{f701}", arrow_flags, 125)?;
+    application.sendEvent(&down);
+    ensure(
+        native.text.selectedRange().location >= second_line,
+        "Down did not move to following line",
+    )?;
+    let word_left = event(
+        &native,
+        "\u{f702}",
+        arrow_flags | NSEventModifierFlags::Option,
+        123,
+    )?;
+    native.text.setSelectedRange(NSRange::new(end, 0));
+    application.sendEvent(&word_left);
+    ensure(
+        native.text.selectedRange().location < end,
+        "Option+Left did not move by word",
+    )?;
+    // A surrogate-pair emoji is one character to AppKit, not two cursor stops.
+    native
+        .text
+        .setSelectedRange(NSRange::new(second_line - 1, 0));
+    let emoji_left = event(
+        &native,
+        "\u{f702}",
+        arrow_flags | NSEventModifierFlags::Shift,
+        123,
+    )?;
+    application.sendEvent(&emoji_left);
+    ensure(
+        native.text.selectedRange() == NSRange::new(second_line - 3, 2),
+        "Shift+Left split an emoji or failed to select it",
+    )?;
+    ensure(
+        native.text.string().to_string() == source,
+        "navigation modified source text",
+    )?;
+    native.text.setSelectedRange(NSRange::new(end, 0));
     cx.update(|_| {
         ensure(
             native.text.string().to_string() == format!("{initial}日本x"),
@@ -1599,7 +1682,17 @@ pub(in crate::panes::editor) async fn verify(
     settle(handle, cx).await?;
     // Saving is asynchronous and is bounded by the same owned runner timeout.
     for _ in 0..20 {
-        if std::fs::read_to_string(&path).map_err(error)? == format!("{initial}日本x") {
+        let finished = cx
+            .update(|cx| {
+                editor
+                    .read(cx)
+                    .write_task
+                    .as_ref()
+                    .is_some_and(|task| task.peek() == Some(&true))
+            })
+            .map_err(error)?;
+        if finished && std::fs::read_to_string(&path).map_err(error)? == format!("{initial}日本x")
+        {
             break;
         }
         settle(handle, cx).await?;
@@ -1608,6 +1701,105 @@ pub(in crate::panes::editor) async fn verify(
         std::fs::read_to_string(&path).map_err(error)? == format!("{initial}日本x"),
         "actual Cmd+S delivery did not save the owned file",
     )?;
+
+    // Bind real application actions in the owned fixture to observe forwarding
+    // without entering fullscreen on the operator's display.
+    cx.update(|cx| {
+        cx.bind_keys([
+            gpui::KeyBinding::new("f11", super::super::SaveEditor, Some(super::super::CONTEXT)),
+            gpui::KeyBinding::new(
+                "cmd-ctrl-f",
+                super::super::SaveEditor,
+                Some(super::super::CONTEXT),
+            ),
+        ])
+    })
+    .map_err(error)?;
+    for (chars, flags, code) in [
+        ("\u{f70e}", NSEventModifierFlags::Function, 103),
+        (
+            "f",
+            NSEventModifierFlags::Command | NSEventModifierFlags::Control,
+            3,
+        ),
+    ] {
+        std::fs::remove_file(&path).map_err(error)?;
+        let shortcut = event(&native, chars, flags, code)?;
+        application.sendEvent(&shortcut);
+        for _ in 0..20 {
+            let finished = cx
+                .update(|cx| {
+                    editor
+                        .read(cx)
+                        .write_task
+                        .as_ref()
+                        .is_some_and(|task| task.peek() == Some(&true))
+                })
+                .map_err(error)?;
+            if finished && std::fs::read_to_string(&path).ok().as_deref() == Some(source.as_str()) {
+                break;
+            }
+            settle(handle, cx).await?;
+        }
+        ensure(
+            std::fs::read_to_string(&path).ok().as_deref() == Some(source.as_str()),
+            "application shortcut was consumed by the native source editor",
+        )?;
+    }
+
+    // Same-document navigation must update the visible native caret immediately.
+    cx.update_window(handle.into(), |_, window, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.request_open_file(path.clone(), Some(2), window, cx)
+        });
+    })
+    .map_err(error)?;
+    ensure(
+        native.text.selectedRange() == NSRange::new(second_line, 0),
+        "same-document line jump did not reach the visible native caret",
+    )?;
+
+    let tab_string = cx
+        .update(|cx| editor.read(cx).config.tab_string())
+        .map_err(error)?;
+    let indented = source
+        .split('\n')
+        .map(|line| format!("{tab_string}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    native.text.setSelectedRange(NSRange::new(0, end));
+    undo.beginUndoGrouping();
+    let tab_event = event(&native, "\t", NSEventModifierFlags::empty(), 48)?;
+    application.sendEvent(&tab_event);
+    undo.endUndoGrouping();
+    ensure(
+        native.text.string().to_string() == indented,
+        "Tab replaced selected lines instead of indenting them",
+    )?;
+    key(&native, "z", NSEventModifierFlags::Command, 6)?;
+    ensure(
+        native.text.string().to_string() == source,
+        "Undo did not restore selected-line indentation",
+    )?;
+    key(
+        &native,
+        "z",
+        NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
+        6,
+    )?;
+    native
+        .text
+        .setSelectedRange(NSRange::new(0, native.text.string().length()));
+    undo.beginUndoGrouping();
+    let backtab_event = event(&native, "\u{19}", NSEventModifierFlags::Shift, 48)?;
+    application.sendEvent(&backtab_event);
+    undo.endUndoGrouping();
+    ensure(
+        native.text.string().to_string() == source,
+        "Shift-Tab did not outdent all selected lines",
+    )?;
+    native.text.setSelectedRange(NSRange::new(end, 0));
+    settle(handle, cx).await?;
 
     cx.update(|cx| {
         ensure(
