@@ -6,9 +6,12 @@
 //!
 //! Header: file name (click copies it, "Copied" flash), orange dot while
 //! unsaved, Open File, Save (Save As for untitled), Source/Runbook toggle
-//! and Run All for `.md` files, close. Closing with unsaved, non-empty text
+//! and Run All for `.md` files, close. Closing with unsaved text
 //! asks Save / Don't Save / Cancel.
 
+mod file_io;
+#[cfg(any(target_os = "macos", test))]
+mod indent;
 #[cfg(any(target_os = "macos", test))]
 mod keyboard;
 mod live_markdown;
@@ -479,6 +482,7 @@ impl EditorPane {
         self.loading = true;
         self.error = None;
         cx.notify();
+        let previous_content = edtext::content_hash(self.content(cx).as_bytes());
         let read_path = path.clone();
         let task = cx.background_spawn(async move { std::fs::read(&read_path) });
         self.load_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -489,6 +493,15 @@ impl EditorPane {
                     return;
                 }
                 this.loading = false;
+                if this.note_attachment_pending.is_none()
+                    && edtext::content_hash(this.content(cx).as_bytes()) != previous_content
+                {
+                    this.error =
+                        Some("File was not opened because the current text changed.".into());
+                    this.schedule_autosave(cx);
+                    cx.notify();
+                    return;
+                }
                 let text = match result {
                     Ok(bytes) => String::from_utf8(bytes)
                         .map_err(|_| "The file is not valid UTF-8 text.".to_string()),
@@ -504,6 +517,43 @@ impl EditorPane {
                 cx.notify();
             });
         }));
+    }
+
+    /// User-initiated document replacement must resolve unsaved edits first.
+    pub fn request_open_file(
+        &mut self,
+        path: PathBuf,
+        line: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.flush_native_edits(window, cx);
+        if self.path.as_ref() == Some(&path) && !self.loading {
+            if let Some(line) = line {
+                self.select_line(&self.content(cx), line, cx);
+                #[cfg(target_os = "macos")]
+                if let Some(native) = &self.native_markdown {
+                    native.select(&self.content(cx), self.state.read(cx).selected_range());
+                }
+            }
+            return;
+        }
+        // Invalidate earlier reads and prompts before asking about this buffer.
+        self.load_token += 1;
+        self.load_task = None;
+        self.loading = false;
+        let token = self.load_token;
+        let confirm = self.confirm_close(window, cx);
+        cx.spawn_in(window, async move |this, cx| {
+            if confirm.await {
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if this.load_token == token {
+                        this.load_file(path, line, window, cx);
+                    }
+                });
+            }
+        })
+        .detach();
     }
 
     fn finish_load(
@@ -613,7 +663,8 @@ impl EditorPane {
                     let Ok(bytes) = bytes else {
                         return;
                     };
-                    let dirty = this.dirty || this.has_pending_native_edits();
+                    this.flush_native_edits(window, cx);
+                    let dirty = this.is_dirty();
                     match edtext::external_change(this.loaded_hash, &bytes, dirty) {
                         edtext::ExternalChange::Unchanged => {}
                         edtext::ExternalChange::Conflict => {
@@ -626,14 +677,22 @@ impl EditorPane {
                         edtext::ExternalChange::Reload => match String::from_utf8(bytes) {
                             Ok(text) => {
                                 this.loaded_hash = Some(edtext::content_hash(text.as_bytes()));
+                                let selection = this.state.read(cx).selected_range();
+                                this.programmatic = true;
+                                this.state.update(cx, |state, cx| {
+                                    state.set_value(text.clone(), window, cx);
+                                    state.set_selected_range(selection, cx);
+                                });
+                                this.programmatic = false;
                                 #[cfg(target_os = "macos")]
                                 if let Some(native) = &this.native_markdown {
-                                    native.loaded(&text, &this.config, 0..0);
+                                    native.loaded(
+                                        &text,
+                                        &this.config,
+                                        this.state.read(cx).selected_range(),
+                                    );
                                 }
-                                this.programmatic = true;
-                                this.state
-                                    .update(cx, |state, cx| state.set_value(text, window, cx));
-                                this.programmatic = false;
+                                this.refresh_markdown_styles(cx);
                                 this.error = None;
                                 cx.emit(SidePaneEvent::Changed);
                                 cx.notify();
@@ -656,18 +715,12 @@ impl EditorPane {
         self.terminal_provider = Some(Rc::new(provider));
     }
 
-    /// Select the start of `line` once the new text is laid out
-    /// (`scrollToLine`).
+    /// Set the selection immediately; EditorState reveals it after layout.
+    /// No delayed task may move a subsequently opened document's caret.
     fn select_line(&mut self, text: &str, line: usize, cx: &mut Context<Self>) {
         let offset = edtext::line_start_offset(text, line);
-        let state = self.state.clone();
-        cx.spawn(async move |_, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(30))
-                .await;
-            state.update(cx, |s, cx| s.set_selected_range(offset..offset, cx));
-        })
-        .detach();
+        self.state
+            .update(cx, |s, cx| s.set_selected_range(offset..offset, cx));
         log::info!("Scrolled editor to line {line}");
     }
 
@@ -693,11 +746,7 @@ impl EditorPane {
             }
         }
         let content = self.content(cx);
-        let tmp = path.with_extension(format!(
-            "{}.chau7-tmp",
-            path.extension().and_then(|e| e.to_str()).unwrap_or("")
-        ));
-        let result = std::fs::write(&tmp, &content).and_then(|_| std::fs::rename(&tmp, &path));
+        let result = file_io::write_atomic(&path, content.as_bytes());
         match result {
             Ok(()) => {
                 if self.path.as_ref() != Some(&path) {
@@ -717,7 +766,6 @@ impl EditorPane {
                 true
             }
             Err(err) => {
-                let _ = std::fs::remove_file(&tmp);
                 log::error!("Failed to save file: {err}");
                 self.error = Some(format!("Failed to save file: {err}"));
                 cx.notify();
@@ -743,12 +791,17 @@ impl EditorPane {
             .and_then(|p| p.parent().map(Path::to_path_buf))
             .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
             .unwrap_or_else(|| PathBuf::from("/"));
+        let token = self.load_token;
+        let source_path = self.path.clone();
         let answer = cx.prompt_for_new_path(&directory, Some(DEFAULT_FILENAME));
         cx.spawn_in(window, async move |this, cx| {
             let Ok(Ok(Some(path))) = answer.await else {
                 return false;
             };
             this.update_in(cx, |this, window, cx| {
+                if this.load_token != token || this.path != source_path {
+                    return false;
+                }
                 let saved = this.write_to(path.clone(), window, cx);
                 if saved {
                     let root = chau7_next_core::data_root::DataRoot::from_env();
@@ -775,7 +828,7 @@ impl EditorPane {
                 && let Some(path) = paths.into_iter().next()
             {
                 let _ = this.update_in(cx, |this, window, cx| {
-                    this.load_file(path, None, window, cx)
+                    this.request_open_file(path, None, window, cx)
                 });
             }
         })
@@ -824,13 +877,16 @@ impl EditorPane {
     }
 
     /// Close button (`attemptClose`): asks first when the text is unsaved
-    /// and not blank. Resolves to whether the pane may close.
+    /// (including a cleared existing file). Resolves to whether the pane may close.
     pub fn confirm_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Task<bool> {
         self.flush_native_edits(window, cx);
-        if !self.dirty || self.content(cx).trim().is_empty() {
+        if !self.dirty || (self.path.is_none() && self.content(cx).is_empty()) {
             return Task::ready(true);
         }
         self.autosave_task = None;
+        let token = self.load_token;
+        let path = self.path.clone();
+        let content_hash = edtext::content_hash(self.content(cx).as_bytes());
         let answer = crate::l10n::prompt(
             window,
             PromptLevel::Warning,
@@ -839,23 +895,44 @@ impl EditorPane {
             &["Save", "Don't Save", "Cancel"],
             cx,
         );
-        cx.spawn_in(window, async move |this, cx| match answer.await.ok() {
-            Some(0) => {
-                let Ok(saved) = this.update_in(cx, |this, window, cx| this.save(window, cx)) else {
-                    return false;
-                };
-                // A cancelled Save As keeps the pane.
-                saved.await
-            }
-            Some(1) => this
-                .update(cx, |this, _| {
-                    this.autosave_task = None;
-                    true
+        cx.spawn_in(window, async move |this, cx| {
+            let answer = answer.await.ok();
+            let current = this
+                .update(cx, |this, cx| {
+                    let current = this.load_token == token
+                        && this.path == path
+                        && edtext::content_hash(this.content(cx).as_bytes()) == content_hash;
+                    if !current {
+                        this.schedule_autosave(cx);
+                    }
+                    current
                 })
-                .unwrap_or(false),
-            _ => {
-                let _ = this.update(cx, |this, cx| this.schedule_autosave(cx));
-                false
+                .unwrap_or(false);
+            if !current {
+                return false;
+            }
+            match answer {
+                Some(0) => {
+                    let Ok(saved) = this.update_in(cx, |this, window, cx| this.save(window, cx))
+                    else {
+                        return false;
+                    };
+                    // A cancelled Save As, another open, or a newer edit keeps the pane.
+                    saved.await
+                        && this
+                            .update(cx, |this, _| this.load_token == token && !this.is_dirty())
+                            .unwrap_or(false)
+                }
+                Some(1) => this
+                    .update(cx, |this, _| {
+                        this.autosave_task = None;
+                        true
+                    })
+                    .unwrap_or(false),
+                _ => {
+                    let _ = this.update(cx, |this, cx| this.schedule_autosave(cx));
+                    false
+                }
             }
         })
     }
@@ -1634,6 +1711,215 @@ mod markdown_live_tests {
             .unwrap();
             (handle.downcast::<Root>().unwrap(), pane)
         })
+    }
+
+    #[gpui::test]
+    async fn cleared_existing_file_and_whitespace_edits_require_confirmation(
+        cx: &mut TestAppContext,
+    ) {
+        let (handle, pane) = editor(cx);
+        for text in ["", " \n"] {
+            let confirm = cx
+                .update_window(handle.into(), |_, window, cx| {
+                    pane.update(cx, |pane, cx| {
+                        pane.state
+                            .update(cx, |state, cx| state.set_value(text, window, cx));
+                        pane.dirty = true;
+                        pane.confirm_close(window, cx)
+                    })
+                })
+                .unwrap();
+            assert!(
+                cx.has_pending_prompt(),
+                "deletions and whitespace are edits"
+            );
+            cx.simulate_prompt_answer("Cancel");
+            assert!(!confirm.await);
+            cx.update(|cx| assert!(pane.read(cx).is_dirty()));
+        }
+    }
+
+    #[gpui::test]
+    fn same_file_jump_keeps_unsaved_buffer_and_selects_line_immediately(cx: &mut TestAppContext) {
+        let (handle, pane) = editor(cx);
+        let text = "# café😀\nunsaved\nlast";
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.state
+                    .update(cx, |state, cx| state.set_value(text, window, cx));
+                pane.dirty = true;
+                let token = pane.load_token;
+                pane.request_open_file(pane.path.clone().unwrap(), Some(2), window, cx);
+                assert_eq!(pane.content(cx), text);
+                assert_eq!(
+                    pane.state.read(cx).selected_range(),
+                    "# café😀\n".len().."# café😀\n".len()
+                );
+                assert!(pane.is_dirty());
+                assert!(!pane.loading);
+                assert_eq!(pane.load_token, token);
+            });
+        })
+        .unwrap();
+        assert!(!cx.has_pending_prompt());
+    }
+
+    #[gpui::test]
+    async fn a_close_answer_cannot_discard_a_newer_edit(cx: &mut TestAppContext) {
+        let (handle, pane) = editor(cx);
+        let confirm = cx
+            .update_window(handle.into(), |_, window, cx| {
+                pane.update(cx, |pane, cx| {
+                    pane.dirty = true;
+                    pane.confirm_close(window, cx)
+                })
+            })
+            .unwrap();
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.state
+                    .update(cx, |state, cx| state.set_value("newer edit", window, cx));
+            });
+        })
+        .unwrap();
+        cx.simulate_prompt_answer("Don't Save");
+        assert!(!confirm.await);
+        cx.update(|cx| assert_eq!(pane.read(cx).content(cx), "newer edit"));
+    }
+
+    #[gpui::test]
+    fn open_over_unsaved_text_can_be_cancelled(cx: &mut TestAppContext) {
+        let (handle, pane) = editor(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.state
+                    .update(cx, |state, cx| state.set_value("keep me", window, cx));
+                pane.dirty = true;
+                pane.request_open_file(PathBuf::from("other.md"), None, window, cx);
+            });
+        })
+        .unwrap();
+        assert!(cx.has_pending_prompt());
+        cx.simulate_prompt_answer("Cancel");
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let pane = pane.read(cx);
+            assert_eq!(pane.path(), Some(Path::new("NOTE.MARKDOWN")));
+            assert_eq!(pane.content(cx), "keep me");
+            assert!(pane.is_dirty());
+            assert!(!pane.loading);
+        });
+    }
+
+    #[gpui::test]
+    fn a_stale_open_prompt_cannot_replace_a_new_document(cx: &mut TestAppContext) {
+        let (handle, pane) = editor(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.dirty = true;
+                pane.request_open_file(PathBuf::from("other.md"), None, window, cx);
+                // A newer load supersedes the request while its dialog is open.
+                pane.load_token += 1;
+                pane.path = Some(PathBuf::from("newest.md"));
+                pane.state
+                    .update(cx, |state, cx| state.set_value("newest", window, cx));
+            });
+        })
+        .unwrap();
+        cx.simulate_prompt_answer("Don't Save");
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let pane = pane.read(cx);
+            assert_eq!(pane.path(), Some(Path::new("newest.md")));
+            assert_eq!(pane.content(cx), "newest");
+            assert!(!pane.loading);
+        });
+    }
+
+    #[gpui::test]
+    async fn saving_a_cleared_existing_file_persists_the_deletion(cx: &mut TestAppContext) {
+        let path = std::env::temp_dir().join(format!("chau7-cleared-{}.md", uuid::Uuid::new_v4()));
+        std::fs::write(&path, "old content").unwrap();
+        let (handle, pane) = editor(cx);
+        let confirm = cx
+            .update_window(handle.into(), |_, window, cx| {
+                pane.update(cx, |pane, cx| {
+                    pane.finish_load(path.clone(), "old content".into(), None, window, cx);
+                    pane.state
+                        .update(cx, |state, cx| state.set_value("", window, cx));
+                    pane.dirty = true;
+                    pane.confirm_close(window, cx)
+                })
+            })
+            .unwrap();
+        cx.simulate_prompt_answer("Save");
+        assert!(confirm.await);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
+        cx.update(|cx| {
+            pane.update(cx, |pane, _| {
+                assert!(!pane.is_dirty());
+                pane.file_monitor = None;
+                pane.file_monitor_task = None;
+            })
+        });
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[gpui::test]
+    async fn save_as_answer_does_not_write_a_newer_document(cx: &mut TestAppContext) {
+        let target =
+            std::env::temp_dir().join(format!("chau7-stale-save-{}.md", uuid::Uuid::new_v4()));
+        let (handle, pane) = editor(cx);
+        let save = cx
+            .update_window(handle.into(), |_, window, cx| {
+                pane.update(cx, |pane, cx| pane.save_as(window, cx))
+            })
+            .unwrap();
+        cx.update(|cx| {
+            pane.update(cx, |pane, _| {
+                pane.load_token += 1;
+                pane.path = Some(PathBuf::from("newer.md"));
+            })
+        });
+        cx.simulate_new_path_selection(|_| Some(target.clone()));
+        assert!(!save.await);
+        assert!(!target.exists());
+        cx.update(|cx| assert_eq!(pane.read(cx).path(), Some(Path::new("newer.md"))));
+    }
+
+    #[gpui::test]
+    async fn discarding_changes_opens_requested_file_and_selects_utf8_line(
+        cx: &mut TestAppContext,
+    ) {
+        let path = std::env::temp_dir().join(format!("chau7-open-{}.md", uuid::Uuid::new_v4()));
+        let text = "# café😀\nnext";
+        std::fs::write(&path, text).unwrap();
+        let (handle, pane) = editor(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.dirty = true;
+                pane.request_open_file(path.clone(), Some(2), window, cx);
+            });
+        })
+        .unwrap();
+        cx.simulate_prompt_answer("Don't Save");
+        cx.condition(&pane, |pane, _| {
+            pane.path() == Some(path.as_path()) && !pane.loading
+        })
+        .await;
+        cx.update(|cx| {
+            pane.update(cx, |pane, cx| {
+                assert_eq!(pane.content(cx), text);
+                assert_eq!(
+                    pane.state.read(cx).selected_range(),
+                    "# café😀\n".len().."# café😀\n".len()
+                );
+                assert!(!pane.is_dirty());
+                pane.file_monitor = None;
+                pane.file_monitor_task = None;
+            })
+        });
+        std::fs::remove_file(path).unwrap();
     }
 
     #[gpui::test]

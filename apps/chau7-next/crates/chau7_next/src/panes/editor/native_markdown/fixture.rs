@@ -1692,6 +1692,60 @@ pub(in crate::panes::editor) async fn verify(
         "actual Cmd+S delivery did not save the owned file",
     )?;
 
+    // Same-document navigation must update the visible native caret immediately.
+    cx.update_window(handle.into(), |_, window, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.request_open_file(path.clone(), Some(2), window, cx)
+        });
+    })
+    .map_err(error)?;
+    ensure(
+        native.text.selectedRange() == NSRange::new(second_line, 0),
+        "same-document line jump did not reach the visible native caret",
+    )?;
+
+    let tab_string = cx
+        .update(|cx| editor.read(cx).config.tab_string())
+        .map_err(error)?;
+    let indented = source
+        .split('\n')
+        .map(|line| format!("{tab_string}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    native.text.setSelectedRange(NSRange::new(0, end));
+    undo.beginUndoGrouping();
+    let tab_event = event(&native, "\t", NSEventModifierFlags::empty(), 48)?;
+    application.sendEvent(&tab_event);
+    undo.endUndoGrouping();
+    ensure(
+        native.text.string().to_string() == indented,
+        "Tab replaced selected lines instead of indenting them",
+    )?;
+    key(&native, "z", NSEventModifierFlags::Command, 6)?;
+    ensure(
+        native.text.string().to_string() == source,
+        "Undo did not restore selected-line indentation",
+    )?;
+    key(
+        &native,
+        "z",
+        NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
+        6,
+    )?;
+    native
+        .text
+        .setSelectedRange(NSRange::new(0, native.text.string().length()));
+    undo.beginUndoGrouping();
+    let backtab_event = event(&native, "\u{19}", NSEventModifierFlags::Shift, 48)?;
+    application.sendEvent(&backtab_event);
+    undo.endUndoGrouping();
+    ensure(
+        native.text.string().to_string() == source,
+        "Shift-Tab did not outdent all selected lines",
+    )?;
+    native.text.setSelectedRange(NSRange::new(end, 0));
+    settle(handle, cx).await?;
+
     cx.update(|cx| {
         ensure(
             editor
