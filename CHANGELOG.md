@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Restore Mac-to-iPhone QR pairing in Remote settings with complete v3 relay credentials, local background encoding, cached rendering and expiry handling. Keep admission credentials out of diagnostic and clipboard serialization, and preserve an opaque white quiet zone for scanning.
 
+- Keep Markdown source navigation and selection in the native editor, including arrow keys and their modifiers, while retaining application shortcuts, F11, Control-Command combinations and Control-Tab.
+- Preserve unsaved editor buffers when opening files, require confirmation for cleared files, reject stale Open/Save As/Reload dialogs and reads, retain the caret on explicit reload, and apply line jumps immediately to the visible editor. Keep cursor selection and Markdown counters current after external reloads.
+- Indent and outdent all selected Markdown lines without deleting their text; keep Unicode selection and native undo intact.
+- Serialize and coalesce editor saves off the UI thread, retain newer unsaved edits, propagate queued save failures, and fence saves and file-watch reads to their captured disk revision. Save through exclusively owned temporary files, retaining existing file permissions and symlink targets without overwriting an unrelated staging file.
+
+- Keep repository and recording persistence drains and log flushing off the UI quit callback; retain a repository durability barrier before marking shutdown clean.
+- Retain a UUID-bound Rust function/address map outside fast macOS bundles before stripping and signing their installed executables, so production hang stacks can be mapped without shipping debug data.
+
+- Skip unchanged autosave exports before walking or hashing terminal history. Track terminal mutations and retained-history changes, keep session metadata fresh, and retry captures after failed persistence without retaining a second history copy.
+
 - Stop tab-bar scrolling at the final tab control. Clamp later-tab reveals and in-flight animations to the natural content end, keeping the first viewport anchored without allowing an empty scrolled tab bar.
 
 - Keep all fitting tabs visible with no artificial trailing scroll space. Anchor selections from the first viewport at the start; align later tabs to the left only when the strip overflows, and reset stale scrolling when tabs fit again without rewriting a settled offset.
@@ -49,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep hidden terminal output from invalidating the native window while preserving live output processing, tab reveals and hover previews.
 
 - Avoid whole-workspace redraws for repeated hidden-tab output while preserving activity timestamps, idle-tab revival and visible age panels.
+
+- Reduce remote idle refreshes from every 150 ms to once per second while retaining agent supervision and output deadlines. Poll terminal grids at 150 ms for a ready phone or active viewer, skip output batching without a consumer, and apply remote settings only when they change.
 
 - Remove the remote IPC listener's idle 50 ms accept polling. Wait for incoming connections or an explicit shutdown signal while preserving client replacement, frame delivery and socket ownership.
 - Wake remote control on settings, IPC and grid-completion events; park it when disabled and schedule live metadata, output batching and agent supervision at their actual deadlines, without adding timer callbacks to immediately flushed output.

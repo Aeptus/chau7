@@ -24,7 +24,7 @@ mod scheduling;
 pub mod snapshot;
 pub mod viewer_ui;
 
-use self::scheduling::{OUTPUT_BATCH, REFRESH_EVERY, Wake};
+use self::scheduling::{OUTPUT_BATCH, Wake};
 use futures::{FutureExt, StreamExt};
 use std::time::{Duration, Instant};
 
@@ -111,6 +111,7 @@ pub struct RemoteControl {
     devices_refresh_again: bool,
     /// Settings the agent runs with (enabled, relay URL).
     applied: Option<(bool, String)>,
+    applied_settings: Option<RemoteSettings>,
     focus_window: Option<AnyWindowHandle>,
     devices: Vec<AgentPairedDevice>,
     viewer: RemoteViewerMode,
@@ -151,6 +152,7 @@ pub fn init(cx: &mut App) {
         devices_refreshing: false,
         devices_refresh_again: false,
         applied: None,
+        applied_settings: None,
         focus_window: None,
         devices: Vec::new(),
         viewer: RemoteViewerMode::default(),
@@ -243,6 +245,11 @@ pub fn record_output(session: u64, data: &[u8], cx: &mut App) {
     let Some(entity) = handle(cx) else { return };
     let batching = output_batching_enabled();
     let full = entity.update(cx, |rc, _| {
+        if !rc.terminal_consumed() {
+            rc.host.discard_pending_output();
+            rc.output_due = None;
+            return false;
+        }
         if rc.viewer.should_broadcast() {
             log::trace!(
                 "RemoteViewerMode: broadcast {} bytes to {} viewers",
@@ -388,6 +395,13 @@ fn viewer_left(id: &str, cx: &mut App) {
 }
 
 impl RemoteControl {
+    fn terminal_consumed(&self) -> bool {
+        self.host.live_terminal()
+            || self.host.ipc_connected
+                && self.host.streams_terminal()
+                && self.viewer.should_broadcast()
+    }
+
     fn status(&self) -> RemoteStatus {
         let ready = self.host.session_status.as_deref() == Some("ready");
         RemoteStatus {
@@ -468,8 +482,8 @@ impl RemoteControl {
                 "app",
                 chau7_next_core::work_profiler::Queue::Main,
             ));
-        let settings = Settings::get(cx).remote.clone();
-        self.apply_settings(&settings, cx);
+        let enabled = Settings::get(cx).remote.enabled;
+        self.sync_settings(cx);
 
         if let Some(agent) = &mut self.agent
             && let Some(code) = agent.try_exit()
@@ -521,14 +535,22 @@ impl RemoteControl {
                 }
             });
         }
+        let terminal_consumed = self.terminal_consumed();
+        if !terminal_consumed {
+            self.host.discard_pending_output();
+        }
         if !self.host.has_pending_output() {
             self.output_due = None;
         } else if self.output_due.is_none_or(|due| Instant::now() >= due) {
             self.flush_output(cx);
         }
-        if self.host.ipc_connected && self.last_refresh.elapsed() >= REFRESH_EVERY {
+        if self.host.ipc_connected
+            && self.last_refresh.elapsed() >= scheduling::refresh_every(terminal_consumed)
+        {
             self.last_refresh = Instant::now();
-            self.with_host(cx, |host, env, sink| host.refresh(env, sink));
+            self.with_host(cx, |host, env, sink| {
+                host.refresh(env, sink, terminal_consumed)
+            });
         }
         if self.grid_worker.has_result() {
             self.with_host(cx, |_, _, _| ());
@@ -545,8 +567,9 @@ impl RemoteControl {
         }
         scheduling::next_delay(
             Instant::now(),
-            settings.enabled,
+            enabled,
             self.host.ipc_connected,
+            terminal_consumed,
             self.last_refresh,
             self.output_due,
         )
@@ -563,6 +586,16 @@ impl RemoteControl {
     }
 
     /// Follow the settings: start, stop or restart the agent.
+    fn sync_settings(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.applied_settings.as_ref() == Some(&Settings::get(cx).remote) {
+            return false;
+        }
+        let settings = Settings::get(cx).remote.clone();
+        self.apply_settings(&settings, cx);
+        self.applied_settings = Some(settings);
+        true
+    }
+
     fn apply_settings(&mut self, settings: &RemoteSettings, cx: &mut Context<Self>) {
         self.viewer.enabled = settings.viewer_enabled;
         self.viewer.set_max_viewers(i64::from(settings.viewer_max));
@@ -865,6 +898,7 @@ mod startup_tests {
             entity.update(cx, |rc, _| {
                 let mut env = host::tests::FakeEnv::new();
                 rc.host.on_connected(&mut env, &mut Vec::new());
+                rc.host.session_status = Some("ready".into());
             });
             record_output(100, &vec![b'x'; 40_000], cx);
             let rc = entity.read(cx);
@@ -877,6 +911,32 @@ mod startup_tests {
             let rc = entity.read(cx);
             assert_eq!(rc.ticks, before + 1);
             assert!(!rc.host.has_pending_output());
+        });
+        cx.update(|cx| {
+            let entity = handle(cx).unwrap();
+            entity.update(cx, |rc, cx| {
+                assert!(
+                    !rc.sync_settings(cx),
+                    "unchanged settings are not reapplied"
+                );
+                rc.host.session_status = None;
+                assert!(!rc.terminal_consumed());
+            });
+            record_output(100, b"no remote consumer", cx);
+            entity.update(cx, |rc, _| {
+                assert!(!rc.host.has_pending_output());
+                assert!(rc.output_due.is_none());
+                rc.viewer.is_sharing = true;
+                rc.viewer
+                    .connected
+                    .push(chau7_next_core::remote::viewer::RemoteViewer::new(
+                        "viewer", "fixture",
+                    ));
+                assert!(
+                    rc.terminal_consumed(),
+                    "active viewers retain fast streaming"
+                );
+            });
         });
     }
 

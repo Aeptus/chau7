@@ -203,17 +203,32 @@ pub struct ContextBuffer {
     pub version: u64,
     pub text: Option<Arc<String>>,
 }
-/// Fingerprint of the raw exported buffer and capture policy. Retains no history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CaptureSource {
+    Fingerprint([u8; 32]),
+    Revision([u64; 3]),
+}
+
+/// Identity of terminal content and capture policy. Retains no history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScrollbackCaptureKey {
-    digest: [u8; 32],
+    source: CaptureSource,
     max_lines: usize,
 }
 impl ScrollbackCaptureKey {
     pub fn new(source: &str, max_lines: usize) -> Self {
         use sha2::{Digest, Sha256};
         Self {
-            digest: Sha256::digest(source.as_bytes()).into(),
+            source: CaptureSource::Fingerprint(Sha256::digest(source.as_bytes()).into()),
+            max_lines,
+        }
+    }
+
+    /// Terminal identity/content revision and retained-history epoch, without
+    /// exporting or hashing terminal text. Distinct from source fingerprints.
+    pub fn from_revision(revision: [u64; 3], max_lines: usize) -> Self {
+        Self {
+            source: CaptureSource::Revision(revision),
             max_lines,
         }
     }
@@ -221,6 +236,7 @@ impl ScrollbackCaptureKey {
 
 struct BufferEntry {
     capture_key: Option<ScrollbackCaptureKey>,
+    export_key: Option<ScrollbackCaptureKey>,
     version: u64,
     hash: Option<u64>,
     text: Option<Arc<String>>,
@@ -236,6 +252,41 @@ pub struct BufferLedger {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CaptureBoundExceeded;
 impl BufferLedger {
+    pub fn reuse_export(&self, pane: u64, key: ScrollbackCaptureKey) -> Option<bool> {
+        self.entries
+            .get(&pane)
+            .filter(|entry| entry.export_key == Some(key) && (entry.pending || entry.persisted))
+            .map(|entry| entry.hash.is_some())
+    }
+
+    /// A parser revision may change without changing exported text. Preserve
+    /// source reuse too, and associate the accepted export with its new revision.
+    pub fn reuse_source(
+        &mut self,
+        pane: u64,
+        export: ScrollbackCaptureKey,
+        source: ScrollbackCaptureKey,
+    ) -> Option<bool> {
+        let present = self.reuse_capture(pane, source)?;
+        self.entries.get_mut(&pane)?.export_key = Some(export);
+        Some(present)
+    }
+
+    pub fn record_export(
+        &mut self,
+        pane: u64,
+        export: ScrollbackCaptureKey,
+        source: ScrollbackCaptureKey,
+        text: Option<String>,
+    ) -> Result<bool, CaptureBoundExceeded> {
+        let present = self.record_capture(pane, source, text)?;
+        self.entries
+            .get_mut(&pane)
+            .expect("accepted capture")
+            .export_key = Some(export);
+        Ok(present)
+    }
+
     /// Reuse only accepted captures still pending or successfully persisted.
     pub fn reuse_capture(&self, pane: u64, key: ScrollbackCaptureKey) -> Option<bool> {
         self.entries
@@ -288,10 +339,9 @@ impl BufferLedger {
             .get(&pane)
             .is_some_and(|entry| entry.hash == hash && (entry.pending || entry.persisted))
         {
-            self.entries
-                .get_mut(&pane)
-                .expect("existing capture")
-                .capture_key = None;
+            let entry = self.entries.get_mut(&pane).expect("existing capture");
+            entry.capture_key = None;
+            entry.export_key = None;
             return Ok(hash.is_some());
         }
         let previous_bytes = self
@@ -311,6 +361,7 @@ impl BufferLedger {
             pane,
             BufferEntry {
                 capture_key: None,
+                export_key: None,
                 version: self.next_version,
                 hash,
                 text: text.map(Arc::new),
@@ -395,6 +446,42 @@ impl BufferLedger {
 #[cfg(test)]
 mod ledger_tests {
     use super::*;
+
+    #[test]
+    fn revision_reuse_requires_identity_content_retention_and_policy_and_retries_io() {
+        let mut ledger = BufferLedger::default();
+        let key = ScrollbackCaptureKey::from_revision([7, 1, 0], 500);
+        let source = ScrollbackCaptureKey::new("raw ANSI", 500);
+        ledger
+            .record_export(1, key, source, Some("accepted".into()))
+            .unwrap();
+        assert_eq!(ledger.reuse_export(1, key), Some(true));
+        for changed in [
+            ScrollbackCaptureKey::from_revision([8, 1, 0], 500),
+            ScrollbackCaptureKey::from_revision([7, 2, 0], 500),
+            ScrollbackCaptureKey::from_revision([7, 1, 1], 500),
+            ScrollbackCaptureKey::from_revision([7, 1, 0], 10),
+            source,
+        ] {
+            assert_eq!(ledger.reuse_export(1, changed), None);
+        }
+        let next = ScrollbackCaptureKey::from_revision([7, 2, 0], 500);
+        assert_eq!(ledger.reuse_source(1, next, source), Some(true));
+        assert_eq!(ledger.reuse_export(1, next), Some(true));
+        let pending = ledger.snapshot();
+        ledger.acknowledge(&pending);
+        assert_eq!(ledger.reuse_export(1, next), Some(true));
+        ledger.invalidate_persisted(&HashSet::from([1]));
+        assert_eq!(ledger.reuse_export(1, next), None);
+        assert_eq!(ledger.reuse_source(1, key, source), None);
+        ledger
+            .record_export(1, next, source, Some("accepted".into()))
+            .unwrap();
+        assert!(ledger.snapshot().contains_key(&1));
+        ledger.record(1, None).unwrap();
+        assert_eq!(ledger.reuse_export(1, next), None);
+        assert_eq!(ledger.reuse_capture(1, source), None);
+    }
 
     #[test]
     fn unchanged_capture_survives_ack_but_retries_after_failed_persistence() {

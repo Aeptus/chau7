@@ -699,17 +699,17 @@ define_class!(
             }
         }
         #[unsafe(method(insertTab:))]
-        fn tab(&self,_sender:Option<&AnyObject>) { self.insert(&self.ivars().shared.config.borrow().tab_string(),self.selectedRange()); }
-        #[unsafe(method(insertBacktab:))]
-        fn backtab(&self,_sender:Option<&AnyObject>) {
-            let text=self.string().to_string();let selected=self.selectedRange();let byte=utf16_to_byte(&text,selected.location);
-            let tab=self.ivars().shared.config.borrow().tab_string();
-            if let Some((start,len))=edtext::outdent(&text,byte,&tab) {
-                self.insert("",bytes_to_range(&text,start..start+len));
-                let shift=|n:usize| if n>=start+len {n-len} else {n.min(start)};
-                let end=utf16_to_byte(&text,selected.location+selected.length);
-                let now=self.string().to_string();self.setSelectedRange(bytes_to_range(&now,shift(byte)..shift(end)));
+        fn tab(&self, _sender: Option<&AnyObject>) {
+            if self.selectedRange().length == 0 {
+                let tab = self.ivars().shared.config.borrow().tab_string();
+                self.insert(&tab, self.selectedRange());
+            } else {
+                self.indent_selection(false);
             }
+        }
+        #[unsafe(method(insertBacktab:))]
+        fn backtab(&self, _sender: Option<&AnyObject>) {
+            self.indent_selection(true);
         }
         #[unsafe(method(insertNewline:))]
         fn newline(&self,_sender:Option<&AnyObject>) {
@@ -782,7 +782,11 @@ impl SourceTextView {
             .charactersIgnoringModifiers()
             .map(|s| s.to_string())
             .unwrap_or_default();
-        if flags.contains(NSEventModifierFlags::Command) {
+        // Control+Command combinations are application shortcuts, including
+        // Chau7's fullscreen action; they must not become native Find/Save/etc.
+        if flags.contains(NSEventModifierFlags::Command)
+            && !flags.contains(NSEventModifierFlags::Control)
+        {
             let shift = flags.contains(NSEventModifierFlags::Shift);
             // GPUI's application Edit menu targets its own editor model. Native
             // source editing must consume these shortcuts with NSTextView's undo.
@@ -861,6 +865,15 @@ impl SourceTextView {
         let handled: bool = unsafe { msg_send![super(self),performKeyEquivalent:event] };
         if handled {
             return true;
+        }
+        // A key equivalent runs before keyDown. Forwarding arrows or plain
+        // text here lets the invisible GPUI mirror consume native editing.
+        if !super::keyboard::forward_to_host(
+            &key,
+            flags.contains(NSEventModifierFlags::Command),
+            flags.contains(NSEventModifierFlags::Control),
+        ) {
+            return false;
         }
         // Unhandled application shortcuts retain GPUI's normal dispatch path.
         self.ivars()
@@ -964,6 +977,28 @@ impl SourceTextView {
     #[cfg(feature = "native-parity-fixture")]
     pub(super) fn set_fixture_pasteboard(&self, pasteboard: Option<Retained<NSPasteboard>>) {
         *self.ivars().fixture_pasteboard.borrow_mut() = pasteboard;
+    }
+
+    fn indent_selection(&self, outdent: bool) {
+        let text = self.string().to_string();
+        let selected = self.selectedRange();
+        let start = utf16_to_byte(&text, selected.location);
+        let end = utf16_to_byte(&text, selected.location + selected.length);
+        let tab = {
+            let config = self.ivars().shared.config.borrow();
+            if outdent {
+                " ".repeat(config.tab_size as usize)
+            } else {
+                config.tab_string()
+            }
+        };
+        if let Some(edit) = super::indent::selected_lines(&text, start..end, &tab, outdent) {
+            self.breakUndoCoalescing();
+            self.insert(&edit.replacement, bytes_to_range(&text, edit.range));
+            self.breakUndoCoalescing();
+            self.setSelectedRange(bytes_to_range(&self.string().to_string(), edit.selection));
+            self.ivars().shared.changed(self, false);
+        }
     }
 
     fn insert(&self, text: &str, range: NSRange) {
@@ -1263,6 +1298,15 @@ impl NativeMarkdown {
     ) {
         self.shared.pending.borrow_mut().clear_for_load();
         self.sync_inner(text, config, true);
+        self.shared.mirroring.set(true);
+        self.text.setSelectedRange(bytes_to_range(text, selection));
+        self.text.scrollRangeToVisible(self.text.selectedRange());
+        self.shared.mirroring.set(false);
+    }
+
+    /// Programmatic navigation changes selection without resetting native undo.
+    pub(super) fn select(&self, text: &str, selection: std::ops::Range<usize>) {
+        self.shared.pending.borrow_mut().selection = None;
         self.shared.mirroring.set(true);
         self.text.setSelectedRange(bytes_to_range(text, selection));
         self.text.scrollRangeToVisible(self.text.selectedRange());

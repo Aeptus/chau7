@@ -1,7 +1,6 @@
 {
-  "reason": "Test-only fixture socket names are isolated from the reserved legacy app namespace. Production IPC behavior and DataRoot routing are unchanged; the feature changelog is already in the preceding commit.",
+  "reason": "Test-only editor fixtures inject the production file-event channel instead of waking GPUI\u2019s deterministic scheduler from an OS notification thread. Production and native acceptance builds retain real file monitoring; user-visible editor changes are documented in the preceding commits.",
   "paths": [
-    "apps/chau7-next/crates/chau7_next/src/remote/ipc.rs",
-    "apps/chau7-next/crates/chau7_next_core/tests/remote_ipc.rs"
+    "apps/chau7-next/crates/chau7_next/src/panes/editor.rs"
   ]
 }

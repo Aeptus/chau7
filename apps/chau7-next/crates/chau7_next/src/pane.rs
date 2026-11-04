@@ -1538,7 +1538,7 @@ impl PaneTree {
         cx: &mut Context<Self>,
     ) {
         match self.first_editor() {
-            Some(editor) => editor.update(cx, |e, cx| e.load_file(path, line, window, cx)),
+            Some(editor) => editor.update(cx, |e, cx| e.request_open_file(path, line, window, cx)),
             None => {
                 self.open_text_editor(Some(path), line, window, cx);
             }

@@ -8,6 +8,14 @@ pub(super) const OUTPUT_BATCH: Duration = Duration::from_millis(33);
 pub(super) const REFRESH_EVERY: Duration = Duration::from_millis(150);
 const AGENT_HEALTH: Duration = Duration::from_secs(1);
 
+pub(super) fn refresh_every(live_terminal: bool) -> Duration {
+    if live_terminal {
+        REFRESH_EVERY
+    } else {
+        AGENT_HEALTH
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct Wake(Arc<Mutex<mpsc::Sender<()>>>);
 impl Wake {
@@ -25,11 +33,13 @@ impl Wake {
 }
 
 /// Disabled remote control has no timer. An enabled agent retains supervision;
-/// connected clients retain metadata refresh and only pending output needs 33ms.
+/// idle helpers retain one-second metadata refresh. Terminal consumers retain
+/// 150ms refresh and only pending output needs 33ms.
 pub(super) fn next_delay(
     now: Instant,
     enabled: bool,
     connected: bool,
+    live_terminal: bool,
     last_refresh: Instant,
     output_due: Option<Instant>,
 ) -> Option<Duration> {
@@ -38,7 +48,8 @@ pub(super) fn next_delay(
     }
     let mut delay = AGENT_HEALTH;
     if connected {
-        delay = delay.min((last_refresh + REFRESH_EVERY).saturating_duration_since(now));
+        delay =
+            delay.min((last_refresh + refresh_every(live_terminal)).saturating_duration_since(now));
     }
     if let Some(due) = output_due {
         delay = delay.min(due.saturating_duration_since(now));
@@ -52,21 +63,53 @@ mod tests {
     #[test]
     fn idle_has_no_batch_poll_but_live_deadlines_remain() {
         let now = Instant::now();
-        assert_eq!(next_delay(now, false, false, now, None), None);
-        assert_eq!(next_delay(now, true, false, now, None), Some(AGENT_HEALTH));
-        assert_eq!(next_delay(now, true, true, now, None), Some(REFRESH_EVERY));
+        assert_eq!(next_delay(now, false, false, false, now, None), None);
         assert_eq!(
-            next_delay(now, true, true, now, Some(now + OUTPUT_BATCH)),
+            next_delay(now, true, true, false, now, None),
+            Some(AGENT_HEALTH)
+        );
+        assert_eq!(
+            next_delay(now, true, true, false, now, Some(now + OUTPUT_BATCH)),
             Some(OUTPUT_BATCH)
         );
         assert_eq!(
-            next_delay(now, true, true, now - REFRESH_EVERY, None),
+            next_delay(now, true, true, false, now - AGENT_HEALTH, None),
             Some(Duration::ZERO)
         );
         assert_eq!(
-            next_delay(now, true, false, now, Some(now - OUTPUT_BATCH)),
+            next_delay(now, true, false, false, now, None),
+            Some(AGENT_HEALTH)
+        );
+        assert_eq!(
+            next_delay(now, true, true, true, now, None),
+            Some(REFRESH_EVERY)
+        );
+        assert_eq!(
+            next_delay(now, true, true, true, now, Some(now + OUTPUT_BATCH)),
+            Some(OUTPUT_BATCH)
+        );
+        assert_eq!(
+            next_delay(now, true, true, true, now - REFRESH_EVERY, None),
             Some(Duration::ZERO)
         );
+        assert_eq!(
+            next_delay(now, true, false, false, now, Some(now - OUTPUT_BATCH)),
+            Some(Duration::ZERO)
+        );
+    }
+
+    #[test]
+    fn one_minute_idle_helper_requires_sixty_refreshes_instead_of_four_hundred() {
+        let start = Instant::now();
+        for (live, expected) in [(false, 60), (true, 400)] {
+            let mut now = start;
+            let mut callbacks = 0;
+            while now < start + Duration::from_secs(60) {
+                now += next_delay(now, true, true, live, now, None).unwrap();
+                callbacks += 1;
+            }
+            assert_eq!(callbacks, expected);
+        }
     }
     #[test]
     fn notifications_coalesce_and_rearm_without_polling() {

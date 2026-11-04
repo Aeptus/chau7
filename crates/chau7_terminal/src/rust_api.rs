@@ -411,6 +411,9 @@ impl Chau7Terminal {
         let mut term = self.term.lock();
         self.kitty_keyboard.store(enabled, Ordering::Release);
         term.set_options(config);
+        self.history_limit
+            .store(scrollback_lines as u64, Ordering::Relaxed);
+        self.restore_revision.fetch_add(1, Ordering::Release);
         drop(term);
         self.grid_dirty.store(true, Ordering::Release);
     }

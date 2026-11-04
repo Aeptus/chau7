@@ -1160,6 +1160,11 @@ impl RemoteHost {
         self.full()
     }
 
+    /// A helper socket alone does not mean a phone is consuming terminal grids.
+    pub(super) fn live_terminal(&self) -> bool {
+        self.ipc_connected && self.session_status.as_deref() == Some("ready") && self.full()
+    }
+
     /// Resolve actual UI selection and focused session, including changes since
     /// the last tab-list refresh. Neither this read nor enqueue copies grid data.
     pub(crate) fn grid_capture_scope(
@@ -1237,6 +1242,10 @@ impl RemoteHost {
 
     pub fn has_pending_output(&self) -> bool {
         self.pending_output.is_some()
+    }
+
+    pub(super) fn discard_pending_output(&mut self) {
+        self.pending_output = None;
     }
 
     /// Send the batched output, then a fresh grid snapshot (`flushPendingOutput`).
@@ -1484,10 +1493,14 @@ impl RemoteHost {
         self.send_json(sink, RemoteFrameType::InteractivePromptList, 0, &wire);
     }
 
-    /// Periodic refresh (tabs, selection, activity, prompts). Swift reacts to
-    /// tab and session changes with a 150 ms debounce; the app calls this
-    /// every 150 ms instead.
-    pub fn refresh(&mut self, env: &mut dyn HostEnv, sink: &mut dyn FrameSink) {
+    /// Refresh metadata even without terminal consumers so activity and
+    /// approval notifications stay current. Periodic grids need a consumer.
+    pub fn refresh(
+        &mut self,
+        env: &mut dyn HostEnv,
+        sink: &mut dyn FrameSink,
+        terminal_consumed: bool,
+    ) {
         if !self.ipc_connected {
             return;
         }
@@ -1496,7 +1509,8 @@ impl RemoteHost {
         if self.full() && (sent || previous_selected != self.selected_tab_id) {
             self.pending_output = None;
             self.send_selected_snapshot(env, sink);
-        } else if let Some(scope) = self.grid_capture_scope(env, 0)
+        } else if terminal_consumed
+            && let Some(scope) = self.grid_capture_scope(env, 0)
             && let Some(key) = self.registry.key(scope.tab)
             && let Some(payload) = env.periodic_grid_snapshot(key, scope.tab)
         {
@@ -1713,13 +1727,13 @@ pub(crate) mod tests {
         assert_eq!(types(&out), [RemoteFrameType::Output]);
         out.clear();
         env.grid_requests.clear();
-        host.refresh(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
         assert_eq!(env.grid_requests, [(10, 1, false)]);
         assert!(out.is_empty());
         env.grid_requests.clear();
         host.stream_mode = RemoteClientStreamMode::ApprovalsOnly;
         host.send_snapshot(&mut env, &mut out, 1);
-        host.refresh(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
         assert!(env.grid_requests.is_empty());
         host.on_disconnected();
         host.send_snapshot(&mut env, &mut out, 1);
@@ -2067,7 +2081,7 @@ pub(crate) mod tests {
         out.clear();
         assert!(!host.record_output(100, b"data"));
         env.tabs[0].title = "Renamed".into();
-        host.refresh(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
         assert!(out.is_empty());
         host.handle_frame(
             frame(
@@ -2107,10 +2121,10 @@ pub(crate) mod tests {
     fn refresh_resends_tabs_on_change_and_snapshot_on_selection() {
         let (mut host, mut env, _) = connected();
         let mut out = Vec::new();
-        host.refresh(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
         assert!(out.is_empty());
         env.selected = Some(20);
-        host.refresh(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
         assert_eq!(
             types(&out),
             [
@@ -2123,12 +2137,36 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn idle_refresh_keeps_metadata_without_polling_the_terminal() {
+        let (mut host, mut env, _) = connected();
+        env.async_grid = true;
+        let mut out = Vec::new();
+        assert!(
+            !host.live_terminal(),
+            "a helper socket is not a ready phone"
+        );
+        host.refresh(&mut env, &mut out, false);
+        assert!(env.grid_requests.is_empty());
+        env.tabs[1].panes[0].ai_app = Some("Claude".into());
+        env.tabs[1].panes[0].status = CommandStatus::WaitingForInput;
+        host.refresh(&mut env, &mut out, false);
+        assert!(types(&out).contains(&RemoteFrameType::ActivityState));
+        env.grid_requests.clear();
+        host.session_status = Some("ready".into());
+        assert!(host.live_terminal());
+        host.refresh(&mut env, &mut out, true);
+        assert_eq!(env.grid_requests, [(10, 1, false)]);
+        host.on_disconnected();
+        assert!(!host.live_terminal());
+    }
+
+    #[test]
     fn activity_follows_ai_panes() {
         let (mut host, mut env, _) = connected();
         let mut out = Vec::new();
         env.tabs[1].panes[0].ai_app = Some("Claude".into());
         env.tabs[1].panes[0].status = CommandStatus::WaitingForInput;
-        host.refresh(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
         let activity: RemoteActivityState = serde_json::from_slice(&out[0].payload).unwrap();
         assert_eq!(out[0].frame_type(), Some(RemoteFrameType::ActivityState));
         assert_eq!(out[0].tab_id, 2);
@@ -2147,7 +2185,7 @@ pub(crate) mod tests {
             end_time: Some(env.now - chrono::Duration::seconds(5)),
             exit_code: Some(101),
         });
-        host.refresh(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
         let activity: RemoteActivityState = serde_json::from_slice(&out[0].payload).unwrap();
         assert_eq!(activity.status, RemoteActivityStatus::Failed);
         assert_eq!(activity.tool_name, "Codex");
@@ -2155,7 +2193,7 @@ pub(crate) mod tests {
 
         out.clear();
         env.now += chrono::Duration::seconds(30);
-        host.refresh(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
         assert_eq!(types(&out), [RemoteFrameType::ActivityCleared]);
     }
 
@@ -2170,7 +2208,7 @@ pub(crate) mod tests {
             "Do you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently\n"
                 .into(),
         );
-        host.refresh(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
         let list = out
             .iter()
             .find(|f| f.frame_type() == Some(RemoteFrameType::InteractivePromptList))
@@ -2196,7 +2234,7 @@ pub(crate) mod tests {
         );
         // Unchanged: not sent again.
         out.clear();
-        host.refresh(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
         assert!(!types(&out).contains(&RemoteFrameType::InteractivePromptList));
     }
 
@@ -2282,7 +2320,7 @@ pub(crate) mod tests {
         );
         let event=chau7_next_core::monitoring::claude_code::parse_event_line(r#"{"type":"tool_start","sessionId":"s","toolName":"AskUserQuestion","toolUseID":"q","toolInput":{"questions":[{"question":"Choose","options":[{"label":"Keep"},{"label":"Cancel"}]}]}}"#,0.).unwrap();
         host.ingest_claude_event(&event, Some(10), env.now);
-        host.refresh(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
         let prompt = host.prompts[0].clone();
         assert_eq!(prompt.pane_id, Some(uuid::Uuid::from_u64_pair(0, 3)));
         let payload=serde_json::json!({"prompt_id":prompt.id,"pane_id":prompt.pane_id,"action":"select","option_id":"1"}).to_string();

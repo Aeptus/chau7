@@ -374,6 +374,9 @@ pub struct Chau7Terminal {
     pub(crate) created_at: Instant,
     /// Total bytes received from PTY
     pub(crate) bytes_received: AtomicU64,
+    /// Revision of content used by restoration exports, published after mutation.
+    pub(crate) restore_revision: AtomicU64,
+    pub(crate) history_limit: AtomicU64,
     /// Total bytes sent to PTY
     pub(crate) bytes_sent: AtomicU64,
     /// Total PTY write errors
@@ -489,6 +492,7 @@ impl Chau7Terminal {
 
         let size = SizeInfo::new(cols as usize, rows as usize);
         let config = TermConfig::default();
+        let history_limit = config.scrolling_history as u64;
         let term = Term::new(config, &size, listener);
 
         Ok(Chau7Terminal {
@@ -510,6 +514,8 @@ impl Chau7Terminal {
             rows: AtomicU16::new(rows),
             created_at,
             bytes_received: AtomicU64::new(0),
+            restore_revision: AtomicU64::new(0),
+            history_limit: AtomicU64::new(history_limit),
             bytes_sent: AtomicU64::new(0),
             write_errors: AtomicU64::new(0),
             last_primary_total_lines: AtomicU64::new(0),
@@ -644,6 +650,7 @@ impl Chau7Terminal {
         // Create alacritty terminal
         let size = SizeInfo::new(cols as usize, rows as usize);
         let config = TermConfig::default();
+        let history_limit = config.scrolling_history as u64;
         let term = Term::new(config, &size, listener);
         debug!(
             "[terminal-{}] Terminal state initialized (history: 10000 lines)",
@@ -839,6 +846,8 @@ impl Chau7Terminal {
             rows: AtomicU16::new(rows),
             created_at,
             bytes_received: AtomicU64::new(0),
+            restore_revision: AtomicU64::new(0),
+            history_limit: AtomicU64::new(history_limit),
             bytes_sent: AtomicU64::new(0),
             write_errors: AtomicU64::new(0),
             last_primary_total_lines: AtomicU64::new(0),
@@ -891,6 +900,7 @@ impl Chau7Terminal {
         theme.cursor = cursor;
         theme.palette = palette;
         theme.rebuild_lut();
+        self.restore_revision.fetch_add(1, Ordering::Release);
         // Mark grid dirty so it gets re-rendered with new colors
         self.grid_dirty.store(true, Ordering::Release);
         self.dirty_rows.mark_all_dirty();
@@ -1091,6 +1101,7 @@ impl Chau7Terminal {
         let mut term = self.term.lock();
         let term_size = SizeInfo::new(cols as usize, rows as usize);
         term.resize(term_size);
+        self.restore_revision.fetch_add(1, Ordering::Release);
         debug!("[terminal-{}] Terminal state resized", self.id);
 
         self.grid_dirty.store(true, Ordering::Release);
@@ -1563,6 +1574,7 @@ impl Chau7Terminal {
                 if n.is_multiple_of(INVARIANT_CHECK_PERIOD) {
                     Self::check_grid_invariants(self.id, &term, passthrough_owned.len());
                 }
+                self.restore_revision.fetch_add(1, Ordering::Release);
             }
         }
 
@@ -2572,6 +2584,7 @@ impl Chau7Terminal {
         );
         let mut term = self.term.lock();
         term.grid_mut().clear_history();
+        self.restore_revision.fetch_add(1, Ordering::Release);
         self.grid_dirty.store(true, Ordering::Release);
         self.dirty_rows.mark_all_dirty();
         debug!("[terminal-{}] clear_scrollback: History cleared", self.id);
@@ -2597,12 +2610,17 @@ impl Chau7Terminal {
             self.id, lines
         );
         let mut term = self.term.lock();
+        if self.history_limit.load(Ordering::Relaxed) == lines as u64 {
+            return;
+        }
         let config = TermConfig {
             scrolling_history: lines,
             kitty_keyboard: self.kitty_keyboard.load(Ordering::Acquire),
             ..TermConfig::default()
         };
         term.set_options(config);
+        self.history_limit.store(lines as u64, Ordering::Relaxed);
+        self.restore_revision.fetch_add(1, Ordering::Release);
         self.grid_dirty.store(true, Ordering::Release);
         self.dirty_rows.mark_all_dirty();
         debug!(
@@ -2664,6 +2682,8 @@ impl Chau7Terminal {
             crate::emoji_presentation::advance(&mut processor, &mut *term, RESET);
         }
 
+        self.restore_revision.fetch_add(1, Ordering::Release);
+
         self.grid_dirty.store(true, Ordering::Release);
         self.dirty_rows.mark_all_dirty();
         debug!("[terminal-{}] replay_buffer: Replay complete", self.id);
@@ -2696,6 +2716,13 @@ impl Chau7Terminal {
             self.bytes_received.load(Ordering::Relaxed),
             self.created_at.elapsed(),
         )
+    }
+
+    /// Cheap non-consuming identity/revision for unchanged restoration captures.
+    /// Observe before exporting: a concurrent later mutation then forces the
+    /// next capture, even if the export already included some newer content.
+    pub fn restoration_revision(&self) -> [u64; 2] {
+        [self.id, self.restore_revision.load(Ordering::Acquire)]
     }
 
     /// Get text for a specific line in the grid
@@ -3823,6 +3850,49 @@ fn spawn_pty_reader_thread(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restoration_revision_tracks_content_without_consuming_render_damage() {
+        let term = Chau7Terminal::new_headless(20, 4).unwrap();
+        let initial = term.restoration_revision();
+        term.inject_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+        let output = term.restoration_revision();
+        assert_ne!(output, initial);
+        let _ = term.get_grid_snapshot();
+        let _ = term.full_buffer_ansi_text();
+        term.scroll_lines(1);
+        term.selection_start(0, 0, 0);
+        assert_eq!(term.restoration_revision(), output);
+        term.resize(10, 4);
+        let resized = term.restoration_revision();
+        assert_ne!(resized, output);
+        term.clear_scrollback();
+        let cleared = term.restoration_revision();
+        assert_ne!(cleared, resized);
+        term.replay_buffer(b"replacement");
+        let replayed = term.restoration_revision();
+        assert_ne!(replayed, cleared);
+        term.set_scrollback_size(5);
+        let limited = term.restoration_revision();
+        assert_ne!(limited, replayed);
+        term.set_scrollback_size(5);
+        assert_eq!(
+            term.restoration_revision(),
+            limited,
+            "unchanged retention is idle"
+        );
+        term.set_kitty_keyboard(true, 3);
+        let options = term.restoration_revision();
+        assert_ne!(options, limited);
+        term.set_colors((1, 2, 3), (4, 5, 6), (7, 8, 9), [(10, 11, 12); 16]);
+        assert_ne!(term.restoration_revision(), options);
+        assert_ne!(
+            Chau7Terminal::new_headless(20, 4)
+                .unwrap()
+                .restoration_revision()[0],
+            initial[0]
+        );
+    }
 
     #[cfg(unix)]
     #[test]
