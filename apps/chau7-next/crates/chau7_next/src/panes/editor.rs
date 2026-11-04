@@ -127,6 +127,10 @@ pub struct EditorPane {
     autosave: bool,
     autosaved_until: Option<Instant>,
     autosave_task: Option<Task<()>>,
+    #[cfg(test)]
+    watch_files: bool,
+    #[cfg(test)]
+    test_file_events: Option<futures::channel::mpsc::Sender<()>>,
     file_monitor: Option<FileMonitor>,
     file_monitor_task: Option<Task<()>>,
     terminal_provider: Option<TerminalProvider>,
@@ -231,6 +235,10 @@ impl EditorPane {
             autosave: false,
             autosaved_until: None,
             autosave_task: None,
+            #[cfg(test)]
+            watch_files: true,
+            #[cfg(test)]
+            test_file_events: None,
             file_monitor: None,
             file_monitor_task: None,
             terminal_provider: None,
@@ -694,12 +702,21 @@ impl EditorPane {
         self.file_monitor_task = None;
         let (sender, mut receiver) = futures::channel::mpsc::channel::<()>(1);
         let mut retry_sender = sender.clone();
+        #[cfg(test)]
+        {
+            self.test_file_events = Some(sender.clone());
+        }
         let sender = std::sync::Mutex::new(sender);
         let monitor = FileMonitor::new(path.clone(), move || {
             if let Ok(mut sender) = sender.lock() {
                 let _ = sender.try_send(());
             }
         });
+        #[cfg(test)]
+        if self.watch_files {
+            monitor.start();
+        }
+        #[cfg(not(test))]
         monitor.start();
         self.file_monitor = Some(monitor);
         self.file_monitor_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -1819,6 +1836,9 @@ mod markdown_live_tests {
                 |window, cx| {
                     cx.new(|cx| {
                         let mut pane = EditorPane::new(window, cx);
+                        // Native OS events cannot wake GPUI's deterministic
+                        // scheduler. Inject the same bounded channel explicitly.
+                        pane.watch_files = false;
                         pane.path = Some(PathBuf::from("NOTE.MARKDOWN"));
                         pane.language = EditorLanguage::detect("NOTE.MARKDOWN");
                         pane.install_highlighter(cx);
@@ -2217,6 +2237,59 @@ mod markdown_live_tests {
         assert!(!save.await);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "external");
         cx.update(|cx| assert_eq!(pane.read(cx).content(cx), "external"));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[gpui::test]
+    async fn controlled_file_events_reload_clean_text_and_protect_unsaved_input(
+        cx: &mut TestAppContext,
+    ) {
+        let path = std::env::temp_dir().join(format!("chau7-watch-{}.md", uuid::Uuid::new_v4()));
+        std::fs::write(&path, "- [ ] pending").unwrap();
+        let (handle, pane) = editor(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.finish_load(path.clone(), "- [ ] pending".into(), None, window, cx);
+                pane.state
+                    .update(cx, |state, cx| state.set_selected_range(2..8, cx));
+                std::fs::write(&path, "- [x] done").unwrap();
+                pane.test_file_events
+                    .as_mut()
+                    .unwrap()
+                    .try_send(())
+                    .unwrap();
+            });
+        })
+        .unwrap();
+        cx.condition(&pane, |pane, _| pane.markdown_progress == (1, 1))
+            .await;
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                assert_eq!(pane.state.read(cx).selected_range(), 2..8);
+                assert!(!pane.is_dirty());
+                pane.state
+                    .update(cx, |state, cx| state.set_value("unsaved input", window, cx));
+                pane.dirty = true;
+                std::fs::write(&path, "external edit").unwrap();
+                pane.test_file_events
+                    .as_mut()
+                    .unwrap()
+                    .try_send(())
+                    .unwrap();
+            });
+        })
+        .unwrap();
+        cx.condition(&pane, |pane, _| pane.error.is_some()).await;
+        cx.update(|cx| {
+            pane.update(cx, |pane, cx| {
+                assert_eq!(pane.content(cx), "unsaved input");
+                assert!(pane.is_dirty());
+                pane.file_monitor = None;
+                pane.file_monitor_task = None;
+                pane.test_file_events = None;
+            })
+        });
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "external edit");
         std::fs::remove_file(path).unwrap();
     }
 
