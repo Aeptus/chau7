@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep Markdown source navigation and selection in the native editor, including arrow keys and their modifiers, while retaining application shortcuts and Control-Tab.
 - Preserve unsaved editor buffers when opening files, require confirmation for cleared files, reject stale dialogs and reads, and apply line jumps immediately to the visible editor. Keep cursor selection and Markdown counters current after external reloads.
 - Indent and outdent all selected Markdown lines without deleting their text; keep Unicode selection and native undo intact.
-- Save editor documents through exclusively owned temporary files, retaining existing file permissions and symlink targets without overwriting an unrelated staging file.
+- Serialize and coalesce editor saves off the UI thread, retain newer unsaved edits, and ignore stale file-watch reads. Save through exclusively owned temporary files, retaining existing file permissions and symlink targets without overwriting an unrelated staging file.
 
 - Keep repository and recording persistence drains and log flushing off the UI quit callback; retain a repository durability barrier before marking shutdown clean.
 - Retain a UUID-bound Rust function/address map outside fast macOS bundles before stripping and signing their installed executables, so production hang stacks can be mapped without shipping debug data.

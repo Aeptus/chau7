@@ -20,7 +20,7 @@ mod native_markdown;
 
 use crate::monitoring::file_monitor::FileMonitor;
 use crate::terminal::session::TerminalSession;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -122,6 +122,7 @@ pub struct EditorPane {
     settings_pending: bool,
     focus_handle: FocusHandle,
     _subscriptions: Vec<Subscription>,
+    write_task: Option<futures::future::Shared<Task<bool>>>,
     loaded_hash: Option<edtext::ContentHash>,
     autosave: bool,
     autosaved_until: Option<Instant>,
@@ -225,6 +226,7 @@ impl EditorPane {
             settings_pending: false,
             focus_handle,
             _subscriptions: subscriptions,
+            write_task: None,
             loaded_hash: None,
             autosave: false,
             autosaved_until: None,
@@ -629,7 +631,7 @@ impl EditorPane {
                         && this.is_dirty()
                         && let Some(path) = this.path.clone()
                     {
-                        this.write_to(path, window, cx);
+                        this.write_to(path, window, cx).detach();
                     }
                 })
             });
@@ -642,6 +644,7 @@ impl EditorPane {
         self.file_monitor = None;
         self.file_monitor_task = None;
         let (sender, mut receiver) = futures::channel::mpsc::channel::<()>(1);
+        let mut retry_sender = sender.clone();
         let sender = std::sync::Mutex::new(sender);
         let monitor = FileMonitor::new(path.clone(), move || {
             if let Ok(mut sender) = sender.lock() {
@@ -652,12 +655,23 @@ impl EditorPane {
         self.file_monitor = Some(monitor);
         self.file_monitor_task = Some(cx.spawn_in(window, async move |this, cx| {
             while receiver.next().await.is_some() {
+                let Ok((token, loaded_hash)) =
+                    this.update(cx, |this, _| (this.load_token, this.loaded_hash))
+                else {
+                    return;
+                };
                 let read_path = path.clone();
                 let bytes = cx
                     .background_spawn(async move { std::fs::read(read_path) })
                     .await;
                 let _ = this.update_in(cx, |this, window, cx| {
-                    if this.path.as_ref() != Some(&path) {
+                    if this.path.as_ref() != Some(&path) || this.load_token != token {
+                        return;
+                    }
+                    if this.loaded_hash != loaded_hash {
+                        // A save superseded this snapshot. Coalesce a fresh read
+                        // so an external write near that save is not missed.
+                        let _ = retry_sender.try_send(());
                         return;
                     }
                     let Ok(bytes) = bytes else {
@@ -676,26 +690,7 @@ impl EditorPane {
                         }
                         edtext::ExternalChange::Reload => match String::from_utf8(bytes) {
                             Ok(text) => {
-                                this.loaded_hash = Some(edtext::content_hash(text.as_bytes()));
-                                let selection = this.state.read(cx).selected_range();
-                                this.programmatic = true;
-                                this.state.update(cx, |state, cx| {
-                                    state.set_value(text.clone(), window, cx);
-                                    state.set_selected_range(selection, cx);
-                                });
-                                this.programmatic = false;
-                                #[cfg(target_os = "macos")]
-                                if let Some(native) = &this.native_markdown {
-                                    native.loaded(
-                                        &text,
-                                        &this.config,
-                                        this.state.read(cx).selected_range(),
-                                    );
-                                }
-                                this.refresh_markdown_styles(cx);
-                                this.error = None;
-                                cx.emit(SidePaneEvent::Changed);
-                                cx.notify();
+                                this.reload_clean_text(text, window, cx);
                             }
                             Err(_) => {
                                 this.error = Some("Changed file is not valid UTF-8 text.".into());
@@ -706,6 +701,25 @@ impl EditorPane {
                 });
             }
         }));
+    }
+
+    fn reload_clean_text(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.loaded_hash = Some(edtext::content_hash(text.as_bytes()));
+        let selection = self.state.read(cx).selected_range();
+        self.programmatic = true;
+        self.state.update(cx, |state, cx| {
+            state.set_value(text.clone(), window, cx);
+            state.set_selected_range(selection, cx);
+        });
+        self.programmatic = false;
+        #[cfg(target_os = "macos")]
+        if let Some(native) = &self.native_markdown {
+            native.loaded(&text, &self.config, self.state.read(cx).selected_range());
+        }
+        self.refresh_markdown_styles(cx);
+        self.error = None;
+        cx.emit(SidePaneEvent::Changed);
+        cx.notify();
     }
 
     pub fn set_terminal_provider(
@@ -724,61 +738,131 @@ impl EditorPane {
         log::info!("Scrolled editor to line {line}");
     }
 
-    /// Write the text to `path` (`saveAs(to:)`). Returns success.
-    fn write_to(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    /// Save a captured revision off the UI thread. Each document serializes its
+    /// writes; finishing an older revision must not mark newer input as saved.
+    fn write_to(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Task<bool> {
         self.flush_native_edits(window, cx);
-        let expected = (self.path.as_ref() == Some(&path))
-            .then_some(self.loaded_hash)
-            .flatten();
-        match edtext::can_save_file(&path, expected) {
-            Ok(true) => {}
-            Ok(false) => {
-                self.error =
-                    Some("File changed externally. Reload and merge before saving.".into());
-                self.autosave_task = None;
-                cx.notify();
-                return false;
-            }
-            Err(error) => {
-                self.error = Some(format!("Cannot verify current file: {error}"));
-                cx.notify();
-                return false;
-            }
+        let token = self.load_token;
+        let source_path = self.path.clone();
+        if let Some(pending) = self
+            .write_task
+            .as_ref()
+            .filter(|task| task.peek().is_none())
+            .cloned()
+        {
+            // Coalesce repeated saves without retaining a full buffer per key
+            // repeat. Capture the newest revision only when the writer is free.
+            return cx.spawn_in(window, async move |this, cx| {
+                pending.await;
+                let next = this.update_in(cx, |this, window, cx| {
+                    if this.load_token != token || this.path != source_path {
+                        return Task::ready(false);
+                    }
+                    if !this.is_dirty() && this.path.as_ref() == Some(&path) {
+                        return Task::ready(true);
+                    }
+                    this.write_to(path, window, cx)
+                });
+                match next {
+                    Ok(next) => next.await,
+                    Err(_) => false,
+                }
+            });
         }
         let content = self.content(cx);
-        let result = file_io::write_atomic(&path, content.as_bytes());
-        match result {
-            Ok(()) => {
-                if self.path.as_ref() != Some(&path) {
-                    self.language = EditorLanguage::detect(&path.to_string_lossy());
-                    self.path = Some(path.clone());
-                    self.install_highlighter(cx);
+        let previous = self.write_task.take();
+        let task = cx
+            .spawn_in(window, async move |this, cx| {
+                if let Some(previous) = previous {
+                    previous.await;
                 }
-                self.loaded_hash = Some(edtext::content_hash(content.as_bytes()));
-                self.dirty = false;
-                self.error = None;
-                self.autosaved_until = self
-                    .autosave
-                    .then(|| Instant::now() + Duration::from_secs(2));
-                log::info!("Saved file: {}", path.display());
-                cx.emit(SidePaneEvent::Changed);
-                cx.notify();
-                true
-            }
-            Err(err) => {
-                log::error!("Failed to save file: {err}");
-                self.error = Some(format!("Failed to save file: {err}"));
-                cx.notify();
-                false
-            }
-        }
+                // A preceding save may have advanced the disk hash. Read that hash
+                // only after it finishes, and reject saves for superseded documents.
+                let expected = this.update(cx, |this, _| {
+                    (this.load_token == token && this.path == source_path).then(|| {
+                        (this.path.as_ref() == Some(&path))
+                            .then_some(this.loaded_hash)
+                            .flatten()
+                    })
+                });
+                let Ok(Some(expected)) = expected else {
+                    return false;
+                };
+                let write_path = path.clone();
+                let (content, saved_hash, result) = cx
+                    .background_spawn(async move {
+                        let saved_hash = edtext::content_hash(content.as_bytes());
+                        let result = match edtext::can_save_file(&write_path, expected) {
+                            Ok(true) => file_io::write_atomic(&write_path, content.as_bytes())
+                                .map_err(|error| format!("Failed to save file: {error}")),
+                            Ok(false) => {
+                                Err("File changed externally. Reload and merge before saving."
+                                    .into())
+                            }
+                            Err(error) => Err(format!("Cannot verify current file: {error}")),
+                        };
+                        (content, saved_hash, result)
+                    })
+                    .await;
+                this.update_in(cx, |this, window, cx| {
+                    if this.load_token != token || this.path != source_path {
+                        return false;
+                    }
+                    match result {
+                        Ok(()) => {
+                            let different_file = this.path.as_ref() != Some(&path);
+                            if different_file {
+                                this.language = EditorLanguage::detect(&path.to_string_lossy());
+                                this.path = Some(path.clone());
+                                this.install_highlighter(cx);
+                                this.refresh_markdown_styles(cx);
+                                let root = chau7_next_core::data_root::DataRoot::from_env();
+                                this.autosave |= edtext::default_autosave(&path, root.config_dir())
+                                    || edtext::default_autosave(&path, root.state_dir());
+                                this.watch_file(path.clone(), window, cx);
+                            }
+                            this.loaded_hash = Some(saved_hash);
+                            this.flush_native_edits(window, cx);
+                            this.dirty = this.content(cx) != content;
+                            this.error = None;
+                            this.autosaved_until = (this.autosave && !this.dirty)
+                                .then(|| Instant::now() + Duration::from_secs(2));
+                            if this.dirty {
+                                this.schedule_autosave(cx);
+                            }
+                            log::info!("Saved file: {}", path.display());
+                            cx.emit(SidePaneEvent::Changed);
+                            cx.notify();
+                            true
+                        }
+                        Err(error) => {
+                            log::error!("{error}");
+                            this.error = Some(error);
+                            this.autosave_task = None;
+                            cx.notify();
+                            false
+                        }
+                    }
+                })
+                .unwrap_or(false)
+            })
+            .shared();
+        // Keep the operation alive if its caller detaches or an autosave timer
+        // is replaced while the background write is finishing.
+        self.write_task = Some(task.clone());
+        cx.spawn(async move |_, _| task.await)
     }
 
     /// Save button / Cmd+S: save in place, or ask for a path when untitled.
     /// The task resolves to whether the text was saved.
     pub fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Task<bool> {
         match self.path.clone() {
-            Some(path) => Task::ready(self.write_to(path, window, cx)),
+            Some(path) => self.write_to(path, window, cx),
             None => self.save_as(window, cx),
         }
     }
@@ -798,20 +882,16 @@ impl EditorPane {
             let Ok(Ok(Some(path))) = answer.await else {
                 return false;
             };
-            this.update_in(cx, |this, window, cx| {
+            let save = this.update_in(cx, |this, window, cx| {
                 if this.load_token != token || this.path != source_path {
-                    return false;
+                    return Task::ready(false);
                 }
-                let saved = this.write_to(path.clone(), window, cx);
-                if saved {
-                    let root = chau7_next_core::data_root::DataRoot::from_env();
-                    this.autosave |= edtext::default_autosave(&path, root.config_dir())
-                        || edtext::default_autosave(&path, root.state_dir());
-                    this.watch_file(path, window, cx);
-                }
-                saved
-            })
-            .unwrap_or(false)
+                this.write_to(path, window, cx)
+            });
+            match save {
+                Ok(save) => save.await,
+                Err(_) => false,
+            }
         })
     }
 
@@ -1923,6 +2003,116 @@ mod markdown_live_tests {
     }
 
     #[gpui::test]
+    async fn typing_during_save_keeps_the_newer_buffer_dirty(cx: &mut TestAppContext) {
+        let path =
+            std::env::temp_dir().join(format!("chau7-save-edit-{}.md", uuid::Uuid::new_v4()));
+        std::fs::write(&path, "original").unwrap();
+        let (handle, pane) = editor(cx);
+        let first = cx
+            .update_window(handle.into(), |_, window, cx| {
+                pane.update(cx, |pane, cx| {
+                    pane.finish_load(path.clone(), "original".into(), None, window, cx);
+                    pane.state.update(cx, |state, cx| {
+                        state.set_value("first revision", window, cx)
+                    });
+                    pane.dirty = true;
+                    let save = pane.save(window, cx);
+                    pane.state.update(cx, |state, cx| {
+                        state.set_value("newer revision", window, cx)
+                    });
+                    save
+                })
+            })
+            .unwrap();
+        assert!(first.await);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "first revision");
+        cx.update(|cx| {
+            assert_eq!(pane.read(cx).content(cx), "newer revision");
+            assert!(pane.read(cx).is_dirty());
+        });
+        let next = cx
+            .update_window(handle.into(), |_, window, cx| {
+                pane.update(cx, |pane, cx| pane.save(window, cx))
+            })
+            .unwrap();
+        assert!(next.await);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "newer revision");
+        cx.update(|cx| {
+            pane.update(cx, |pane, _| {
+                assert!(!pane.is_dirty());
+                pane.file_monitor = None;
+                pane.file_monitor_task = None;
+            })
+        });
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[gpui::test]
+    async fn overlapping_saves_serialize_and_coalesce_to_latest_text(cx: &mut TestAppContext) {
+        let path =
+            std::env::temp_dir().join(format!("chau7-save-queue-{}.md", uuid::Uuid::new_v4()));
+        std::fs::write(&path, "original").unwrap();
+        let (handle, pane) = editor(cx);
+        let saves = cx
+            .update_window(handle.into(), |_, window, cx| {
+                pane.update(cx, |pane, cx| {
+                    pane.finish_load(path.clone(), "original".into(), None, window, cx);
+                    pane.state
+                        .update(cx, |state, cx| state.set_value("first", window, cx));
+                    pane.dirty = true;
+                    let mut saves = vec![pane.save(window, cx)];
+                    for index in 0..10 {
+                        pane.state.update(cx, |state, cx| {
+                            state.set_value(format!("revision {index}"), window, cx)
+                        });
+                        saves.push(pane.save(window, cx));
+                    }
+                    saves
+                })
+            })
+            .unwrap();
+        for save in saves {
+            assert!(save.await);
+        }
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "revision 9");
+        cx.update(|cx| {
+            pane.update(cx, |pane, _| {
+                assert!(!pane.is_dirty());
+                assert!(pane.error.is_none());
+                pane.file_monitor = None;
+                pane.file_monitor_task = None;
+            })
+        });
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[gpui::test]
+    fn external_reload_retains_selection_clips_unicode_and_refreshes_markdown(
+        cx: &mut TestAppContext,
+    ) {
+        let (handle, pane) = editor(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.state.update(cx, |state, cx| {
+                    state.set_value("- [ ] pending", window, cx);
+                    state.set_selected_range(2..8, cx);
+                });
+                pane.refresh_markdown_styles(cx);
+                assert_eq!(pane.markdown_progress, (0, 1));
+                pane.reload_clean_text("- [x] done".into(), window, cx);
+                assert_eq!(pane.markdown_progress, (1, 1));
+                assert_eq!(pane.state.read(cx).selected_range(), 2..8);
+                pane.reload_clean_text("😀".into(), window, cx);
+                assert_eq!(pane.state.read(cx).selected_range(), 0..4);
+                assert_eq!(pane.markdown_styles.text(), "😀");
+                assert_eq!(pane.markdown_progress, (0, 0));
+                assert!(!pane.is_dirty());
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
     fn markdown_progress_cache_tracks_text_changes_and_ignores_fenced_tasks(
         cx: &mut TestAppContext,
     ) {
@@ -2015,38 +2205,40 @@ mod markdown_live_tests {
 
     #[cfg(target_os = "macos")]
     #[gpui::test]
-    fn pending_native_text_is_saved_before_coalesced_delivery(cx: &mut TestAppContext) {
+    async fn pending_native_text_is_saved_before_coalesced_delivery(cx: &mut TestAppContext) {
         let path = std::env::temp_dir().join(format!(
             "chau7-next-pending-save-{}.md",
             uuid::Uuid::new_v4()
         ));
         std::fs::write(&path, "# old").unwrap();
         let (handle, pane) = editor(cx);
-        cx.update_window(handle.into(), |_, window, cx| {
-            pane.update(cx, |pane, cx| {
-                pane.finish_load(path.clone(), "# old".into(), None, window, cx);
-                let typed = "# café😀";
-                pane.native_pending.borrow_mut().typed(
-                    typed,
-                    objc2_foundation::NSRange::new(2, typed.encode_utf16().count() - 2),
-                );
-                assert_eq!(pane.state.read(cx).value(), "# old");
-                assert_eq!(pane.content(cx), typed);
-                assert!(pane.is_dirty());
-                assert!(pane.write_to(path.clone(), window, cx));
-                assert_eq!(std::fs::read_to_string(&path).unwrap(), typed);
-                assert_eq!(pane.state.read(cx).value(), typed);
-                assert_eq!(pane.state.read(cx).selected_range(), 2..typed.len());
-                // The signal queued before Save arrives later: there is no old
-                // text left to replace the saved mirror or mark it dirty again.
-                let (text, selection) = pane.native_pending.borrow_mut().take_edits("# old");
-                assert!(!pane.mirror_native_edits(text, selection, window, cx));
-                assert!(!pane.is_dirty());
-                pane.file_monitor = None;
-                pane.file_monitor_task = None;
-            });
-        })
-        .unwrap();
+        let save = cx
+            .update_window(handle.into(), |_, window, cx| {
+                pane.update(cx, |pane, cx| {
+                    pane.finish_load(path.clone(), "# old".into(), None, window, cx);
+                    let typed = "# café😀";
+                    pane.native_pending.borrow_mut().typed(
+                        typed,
+                        objc2_foundation::NSRange::new(2, typed.encode_utf16().count() - 2),
+                    );
+                    assert_eq!(pane.state.read(cx).value(), "# old");
+                    assert_eq!(pane.content(cx), typed);
+                    assert!(pane.is_dirty());
+                    let save = pane.write_to(path.clone(), window, cx);
+                    assert_eq!(pane.state.read(cx).value(), typed);
+                    assert_eq!(pane.state.read(cx).selected_range(), 2..typed.len());
+                    // The signal queued before Save arrives later: there is no old
+                    // text left to replace the saved mirror or mark it dirty again.
+                    let (text, selection) = pane.native_pending.borrow_mut().take_edits("# old");
+                    assert!(!pane.mirror_native_edits(text, selection, window, cx));
+                    pane.file_monitor = None;
+                    pane.file_monitor_task = None;
+                    save
+                })
+            })
+            .unwrap();
+        assert!(save.await);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# café😀");
         cx.update(|cx| assert!(!pane.read(cx).is_dirty()));
         std::fs::remove_file(path).unwrap();
     }
