@@ -2,7 +2,8 @@
 # run Linux only, so work merges fast and breaks are repaired on main; the
 # full macOS, Linux and Windows matrix runs when dispatched (and in
 # release.yml). The macOS job also produces "Chau7 Next.app" as a
-# downloadable artifact.
+# downloadable artifact. An opt-in manual production candidate uses macOS only
+# and creates a locally installable artifact without publishing a release.
 name: Chau7 Next
 
 on:
@@ -25,6 +26,18 @@ on:
       - "services/chau7-remote/**"
       - ".github/workflows/chau7-next.yml"
   workflow_dispatch:
+    inputs:
+      production_candidate:
+        description: Also build an unsigned production candidate for guarded local installation (macOS only; no release publication).
+        type: boolean
+        default: false
+      production_version:
+        description: SemVer for the optional local production candidate.
+        type: string
+        default: '0.6.0'
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.event_name == 'workflow_dispatch' && format('{0}:dispatch:{1}', github.workflow, github.run_id) || format('{0}:ref:{1}:{2}:{3}', github.workflow, github.event.pull_request.head.repo.full_name || github.repository, github.head_ref || github.ref_name, github.base_ref || github.event.repository.default_branch) }}
@@ -47,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[{"name":"macOS","os":"macos-latest"},{"name":"Linux","os":"ubuntu-latest"},{"name":"Windows","os":"windows-latest"}]' || '[{"name":"Linux","os":"ubuntu-latest"}]') }}
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && (inputs.production_candidate && '[{"name":"macOS","os":"macos-latest"}]' || '[{"name":"macOS","os":"macos-latest"},{"name":"Linux","os":"ubuntu-latest"},{"name":"Windows","os":"windows-latest"}]') || '[{"name":"Linux","os":"ubuntu-latest"}]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -190,6 +203,45 @@ jobs:
             apps/chau7-next/target/bundle/Chau7-Next-macOS-arm64.zip
             apps/chau7-next/target/bundle/Chau7-Next-aarch64-apple-darwin-fast.json
           if-no-files-found: error
+
+      # Reuse the validated release dependency cache, but compile the real
+      # production feature. Do not relabel the Next bundle or publish a release.
+      - name: Bundle local production candidate
+        if: runner.os == 'macOS' && github.event_name == 'workflow_dispatch' && inputs.production_candidate
+        env:
+          CHANNEL: production
+          RELEASE_VERSION: ${{ inputs.production_version }}
+          BUILD_MODE: fast
+          REQUIRE_REMOTE_AGENT: '1'
+          REQUIRE_PROXY: '1'
+          OUT_DIR: target/production-candidate
+        run: |
+          set -o pipefail
+          BUILD_NUMBER="$(date -u +%Y%m%d%H%M)" TARGET=aarch64-apple-darwin ./scripts/bundle-macos.sh 2>&1 | tee "$RUNNER_TEMP/ci.log"
+          python3 - <<'PY_VALIDATE'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          receipt = json.loads(pathlib.Path("target/production-candidate/Chau7-Production-aarch64-apple-darwin-fast.json").read_text())
+          assert receipt["channel"] == "production"
+          assert receipt["releaseVersion"] == os.environ["RELEASE_VERSION"]
+          assert receipt["sourceDirty"] is False
+          assert receipt["appSignatureVerified"] is True
+          assert receipt["sourceRevision"] == subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          PY_VALIDATE
+          tar -C target/production-candidate -czf "$RUNNER_TEMP/Chau7-Production-local-macOS-arm64.tar.gz" \
+            Chau7.app Chau7-Production-aarch64-apple-darwin-fast.json
+
+      - name: Upload local production candidate
+        if: runner.os == 'macOS' && github.event_name == 'workflow_dispatch' && inputs.production_candidate
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Chau7-Production-local-macOS-arm64
+          path: ${{ runner.temp }}/Chau7-Production-local-macOS-arm64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
 
       # Surface the end of the failing step's output as an annotation, so the
       # failure is readable from the check run without opening the logs.

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add an opt-in cloud production-candidate build with a source receipt for guarded local installation, so a busy Mac can avoid native compilation without publishing a release.
+
+- Restore Mac-to-iPhone QR pairing in Remote settings with complete v3 relay credentials, local background encoding, cached rendering and expiry handling. Keep admission credentials out of diagnostic and clipboard serialization, and preserve an opaque white quiet zone for scanning.
+
 - Keep Markdown source navigation and selection in the native editor, including arrow keys and their modifiers, while retaining application shortcuts, F11, Control-Command combinations and Control-Tab.
 - Preserve unsaved editor buffers when opening files, require confirmation for cleared files, reject stale Open/Save As/Reload dialogs and reads, retain the caret on explicit reload, and apply line jumps immediately to the visible editor. Keep cursor selection and Markdown counters current after external reloads.
 - Indent and outdent all selected Markdown lines without deleting their text; keep Unicode selection and native undo intact.

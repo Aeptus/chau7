@@ -340,6 +340,7 @@ mkdir -p \
   "$FIXTURE_APP/scripts" \
   "$FIXTURE_APP/resources/skills/chau7-next-build" \
   "$FIXTURE_APP/resources/licenses/ondine" \
+  "$FIXTURE_APP/resources/licenses/qrcodegen" \
   "$FIXTURE_APP/vendor/history/0.3.8" \
   "$FIXTURE_ROOT/services/chau7-proxy" \
   "$FIXTURE_HELPERS" \
@@ -351,6 +352,7 @@ cp "$APP_ROOT/scripts/install-chau7-next-cli.sh" "$FIXTURE_APP/scripts/install-c
 printf 'version = "0.1.0"\n' > "$FIXTURE_APP/Cargo.toml"
 printf 'fixture skill\n' > "$FIXTURE_APP/resources/skills/chau7-next-build/SKILL.md"
 cp "$APP_ROOT/resources/licenses/ondine/"* "$FIXTURE_APP/resources/licenses/ondine/"
+cp "$APP_ROOT/resources/licenses/qrcodegen/LICENSE-MIT" "$FIXTURE_APP/resources/licenses/qrcodegen/LICENSE-MIT"
 printf 'icon\n' > "$FIXTURE_APP/resources/AppDockIcon.icns"
 printf 'history\n' > "$FIXTURE_APP/vendor/history/0.3.8/README.md"
 for audit in README.md gpui-provenance.json gpui-modifications.json gpui-rebase-0.3.8-to-0.3.9.json; do
@@ -412,6 +414,9 @@ run_fake_bundle() {
       "$output_dir/$app_name.app/Contents/Resources/licenses/ondine/$notice" \
       || fail "bundled Ondine notice differs: $notice"
   done
+  cmp "$APP_ROOT/resources/licenses/qrcodegen/LICENSE-MIT" \
+    "$output_dir/$app_name.app/Contents/Resources/licenses/qrcodegen/LICENSE-MIT" \
+    || fail "bundled QR encoder notice differs"
   printf '%s\n' "$output_dir/$app_name.app" "$output_dir/$metadata_stem-aarch64-apple-darwin-${mode/default/fast}.json"
 }
 
