@@ -9,6 +9,8 @@
 //! and Run All for `.md` files, close. Closing with unsaved, non-empty text
 //! asks Save / Don't Save / Cancel.
 
+#[cfg(any(target_os = "macos", test))]
+mod keyboard;
 mod live_markdown;
 #[cfg(target_os = "macos")]
 mod native_markdown;

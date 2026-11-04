@@ -862,6 +862,15 @@ impl SourceTextView {
         if handled {
             return true;
         }
+        // A key equivalent runs before keyDown. Forwarding arrows or plain
+        // text here lets the invisible GPUI mirror consume native editing.
+        if !super::keyboard::forward_to_host(
+            &key,
+            flags.contains(NSEventModifierFlags::Command),
+            flags.contains(NSEventModifierFlags::Control),
+        ) {
+            return false;
+        }
         // Unhandled application shortcuts retain GPUI's normal dispatch path.
         self.ivars()
             .shared

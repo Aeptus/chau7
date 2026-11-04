@@ -1571,6 +1571,89 @@ pub(in crate::panes::editor) async fn verify(
     ordinary_keydown_phase("before", &application, &native_window, &native, &typed);
     application.sendEvent(&typed);
     ordinary_keydown_phase("after", &application, &native_window, &native, &typed);
+
+    // Exercise the actual AppKit event route, not direct movement selectors or
+    // the GPUI mirror. Navigation must neither edit text nor corrupt native undo.
+    let source = format!("{initial}日本x");
+    let end = source.encode_utf16().count();
+    let second_line = initial.encode_utf16().count();
+    let arrow_flags = NSEventModifierFlags::Function | NSEventModifierFlags::NumericPad;
+    for (chars, code, modifiers, expected) in [
+        ("\u{f702}", 123, arrow_flags, NSRange::new(end - 1, 0)),
+        (
+            "\u{f702}",
+            123,
+            arrow_flags | NSEventModifierFlags::Shift,
+            NSRange::new(end - 2, 1),
+        ),
+        ("\u{f703}", 124, arrow_flags, NSRange::new(end - 1, 0)),
+        (
+            "\u{f702}",
+            123,
+            arrow_flags | NSEventModifierFlags::Command,
+            NSRange::new(second_line, 0),
+        ),
+        (
+            "\u{f703}",
+            124,
+            arrow_flags | NSEventModifierFlags::Command,
+            NSRange::new(end, 0),
+        ),
+    ] {
+        let event = event(&native, chars, modifiers, code)?;
+        application.sendEvent(&event);
+        ensure(
+            native.text.selectedRange() == expected,
+            &format!(
+                "native navigation {chars:?}/{modifiers:?}: {:?}, expected {expected:?}",
+                native.text.selectedRange()
+            ),
+        )?;
+    }
+    let up = event(&native, "\u{f700}", arrow_flags, 126)?;
+    application.sendEvent(&up);
+    ensure(
+        native.text.selectedRange().location < second_line,
+        "Up did not move to preceding line",
+    )?;
+    let down = event(&native, "\u{f701}", arrow_flags, 125)?;
+    application.sendEvent(&down);
+    ensure(
+        native.text.selectedRange().location >= second_line,
+        "Down did not move to following line",
+    )?;
+    let word_left = event(
+        &native,
+        "\u{f702}",
+        arrow_flags | NSEventModifierFlags::Option,
+        123,
+    )?;
+    native.text.setSelectedRange(NSRange::new(end, 0));
+    application.sendEvent(&word_left);
+    ensure(
+        native.text.selectedRange().location < end,
+        "Option+Left did not move by word",
+    )?;
+    // A surrogate-pair emoji is one character to AppKit, not two cursor stops.
+    native
+        .text
+        .setSelectedRange(NSRange::new(second_line - 1, 0));
+    let emoji_left = event(
+        &native,
+        "\u{f702}",
+        arrow_flags | NSEventModifierFlags::Shift,
+        123,
+    )?;
+    application.sendEvent(&emoji_left);
+    ensure(
+        native.text.selectedRange() == NSRange::new(second_line - 3, 2),
+        "Shift+Left split an emoji or failed to select it",
+    )?;
+    ensure(
+        native.text.string().to_string() == source,
+        "navigation modified source text",
+    )?;
+    native.text.setSelectedRange(NSRange::new(end, 0));
     cx.update(|_| {
         ensure(
             native.text.string().to_string() == format!("{initial}日本x"),

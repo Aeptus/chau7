@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep Markdown source navigation and selection in the native editor, including arrow keys and their modifiers, while retaining application shortcuts and Control-Tab.
+
 - Keep repository and recording persistence drains and log flushing off the UI quit callback; retain a repository durability barrier before marking shutdown clean.
 - Retain a UUID-bound Rust function/address map outside fast macOS bundles before stripping and signing their installed executables, so production hang stacks can be mapped without shipping debug data.
 
