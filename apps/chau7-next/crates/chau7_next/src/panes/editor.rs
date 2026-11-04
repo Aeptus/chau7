@@ -514,6 +514,7 @@ impl EditorPane {
                     Err(err) => {
                         log::error!("Failed to load file: {err}");
                         this.error = Some(format!("Failed to load file: {err}"));
+                        this.schedule_autosave(cx);
                     }
                 }
                 cx.notify();
@@ -558,6 +559,49 @@ impl EditorPane {
         .detach();
     }
 
+    fn request_reload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.flush_native_edits(window, cx);
+        let Some(path) = self.path.clone() else {
+            return;
+        };
+        let token = self.load_token;
+        let hash = edtext::content_hash(self.content(cx).as_bytes());
+        self.autosave_task = None;
+        let confirm = self.is_dirty().then(|| {
+            crate::l10n::prompt(
+                window,
+                PromptLevel::Warning,
+                "Reload file?",
+                Some("Unsaved changes will be lost."),
+                &["Reload", "Cancel"],
+                cx,
+            )
+        });
+        let write = self.write_task.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            if let Some(confirm) = confirm
+                && confirm.await.ok() != Some(0)
+            {
+                let _ = this.update(cx, |this, cx| this.schedule_autosave(cx));
+                return;
+            }
+            if let Some(write) = write {
+                write.await;
+            }
+            let _ = this.update_in(cx, |this, window, cx| {
+                if this.load_token == token
+                    && this.path.as_ref() == Some(&path)
+                    && edtext::content_hash(this.content(cx).as_bytes()) == hash
+                {
+                    this.load_file(path, None, window, cx);
+                } else {
+                    this.schedule_autosave(cx);
+                }
+            });
+        })
+        .detach();
+    }
+
     fn finish_load(
         &mut self,
         path: PathBuf,
@@ -575,6 +619,7 @@ impl EditorPane {
             .then(|| self.content(cx))
             .filter(|text| !text.trim().is_empty());
         let different_file = self.path.as_ref() != Some(&path);
+        let previous_selection = self.state.read(cx).selected_range();
         self.loaded_hash = Some(edtext::content_hash(text.as_bytes()));
         if let Some(untitled) = &untitled {
             text = edtext::append_text(&text, untitled).unwrap_or(text);
@@ -604,6 +649,10 @@ impl EditorPane {
         self.refresh_markdown_styles(cx);
         if let Some(line) = line {
             self.select_line(&text, line, cx);
+        } else if !different_file {
+            self.state.update(cx, |state, cx| {
+                state.set_selected_range(previous_selection, cx)
+            });
         }
         #[cfg(target_os = "macos")]
         if let Some(native) = &self.native_markdown {
@@ -1705,31 +1754,7 @@ impl Render for EditorPane {
                             .child(
                                 header_button("editor-reload", "Reload", chrome, true).on_click(
                                     cx.listener(|this, _, window, cx| {
-                                        let confirm = if this.dirty {
-                                            Some(crate::l10n::prompt(
-                                                window,
-                                                PromptLevel::Warning,
-                                                "Reload file?",
-                                                Some("Unsaved changes will be lost."),
-                                                &["Reload", "Cancel"],
-                                                cx,
-                                            ))
-                                        } else {
-                                            None
-                                        };
-                                        cx.spawn_in(window, async move |this, cx| {
-                                            if let Some(confirm) = confirm
-                                                && confirm.await.ok() != Some(0)
-                                            {
-                                                return;
-                                            }
-                                            let _ = this.update_in(cx, |this, window, cx| {
-                                                if let Some(path) = this.path.clone() {
-                                                    this.load_file(path, None, window, cx);
-                                                }
-                                            });
-                                        })
-                                        .detach();
+                                        this.request_reload(window, cx);
                                     }),
                                 ),
                             ),
@@ -2110,6 +2135,28 @@ mod markdown_live_tests {
             });
         })
         .unwrap();
+    }
+
+    #[gpui::test]
+    fn stale_reload_answer_preserves_newer_input(cx: &mut TestAppContext) {
+        let (handle, pane) = editor(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.dirty = true;
+                pane.request_reload(window, cx);
+                pane.state
+                    .update(cx, |state, cx| state.set_value("newer input", window, cx));
+            });
+        })
+        .unwrap();
+        assert!(cx.has_pending_prompt());
+        cx.simulate_prompt_answer("Reload");
+        cx.run_until_parked();
+        cx.update(|cx| {
+            assert_eq!(pane.read(cx).content(cx), "newer input");
+            assert!(!pane.read(cx).loading);
+            assert!(pane.read(cx).is_dirty());
+        });
     }
 
     #[gpui::test]
