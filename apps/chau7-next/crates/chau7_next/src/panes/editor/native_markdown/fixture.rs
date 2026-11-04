@@ -1682,7 +1682,17 @@ pub(in crate::panes::editor) async fn verify(
     settle(handle, cx).await?;
     // Saving is asynchronous and is bounded by the same owned runner timeout.
     for _ in 0..20 {
-        if std::fs::read_to_string(&path).map_err(error)? == format!("{initial}日本x") {
+        let finished = cx
+            .update(|cx| {
+                editor
+                    .read(cx)
+                    .write_task
+                    .as_ref()
+                    .is_some_and(|task| task.peek() == Some(&true))
+            })
+            .map_err(error)?;
+        if finished && std::fs::read_to_string(&path).map_err(error)? == format!("{initial}日本x")
+        {
             break;
         }
         settle(handle, cx).await?;
@@ -1691,6 +1701,51 @@ pub(in crate::panes::editor) async fn verify(
         std::fs::read_to_string(&path).map_err(error)? == format!("{initial}日本x"),
         "actual Cmd+S delivery did not save the owned file",
     )?;
+
+    // Bind real application actions in the owned fixture to observe forwarding
+    // without entering fullscreen on the operator's display.
+    cx.update(|cx| {
+        cx.bind_keys([
+            gpui::KeyBinding::new("f11", super::super::SaveEditor, Some(super::super::CONTEXT)),
+            gpui::KeyBinding::new(
+                "cmd-ctrl-f",
+                super::super::SaveEditor,
+                Some(super::super::CONTEXT),
+            ),
+        ])
+    })
+    .map_err(error)?;
+    for (chars, flags, code) in [
+        ("\u{f70e}", NSEventModifierFlags::Function, 103),
+        (
+            "f",
+            NSEventModifierFlags::Command | NSEventModifierFlags::Control,
+            3,
+        ),
+    ] {
+        std::fs::remove_file(&path).map_err(error)?;
+        let shortcut = event(&native, chars, flags, code)?;
+        application.sendEvent(&shortcut);
+        for _ in 0..20 {
+            let finished = cx
+                .update(|cx| {
+                    editor
+                        .read(cx)
+                        .write_task
+                        .as_ref()
+                        .is_some_and(|task| task.peek() == Some(&true))
+                })
+                .map_err(error)?;
+            if finished && std::fs::read_to_string(&path).ok().as_deref() == Some(source.as_str()) {
+                break;
+            }
+            settle(handle, cx).await?;
+        }
+        ensure(
+            std::fs::read_to_string(&path).ok().as_deref() == Some(source.as_str()),
+            "application shortcut was consumed by the native source editor",
+        )?;
+    }
 
     // Same-document navigation must update the visible native caret immediately.
     cx.update_window(handle.into(), |_, window, cx| {

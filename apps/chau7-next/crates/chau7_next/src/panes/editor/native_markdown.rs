@@ -782,7 +782,11 @@ impl SourceTextView {
             .charactersIgnoringModifiers()
             .map(|s| s.to_string())
             .unwrap_or_default();
-        if flags.contains(NSEventModifierFlags::Command) {
+        // Control+Command combinations are application shortcuts, including
+        // Chau7's fullscreen action; they must not become native Find/Save/etc.
+        if flags.contains(NSEventModifierFlags::Command)
+            && !flags.contains(NSEventModifierFlags::Control)
+        {
             let shift = flags.contains(NSEventModifierFlags::Shift);
             // GPUI's application Edit menu targets its own editor model. Native
             // source editing must consume these shortcuts with NSTextView's undo.

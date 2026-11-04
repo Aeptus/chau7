@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Keep Markdown source navigation and selection in the native editor, including arrow keys and their modifiers, while retaining application shortcuts and Control-Tab.
+- Keep Markdown source navigation and selection in the native editor, including arrow keys and their modifiers, while retaining application shortcuts, F11, Control-Command combinations and Control-Tab.
 - Preserve unsaved editor buffers when opening files, require confirmation for cleared files, reject stale Open/Save As/Reload dialogs and reads, retain the caret on explicit reload, and apply line jumps immediately to the visible editor. Keep cursor selection and Markdown counters current after external reloads.
 - Indent and outdent all selected Markdown lines without deleting their text; keep Unicode selection and native undo intact.
 - Serialize and coalesce editor saves off the UI thread, retain newer unsaved edits, propagate queued save failures, and fence saves and file-watch reads to their captured disk revision. Save through exclusively owned temporary files, retaining existing file permissions and symlink targets without overwriting an unrelated staging file.
