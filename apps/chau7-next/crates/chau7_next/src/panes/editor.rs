@@ -727,7 +727,11 @@ impl EditorPane {
                         return;
                     };
                     this.flush_native_edits(window, cx);
-                    let dirty = this.is_dirty();
+                    let dirty = this.is_dirty()
+                        || this
+                            .write_task
+                            .as_ref()
+                            .is_some_and(|task| task.peek().is_none());
                     match edtext::external_change(this.loaded_hash, &bytes, dirty) {
                         edtext::ExternalChange::Unchanged => {}
                         edtext::ExternalChange::Conflict => {
@@ -807,7 +811,9 @@ impl EditorPane {
             // Coalesce repeated saves without retaining a full buffer per key
             // repeat. Capture the newest revision only when the writer is free.
             return cx.spawn_in(window, async move |this, cx| {
-                pending.await;
+                if !pending.await {
+                    return false;
+                }
                 let next = this.update_in(cx, |this, window, cx| {
                     if this.load_token != token || this.path != source_path {
                         return Task::ready(false);
@@ -824,24 +830,28 @@ impl EditorPane {
             });
         }
         let content = self.content(cx);
+        let source_hash = self.loaded_hash;
+        let expected = (self.path.as_ref() == Some(&path))
+            .then_some(source_hash)
+            .flatten();
         let previous = self.write_task.take();
         let task = cx
             .spawn_in(window, async move |this, cx| {
                 if let Some(previous) = previous {
                     previous.await;
                 }
-                // A preceding save may have advanced the disk hash. Read that hash
-                // only after it finishes, and reject saves for superseded documents.
-                let expected = this.update(cx, |this, _| {
-                    (this.load_token == token && this.path == source_path).then(|| {
-                        (this.path.as_ref() == Some(&path))
-                            .then_some(this.loaded_hash)
-                            .flatten()
+                // The snapshot belongs to this disk revision. A clean external
+                // reload must not lend its newer hash to an older save request.
+                let current = this
+                    .update(cx, |this, _| {
+                        this.load_token == token
+                            && this.path == source_path
+                            && this.loaded_hash == source_hash
                     })
-                });
-                let Ok(Some(expected)) = expected else {
+                    .unwrap_or(false);
+                if !current {
                     return false;
-                };
+                }
                 let write_path = path.clone();
                 let (content, saved_hash, result) = cx
                     .background_spawn(async move {
@@ -859,7 +869,10 @@ impl EditorPane {
                     })
                     .await;
                 this.update_in(cx, |this, window, cx| {
-                    if this.load_token != token || this.path != source_path {
+                    if this.load_token != token
+                        || this.path != source_path
+                        || this.loaded_hash != source_hash
+                    {
                         return false;
                     }
                     match result {
@@ -2157,6 +2170,54 @@ mod markdown_live_tests {
             assert!(!pane.read(cx).loading);
             assert!(pane.read(cx).is_dirty());
         });
+    }
+
+    #[gpui::test]
+    async fn queued_save_failures_do_not_claim_success_for_a_clean_buffer(cx: &mut TestAppContext) {
+        let path =
+            std::env::temp_dir().join(format!("chau7-save-conflict-{}.md", uuid::Uuid::new_v4()));
+        std::fs::write(&path, "original").unwrap();
+        let (handle, pane) = editor(cx);
+        let (first, queued) = cx
+            .update_window(handle.into(), |_, window, cx| {
+                pane.update(cx, |pane, cx| {
+                    pane.finish_load(path.clone(), "original".into(), None, window, cx);
+                    pane.file_monitor = None;
+                    pane.file_monitor_task = None;
+                    std::fs::write(&path, "external").unwrap();
+                    (pane.save(window, cx), pane.save(window, cx))
+                })
+            })
+            .unwrap();
+        assert!(!first.await);
+        assert!(!queued.await);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "external");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[gpui::test]
+    async fn an_external_reload_cannot_lend_its_hash_to_an_older_save(cx: &mut TestAppContext) {
+        let path =
+            std::env::temp_dir().join(format!("chau7-save-revision-{}.md", uuid::Uuid::new_v4()));
+        std::fs::write(&path, "original").unwrap();
+        let (handle, pane) = editor(cx);
+        let save = cx
+            .update_window(handle.into(), |_, window, cx| {
+                pane.update(cx, |pane, cx| {
+                    pane.finish_load(path.clone(), "original".into(), None, window, cx);
+                    pane.file_monitor = None;
+                    pane.file_monitor_task = None;
+                    let save = pane.save(window, cx);
+                    std::fs::write(&path, "external").unwrap();
+                    pane.reload_clean_text("external".into(), window, cx);
+                    save
+                })
+            })
+            .unwrap();
+        assert!(!save.await);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "external");
+        cx.update(|cx| assert_eq!(pane.read(cx).content(cx), "external"));
+        std::fs::remove_file(path).unwrap();
     }
 
     #[gpui::test]
