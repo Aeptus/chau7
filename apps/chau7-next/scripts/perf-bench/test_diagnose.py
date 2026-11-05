@@ -1,5 +1,9 @@
 import hashlib
 import json
+import os
+import select
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from diagnose import capture, retain_hangs, symbolicate
-from run import Mcp
+from run import BRIDGE_CLOSE_TIMEOUT, Mcp
 
 
 class SymbolicationTests(unittest.TestCase):
@@ -57,9 +61,72 @@ class CaptureTests(unittest.TestCase):
         ):
             Mcp("owned-bridge", "socket", None)
         process.kill.assert_called_once_with()
-        process.wait.assert_called_once_with()
+        process.wait.assert_called_once_with(timeout=BRIDGE_CLOSE_TIMEOUT)
         process.stdin.close.assert_called_once_with()
         process.stdout.close.assert_called_once_with()
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX signals")
+    def test_close_reaps_a_real_bridge_that_ignores_eof_and_termination(self):
+        client = object.__new__(Mcp)
+        client.process = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                    "print('ready',flush=True); time.sleep(60)"
+                ),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            self.assertTrue(select.select([client.process.stdout], [], [], 5)[0])
+            self.assertEqual(client.process.stdout.readline(), b"ready\n")
+            with patch("run.BRIDGE_CLOSE_TIMEOUT", 0.1):
+                client.close()
+                client.close()
+            self.assertIsNotNone(client.process.poll())
+            self.assertTrue(client.process.stdin.closed)
+            self.assertTrue(client.process.stdout.closed)
+        finally:
+            if client.process.poll() is None:
+                client.process.kill()
+                client.process.wait(timeout=5)
+            client.process.stdin.close()
+            client.process.stdout.close()
+
+    def test_interruption_retains_partial_evidence_and_closes_bridge(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            args = SimpleNamespace(
+                output_parent=root,
+                app=root,
+                socket=root / "s",
+                hangs=root,
+                pid=42,
+                seconds=1,
+                interval=0.1,
+                stack_seconds=0,
+            )
+            sampler = Mock()
+            sampler.sample.return_value = {"pid": 42, "start_ticks": 1}
+            bridge = Mock()
+            bridge.close.return_value = None
+            bridge.tool.return_value = {"process_id": 42, "launch_time": 10}
+            with (
+                patch("diagnose.Mcp", return_value=bridge),
+                patch("diagnose.Sampler", return_value=sampler),
+                patch("diagnose.host_sample", return_value={}),
+                patch("diagnose.time.sleep", side_effect=KeyboardInterrupt),
+            ):
+                self.assertEqual(capture(args), 130)
+            data = json.loads(next(root.glob("*/capture.json")).read_text())
+            self.assertEqual(data["status"], "partial")
+            self.assertEqual(len(data["samples"]), 1)
+            self.assertIn("interrupted", str(data["errors"]))
+            bridge.close.assert_called_once_with()
 
     def test_retains_only_matching_launch(self):
         with tempfile.TemporaryDirectory() as d:

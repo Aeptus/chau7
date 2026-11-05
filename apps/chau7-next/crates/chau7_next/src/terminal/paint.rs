@@ -84,27 +84,45 @@ impl CellMetrics {
     }
 }
 
-/// The terminal font: the configured family (the first installed one among
-/// it and the platform's monospace fallbacks, since a missing family would
-/// fall back to a proportional UI font and break the grid), weight
-/// (`terminal.fontWeight`) and ligatures (`terminal.enableLigatures`).
+/// Resolve the configured family and ordered monospace fallbacks directly.
+/// Catalogue enumeration must not sit on the terminal measurement/paint path.
 pub fn terminal_font(settings: &Settings, window: &Window) -> Font {
+    use chau7_next_core::work_profiler::{self, Key, Queue};
+    let mut resolution = work_profiler::begin(Key::work(
+        "font_resolution",
+        "select",
+        "application",
+        "terminal_metrics",
+        Queue::Main,
+    ));
+    resolution.items(1);
+    let ligatures = settings.appearance.rendering.gpu_renderer
+        && window
+            .renderer_diagnostics()
+            .is_none_or(|d| d.backend != "software");
+    select_terminal_font(settings, ligatures, |font| {
+        window.text_system().try_resolve_font(font).is_ok()
+    })
+}
+
+fn select_terminal_font(
+    settings: &Settings,
+    ligatures_supported: bool,
+    mut can_load: impl FnMut(&Font) -> bool,
+) -> Font {
     let appearance = &settings.appearance;
-    let installed = crate::performance::font_names(window, "terminal_metrics");
-    let family = std::iter::once(appearance.font_family.clone())
-        .chain(fallback_fonts())
-        .find(|name| installed.iter().any(|f| f.eq_ignore_ascii_case(name)))
-        .unwrap_or_else(|| appearance.font_family.clone());
-    let mut f = font(SharedString::from(family));
+    let mut f = font(SharedString::from(appearance.font_family.clone()));
     f.fallbacks = Some(FontFallbacks::from_fonts(fallback_fonts()));
     f.weight = ns_font_weight(appearance.font_weight);
-    f.features = font_features(
-        appearance.ligatures
-            && appearance.rendering.gpu_renderer
-            && window
-                .renderer_diagnostics()
-                .is_none_or(|d| d.backend != "software"),
-    );
+    f.features = font_features(appearance.ligatures && ligatures_supported);
+    for family in std::iter::once(appearance.font_family.clone()).chain(fallback_fonts()) {
+        f.family = family.into();
+        if can_load(&f) {
+            return f;
+        }
+    }
+    // Preserve the existing last-resort behavior when no candidate loads.
+    f.family = appearance.font_family.clone().into();
     f
 }
 
@@ -1467,6 +1485,48 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0..80]
         );
+    }
+
+    #[test]
+    fn terminal_font_tries_loadable_monospace_candidates_with_final_style() {
+        let mut settings = Settings::default();
+        settings.appearance.font_family = "Missing test font".into();
+        settings.appearance.font_weight = 9;
+        settings.appearance.ligatures = true;
+        let fallbacks = fallback_fonts();
+        let wanted = &fallbacks[1];
+        let mut tried = Vec::new();
+        let selected = select_terminal_font(&settings, false, |candidate| {
+            assert_eq!(candidate.weight, FontWeight::BOLD);
+            assert_eq!(candidate.features.is_calt_enabled(), Some(false));
+            assert!(candidate.fallbacks.is_some());
+            tried.push(candidate.family.to_string());
+            candidate.family.as_ref() == wanted.as_str()
+        });
+        assert_eq!(selected.family.as_ref(), wanted.as_str());
+        assert_eq!(
+            tried,
+            vec![
+                "Missing test font".to_string(),
+                fallbacks[0].clone(),
+                wanted.clone()
+            ]
+        );
+    }
+
+    #[test]
+    fn terminal_font_keeps_configured_family_when_all_candidates_fail() {
+        let mut settings = Settings::default();
+        settings.appearance.font_family = "Unavailable test font".into();
+        let selected = select_terminal_font(&settings, true, |_| false);
+        assert_eq!(selected.family.as_ref(), settings.appearance.font_family);
+        let mut calls = 0;
+        let selected = select_terminal_font(&settings, true, |_| {
+            calls += 1;
+            true
+        });
+        assert_eq!(selected.family.as_ref(), settings.appearance.font_family);
+        assert_eq!(calls, 1);
     }
 
     #[test]

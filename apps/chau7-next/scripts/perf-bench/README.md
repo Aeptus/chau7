@@ -184,10 +184,15 @@ sample UUID or modified symbol map, preserves original addresses, and labels
 nearest text symbols; inlined source lines require the matching diagnostic
 dSYM and `atos`. A newly rebuilt binary cannot symbolize an older installation.
 Missing symbols remain an evidence gap, not a reason to guess at callers.
-Font lookups now appear in the work profiler as `font_catalog / lookup`, with
-separate callers for terminal metrics, settings and import. Inspect those
+Font catalogue lookups appear as `font_catalog / lookup`, with separate callers
+for settings and import. Terminal metrics use `font_resolution / select` and
+resolve individual candidates without enumerating the catalogue. Inspect these
 spans alongside native stacks instead of treating low paint timings as proof
 that the whole frame was fast.
+
+Interrupting capture with Ctrl-C retains a partial `capture.json` and closes
+its owned bridge. A bridge that ignores EOF and termination is killed and reaped
+without signaling Chau7.
 
 ## Local streaming proxy fixture
 

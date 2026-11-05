@@ -74,6 +74,7 @@ def capture(args):
     result_path = output / "capture.json"
     mcp = sample = None
     sample_log = None
+    interrupted = False
     try:
         mcp = attempt(
             result,
@@ -135,6 +136,10 @@ def capture(args):
             result["heartbeat_after"] = after
             attempt(result, "retained_hangs_after", lambda: retain_hangs(args.hangs, output, pid, launch["launch_id"]))
         result["status"] = "complete" if not result.get("errors") else "partial"
+    except KeyboardInterrupt:
+        interrupted = True
+        result["status"] = "partial"
+        result.setdefault("errors", []).append({"operation": "capture", "error": "interrupted"})
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
         result["status"] = "partial"
         result.setdefault("errors", []).append({"operation": "capture", "error": str(error)})
@@ -158,7 +163,7 @@ def capture(args):
             result["status"] = "partial"
         save(result_path, result)
     print(result_path)
-    return 0 if result["status"] == "complete" else 1
+    return 130 if interrupted else (0 if result["status"] == "complete" else 1)
 
 
 def symbolicate(sample_text, receipt, symbols):

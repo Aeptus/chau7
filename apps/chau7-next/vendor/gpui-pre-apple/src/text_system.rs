@@ -113,24 +113,31 @@ impl PlatformTextSystem for AppleTextSystem {
         if let Some(names) = self.0.read().font_catalog.get(generation) {
             return names.clone();
         }
-        let mut state = self.0.write();
-        if let Some(names) = state.font_catalog.get(generation) {
-            return names.clone();
-        }
         unsafe extern "C" {
             fn CTFontManagerCopyAvailableFontFamilyNames() -> CFArrayRef;
         }
         // SAFETY: CoreText returns an owned CFArray of CFStrings (Create Rule).
         // Asking for families avoids constructing, deduplicating and sorting
         // every installed font descriptor just to choose one terminal family.
-        let mut names: Vec<String> = unsafe {
+        // CoreText may wait on the system font service. Do not hold the
+        // renderer's text-state lock while asking that external service.
+        let discovered: Option<Vec<String>> = unsafe {
             let array = CTFontManagerCopyAvailableFontFamilyNames();
             if array.is_null() {
-                Vec::new()
+                None
             } else {
                 let families: CFArray<CFString> = CFArray::wrap_under_create_rule(array);
-                families.iter().map(|name| name.to_string()).collect()
+                Some(families.iter().map(|name| name.to_string()).collect())
             }
+        };
+        let mut state = self.0.write();
+        if let Some(names) = state.font_catalog.get(generation) {
+            return names.clone();
+        }
+        let Some(mut names) = discovered else {
+            // A transient font-service failure must not become a permanently
+            // cached empty catalogue. Registered in-memory fonts remain usable.
+            return state.memory_source.all_families().unwrap_or_default();
         };
         if let Ok(memory_fonts) = state.memory_source.all_families() {
             names.extend(memory_fonts);

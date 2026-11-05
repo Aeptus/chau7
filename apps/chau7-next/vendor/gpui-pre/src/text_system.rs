@@ -361,6 +361,26 @@ impl TextSystem {
             .next()
     }
 
+    /// Resolve only the requested family and style, without the default UI font
+    /// stack. Callers that need a monospace fallback can try their own ordered
+    /// candidates without enumerating every installed family. Successful lookups
+    /// share the normal cache. Retry misses so a newly installed family can be
+    /// selected without restarting the app.
+    pub fn try_resolve_font(&self, font: &Font) -> Result<FontId> {
+        if let Some(id) = self
+            .font_ids_by_font
+            .read()
+            .get(font)
+            .and_then(|result| result.as_ref().ok())
+            .copied()
+        {
+            return Ok(id);
+        }
+        let id = self.platform_text_system.font_id(font)?;
+        self.font_ids_by_font.write().insert(font.clone(), Ok(id));
+        Ok(id)
+    }
+
     /// Resolves the specified font, falling back to the default font stack if
     /// the font fails to load.
     ///
@@ -1450,6 +1470,20 @@ pub fn font_name_with_fallbacks_shared<'a>(
 mod missing_glyph_tests {
     use super::*;
     use futures::FutureExt as _;
+
+    #[test]
+    fn explicit_resolution_retries_a_prior_miss_and_keeps_successes() {
+        let text = TextSystem::new(Arc::new(crate::NoopTextSystem));
+        let requested = crate::font("newly installed family");
+        text.font_ids_by_font
+            .write()
+            .insert(requested.clone(), Err(anyhow!("previously unavailable")));
+        assert_eq!(text.try_resolve_font(&requested).unwrap(), FontId(1));
+        text.font_ids_by_font
+            .write()
+            .insert(requested.clone(), Ok(FontId(42)));
+        assert_eq!(text.try_resolve_font(&requested).unwrap(), FontId(42));
+    }
 
     #[test]
     fn bounds_retained_missing_glyphs() {
