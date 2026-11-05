@@ -49,7 +49,7 @@ impl WizardView {
     fn scan(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.wizard.start_scan();
         let home = cx.global::<AppData>().root.home().to_path_buf();
-        let families = window.text_system().all_font_names();
+        let families = crate::performance::font_names(window, "import_wizard");
         let task = cx
             .background_executor()
             .spawn(async move { scan_home(&home, &families) });

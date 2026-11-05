@@ -2,6 +2,7 @@
 """Run fixed workloads against an owned, isolated macOS app and its helpers."""
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -21,6 +22,7 @@ from safety import ResourceGuard
 from threads import ThreadSampler, summarize_threads
 
 HERE = Path(__file__).resolve().parent
+BRIDGE_CLOSE_TIMEOUT = 5
 
 
 class Mcp:
@@ -34,15 +36,26 @@ class Mcp:
         self.timeout = timeout
         self.sequence = 0
         self.buffer = b""
-        self.rpc(
-            "initialize",
-            {
-                "protocolVersion": "2025-11-25",
-                "capabilities": {},
-                "clientInfo": {"name": "chau7-perf-lab", "version": "2"},
-            },
-        )
-        self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        try:
+            self.rpc(
+                "initialize",
+                {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "chau7-perf-lab", "version": "2"},
+                },
+            )
+            self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        except BaseException:
+            # Construction never returns a handle on handshake failure. Reap
+            # our bridge here so repeated diagnostics cannot leak helpers.
+            try:
+                self.process.kill()
+                self.process.wait(timeout=BRIDGE_CLOSE_TIMEOUT)
+            finally:
+                self.process.stdin.close()
+                self.process.stdout.close()
+            raise
 
     def send(self, value):
         self.process.stdin.write(json.dumps(value).encode() + b"\n")
@@ -79,13 +92,21 @@ class Mcp:
         return json.loads("".join(c.get("text", "") for c in result.get("content", [])))
 
     def close(self):
-        self.process.stdin.close()
         try:
-            self.process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self.process.terminate()
-            self.process.wait(timeout=5)
-        self.process.stdout.close()
+            with contextlib.suppress(BrokenPipeError):
+                self.process.stdin.close()
+            try:
+                self.process.wait(timeout=BRIDGE_CLOSE_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=BRIDGE_CLOSE_TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    # Only this client-owned bridge, never the target app.
+                    self.process.kill()
+                    self.process.wait(timeout=BRIDGE_CLOSE_TIMEOUT)
+        finally:
+            self.process.stdout.close()
 
 
 def available_port_pair():

@@ -1037,6 +1037,39 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    // The passive collector reads only this versioned Rust profile. Keep the
+    // allowance at exact declarations so Swift-profile paths still fail.
+    fn is_rust_diagnostic_default(path: &Path, line: &str) -> bool {
+        path.ends_with("scripts/perf-bench/diagnose.py")
+            && matches!(
+                line.trim(),
+                r#"live.add_argument("--socket", type=Path, default=Path.home() / ".chau7/rust-v1/mcp.sock")"#
+                    | r#"live.add_argument("--hangs", type=Path, default=Path.home() / ".chau7/rust-v1/reports/hangs")"#
+            )
+    }
+
+    #[test]
+    fn diagnostic_path_allowance_excludes_swift_and_unrelated_readers() {
+        let path = Path::new("scripts/perf-bench/diagnose.py");
+        let socket = r#"live.add_argument("--socket", type=Path, default=Path.home() / ".chau7/rust-v1/mcp.sock")"#;
+        let hangs = r#"live.add_argument("--hangs", type=Path, default=Path.home() / ".chau7/rust-v1/reports/hangs")"#;
+        for declaration in [socket, hangs] {
+            assert!(is_rust_diagnostic_default(path, declaration));
+            assert!(!is_rust_diagnostic_default(
+                path,
+                &declaration.replace("/rust-v1/", "/")
+            ));
+            assert!(!is_rust_diagnostic_default(
+                Path::new("scripts/other.py"),
+                declaration
+            ));
+            assert!(!is_rust_diagnostic_default(
+                path,
+                &format!("{declaration}; write_to_profile()")
+            ));
+        }
+    }
+
     /// Guards the coexistence rule: outside this file, no source in the
     /// Chau7 Next workspace may mention a path or identifier owned by the
     /// Swift app.
@@ -1093,6 +1126,9 @@ mod tests {
                 if path.ends_with("scripts/perf-bench/run.py")
                     && line.trim() == "for relative in (\".chau7-next\", \".chau7/rust-v1\"):"
                 {
+                    continue;
+                }
+                if is_rust_diagnostic_default(path, &line) {
                     continue;
                 }
                 for needle in forbidden {

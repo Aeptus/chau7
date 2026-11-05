@@ -374,9 +374,13 @@ impl Chau7Terminal {
         }
     }
 
-    /// Whether this terminal has a live PTY (false for headless terminals).
+    /// Whether this terminal is PTY-backed (false for headless terminals).
+    /// This is independent of child exit; use `is_pty_closed` for that state.
     pub fn has_pty(&self) -> bool {
-        self.pty_handle.lock().is_some()
+        // Both constructors initialize the immutable receiver and writer
+        // together. A writer can block under PTY backpressure; UI status reads
+        // must never queue behind it merely to inspect this lifetime invariant.
+        self.pty_rx.is_some()
     }
 
     /// Mirrors `chau7_terminal_get_pending_images`: images decoded from
@@ -761,6 +765,38 @@ mod tests {
         }
         assert!(String::from_utf8_lossy(&output).contains("readiness-marker"));
         assert!(term.is_pty_closed());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pty_status_does_not_wait_for_writer_lock() {
+        use std::sync::{Arc, mpsc};
+        for real_pty in [false, true] {
+            let term = Arc::new(if real_pty {
+                Chau7Terminal::new_with_args_env_in_dir(
+                    2,
+                    2,
+                    "/bin/sh",
+                    &["-c", "exit 0"],
+                    &[],
+                    None,
+                )
+                .unwrap()
+            } else {
+                Chau7Terminal::new_headless(2, 2).unwrap()
+            });
+            let held = term.pty_handle.lock();
+            let (tx, rx) = mpsc::channel();
+            let reader = Arc::clone(&term);
+            let worker = std::thread::spawn(move || {
+                tx.send(reader.has_pty()).unwrap();
+            });
+            let result = rx.recv_timeout(Duration::from_millis(250));
+            // Release before joining even on regression, so tests cannot hang.
+            drop(held);
+            worker.join().unwrap();
+            assert_eq!(result.unwrap(), real_pty, "status waited for PTY writer");
+        }
     }
 
     #[test]
