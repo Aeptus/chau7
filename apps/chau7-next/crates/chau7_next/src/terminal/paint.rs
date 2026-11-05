@@ -90,7 +90,7 @@ impl CellMetrics {
 /// (`terminal.fontWeight`) and ligatures (`terminal.enableLigatures`).
 pub fn terminal_font(settings: &Settings, window: &Window) -> Font {
     let appearance = &settings.appearance;
-    let installed = window.text_system().all_font_names();
+    let installed = crate::performance::font_names(window, "terminal_metrics");
     let family = std::iter::once(appearance.font_family.clone())
         .chain(fallback_fonts())
         .find(|name| installed.iter().any(|f| f.eq_ignore_ascii_case(name)))

@@ -18,6 +18,21 @@ use chau7_next_core::feature_profiler;
 use gpui::{App, Global};
 use serde_json::{Value, json};
 
+/// Attribute catalogue discovery separately from the surrounding layout phase.
+pub fn font_names(window: &gpui::Window, caller: &'static str) -> Vec<String> {
+    use chau7_next_core::work_profiler::{self, Key, Queue};
+    let mut span = work_profiler::begin(Key::work(
+        "font_catalog",
+        "lookup",
+        "application",
+        caller,
+        Queue::Main,
+    ));
+    let names = window.text_system().all_font_names();
+    span.items(names.len());
+    names
+}
+
 const INTERVAL: Duration = Duration::from_secs(5);
 const MAX_TERMINALS: usize = 128;
 const MAX_RECORD_BYTES: usize = 1024 * 1024;

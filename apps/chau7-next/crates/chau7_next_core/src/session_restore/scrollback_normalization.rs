@@ -63,7 +63,9 @@ fn normalize_with(
 }
 
 fn terminal_line_is_blank(line: &str) -> bool {
-    visible_for_restore(line).trim().is_empty()
+    // Most rows contain text. Stop at its first visible non-whitespace
+    // character instead of allocating and scanning a copy of every row.
+    visible_chars_for_restore(line).all(char::is_whitespace)
 }
 
 /// Return the physical line count only for a complete built-in startup tip
@@ -135,43 +137,89 @@ fn recognize_with(
 /// Strip terminal control sequences without collapsing spaces. Matching restore
 /// artifacts must not rewrite actual styled output or column alignment.
 pub fn visible_for_restore(text: &str) -> String {
-    let mut chars = text.chars().peekable();
     let mut result = String::with_capacity(text.len());
-    while let Some(c) = chars.next() {
-        if c != '\u{1b}' {
-            if matches!(c, '\n' | '\r' | '\t') || (c >= ' ' && c != '\u{7f}') {
-                result.push(c);
-            }
-            continue;
-        }
-        match chars.next() {
-            Some('[') => {
-                for c in chars.by_ref() {
-                    if ('@'..='~').contains(&c) {
-                        break;
-                    }
-                }
-            }
-            Some(']') => {
-                while let Some(c) = chars.next() {
-                    if c == '\u{7}' {
-                        break;
-                    }
-                    if c == '\u{1b}' && chars.peek() == Some(&'\\') {
-                        chars.next();
-                        break;
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    result.extend(visible_chars_for_restore(text));
     result
+}
+
+fn visible_chars_for_restore(text: &str) -> impl Iterator<Item = char> + '_ {
+    let mut chars = text.chars().peekable();
+    std::iter::from_fn(move || {
+        while let Some(c) = chars.next() {
+            if c != '\u{1b}' {
+                if matches!(c, '\n' | '\r' | '\t') || (c >= ' ' && c != '\u{7f}') {
+                    return Some(c);
+                }
+                continue;
+            }
+            match chars.next() {
+                Some('[') => {
+                    for c in chars.by_ref() {
+                        if ('@'..='~').contains(&c) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    while let Some(c) = chars.next() {
+                        if c == '\u{7}' {
+                            break;
+                        }
+                        if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                            chars.next();
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blank_rows_ignore_controls_but_preserve_visible_unicode() {
+        for text in [
+            "",
+            " \t\r",
+            "\u{2003}",
+            "\x1b[31m  \x1b[0m",
+            "\x1b]0;title\x07\t",
+            "\x1b]0;title\x1b\\ ",
+            "\x01\x7f",
+            "\x1b[",
+            "\x1b]unfinished",
+        ] {
+            assert!(terminal_line_is_blank(text), "{text:?}");
+            assert!(visible_for_restore(text).trim().is_empty(), "{text:?}");
+        }
+        for text in [
+            "x",
+            "\x1b[31mx\x1b[0m",
+            "\x1b]0;title\x07界",
+            "\x1b]0;title\x1b\\ 🦀",
+            "\x1b[0m  +----+",
+        ] {
+            assert!(!terminal_line_is_blank(text), "{text:?}");
+            assert!(!visible_for_restore(text).trim().is_empty(), "{text:?}");
+        }
+        assert_eq!(
+            visible_for_restore("\x1b[31mred\x1b[0m\t\x1b]0;hidden\x07界\r\n"),
+            "red\t界\r\n"
+        );
+    }
+
+    #[test]
+    fn normalization_preserves_styling_and_removes_only_blank_tail() {
+        let row = "\x1b[31mreal output 界\x1b[0m";
+        let input = format!("{row}\n\x1b[0m \t\r\n\x1b]0;title\x07");
+        assert_eq!(normalize_scrollback_for_restore(&input), row);
+    }
 
     #[test]
     fn ordinary_boxed_output_only_checks_the_initial_position() {

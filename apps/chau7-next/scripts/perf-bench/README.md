@@ -148,6 +148,47 @@ attribution with nanosecond counters, excluding vanished, renamed or regressed
 handles. Opaque handles can be recycled; this is attribution evidence, not a
 substitute for process CPU totals. Leave it off for final comparisons.
 
+## Diagnose the running production app
+
+Use a passive capture before adding load to an already busy Mac:
+
+```sh
+python3 apps/chau7-next/scripts/perf-bench/diagnose.py capture --seconds 30
+```
+
+This creates a private `chau7-diagnostics-*` directory, prints its path, and
+retains native CPU/footprint/wakeup counters, bracketing numeric MCP snapshots,
+heartbeat observations, one bounded native stack sample, and up to twenty
+watchdog captures for the same launch. It sends no terminal input and never
+closes or restarts the app. If the UI/MCP is unresponsive, pass its verified
+`--pid`; native evidence remains useful and the result explicitly stays partial.
+Use `--app`, `--socket` and `--hangs` together for a nonproduction channel.
+Capture is limited to 60 seconds; use `--stack-seconds 0` to omit native sampling.
+This is observational evidence, not an isolated benchmark or an A/B result.
+The surrounding host workload and collection itself can affect the result.
+
+Production fast builds already retain an Apple nm symbol map and its UUID/hash
+in `Chau7-Production.build.json`. Keep that receipt and its symbol map together
+when moving a candidate or preserving an installed build. To resolve stripped
+application frames without rebuilding the app:
+
+```sh
+python3 apps/chau7-next/scripts/perf-bench/diagnose.py symbolicate \
+  /tmp/chau7-diagnostics-.../live.sample.txt \
+  --receipt /path/to/Chau7-Production.build.json \
+  --output /tmp/chau7-symbolicated.txt
+```
+
+Use `--symbols` when the receipt's map moved. The tool refuses a mismatched
+sample UUID or modified symbol map, preserves original addresses, and labels
+nearest text symbols; inlined source lines require the matching diagnostic
+dSYM and `atos`. A newly rebuilt binary cannot symbolize an older installation.
+Missing symbols remain an evidence gap, not a reason to guess at callers.
+Font lookups now appear in the work profiler as `font_catalog / lookup`, with
+separate callers for terminal metrics, settings and import. Inspect those
+spans alongside native stacks instead of treating low paint timings as proof
+that the whole frame was fast.
+
 ## Local streaming proxy fixture
 
 The app-owned proxy phase above measures control requests. Also measure the

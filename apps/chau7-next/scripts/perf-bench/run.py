@@ -34,15 +34,24 @@ class Mcp:
         self.timeout = timeout
         self.sequence = 0
         self.buffer = b""
-        self.rpc(
-            "initialize",
-            {
-                "protocolVersion": "2025-11-25",
-                "capabilities": {},
-                "clientInfo": {"name": "chau7-perf-lab", "version": "2"},
-            },
-        )
-        self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        try:
+            self.rpc(
+                "initialize",
+                {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "chau7-perf-lab", "version": "2"},
+                },
+            )
+            self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        except BaseException:
+            # Construction never returns a handle on handshake failure. Reap
+            # our bridge here so repeated diagnostics cannot leak helpers.
+            self.process.kill()
+            self.process.wait()
+            self.process.stdin.close()
+            self.process.stdout.close()
+            raise
 
     def send(self, value):
         self.process.stdin.write(json.dumps(value).encode() + b"\n")

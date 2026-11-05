@@ -15,10 +15,8 @@ use core_graphics::{
 };
 use core_text::{
     font::CTFont,
-    font_collection::CTFontCollectionRef,
     font_descriptor::{
-        CTFontDescriptor, kCTFontSlantTrait, kCTFontSymbolicTrait, kCTFontWeightTrait,
-        kCTFontWidthTrait,
+        kCTFontSlantTrait, kCTFontSymbolicTrait, kCTFontWeightTrait, kCTFontWidthTrait,
     },
     line::CTLine,
     string_attributes::kCTFontAttributeName,
@@ -70,6 +68,7 @@ struct FontKey {
 }
 
 struct AppleTextSystemState {
+    font_catalog: crate::font_catalog::FontCatalog,
     memory_source: MemSource,
     system_source: SystemSource,
     fonts: Vec<FontKitFont>,
@@ -83,6 +82,7 @@ impl AppleTextSystem {
     /// Create a new AppleTextSystem.
     pub fn new() -> Self {
         Self(RwLock::new(AppleTextSystemState {
+            font_catalog: Default::default(),
             memory_source: MemSource::empty(),
             system_source: SystemSource::new(),
             fonts: Vec::new(),
@@ -102,40 +102,42 @@ impl Default for AppleTextSystem {
 
 impl PlatformTextSystem for AppleTextSystem {
     fn add_fonts(&self, fonts: Vec<Cow<'static, [u8]>>) -> Result<()> {
-        self.0.write().add_fonts(fonts)
+        let mut state = self.0.write();
+        // Also invalidate if registration fails after installing some fonts.
+        state.font_catalog.invalidate();
+        state.add_fonts(fonts)
     }
 
     fn all_font_names(&self) -> Vec<String> {
-        let mut names = Vec::new();
-        let collection = core_text::font_collection::create_for_all_families();
-        // NOTE: We intentionally avoid using `collection.get_descriptors()` here because
-        // it has a memory leak bug in core-text v21.0.0. The upstream code uses
-        // `wrap_under_get_rule` but `CTFontCollectionCreateMatchingFontDescriptors`
-        // follows the Create Rule (caller owns the result), so it should use
-        // `wrap_under_create_rule`. We call the function directly with correct memory management.
-        unsafe extern "C" {
-            fn CTFontCollectionCreateMatchingFontDescriptors(
-                collection: CTFontCollectionRef,
-            ) -> CFArrayRef;
+        let generation = crate::font_catalog::generation();
+        if let Some(names) = self.0.read().font_catalog.get(generation) {
+            return names.clone();
         }
-        let descriptors: Option<CFArray<CTFontDescriptor>> = unsafe {
-            let array_ref =
-                CTFontCollectionCreateMatchingFontDescriptors(collection.as_concrete_TypeRef());
-            if array_ref.is_null() {
-                None
+        let mut state = self.0.write();
+        if let Some(names) = state.font_catalog.get(generation) {
+            return names.clone();
+        }
+        unsafe extern "C" {
+            fn CTFontManagerCopyAvailableFontFamilyNames() -> CFArrayRef;
+        }
+        // SAFETY: CoreText returns an owned CFArray of CFStrings (Create Rule).
+        // Asking for families avoids constructing, deduplicating and sorting
+        // every installed font descriptor just to choose one terminal family.
+        let mut names: Vec<String> = unsafe {
+            let array = CTFontManagerCopyAvailableFontFamilyNames();
+            if array.is_null() {
+                Vec::new()
             } else {
-                Some(CFArray::wrap_under_create_rule(array_ref))
+                let families: CFArray<CFString> = CFArray::wrap_under_create_rule(array);
+                families.iter().map(|name| name.to_string()).collect()
             }
         };
-        let Some(descriptors) = descriptors else {
-            return names;
-        };
-        for descriptor in descriptors.into_iter() {
-            names.extend(lenient_font_attributes::family_name(&descriptor));
+        if let Ok(memory_fonts) = state.memory_source.all_families() {
+            names.extend(memory_fonts);
         }
-        if let Ok(fonts_in_memory) = self.0.read().memory_source.all_families() {
-            names.extend(fonts_in_memory);
-        }
+        // Tag with the generation before enumeration. A racing notification
+        // makes the next lookup miss instead of retaining a stale snapshot.
+        state.font_catalog.store(generation, names.clone());
         names
     }
 
@@ -727,47 +729,6 @@ fn fontkit_style(style: FontStyle) -> FontkitStyle {
         FontStyle::Normal => FontkitStyle::Normal,
         FontStyle::Italic => FontkitStyle::Italic,
         FontStyle::Oblique => FontkitStyle::Oblique,
-    }
-}
-
-// Some fonts may have no attributes despite `core_text` requiring them (and panicking).
-// This is the same version as `core_text` has without `expect` calls.
-mod lenient_font_attributes {
-    use core_foundation::{
-        base::{CFRetain, CFType, TCFType},
-        string::{CFString, CFStringRef},
-    };
-    use core_text::font_descriptor::{
-        CTFontDescriptor, CTFontDescriptorCopyAttribute, kCTFontFamilyNameAttribute,
-    };
-
-    pub fn family_name(descriptor: &CTFontDescriptor) -> Option<String> {
-        unsafe { get_string_attribute(descriptor, kCTFontFamilyNameAttribute) }
-    }
-
-    fn get_string_attribute(
-        descriptor: &CTFontDescriptor,
-        attribute: CFStringRef,
-    ) -> Option<String> {
-        unsafe {
-            let value = CTFontDescriptorCopyAttribute(descriptor.as_concrete_TypeRef(), attribute);
-            if value.is_null() {
-                return None;
-            }
-
-            let value = CFType::wrap_under_create_rule(value);
-            assert!(value.instance_of::<CFString>());
-            let s = wrap_under_get_rule(value.as_CFTypeRef() as CFStringRef);
-            Some(s.to_string())
-        }
-    }
-
-    unsafe fn wrap_under_get_rule(reference: CFStringRef) -> CFString {
-        unsafe {
-            assert!(!reference.is_null(), "Attempted to create a NULL object.");
-            let reference = CFRetain(reference as *const ::std::os::raw::c_void) as CFStringRef;
-            TCFType::wrap_under_create_rule(reference)
-        }
     }
 }
 

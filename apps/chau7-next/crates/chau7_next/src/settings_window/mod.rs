@@ -319,7 +319,7 @@ impl SettingsView {
 
     fn new_inner(window: &mut Window, cx: &mut Context<Self>, api_key: Option<String>) -> Self {
         let appearance = Settings::get(cx).appearance.clone();
-        let installed_fonts = window.text_system().all_font_names();
+        let installed_fonts = crate::performance::font_names(window, "settings_window");
         let font_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(crate::l10n::tr("Font family name..."))
