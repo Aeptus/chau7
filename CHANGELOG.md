@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep passive diagnostics compatible with the Rust profile-isolation guard while continuing to reject Swift-profile paths and unrelated readers.
+
 - Prevent unhandled forwarded shortcuts from looping and making the app unresponsive.
 - Resolve terminal font candidates directly without enumerating the installed catalogue, retry newly installed font families after a miss, and retain diagnostic evidence on cancellation while reaping unresponsive bridge helpers.
 
