@@ -181,6 +181,17 @@ thread_local! {
     static FORWARDING: Cell<bool> = const { Cell::new(false) };
 }
 
+/// Keep the guard until GPUI has delivered the deferred action. Clearing it
+/// immediately after `dispatch_action` lets an unhandled action return to the
+/// global fallback and enqueue itself indefinitely.
+fn deliver_forwarded_action(handle: AnyWindowHandle, action: Box<dyn Action>, cx: &mut App) {
+    let _ = handle.update(cx, |_, window, cx| {
+        window.activate_window();
+        window.dispatch_action(action, cx);
+    });
+    cx.defer(|_| FORWARDING.with(|f| f.set(false)));
+}
+
 /// Shortcuts and menu items act on a terminal window even when no window is
 /// open or another window (settings) has the focus: a window is created or
 /// brought forward and the action is delivered to it. The workspace handles
@@ -197,11 +208,7 @@ fn register_window_fallbacks(cx: &mut App) {
             let boxed = action.boxed_clone();
             FORWARDING.with(|f| f.set(true));
             let deliver = move |cx: &mut App| {
-                let _ = handle.update(cx, |_, window, cx| {
-                    window.activate_window();
-                    window.dispatch_action(boxed, cx);
-                });
-                FORWARDING.with(|f| f.set(false));
+                deliver_forwarded_action(handle, boxed, cx);
             };
             if created {
                 // Let the new window draw once, so its handlers exist.
@@ -226,11 +233,7 @@ fn register_window_fallbacks(cx: &mut App) {
             Some((handle, _)) => {
                 FORWARDING.with(|f| f.set(true));
                 cx.defer(move |cx| {
-                    let _ = handle.update(cx, |_, window, cx| {
-                        window.activate_window();
-                        window.dispatch_action(Box::new(NewTab), cx);
-                    });
-                    FORWARDING.with(|f| f.set(false));
+                    deliver_forwarded_action(handle, Box::new(NewTab), cx);
                 });
             }
             None => show_overlay(cx),
@@ -581,6 +584,57 @@ mod quit_tests {
                 })
                 .collect(),
         }
+    }
+
+    gpui::actions!(fallback_guard_test, [UnhandledForwardedAction]);
+
+    #[gpui::test]
+    fn unhandled_forwarded_action_does_not_reenter_global_fallback(harness: &mut TestAppContext) {
+        use std::rc::Rc;
+
+        let root = init(harness);
+        let (handle, _, _, _) = harness.update(open_two_windows);
+        let forwards = Rc::new(Cell::new(0));
+        harness.update(|cx| {
+            let forwards = forwards.clone();
+            cx.on_action(move |_: &UnhandledForwardedAction, cx| {
+                if FORWARDING.with(Cell::get) {
+                    return;
+                }
+                let count = forwards.get() + 1;
+                forwards.set(count);
+                // Stop a broken implementation after one recursive forward.
+                if count > 1 {
+                    return;
+                }
+                FORWARDING.with(|f| f.set(true));
+                cx.defer(move |cx| {
+                    deliver_forwarded_action(handle, Box::new(UnhandledForwardedAction), cx);
+                });
+            });
+        });
+
+        for _ in 0..2 {
+            forwards.set(0);
+            handle
+                .update(harness, |_, window, cx| {
+                    window.dispatch_action(Box::new(UnhandledForwardedAction), cx);
+                })
+                .unwrap();
+            harness.run_until_parked();
+            assert_eq!(
+                forwards.get(),
+                1,
+                "unhandled action must only be forwarded once"
+            );
+            assert!(
+                !FORWARDING.with(Cell::get),
+                "guard must clear after delivery"
+            );
+        }
+        let writer = harness.update(crate::restore::writer::shutdown).unwrap();
+        writer.join().unwrap();
+        let _ = std::fs::remove_dir_all(root.home());
     }
 
     #[gpui::test]
