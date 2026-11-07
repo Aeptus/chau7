@@ -9,6 +9,15 @@ from pathlib import Path
 from run import validate_rendering
 
 METRICS = ("cpu_percent", "interrupt_wakeups_per_s", "footprint_peak_bytes")
+PHASES = ("idle", "terminal", "mcp", "proxy", "recovery")
+ROLES = ("app", "mcp_bridge", "proxy")
+
+
+def validate_target(target):
+    parts = target.split("/")
+    if len(parts) != 3 or parts[0] not in PHASES or parts[1] not in ROLES or parts[2] not in METRICS:
+        raise ValueError(f"unknown target {target!r}; expected phase/role/metric")
+    return parts
 
 
 def load_runs(paths):
@@ -44,10 +53,7 @@ def improvement_finding(rows, target):
 
     This conservative screening rule is not a statistical confidence interval.
     """
-    parts = target.split("/")
-    if len(parts) != 3:
-        raise ValueError("target must be phase/role/metric")
-    phase, role, metric = parts
+    phase, role, metric = validate_target(target)
     try:
         row = rows[phase][role][metric]
     except KeyError as error:
