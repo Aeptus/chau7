@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add bounded diagnostic timing from terminal input to the next visible output paint.
+
 - Keep the optimizer wrapper bypass test compatible with multicall utilities on Linux runners.
 
 - Remove the retired standalone Swift MCP bridge and its legacy-only checks; the Rust app continues to use its own bridge.

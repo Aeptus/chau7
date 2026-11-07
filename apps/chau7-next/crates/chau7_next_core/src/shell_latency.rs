@@ -163,6 +163,9 @@ pub struct LatencyTracker {
     highlight: KindState,
     pending_input_at: Option<f64>,
     pending_output_at: Option<f64>,
+    pending_input_paint_at: Option<f64>,
+    input_paint_ready: Option<(f64, f64)>,
+    input_paint_samples: SampleBuffer,
     hidden_output_dropped_count: u64,
     timeline: Vec<LagEvent>,
 }
@@ -182,6 +185,9 @@ impl LatencyTracker {
             highlight: KindState::new(),
             pending_input_at: None,
             pending_output_at: None,
+            pending_input_paint_at: None,
+            input_paint_ready: None,
+            input_paint_samples: SampleBuffer::new(SAMPLE_CAPACITY),
             hidden_output_dropped_count: 0,
             timeline: Vec::new(),
         }
@@ -208,6 +214,7 @@ impl LatencyTracker {
     /// The user typed (`markInputLatencyStart`).
     pub fn mark_input(&mut self, now: f64) {
         self.pending_input_at = Some(now);
+        self.pending_input_paint_at = now.is_finite().then_some(now);
     }
 
     /// Records the synchronous terminal handler duration through PTY writer
@@ -235,6 +242,15 @@ impl LatencyTracker {
             _ => None,
         };
         if visible {
+            if self
+                .pending_input_paint_at
+                .is_some_and(|start| now.is_finite() && now >= start)
+            {
+                let start = self.pending_input_paint_at.take().expect("checked above");
+                if self.input_paint_ready.is_none() {
+                    self.input_paint_ready = Some((start, now));
+                }
+            }
             if self.pending_output_at.is_none() && now.is_finite() {
                 self.pending_output_at = Some(now);
             }
@@ -251,12 +267,23 @@ impl LatencyTracker {
             return None;
         }
         self.pending_output_at = None;
+        if let Some((input_at, output_at)) = self.input_paint_ready
+            && now >= output_at
+        {
+            self.input_paint_ready = None;
+            let elapsed_ms = (now - input_at) * 1000.0;
+            if elapsed_ms.is_finite() && (0.0..=MAX_ACCEPTED_MS).contains(&elapsed_ms) {
+                self.input_paint_samples.push(elapsed_ms.round() as i64);
+            }
+        }
         self.record(LagKind::Output, (now - start) * 1000.0, now)
     }
 
     /// Cancels one pending visible-output measure when the surface becomes
     /// hidden or rendering is suspended. The cancellation remains observable.
     pub fn cancel_pending_output_as_hidden(&mut self) {
+        self.pending_input_paint_at = None;
+        self.input_paint_ready = None;
         if self.pending_output_at.take().is_some() {
             self.hidden_output_dropped_count = self.hidden_output_dropped_count.saturating_add(1);
         }
@@ -332,6 +359,18 @@ impl LatencyTracker {
 
     pub fn percentiles(&self, kind: LagKind) -> String {
         percentiles_summary(&self.state(kind).samples)
+    }
+
+    /// Input to the next visible output paint. The output may be unrelated to
+    /// the input; painting does not establish GPU or display presentation.
+    pub fn input_to_next_paint_statistics(&self) -> serde_json::Value {
+        let values = self.input_paint_samples.values();
+        serde_json::json!({
+            "p50_ms": percentile(&values, 0.5), "p95_ms": percentile(&values, 0.95),
+            "p99_ms": percentile(&values, 0.99), "max_ms": values.iter().max(),
+            "sample_count": values.len(),
+            "measurement_basis": "write_input entry to paint after first subsequent visible PTY output; output may be unrelated and GPU or display presentation is not measured"
+        })
     }
 
     /// Structured samples for diagnostics, independent of display formatting.
@@ -449,6 +488,29 @@ mod tests {
             t.statistics(LagKind::Output)["hidden_output_dropped_count"],
             1
         );
+    }
+
+    #[test]
+    fn input_to_next_paint_requires_visible_output_and_ordered_paint() {
+        let mut t = LatencyTracker::new();
+        t.mark_input(1.0);
+        t.mark_output(0.9);
+        t.mark_rendered(1.01);
+        assert_eq!(t.input_to_next_paint_statistics()["sample_count"], 0);
+        t.mark_output(1.02);
+        t.mark_rendered(1.05);
+        assert_eq!(t.input_to_next_paint_statistics()["p95_ms"], 50);
+        t.mark_input(2.0);
+        t.mark_output_for_surface(2.01, false);
+        t.mark_output(2.02);
+        t.mark_rendered(2.03);
+        assert_eq!(t.input_to_next_paint_statistics()["sample_count"], 1);
+        t.mark_input(3.0);
+        t.mark_output(3.01);
+        t.cancel_pending_output_as_hidden();
+        t.mark_output(3.02);
+        t.mark_rendered(3.03);
+        assert_eq!(t.input_to_next_paint_statistics()["sample_count"], 1);
     }
 
     #[test]
