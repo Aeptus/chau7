@@ -228,6 +228,7 @@ impl Workspace {
                     "session_id":session.id, "memory":session.allocation_snapshot(),
                     "input": latency.statistics(LagKind::Input),
                     "input_dispatch": latency.statistics(LagKind::InputDispatch),
+                    "input_to_next_paint": latency.input_to_next_paint_statistics(),
                     "output": latency.statistics(LagKind::Output),
                     "highlight": latency.statistics(LagKind::Highlight), "lag_events": lag
                 }));
