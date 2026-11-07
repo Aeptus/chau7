@@ -920,7 +920,14 @@ impl TerminalSession {
         let alternate_scroll_active = terminal.is_alternate_scroll_active();
         drop(terminal);
         let mouse_reporting_enabled = self.mouse_reporting_enabled.get();
-        let output = self.output.lock();
+        let (pending_output_bytes, output_capacity, pending_output_age_ms) = {
+            let output = self.output.lock();
+            (
+                output.0.len(),
+                output.0.capacity(),
+                pending_output_age_ms(output.0.len(), output.1, Instant::now()),
+            )
+        };
         let pending = self.pending_input.borrow();
         let grid_cells = self
             .grid
@@ -937,7 +944,6 @@ impl TerminalSession {
             .iter()
             .map(|(bytes, _)| bytes.capacity())
             .sum::<usize>();
-        let output_capacity = output.0.capacity();
         let preview = self.memory.restoration_preview_capacity_bytes();
         serde_json::json!({
             "session_id":self.id, "render_phase":self.profiling_phase(),
@@ -948,7 +954,9 @@ impl TerminalSession {
             "alternate_scroll_active":alternate_scroll_active as u8,
             "native_ring_estimated_bytes":native.estimated_grid_bytes,
             "ui_grid_cells_capacity_bytes":grid_cells, "ui_grid_cluster_string_capacity_bytes":clusters,
-            "pending_output_bytes":output.0.len(), "pending_output_capacity_bytes":output_capacity,
+            "pending_output_bytes":pending_output_bytes, "pending_output_capacity_bytes":output_capacity,
+            "pending_output_oldest_age_ms":pending_output_age_ms,
+            "pending_output_age_basis":"time since the first buffered PTY output was captured; includes deliberate pacing",
             "pending_input_capacity_bytes":pending_input, "restoration_preview_capacity_bytes":preview,
             "known_session_capacity_bytes":grid_cells.saturating_add(clusters).saturating_add(output_capacity).saturating_add(pending_input).saturating_add(preview),
             "refresh_cap_interval_ms":self.refresh_interval_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0,
@@ -2886,6 +2894,31 @@ impl Drop for TerminalSession {
         self.close();
         self.stop.store(true, Ordering::Release);
         self.poll_interrupt.wake();
+    }
+}
+
+/// Age of the oldest buffered output, including intentional pacing.
+fn pending_output_age_ms(bytes: usize, first: Option<Instant>, now: Instant) -> Option<f64> {
+    if bytes == 0 {
+        return None;
+    }
+    now.checked_duration_since(first?)
+        .map(|duration| duration.as_secs_f64() * 1000.0)
+}
+
+#[cfg(test)]
+mod pending_output_age_tests {
+    use super::pending_output_age_ms;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn reports_oldest_buffer_age_and_preserves_missing_values() {
+        let first = Instant::now();
+        let now = first + Duration::from_millis(25);
+        assert_eq!(pending_output_age_ms(4, Some(first), now), Some(25.0));
+        assert_eq!(pending_output_age_ms(0, Some(first), now), None);
+        assert_eq!(pending_output_age_ms(4, None, now), None);
+        assert_eq!(pending_output_age_ms(4, Some(now), first), None);
     }
 }
 

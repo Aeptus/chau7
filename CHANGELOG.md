@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Include the age of buffered terminal output in performance snapshots, while holding its buffer lock for less time.
+
 - Add bounded diagnostic timing from terminal input to the next visible output paint.
 
 - Keep the optimizer wrapper bypass test compatible with multicall utilities on Linux runners.
