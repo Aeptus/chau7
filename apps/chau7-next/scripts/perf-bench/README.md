@@ -70,7 +70,7 @@ part of the evidence rather than a reason to declare a speedup.
    python3 apps/chau7-next/scripts/perf-bench/loop.py \
      '/tmp/chau7-perf-baseline/Chau7 Next.app/Contents/MacOS/Chau7 Next' \
      '/tmp/chau7-perf-candidate/Chau7 Next.app/Contents/MacOS/Chau7 Next' \
-     --results /tmp/chau7-perf-iteration-1
+     --results /tmp/chau7-perf-iteration-1 --target terminal/app/cpu_percent
    ```
 
 4. Compare with `summary.py /tmp/chau7-perf-results/*.json` (select complete runs).
@@ -82,10 +82,17 @@ part of the evidence rather than a reason to declare a speedup.
    python3 apps/chau7-next/scripts/perf-bench/compare.py \
      --baseline /tmp/chau7-perf-results/baseline-{1,2}.json \
      --candidate /tmp/chau7-perf-results/candidate-{1,2}.json \
-     --output /tmp/chau7-perf-results/comparison.json
+     --output /tmp/chau7-perf-results/comparison.json --target terminal/app/cpu_percent
    ```
 
-   A failed budget exits nonzero and means another iteration is required.
+   Choose `--target phase/role/metric` before running the trials; available
+   metrics are `cpu_percent`, `interrupt_wakeups_per_s`, and
+   `footprint_peak_bytes` for `app`, `mcp_bridge`, or `proxy`. The candidate
+   must beat the baseline in every repeat (the ranges must not overlap), in
+   addition to passing all existing budgets and regression guards. This is a
+   conservative screening rule, not a confidence interval or proof of causation.
+   Repeat on independent workloads before claiming a general improvement.
+   A failed budget or improvement screen exits nonzero and means another iteration is required.
    Active phases also require recent selected-terminal paint evidence and a
    healthy hang watchdog, so a frozen renderer cannot pass as an optimization.
 

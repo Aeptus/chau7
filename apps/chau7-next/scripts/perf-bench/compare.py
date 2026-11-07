@@ -39,7 +39,25 @@ def signature(run):
     return args, grids, run["host"]["platform"], run["host"]["logical_cpus"], run.get("harness_sha256")
 
 
-def compare(baselines, candidates):
+def improvement_finding(rows, target):
+    """Require separated repeat ranges for the predeclared lower-is-better metric.
+
+    This conservative screening rule is not a statistical confidence interval.
+    """
+    parts = target.split("/")
+    if len(parts) != 3:
+        raise ValueError("target must be phase/role/metric")
+    phase, role, metric = parts
+    try:
+        row = rows[phase][role][metric]
+    except KeyError as error:
+        raise ValueError(f"unknown target: {target}") from error
+    if row["candidate_range"][1] >= row["baseline_range"][0]:
+        return f"no repeatable improvement: {target}; candidate and baseline ranges overlap or worsen"
+    return None
+
+
+def compare(baselines, candidates, target=None):
     expected = signature(baselines[0])
     if any(signature(run) != expected for run in baselines + candidates):
         raise ValueError("workload, terminal geometry or host differs between runs")
@@ -92,7 +110,14 @@ def compare(baselines, candidates):
             requests = run["phases"][phase]["requests"]
             if phase in ("mcp", "proxy") and (not requests["count"] or requests["latency_p95_ms"] >= 10):
                 findings.append(f"budget: {run['label']}/{phase}/p95 >= 10 ms or no requests")
+    if target is not None:
+        finding = improvement_finding(rows, target)
+        if finding:
+            findings.append(finding)
     return {
+        "target": target,
+        "improvement_verified": target is not None
+        and not any(finding.startswith("no repeatable improvement:") for finding in findings),
         "accepted": not findings,
         "findings": findings,
         "baseline_labels": [r["label"] for r in baselines],
@@ -108,8 +133,9 @@ def main():
     parser.add_argument("--baseline", type=Path, nargs="+", required=True)
     parser.add_argument("--candidate", type=Path, nargs="+", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--target", required=True, help="lower-is-better phase/role/metric to improve")
     args = parser.parse_args()
-    report = compare(load_runs(args.baseline), load_runs(args.candidate))
+    report = compare(load_runs(args.baseline), load_runs(args.candidate), args.target)
     with args.output.open("x") as output:
         json.dump(report, output, indent=2)
         output.write("\n")

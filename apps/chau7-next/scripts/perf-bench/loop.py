@@ -16,6 +16,7 @@ def main():
     parser.add_argument("baseline", type=Path)
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--results", type=Path, required=True, help="new directory for this iteration")
+    parser.add_argument("--target", required=True, help="lower-is-better phase/role/metric to improve")
     parser.add_argument("--repeats", type=int, default=2)
     parser.add_argument("--measure", type=float, default=30)
     parser.add_argument("--settle", type=float, default=10)
@@ -59,7 +60,7 @@ def main():
                 check=True,
             )
             groups[kind].append(args.results / f"{label}.json")
-    report = compare(load_runs(groups["baseline"]), load_runs(groups["candidate"]))
+    report = compare(load_runs(groups["baseline"]), load_runs(groups["candidate"]), args.target)
     (args.results / "comparison.json").write_text(json.dumps(report, indent=2) + "\n")
     print("accepted" if report["accepted"] else "needs another iteration", flush=True)
     for finding in report["findings"]:
