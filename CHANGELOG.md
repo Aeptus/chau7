@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the optimizer wrapper bypass test compatible with multicall utilities on Linux runners.
+
+- Remove the retired standalone Swift MCP bridge and its legacy-only checks; the Rust app continues to use its own bridge.
+
 - Keep passive diagnostics compatible with the Rust profile-isolation guard while continuing to reject Swift-profile paths and unrelated readers.
 
 - Prevent unhandled forwarded shortcuts from looping and making the app unresponsive.

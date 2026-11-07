@@ -1,5 +1,5 @@
 //! chau7-next-mcp-bridge: pipes stdin and stdout to the Chau7 Next MCP
-//! socket (port of `tools/chau7-mcp-bridge/main.swift`).
+//! socket.
 //!
 //! AI CLIs launch it from their config:
 //! `{"command": "~/.chau7-next/bin/chau7-next-mcp-bridge", "args": ["--socket", "<socket>"]}`.

@@ -1242,20 +1242,20 @@ mod tests {
             create_flag(&paths, "S1");
             for command in ["git", "cat", "sed"] {
                 // Forks from parallel tests may temporarily inherit a newly
-                // written script's descriptor on Linux. This fixture tests the
-                // generated wrapper's bypass, using a stable real executable.
+                // written script's descriptor on Linux. Use a stable shell binary;
+                // unlike a multicall echo, it accepts the wrapper command name.
                 let real = real_dir.join(command);
                 if real.exists() {
                     fs::remove_file(&real).unwrap();
                 }
-                std::os::unix::fs::symlink("/bin/echo", &real).unwrap();
+                std::os::unix::fs::symlink("/bin/sh", &real).unwrap();
                 let path = format!("{}:/usr/bin:/bin", real_dir.display());
                 install_wrapper(command, &paths, &path).unwrap();
                 // The generated source is still executed by its actual Bash
                 // interpreter. Wrapper execute permissions are tested above.
                 let out = Command::new("/bin/bash")
                     .arg(paths.wrapper_dir.join(command))
-                    .args(["real", "file.md"])
+                    .args(["-c", "printf '%s\\n' \"$*\"", "fixture", "real", "file.md"])
                     .env_clear()
                     .env("PATH", path)
                     .env("CHAU7_CTO_SESSION", "S1")
