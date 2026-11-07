@@ -110,6 +110,14 @@ Proxy exercises the local SQLite stats endpoint at 1 request/s by default; this 
 analytics/control workload, not a measurement of upstream model streaming.
 The synthetic loop makes no external API or paid model calls.
 
+An optional `--input-hz 1` sends synthetic single-byte MCP input to the selected
+isolated terminal during the terminal phase, while all fixture tabs produce
+output. The TUI confirms receipt; a mismatch fails the capture. The recorded
+latency is MCP request round-trip time, not physical key-to-display latency or
+a guarantee that an input was displayed. This workload is opt-in, retains all
+resource guards, and should only run after the small fixture and capacity checks
+above succeed. `--input-hz` defaults to zero and is capped at 1 Hz.
+
 ## Measurement contract
 
 `native.py` calls macOS `proc_pid_rusage` v4 directly once per second for each

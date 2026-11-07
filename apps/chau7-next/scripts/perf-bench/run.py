@@ -131,7 +131,8 @@ def prepare_home(home, args, port):
     shell = home / "workload.sh"
     command = " ".join(shlex.quote(str(p)) for p in (args.python, HERE / "tui.py"))
     controls = " ".join(shlex.quote(str(p)) for p in (phase_file, home / "progress"))
-    shell.write_text(f"#!/bin/sh\nexec {command} {args.hz} 1 2 {controls}\n")
+    probe = " --input-probe" if getattr(args, "input_hz", 0) else ""
+    shell.write_text(f"#!/bin/sh\nexec {command} {args.hz} 1 2 {controls}{probe}\n")
     shell.chmod(0o700)
     seed_channel_configs(
         home,
@@ -184,6 +185,16 @@ def validate_rendering(name, snapshot, expected_count=None):
                 raise RuntimeError("output was emitted but the selected terminal stopped painting")
 
 
+def validate_input_probe(probe, expected):
+    if (
+        not probe["sent"]
+        or probe["received"] != probe["sent"]
+        or probe["sent"] < 0.8 * expected
+        or probe["sent"] > expected + 1
+    ):
+        raise RuntimeError(f"input probe missed its configured rate or delivery: {probe}")
+
+
 def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guard=None):
     phase_file.write_text("active" if name == "terminal" else "idle")
     if guard:
@@ -197,6 +208,13 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
         raise RuntimeError("not all synthetic terminals started")
     samples = {name: [] for name in pids}
     latencies = []
+    input_latencies = []
+    input_hz = getattr(args, "input_hz", 0) if name == "terminal" else 0
+    selected = (
+        [t for t in before["terminals"] if t.get("selected") and not t.get("render_suspended")] if input_hz else []
+    )
+    if input_hz and (len(selected) != 1 or not selected[0].get("tab_id")):
+        raise RuntimeError("input probe requires exactly one selected live terminal")
     thread_sampler = ThreadSampler() if args.threads else None
     thread_samples = []
     host_samples = []
@@ -208,7 +226,7 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
         "first_snapshot": before,
     }
     deadline = time.monotonic() + args.measure
-    next_sample = next_request = time.monotonic()
+    next_sample = next_request = next_input = time.monotonic()
     count = 0
     while True:
         now = time.monotonic()
@@ -235,12 +253,20 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
             latencies.append((time.monotonic() - started) * 1000)
             count += 1
             next_request = started + 1 / (args.mcp_hz if name == "mcp" else args.request_hz)
+        if input_hz and now >= next_input and now < deadline - 1:
+            started = time.monotonic()
+            response = mcp.tool("tab_send_input", tab_id=selected[0]["tab_id"], input="x")
+            if not isinstance(response, dict) or response.get("ok") is not True:
+                raise RuntimeError(f"input probe delivery failed: {response}")
+            input_latencies.append((time.monotonic() - started) * 1000)
+            next_input = started + 1 / input_hz
         time.sleep(
             max(
                 0,
                 min(
                     next_sample,
                     next_request if name in ("mcp", "proxy") else deadline,
+                    next_input if input_hz and next_input < deadline - 1 else deadline,
                     deadline,
                 )
                 - time.monotonic(),
@@ -257,6 +283,19 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
         "thread_samples": thread_samples,
         "thread_cpu": summarize_threads(thread_samples) if thread_samples else None,
         "workload_proof": proof,
+        "input_probe": {
+            "sent": len(input_latencies),
+            "received": sum(
+                progress_after[pid].get("input_bytes", 0) - worker.get("input_bytes", 0)
+                for pid, worker in progress_before.items()
+            ),
+            "rpc_latency_p50_ms": percentile(input_latencies, 0.5),
+            "rpc_latency_p95_ms": percentile(input_latencies, 0.95),
+            "rpc_latency_max_ms": max(input_latencies, default=None),
+            "measurement_basis": "MCP request round trip; not physical keyboard or display latency",
+        }
+        if input_hz
+        else None,
         "processes": {role: summarize(rows) for role, rows in samples.items()},
         "samples": samples,
         "requests": {
@@ -272,6 +311,8 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
     # Preserve complete phase evidence even when an acceptance check rejects it.
     phases[name] = row
     validate_rendering(name, after, args.tabs + 1)
+    if input_hz:
+        validate_input_probe(row["input_probe"], (args.measure - 1) * input_hz)
     if name in ("mcp", "proxy"):
         target = args.measure * (args.mcp_hz if name == "mcp" else args.request_hz)
         if not 0.8 * target <= count <= 1.2 * target:
@@ -355,6 +396,7 @@ def main():
     parser.add_argument("label")
     parser.add_argument("--tabs", type=int, default=0, help="additional hidden tabs; start with one total tab")
     parser.add_argument("--hz", type=float, default=3)
+    parser.add_argument("--input-hz", type=float, default=0, help="opt-in synthetic MCP input rate, at most 1 Hz")
     parser.add_argument(
         "--threads", action="store_true", help="diagnostic thread attribution; keep off for final trials"
     )
@@ -381,6 +423,8 @@ def main():
         or args.measure < args.interval
         or min(args.interval, args.request_hz, args.mcp_hz, args.hz) <= 0
         or args.mcp_hz > 2
+        or not 0 <= args.input_hz <= 1
+        or (args.input_hz and args.measure < 3)
         or not 0 <= args.tabs < 40
     ):
         parser.error("positive rates and duration >= interval required; tabs must be 0..39")
