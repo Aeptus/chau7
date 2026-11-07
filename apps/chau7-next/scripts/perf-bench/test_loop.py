@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from compare import load_runs, signature
+from compare import improvement_finding, load_runs, signature
 from run import HERE, measure_phase, validate_rendering
 
 
@@ -113,6 +113,18 @@ class WorkloadAcceptance(unittest.TestCase):
 
 
 class ComparisonAcceptance(unittest.TestCase):
+    def test_predeclared_target_requires_separated_improving_repeats(self):
+        rows = {"terminal": {"app": {"cpu_percent": {"baseline_range": [2.0, 3.0], "candidate_range": [1.0, 1.9]}}}}
+        self.assertIsNone(improvement_finding(rows, "terminal/app/cpu_percent"))
+        rows["terminal"]["app"]["cpu_percent"]["candidate_range"] = [1.0, 2.0]
+        self.assertIn("no repeatable improvement", improvement_finding(rows, "terminal/app/cpu_percent"))
+        rows["terminal"]["app"]["cpu_percent"]["candidate_range"] = [3.1, 4.0]
+        self.assertIn("no repeatable improvement", improvement_finding(rows, "terminal/app/cpu_percent"))
+        with self.assertRaises(ValueError):
+            improvement_finding(rows, "terminal/app/not-a-metric")
+        with self.assertRaises(ValueError):
+            improvement_finding(rows, "bad-target")
+
     def test_incomplete_or_mixed_binaries_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             paths = [Path(directory) / str(n) for n in range(2)]
