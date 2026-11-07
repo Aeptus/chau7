@@ -1,6 +1,6 @@
 # MCP
 
-Swift: `apps/chau7-macos/Sources/Chau7/MCP/` (5 files, 2,394 lines), plus `tools/chau7-mcp-bridge/main.swift` (bridge), `Chau7Core/MCPProfile.swift`, `Chau7Core/MCPPermissionMode.swift`, settings UI in `Settings/Views/MCPSettingsView.swift`
+Swift: `apps/chau7-macos/Sources/Chau7/MCP/` (5 files, 2,394 lines), plus the former standalone Swift MCP bridge (removed), `Chau7Core/MCPProfile.swift`, `Chau7Core/MCPPermissionMode.swift`, settings UI in `Settings/Views/MCPSettingsView.swift`
 Swift tests: `MCP/MCPCommandFilterTests.swift`, `MCP/MCPProfileTests.swift` (also `MCPApprovalResultTests`, `MCPPermissionModeTests`, `MCPTabContextTests`), `MCP/TerminalControlServiceTests.swift`
 Wave: 3 (see README.md)
 Depends on: Overlay, Terminal (done); Telemetry (run_* and session_* tools), Repository and History (repo_* tools), TokenOptimization (tab_set_cto), Remote (iOS approval), Profiles (`ProfileSwitchRule` matching), Settings, Runtime (runtime_* tools)
@@ -13,7 +13,7 @@ Chau7 runs an MCP server on a Unix socket so AI agents (Claude Code, Codex, Curs
 |---|---|---|---|---|---|---|
 | MCP-001 | MCP server listens on `~/.chau7/mcp.sock` while the app runs (stale socket removed, mode 0600, backlog 5, one session per client, closed on quit) | `MCP/MCPServerManager.swift` |  | `chau7_next/src/mcp/server.rs`, `chau7_next/src/platform/local_socket.rs` | done | Unix sockets |
 | MCP-002 | JSON-RPC 2.0 session over the socket: `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `resources/list`, `resources/read`, `ping`; parse errors and unknown methods return JSON-RPC errors | `MCP/MCPSession.swift` |  | `chau7_next_core/src/mcp/protocol.rs`, `chau7_next/src/mcp/server.rs` | done |  |
-| MCP-003 | Bridge binary `chau7-mcp-bridge`: pipes stdin/stdout to the socket; prints a JSON-RPC error "Chau7 is not running. Start the app to enable MCP." and exits 1 when the app is not running | `tools/chau7-mcp-bridge/main.swift` |  | `chau7_next_mcp_bridge/src/main.rs`, `chau7_next_core/src/mcp/mod.rs` | done | Unix sockets |
+| MCP-003 | Bridge binary `chau7-mcp-bridge`: pipes stdin/stdout to the socket; prints a JSON-RPC error "Chau7 is not running. Start the app to enable MCP." and exits 1 when the app is not running | Former standalone Swift bridge (removed) |  | `chau7_next_mcp_bridge/src/main.rs`, `chau7_next_core/src/mcp/mod.rs` | done | Unix sockets |
 | MCP-004 | Bridge is copied from the app bundle to `~/.chau7/bin/chau7-mcp-bridge` (mode 755) on every launch; skipped in dev builds without the bundled bridge | `MCP/MCPServerManager.swift` |  | `chau7_next/src/mcp/install.rs`, `apps/chau7-next/scripts/bundle-macos.sh` | done |  |
 | MCP-005 | Registers the server in Claude Code `~/.claude.json` (`mcpServers.chau7`), only if `~/.claude.json` or `~/.claude/` exists | `MCP/MCPServerManager.swift` |  | `chau7_next_core/src/mcp/client_config.rs`, `chau7_next/src/mcp/install.rs` | done |  |
 | MCP-006 | Registers the server in Codex `~/.codex/config.toml` (`[mcp_servers.chau7]`), only if the file exists; updates `command` when the section is already there | `MCP/MCPServerManager.swift` |  | `chau7_next_core/src/mcp/client_config.rs`, `chau7_next/src/mcp/install.rs` | done |  |

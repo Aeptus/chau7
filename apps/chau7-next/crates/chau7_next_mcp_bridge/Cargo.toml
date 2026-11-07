@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 # stdio <-> Unix socket bridge that AI CLIs launch to reach the Chau7 Next
-# MCP server (port of `tools/chau7-mcp-bridge/main.swift`).
+# MCP server.
 [[bin]]
 name = "chau7-next-mcp-bridge"
 path = "src/main.rs"
