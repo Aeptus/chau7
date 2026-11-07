@@ -195,6 +195,13 @@ def validate_input_probe(probe, expected):
         raise RuntimeError(f"input probe missed its configured rate or delivery: {probe}")
 
 
+def next_input_wakeup(next_input, deadline, now, enabled):
+    # Do not busy-spin on an expired input deadline after the grace period starts.
+    if enabled and now < deadline - 1 and next_input < deadline - 1:
+        return next_input
+    return deadline
+
+
 def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guard=None):
     phase_file.write_text("active" if name == "terminal" else "idle")
     if guard:
@@ -266,7 +273,7 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
                 min(
                     next_sample,
                     next_request if name in ("mcp", "proxy") else deadline,
-                    next_input if input_hz and next_input < deadline - 1 else deadline,
+                    next_input_wakeup(next_input, deadline, time.monotonic(), bool(input_hz)),
                     deadline,
                 )
                 - time.monotonic(),

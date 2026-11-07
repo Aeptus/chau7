@@ -11,8 +11,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from compare import improvement_finding, load_runs, signature
-from run import HERE, measure_phase, validate_input_probe, validate_rendering
+from compare import improvement_finding, load_runs, signature, validate_target
+from run import HERE, measure_phase, next_input_wakeup, validate_input_probe, validate_rendering
 
 
 class WorkloadAcceptance(unittest.TestCase):
@@ -62,6 +62,12 @@ class WorkloadAcceptance(unittest.TestCase):
             finally:
                 child.terminate()
                 child.wait(timeout=5)
+
+    def test_input_wakeup_stops_polling_when_grace_period_starts(self):
+        self.assertEqual(next_input_wakeup(8, 10, 7, True), 8)
+        self.assertEqual(next_input_wakeup(8, 10, 9, True), 10)
+        self.assertEqual(next_input_wakeup(9, 10, 7, True), 10)
+        self.assertEqual(next_input_wakeup(8, 10, 7, False), 10)
 
     def test_input_proof_rejects_lost_or_missing_input(self):
         validate_input_probe({"sent": 10, "received": 10}, 10)
@@ -160,6 +166,12 @@ class WorkloadAcceptance(unittest.TestCase):
 
 
 class ComparisonAcceptance(unittest.TestCase):
+    def test_target_is_checked_before_starting_trials(self):
+        self.assertEqual(validate_target("terminal/app/cpu_percent"), ["terminal", "app", "cpu_percent"])
+        for target in ("unknown/app/cpu_percent", "idle/app/not_a_metric", "idle/not_a_role/cpu_percent"):
+            with self.assertRaises(ValueError):
+                validate_target(target)
+
     def test_predeclared_target_requires_separated_improving_repeats(self):
         rows = {"terminal": {"app": {"cpu_percent": {"baseline_range": [2.0, 3.0], "candidate_range": [1.0, 1.9]}}}}
         self.assertIsNone(improvement_finding(rows, "terminal/app/cpu_percent"))

@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from compare import compare, load_runs
+from compare import compare, load_runs, validate_target
 from run import HERE
 
 
@@ -29,6 +29,10 @@ def main():
     args = parser.parse_args()
     if args.repeats < 2:
         parser.error("at least two repeats required")
+    try:
+        validate_target(args.target)
+    except ValueError as error:
+        parser.error(str(error))
     args.results.mkdir(parents=True, exist_ok=False)
     groups = {"baseline": [], "candidate": []}
     for repeat in range(args.repeats):
