@@ -7,9 +7,12 @@ import ctypes
 import json
 import os
 import random
+import select
 import shutil
 import sys
+import termios
 import time
+import tty
 from pathlib import Path
 
 hz = float(sys.argv[1]) if len(sys.argv) > 1 else 12.5
@@ -18,6 +21,7 @@ message_every = float(sys.argv[3]) if len(sys.argv) > 3 else 2.0
 rng = random.Random(seed)
 phase_file = Path(sys.argv[4]) if len(sys.argv) > 4 else None
 progress_dir = Path(sys.argv[5]) if len(sys.argv) > 5 else None
+input_probe = len(sys.argv) > 6 and sys.argv[6] == "--input-probe"
 # Keep only the external load generator at a known QoS; app/helper QoS is unchanged.
 if sys.platform == "darwin":
     libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
@@ -25,7 +29,7 @@ if sys.platform == "darwin":
     error = libc.pthread_set_qos_class_self_np(0x19, 0)  # QOS_CLASS_USER_INITIATED
     if error:
         raise OSError(error, "could not set workload generator QoS")
-counters = {"bytes": 0}
+counters = {"bytes": 0, "input_bytes": 0}
 words = [
     "terminal",
     "render",
@@ -69,11 +73,24 @@ def progress():
         temporary = path.with_suffix(".tmp")
         temporary.write_text(
             json.dumps(
-                {"pid": os.getpid(), "frames": tick, "bytes": counters["bytes"], "monotonic_s": time.monotonic()}
+                {
+                    "pid": os.getpid(),
+                    "frames": tick,
+                    "bytes": counters["bytes"],
+                    "input_bytes": counters["input_bytes"],
+                    "monotonic_s": time.monotonic(),
+                }
             )
         )
         temporary.replace(path)
 
+
+original_tty = None
+if input_probe:
+    if not sys.stdin.isatty():
+        raise RuntimeError("input probe requires a terminal")
+    original_tty = termios.tcgetattr(sys.stdin.fileno())
+    tty.setcbreak(sys.stdin.fileno())
 
 w("\x1b[?1049h\x1b[?25l\x1b[2J")
 tick = 0
@@ -84,6 +101,15 @@ next_frame = start
 try:
     while True:
         now = time.monotonic()
+        if input_probe and select.select([sys.stdin], [], [], 0)[0]:
+            data = os.read(sys.stdin.fileno(), 4096)
+            if not data:
+                raise RuntimeError("probe terminal closed")
+            counters["input_bytes"] += len(data)
+            # Respond through the PTY without storing typed contents.
+            w(f"\x1b[s\x1b[1;1H\x1b[2Kprobe {counters['input_bytes']}\x1b[u")
+            out.flush()
+            progress()
         if now >= next_progress:
             progress()
             next_progress = now + 0.5
@@ -125,5 +151,7 @@ try:
 except KeyboardInterrupt:
     pass
 finally:
+    if original_tty is not None:
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, original_tty)
     w("\x1b[r\x1b[?25h\x1b[?1049l")
     out.flush()

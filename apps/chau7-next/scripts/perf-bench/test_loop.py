@@ -1,5 +1,7 @@
 import copy
 import json
+import os
+import pty
 import subprocess
 import sys
 import tempfile
@@ -10,7 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from compare import improvement_finding, load_runs, signature
-from run import HERE, measure_phase, validate_rendering
+from run import HERE, measure_phase, validate_input_probe, validate_rendering
 
 
 class WorkloadAcceptance(unittest.TestCase):
@@ -60,6 +62,51 @@ class WorkloadAcceptance(unittest.TestCase):
             finally:
                 child.terminate()
                 child.wait(timeout=5)
+
+    def test_input_proof_rejects_lost_or_missing_input(self):
+        validate_input_probe({"sent": 10, "received": 10}, 10)
+        for probe in (
+            {"sent": 10, "received": 9},
+            {"sent": 0, "received": 0},
+            {"sent": 2, "received": 2},
+            {"sent": 12, "received": 12},
+        ):
+            with self.assertRaises(RuntimeError):
+                validate_input_probe(probe, 10)
+
+    def test_opt_in_worker_confirms_input_from_pty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            control = root / "phase"
+            control.write_text("active")
+            master, slave = pty.openpty()
+            child = subprocess.Popen(
+                [sys.executable, str(HERE / "tui.py"), "3", "1", "2", str(control), str(root), "--input-probe"],
+                stdin=slave,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            os.close(slave)
+            try:
+                path = root / f"{child.pid}.json"
+                deadline = time.monotonic() + 10
+                while not path.exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertTrue(path.exists(), "worker never became ready")
+                os.write(master, b"x")
+                while time.monotonic() < deadline:
+                    if json.loads(path.read_text())["input_bytes"] == 1:
+                        break
+                    if child.poll() is not None:
+                        self.fail("worker exited before receiving input")
+                    time.sleep(0.02)
+                else:
+                    self.fail("worker did not confirm input")
+            finally:
+                child.terminate()
+                child.wait(timeout=5)
+                child.stderr.close()
+                os.close(master)
 
     def test_rejected_phase_keeps_raw_capture(self):
         with tempfile.TemporaryDirectory() as directory:
