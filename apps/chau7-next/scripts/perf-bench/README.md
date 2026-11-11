@@ -87,7 +87,16 @@ part of the evidence rather than a reason to declare a speedup.
 
    Choose `--target phase/role/metric` before running the trials; available
    metrics are `cpu_percent`, `interrupt_wakeups_per_s`, and
-   `footprint_peak_bytes` for `app`, `mcp_bridge`, or `proxy`. The candidate
+   `footprint_peak_bytes` for `app`, `mcp_bridge`, or `proxy`.
+   For responsiveness, `terminal/app/output_wait_mean_ms` is the mean time
+   captured PTY output waited before the main thread processed it, across all
+   fixture terminals, and `terminal/app/output_congestion_mean_ms` is the same
+   wait without the deliberate pacing hold. Both are whole-phase means taken
+   from the difference of the profiler's lifetime counters between the phase's
+   first and last snapshots, not rolling windows or bucketed percentiles. They
+   end at output processing: they do not include painting or display
+   presentation, and a mean does not bound the worst stall. A run with no
+   samples makes the target unavailable instead of reading as zero. The candidate
    must beat the baseline in every repeat (the ranges must not overlap), in
    addition to passing all existing budgets and regression guards. This is a
    conservative screening rule, not a confidence interval or proof of causation.

@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from compare import improvement_finding, load_runs, signature, validate_target
+from compare import compare, improvement_finding, load_runs, output_latency_mean_ms, signature, validate_target
 from run import HERE, measure_phase, next_input_wakeup, validate_input_probe, validate_rendering
 
 
@@ -183,6 +183,95 @@ class ComparisonAcceptance(unittest.TestCase):
             improvement_finding(rows, "terminal/app/not-a-metric")
         with self.assertRaises(ValueError):
             improvement_finding(rows, "bad-target")
+
+    def test_output_latency_targets_only_exist_for_app_terminal_phase(self):
+        validate_target("terminal/app/output_wait_mean_ms")
+        validate_target("terminal/app/output_congestion_mean_ms")
+        for target in ("idle/app/output_wait_mean_ms", "terminal/proxy/output_wait_mean_ms"):
+            with self.assertRaises(ValueError):
+                validate_target(target)
+
+    def test_output_latency_is_a_whole_phase_mean_of_lifetime_deltas(self):
+        def snapshot(*lifetimes, operation="event_dispatch_wait"):
+            return {
+                "work_profile": {
+                    "entries": [
+                        {
+                            "kind": "latency",
+                            "caller": "output_dispatch",
+                            "operation": operation,
+                            # A misleading rolling window must not be used.
+                            "last_60s": {"sample_count": 1, "total_ms": 999.0},
+                            "lifetime": {"sample_count": count, "total_ms": total},
+                        }
+                        for count, total in lifetimes
+                    ]
+                }
+            }
+
+        row = {"first_snapshot": snapshot((10, 100.0), (5, 5.0)), "last_snapshot": snapshot((30, 160.0), (15, 35.0))}
+        self.assertEqual(output_latency_mean_ms(row, "event_dispatch_wait"), 3.0)
+        # A key first seen during the phase counts from zero.
+        row["first_snapshot"] = snapshot((10, 100.0))
+        self.assertEqual(output_latency_mean_ms(row, "event_dispatch_wait"), 95.0 / 35)
+        for silent in (
+            {"first_snapshot": snapshot((10, 100.0)), "last_snapshot": snapshot((10, 100.0))},
+            {"first_snapshot": snapshot((10, 100.0)), "last_snapshot": snapshot((12, 90.0))},
+            {"first_snapshot": snapshot(), "last_snapshot": snapshot((4, 8.0), operation="other")},
+        ):
+            with self.assertRaisesRegex(ValueError, "no event_dispatch_wait samples"):
+                output_latency_mean_ms(silent, "event_dispatch_wait")
+
+    def test_output_wait_target_gates_on_separated_repeats(self):
+        def run(label, wait_ms, profiled=True):
+            def snapshot(count):
+                entries = [
+                    {
+                        "kind": "latency",
+                        "caller": "output_dispatch",
+                        "operation": operation,
+                        "lifetime": {"sample_count": count, "total_ms": count * wait_ms},
+                    }
+                    for operation in ("event_dispatch_wait", "event_dispatch_congestion")
+                ]
+                return {
+                    "terminals": [{"selected": True, "memory": {"grid_cols": 80, "grid_rows": 24}}],
+                    "work_profile": {"entries": entries if profiled else []},
+                }
+
+            process = {"cpu_percent": 1.0, "interrupt_wakeups_per_s": 1.0, "footprint_peak_bytes": 1024}
+            return {
+                "label": label,
+                "binary_sha256": label[0],
+                "arguments": {"tabs": 0},
+                "host": {"platform": "mac", "logical_cpus": 10},
+                "phases": {
+                    "terminal": {
+                        "processes": {role: dict(process) for role in ("app", "mcp_bridge", "proxy")},
+                        "requests": {"count": 0},
+                        "first_snapshot": snapshot(10),
+                        "last_snapshot": snapshot(110),
+                    }
+                },
+            }
+
+        target = "terminal/app/output_wait_mean_ms"
+        baselines = [run("b1", 8.0), run("b2", 9.0)]
+        report = compare(baselines, [run("c1", 5.0), run("c2", 6.0)], target)
+        self.assertTrue(report["accepted"], report["findings"])
+        row = report["metrics"]["terminal"]["app"]["output_wait_mean_ms"]
+        self.assertEqual((row["baseline_range"], row["candidate_range"]), ([8.0, 9.0], [5.0, 6.0]))
+        self.assertIn("output_congestion_mean_ms", report["metrics"]["terminal"]["app"])
+        report = compare(baselines, [run("c1", 5.0), run("c2", 8.0)], target)
+        self.assertEqual(
+            report["findings"],
+            [f"no repeatable improvement: {target}; candidate and baseline ranges overlap or worsen"],
+        )
+        with self.assertRaisesRegex(ValueError, "target unavailable"):
+            compare(baselines, [run("c1", 5.0), run("c2", 5.0, profiled=False)], target)
+        # Other targets still compare runs that lack the latency profile.
+        report = compare(baselines, [run("c1", 5.0), run("c2", 5.0, profiled=False)], "terminal/app/cpu_percent")
+        self.assertNotIn("output_wait_mean_ms", report["metrics"]["terminal"]["app"])
 
     def test_incomplete_or_mixed_binaries_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
