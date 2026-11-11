@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Build the Go services with Go 1.27.4, which fixes the net/http advisory GO-2026-6859.
+
 - Include the age of buffered terminal output in performance snapshots, while holding its buffer lock for less time.
 
 - Add bounded diagnostic timing from terminal input to the next visible output paint.
