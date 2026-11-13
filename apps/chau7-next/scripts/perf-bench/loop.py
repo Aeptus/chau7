@@ -29,6 +29,8 @@ def main():
     args = parser.parse_args()
     if args.repeats < 2:
         parser.error("at least two repeats required")
+    if args.input_hz and not args.tabs:
+        parser.error("--input-hz needs --tabs 1 or more: input can only go to a tab the harness created")
     try:
         validate_target(args.target)
     except ValueError as error:

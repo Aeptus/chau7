@@ -119,9 +119,11 @@ Proxy exercises the local SQLite stats endpoint at 1 request/s by default; this 
 analytics/control workload, not a measurement of upstream model streaming.
 The synthetic loop makes no external API or paid model calls.
 
-An optional `--input-hz 1` sends synthetic single-byte MCP input to the selected
-isolated terminal during the terminal phase, while all fixture tabs produce
-output. The TUI confirms receipt; a mismatch fails the capture. The recorded
+An optional `--input-hz 1` sends synthetic single-byte MCP input to the first
+tab the harness created during the terminal phase, while all fixture tabs
+produce output. It therefore needs `--tabs 1` or more: the app only lets an MCP
+client drive a tab that client created, and the initial tab would need an
+interactive approval. The target tab is not necessarily the visible one. The TUI confirms receipt; a mismatch fails the capture. The recorded
 latency is MCP request round-trip time, not physical key-to-display latency or
 a guarantee that an input was displayed. This workload is opt-in, retains all
 resource guards, and should only run after the small fixture and capacity checks

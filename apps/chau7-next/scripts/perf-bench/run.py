@@ -217,11 +217,11 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
     latencies = []
     input_latencies = []
     input_hz = getattr(args, "input_hz", 0) if name == "terminal" else 0
-    selected = (
-        [t for t in before["terminals"] if t.get("selected") and not t.get("render_suspended")] if input_hz else []
-    )
-    if input_hz and (len(selected) != 1 or not selected[0].get("tab_id")):
-        raise RuntimeError("input probe requires exactly one selected live terminal")
+    # MCP may only send input to a tab this connection created; the initial
+    # tab would need an interactive approval, and snapshot ids are not tab ids.
+    input_tab = getattr(args, "input_tab", None) if input_hz else None
+    if input_hz and not input_tab:
+        raise RuntimeError("input probe requires a harness-created tab; use --tabs 1 or more")
     thread_sampler = ThreadSampler() if args.threads else None
     thread_samples = []
     host_samples = []
@@ -262,7 +262,7 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
             next_request = started + 1 / (args.mcp_hz if name == "mcp" else args.request_hz)
         if input_hz and now >= next_input and now < deadline - 1:
             started = time.monotonic()
-            response = mcp.tool("tab_send_input", tab_id=selected[0]["tab_id"], input="x")
+            response = mcp.tool("tab_send_input", tab_id=input_tab, input="x")
             if not isinstance(response, dict) or response.get("ok") is not True:
                 raise RuntimeError(f"input probe delivery failed: {response}")
             input_latencies.append((time.monotonic() - started) * 1000)
@@ -299,7 +299,8 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
             "rpc_latency_p50_ms": percentile(input_latencies, 0.5),
             "rpc_latency_p95_ms": percentile(input_latencies, 0.95),
             "rpc_latency_max_ms": max(input_latencies, default=None),
-            "measurement_basis": "MCP request round trip; not physical keyboard or display latency",
+            "measurement_basis": "MCP request round trip to a harness-created tab, which need not be"
+            " the visible one; not physical keyboard or display latency",
         }
         if input_hz
         else None,
@@ -364,6 +365,8 @@ def run(args, result, home, log):
             created = mcp.tool("tab_create", directory=str(home))
             if not isinstance(created, dict) or not created.get("tab_id"):
                 raise RuntimeError(f"tab_create failed: {created}")
+            if not getattr(args, "input_tab", None):
+                args.input_tab = created["tab_id"]
         result["pids"] = {
             "app": app.pid,
             "mcp_bridge": mcp.process.pid,
@@ -435,6 +438,8 @@ def main():
         or not 0 <= args.tabs < 40
     ):
         parser.error("positive rates and duration >= interval required; tabs must be 0..39")
+    if args.input_hz and not args.tabs:
+        parser.error("--input-hz needs --tabs 1 or more: input can only go to a tab the harness created")
     if Path(args.label).name != args.label:
         parser.error("label must be a filename")
     args.binary = args.binary.resolve(strict=True)
