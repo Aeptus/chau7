@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Make the performance lab's synthetic input reach the app by sending it to a tab the lab created.
+
 - Let the performance comparison gate target the time terminal output waits before processing, measured over the whole trial phase.
 
 - Build the Go services with Go 1.27.4, which fixes the net/http advisory GO-2026-6859.
