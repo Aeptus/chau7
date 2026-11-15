@@ -486,7 +486,8 @@ mod tests {
             expires_at: expires_at.into(),
             relay_url: "wss://relay.test/connect".into(),
             relay_key_id: None,
-            relay_secret: None,            pairing_key: None,
+            relay_secret: None,
+            pairing_key: None,
         }
     }
 
