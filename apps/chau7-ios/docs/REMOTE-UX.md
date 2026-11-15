@@ -9,9 +9,9 @@ The transport and payload contract live in
 
 - Live terminal output streaming
 - Simple input with a Send button
-- Hold-to-send by default, with a setting to switch to tap-to-send
+- Tap-to-send by default, with a setting to require hold-to-send
 - Send appends newline by default
-- Accountless pairing via pasted JSON payload
+- Accountless pairing by scanning the Mac's QR code
 - Live Activity / Dynamic Island status for the most relevant remote AI task
 - Support for multiple Macs in the iOS app
 
@@ -38,9 +38,10 @@ The transport and payload contract live in
 ## Pairing UX
 
 - Pairing is accountless
-- The Mac produces a payload containing relay URL, device ID, public key, pairing code, and expiry
-- iOS accepts that payload by scanning the Mac's QR code, a one-tap "Paste & Pair"
-  from the clipboard, or manual entry
+- The Mac's QR code carries relay URL, device ID, public key, pairing code, expiry, and the relay credential
+- iOS accepts that payload only by scanning the QR code; the credential is never put on a clipboard
+- The previous pairing is kept until the Mac accepts the new one; success is shown only then
+- Settings offers "Forget this Mac", and an explicit Disconnect holds until the user taps Connect
 - Payload validation reports specific errors (missing field, expired code, unreadable text)
 
 

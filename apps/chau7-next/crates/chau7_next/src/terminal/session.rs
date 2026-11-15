@@ -2593,6 +2593,11 @@ impl TerminalSession {
         }
     }
 
+    /// A full-screen program is on the alternate screen.
+    pub fn is_alternate_screen_active(&self) -> bool {
+        self.term.read().is_alternate_screen_active()
+    }
+
     /// Mouse tracking mode for wheel reports. Full-screen programs receive
     /// the wheel reports they request even when click/drag reporting is off.
     /// On the primary screen, the three tracking bits still follow the setting.

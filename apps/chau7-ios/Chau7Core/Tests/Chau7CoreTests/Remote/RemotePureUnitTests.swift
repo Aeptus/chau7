@@ -288,6 +288,87 @@ final class RelayTokenTests: XCTestCase {
         XCTAssertEqual(token, "v3.test-key.1751457600.AAAAAAAAAAAAAAAAAAAAAA.connect.\(signature)")
     }
 
+    // MARK: Per-phone credentials
+
+    /// 32 bytes of 0x02: a stand-in, well-formed and obviously not real.
+    private let phoneSecret = Data(repeating: 2, count: 32).base64EncodedString()
+        .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+
+    private func pairing(pairID: String? = nil) -> RemotePairingPayload {
+        RemotePairingPayload(
+            relayURL: "wss://relay.example.com",
+            deviceID: "device-123",
+            macPub: "bWFjLXB1Yg==",
+            pairingCode: "123456",
+            expiresAt: "2026-07-01T12:30:00Z",
+            relaySecret: vectorHMACKey,
+            relayKeyID: "current",
+            relayPairID: pairID,
+            relayPairSecret: pairID == nil ? nil : phoneSecret
+        )
+    }
+
+    private func phoneCredential(deviceID: String = "device-123") -> RemotePhoneRelayCredential {
+        RemotePhoneRelayCredential(
+            deviceID: deviceID,
+            credential: RemoteRelayCredentialPayload(phoneID: "dPhoneOne", relaySecret: phoneSecret, relayKeyID: "current")
+        )
+    }
+
+    /// The relay (test/phones.test.js) verifies this exact token.
+    func testPhoneTokenMatchesTheSharedVector() {
+        let token = RelayToken.make(
+            deviceID: "device-123",
+            keyID: "current",
+            phoneID: "dPhoneOne",
+            secret: phoneSecret,
+            role: "ios",
+            scope: "connect",
+            ts: "1000000",
+            nonce: "bm9uY2U"
+        )
+        XCTAssertEqual(token, "v4.current.dPhoneOne.1000000.bm9uY2U.connect.PLf8PmGtfT8Qy01hk7xIoqXTz72NKSF9qsdWXe3H1YU")
+    }
+
+    func testThePhonesOwnCredentialIsPreferredOverEverythingElse() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertEqual(
+            RelayToken.signer(pairing: pairing(pairID: "p1000600"), phoneCredential: phoneCredential(), now: now),
+            .phone(id: "dPhoneOne", keyID: "current", secret: phoneSecret)
+        )
+        let token = RelayToken.make(pairing: pairing(), phoneCredential: phoneCredential(), role: "ios", scope: "pending", now: now)
+        XCTAssertEqual(token?.hasPrefix("v4.current.dPhoneOne."), true)
+    }
+
+    func testACredentialFromAnotherMacIsNotUsed() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertEqual(
+            RelayToken.signer(pairing: pairing(), phoneCredential: phoneCredential(deviceID: "other-mac"), now: now),
+            .shared(keyID: "current", secret: vectorHMACKey)
+        )
+    }
+
+    func testThePairingWindowCredentialIsUsedOnlyWhileTheWindowIsOpen() {
+        let scanned = pairing(pairID: "p1000600")
+        XCTAssertEqual(
+            RelayToken.signer(pairing: scanned, phoneCredential: nil, now: Date(timeIntervalSince1970: 1_000_000)),
+            .phone(id: "p1000600", keyID: "current", secret: phoneSecret)
+        )
+        XCTAssertEqual(
+            RelayToken.signer(pairing: scanned, phoneCredential: nil, now: Date(timeIntervalSince1970: 1_000_600)),
+            .shared(keyID: "current", secret: vectorHMACKey)
+        )
+        for label in ["1000600", "pabc", "p", "p-5", "dPhoneOne"] {
+            XCTAssertNil(RelayToken.pairWindowClose(label), label)
+        }
+    }
+
+    func testAMalformedCredentialFromTheMacIsRejected() {
+        XCTAssertTrue(phoneCredential().credential.isWellFormed)
+        XCTAssertFalse(RemoteRelayCredentialPayload(phoneID: "d.bad", relaySecret: phoneSecret, relayKeyID: "current").isWellFormed)
+        XCTAssertFalse(RemoteRelayCredentialPayload(phoneID: "dPhoneOne", relaySecret: "weak", relayKeyID: "current").isWellFormed)
+    }
+
     func testLegacyWeakAndWrongRolePairingsFailClosed() {
         var pairing = RemotePairingPayload(relayURL: "wss://r", deviceID: "d", macPub: "m", pairingCode: "1", expiresAt: "e", relaySecret: vectorHMACKey)
         XCTAssertNil(RelayToken.make(pairing: pairing, role: "ios", scope: "connect"))

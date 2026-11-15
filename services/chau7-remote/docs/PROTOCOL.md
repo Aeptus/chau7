@@ -29,6 +29,7 @@ Mac generates:
 - `device_id` (UUID)
 - `mac_pub` (X25519 public key)
 - `pairing_code` (6 digits, TTL 10 minutes)
+- `pairing_key` (32 random bytes, same lifetime as the code)
 
 Pairing payload:
 
@@ -36,9 +37,12 @@ Pairing payload:
 - `device_id`
 - `mac_pub` (base64)
 - `pairing_code`
+- `pairing_key` (base64) — shown in the QR only; never sent over the relay
 - `expires_at` (ISO8601)
 - `relay_secret` — derived iOS-only credential for this Mac device namespace
 - `relay_key_id` — public server key ID; both fields are required for v3 admission
+- `relay_pair_id`, `relay_pair_secret` — a relay credential that works only
+  until `expires_at`; present when the relay supports per-phone credentials
 
 Legacy pairing payloads remain decodable for migration but cannot connect.
 Settings displays/copies public device details without the credential; pair by
@@ -47,17 +51,31 @@ scanning the secure QR. The server root and Mac credential never enter the QR.
 Flow:
 
 1. Mac connects to relay and waits for pair requests.
-2. iOS pastes pairing payload and connects to relay.
-3. iOS sends `PAIR_REQUEST` to the Mac through the relay.
-4. Mac validates `pairing_code` and replies `PAIR_ACCEPT` carrying `mac_pub`.
+2. iOS scans the pairing QR and connects to relay.
+3. iOS sends `PAIR_REQUEST` to the Mac through the relay, carrying a
+   `pairing_proof` instead of the code.
+4. Mac validates `pairing_proof` and replies `PAIR_ACCEPT` carrying `mac_pub`.
 5. Both sides derive session keys via X25519 and exchange an encrypted
    `SESSION_READY`.
 6. Only when the Mac accepts that encrypted `SESSION_READY` — which only the
    holder of the matching iOS private key can produce — does it persist the
    iOS identity as trusted.
 
-`PAIR_REQUEST` is cleartext and the relay forwards it verbatim, so the
-`ios_pub` it carries is attacker-chosen and must not be trusted on arrival. The
+`PAIR_REQUEST` is cleartext and the relay forwards it verbatim. The proof is
+
+```
+pairing_proof = base64(HMAC-SHA256(pairing_key,
+    "chau7-pair-v2" 0x00 device_id 0x00 ios_pub 0x00 pairing_code))
+```
+
+with `ios_pub` exactly as sent (base64 text). It reveals nothing reusable and
+covers the iOS public key, so whoever forwards the request cannot pair a key of
+its own. A request that carries only `pairing_code` comes from an app older
+than the proof and is rejected with `update_required`; a phone the Mac already
+trusts needs neither.
+
+Even with a valid proof, the
+`ios_pub` it carries must not be trusted on arrival. The
 Mac therefore treats a claimed identity as *provisional* until the handshake
 proves possession. Trust is anchored in the Mac's own private key, which never
 leaves the Mac: a relay that observes the pairing code still cannot derive the
@@ -92,6 +110,40 @@ signed:  v3:{key_id}:{device_id}:{role}:{scope}:{ts}:{nonce}
 - The signature uses HMAC-SHA256 with the UTF-8 device/role-derived credential.
 - [Credential provisioning and rotation](CREDENTIALS.md) keeps server roots off clients, limits old-key overlap to 24 hours, and rejects revoked device namespaces.
 - v2/global-secret admission is rejected; iOS never opens an unauthenticated connection as a legacy fallback.
+
+#### Per-phone credentials (v4)
+
+The iOS role credential above is shared by every phone paired with a Mac, so
+it cannot be taken away from one phone. A phone therefore also gets a
+credential of its own:
+
+```
+phone_secret = base64url(HMAC-SHA256(key = mac role credential (32 raw bytes),
+                                     "chau7-v4:phone:" + phone_id))
+wire:    v4.{key_id}.{phone_id}.{ts}.{nonce}.{scope}.{base64url_sig}
+signed:  v4:{key_id}:{device_id}:ios:{phone_id}:{scope}:{ts}:{nonce}
+```
+
+- `phone_id` is `d` + base64url of the first 16 bytes of SHA-256 of the
+  phone's public key. Only the Mac and the relay can derive `phone_secret`;
+  one phone cannot derive another's.
+- A pairing window has its own label, `p` + the unix second the pairing code
+  expires, with a secret derived the same way. It is carried in the QR
+  (`relay_pair_id`, `relay_pair_secret`) and the relay refuses it after that
+  second, and for any window longer than 20 minutes.
+- The Mac sends the relay the full list of phones it trusts:
+  `PUT /phones/:deviceId` (role=mac, scope=`phones`), body
+  `{ "phones": ["d...", ...] }`. A relay without this route answers 404 and the
+  helper then leaves the pairing-window credential out of the QR.
+- For `role=ios` the relay admits: a `phone_id` on the list; an open pairing
+  window; and the shared v3 credential **until a phone has been removed from
+  the list**. From the first removal on, the shared credential is refused for
+  that Mac for good, because the removed phone still holds it. Connected
+  sockets that are no longer admitted are closed (1008).
+- After `SESSION_READY` the helper sends the phone `RELAY_CREDENTIAL`
+  (encrypted). The phone stores it in the Keychain and signs with it from then
+  on. A phone that only ever had the shared credential (an older app) must be
+  updated and scan a fresh QR once a removal has happened.
 
 Each side then sends `HELLO` (cleartext). They compute:
 
@@ -160,6 +212,7 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
 - `0x42 REMOTE_TELEMETRY` (encrypted over relay, local IPC after relay client decrypts)
 - `0x43 CLIENT_STATE` (encrypted, JSON)
 - `0x44 RELAY_STATUS` (local IPC, JSON — helper-to-relay transport state and optional reconnect delay)
+- `0x45 RELAY_CREDENTIAL` (encrypted, JSON, Mac to iOS — `{ "phone_id", "relay_secret", "relay_key_id" }`, the phone's own relay credential)
 - `0x50 APPROVAL_REQUEST` (encrypted, JSON)
 - `0x51 APPROVAL_RESPONSE` (encrypted, JSON)
 - `0x52 NOTIFICATION_EVENT` (encrypted, JSON)
@@ -167,6 +220,13 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
   VIEWER_OUTPUT (cleartext, read-only viewers of a terminal shared by Chau7
   Next; the Swift app never sends them. See
   `docs/remote-control/VIEWER-PROTOCOL.md`)
+- `0x65 RELAY_ACK` (cleartext, iOS to relay, never forwarded — 8-byte
+  little-endian running total of bytes the phone has received and applied,
+  sent about every 256 KiB. The Workers runtime does not report a socket's
+  send queue, so the relay subtracts this total from what it has sent: above
+  4 MiB unacknowledged it drops `TERMINAL_GRID_SNAPSHOT` frames, above 16 MiB
+  it closes the phone's socket (1013). A phone that never acknowledges is
+  never measured.)
 - `0x7F ERROR` (encrypted, JSON)
 
 JSON payloads are UTF-8.
@@ -199,7 +259,7 @@ since 2001-01-01T00:00:00Z (`timeIntervalSinceReferenceDate`).
 ```json
 {
   "device_id": "uuid",
-  "pairing_code": "123456",
+  "pairing_proof": "base64-32bytes",
   "ios_pub": "base64",
   "ios_name": "iPhone"
 }
@@ -218,7 +278,7 @@ since 2001-01-01T00:00:00Z (`timeIntervalSinceReferenceDate`).
 ### PAIR_REJECT
 
 ```json
-{ "reason": "expired_code|invalid_code|internal_error" }
+{ "reason": "expired_code|invalid_code|update_required|rate_limited|invalid_ios_pub|internal_error" }
 ```
 
 ### SESSION_READY
@@ -306,7 +366,7 @@ Rules:
 
 ### CACHED_TAB_LIST
 
-Same payload as TAB_LIST. The agent replays its last cached tab list to a
+Same payload as TAB_LIST, encrypted like it. The agent replays its last cached tab list to a
 freshly connected client before live frames resume, so the UI is populated
 immediately.
 
@@ -435,6 +495,23 @@ level.
 { "request_id": "uuid", "approved": true }
 ```
 
+Input the phone sends (INPUT, KEY_INPUT, PANE_INPUT, a prompt response) passes
+the Mac's dangerous-command guard like input typed on the Mac. When the guard
+holds it for confirmation, the Mac does not refuse it: it sends an
+APPROVAL_REQUEST whose `command` and `flagged_command` are the held command and
+whose `context_note` says why it is held. `approved: true` types the held input
+(the Mac's own confirmation is answered the same way); `approved: false` drops
+it. The request is withdrawn from the Mac's pending approvals when the
+confirmation is answered on the Mac instead. Related ERROR codes, all sent on
+the input's tab:
+
+- `input_held`: more input arrived for a pane whose confirmation is still
+  waiting. The input is dropped and the APPROVAL_REQUEST is sent again.
+- `command_blocked`: the command is on the Mac's block list or would harm
+  Chau7 itself. Nothing ran and no approval can run it.
+- `approval_stale`: the approval arrived after the terminal changed (other
+  input, another directory) or after the Mac answered. Nothing was typed.
+
 ### NOTIFICATION_EVENT
 
 A user-facing notification composed entirely on the Mac (semantic kind +
@@ -498,6 +575,11 @@ the locally focused tab.
 { "code": "unauthorized|bad_frame|internal_error", "message": "..." }
 ```
 
+The Mac also reports input it could not deliver with its own codes:
+`tab_unavailable`, `invalid_input_encoding`, `stale_prompt`, and the
+command-guard codes `input_held`, `command_blocked` and `approval_stale`
+(see APPROVAL_RESPONSE).
+
 ### PAIRING_INFO
 
 Local IPC payload:
@@ -508,9 +590,12 @@ Local IPC payload:
   "device_id": "uuid",
   "mac_pub": "base64",
   "pairing_code": "123456",
+  "pairing_key": "base64-32bytes",
   "expires_at": "ISO8601",
   "relay_secret": "derived-ios-role-credential",
-  "relay_key_id": "public-key-id"
+  "relay_key_id": "public-key-id",
+  "relay_pair_id": "p1782909000",
+  "relay_pair_secret": "pairing-window-credential"
 }
 ```
 
@@ -556,6 +641,9 @@ with `RELAY_ALLOW_UNAUTHENTICATED`.
 - `POST /push/notify/:deviceId` (role=mac, scope=push) — forward a push
   notification to the registered device. The relay builds the APNs payload
   (`time-sensitive` interruption level, thread grouping by tab title).
+- `PUT /phones/:deviceId` (role=mac, scope=phones) — replace the list of
+  phones this Mac trusts; see "Per-phone credentials". Answers
+  `{ "locked": bool, "phones": n }`.
 - `POST /pending/:deviceId` (role=mac, scope=pending) — replace the pending
   approvals/prompts snapshot. Body: the `pending_state.json` fixture shape:
 
