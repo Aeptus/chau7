@@ -24,7 +24,7 @@ mod scheduling;
 pub mod snapshot;
 pub mod viewer_ui;
 
-use self::scheduling::{OUTPUT_BATCH, Wake};
+use self::scheduling::Wake;
 use futures::{FutureExt, StreamExt};
 use std::time::{Duration, Instant};
 
@@ -117,6 +117,8 @@ pub struct RemoteControl {
     viewer: RemoteViewerMode,
     last_refresh: Instant,
     output_due: Option<Instant>,
+    /// When output was last sent, to send the first bytes after a pause at once.
+    last_output_flush: Option<Instant>,
     wake: Wake,
     approval_resolver: Option<ApprovalResolver>,
     telemetry_sink: Option<TelemetrySink>,
@@ -158,6 +160,7 @@ pub fn init(cx: &mut App) {
         viewer: RemoteViewerMode::default(),
         last_refresh: Instant::now(),
         output_due: None,
+        last_output_flush: None,
         wake,
         approval_resolver: None,
         telemetry_sink: None,
@@ -259,7 +262,7 @@ pub fn record_output(session: u64, data: &[u8], cx: &mut App) {
         }
         let full = rc.host.record_output(session, data);
         if batching && !full && rc.host.has_pending_output() && rc.output_due.is_none() {
-            rc.output_due = Some(Instant::now() + OUTPUT_BATCH);
+            rc.output_due = Some(scheduling::output_due(Instant::now(), rc.last_output_flush));
             rc.wake.notify();
         }
         full
@@ -438,6 +441,8 @@ impl RemoteControl {
                 self.grid_epoch,
             );
             let mut sink = IpcSink(self.ipc.as_ref());
+            self.host
+                .set_viewers_watching(self.viewer.should_broadcast());
             let result = f(&mut self.host, &mut env, &mut sink);
             let scope = self.host.grid_capture_scope(&mut env, 0);
             let context = GridContext {
@@ -582,6 +587,7 @@ impl RemoteControl {
 
     fn flush_output(&mut self, cx: &mut Context<Self>) {
         self.output_due = None;
+        self.last_output_flush = Some(Instant::now());
         self.with_host(cx, |host, env, sink| host.flush_output(env, sink));
     }
 

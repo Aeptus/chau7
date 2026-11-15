@@ -24,6 +24,7 @@ use chau7_next_core::remote::models::{
     ApprovalRequestPayload, ApprovalResponsePayload, RemoteClientAppState,
     RemoteClientStatePayload, RemoteClientStreamMode, RemoteErrorPayload, RemotePairingInfo,
     RemoteSessionStatus, RemoteTabDescriptor, RemoteTabListPayload, RemoteTabSwitchPayload,
+    RemoteTerminalPresentation, RemoteTerminalSizePayload,
 };
 use chau7_next_core::remote::output_buffering::RemoteOutputTuning;
 use chau7_next_core::remote::prompt_response::{Action, RemotePaneInput, RemotePromptResponse};
@@ -124,6 +125,10 @@ pub trait HostEnv {
     }
     /// Poll cursor/resize damage even when no PTY output arrives.
     fn periodic_grid_snapshot(&mut self, _key: TabKey, _tab_id: u32) -> Option<Vec<u8>> {
+        None
+    }
+    /// The main pane's PTY grid and whether it shows the alternate screen.
+    fn terminal_size(&mut self, _key: TabKey) -> Option<RemoteTerminalSizePayload> {
         None
     }
     fn main_session_id(&mut self, key: TabKey) -> Option<u64> {
@@ -348,6 +353,15 @@ pub struct RemoteHost {
     pub last_error: Option<String>,
     app_state: RemoteClientAppState,
     stream_mode: RemoteClientStreamMode,
+    /// How the phone draws terminals; `None` until it says, and for older
+    /// clients, which get text and grids.
+    presentation: Option<RemoteTerminalPresentation>,
+    /// Read-only viewers are watching; they are drawn from host grids.
+    viewers_watching: bool,
+    /// The size last sent, with its tab.
+    terminal_size_sent: Option<(u32, RemoteTerminalSizePayload)>,
+    /// Tab and content hash of the grid last sent, to skip identical ones.
+    grid_sent: Option<(u32, u64)>,
     pending_protected: HashMap<String, ProtectedInput>,
     approvals: HashMap<String, ApprovalContext>,
     pub activity: Option<RemoteActivityState>,
@@ -390,6 +404,65 @@ impl RemoteHost {
 
     fn full(&self) -> bool {
         self.stream_mode == RemoteClientStreamMode::Full
+    }
+
+    pub(super) fn set_viewers_watching(&mut self, watching: bool) {
+        self.viewers_watching = watching;
+    }
+
+    /// Whether anyone draws the selected tab from host grids right now.
+    fn uses_grids(&self) -> bool {
+        let alternate_screen = self
+            .terminal_size_sent
+            .is_some_and(|(_, size)| size.alternate_screen_active == Some(true));
+        self.viewers_watching
+            || RemoteTerminalPresentation::uses_grids(self.presentation, alternate_screen)
+    }
+
+    /// Tell the phone the tab's PTY size when it changed (or `force`). A
+    /// replay client starts using host grids when a full-screen program
+    /// takes the alternate screen, so it gets one at once.
+    fn sync_terminal_size(
+        &mut self,
+        env: &mut dyn HostEnv,
+        sink: &mut dyn FrameSink,
+        tab_id: u32,
+        force: bool,
+    ) {
+        if !self.ipc_connected || !self.full() {
+            return;
+        }
+        let Some(key) = self.key_for(env, tab_id) else {
+            return;
+        };
+        let (Some(actual_tab), Some(size)) = (self.registry.tab_id(key), env.terminal_size(key))
+        else {
+            return;
+        };
+        if !force && self.terminal_size_sent == Some((actual_tab, size)) {
+            return;
+        }
+        let used_grids = self.uses_grids();
+        self.terminal_size_sent = Some((actual_tab, size));
+        self.send_json(sink, RemoteFrameType::TerminalSize, actual_tab, &size);
+        if !force && !used_grids && self.uses_grids() {
+            self.grid_sent = None;
+            self.send_grid_snapshot(env, sink, actual_tab, true);
+        }
+    }
+
+    /// Send a grid unless the phone already has exactly this one.
+    fn send_grid(&mut self, sink: &mut dyn FrameSink, tab_id: u32, payload: Vec<u8>) -> bool {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        payload.hash(&mut hasher);
+        let sent = Some((tab_id, hasher.finish()));
+        if self.grid_sent == sent {
+            return false;
+        }
+        self.grid_sent = sent;
+        self.send(sink, RemoteFrameType::TerminalGridSnapshot, tab_id, payload);
+        true
     }
 
     fn next_seq(&mut self) -> u64 {
@@ -446,6 +519,9 @@ impl RemoteHost {
         self.connected_device_name = None;
         self.app_state = RemoteClientAppState::Foreground;
         self.stream_mode = RemoteClientStreamMode::Full;
+        self.presentation = None;
+        self.terminal_size_sent = None;
+        self.grid_sent = None;
         self.activity = None;
         self.pending_output = None;
         self.devices_dirty = true;
@@ -554,16 +630,25 @@ impl RemoteHost {
                 else {
                     return;
                 };
+                // A repeated report that changes nothing must not resend the
+                // whole terminal: the phone reports state for push tokens too.
+                let unchanged = self.app_state == payload.app_state
+                    && self.stream_mode == payload.stream_mode
+                    && self.presentation == payload.terminal_presentation
+                    && self.last_tab_list.is_some();
                 self.app_state = payload.app_state;
                 let previous = self.stream_mode;
                 self.stream_mode = payload.stream_mode;
+                self.presentation = payload.terminal_presentation;
                 if previous != payload.stream_mode
                     && payload.stream_mode == RemoteClientStreamMode::ApprovalsOnly
                 {
                     self.pending_output = None;
                 }
                 if payload.stream_mode == RemoteClientStreamMode::Full {
-                    self.send_initial_state(env, sink);
+                    if !unchanged {
+                        self.send_initial_state(env, sink);
+                    }
                 } else {
                     self.send_pending_approvals(env, sink);
                     self.send_prompts(env, sink, true);
@@ -589,6 +674,15 @@ impl RemoteHost {
                     self.last_error = Some(message);
                 }
             }
+            RemoteFrameType::CheckpointRequest => {
+                // The phone lost output (it fell behind or was suspended) and
+                // asks for the tab's current state again.
+                if self.full() && self.registry.key(frame.tab_id).is_some() {
+                    self.send_snapshot(env, sink, frame.tab_id);
+                }
+            }
+            // The agent's relay connection state; Settings does not show it yet.
+            RemoteFrameType::RelayStatus => {}
             other => log::debug!("Unhandled IPC frame type: {other:?}"),
         }
     }
@@ -1136,6 +1230,9 @@ impl RemoteHost {
                 RemoteOutputTuning::cap_snapshot(&text),
             );
         }
+        self.sync_terminal_size(env, sink, tab_id, true);
+        // A checkpoint always carries its grid, even an unchanged one.
+        self.grid_sent = None;
         self.send_grid_snapshot(env, sink, tab_id, true);
     }
 
@@ -1148,11 +1245,12 @@ impl RemoteHost {
     ) {
         if self.ipc_connected
             && self.full()
+            && self.uses_grids()
             && let Some(key) = self.key_for(env, tab_id)
             && let Some(actual_tab) = self.registry.tab_id(key)
             && let Some(grid) = env.queue_grid_snapshot(key, actual_tab, force)
         {
-            self.send(sink, RemoteFrameType::TerminalGridSnapshot, tab_id, grid);
+            self.send_grid(sink, tab_id, grid);
         }
     }
 
@@ -1183,7 +1281,8 @@ impl RemoteHost {
         })
     }
     pub(crate) fn capture_selected_grid(&self, env: &mut dyn HostEnv, force: bool) {
-        if let Some(scope) = self.grid_capture_scope(env, 0)
+        if self.uses_grids()
+            && let Some(scope) = self.grid_capture_scope(env, 0)
             && let Some(key) = self.registry.key(scope.tab)
         {
             let _ = env.queue_grid_snapshot(key, scope.tab, force);
@@ -1207,14 +1306,10 @@ impl RemoteHost {
         ) {
             return false;
         }
-        if let Some(payload) = result.payload {
-            self.send(
-                sink,
-                RemoteFrameType::TerminalGridSnapshot,
-                result.scope.tab,
-                payload,
-            );
-            return true;
+        if self.uses_grids()
+            && let Some(payload) = result.payload
+        {
+            return self.send_grid(sink, result.scope.tab, payload);
         }
         false
     }
@@ -1260,6 +1355,8 @@ impl RemoteHost {
             return None;
         }
         self.send(sink, RemoteFrameType::Output, tab_id, data.clone());
+        // Output is what switches a program to or from the alternate screen.
+        self.sync_terminal_size(env, sink, tab_id, false);
         self.send_grid_snapshot(env, sink, tab_id, false);
         Some(data)
     }
@@ -1509,17 +1606,15 @@ impl RemoteHost {
         if self.full() && (sent || previous_selected != self.selected_tab_id) {
             self.pending_output = None;
             self.send_selected_snapshot(env, sink);
-        } else if terminal_consumed
-            && let Some(scope) = self.grid_capture_scope(env, 0)
-            && let Some(key) = self.registry.key(scope.tab)
-            && let Some(payload) = env.periodic_grid_snapshot(key, scope.tab)
-        {
-            self.send(
-                sink,
-                RemoteFrameType::TerminalGridSnapshot,
-                scope.tab,
-                payload,
-            );
+        } else if terminal_consumed && let Some(scope) = self.grid_capture_scope(env, 0) {
+            // A resize produces no output, so the size is checked here too.
+            self.sync_terminal_size(env, sink, scope.tab, false);
+            if self.uses_grids()
+                && let Some(key) = self.registry.key(scope.tab)
+                && let Some(payload) = env.periodic_grid_snapshot(key, scope.tab)
+            {
+                self.send_grid(sink, scope.tab, payload);
+            }
         }
         self.send_activity(env, sink, false);
     }
@@ -1547,6 +1642,9 @@ pub(crate) mod tests {
         pub typed: Vec<(TabKey, String)>,
         pub pane_typed: Vec<(TabKey, u64, String)>,
         pub async_grid: bool,
+        pub terminal_size: Option<RemoteTerminalSizePayload>,
+        /// Bumped by a test to say the screen changed.
+        pub grid_revision: u32,
         pub grid_requests: Vec<(TabKey, u32, bool)>,
         pub resolved: Vec<(String, bool)>,
         pub cleared: Vec<TabKey>,
@@ -1597,6 +1695,8 @@ pub(crate) mod tests {
                 typed: Vec::new(),
                 pane_typed: Vec::new(),
                 async_grid: false,
+                terminal_size: None,
+                grid_revision: 0,
                 grid_requests: Vec::new(),
                 resolved: Vec::new(),
                 cleared: Vec::new(),
@@ -1638,8 +1738,11 @@ pub(crate) mod tests {
         fn text_snapshot(&mut self, key: TabKey) -> Option<Vec<u8>> {
             self.texts.get(&key).map(|t| t.as_bytes().to_vec())
         }
+        fn terminal_size(&mut self, _key: TabKey) -> Option<RemoteTerminalSizePayload> {
+            self.terminal_size
+        }
         fn grid_snapshot(&mut self, key: TabKey) -> Option<Vec<u8>> {
-            Some(format!("GRID{key}").into_bytes())
+            Some(format!("GRID{key}.{}", self.grid_revision).into_bytes())
         }
         fn pane_text(&mut self, key: TabKey, pane_id: u64) -> Option<String> {
             self.pane_texts.get(&(key, pane_id)).cloned()
@@ -1775,6 +1878,143 @@ pub(crate) mod tests {
         host.on_disconnected();
         assert!(!host.deliver_grid_result(&mut env, &mut out, 7, frame(scope)));
         assert!(out.is_empty());
+    }
+
+    fn client_state(presentation: &str) -> RemoteFrame {
+        frame(
+            RemoteFrameType::ClientState,
+            0,
+            &format!(
+                r#"{{"app_state":"foreground","stream_mode":"full","terminal_presentation":"{presentation}"}}"#
+            ),
+        )
+    }
+
+    #[test]
+    fn a_replay_client_gets_output_without_grids_until_a_full_screen_program_runs() {
+        let (mut host, mut env, _) = connected();
+        env.terminal_size = Some(RemoteTerminalSizePayload {
+            cols: 120,
+            rows: 40,
+            alternate_screen_active: Some(false),
+        });
+        let mut out = Vec::new();
+        host.handle_frame(client_state("replay"), &mut env, &mut out);
+        // The checkpoint carries text and size; the phone replays the text.
+        assert!(types(&out).contains(&RemoteFrameType::Snapshot));
+        assert!(types(&out).contains(&RemoteFrameType::TerminalSize));
+        assert!(!types(&out).contains(&RemoteFrameType::TerminalGridSnapshot));
+
+        out.clear();
+        host.record_output(100, b"ls\r\n");
+        host.flush_output(&mut env, &mut out);
+        host.refresh(&mut env, &mut out, true);
+        assert_eq!(types(&out), [RemoteFrameType::Output]);
+
+        // vim takes the alternate screen: size first, then a grid at once.
+        out.clear();
+        env.terminal_size.as_mut().unwrap().alternate_screen_active = Some(true);
+        host.record_output(100, b"\x1b[?1049h");
+        host.flush_output(&mut env, &mut out);
+        assert_eq!(
+            types(&out),
+            [
+                RemoteFrameType::Output,
+                RemoteFrameType::TerminalSize,
+                RemoteFrameType::TerminalGridSnapshot,
+            ]
+        );
+        let size: RemoteTerminalSizePayload = serde_json::from_slice(&out[1].payload).unwrap();
+        assert_eq!((size.cols, size.rows), (120, 40));
+        assert_eq!(out[1].tab_id, 1);
+    }
+
+    #[test]
+    fn a_text_client_never_gets_grids_and_an_older_client_still_does() {
+        let (mut host, mut env, _) = connected();
+        let mut out = Vec::new();
+        host.record_output(100, b"legacy");
+        host.flush_output(&mut env, &mut out);
+        // The grid is unchanged since the connect checkpoint, so only output.
+        assert_eq!(types(&out), [RemoteFrameType::Output]);
+
+        out.clear();
+        host.handle_frame(client_state("text"), &mut env, &mut out);
+        host.record_output(100, b"text");
+        host.flush_output(&mut env, &mut out);
+        assert!(!types(&out).contains(&RemoteFrameType::TerminalGridSnapshot));
+    }
+
+    #[test]
+    fn an_identical_grid_is_sent_once_and_again_with_a_checkpoint() {
+        use chau7_next_core::remote::grid_delivery::GridCaptureScope;
+        let (mut host, mut env, _) = connected();
+        let scope = GridCaptureScope {
+            epoch: 1,
+            tab: 1,
+            session: 100,
+        };
+        let result = |bytes: &[u8]| super::super::snapshot::GridCaptureResult {
+            scope,
+            generation: 1,
+            payload: Some(bytes.to_vec()),
+        };
+        let mut out = Vec::new();
+        assert!(host.deliver_grid_result(&mut env, &mut out, 1, result(b"idle")));
+        // An idle terminal keeps producing the same grid; the phone has it.
+        assert!(!host.deliver_grid_result(&mut env, &mut out, 1, result(b"idle")));
+        assert!(host.deliver_grid_result(&mut env, &mut out, 1, result(b"changed")));
+        assert_eq!(out.len(), 2);
+
+        // A tab switch or reconnect checkpoint resends whatever is current.
+        env.async_grid = true;
+        host.send_snapshot(&mut env, &mut out, 1);
+        assert!(host.deliver_grid_result(&mut env, &mut out, 1, result(b"changed")));
+    }
+
+    #[test]
+    fn a_repeated_client_state_does_not_resend_the_terminal() {
+        let (mut host, mut env, _) = connected();
+        let mut out = Vec::new();
+        host.handle_frame(client_state("replay"), &mut env, &mut out);
+        assert!(types(&out).contains(&RemoteFrameType::Snapshot));
+        out.clear();
+        host.handle_frame(client_state("replay"), &mut env, &mut out);
+        assert!(out.is_empty());
+        // Coming back from the background does resend it.
+        host.handle_frame(
+            frame(
+                RemoteFrameType::ClientState,
+                0,
+                r#"{"app_state":"background","stream_mode":"approvals_only"}"#,
+            ),
+            &mut env,
+            &mut out,
+        );
+        out.clear();
+        host.handle_frame(client_state("replay"), &mut env, &mut out);
+        assert!(types(&out).contains(&RemoteFrameType::Snapshot));
+    }
+
+    #[test]
+    fn a_checkpoint_request_resends_the_tab_and_an_unknown_presentation_is_legacy() {
+        let (mut host, mut env, _) = connected();
+        let mut out = Vec::new();
+        host.handle_frame(client_state("holographic"), &mut env, &mut out);
+        assert!(types(&out).contains(&RemoteFrameType::TerminalGridSnapshot));
+        out.clear();
+        host.handle_frame(
+            frame(RemoteFrameType::CheckpointRequest, 1, ""),
+            &mut env,
+            &mut out,
+        );
+        assert_eq!(
+            types(&out),
+            [
+                RemoteFrameType::Snapshot,
+                RemoteFrameType::TerminalGridSnapshot
+            ]
+        );
     }
 
     #[test]
@@ -2104,6 +2344,7 @@ pub(crate) mod tests {
         assert!(!host.record_output(100, b"one "));
         assert!(!host.record_output(100, b"two"));
         assert!(host.record_output(100, &vec![b'x'; 40_000]));
+        env.grid_revision += 1; // The output changed the screen.
         let sent = host.flush_output(&mut env, &mut out).unwrap();
         assert!(sent.starts_with(b"one two"));
         assert_eq!(
