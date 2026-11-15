@@ -702,6 +702,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Correct the Debug Console shortcut in Swift and Next help to the current default (⌥⌘L), and document Chau7 Next’s AI Terminal Logs Command Palette access.
 
+
 - Preserve the native background-Warm predicate and deadline while recording actual memory, selection and window state on timeout to diagnose the remaining fallback acceptance failure.
 
 - Prepare native editor responder changes outside GPUI application borrows as well as dispatching the event outside them.
@@ -716,13 +717,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keep the GPUI Metal headless constructor implementation behind the same test and benchmark feature gates as its type, restoring ordinary builds without fixture features. Preserve the original vendor provenance and record the source hash transition.
 
+
 - Make the Swift resume-prefill readiness regression observe actual terminal input delivery instead of an unrelated timer, preserving the not-ready assertion, exact text and existing two-second deadline.
+
 
 - Pin the native Settings regional-format environment contract in ordinary unit tests, keeping fixture constants covered when optional native fixtures are disabled and retaining strict warnings-as-errors checks.
 
+
 - Display the restored-scrollback counter with the current OS number format, including localized zero, matching Swift without untranslated suffixes. Preserve configured values and stepper bounds.
 
+
 - Exercise Spanish Settings search and independently selected regional usage formats through visible controls in an owned native window, verifying persistence and summary values while retaining the animation deadline.
+
 
 - Make the short-lived PTY burst regression enforce its intended ten-second wall-clock ceiling under adaptive polling, retaining the complete output assertions and requiring observed closure before the deadline. Keep all interruption tests under strict helper lint checks.
 
@@ -776,6 +782,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Development history] - through 2026-10-07
 
 The accumulated development entries below preserve the detailed source history leading to 0.5.0.
+
 
 ### Security
 
@@ -835,6 +842,10 @@ The accumulated development entries below preserve the detailed source history l
 
 - Queued parent-directory events preserve the recovered target watch, preventing unnecessary source replacement and observation gaps. File observation also includes size-change events for in-place appends; recovery remains bounded without restoring idle polling.
 - Both Go modules now run race-enabled tests and an uncached, pinned govulncheck audit during PR/pre-push validation. Security/context/body-ownership linters are enabled; relay I/O inherits shutdown cancellation, wire lengths are checked before conversion, and proxy diagnostic output escapes injected control characters. Swift advisory coverage and reviewed trust-boundary exclusions are documented explicitly.
+
+
+
+
 
 ### Fixed
 
