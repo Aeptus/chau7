@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Show a command the Mac refused or held as a message on the iPhone instead of putting the connection into an error state.
+
 - Bind iPhone pairing to the QR code: the phone now proves it scanned the QR instead of sending the six-digit code through the relay, so nothing the relay sees can be used to pair another device. Pairing a new phone needs the updated iPhone app; phones already paired are unaffected, and the updated iPhone app can still pair with an older Mac. The cached tab list is now always encrypted.
 
 - Make the iPhone app quicker to use and pairing honest: Send is a tap by default (hold-to-send is a setting), the launch splash leaves as soon as the first screen is ready, and full-screen programs no longer repaint for output that changes nothing visible. Pairing is by QR code only and reports success once the Mac accepts; a refused or unanswered code no longer replaces a working pairing. Disconnect now holds until you tap Connect, Settings gains Forget this Mac, and re-pairing after the Mac forgot the phone no longer waits three seconds.

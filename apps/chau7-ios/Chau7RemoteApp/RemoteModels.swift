@@ -251,6 +251,12 @@ enum RemoteConnectionStartPolicy {
         forceRestart || !transportIsOpen
     }
 
+    /// ERROR codes the Mac sends when it refuses a single input or approval.
+    /// The session is healthy; only that input did not go through.
+    static func isInputRefusal(code: String) -> Bool {
+        ["tab_unavailable", "stale_prompt", "input_held", "command_blocked", "approval_stale"].contains(code)
+    }
+
     /// An explicit Disconnect holds until the user connects by hand.
     static func allowsStart(userDisconnected: Bool, isManual: Bool) -> Bool {
         isManual || !userDisconnected

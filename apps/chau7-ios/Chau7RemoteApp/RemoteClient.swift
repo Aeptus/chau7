@@ -1538,7 +1538,11 @@ private func handlePairAccept(_ data: Data) {
         }
         lastError = errorText
         emitTelemetry(type: .errorReceived, status: code, message: errorText)
-        status = .error
+        // The Mac refusing one input says nothing about the connection, which
+        // is still up: show the message and leave the status alone.
+        if !RemoteConnectionStartPolicy.isInputRefusal(code: code) {
+            status = .error
+        }
     }
 
     private func handleTabList(_ data: Data) {
