@@ -11,10 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Make the relay's protection against a slow phone work: the iPhone now reports how much terminal data it has taken in, and the relay drops replaceable full-screen frames, then disconnects, for a phone that is megabytes behind. Before, the relay measured a value its platform never provides, so the protection never engaged.
 
-- Show a command the Mac refused or held as a message on the iPhone instead of putting the connection into an error state.
-
-- Bind iPhone pairing to the QR code: the phone now proves it scanned the QR instead of sending the six-digit code through the relay, so nothing the relay sees can be used to pair another device. Pairing a new phone needs the updated iPhone app; phones already paired are unaffected, and the updated iPhone app can still pair with an older Mac. The cached tab list is now always encrypted.
-
 - Remove the six-digit pairing code from the Mac's Remote settings; pairing is by scanning the QR code.
 
 - Let commands sent from the iPhone get past the Mac's dangerous-command guard: a held command now appears on the phone as an approval, approving it runs it and denying it drops it, instead of the phone being refused until someone answered on the Mac. Commands on the block list are refused with the reason, and no longer leave a notice that swallowed the phone's next input.
@@ -24,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restart the Remote Control helper when it stops on its own, waiting 1 second and then twice as long each time up to a minute, and show in the Remote settings whether it is running, starting, restarting (with a countdown) or stopped, and how it last ended.
 
 - Stop Remote Control from starting, or showing a pairing QR code, while the relay URL is empty or still the example placeholder; the Remote settings now say to set your own relay URL first.
+
+- Show a command the Mac refused or held as a message on the iPhone instead of putting the connection into an error state.
+
+- Bind iPhone pairing to the QR code: the phone now proves it scanned the QR instead of sending the six-digit code through the relay, so nothing the relay sees can be used to pair another device. Pairing a new phone needs the updated iPhone app; phones already paired are unaffected, and the updated iPhone app can still pair with an older Mac. The cached tab list is now always encrypted.
 
 - Make the iPhone app quicker to use and pairing honest: Send is a tap by default (hold-to-send is a setting), the launch splash leaves as soon as the first screen is ready, and full-screen programs no longer repaint for output that changes nothing visible. Pairing is by QR code only and reports success once the Mac accepts; a refused or unanswered code no longer replaces a working pairing. Disconnect now holds until you tap Connect, Settings gains Forget this Mac, and re-pairing after the Mac forgot the phone no longer waits three seconds.
 
