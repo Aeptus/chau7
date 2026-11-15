@@ -107,6 +107,33 @@ impl TabInfo {
     }
 }
 
+/// Input the Mac's dangerous-command guard is holding in a pane until
+/// someone decides (the confirmation shown in the tab).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputHold {
+    /// Names the hold: an answer applies to this hold only.
+    pub id: String,
+    /// The held command.
+    pub command: String,
+    /// Why it is held (the matched pattern, or what it would harm).
+    pub note: String,
+    /// Block list or protected target: no approval can run it.
+    pub blocked: bool,
+}
+
+/// What answering an [`InputHold`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HoldResolution {
+    /// Approved and typed.
+    Delivered,
+    /// Denied or blocked: nothing typed.
+    Dropped,
+    /// Approved, but the terminal changed since: nothing typed.
+    Stale,
+    /// The hold is no longer waiting (answered on the Mac).
+    Gone,
+}
+
 /// What the host needs from the app.
 pub trait HostEnv {
     /// Every tab with a terminal session, in order.
@@ -148,6 +175,21 @@ pub trait HostEnv {
     fn write_keys(&mut self, _key: TabKey, _pane_id: Option<u64>, _keys: &[RemoteKey]) -> bool {
         false
     }
+    /// The input the command guard is holding in a pane of the tab (its main
+    /// pane for `None`). Input sent to that pane is refused until it is answered.
+    fn input_hold(&mut self, _key: TabKey, _pane_id: Option<u64>) -> Option<InputHold> {
+        None
+    }
+    /// Answer the hold named `id`: approved input is typed, denied dropped.
+    fn resolve_input_hold(
+        &mut self,
+        _key: TabKey,
+        _pane_id: Option<u64>,
+        _id: &str,
+        _approved: bool,
+    ) -> HoldResolution {
+        HoldResolution::Gone
+    }
     /// Clear the tab's persistent notification style (approval answered).
     fn clear_persistent_style(&mut self, key: TabKey);
     /// Answer an MCP command approval (`TerminalControlService.resolveApproval`).
@@ -178,6 +220,26 @@ struct ProtectedInput {
     pane_id: Option<u64>,
     text: String,
     created_at: DateTime<Utc>,
+}
+
+/// Where a command-guard hold offered to the phone as an approval lives.
+#[derive(Debug, Clone, Copy)]
+struct GuardHoldTarget {
+    key: TabKey,
+    tab_id: u32,
+    pane_id: Option<u64>,
+}
+
+/// What became of input the phone sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Delivery {
+    Written,
+    /// Waiting for the phone's approval (or for an earlier one's answer).
+    Held,
+    /// Refused by the Mac's block list; the phone was told.
+    Blocked,
+    /// The terminal did not take it.
+    Failed,
 }
 
 /// An approval shown on the phone (`PendingRemoteApprovalContext`).
@@ -363,6 +425,8 @@ pub struct RemoteHost {
     /// Tab and content hash of the grid last sent, to skip identical ones.
     grid_sent: Option<(u32, u64)>,
     pending_protected: HashMap<String, ProtectedInput>,
+    /// Command-guard holds the phone was asked to approve, by request ID.
+    guard_holds: HashMap<String, GuardHoldTarget>,
     approvals: HashMap<String, ApprovalContext>,
     pub activity: Option<RemoteActivityState>,
     pub prompts: Vec<RemoteInteractivePrompt>,
@@ -734,13 +798,116 @@ impl RemoteHost {
             self.queue_protected_input(env, sink, request_id, text, (resolved, None), flagged);
             return;
         }
-        if !env.write_input(key, &text) {
+        let delivery = self.write_guarded(env, sink, (key, resolved, None), tab_id, &mut |env| {
+            env.write_input(key, &text)
+        });
+        if delivery == Delivery::Failed {
             self.send_error(
                 sink,
                 "tab_unavailable",
                 "That tab cannot receive remote input right now.",
                 tab_id,
             );
+        }
+    }
+
+    /// Type phone input through the Mac's dangerous-command guard without
+    /// stranding the phone. Input the guard holds is offered to the phone as
+    /// an approval (approve types it, deny drops it); while one waits, more
+    /// input to that pane is refused with the approval sent again; a command
+    /// on the block list is refused with an error and never left on screen.
+    fn write_guarded(
+        &mut self,
+        env: &mut dyn HostEnv,
+        sink: &mut dyn FrameSink,
+        target: (TabKey, u32, Option<u64>),
+        frame_tab: u32,
+        write: &mut dyn FnMut(&mut dyn HostEnv) -> bool,
+    ) -> Delivery {
+        let (key, tab_id, pane_id) = target;
+        let target = GuardHoldTarget {
+            key,
+            tab_id,
+            pane_id,
+        };
+        if let Some(waiting) = env.input_hold(key, pane_id) {
+            if waiting.blocked {
+                // Only an acknowledgement on the Mac: it must not eat input.
+                env.resolve_input_hold(key, pane_id, &waiting.id, false);
+                self.forget_guard_hold(&waiting.id);
+            } else {
+                self.offer_guard_hold(env, sink, waiting, target);
+                self.send_error(
+                    sink,
+                    "input_held",
+                    "A command in this tab is waiting for approval. Approve or deny it before sending more input.",
+                    frame_tab,
+                );
+                return Delivery::Held;
+            }
+        }
+        if write(env) {
+            return Delivery::Written;
+        }
+        match env.input_hold(key, pane_id) {
+            Some(hold) if hold.blocked => {
+                env.resolve_input_hold(key, pane_id, &hold.id, false);
+                self.forget_guard_hold(&hold.id);
+                let message = format!(
+                    "The Mac's command guard blocked this command and did not run it: {}",
+                    hold.note
+                );
+                self.send_error(sink, "command_blocked", &message, frame_tab);
+                log::warn!("Remote: command guard blocked input for tab {tab_id}");
+                Delivery::Blocked
+            }
+            Some(hold) => {
+                self.offer_guard_hold(env, sink, hold, target);
+                log::warn!("Remote: command guard hold offered for approval, tab {tab_id}");
+                Delivery::Held
+            }
+            None => Delivery::Failed,
+        }
+    }
+
+    fn forget_guard_hold(&mut self, id: &str) {
+        if self.guard_holds.remove(id).is_some() {
+            self.approvals.remove(id);
+        }
+    }
+
+    /// Show a command-guard hold on the phone as an approval. A hold already
+    /// shown is sent again, so the phone can always answer it.
+    fn offer_guard_hold(
+        &mut self,
+        env: &mut dyn HostEnv,
+        sink: &mut dyn FrameSink,
+        hold: InputHold,
+        target: GuardHoldTarget,
+    ) {
+        let now = env.now();
+        self.guard_holds.insert(hold.id.clone(), target);
+        let command = hold.command.trim().to_string();
+        let mut request = ApprovalRequestPayload::new(&hold.id, &command, &command, iso8601(now));
+        request.context_note = Some(format!("Held by the Mac's command guard. {}", hold.note));
+        let request = self.approval_for_target(env, request, target.tab_id, target.pane_id);
+        self.send_approval_request(&request, None, env, sink);
+    }
+
+    /// Drop approvals for holds that were answered on the Mac meanwhile.
+    fn sync_guard_holds(&mut self, env: &mut dyn HostEnv) {
+        let answered: Vec<String> = self
+            .guard_holds
+            .iter()
+            .filter(|(id, target)| {
+                env.input_hold(target.key, target.pane_id)
+                    .is_none_or(|hold| &hold.id != *id)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in answered {
+            self.forget_guard_hold(&id);
+            log::info!("Remote: command guard hold {id} was answered on the Mac");
         }
     }
 
@@ -757,10 +924,14 @@ impl RemoteHost {
         let Ok(input) = serde_json::from_slice::<RemoteKeyInput>(&frame.payload) else {
             return;
         };
-        let Some((key, _)) = self.resolve_input_target(env, frame.tab_id) else {
+        let Some((key, resolved)) = self.resolve_input_target(env, frame.tab_id) else {
             return;
         };
-        if !env.write_keys(key, None, &input.keys) {
+        let delivery =
+            self.write_guarded(env, sink, (key, resolved, None), frame.tab_id, &mut |env| {
+                env.write_keys(key, None, &input.keys)
+            });
+        if delivery == Delivery::Failed {
             self.send_error(
                 sink,
                 "tab_unavailable",
@@ -801,11 +972,25 @@ impl RemoteHost {
                         flagged,
                     );
                 } else {
-                    env.write_pane_input(key, pane.pane_id, &text);
+                    let pane = pane.pane_id;
+                    self.write_guarded(
+                        env,
+                        sink,
+                        (key, resolved, Some(pane)),
+                        frame.tab_id,
+                        &mut |env| env.write_pane_input(key, pane, &text),
+                    );
                 }
             }
             (None, Some(keys)) => {
-                env.write_keys(key, Some(pane.pane_id), &keys);
+                let pane = pane.pane_id;
+                self.write_guarded(
+                    env,
+                    sink,
+                    (key, resolved, Some(pane)),
+                    frame.tab_id,
+                    &mut |env| env.write_keys(key, Some(pane), &keys),
+                );
             }
             _ => {}
         }
@@ -875,10 +1060,18 @@ impl RemoteHost {
                 flagged,
             );
             return;
-        } else if let Some(keys) = navigation_keys(&text) {
-            env.write_keys(key, Some(pane), &keys)
         } else {
-            env.write_pane_input(key, pane, &text)
+            let keys = navigation_keys(&text);
+            self.write_guarded(
+                env,
+                sink,
+                (key, resolved, Some(pane)),
+                frame.tab_id,
+                &mut |env| match &keys {
+                    Some(keys) => env.write_keys(key, Some(pane), keys),
+                    None => env.write_pane_input(key, pane, &text),
+                },
+            ) == Delivery::Written
         };
         if written && response.action != Action::Toggle {
             if self.answered_prompts.len() >= 128
@@ -977,9 +1170,13 @@ impl RemoteHost {
         let tabs = env.tabs();
         let target = match explicit_target {
             Some(key) => self.registry.tab_id(key),
-            None => match self.pending_protected.get(&request.request_id) {
-                Some(input) => Some(input.tab_id),
-                None => env.selected().and_then(|key| self.registry.tab_id(key)),
+            None => match (
+                self.pending_protected.get(&request.request_id),
+                self.guard_holds.get(&request.request_id),
+            ) {
+                (Some(input), _) => Some(input.tab_id),
+                (None, Some(hold)) => Some(hold.tab_id),
+                (None, None) => env.selected().and_then(|key| self.registry.tab_id(key)),
             },
         };
         let Some(tab_id) = target else { return false };
@@ -1065,21 +1262,37 @@ impl RemoteHost {
             },
         );
         let command = text.trim().to_string();
-        let mut request = ApprovalRequestPayload::new(&request_id, &command, flagged, iso8601(now));
-        let tabs = env.tabs();
-        if let Some(mut tab) = self.tab_and_main(&tabs, tab_id) {
-            if let Some(pane) = pane_id
-                && let Some(index) = tab.panes.iter().position(|value| value.pane_id == pane)
-            {
-                tab.main_pane = index;
-            }
-            if let Some(context) = self.context_for(&tab, tab_id, &request, now) {
-                request = context.payload();
-                self.approvals.insert(request_id.clone(), context);
-            }
-        }
+        let request = ApprovalRequestPayload::new(&request_id, &command, flagged, iso8601(now));
+        let request = self.approval_for_target(env, request, tab_id, pane_id);
         self.send_approval_request(&request, None, env, sink);
         log::warn!("Remote: queued protected action approval for tab {tab_id}");
+    }
+
+    /// Register `request` with the context of the pane its input targets,
+    /// and return it filled in from that pane.
+    fn approval_for_target(
+        &mut self,
+        env: &mut dyn HostEnv,
+        request: ApprovalRequestPayload,
+        tab_id: u32,
+        pane_id: Option<u64>,
+    ) -> ApprovalRequestPayload {
+        let now = env.now();
+        let tabs = env.tabs();
+        let Some(mut tab) = self.tab_and_main(&tabs, tab_id) else {
+            return request;
+        };
+        if let Some(pane) = pane_id
+            && let Some(index) = tab.panes.iter().position(|value| value.pane_id == pane)
+        {
+            tab.main_pane = index;
+        }
+        let Some(context) = self.context_for(&tab, tab_id, &request, now) else {
+            return request;
+        };
+        let filled = context.payload();
+        self.approvals.insert(request.request_id.clone(), context);
+        filled
     }
 
     fn handle_approval_response(
@@ -1094,6 +1307,40 @@ impl RemoteHost {
             return;
         };
         let context = self.approvals.remove(&response.request_id);
+        if let Some(hold) = self.guard_holds.remove(&response.request_id) {
+            let outcome = env.resolve_input_hold(
+                hold.key,
+                hold.pane_id,
+                &response.request_id,
+                response.approved,
+            );
+            match outcome {
+                HoldResolution::Stale => self.send_error(
+                    sink,
+                    "approval_stale",
+                    "The terminal changed after this command was held, so it was not sent. Send it again.",
+                    hold.tab_id,
+                ),
+                HoldResolution::Gone if response.approved => self.send_error(
+                    sink,
+                    "approval_stale",
+                    "That command was already answered on the Mac.",
+                    hold.tab_id,
+                ),
+                _ => {}
+            }
+            log::info!(
+                "Remote: command guard hold for tab {} answered ({}): {outcome:?}",
+                hold.tab_id,
+                if response.approved {
+                    "allowed"
+                } else {
+                    "denied"
+                }
+            );
+            self.send_activity(env, sink, false);
+            return;
+        }
         if let Some(input) = self.pending_protected.remove(&response.request_id) {
             let key = if input.tab_id == 0 {
                 env.selected()
@@ -1103,11 +1350,18 @@ impl RemoteHost {
             if response.approved
                 && let Some(key) = key
             {
-                if let Some(pane) = input.pane_id {
-                    env.write_pane_input(key, pane, &input.text);
-                } else {
-                    env.write_input(key, &input.text);
-                }
+                // The Mac's command guard still reviews it: a hold or a
+                // block is reported to the phone, not left on the Mac.
+                self.write_guarded(
+                    env,
+                    sink,
+                    (key, input.tab_id, input.pane_id),
+                    input.tab_id,
+                    &mut |env| match input.pane_id {
+                        Some(pane) => env.write_pane_input(key, pane, &input.text),
+                        None => env.write_input(key, &input.text),
+                    },
+                );
                 log::info!("Remote: protected action approved for tab {}", input.tab_id);
             } else {
                 log::info!("Remote: protected action denied for tab {}", input.tab_id);
@@ -1616,6 +1870,7 @@ impl RemoteHost {
                 self.send_grid(sink, scope.tab, payload);
             }
         }
+        self.sync_guard_holds(env);
         self.send_activity(env, sink, false);
     }
 
@@ -1650,6 +1905,22 @@ pub(crate) mod tests {
         pub cleared: Vec<TabKey>,
         pub telemetry: Vec<RemoteClientTelemetryEvent>,
         pub now: DateTime<Utc>,
+        /// The fake command guard: input containing one of these is held
+        /// for a decision, or refused outright.
+        pub risky: Vec<&'static str>,
+        pub blocked: Vec<&'static str>,
+        /// Held input by (tab, pane).
+        pub holds: HashMap<(TabKey, u64), FakeHold>,
+        pub hold_count: u32,
+    }
+
+    /// Input the fake guard holds, and where it is typed once approved.
+    pub(crate) struct FakeHold {
+        pub hold: InputHold,
+        pub text: String,
+        pub to_pane: bool,
+        /// The terminal changed since the hold.
+        pub stale: bool,
     }
 
     pub(crate) fn pane(pane_id: u64, session_id: u64) -> PaneInfo {
@@ -1702,7 +1973,49 @@ pub(crate) mod tests {
                 cleared: Vec::new(),
                 telemetry: Vec::new(),
                 now: Utc.timestamp_opt(1_760_000_000, 0).unwrap(),
+                risky: Vec::new(),
+                blocked: Vec::new(),
+                holds: HashMap::new(),
+                hold_count: 0,
             }
+        }
+
+        fn pane_or_main(&self, key: TabKey, pane: Option<u64>) -> Option<u64> {
+            pane.or_else(|| {
+                self.tabs
+                    .iter()
+                    .find(|tab| tab.key == key)
+                    .and_then(|tab| tab.panes.get(tab.main_pane))
+                    .map(|pane| pane.pane_id)
+            })
+        }
+
+        /// The fake guard's admission: false when `text` is held or the
+        /// pane already has a hold, like `TerminalView::send_guarded_steps`.
+        fn admit(&mut self, key: TabKey, pane: u64, text: &str, to_pane: bool) -> bool {
+            if self.holds.contains_key(&(key, pane)) {
+                return false;
+            }
+            let blocked = self.blocked.iter().any(|word| text.contains(word));
+            if !blocked && !self.risky.iter().any(|word| text.contains(word)) {
+                return true;
+            }
+            self.hold_count += 1;
+            self.holds.insert(
+                (key, pane),
+                FakeHold {
+                    hold: InputHold {
+                        id: format!("HOLD-{}", self.hold_count),
+                        command: text.trim().to_string(),
+                        note: "Matches the risky pattern `rm -rf`".into(),
+                        blocked,
+                    },
+                    text: text.to_string(),
+                    to_pane,
+                    stale: false,
+                },
+            );
+            false
         }
     }
 
@@ -1748,6 +2061,11 @@ pub(crate) mod tests {
             self.pane_texts.get(&(key, pane_id)).cloned()
         }
         fn write_input(&mut self, key: TabKey, text: &str) -> bool {
+            if let Some(pane) = self.pane_or_main(key, None)
+                && !self.admit(key, pane, text, false)
+            {
+                return false;
+            }
             self.typed.push((key, text.to_string()));
             true
         }
@@ -1759,8 +2077,47 @@ pub(crate) mod tests {
             {
                 return false;
             }
+            if !self.admit(key, pane, text, true) {
+                return false;
+            }
             self.pane_typed.push((key, pane, text.into()));
             true
+        }
+        fn input_hold(&mut self, key: TabKey, pane: Option<u64>) -> Option<InputHold> {
+            let pane = self.pane_or_main(key, pane)?;
+            self.holds.get(&(key, pane)).map(|held| held.hold.clone())
+        }
+        fn resolve_input_hold(
+            &mut self,
+            key: TabKey,
+            pane: Option<u64>,
+            id: &str,
+            approved: bool,
+        ) -> HoldResolution {
+            let Some(pane) = self.pane_or_main(key, pane) else {
+                return HoldResolution::Gone;
+            };
+            if self
+                .holds
+                .get(&(key, pane))
+                .map(|held| held.hold.id.as_str())
+                != Some(id)
+            {
+                return HoldResolution::Gone;
+            }
+            let held = self.holds.remove(&(key, pane)).expect("checked above");
+            if !approved || held.hold.blocked {
+                HoldResolution::Dropped
+            } else if held.stale {
+                HoldResolution::Stale
+            } else {
+                if held.to_pane {
+                    self.pane_typed.push((key, pane, held.text));
+                } else {
+                    self.typed.push((key, held.text));
+                }
+                HoldResolution::Delivered
+            }
         }
         fn write_keys(&mut self, key: TabKey, pane: Option<u64>, keys: &[RemoteKey]) -> bool {
             let pane = pane.or_else(|| {
@@ -2139,6 +2496,227 @@ pub(crate) mod tests {
         assert_eq!(env.typed, [(10, "killall chau7\n".to_string())]);
         assert!(host.pending_approval_ids().is_empty());
         assert!(env.resolved.is_empty());
+    }
+
+    fn error_codes(frames: &[RemoteFrame]) -> Vec<String> {
+        frames
+            .iter()
+            .filter(|f| f.frame_type() == Some(RemoteFrameType::Error))
+            .map(|f| {
+                serde_json::from_slice::<RemoteErrorPayload>(&f.payload)
+                    .unwrap()
+                    .code
+            })
+            .collect()
+    }
+
+    fn approval_requests(frames: &[RemoteFrame]) -> Vec<ApprovalRequestPayload> {
+        frames
+            .iter()
+            .filter(|f| f.frame_type() == Some(RemoteFrameType::ApprovalRequest))
+            .map(|f| serde_json::from_slice(&f.payload).unwrap())
+            .collect()
+    }
+
+    fn answer(
+        host: &mut RemoteHost,
+        env: &mut FakeEnv,
+        id: &str,
+        approved: bool,
+    ) -> Vec<RemoteFrame> {
+        let mut out = Vec::new();
+        host.handle_frame(
+            frame(
+                RemoteFrameType::ApprovalResponse,
+                0,
+                &format!(r#"{{"request_id":"{id}","approved":{approved}}}"#),
+            ),
+            env,
+            &mut out,
+        );
+        out
+    }
+
+    /// Phone input the Mac's command guard holds is not refused: the phone
+    /// gets an approval for it, and approving types it.
+    #[test]
+    fn guarded_phone_input_becomes_an_approval_and_is_typed_when_approved() {
+        let (mut host, mut env, _) = connected();
+        env.risky = vec!["rm -rf"];
+        let mut out = Vec::new();
+        host.handle_frame(
+            frame(RemoteFrameType::Input, 0, "rm -rf build\n"),
+            &mut env,
+            &mut out,
+        );
+        assert!(env.typed.is_empty(), "held, not typed");
+        assert!(error_codes(&out).is_empty(), "the phone is not turned away");
+        let requests = approval_requests(&out);
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].request_id, "HOLD-1");
+        assert_eq!(requests[0].command, "rm -rf build");
+        assert_eq!(requests[0].flagged_command, "rm -rf build");
+        assert_eq!(requests[0].tab_title.as_deref(), Some("Shell"));
+        assert_eq!(
+            requests[0].context_note.as_deref(),
+            Some("Held by the Mac's command guard. Matches the risky pattern `rm -rf`")
+        );
+        assert_eq!(host.pending_approval_ids(), ["HOLD-1"]);
+        assert_eq!(
+            host.activity.as_ref().map(|a| a.activity_id.as_str()),
+            Some("tab-1-approval")
+        );
+
+        let out = answer(&mut host, &mut env, "HOLD-1", true);
+        assert_eq!(env.typed, [(10, "rm -rf build\n".to_string())]);
+        assert!(error_codes(&out).is_empty());
+        assert!(host.pending_approval_ids().is_empty());
+        assert!(env.holds.is_empty());
+        assert!(env.resolved.is_empty(), "not an MCP approval");
+        // A second answer to the same request types nothing more.
+        answer(&mut host, &mut env, "HOLD-1", true);
+        assert_eq!(env.typed.len(), 1);
+    }
+
+    #[test]
+    fn denied_guarded_input_is_dropped_and_the_tab_takes_input_again() {
+        let (mut host, mut env, _) = connected();
+        env.risky = vec!["rm -rf"];
+        let mut out = Vec::new();
+        host.handle_frame(
+            frame(RemoteFrameType::Input, 1, "rm -rf build\n"),
+            &mut env,
+            &mut out,
+        );
+        // More input while the approval waits is refused, and the approval is
+        // sent again so the phone can always answer it.
+        out.clear();
+        host.handle_frame(frame(RemoteFrameType::Input, 1, "ls\n"), &mut env, &mut out);
+        assert!(env.typed.is_empty());
+        assert_eq!(error_codes(&out), ["input_held"]);
+        assert_eq!(approval_requests(&out).len(), 1);
+        assert_eq!(host.pending_approval_ids(), ["HOLD-1"]);
+
+        let out = answer(&mut host, &mut env, "HOLD-1", false);
+        assert!(env.typed.is_empty(), "denied input is dropped");
+        assert!(error_codes(&out).is_empty());
+        assert!(host.pending_approval_ids().is_empty() && env.holds.is_empty());
+
+        let mut out = Vec::new();
+        host.handle_frame(frame(RemoteFrameType::Input, 1, "ls\n"), &mut env, &mut out);
+        assert_eq!(env.typed, [(10, "ls\n".to_string())]);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn a_blocked_command_is_refused_with_its_reason_and_never_strands_the_tab() {
+        let (mut host, mut env, _) = connected();
+        env.blocked = vec!["mkfs"];
+        let mut out = Vec::new();
+        host.handle_frame(
+            frame(RemoteFrameType::Input, 0, "mkfs /dev/disk0\n"),
+            &mut env,
+            &mut out,
+        );
+        assert!(env.typed.is_empty());
+        assert_eq!(error_codes(&out), ["command_blocked"]);
+        assert!(approval_requests(&out).is_empty(), "no approval can run it");
+        assert!(host.pending_approval_ids().is_empty());
+        assert!(env.holds.is_empty(), "the Mac's notice is dismissed");
+
+        // A notice left by the Mac's own keyboard does not eat phone input.
+        env.admit(10, 1, "mkfs /dev/disk1", false);
+        assert_eq!(env.holds.len(), 1);
+        out.clear();
+        host.handle_frame(frame(RemoteFrameType::Input, 0, "ls\n"), &mut env, &mut out);
+        assert_eq!(env.typed, [(10, "ls\n".to_string())]);
+        assert!(out.is_empty() && env.holds.is_empty());
+    }
+
+    #[test]
+    fn a_hold_typed_at_the_mac_is_offered_to_the_phone_and_withdrawn_when_answered_there() {
+        let (mut host, mut env, _) = connected();
+        env.risky = vec!["rm -rf"];
+        // Typed on the Mac's keyboard; the confirmation waits in the tab.
+        env.admit(10, 1, "rm -rf target", false);
+        let mut out = Vec::new();
+        host.handle_frame(frame(RemoteFrameType::Input, 0, "ls\n"), &mut env, &mut out);
+        assert!(env.typed.is_empty());
+        assert_eq!(error_codes(&out), ["input_held"]);
+        assert_eq!(approval_requests(&out)[0].command, "rm -rf target");
+        assert_eq!(host.pending_approval_ids(), ["HOLD-1"]);
+
+        // Answered on the Mac: the phone's approval goes away.
+        env.holds.clear();
+        out.clear();
+        host.refresh(&mut env, &mut out, false);
+        assert!(host.pending_approval_ids().is_empty());
+        assert!(host.activity.is_none());
+        // A late answer from the phone types nothing and says why.
+        let out = answer(&mut host, &mut env, "HOLD-1", true);
+        assert!(env.typed.is_empty() && env.resolved == [("HOLD-1".to_string(), true)]);
+        assert!(error_codes(&out).is_empty());
+    }
+
+    #[test]
+    fn an_approval_for_a_terminal_that_changed_types_nothing_and_tells_the_phone() {
+        let (mut host, mut env, _) = connected();
+        env.risky = vec!["rm -rf"];
+        let mut out = Vec::new();
+        host.handle_frame(
+            frame(RemoteFrameType::Input, 0, "rm -rf build\n"),
+            &mut env,
+            &mut out,
+        );
+        env.holds.get_mut(&(10, 1)).unwrap().stale = true;
+        let out = answer(&mut host, &mut env, "HOLD-1", true);
+        assert!(env.typed.is_empty());
+        assert_eq!(error_codes(&out), ["approval_stale"]);
+        assert!(host.pending_approval_ids().is_empty() && env.holds.is_empty());
+    }
+
+    #[test]
+    fn guarded_keys_and_pane_input_are_held_for_approval_in_their_pane() {
+        let (mut host, mut env, _) = connected();
+        env.tabs[0].panes.push(pane(3, 300));
+        env.risky = vec!["\r"];
+        let mut out = Vec::new();
+        // Enter on a risky line typed earlier: the key is what is held.
+        host.handle_frame(
+            frame(
+                RemoteFrameType::KeyInput,
+                1,
+                r#"{"keys":[{"key":"enter"}]}"#,
+            ),
+            &mut env,
+            &mut out,
+        );
+        assert!(env.pane_typed.is_empty());
+        assert!(error_codes(&out).is_empty());
+        assert_eq!(approval_requests(&out).len(), 1);
+        let out = answer(&mut host, &mut env, "HOLD-1", true);
+        assert_eq!(env.pane_typed, [(10, 1, "\r".to_string())]);
+        assert!(error_codes(&out).is_empty());
+
+        env.risky = vec!["rm -rf"];
+        let payload = format!(
+            r#"{{"pane_id":"{}","text":"rm -rf other\n"}}"#,
+            pane_uuid(3)
+        );
+        let mut out = Vec::new();
+        host.handle_frame(
+            frame(RemoteFrameType::PaneInput, 1, &payload),
+            &mut env,
+            &mut out,
+        );
+        assert_eq!(env.pane_typed.len(), 1, "held");
+        assert_eq!(approval_requests(&out)[0].request_id, "HOLD-2");
+        assert!(env.holds.contains_key(&(10, 3)));
+        // The other pane of the tab is not held.
+        host.handle_frame(frame(RemoteFrameType::Input, 1, "ls\n"), &mut env, &mut out);
+        assert_eq!(env.typed, [(10, "ls\n".to_string())]);
+        answer(&mut host, &mut env, "HOLD-2", true);
+        assert_eq!(env.pane_typed[1], (10, 3, "rm -rf other\n".to_string()));
     }
 
     #[test]

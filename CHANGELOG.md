@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bind iPhone pairing to the QR code: the phone now proves it scanned the QR instead of sending the six-digit code through the relay, so nothing the relay sees can be used to pair another device. Pairing a new phone needs the updated iPhone app; phones already paired are unaffected, and the updated iPhone app can still pair with an older Mac. The cached tab list is now always encrypted.
 
+- Remove the six-digit pairing code from the Mac's Remote settings; pairing is by scanning the QR code.
+
+- Let commands sent from the iPhone get past the Mac's dangerous-command guard: a held command now appears on the phone as an approval, approving it runs it and denying it drops it, instead of the phone being refused until someone answered on the Mac. Commands on the block list are refused with the reason, and no longer leave a notice that swallowed the phone's next input.
+
+- Stop the Remote settings from showing a pairing code that has expired or belongs to a stopped helper: an expired code is replaced by a notice until the new one arrives. The pairing instructions now describe scanning the QR code, how long a code lasts and that it works once, and the Copy Device Details button is gone.
+
+- Restart the Remote Control helper when it stops on its own, waiting 1 second and then twice as long each time up to a minute, and show in the Remote settings whether it is running, starting, restarting (with a countdown) or stopped, and how it last ended.
+
+- Stop Remote Control from starting, or showing a pairing QR code, while the relay URL is empty or still the example placeholder; the Remote settings now say to set your own relay URL first.
+
 - Make the iPhone app quicker to use and pairing honest: Send is a tap by default (hold-to-send is a setting), the launch splash leaves as soon as the first screen is ready, and full-screen programs no longer repaint for output that changes nothing visible. Pairing is by QR code only and reports success once the Mac accepts; a refused or unanswered code no longer replaces a working pairing. Disconnect now holds until you tap Connect, Settings gains Forget this Mac, and re-pairing after the Mac forgot the phone no longer waits three seconds.
 
 - Fix the iPhone terminal: it no longer stays in the plain-text view after reconnecting, it keeps the newest output and the cursor on screen when wide lines are folded to the phone's width, and it keeps blank lines between folded lines. The app may now draw at up to 120 Hz on ProMotion displays.

@@ -39,11 +39,11 @@ use chau7_next_core::telemetry::remote_client_event::RemoteClientTelemetryEvent;
 use chrono::Utc;
 use gpui::{AnyWindowHandle, App, AppContext, Context, Entity, Global};
 
-use self::agent::AgentProcess;
+use self::agent::{AgentExit, AgentProcess};
 use self::env::GpuiEnv;
 use self::host::{FrameSink, RemoteHost, ViewerInbound};
 use self::ipc::{IpcEvent, IpcServer};
-use crate::settings::{RemoteSettings, Settings};
+use crate::settings::{RemoteSettings, Settings, is_placeholder_relay_url};
 use crate::workspace::AppData;
 
 /// Answers MCP command approvals from the phone (`TerminalControlService
@@ -62,10 +62,48 @@ impl FrameSink for IpcSink<'_> {
     }
 }
 
+/// What the agent process is doing, as the settings window shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentState {
+    /// Not running and not about to: remote control is off, has no relay
+    /// URL, or the app is quitting.
+    Stopped,
+    Starting,
+    Running,
+    /// It ended or could not start; it is started again in this many seconds.
+    Restarting {
+        seconds: u64,
+    },
+}
+
+fn agent_state(
+    running: bool,
+    starting: bool,
+    restart_at: Option<Instant>,
+    now: Instant,
+) -> AgentState {
+    if running {
+        AgentState::Running
+    } else if starting {
+        AgentState::Starting
+    } else if let Some(at) = restart_at {
+        // Whole seconds, rounded up: "in 1 s" until it actually starts.
+        let left = at.saturating_duration_since(now);
+        AgentState::Restarting {
+            seconds: left.as_secs() + u64::from(left.subsec_nanos() > 0),
+        }
+    } else {
+        AgentState::Stopped
+    }
+}
+
 /// What the settings window shows.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemoteStatus {
     pub agent_running: bool,
+    pub agent: AgentState,
+    /// How the agent last ended on its own; forgotten when the user stops it.
+    pub last_exit: Option<AgentExit>,
     pub ipc_connected: bool,
     pub session_status: Option<String>,
     pub last_error: Option<String>,
@@ -106,6 +144,13 @@ pub struct RemoteControl {
     agent: Option<AgentProcess>,
     start_generation: u64,
     start_pending: bool,
+    /// Supervision: when the running agent was started, how many times in a
+    /// row it ended or failed to start, when it is started again, and how it
+    /// last ended.
+    agent_started_at: Option<Instant>,
+    restart_failures: u32,
+    restart_at: Option<Instant>,
+    last_exit: Option<AgentExit>,
     shutting_down: bool,
     devices_refreshing: bool,
     devices_refresh_again: bool,
@@ -150,6 +195,10 @@ pub fn init(cx: &mut App) {
         agent: None,
         start_generation: 0,
         start_pending: false,
+        agent_started_at: None,
+        restart_failures: 0,
+        restart_at: None,
+        last_exit: None,
         shutting_down: false,
         devices_refreshing: false,
         devices_refresh_again: false,
@@ -409,6 +458,13 @@ impl RemoteControl {
         let ready = self.host.session_status.as_deref() == Some("ready");
         RemoteStatus {
             agent_running: self.agent.is_some(),
+            agent: agent_state(
+                self.agent.is_some(),
+                self.start_pending,
+                self.restart_at,
+                Instant::now(),
+            ),
+            last_exit: self.last_exit,
             ipc_connected: self.host.ipc_connected,
             session_status: self.host.session_status.clone(),
             last_error: self.host.last_error.clone(),
@@ -487,18 +543,17 @@ impl RemoteControl {
                 "app",
                 chau7_next_core::work_profiler::Queue::Main,
             ));
-        let enabled = Settings::get(cx).remote.enabled;
+        let enabled = agent_wanted(&Settings::get(cx).remote);
         self.sync_settings(cx);
 
         if let Some(agent) = &mut self.agent
-            && let Some(code) = agent.try_exit()
+            && let Some(exit) = agent.try_exit()
         {
             self.agent = None;
-            if code != 0 {
-                let error = format!("Remote agent exited with status {code}");
-                log::error!("{error}");
-                self.host.last_error = Some(error);
-            }
+            self.agent_exited(exit);
+        }
+        if self.take_due_restart(Instant::now()) {
+            self.start_agent(cx);
         }
 
         let events = self.ipc.as_ref().map(IpcServer::drain).unwrap_or_default();
@@ -577,7 +632,58 @@ impl RemoteControl {
             terminal_consumed,
             self.last_refresh,
             self.output_due,
+            self.restart_at,
         )
+    }
+
+    /// The agent ended on its own: say how, and start it again after a wait
+    /// that grows while it keeps ending.
+    fn agent_exited(&mut self, exit: AgentExit) {
+        let uptime = self
+            .agent_started_at
+            .take()
+            .map(|at| at.elapsed())
+            .unwrap_or_default();
+        if exit.is_failure() {
+            let error = format!("Remote agent {exit}");
+            log::error!("{error}");
+            self.host.last_error = Some(error);
+        } else {
+            log::warn!("Remote agent {exit}");
+        }
+        self.last_exit = Some(exit);
+        self.schedule_restart(uptime);
+    }
+
+    /// Start the agent again later, unless the user turned remote control
+    /// off (or never set a relay URL) or the app is quitting.
+    fn schedule_restart(&mut self, uptime: Duration) {
+        if self.shutting_down || !self.applied.as_ref().is_some_and(|(wanted, _)| *wanted) {
+            self.restart_at = None;
+            return;
+        }
+        let (failures, wait) = scheduling::restart_backoff(self.restart_failures, uptime);
+        self.restart_failures = failures;
+        self.restart_at = Some(Instant::now() + wait);
+        log::warn!("Remote agent restarts in {wait:?} (failure {failures} in a row)");
+        self.wake.notify();
+    }
+
+    /// Whether a scheduled restart is due now; it is then no longer scheduled.
+    fn take_due_restart(&mut self, now: Instant) -> bool {
+        let wanted = self.applied.as_ref().is_some_and(|(wanted, _)| *wanted);
+        if !wanted || self.shutting_down {
+            self.restart_at = None;
+            return false;
+        }
+        if self.agent.is_some() || self.start_pending {
+            return false;
+        }
+        if self.restart_at.is_some_and(|at| now >= at) {
+            self.restart_at = None;
+            return true;
+        }
+        false
     }
 
     fn send_viewer_frames(&mut self, frames: Vec<viewer_protocol::ViewerFrame>) {
@@ -611,7 +717,10 @@ impl RemoteControl {
             self.viewer.stop_sharing();
         }
 
-        let wanted = (settings.enabled, settings.relay_url.trim().to_string());
+        let wanted = (
+            agent_wanted(settings),
+            settings.relay_url.trim().to_string(),
+        );
         let Some(applied) = self.applied.clone() else {
             self.applied = Some(wanted.clone());
             if wanted.0 {
@@ -663,6 +772,7 @@ impl RemoteControl {
                         Err(error) => {
                             rc.start_pending = false;
                             rc.host.last_error = Some(error);
+                            rc.schedule_restart(Duration::ZERO);
                             cx.refresh_windows();
                             return None;
                         }
@@ -676,6 +786,7 @@ impl RemoteControl {
                                 rc.start_pending = false;
                                 rc.host.last_error =
                                     Some(format!("Cannot start remote agent: {error}"));
+                                rc.schedule_restart(Duration::ZERO);
                                 return None;
                             }
                         }
@@ -701,10 +812,12 @@ impl RemoteControl {
                 match result {
                     Ok(process) => {
                         rc.agent = Some(process);
+                        rc.agent_started_at = Some(Instant::now());
                         rc.host.last_error = None;
                     }
                     Err(error) => {
                         rc.host.last_error = Some(error);
+                        rc.schedule_restart(Duration::ZERO);
                     }
                 }
                 rc.refresh_devices(cx);
@@ -735,6 +848,12 @@ impl RemoteControl {
         self.grid_worker.stop();
         self.start_generation = self.start_generation.wrapping_add(1);
         self.start_pending = false;
+        // Stopped on purpose (setting off, relay changed, new pairing code,
+        // quit): nothing restarts it and the failure history starts over.
+        self.agent_started_at = None;
+        self.restart_failures = 0;
+        self.restart_at = None;
+        self.last_exit = None;
         if let Some(agent) = self.agent.take() {
             agent.stop();
         }
@@ -848,6 +967,12 @@ fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
 #[cfg(all(test, unix))]
 mod e2e_tests;
 
+/// The agent runs only while remote control is on and the user has set a
+/// relay URL: it is never started against an empty or placeholder URL.
+fn agent_wanted(settings: &RemoteSettings) -> bool {
+    settings.enabled && !is_placeholder_relay_url(&settings.relay_url)
+}
+
 /// A disabled setting, changed relay or app quit invalidates all late completions.
 fn start_is_current(
     requested: u64,
@@ -944,6 +1069,165 @@ mod startup_tests {
                 );
             });
         });
+    }
+
+    #[test]
+    fn agent_is_wanted_only_when_enabled_with_a_relay_url_of_the_users_own() {
+        let mut settings = RemoteSettings {
+            enabled: true,
+            ..RemoteSettings::default()
+        };
+        assert!(!agent_wanted(&settings), "placeholder default");
+        settings.relay_url = String::new();
+        assert!(!agent_wanted(&settings), "empty");
+        settings.relay_url = "wss://relay.test/connect".into();
+        assert!(agent_wanted(&settings));
+        settings.enabled = false;
+        assert!(!agent_wanted(&settings));
+    }
+
+    #[test]
+    fn agent_state_names_what_the_process_is_doing() {
+        let now = Instant::now();
+        assert_eq!(agent_state(false, false, None, now), AgentState::Stopped);
+        assert_eq!(agent_state(false, true, None, now), AgentState::Starting);
+        assert_eq!(
+            agent_state(true, false, Some(now), now),
+            AgentState::Running
+        );
+        for (millis, seconds) in [(0, 0), (1, 1), (1000, 1), (1001, 2), (59_500, 60)] {
+            assert_eq!(
+                agent_state(false, false, Some(now + Duration::from_millis(millis)), now),
+                AgentState::Restarting { seconds }
+            );
+        }
+        // Overdue (the timer has not run yet) is "now", never negative.
+        assert_eq!(
+            agent_state(false, false, Some(now), now + Duration::from_secs(3)),
+            AgentState::Restarting { seconds: 0 }
+        );
+    }
+
+    /// An agent that ends on its own is started again after a growing wait,
+    /// and is left alone once the user turns remote control off.
+    #[gpui::test]
+    fn an_exited_agent_is_restarted_with_backoff_until_remote_is_turned_off(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let home =
+            std::env::temp_dir().join(format!("chau7-remote-restart-{}", uuid::Uuid::new_v4()));
+        cx.on_quit({
+            let home = home.clone();
+            move || {
+                let _ = std::fs::remove_dir_all(home);
+            }
+        });
+        cx.update(|cx| {
+            let mut settings = Settings::default();
+            settings.remote.enabled = false;
+            cx.set_global(settings);
+            cx.set_global(AppData::new(DataRoot::with_home(home, true)));
+            init(cx);
+        });
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let entity = handle(cx).unwrap();
+            // No process is started here: the supervision state is driven as
+            // the timer drives it when the agent's exit is observed.
+            entity.update(cx, |rc, _| {
+                rc.applied = Some((true, "wss://relay.test/connect".into()));
+                let start = Instant::now();
+                assert!(!rc.take_due_restart(start + Duration::from_secs(3600)));
+
+                rc.agent_exited(AgentExit::Code(1));
+                assert_eq!(rc.restart_failures, 1);
+                let first = rc.restart_at.expect("restart scheduled");
+                assert!(first <= Instant::now() + scheduling::RESTART_BASE);
+                assert_eq!(rc.status().agent, AgentState::Restarting { seconds: 1 });
+                assert_eq!(rc.status().last_exit, Some(AgentExit::Code(1)));
+                assert_eq!(
+                    rc.host.last_error.as_deref(),
+                    Some("Remote agent exited with status 1")
+                );
+                assert!(!rc.take_due_restart(first - Duration::from_millis(1)));
+                assert!(rc.restart_at.is_some());
+                assert!(rc.take_due_restart(first));
+                assert!(rc.restart_at.is_none(), "one start per scheduled restart");
+                assert!(!rc.take_due_restart(first + Duration::from_secs(1)));
+
+                // It ends again at once (as a failed start does): twice the wait.
+                rc.agent_exited(AgentExit::Signal(9));
+                assert_eq!(rc.restart_failures, 2);
+                let second = rc.restart_at.unwrap();
+                assert!(second > Instant::now() + scheduling::RESTART_BASE);
+                assert_eq!(rc.status().agent, AgentState::Restarting { seconds: 2 });
+                rc.schedule_restart(Duration::ZERO);
+                assert_eq!(rc.restart_failures, 3);
+
+                // A run that lasted starts the wait over.
+                rc.agent_started_at = Some(Instant::now() - scheduling::RESTART_STABLE_AFTER);
+                rc.agent_exited(AgentExit::Code(0));
+                assert_eq!(rc.restart_failures, 1);
+                assert_eq!(
+                    rc.host.last_error.as_deref(),
+                    Some("Remote agent was ended by signal 9"),
+                    "a clean exit is not an error"
+                );
+
+                // Turned off by the user: stopped, and nothing restarts it.
+                rc.stop_agent();
+                assert!(rc.restart_at.is_none() && rc.restart_failures == 0);
+                assert_eq!(rc.status().agent, AgentState::Stopped);
+                assert_eq!(rc.status().last_exit, None);
+                rc.applied = Some((false, "wss://relay.test/connect".into()));
+                rc.agent_exited(AgentExit::Code(1));
+                assert!(rc.restart_at.is_none(), "no restart while disabled");
+                assert_eq!(rc.status().agent, AgentState::Stopped);
+                rc.restart_at = Some(Instant::now());
+                assert!(!rc.take_due_restart(Instant::now()));
+                assert!(rc.restart_at.is_none());
+
+                // Quitting: no restart either.
+                rc.applied = Some((true, "wss://relay.test/connect".into()));
+                rc.shutdown();
+                rc.agent_exited(AgentExit::Code(1));
+                assert!(rc.restart_at.is_none());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn enabled_remote_with_the_placeholder_relay_never_starts_the_agent(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let home =
+            std::env::temp_dir().join(format!("chau7-remote-relay-{}", uuid::Uuid::new_v4()));
+        cx.on_quit({
+            let home = home.clone();
+            move || {
+                let _ = std::fs::remove_dir_all(home);
+            }
+        });
+        cx.update(|cx| {
+            let mut settings = Settings::default();
+            settings.remote.enabled = true;
+            assert!(is_placeholder_relay_url(&settings.remote.relay_url));
+            cx.set_global(settings);
+            cx.set_global(AppData::new(DataRoot::with_home(home, true)));
+            init(cx);
+        });
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let entity = handle(cx).unwrap();
+            let rc = entity.read(cx);
+            assert_eq!(rc.start_generation, 0, "no start was attempted");
+            assert!(!rc.start_pending && rc.agent.is_none() && rc.ipc.is_none());
+            assert_eq!(rc.applied.as_ref().map(|(run, _)| *run), Some(false));
+        });
+        let before = cx.update(|cx| handle(cx).unwrap().read(cx).ticks);
+        cx.executor().advance_clock(Duration::from_secs(5));
+        cx.run_until_parked();
+        cx.update(|cx| assert_eq!(handle(cx).unwrap().read(cx).ticks, before));
     }
 
     #[test]

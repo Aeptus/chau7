@@ -1121,7 +1121,9 @@ fn items(section: SettingsSection, ctx: &SectionContext) -> Vec<Card> {
                     Tone::Enabled
                 };
             }
-            (SettingsSection::RemoteControl, "relay") if s.remote.relay_url.trim().is_empty() => {
+            (SettingsSection::RemoteControl, "relay")
+                if crate::settings::is_placeholder_relay_url(&s.remote.relay_url) =>
+            {
                 card.tone = Tone::Warning
             }
             (SettingsSection::ApiProxy, "status") => {
