@@ -644,6 +644,15 @@ final class RemoteTerminalScrollPolicyTests: XCTestCase {
 }
 
 final class RemoteConnectionStartPolicyTests: XCTestCase {
+    func testARefusedInputIsNotAConnectionError() {
+        for code in ["tab_unavailable", "stale_prompt", "input_held", "command_blocked", "approval_stale"] {
+            XCTAssertTrue(RemoteConnectionStartPolicy.isInputRefusal(code: code), code)
+        }
+        for code in ["error", "decrypt_failed", ""] {
+            XCTAssertFalse(RemoteConnectionStartPolicy.isInputRefusal(code: code), code)
+        }
+    }
+
     func testExplicitDisconnectHoldsUntilAManualConnect() {
         XCTAssertTrue(RemoteConnectionStartPolicy.allowsStart(userDisconnected: false, isManual: false))
         XCTAssertFalse(RemoteConnectionStartPolicy.allowsStart(userDisconnected: true, isManual: false))
