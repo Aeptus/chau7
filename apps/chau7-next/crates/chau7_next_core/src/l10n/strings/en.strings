@@ -2696,6 +2696,10 @@
 "settings.search.promptInjection.title" = "AI Context";
 "settings.remote.access" = "Remote Access";
 "settings.remote.agent" = "Remote Agent";
+"settings.remote.agent.restarting" = "Restarting in %d s";
+"settings.remote.agent.lastExit.status" = "Last exit: status %d";
+"settings.remote.agent.lastExit.signal" = "Last exit: signal %d";
+"settings.remote.agent.lastExit.unknown" = "Last exit: unknown reason";
 "settings.remote.agent.needsRelay" = "Not started: no relay URL set";
 "settings.remote.pairing.needsRelay" = "Set your relay URL above to pair an iPhone. No pairing QR code is shown until then.";
 "settings.remote.relayUrl.unset" = "Enter the WebSocket URL of your own relay. Relay URLs are specific to you, so there is no default.";

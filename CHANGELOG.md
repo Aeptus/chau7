@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Restart the Remote Control helper when it stops on its own, waiting 1 second and then twice as long each time up to a minute, and show in the Remote settings whether it is running, starting, restarting (with a countdown) or stopped, and how it last ended.
+
 - Stop Remote Control from starting, or showing a pairing QR code, while the relay URL is empty or still the example placeholder; the Remote settings now say to set your own relay URL first.
 
 - Make terminal text reach the iPhone sooner and with far less data: the Mac sends the first output after a pause immediately, stops sending full-screen grids the phone does not use or already has, tells the phone the terminal size and when a full-screen program is running, and answers the phone's request to resend a tab.

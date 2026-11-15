@@ -13,9 +13,11 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 
 use super::widgets::{button, description, row, section as titled, stepper, toggle};
 use super::{SectionContext, SettingsView, update};
-use crate::l10n::l;
-use crate::remote::{self, RemoteStatus};
+use crate::l10n::{l, lf};
+use crate::remote::agent::AgentExit;
+use crate::remote::{self, AgentState, RemoteStatus};
 use crate::settings::{Settings, is_placeholder_relay_url};
+use chau7_next_core::l10n::Arg;
 
 /// The relay URL field.
 pub(crate) struct RemoteInputs {
@@ -55,6 +57,40 @@ fn copy(text: String, cx: &mut App) {
     cx.write_to_clipboard(ClipboardItem::new_string(text));
 }
 
+/// The agent's state in the Status row.
+fn agent_state_text(state: AgentState) -> String {
+    match state {
+        AgentState::Running => l("status.running", "Running"),
+        AgentState::Starting => l("status.starting", "Starting..."),
+        AgentState::Stopped => l("status.stopped", "Stopped"),
+        AgentState::Restarting { seconds } => lf(
+            "settings.remote.agent.restarting",
+            "Restarting in %d s",
+            &[Arg::Int(i64::try_from(seconds).unwrap_or(i64::MAX))],
+        ),
+    }
+}
+
+/// How the agent last ended on its own.
+fn agent_exit_text(exit: AgentExit) -> String {
+    match exit {
+        AgentExit::Code(code) => lf(
+            "settings.remote.agent.lastExit.status",
+            "Last exit: status %d",
+            &[Arg::Int(i64::from(code))],
+        ),
+        AgentExit::Signal(signal) => lf(
+            "settings.remote.agent.lastExit.signal",
+            "Last exit: signal %d",
+            &[Arg::Int(i64::from(signal))],
+        ),
+        AgentExit::Unknown => l(
+            "settings.remote.agent.lastExit.unknown",
+            "Last exit: unknown reason",
+        ),
+    }
+}
+
 /// What the Pairing block shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PairingDisplay {
@@ -81,6 +117,8 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     let chrome = ctx.chrome;
     let status = ctx.remote.clone().unwrap_or(RemoteStatus {
         agent_running: false,
+        agent: AgentState::Stopped,
+        last_exit: None,
         ipc_connected: false,
         session_status: None,
         last_error: None,
@@ -94,12 +132,14 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
         div()
             .text_sm()
             .font_weight(gpui::FontWeight::SEMIBOLD)
-            .child(if status.agent_running {
-                "Running"
-            } else {
-                "Stopped"
-            }),
+            .child(agent_state_text(status.agent)),
     );
+    if let Some(exit) = status
+        .last_exit
+        .filter(|_| status.agent != AgentState::Running)
+    {
+        detail = detail.child(caption(agent_exit_text(exit), ctx));
+    }
     let relay_unset = is_placeholder_relay_url(&ctx.settings.remote.relay_url);
     if ctx.settings.remote.enabled && relay_unset {
         detail = detail.child(caption(
@@ -391,6 +431,46 @@ pub(super) fn viewers(ctx: &SectionContext) -> gpui::Div {
 mod tests {
     use super::*;
     use crate::settings::RemoteSettings;
+
+    #[test]
+    fn agent_state_and_last_exit_have_text_in_every_language() {
+        use chau7_next_core::l10n::{Lang, localized_format, table};
+        for lang in Lang::ALL {
+            let restarting = localized_format(
+                lang,
+                "settings.remote.agent.restarting",
+                "",
+                &[Arg::Int(42)],
+            );
+            assert!(restarting.contains("42"), "{}: {restarting}", lang.code());
+            for key in [
+                "settings.remote.agent.lastExit.status",
+                "settings.remote.agent.lastExit.signal",
+            ] {
+                let text = localized_format(lang, key, "", &[Arg::Int(137)]);
+                assert!(text.contains("137"), "{}: {text}", lang.code());
+            }
+            assert!(!table(lang)["settings.remote.agent.lastExit.unknown"].is_empty());
+        }
+        assert_eq!(
+            localized_format(
+                Lang::En,
+                "settings.remote.agent.restarting",
+                "",
+                &[Arg::Int(8)]
+            ),
+            "Restarting in 8 s"
+        );
+        assert_eq!(
+            localized_format(
+                Lang::En,
+                "settings.remote.agent.lastExit.status",
+                "",
+                &[Arg::Int(1)]
+            ),
+            "Last exit: status 1"
+        );
+    }
 
     #[test]
     fn no_pairing_qr_or_code_while_the_relay_url_is_empty_or_the_placeholder() {
