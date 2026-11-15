@@ -29,6 +29,7 @@ Mac generates:
 - `device_id` (UUID)
 - `mac_pub` (X25519 public key)
 - `pairing_code` (6 digits, TTL 10 minutes)
+- `pairing_key` (32 random bytes, same lifetime as the code)
 
 Pairing payload:
 
@@ -36,6 +37,7 @@ Pairing payload:
 - `device_id`
 - `mac_pub` (base64)
 - `pairing_code`
+- `pairing_key` (base64) — shown in the QR only; never sent over the relay
 - `expires_at` (ISO8601)
 - `relay_secret` — derived iOS-only credential for this Mac device namespace
 - `relay_key_id` — public server key ID; both fields are required for v3 admission
@@ -47,17 +49,31 @@ scanning the secure QR. The server root and Mac credential never enter the QR.
 Flow:
 
 1. Mac connects to relay and waits for pair requests.
-2. iOS pastes pairing payload and connects to relay.
-3. iOS sends `PAIR_REQUEST` to the Mac through the relay.
-4. Mac validates `pairing_code` and replies `PAIR_ACCEPT` carrying `mac_pub`.
+2. iOS scans the pairing QR and connects to relay.
+3. iOS sends `PAIR_REQUEST` to the Mac through the relay, carrying a
+   `pairing_proof` instead of the code.
+4. Mac validates `pairing_proof` and replies `PAIR_ACCEPT` carrying `mac_pub`.
 5. Both sides derive session keys via X25519 and exchange an encrypted
    `SESSION_READY`.
 6. Only when the Mac accepts that encrypted `SESSION_READY` — which only the
    holder of the matching iOS private key can produce — does it persist the
    iOS identity as trusted.
 
-`PAIR_REQUEST` is cleartext and the relay forwards it verbatim, so the
-`ios_pub` it carries is attacker-chosen and must not be trusted on arrival. The
+`PAIR_REQUEST` is cleartext and the relay forwards it verbatim. The proof is
+
+```
+pairing_proof = base64(HMAC-SHA256(pairing_key,
+    "chau7-pair-v2" 0x00 device_id 0x00 ios_pub 0x00 pairing_code))
+```
+
+with `ios_pub` exactly as sent (base64 text). It reveals nothing reusable and
+covers the iOS public key, so whoever forwards the request cannot pair a key of
+its own. A request that carries only `pairing_code` comes from an app older
+than the proof and is rejected with `update_required`; a phone the Mac already
+trusts needs neither.
+
+Even with a valid proof, the
+`ios_pub` it carries must not be trusted on arrival. The
 Mac therefore treats a claimed identity as *provisional* until the handshake
 proves possession. Trust is anchored in the Mac's own private key, which never
 leaves the Mac: a relay that observes the pairing code still cannot derive the
@@ -199,7 +215,7 @@ since 2001-01-01T00:00:00Z (`timeIntervalSinceReferenceDate`).
 ```json
 {
   "device_id": "uuid",
-  "pairing_code": "123456",
+  "pairing_proof": "base64-32bytes",
   "ios_pub": "base64",
   "ios_name": "iPhone"
 }
@@ -218,7 +234,7 @@ since 2001-01-01T00:00:00Z (`timeIntervalSinceReferenceDate`).
 ### PAIR_REJECT
 
 ```json
-{ "reason": "expired_code|invalid_code|internal_error" }
+{ "reason": "expired_code|invalid_code|update_required|rate_limited|invalid_ios_pub|internal_error" }
 ```
 
 ### SESSION_READY
@@ -306,7 +322,7 @@ Rules:
 
 ### CACHED_TAB_LIST
 
-Same payload as TAB_LIST. The agent replays its last cached tab list to a
+Same payload as TAB_LIST, encrypted like it. The agent replays its last cached tab list to a
 freshly connected client before live frames resume, so the UI is populated
 immediately.
 
@@ -530,6 +546,7 @@ Local IPC payload:
   "device_id": "uuid",
   "mac_pub": "base64",
   "pairing_code": "123456",
+  "pairing_key": "base64-32bytes",
   "expires_at": "ISO8601",
   "relay_secret": "derived-ios-role-credential",
   "relay_key_id": "public-key-id"

@@ -136,6 +136,7 @@ mod tests {
             expires_at: (Utc::now() + chrono::Duration::seconds(60)).to_rfc3339(),
             relay_key_id: Some("fixture-key".into()),
             relay_secret: Some("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE".into()),
+            pairing_key: Some("KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio=".into()),
         }
     }
 

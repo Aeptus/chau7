@@ -21,6 +21,10 @@ pub struct RemotePairingInfo {
     /// Ordinary serialization and diagnostics must never disclose it.
     #[serde(default, skip_serializing)]
     pub relay_secret: Option<String>,
+    /// Secret the phone proves it scanned, without sending it. Like the relay
+    /// credential it belongs in the QR only and is never serialized elsewhere.
+    #[serde(default, skip_serializing)]
+    pub pairing_key: Option<String>,
 }
 
 /// Explicit secure QR serialization; ordinary device details omit admission credentials.
@@ -35,6 +39,8 @@ pub struct RemoteQrPayload {
     pub relay_key_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relay_secret: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pairing_key: Option<String>,
 }
 
 impl std::fmt::Debug for RemotePairingInfo {
@@ -63,6 +69,7 @@ impl RemotePairingInfo {
             expires_at: self.expires_at.clone(),
             relay_key_id: self.relay_key_id.clone(),
             relay_secret: None,
+            pairing_key: None,
         };
         serde_json::to_string(&payload).unwrap_or_default()
     }
@@ -110,6 +117,7 @@ impl RemotePairingInfo {
             expires_at: self.expires_at.clone(),
             relay_key_id: Some(key_id.to_owned()),
             relay_secret: Some(secret.to_owned()),
+            pairing_key: self.pairing_key.clone().filter(|key| !key.is_empty()),
         };
         serde_json::to_string(&payload)
             .map_err(|_| "Cannot prepare the pairing code. Refresh the code.")
@@ -311,6 +319,7 @@ mod tests {
             relay_url: "wss://relay.example.com/connect".into(),
             relay_key_id: None,
             relay_secret: None,
+            pairing_key: None,
         };
         assert_eq!(
             info.qr_payload_string(),
@@ -337,13 +346,16 @@ mod tests {
         let decoded: RemotePairingInfo = serde_json::from_str(&qr).unwrap();
         assert_eq!(decoded, info);
         let secret = info.relay_secret.as_deref().unwrap();
+        let pairing_key = info.pairing_key.as_deref().unwrap();
         assert!(qr.contains(secret));
+        assert!(qr.contains(pairing_key));
         for public in [
             info.qr_payload_string(),
             serde_json::to_string(&info).unwrap(),
             format!("{info:?}"),
         ] {
             assert!(!public.contains(secret));
+            assert!(!public.contains(pairing_key));
         }
     }
 
