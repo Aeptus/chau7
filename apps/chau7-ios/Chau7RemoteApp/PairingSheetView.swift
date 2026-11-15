@@ -1,19 +1,19 @@
 import Chau7Core
 import SwiftUI
 
-/// Modal sheet for pairing with the macOS app. Supports scanning the pairing QR
-/// code shown by Chau7 on the Mac, a one-tap "Paste & Pair" from the clipboard,
-/// or manually editing the pairing payload. Validation produces specific,
-/// human-readable errors instead of a single generic failure.
+/// Modal sheet for pairing with the macOS app by scanning the QR code Chau7
+/// shows on the Mac. The QR is the only carrier of the relay credential, so
+/// there is no paste or manual entry. Success is reported only once the Mac
+/// has accepted the scan; until then the previous pairing stays stored.
 struct PairingSheetView: View {
     var client: RemoteClient
     @Environment(\.dismiss) private var dismiss
-    @State private var draftPayload = ""
     @State private var feedback: Feedback?
     @State private var isScannerPresented = false
 
     enum Feedback: Equatable {
         case error(String)
+        case waiting
         case success
 
         var isSuccess: Bool { self == .success }
@@ -22,7 +22,7 @@ struct PairingSheetView: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Open Chau7 on your Mac, enable Remote, and scan the secure QR code. You can also enter a securely supplied pairing payload.")
+                Text("Open Chau7 on your Mac, enable Remote, and scan the QR code it shows.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -36,42 +36,6 @@ struct PairingSheetView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
 
-                Button {
-                    pasteAndPair()
-                } label: {
-                    Label("Paste & Pair", systemImage: "doc.on.clipboard")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-
-                DisclosureGroup("Enter pairing text manually") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        TextEditor(text: $draftPayload)
-                            .font(.system(.footnote, design: .monospaced))
-                            .frame(minHeight: 120)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.secondary.opacity(0.3))
-                            )
-                            .accessibilityLabel("Pairing text")
-
-                        HStack {
-                            Button("Clear", role: .destructive) {
-                                draftPayload = ""
-                                feedback = nil
-                            }
-                            .disabled(draftPayload.isEmpty)
-                            Spacer()
-                            Button("Pair") { attemptPair(with: draftPayload) }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(draftPayload.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
-                    .padding(.top, 4)
-                }
-                .font(.subheadline)
-
                 if let feedback {
                     switch feedback {
                     case .error(let message):
@@ -79,8 +43,15 @@ struct PairingSheetView: View {
                             .font(.caption)
                             .foregroundStyle(.red)
                             .fixedSize(horizontal: false, vertical: true)
+                    case .waiting:
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Waiting for your Mac…")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                     case .success:
-                        Label("Paired! Connecting…", systemImage: "checkmark.circle.fill")
+                        Label("Paired", systemImage: "checkmark.circle.fill")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.green)
                     }
@@ -98,6 +69,22 @@ struct PairingSheetView: View {
             }
             .sheet(isPresented: $isScannerPresented) {
                 scannerSheet
+            }
+            .onChange(of: client.pairingAttempt) { _, attempt in
+                // Only an attempt this sheet started is reflected here.
+                guard feedback == .waiting else { return }
+                switch attempt {
+                case .accepted:
+                    feedback = .success
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(600))
+                        dismiss()
+                    }
+                case .failed(let message):
+                    feedback = .error(message)
+                case .idle, .waitingForMac:
+                    break
+                }
             }
         }
     }
@@ -125,25 +112,11 @@ struct PairingSheetView: View {
         }
     }
 
-    private func pasteAndPair() {
-        guard let text = UIPasteboard.general.string, !text.isEmpty else {
-            feedback = .error("Your clipboard is empty. Scan the secure QR on your Mac, or enter a securely supplied pairing payload.")
-            return
-        }
-        draftPayload = text
-        attemptPair(with: text)
-    }
-
     private func attemptPair(with payload: String) {
         switch PairingPayloadValidator.validate(payload) {
         case .success(let info):
-            client.pairingInfo = info
-            client.connect()
-            feedback = .success
-            Task {
-                try? await Task.sleep(for: .milliseconds(900))
-                dismiss()
-            }
+            feedback = .waiting
+            client.beginPairing(info)
         case .failure(let message):
             feedback = .error(message)
         }

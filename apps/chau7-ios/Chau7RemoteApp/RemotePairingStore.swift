@@ -77,6 +77,10 @@ enum RemotePairingStore {
         persist(key: Key.macPublicKey, data: data, label: "Mac public key")
     }
 
+    static func deleteMacPublicKey() {
+        _ = KeychainStore.delete(key: Key.macPublicKey)
+    }
+
     // MARK: - Pairing payload
 
     static func loadPairing() -> PairingInfo? {
