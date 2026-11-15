@@ -118,18 +118,83 @@ func TestAnnounceIPCConnectionReplaysExistingSessionStatus(t *testing.T) {
 	}
 }
 
-func TestIsPairRequestAuthorizedAcceptsValidPairingCode(t *testing.T) {
+// testPairingKey is the QR secret the pairing tests share.
+var testPairingKey = bytes.Repeat([]byte{0x2a}, 32)
+
+// proofFor returns the proof a phone that scanned a's QR would send.
+func proofFor(a *Agent, iosPub string) string {
+	a.pairingKey = testPairingKey
+	return pairingProof(testPairingKey, a.state.DeviceID, iosPub, a.pairingCode)
+}
+
+func TestPairRequestWithValidProofIsAuthorized(t *testing.T) {
 	a := &Agent{
-		state:          &State{},
+		state:          &State{DeviceID: "mac-device"},
 		pairingCode:    "123456",
 		pairingExpires: time.Date(2026, 3, 13, 12, 0, 0, 0, time.UTC),
 	}
+	before := time.Date(2026, 3, 13, 11, 59, 0, 0, time.UTC)
 
-	if !a.isPairRequestAuthorized(PairRequestPayload{
-		PairingCode: "123456",
-		IOSPub:      "new-ios-pub",
-	}, time.Date(2026, 3, 13, 11, 59, 0, 0, time.UTC)) {
-		t.Fatal("expected valid pairing code to authorize request")
+	request := PairRequestPayload{PairingProof: proofFor(a, "new-ios-pub"), IOSPub: "new-ios-pub"}
+	if reason := a.pairRequestRejection(request, before); reason != "" {
+		t.Fatalf("expected a valid proof to authorize the request, got %q", reason)
+	}
+	after := time.Date(2026, 3, 13, 12, 1, 0, 0, time.UTC)
+	if reason := a.pairRequestRejection(request, after); reason != "expired_code" {
+		t.Fatalf("expected an expired pairing to be rejected, got %q", reason)
+	}
+}
+
+// The shared fixtures are the cross-language vector: the phone must compute
+// the same proof from the same QR.
+func TestPairingProofMatchesTheSharedFixtures(t *testing.T) {
+	var info PairingInfoPayload
+	var request PairRequestPayload
+	for name, target := range map[string]any{"pairing_info.json": &info, "pair_request.json": &request} {
+		data, err := os.ReadFile("../../docs/fixtures/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, target); err != nil {
+			t.Fatal(err)
+		}
+	}
+	key, err := base64.StdEncoding.DecodeString(info.PairingKey)
+	if err != nil || len(key) != 32 {
+		t.Fatalf("fixture pairing key must be 32 base64 bytes: %v", err)
+	}
+	if got := pairingProof(key, info.DeviceID, request.IOSPub, info.PairingCode); got != request.PairingProof {
+		t.Fatalf("proof drifted from the fixture: got %q", got)
+	}
+}
+
+// The attack the proof exists for: whoever forwards the request swaps in a key
+// of its own. The proof covers the key, so the swap invalidates it.
+func TestPairingProofDoesNotTransferToAnotherKey(t *testing.T) {
+	a := &Agent{
+		state:          &State{DeviceID: "mac-device"},
+		pairingCode:    "123456",
+		pairingExpires: time.Now().Add(time.Minute),
+	}
+	proof := proofFor(a, "real-ios-pub")
+
+	if reason := a.pairRequestRejection(PairRequestPayload{PairingProof: proof, IOSPub: "attacker-pub"}, time.Now()); reason != "invalid_code" {
+		t.Fatalf("expected a proof replayed with another key to be rejected, got %q", reason)
+	}
+}
+
+// The six-digit code used to cross the relay in cleartext and authorise the
+// request by itself. It no longer authorises anything.
+func TestPairingCodeAloneIsRejected(t *testing.T) {
+	a := &Agent{
+		state:          &State{DeviceID: "mac-device"},
+		pairingCode:    "123456",
+		pairingKey:     testPairingKey,
+		pairingExpires: time.Now().Add(time.Minute),
+	}
+
+	if reason := a.pairRequestRejection(PairRequestPayload{PairingCode: "123456", IOSPub: "old-phone-pub"}, time.Now()); reason != "update_required" {
+		t.Fatalf("expected a code-only request to ask for an app update, got %q", reason)
 	}
 }
 
@@ -140,10 +205,10 @@ func TestIsPairRequestAuthorizedAcceptsKnownIOSKeyAfterExpiry(t *testing.T) {
 		pairingExpires: time.Date(2026, 3, 13, 12, 0, 0, 0, time.UTC),
 	}
 
-	if !a.isPairRequestAuthorized(PairRequestPayload{
+	if a.pairRequestRejection(PairRequestPayload{
 		PairingCode: "000000",
 		IOSPub:      "known-ios-pub",
-	}, time.Date(2026, 3, 13, 13, 0, 0, 0, time.UTC)) {
+	}, time.Date(2026, 3, 13, 13, 0, 0, 0, time.UTC)) != "" {
 		t.Fatal("expected known iOS key to authorize reconnect after pairing code expiry")
 	}
 }
@@ -155,10 +220,10 @@ func TestIsPairRequestAuthorizedRejectsUnknownIOSKeyAfterExpiry(t *testing.T) {
 		pairingExpires: time.Date(2026, 3, 13, 12, 0, 0, 0, time.UTC),
 	}
 
-	if a.isPairRequestAuthorized(PairRequestPayload{
+	if a.pairRequestRejection(PairRequestPayload{
 		PairingCode: "000000",
 		IOSPub:      "other-ios-pub",
-	}, time.Date(2026, 3, 13, 13, 0, 0, 0, time.UTC)) {
+	}, time.Date(2026, 3, 13, 13, 0, 0, 0, time.UTC)) == "" {
 		t.Fatal("expected unknown iOS key to be rejected after pairing code expiry")
 	}
 }
@@ -201,10 +266,10 @@ func TestHandlePairRequestChangesPeerAndWaitsForFreshIOSHello(t *testing.T) {
 	}
 
 	payload, err := json.Marshal(PairRequestPayload{
-		DeviceID:    "mac-device",
-		PairingCode: "123456",
-		IOSPub:      iosPub,
-		IOSName:     "New Phone",
+		DeviceID:     "mac-device",
+		PairingProof: proofFor(a, iosPub),
+		IOSPub:       iosPub,
+		IOSName:      "New Phone",
 	})
 	if err != nil {
 		t.Fatalf("marshal pair request: %v", err)
@@ -254,10 +319,10 @@ func TestPairRequestAloneNeverPersistsIdentity(t *testing.T) {
 	a.pairingExpires = time.Now().Add(time.Minute)
 
 	payload, err := json.Marshal(PairRequestPayload{
-		DeviceID:    "mac-device",
-		PairingCode: "424242",
-		IOSPub:      iosPub,
-		IOSName:     "Attacker",
+		DeviceID:     "mac-device",
+		PairingProof: proofFor(a, iosPub),
+		IOSPub:       iosPub,
+		IOSName:      "Attacker",
 	})
 	if err != nil {
 		t.Fatalf("marshal pair request: %v", err)
@@ -423,10 +488,10 @@ func TestNewPhoneCanPairWhileAnotherIdentityIsCurrent(t *testing.T) {
 		t.Fatalf("marshal hello: %v", err)
 	}
 	request, err := json.Marshal(PairRequestPayload{
-		DeviceID:    "mac-device",
-		PairingCode: "123456",
-		IOSPub:      newPub,
-		IOSName:     "New Phone",
+		DeviceID:     "mac-device",
+		PairingProof: proofFor(a, newPub),
+		IOSPub:       newPub,
+		IOSName:      "New Phone",
 	})
 	if err != nil {
 		t.Fatalf("marshal pair request: %v", err)
@@ -932,7 +997,7 @@ func TestConfirmPendingPairPreservesTrustWhenSaveFails(t *testing.T) {
 	if a.currentPeerID != "" {
 		t.Fatal("failed persistence selected a trusted peer")
 	}
-	if a.isPairRequestAuthorized(PairRequestPayload{IOSPub: iosPub}, time.Now()) {
+	if a.pairRequestRejection(PairRequestPayload{IOSPub: iosPub}, time.Now()) == "" {
 		t.Fatal("unsaved identity became authorized")
 	}
 }

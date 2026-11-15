@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Bind iPhone pairing to the QR code: the phone now proves it scanned the QR instead of sending the six-digit code through the relay, so nothing the relay sees can be used to pair another device. Pairing a new phone needs the updated iPhone app; phones already paired are unaffected. The cached tab list is now always encrypted.
+
 - Make terminal text reach the iPhone sooner and with far less data: the Mac sends the first output after a pause immediately, stops sending full-screen grids the phone does not use or already has, tells the phone the terminal size and when a full-screen program is running, and answers the phone's request to resend a tab.
 
 - Fix pairing a second iPhone, or re-pairing with a new key, which timed out while another phone had been connected. A pairing code now stops working once it has paired a phone.
