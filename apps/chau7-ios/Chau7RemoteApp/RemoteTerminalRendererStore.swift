@@ -43,11 +43,15 @@ private actor RemoteTerminalRenderEngine {
         self.colorScheme = colorScheme
     }
 
-    func reset(colorScheme: TerminalColorScheme) {
+    /// The viewport is the phone's screen, not connection state: the view
+    /// declares it only when its size or font changes, so a reset passes the
+    /// last declared one back in rather than waiting for a change that may
+    /// never come.
+    func reset(colorScheme: TerminalColorScheme, viewport: (cols: Int, rows: Int)?) {
         playbacks.removeAll()
         replayByTabID.removeAll()
-        viewportCols = 0
-        viewportRows = 0
+        viewportCols = viewport?.cols ?? 0
+        viewportRows = viewport?.rows ?? 0
         sourceColsByTabID.removeAll()
         sourceRowsByTabID.removeAll()
         alternateScreenByTabID.removeAll()
@@ -290,6 +294,8 @@ final class RemoteTerminalRendererStore {
         return pacer
     }()
 
+    /// Last viewport the view declared; survives `reset`.
+    @ObservationIgnored private var declaredViewport: (cols: Int, rows: Int)?
     @ObservationIgnored var onFramePublished: ((Double) -> Void)?
     @ObservationIgnored var onFramePresented: ((RemoteTerminalFrameTrace) -> Void)?
     @ObservationIgnored var onAvailabilityChanged: ((Bool) -> Void)?
@@ -310,9 +316,10 @@ final class RemoteTerminalRendererStore {
         // connection (or the text fallback) never inherits stale remote state.
         let scheme = AppSettings.currentColorScheme
         colorScheme = scheme
+        let viewport = declaredViewport
         mutationTail = Task { @MainActor [weak self, engine] in
             _ = await predecessor?.result
-            await engine.reset(colorScheme: scheme)
+            await engine.reset(colorScheme: scheme, viewport: viewport)
             guard let self, self.generation == currentGeneration else { return }
             self.markRenderDirty()
         }
@@ -356,6 +363,7 @@ final class RemoteTerminalRendererStore {
 
     func setViewport(cols: Int, rows: Int) {
         guard cols > 0, rows > 0 else { return }
+        declaredViewport = (cols, rows)
         enqueueMutation(publishFor: activeTabID) { engine in
             await engine.setViewport(cols: cols, rows: rows)
         }

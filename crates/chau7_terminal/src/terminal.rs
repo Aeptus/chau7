@@ -1834,6 +1834,7 @@ impl Chau7Terminal {
                 });
             }
 
+            let mut pending_blank_rows = 0usize;
             let mut row = 0usize;
             while row < rows {
                 // Collect the physical rows of this logical line.
@@ -1868,7 +1869,17 @@ impl Chau7Terminal {
                 }
                 let line_begin = line_start * cols;
 
-                if content_end > line_begin || line_end == line_start + 1 {
+                if content_end == line_begin {
+                    // A blank line: owed one empty row if content follows.
+                    pending_blank_rows += 1;
+                } else {
+                    // Blank lines between content keep their height. Trailing
+                    // ones are never emitted, so padding below the last line
+                    // does not inflate the display.
+                    for _ in 0..pending_blank_rows {
+                        row_offsets.push(out_cells.len() as u32);
+                    }
+                    pending_blank_rows = 0;
                     let mut col_in_row = 0usize;
                     let mut idx = line_begin;
                     while idx < content_end {
@@ -4275,6 +4286,28 @@ mod tests {
                 .collect();
 
             assert_eq!(rows, vec!["one".to_string(), "two".to_string()]);
+            release(&mut buffer);
+        }
+
+        #[test]
+        fn blank_lines_between_content_keep_their_rows() {
+            let term = Chau7Terminal::new_headless(20, 6).expect("create headless terminal");
+            term.inject_output(b"one\r\n\r\n\r\ntwo");
+
+            term.inject_output(b"\x1b[?25l");
+            let (mut buffer, clusters) = fold(&term, 10);
+            let rows = folded_text(&buffer, &clusters);
+
+            assert_eq!(
+                rows,
+                vec![
+                    "one".to_string(),
+                    String::new(),
+                    String::new(),
+                    "two".to_string()
+                ],
+                "interior blank lines stay; padding below the last line is trimmed"
+            );
             release(&mut buffer);
         }
 

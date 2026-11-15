@@ -132,6 +132,18 @@ final class RemoteTerminalScrollRequestsTests: XCTestCase {
         XCTAssertNil(requests.take(for: 7))
     }
 
+    func testFoldedRowsAnchorToTheBottomUnlessTheCursorIsAbove() {
+        // Everything fits: paint from the first row.
+        XCTAssertEqual(RemoteTerminalScrollPolicy.firstFoldedRow(displayRows: 10, viewportRows: 24, cursorRow: 9), 0)
+        // 30 folded rows in a 24-row canvas: the newest 24 are shown.
+        XCTAssertEqual(RemoteTerminalScrollPolicy.firstFoldedRow(displayRows: 30, viewportRows: 24, cursorRow: 29), 6)
+        XCTAssertEqual(RemoteTerminalScrollPolicy.firstFoldedRow(displayRows: 30, viewportRows: 24, cursorRow: nil), 6)
+        // A cursor above the bottom window pulls the window up to it.
+        XCTAssertEqual(RemoteTerminalScrollPolicy.firstFoldedRow(displayRows: 30, viewportRows: 24, cursorRow: 2), 2)
+        XCTAssertEqual(RemoteTerminalScrollPolicy.firstFoldedRow(displayRows: 0, viewportRows: 24, cursorRow: nil), 0)
+        XCTAssertEqual(RemoteTerminalScrollPolicy.firstFoldedRow(displayRows: 30, viewportRows: 0, cursorRow: nil), 0)
+    }
+
     func testInvalidRequestsDoNotReplacePendingDestination() {
         var requests = RemoteTerminalScrollRequests()
         requests.request(tabID: 7, fraction: 0.5)

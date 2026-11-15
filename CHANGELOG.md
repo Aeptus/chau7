@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fix the iPhone terminal: it no longer stays in the plain-text view after reconnecting, it keeps the newest output and the cursor on screen when wide lines are folded to the phone's width, and it keeps blank lines between folded lines. The app may now draw at up to 120 Hz on ProMotion displays.
+
 - Make the performance lab's synthetic input reach the app by sending it to a tab the lab created.
 
 - Let the performance comparison gate target the time terminal output waits before processing, measured over the whole trial phase.

@@ -53,6 +53,17 @@ public enum RemoteTerminalScrollPolicy {
         let end = Int(min(max((maxY / cellHeight).rounded(.up), 0), Double(totalRows)))
         return first ..< max(first, end)
     }
+
+    /// First folded row to paint at the top of the canvas. Folding a wide grid
+    /// yields more rows than fit, and the newest output is at the bottom, so
+    /// the surplus is hidden above the canvas. A cursor above that window wins,
+    /// so the place being edited is never the part cut off.
+    public static func firstFoldedRow(displayRows: Int, viewportRows: Int, cursorRow: Int?) -> Int {
+        guard displayRows > 0, viewportRows > 0 else { return 0 }
+        let bottomAnchored = max(0, displayRows - viewportRows)
+        guard let cursorRow, cursorRow >= 0 else { return bottomAnchored }
+        return min(bottomAnchored, cursorRow)
+    }
 }
 
 /// One latest scroll destination per display refresh, never a task per gesture callback.
