@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fix pairing a second iPhone, or re-pairing with a new key, which timed out while another phone had been connected. A pairing code now stops working once it has paired a phone.
+
+- Keep terminal output and input flowing to the iPhone while the relay is slow to answer notification and approval requests; deliver input rejections and terminal size to the phone; stop large pastes and oversized frames from dropping the relay connection.
+
 - Make the performance lab's synthetic input reach the app by sending it to a tab the lab created.
 
 - Let the performance comparison gate target the time terminal output waits before processing, measured over the whole trial phase.

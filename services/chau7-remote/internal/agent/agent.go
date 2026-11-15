@@ -35,9 +35,13 @@ import (
 )
 
 const (
-	defaultRelayURL     = "wss://relay.chau7.sh/connect"
-	pairingTTL          = 10 * time.Minute
-	maxFrameSize        = 5 * 1024 * 1024
+	defaultRelayURL = "wss://relay.chau7.sh/connect"
+	pairingTTL      = 10 * time.Minute
+	maxFrameSize    = 5 * 1024 * 1024
+	// The relay closes a socket that sends it a larger message.
+	maxRelayFrameSize = 1024 * 1024
+	// Relay HTTP work waiting behind a slow relay; beyond this it is dropped.
+	relayWorkBacklog    = 256
 	relayRequestTimeout = 10 * time.Second
 	// How long a claimed iOS identity stays provisional, waiting for the peer to
 	// prove it holds the matching private key by completing the encrypted
@@ -71,6 +75,10 @@ type Agent struct {
 	// completes the encrypted handshake (see confirmPendingPair), because that
 	// is the one step a relay replaying a cleartext PAIR_REQUEST cannot fake.
 	pendingPairMu sync.Mutex
+	// Relay HTTP calls (pending state, push) run here, in order, so a slow
+	// relay never holds up terminal output or input.
+	relayWorkOnce sync.Once
+	relayWorkCh   chan func()
 	pendingPair   *pendingPair
 
 	ipcMu   sync.Mutex
@@ -543,6 +551,8 @@ func (a *Agent) relayLoop(ctx context.Context) {
 			continue
 		}
 		backoff = 2 * time.Second // Reset on successful connect
+		// The library default (32 KiB) closes the connection on a large paste.
+		conn.SetReadLimit(maxRelayFrameSize)
 		a.wsMu.Lock()
 		a.wsConn = conn
 		a.wsMu.Unlock()
@@ -630,24 +640,36 @@ func (a *Agent) handleIPCFrame(ctx context.Context, frame *protocol.Frame) {
 	case protocol.TypeViewerLeave:
 		a.dispatchViewerFrames(ctx, a.viewerHub().leaveFromApp(frame.Payload))
 	case protocol.TypeApprovalRequest:
-		a.updatePendingApproval(ctx, frame.Payload)
 		if a.isSessionReady() {
 			a.sendEncryptedToRelay(ctx, frame)
 		}
-		a.handleApprovalRequestForPush(ctx, frame.Payload)
+		payload := frame.Payload
+		a.relayWork(func() {
+			a.updatePendingApproval(ctx, payload)
+			a.handleApprovalRequestForPush(ctx, payload)
+		})
 	case protocol.TypeInteractivePromptList:
-		a.replacePendingPrompts(ctx, frame.Payload)
 		if a.isSessionReady() {
 			a.sendEncryptedToRelay(ctx, frame)
 		}
-		a.handleInteractivePromptListForPush(ctx, frame.Payload)
+		payload := frame.Payload
+		a.relayWork(func() {
+			a.replacePendingPrompts(ctx, payload)
+			a.handleInteractivePromptListForPush(ctx, payload)
+		})
 	case protocol.TypeNotificationEvent:
 		if a.isSessionReady() {
 			a.sendEncryptedToRelay(ctx, frame)
 		}
-		a.handleNotificationEventForPush(ctx, frame.Payload)
+		payload := frame.Payload
+		a.relayWork(func() { a.handleNotificationEventForPush(ctx, payload) })
+	case protocol.TypeError:
+		// The app's refusal of an input; the phone must hear about it.
+		if a.isSessionReady() {
+			a.sendEncryptedToRelay(ctx, frame)
+		}
 	case protocol.TypeTabList, protocol.TypeOutput, protocol.TypeSnapshot,
-		protocol.TypeTerminalGridSnapshot,
+		protocol.TypeTerminalGridSnapshot, protocol.TypeTerminalSize,
 		protocol.TypeActivityState,
 		protocol.TypeActivityCleared:
 		if a.shouldForwardLiveFrames() {
@@ -733,13 +755,14 @@ func (a *Agent) handleRelayFrame(ctx context.Context, frame *protocol.Frame) {
 		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
 			return
 		}
+		// The app acts first; clearing the relay's pending copy can wait.
+		a.sendToIPC(frame)
 		if frame.Type == protocol.TypeApprovalResponse {
 			var response ApprovalResponsePayload
 			if err := json.Unmarshal(frame.Payload, &response); err == nil {
-				a.clearPendingApproval(ctx, response.RequestID)
+				a.relayWork(func() { a.clearPendingApproval(ctx, response.RequestID) })
 			}
 		}
-		a.sendToIPC(frame)
 	case protocol.TypePing:
 		a.sendEncryptedToRelay(ctx, &protocol.Frame{
 			Version: 1,
@@ -784,17 +807,30 @@ func (a *Agent) handleClientStateFrame(ctx context.Context, payload []byte) {
 	nowEligible := a.currentClientAppState != "foreground" || a.currentClientStreamMode == "approvals_only"
 	a.clientStateMu.Unlock()
 
-	// The client just moved to background / approvals-only: alert about anything
-	// already pending, since no fresh approval or prompt-list frame will arrive
-	// to trigger a push while it sits idle in the background.
-	if nowEligible && !wasEligible {
-		a.flushPendingPushNotifications(ctx)
-	}
-
 	a.sessionMu.Lock()
 	pairedDeviceID := a.currentPeerID
 	deviceName := a.currentPeerName
 	a.sessionMu.Unlock()
+
+	// Only the in-memory state above decides what is forwarded next. The
+	// state file and the relay's push registration follow in the background.
+	a.relayWork(func() {
+		a.recordClientState(ctx, statePayload, pairedDeviceID, deviceName, nowEligible && !wasEligible)
+	})
+}
+
+func (a *Agent) recordClientState(
+	ctx context.Context,
+	statePayload RemoteClientStatePayload,
+	pairedDeviceID, deviceName string,
+	becameEligibleForPush bool,
+) {
+	// The client just moved to background / approvals-only: alert about anything
+	// already pending, since no fresh approval or prompt-list frame will arrive
+	// to trigger a push while it sits idle in the background.
+	if becameEligibleForPush {
+		a.flushPendingPushNotifications(ctx)
+	}
 	if pairedDeviceID == "" {
 		return
 	}
@@ -816,6 +852,30 @@ func (a *Agent) handleClientStateFrame(ctx context.Context, payload []byte) {
 	a.stateMu.Unlock()
 
 	a.registerPushToken(ctx, pairedDeviceID, deviceName, statePayload)
+}
+
+// relayWork runs fn after everything queued before it, off the frame loops.
+func (a *Agent) relayWork(fn func()) {
+	a.relayWorkOnce.Do(func() {
+		a.relayWorkCh = make(chan func(), relayWorkBacklog)
+		go func() {
+			for work := range a.relayWorkCh {
+				work()
+			}
+		}()
+	})
+	select {
+	case a.relayWorkCh <- fn:
+	default:
+		log.Printf("relay work: backlog full, dropped one request")
+	}
+}
+
+// waitForRelayWork returns once everything queued so far has run.
+func (a *Agent) waitForRelayWork() {
+	done := make(chan struct{})
+	a.relayWork(func() { close(done) })
+	<-done
 }
 
 func (a *Agent) shouldForwardLiveFrames() bool {
@@ -960,6 +1020,18 @@ func (a *Agent) setPendingPair(name, pub string) {
 	a.pendingPairMu.Unlock()
 }
 
+// pendingPairHasFingerprint reports whether fp belongs to the identity a pair
+// request claimed and has not yet proven or abandoned.
+func (a *Agent) pendingPairHasFingerprint(fp string) bool {
+	a.pendingPairMu.Lock()
+	defer a.pendingPairMu.Unlock()
+	if a.pendingPair == nil || fp == "" || time.Since(a.pendingPair.claimedAt) > pendingPairTTL {
+		return false
+	}
+	raw, err := base64.StdEncoding.DecodeString(a.pendingPair.iosPub)
+	return err == nil && fingerprintBytes(raw) == fp
+}
+
 func (a *Agent) clearPendingPair() {
 	a.pendingPairMu.Lock()
 	a.pendingPair = nil
@@ -1022,6 +1094,9 @@ func (a *Agent) confirmPendingPair() bool {
 	a.setCurrentPeer(device)
 	a.stateMu.Unlock()
 	log.Printf("pair request: trusted iOS identity after encrypted handshake proof")
+	// The code admitted this new identity; it must not admit another.
+	a.refreshPairingCode()
+	a.sendPairingInfo()
 	return true
 }
 
@@ -1071,7 +1146,10 @@ func (a *Agent) handleHello(ctx context.Context, payload []byte) {
 			a.sessionMu.Lock()
 			hasTrustedPeer := a.currentIOSPub != ""
 			a.sessionMu.Unlock()
-			if hasTrustedPeer {
+			// The identity a pairing code just admitted is not persisted until
+			// it proves its key, yet its HELLO must be accepted or the pairing
+			// can never complete while another identity is current.
+			if hasTrustedPeer && !a.pendingPairHasFingerprint(hello.PubKeyFP) {
 				log.Printf("hello: ignored unrecognized iOS identity while a trusted session is active")
 				return
 			}
@@ -1960,6 +2038,11 @@ func (a *Agent) sendToRelay(ctx context.Context, frame *protocol.Frame) {
 	data := frame.Encode()
 	if data == nil {
 		log.Printf("relay write: invalid frame length")
+		return
+	}
+	if len(data) > maxRelayFrameSize {
+		// Sending it would make the relay close this connection.
+		log.Printf("relay write: dropped 0x%02x frame of %d bytes, above the relay limit", frame.Type, len(data))
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
