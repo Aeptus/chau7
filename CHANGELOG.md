@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Make the iPhone app quicker to use and pairing honest: Send is a tap by default (hold-to-send is a setting), the launch splash leaves as soon as the first screen is ready, and full-screen programs no longer repaint for output that changes nothing visible. Pairing is by QR code only and reports success once the Mac accepts; a refused or unanswered code no longer replaces a working pairing. Disconnect now holds until you tap Connect, Settings gains Forget this Mac, and re-pairing after the Mac forgot the phone no longer waits three seconds.
+
 - Fix the iPhone terminal: it no longer stays in the plain-text view after reconnecting, it keeps the newest output and the cursor on screen when wide lines are folded to the phone's width, and it keeps blank lines between folded lines. The app may now draw at up to 120 Hz on ProMotion displays.
 
 - Make the performance lab's synthetic input reach the app by sending it to a tab the lab created.

@@ -7,7 +7,7 @@ enum AppSettings {
     static let holdToSendKey = "hold_to_send"
     // Hold-to-send is the documented default: it guards against accidental sends
     // to a live terminal that may be driving an AI agent.
-    static let holdToSendDefault = true
+    static let holdToSendDefault = false
     static let renderANSIKey = "render_ansi"
     static let renderANSIDefault = false
     static let experimentalTerminalRendererKey = "experimental_terminal_renderer"
@@ -64,6 +64,7 @@ enum AppSettings {
 struct SettingsView: View {
     var client: RemoteClient
     @Binding var isPairingPresented: Bool
+    @State private var isForgetConfirmationPresented = false
 
     @AppStorage(AppSettings.holdToSendKey) private var holdToSend = AppSettings.holdToSendDefault
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
@@ -106,7 +107,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Input")
                 } footer: {
-                    Text("Hold to Send requires a long press before input is forwarded, guarding against accidental sends. Control Keys shows the esc / tab / ^C row above the input field. Send always submits; use the control keys for raw key presses.")
+                    Text("Hold to Send is off by default; turn it on to require a long press before input is forwarded, guarding against accidental sends. Control Keys shows the esc / tab / ^C row above the input field. Send always submits; use the control keys for raw key presses.")
                 }
 
                 Section {
@@ -227,6 +228,16 @@ struct SettingsView: View {
                             Button("Connect") { client.connect() }
                         }
                         Button("Re-pair") { isPairingPresented = true }
+                        Button("Forget this Mac", role: .destructive) { isForgetConfirmationPresented = true }
+                            .confirmationDialog(
+                                "Forget this Mac?",
+                                isPresented: $isForgetConfirmationPresented,
+                                titleVisibility: .visible
+                            ) {
+                                Button("Forget this Mac", role: .destructive) { client.forgetPairedMac() }
+                            } message: {
+                                Text("This removes the pairing and its keys from this iPhone. Scan the QR code on your Mac to pair again.")
+                            }
                     } else {
                         Text("Not paired")
                             .foregroundStyle(.secondary)

@@ -54,6 +54,13 @@ public enum RemoteTerminalScrollPolicy {
         return first ..< max(first, end)
     }
 
+    /// Whether output bytes change what is on screen. A full-screen program
+    /// is shown from the Mac's grid frames once one has arrived, so output
+    /// bytes alone change nothing visible.
+    public static func outputRepaints(alternateScreenActive: Bool, hasGridSnapshot: Bool) -> Bool {
+        !(alternateScreenActive && hasGridSnapshot)
+    }
+
     /// First folded row to paint at the top of the canvas. Folding a wide grid
     /// yields more rows than fit, and the newest output is at the bottom, so
     /// the surplus is hidden above the canvas. A cursor above that window wins,

@@ -132,6 +132,14 @@ final class RemoteTerminalScrollRequestsTests: XCTestCase {
         XCTAssertNil(requests.take(for: 7))
     }
 
+    func testOutputRepaintsUnlessAGridIsShownForAFullScreenProgram() {
+        XCTAssertTrue(RemoteTerminalScrollPolicy.outputRepaints(alternateScreenActive: false, hasGridSnapshot: false))
+        XCTAssertTrue(RemoteTerminalScrollPolicy.outputRepaints(alternateScreenActive: false, hasGridSnapshot: true))
+        // No grid yet: the engine's own state is all there is to show.
+        XCTAssertTrue(RemoteTerminalScrollPolicy.outputRepaints(alternateScreenActive: true, hasGridSnapshot: false))
+        XCTAssertFalse(RemoteTerminalScrollPolicy.outputRepaints(alternateScreenActive: true, hasGridSnapshot: true))
+    }
+
     func testFoldedRowsAnchorToTheBottomUnlessTheCursorIsAbove() {
         // Everything fits: paint from the first row.
         XCTAssertEqual(RemoteTerminalScrollPolicy.firstFoldedRow(displayRows: 10, viewportRows: 24, cursorRow: 9), 0)

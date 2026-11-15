@@ -425,7 +425,14 @@ final class RemoteTerminalRendererStore {
     func appendOutput(_ data: Data, for tabID: UInt32, trace: RemoteTerminalFrameTrace? = nil) {
         guard !data.isEmpty else { return }
         let visibleTrace = tabID == activeTabID ? trace : nil
-        enqueueMutation(publishFor: tabID) { engine in
+        // A full-screen program is painted from the Mac's grid frames. Output
+        // bytes still feed the engine, but repainting for them would redraw
+        // the same grid.
+        let repaints = RemoteTerminalScrollPolicy.outputRepaints(
+            alternateScreenActive: alternateScreenByTabID[tabID] ?? false,
+            hasGridSnapshot: gridSnapshotByTabID[tabID] != nil
+        )
+        enqueueMutation(publishFor: tabID, publishAfterMutation: repaints) { engine in
             await engine.appendOutput(data, for: tabID, trace: visibleTrace)
         }
     }

@@ -251,6 +251,21 @@ enum RemoteConnectionStartPolicy {
         forceRestart || !transportIsOpen
     }
 
+    /// An explicit Disconnect holds until the user connects by hand.
+    static func allowsStart(userDisconnected: Bool, isManual: Bool) -> Bool {
+        isManual || !userDisconnected
+    }
+
+    /// A phone the Mac already trusts reconnects with HELLO alone, falling
+    /// back to PAIR_REQUEST after a few silent attempts in case the Mac forgot
+    /// it. A freshly scanned code is sent at once: the user is waiting on it,
+    /// and the Mac may no longer know this phone.
+    static func shouldSendPairRequest(
+        hasStoredTrust: Bool, isFreshScan: Bool, attempt: Int, fallbackAttempt: Int
+    ) -> Bool {
+        !hasStoredTrust || isFreshScan || attempt >= fallbackAttempt
+    }
+
     static func shouldScheduleReconnect(
         hasScheduledReconnect: Bool,
         shouldReconnect: Bool,
