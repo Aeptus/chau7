@@ -132,6 +132,8 @@ def prepare_home(home, args, port):
     command = " ".join(shlex.quote(str(p)) for p in (args.python, HERE / "tui.py"))
     controls = " ".join(shlex.quote(str(p)) for p in (phase_file, home / "progress"))
     probe = " --input-probe" if getattr(args, "input_hz", 0) else ""
+    scroll = getattr(args, "scroll_lines", 0)
+    probe += f" --scroll {scroll}" if scroll else ""
     shell.write_text(f"#!/bin/sh\nexec {command} {args.hz} 1 2 {controls}{probe}\n")
     shell.chmod(0o700)
     seed_channel_configs(
@@ -408,6 +410,12 @@ def main():
     parser.add_argument("--hz", type=float, default=3)
     parser.add_argument("--input-hz", type=float, default=0, help="opt-in synthetic MCP input rate, at most 1 Hz")
     parser.add_argument(
+        "--scroll-lines",
+        type=int,
+        default=0,
+        help="transcript lines appended per frame; 0 repaints only the bottom panel, 1+ scrolls the body",
+    )
+    parser.add_argument(
         "--threads", action="store_true", help="diagnostic thread attribution; keep off for final trials"
     )
     parser.add_argument("--font", type=float, default=12)
@@ -434,10 +442,11 @@ def main():
         or min(args.interval, args.request_hz, args.mcp_hz, args.hz) <= 0
         or args.mcp_hz > 2
         or not 0 <= args.input_hz <= 1
+        or not 0 <= args.scroll_lines <= 8
         or (args.input_hz and args.measure < 3)
         or not 0 <= args.tabs < 40
     ):
-        parser.error("positive rates and duration >= interval required; tabs must be 0..39")
+        parser.error("positive rates and duration >= interval required; tabs must be 0..39, scroll lines 0..8")
     if args.input_hz and not args.tabs:
         parser.error("--input-hz needs --tabs 1 or more: input can only go to a tab the harness created")
     if Path(args.label).name != args.label:

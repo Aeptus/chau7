@@ -2,6 +2,7 @@ import copy
 import json
 import os
 import pty
+import signal
 import subprocess
 import sys
 import tempfile
@@ -62,6 +63,30 @@ class WorkloadAcceptance(unittest.TestCase):
             finally:
                 child.terminate()
                 child.wait(timeout=5)
+
+    def test_scroll_mode_appends_transcript_lines_on_every_frame(self):
+        def transcript_lines(extra):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                control = root / "phase"
+                control.write_text("active")
+                child = subprocess.Popen(
+                    [sys.executable, str(HERE / "tui.py"), "20", "1", "60", str(control), str(root), *extra],
+                    stdout=subprocess.PIPE,
+                )
+                try:
+                    time.sleep(1.5)
+                finally:
+                    child.send_signal(signal.SIGINT)
+                    output, _ = child.communicate(timeout=10)
+                frames = json.loads((root / f"{child.pid}.json").read_text())["frames"]
+                return output.decode().count("●"), frames
+
+        # Without scrolling, one three-line message appears per message interval.
+        self.assertEqual(transcript_lines([])[0], 3)
+        lines, frames = transcript_lines(["--scroll", "2"])
+        self.assertGreater(frames, 5)
+        self.assertGreaterEqual(lines, 2 * frames)
 
     def test_input_wakeup_stops_polling_when_grace_period_starts(self):
         self.assertEqual(next_input_wakeup(8, 10, 7, True), 8)

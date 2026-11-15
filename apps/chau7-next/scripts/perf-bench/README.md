@@ -129,6 +129,12 @@ a guarantee that an input was displayed. This workload is opt-in, retains all
 resource guards, and should only run after the small fixture and capacity checks
 above succeed. `--input-hz` defaults to zero and is capped at 1 Hz.
 
+`--scroll-lines N` (0 to 8, default 0) appends N transcript lines on every
+frame, so the whole body scrolls like a build log. The default repaints only
+the bottom panel and adds three transcript lines every two seconds, like an
+agent thinking. Compare a renderer change under both: rows that stay in place
+and rows that move exercise different caches.
+
 ## Measurement contract
 
 `native.py` calls macOS `proc_pid_rusage` v4 directly once per second for each

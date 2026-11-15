@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Repaint unchanged terminal rows from their recorded text instead of glyph by glyph, cutting terminal paint time by about half when only part of the screen changes.
+
+- Add a scrolling-output mode (`--scroll-lines`) to the performance lab's terminal workload.
+
 - Make the performance lab's synthetic input reach the app by sending it to a tab the lab created.
 
 - Let the performance comparison gate target the time terminal output waits before processing, measured over the whole trial phase.

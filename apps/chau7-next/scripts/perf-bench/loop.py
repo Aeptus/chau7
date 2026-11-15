@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--tabs", type=int, default=0)
     parser.add_argument("--hz", type=float, default=3)
     parser.add_argument("--input-hz", type=float, default=0, help="opt-in synthetic MCP input rate")
+    parser.add_argument("--scroll-lines", type=int, default=0, help="transcript lines appended per frame")
     parser.add_argument("--mcp-hz", type=float, default=0.5)
     parser.add_argument("--request-hz", type=float, default=1)
     parser.add_argument("--resource-policy", choices=("strict-host", "owned-budget"), default="strict-host")
@@ -59,6 +60,8 @@ def main():
                     str(args.hz),
                     "--input-hz",
                     str(args.input_hz),
+                    "--scroll-lines",
+                    str(args.scroll_lines),
                     "--mcp-hz",
                     str(args.mcp_hz),
                     "--request-hz",
