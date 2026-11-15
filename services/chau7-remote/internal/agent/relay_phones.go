@@ -112,10 +112,10 @@ func (a *Agent) putRelayPhones(ctx context.Context, phones []string) (bool, erro
 		return false, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	switch {
-	case resp.StatusCode == http.StatusOK:
+	switch resp.StatusCode {
+	case http.StatusOK:
 		return true, nil
-	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed:
+	case http.StatusNotFound, http.StatusMethodNotAllowed:
 		return false, nil
 	default:
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
