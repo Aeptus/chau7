@@ -2696,6 +2696,11 @@
 "settings.search.promptInjection.title" = "AI Context";
 "settings.remote.access" = "Remote Access";
 "settings.remote.agent" = "Remote Agent";
+"settings.remote.pairing.expired" = "This pairing code has expired. A new one is being generated.";
+"settings.remote.pairing.instructions" = "In the iPhone app, scan this QR code to pair. The code lasts 10 minutes and stops working once it has paired a phone. Keep it private.";
+"settings.remote.pairing.waiting" = "The pairing QR code appears once the remote agent is running and connected.";
+"settings.remote.pairing.preparing" = "Preparing the pairing QR code…";
+"settings.remote.pairing.refresh" = "Refresh QR Code";
 "settings.remote.agent.restarting" = "Restarting in %d s";
 "settings.remote.agent.lastExit.status" = "Last exit: status %d";
 "settings.remote.agent.lastExit.signal" = "Last exit: signal %d";

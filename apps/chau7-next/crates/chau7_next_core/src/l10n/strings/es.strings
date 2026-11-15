@@ -2744,6 +2744,11 @@
 "settings.search.promptInjection.title" = "Contexto de IA";
 "settings.remote.access" = "Acceso remoto";
 "settings.remote.agent" = "Agente remoto";
+"settings.remote.pairing.expired" = "Este código de emparejamiento ha caducado. Se está generando uno nuevo.";
+"settings.remote.pairing.instructions" = "En la app del iPhone, escanea este código QR para emparejar. El código dura 10 minutos y deja de funcionar en cuanto ha emparejado un teléfono. Mantenlo en privado.";
+"settings.remote.pairing.waiting" = "El código QR de emparejamiento aparece cuando el agente remoto está en ejecución y conectado.";
+"settings.remote.pairing.preparing" = "Preparando el código QR de emparejamiento…";
+"settings.remote.pairing.refresh" = "Actualizar el código QR";
 "settings.remote.agent.restarting" = "Reiniciando en %d s";
 "settings.remote.agent.lastExit.status" = "Última salida: código %d";
 "settings.remote.agent.lastExit.signal" = "Última salida: señal %d";

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Stop the Remote settings from showing a pairing code that has expired or belongs to a stopped helper: an expired code is replaced by a notice until the new one arrives. The pairing instructions now describe scanning the QR code, how long a code lasts and that it works once, and the Copy Device Details button is gone.
+
 - Restart the Remote Control helper when it stops on its own, waiting 1 second and then twice as long each time up to a minute, and show in the Remote settings whether it is running, starting, restarting (with a countdown) or stopped, and how it last ended.
 
 - Stop Remote Control from starting, or showing a pairing QR code, while the relay URL is empty or still the example placeholder; the Remote settings now say to set your own relay URL first.
