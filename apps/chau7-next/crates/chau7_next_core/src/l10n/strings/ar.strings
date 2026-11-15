@@ -2664,6 +2664,9 @@
 "settings.search.promptInjection.title" = "سياق الذكاء الاصطناعي";
 "settings.remote.access" = "الوصول عن بُعد";
 "settings.remote.agent" = "الوكيل البعيد";
+"settings.remote.agent.needsRelay" = "لم يبدأ: لم يُحدَّد رابط المرحّل";
+"settings.remote.pairing.needsRelay" = "حدِّد رابط المرحّل الخاص بك أعلاه لإقران iPhone. لن يظهر رمز QR للاقتران قبل ذلك.";
+"settings.remote.relayUrl.unset" = "أدخل عنوان WebSocket للمرحّل الخاص بك. روابط المرحّل خاصة بكل مستخدم، لذلك لا توجد قيمة افتراضية.";
 "settings.remote.connectedDevice" = "الجهاز المتصل: %@";
 "settings.remote.deviceFingerprint" = "البصمة: %@";
 "settings.remote.deviceLastConnectedAt" = "آخر اتصال: %@";

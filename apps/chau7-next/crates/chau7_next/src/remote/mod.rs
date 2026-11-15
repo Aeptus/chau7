@@ -43,7 +43,7 @@ use self::agent::AgentProcess;
 use self::env::GpuiEnv;
 use self::host::{FrameSink, RemoteHost, ViewerInbound};
 use self::ipc::{IpcEvent, IpcServer};
-use crate::settings::{RemoteSettings, Settings};
+use crate::settings::{RemoteSettings, Settings, is_placeholder_relay_url};
 use crate::workspace::AppData;
 
 /// Answers MCP command approvals from the phone (`TerminalControlService
@@ -487,7 +487,7 @@ impl RemoteControl {
                 "app",
                 chau7_next_core::work_profiler::Queue::Main,
             ));
-        let enabled = Settings::get(cx).remote.enabled;
+        let enabled = agent_wanted(&Settings::get(cx).remote);
         self.sync_settings(cx);
 
         if let Some(agent) = &mut self.agent
@@ -611,7 +611,10 @@ impl RemoteControl {
             self.viewer.stop_sharing();
         }
 
-        let wanted = (settings.enabled, settings.relay_url.trim().to_string());
+        let wanted = (
+            agent_wanted(settings),
+            settings.relay_url.trim().to_string(),
+        );
         let Some(applied) = self.applied.clone() else {
             self.applied = Some(wanted.clone());
             if wanted.0 {
@@ -848,6 +851,12 @@ fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
 #[cfg(all(test, unix))]
 mod e2e_tests;
 
+/// The agent runs only while remote control is on and the user has set a
+/// relay URL: it is never started against an empty or placeholder URL.
+fn agent_wanted(settings: &RemoteSettings) -> bool {
+    settings.enabled && !is_placeholder_relay_url(&settings.relay_url)
+}
+
 /// A disabled setting, changed relay or app quit invalidates all late completions.
 fn start_is_current(
     requested: u64,
@@ -944,6 +953,55 @@ mod startup_tests {
                 );
             });
         });
+    }
+
+    #[test]
+    fn agent_is_wanted_only_when_enabled_with_a_relay_url_of_the_users_own() {
+        let mut settings = RemoteSettings {
+            enabled: true,
+            ..RemoteSettings::default()
+        };
+        assert!(!agent_wanted(&settings), "placeholder default");
+        settings.relay_url = String::new();
+        assert!(!agent_wanted(&settings), "empty");
+        settings.relay_url = "wss://relay.test/connect".into();
+        assert!(agent_wanted(&settings));
+        settings.enabled = false;
+        assert!(!agent_wanted(&settings));
+    }
+
+    #[gpui::test]
+    fn enabled_remote_with_the_placeholder_relay_never_starts_the_agent(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let home =
+            std::env::temp_dir().join(format!("chau7-remote-relay-{}", uuid::Uuid::new_v4()));
+        cx.on_quit({
+            let home = home.clone();
+            move || {
+                let _ = std::fs::remove_dir_all(home);
+            }
+        });
+        cx.update(|cx| {
+            let mut settings = Settings::default();
+            settings.remote.enabled = true;
+            assert!(is_placeholder_relay_url(&settings.remote.relay_url));
+            cx.set_global(settings);
+            cx.set_global(AppData::new(DataRoot::with_home(home, true)));
+            init(cx);
+        });
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let entity = handle(cx).unwrap();
+            let rc = entity.read(cx);
+            assert_eq!(rc.start_generation, 0, "no start was attempted");
+            assert!(!rc.start_pending && rc.agent.is_none() && rc.ipc.is_none());
+            assert_eq!(rc.applied.as_ref().map(|(run, _)| *run), Some(false));
+        });
+        let before = cx.update(|cx| handle(cx).unwrap().read(cx).ticks);
+        cx.executor().advance_clock(Duration::from_secs(5));
+        cx.run_until_parked();
+        cx.update(|cx| assert_eq!(handle(cx).unwrap().read(cx).ticks, before));
     }
 
     #[test]

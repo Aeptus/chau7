@@ -8,8 +8,28 @@ use chau7_next_core::config::RawValue;
 
 use super::{ConfigSink, ConfigSource, SettingsDomain};
 
-/// `remote.relayURL` default.
+/// `remote.relayURL` default: a placeholder, never a relay. Relay URLs are
+/// specific to each user, so there is no real default; see
+/// [`is_placeholder_relay_url`].
 pub const DEFAULT_RELAY_URL: &str = "wss://relay.example.com/connect";
+
+/// Host of [`DEFAULT_RELAY_URL`].
+const PLACEHOLDER_RELAY_HOST: &str = "relay.example.com";
+
+/// Whether `url` is empty or still the placeholder (any scheme, port or path
+/// on the placeholder host). Remote control does not start, and no pairing
+/// QR is shown, until the user has set a relay URL of their own.
+pub fn is_placeholder_relay_url(url: &str) -> bool {
+    let url = url.trim();
+    if url.is_empty() {
+        return true;
+    }
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit('@').next().unwrap_or_default();
+    let host = host.split(':').next().unwrap_or_default();
+    host.eq_ignore_ascii_case(PLACEHOLDER_RELAY_HOST)
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemoteSettings {
@@ -119,6 +139,32 @@ mod tests {
             round_trip(&RemoteSettings::default()),
             RemoteSettings::default()
         );
+    }
+
+    #[test]
+    fn empty_and_placeholder_relay_urls_are_not_usable() {
+        for url in [
+            "",
+            "   ",
+            DEFAULT_RELAY_URL,
+            "  wss://relay.example.com/connect  ",
+            "WSS://Relay.Example.com",
+            "wss://relay.example.com:443/other?x=1",
+            "relay.example.com/connect",
+        ] {
+            assert!(is_placeholder_relay_url(url), "{url:?}");
+        }
+        assert!(is_placeholder_relay_url(
+            &RemoteSettings::default().relay_url
+        ));
+        for url in [
+            "wss://relay.test/connect",
+            "wss://my-relay.example.com/connect",
+            "wss://relay.example.com.attacker.test/connect",
+            "ws://127.0.0.1:9/connect",
+        ] {
+            assert!(!is_placeholder_relay_url(url), "{url:?}");
+        }
     }
 
     #[test]

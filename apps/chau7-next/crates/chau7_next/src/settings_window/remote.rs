@@ -13,8 +13,9 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 
 use super::widgets::{button, description, row, section as titled, stepper, toggle};
 use super::{SectionContext, SettingsView, update};
+use crate::l10n::l;
 use crate::remote::{self, RemoteStatus};
-use crate::settings::Settings;
+use crate::settings::{Settings, is_placeholder_relay_url};
 
 /// The relay URL field.
 pub(crate) struct RemoteInputs {
@@ -54,6 +55,27 @@ fn copy(text: String, cx: &mut App) {
     cx.write_to_clipboard(ClipboardItem::new_string(text));
 }
 
+/// What the Pairing block shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PairingDisplay {
+    /// No relay URL of the user's own yet: no QR, no code, only what to do.
+    RelayUnset,
+    /// Nothing to pair with yet.
+    Waiting,
+    /// The QR and the pairing details.
+    Ready,
+}
+
+pub(super) fn pairing_display(relay_url: &str, has_pairing_info: bool) -> PairingDisplay {
+    if is_placeholder_relay_url(relay_url) {
+        PairingDisplay::RelayUnset
+    } else if has_pairing_info {
+        PairingDisplay::Ready
+    } else {
+        PairingDisplay::Waiting
+    }
+}
+
 /// Status, access, relay, pairing and paired devices.
 pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
     let chrome = ctx.chrome;
@@ -78,7 +100,16 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                 "Stopped"
             }),
     );
-    if let Some(error) = status.last_error.as_ref().filter(|e| !e.is_empty()) {
+    let relay_unset = is_placeholder_relay_url(&ctx.settings.remote.relay_url);
+    if ctx.settings.remote.enabled && relay_unset {
+        detail = detail.child(caption(
+            l(
+                "settings.remote.agent.needsRelay",
+                "Not started: no relay URL set",
+            ),
+            ctx,
+        ));
+    } else if let Some(error) = status.last_error.as_ref().filter(|e| !e.is_empty()) {
         detail = detail.child(caption(error.clone(), ctx));
     } else if let Some(session) = status.session_status.as_ref().filter(|s| !s.is_empty()) {
         detail = detail.child(caption(format!("Session: {session}"), ctx));
@@ -124,12 +155,41 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                 .child(Input::new(&ctx.view.remote_inputs.relay)),
             chrome,
         ))
-        .child(description("WebSocket relay base URL", chrome));
+        .child(if relay_unset {
+            description(
+                l(
+                    "settings.remote.relayUrl.unset",
+                    "Enter the WebSocket URL of your own relay. Relay URLs are specific to you, so there is no default.",
+                ),
+                chrome,
+            )
+        } else {
+            description("WebSocket relay base URL", chrome)
+        });
 
     // Pairing
     let mut pairing = titled("Pairing", chrome);
-    pairing = pairing.child(ctx.view.remote_inputs.pairing.clone());
-    match &status.pairing_info {
+    let display = pairing_display(
+        &ctx.settings.remote.relay_url,
+        status.pairing_info.is_some(),
+    );
+    if display != PairingDisplay::RelayUnset {
+        pairing = pairing.child(ctx.view.remote_inputs.pairing.clone());
+    }
+    match status
+        .pairing_info
+        .as_ref()
+        .filter(|_| display == PairingDisplay::Ready)
+    {
+        _ if display == PairingDisplay::RelayUnset => {
+            pairing = pairing.child(caption(
+                l(
+                    "settings.remote.pairing.needsRelay",
+                    "Set your relay URL above to pair an iPhone. No pairing QR code is shown until then.",
+                ),
+                ctx,
+            ));
+        }
         Some(info) => {
             let json = info.qr_payload_string();
             pairing = pairing
@@ -325,4 +385,23 @@ pub(super) fn viewers(ctx: &SectionContext) -> gpui::Div {
         return block;
     };
     block.child(remote::viewer_ui::panel(&status.viewer, chrome, Utc::now()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::RemoteSettings;
+
+    #[test]
+    fn no_pairing_qr_or_code_while_the_relay_url_is_empty_or_the_placeholder() {
+        let placeholder = RemoteSettings::default().relay_url;
+        for url in ["", "  ", placeholder.as_str()] {
+            // Even pairing info left over from an earlier agent is not shown.
+            assert_eq!(pairing_display(url, true), PairingDisplay::RelayUnset);
+            assert_eq!(pairing_display(url, false), PairingDisplay::RelayUnset);
+        }
+        let own = "wss://relay.test/connect";
+        assert_eq!(pairing_display(own, false), PairingDisplay::Waiting);
+        assert_eq!(pairing_display(own, true), PairingDisplay::Ready);
+    }
 }
