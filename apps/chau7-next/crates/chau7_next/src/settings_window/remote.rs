@@ -249,17 +249,6 @@ pub(super) fn section(ctx: &SectionContext) -> gpui::Div {
                     "Device ID: %@",
                     &info.device_id,
                 )))
-                .child(
-                    div()
-                        .text_lg()
-                        .font_family("Menlo")
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .child(line(
-                            "remote.pairingCode",
-                            "Pairing Code: %@",
-                            &info.pairing_code,
-                        )),
-                )
                 .child(caption(
                     line("remote.expiresAt", "Expires: %@", &info.expires_at),
                     ctx,
