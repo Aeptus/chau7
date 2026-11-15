@@ -51,7 +51,7 @@ prove live deployment configuration.
 
 The relay additionally enforces per-device, per-route rate limits, caps request
 bodies (64 KB) and relayed frames (1 MB), bounds persisted pending-state, and
-applies WebSocket backpressure (dropping/closing slow receivers).
+applies WebSocket backpressure (dropping/closing slow receivers, measured from the phone's `RELAY_ACK` frames).
 
 ## Routes
 

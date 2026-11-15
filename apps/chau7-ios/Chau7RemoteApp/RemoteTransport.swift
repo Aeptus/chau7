@@ -569,6 +569,8 @@ final class RemoteTransport {
     private var frameRateLimiter = RemoteFrameRateLimiter()
     private var lastThrottleLogAt: Date?
     private var inboundQueue = RemoteInboundMessageQueue()
+    /// Reports to the relay how much this phone has taken in; per socket.
+    private var acknowledger = RelayReceiveAcknowledger()
     private var drainTask: Task<Void, Never>?
     private var pendingSendCompletions: [UUID: @MainActor (RemoteSendOutcome) -> Void] = [:]
 
@@ -601,6 +603,7 @@ final class RemoteTransport {
         drainTask?.cancel()
         drainTask = nil
         inboundQueue.removeAll()
+        acknowledger = RelayReceiveAcknowledger()
         generation &+= 1
         let completions = Array(pendingSendCompletions.values)
         pendingSendCompletions.removeAll(keepingCapacity: true)
@@ -673,6 +676,7 @@ final class RemoteTransport {
 
                 Task { @MainActor [weak self] in
                     guard let self, self.generation == generation else { return }
+                    self.acknowledger.noteReceived(bytes: data.count)
                     self.inboundQueue.enqueue(data: data, generation: generation)
                     self.startDrainIfNeeded()
                     if self.frameRateLimiter.allow() {
@@ -692,6 +696,12 @@ final class RemoteTransport {
         }
     }
 
+    /// Frames applied or shed have left the queue, so they count as taken in.
+    private func acknowledgeReceivedBytes() {
+        guard let total = acknowledger.totalToAcknowledge(queuedBytes: inboundQueue.bufferedBytes) else { return }
+        send(RelayReceiveAcknowledger.frame(total: total))
+    }
+
     private func startDrainIfNeeded() {
         guard drainTask == nil, !inboundQueue.isEmpty else { return }
         drainTask = Task { @MainActor [weak self] in
@@ -701,6 +711,7 @@ final class RemoteTransport {
                 let shed = self.inboundQueue.takeShedCounts()
                 await self.onMessage?(message, shed)
                 guard message.generation == self.generation else { return }
+                self.acknowledgeReceivedBytes()
             }
             self.drainTask = nil
             if self.inboundQueue.takeOutputRecoverySignalIfDrained() {

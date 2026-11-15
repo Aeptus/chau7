@@ -29,6 +29,11 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
     /// Base64 secret from the QR that a pair request proves without sending.
     /// Absent in a QR from a Mac older than the pairing proof.
     public var pairingKey: String?
+    /// A relay credential that works only until `expiresAt`, used to reach the
+    /// Mac for pairing. The Mac then sends this phone a credential of its own.
+    /// Absent when the relay has no per-phone credentials.
+    public var relayPairID: String?
+    public var relayPairSecret: String?
 
     public init(
         relayURL: String,
@@ -38,7 +43,9 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
         expiresAt: String,
         relaySecret: String? = nil,
         relayKeyID: String? = nil,
-        pairingKey: String? = nil
+        pairingKey: String? = nil,
+        relayPairID: String? = nil,
+        relayPairSecret: String? = nil
     ) {
         self.relayURL = relayURL
         self.deviceID = deviceID
@@ -48,6 +55,8 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
         self.relaySecret = relaySecret
         self.relayKeyID = relayKeyID
         self.pairingKey = pairingKey
+        self.relayPairID = relayPairID
+        self.relayPairSecret = relayPairSecret
     }
 
     enum CodingKeys: String, CodingKey {
@@ -59,6 +68,46 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
         case relaySecret = "relay_secret"
         case relayKeyID = "relay_key_id"
         case pairingKey = "pairing_key"
+        case relayPairID = "relay_pair_id"
+        case relayPairSecret = "relay_pair_secret"
+    }
+}
+
+/// `RELAY_CREDENTIAL` (0x45): the relay credential the Mac made for this phone
+/// alone. Removing the phone on the Mac makes the relay refuse it.
+public struct RemoteRelayCredentialPayload: Codable, Equatable, Sendable {
+    public let phoneID: String
+    public let relaySecret: String
+    public let relayKeyID: String
+
+    public init(phoneID: String, relaySecret: String, relayKeyID: String) {
+        self.phoneID = phoneID
+        self.relaySecret = relaySecret
+        self.relayKeyID = relayKeyID
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case phoneID = "phone_id"
+        case relaySecret = "relay_secret"
+        case relayKeyID = "relay_key_id"
+    }
+
+    public var isWellFormed: Bool {
+        RelayToken.isValidIdentifier(phoneID, maximum: 32)
+            && RelayToken.isValidIdentifier(relayKeyID, maximum: 32)
+            && RelayToken.isStrongCredential(relaySecret)
+    }
+}
+
+/// A phone's own relay credential as kept in the Keychain, tied to the Mac
+/// that issued it.
+public struct RemotePhoneRelayCredential: Codable, Equatable, Sendable {
+    public let deviceID: String
+    public let credential: RemoteRelayCredentialPayload
+
+    public init(deviceID: String, credential: RemoteRelayCredentialPayload) {
+        self.deviceID = deviceID
+        self.credential = credential
     }
 }
 

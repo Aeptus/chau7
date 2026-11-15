@@ -41,6 +41,8 @@ Pairing payload:
 - `expires_at` (ISO8601)
 - `relay_secret` — derived iOS-only credential for this Mac device namespace
 - `relay_key_id` — public server key ID; both fields are required for v3 admission
+- `relay_pair_id`, `relay_pair_secret` — a relay credential that works only
+  until `expires_at`; present when the relay supports per-phone credentials
 
 Legacy pairing payloads remain decodable for migration but cannot connect.
 Settings displays/copies public device details without the credential; pair by
@@ -109,6 +111,40 @@ signed:  v3:{key_id}:{device_id}:{role}:{scope}:{ts}:{nonce}
 - [Credential provisioning and rotation](CREDENTIALS.md) keeps server roots off clients, limits old-key overlap to 24 hours, and rejects revoked device namespaces.
 - v2/global-secret admission is rejected; iOS never opens an unauthenticated connection as a legacy fallback.
 
+#### Per-phone credentials (v4)
+
+The iOS role credential above is shared by every phone paired with a Mac, so
+it cannot be taken away from one phone. A phone therefore also gets a
+credential of its own:
+
+```
+phone_secret = base64url(HMAC-SHA256(key = mac role credential (32 raw bytes),
+                                     "chau7-v4:phone:" + phone_id))
+wire:    v4.{key_id}.{phone_id}.{ts}.{nonce}.{scope}.{base64url_sig}
+signed:  v4:{key_id}:{device_id}:ios:{phone_id}:{scope}:{ts}:{nonce}
+```
+
+- `phone_id` is `d` + base64url of the first 16 bytes of SHA-256 of the
+  phone's public key. Only the Mac and the relay can derive `phone_secret`;
+  one phone cannot derive another's.
+- A pairing window has its own label, `p` + the unix second the pairing code
+  expires, with a secret derived the same way. It is carried in the QR
+  (`relay_pair_id`, `relay_pair_secret`) and the relay refuses it after that
+  second, and for any window longer than 20 minutes.
+- The Mac sends the relay the full list of phones it trusts:
+  `PUT /phones/:deviceId` (role=mac, scope=`phones`), body
+  `{ "phones": ["d...", ...] }`. A relay without this route answers 404 and the
+  helper then leaves the pairing-window credential out of the QR.
+- For `role=ios` the relay admits: a `phone_id` on the list; an open pairing
+  window; and the shared v3 credential **until a phone has been removed from
+  the list**. From the first removal on, the shared credential is refused for
+  that Mac for good, because the removed phone still holds it. Connected
+  sockets that are no longer admitted are closed (1008).
+- After `SESSION_READY` the helper sends the phone `RELAY_CREDENTIAL`
+  (encrypted). The phone stores it in the Keychain and signs with it from then
+  on. A phone that only ever had the shared credential (an older app) must be
+  updated and scan a fresh QR once a removal has happened.
+
 Each side then sends `HELLO` (cleartext). They compute:
 
 - `shared_secret = X25519(own_priv, peer_pub)`
@@ -176,6 +212,7 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
 - `0x42 REMOTE_TELEMETRY` (encrypted over relay, local IPC after relay client decrypts)
 - `0x43 CLIENT_STATE` (encrypted, JSON)
 - `0x44 RELAY_STATUS` (local IPC, JSON — helper-to-relay transport state and optional reconnect delay)
+- `0x45 RELAY_CREDENTIAL` (encrypted, JSON, Mac to iOS — `{ "phone_id", "relay_secret", "relay_key_id" }`, the phone's own relay credential)
 - `0x50 APPROVAL_REQUEST` (encrypted, JSON)
 - `0x51 APPROVAL_RESPONSE` (encrypted, JSON)
 - `0x52 NOTIFICATION_EVENT` (encrypted, JSON)
@@ -183,6 +220,13 @@ Type codes (`u8`). The Swift enum `RemoteFrameType`
   VIEWER_OUTPUT (cleartext, read-only viewers of a terminal shared by Chau7
   Next; the Swift app never sends them. See
   `docs/remote-control/VIEWER-PROTOCOL.md`)
+- `0x65 RELAY_ACK` (cleartext, iOS to relay, never forwarded — 8-byte
+  little-endian running total of bytes the phone has received and applied,
+  sent about every 256 KiB. The Workers runtime does not report a socket's
+  send queue, so the relay subtracts this total from what it has sent: above
+  4 MiB unacknowledged it drops `TERMINAL_GRID_SNAPSHOT` frames, above 16 MiB
+  it closes the phone's socket (1013). A phone that never acknowledges is
+  never measured.)
 - `0x7F ERROR` (encrypted, JSON)
 
 JSON payloads are UTF-8.
@@ -549,7 +593,9 @@ Local IPC payload:
   "pairing_key": "base64-32bytes",
   "expires_at": "ISO8601",
   "relay_secret": "derived-ios-role-credential",
-  "relay_key_id": "public-key-id"
+  "relay_key_id": "public-key-id",
+  "relay_pair_id": "p1782909000",
+  "relay_pair_secret": "pairing-window-credential"
 }
 ```
 
@@ -595,6 +641,9 @@ with `RELAY_ALLOW_UNAUTHENTICATED`.
 - `POST /push/notify/:deviceId` (role=mac, scope=push) — forward a push
   notification to the registered device. The relay builds the APNs payload
   (`time-sensitive` interruption level, thread grouping by tab title).
+- `PUT /phones/:deviceId` (role=mac, scope=phones) — replace the list of
+  phones this Mac trusts; see "Per-phone credentials". Answers
+  `{ "locked": bool, "phones": n }`.
 - `POST /pending/:deviceId` (role=mac, scope=pending) — replace the pending
   approvals/prompts snapshot. Body: the `pending_state.json` fixture shape:
 

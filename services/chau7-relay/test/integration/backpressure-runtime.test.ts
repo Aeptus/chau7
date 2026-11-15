@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest';
 
-// session.ts sheds grid frames and closes slow receivers from a socket's
-// `bufferedAmount`. The Workers runtime does not expose that property, so the
-// relay reads 0 and its backpressure never engages. This test records that
-// fact; if it starts failing, the runtime gained the property and the limits
-// in src/backpressure.js became live and need a real load test.
+// The Workers runtime does not expose a socket's `bufferedAmount`, so the relay
+// cannot see its own send queue. session.ts therefore measures a phone falling
+// behind from the phone's acknowledgements (RELAY_ACK, src/backpressure.js).
+// This test records the runtime fact; if it starts failing, the runtime gained
+// the property and the relay could measure its queue directly.
 it('the Workers runtime does not report bytes queued on a WebSocket', () => {
   const pair = new WebSocketPair();
   const server = pair[1];

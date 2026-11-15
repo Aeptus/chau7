@@ -49,7 +49,7 @@ const LANDING_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
-type Scope = 'connect' | 'push' | 'pending';
+type Scope = 'connect' | 'push' | 'pending' | 'phones';
 type Role = 'mac' | 'ios';
 
 interface Env {
@@ -188,6 +188,17 @@ export default {
         return authFailure;
       }
       return forwardToSession(env, targetDeviceID, request);
+    }
+
+    if (action === 'phones' && parts.length === 2) {
+      if (request.method !== 'PUT') {
+        return methodNotAllowed('PUT');
+      }
+      const authFailure = await authenticateRequest(request, env, parts[1], 'mac', 'phones');
+      if (authFailure) {
+        return authFailure;
+      }
+      return forwardToSession(env, parts[1], request);
     }
 
     if (action === 'pending' && parts.length === 2) {

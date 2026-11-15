@@ -487,6 +487,9 @@ mod tests {
             relay_url: "wss://relay.test/connect".into(),
             relay_key_id: None,
             relay_secret: None,
+            pairing_key: None,
+            relay_pair_id: None,
+            relay_pair_secret: None,
         }
     }
 

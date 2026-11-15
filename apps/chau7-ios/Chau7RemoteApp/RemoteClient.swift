@@ -108,6 +108,32 @@ final class RemoteClient {
         didSet { UserDefaults.standard.set(userDisconnected, forKey: "remote_user_disconnected") }
     }
 
+    /// The relay credential the paired Mac made for this phone alone. Kept
+    /// apart from `pairingInfo`: receiving it must not restart the connection.
+    @ObservationIgnored private var phoneRelayCredential = RemotePairingStore.loadPhoneRelayCredential()
+
+    /// What signs relay tokens. A freshly scanned QR is tried with its own
+    /// credentials: a stored one may be what stopped working.
+    private var relayCredentialForTokens: RemotePhoneRelayCredential? {
+        isPairingUnconfirmed ? nil : phoneRelayCredential
+    }
+
+    private func setPhoneRelayCredential(_ credential: RemotePhoneRelayCredential?) {
+        guard credential != phoneRelayCredential else { return }
+        phoneRelayCredential = credential
+        RemotePairingStore.savePhoneRelayCredential(credential)
+    }
+
+    private func handleRelayCredential(_ data: Data) {
+        guard let pairing = pairingInfo,
+              let payload = try? RemoteJSON.decoder.decode(RemoteRelayCredentialPayload.self, from: data),
+              payload.isWellFormed else {
+            log.warning("Ignoring a malformed relay credential from the Mac")
+            return
+        }
+        setPhoneRelayCredential(RemotePhoneRelayCredential(deviceID: pairing.deviceID, credential: payload))
+    }
+
     var pairingInfo: PairingInfo? {
         didSet {
             if oldValue != pairingInfo {
@@ -338,6 +364,8 @@ final class RemoteClient {
         isPairingUnconfirmed = false
         pairingBeforeScan = nil
         RemotePairingStore.savePairing(pairingInfo)
+        // The Mac sends this phone's credential for the new pairing next.
+        setPhoneRelayCredential(nil)
         pairingAttempt = .accepted
     }
 
@@ -365,6 +393,7 @@ final class RemoteClient {
         disconnectAndDiscardPendingDecisions()
         pairingInfo = nil
         RemotePairingStore.savePairing(nil)
+        setPhoneRelayCredential(nil)
         RemotePairingStore.deleteMacPublicKey()
         userDisconnected = false
     }
@@ -442,7 +471,12 @@ final class RemoteClient {
             return
         }
 
-        guard let token = RelayToken.make(pairing: pairing, role: "ios", scope: "connect") else {
+        guard let token = RelayToken.make(
+            pairing: pairing,
+            phoneCredential: relayCredentialForTokens,
+            role: "ios",
+            scope: "connect"
+        ) else {
             disconnect(autoReconnect: false, trigger: .connectionRestart)
             reportConnectionFailure(.staleRelayCredential, status: .error)
             return
@@ -1371,6 +1405,7 @@ final class RemoteClient {
             )
         case .snapshot: storeSnapshot(payload, tabID: frame.tabID)
         case .terminalSize: handleTerminalSize(payload, tabID: frame.tabID)
+        case .relayCredential: handleRelayCredential(payload)
         case .terminalGridSnapshot:
             // Grid clients always consume host frames. Replay clients also use
             // them while a host full-screen TUI is active because folding an
@@ -2380,7 +2415,12 @@ private func handlePairAccept(_ data: Data) {
         request.httpMethod = "GET"
         request.timeoutInterval = 10
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        guard let token = RelayToken.make(pairing: pairing, role: "ios", scope: "pending") else { return nil }
+        guard let token = RelayToken.make(
+            pairing: pairing,
+            phoneCredential: relayCredentialForTokens,
+            role: "ios",
+            scope: "pending"
+        ) else { return nil }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         return request
     }

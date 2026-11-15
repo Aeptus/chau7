@@ -18,6 +18,7 @@ enum RemotePairingStore {
         static let macPublicKey = "mac_public_key"
         static let pairingPayload = "pairing_payload"
         static let trustedIdentity = "trusted_pairing_identity"
+        static let phoneRelayCredential = "phone_relay_credential"
     }
 
     // MARK: - Device key
@@ -97,6 +98,21 @@ enum RemotePairingStore {
             return
         }
         persist(key: Key.pairingPayload, data: data, label: "pairing payload")
+    }
+
+    // MARK: - This phone's relay credential
+
+    static func loadPhoneRelayCredential() -> RemotePhoneRelayCredential? {
+        guard let data = KeychainStore.load(key: Key.phoneRelayCredential) else { return nil }
+        return try? RemoteJSON.decoder.decode(RemotePhoneRelayCredential.self, from: data)
+    }
+
+    static func savePhoneRelayCredential(_ credential: RemotePhoneRelayCredential?) {
+        guard let credential, let data = try? RemoteJSON.encoder.encode(credential) else {
+            _ = KeychainStore.delete(key: Key.phoneRelayCredential)
+            return
+        }
+        persist(key: Key.phoneRelayCredential, data: data, label: "phone relay credential")
     }
 
     // MARK: - Trusted identity
