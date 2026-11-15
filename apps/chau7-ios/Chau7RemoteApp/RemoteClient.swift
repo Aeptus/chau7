@@ -1841,7 +1841,7 @@ private func handlePairAccept(_ data: Data) {
     private func sendPairRequest(recordTelemetry: Bool = true) {
         guard let pairing = pairingInfo else { return }
         sendJSON(PairRequestPayload(
-            deviceID: pairing.deviceID, pairingCode: pairing.pairingCode,
+            pairing: pairing,
             iosPub: session.iosKey.publicKey.rawRepresentation.base64EncodedString(),
             iosName: deviceName
         ), type: .pairRequest, encrypt: false)
