@@ -451,6 +451,23 @@ level.
 { "request_id": "uuid", "approved": true }
 ```
 
+Input the phone sends (INPUT, KEY_INPUT, PANE_INPUT, a prompt response) passes
+the Mac's dangerous-command guard like input typed on the Mac. When the guard
+holds it for confirmation, the Mac does not refuse it: it sends an
+APPROVAL_REQUEST whose `command` and `flagged_command` are the held command and
+whose `context_note` says why it is held. `approved: true` types the held input
+(the Mac's own confirmation is answered the same way); `approved: false` drops
+it. The request is withdrawn from the Mac's pending approvals when the
+confirmation is answered on the Mac instead. Related ERROR codes, all sent on
+the input's tab:
+
+- `input_held`: more input arrived for a pane whose confirmation is still
+  waiting. The input is dropped and the APPROVAL_REQUEST is sent again.
+- `command_blocked`: the command is on the Mac's block list or would harm
+  Chau7 itself. Nothing ran and no approval can run it.
+- `approval_stale`: the approval arrived after the terminal changed (other
+  input, another directory) or after the Mac answered. Nothing was typed.
+
 ### NOTIFICATION_EVENT
 
 A user-facing notification composed entirely on the Mac (semantic kind +
@@ -513,6 +530,11 @@ the locally focused tab.
 ```json
 { "code": "unauthorized|bad_frame|internal_error", "message": "..." }
 ```
+
+The Mac also reports input it could not deliver with its own codes:
+`tab_unavailable`, `invalid_input_encoding`, `stale_prompt`, and the
+command-guard codes `input_held`, `command_blocked` and `approval_stale`
+(see APPROVAL_RESPONSE).
 
 ### PAIRING_INFO
 

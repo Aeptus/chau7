@@ -1,4 +1,5 @@
 //! One cached QR per pairing payload, encoded off the UI thread while this section is visible.
+use crate::l10n::l;
 use chau7_next_core::remote::{models::RemotePairingInfo, pairing_qr::PairingQrImage};
 use chrono::{DateTime, Utc};
 use gpui::{Context, Render, RenderImage, Task, Window, div, img, prelude::*, px};
@@ -10,6 +11,9 @@ pub(super) struct PairingQrView {
     image: Option<Arc<RenderImage>>,
     width: u32,
     error: Option<&'static str>,
+    /// The code is past its expiry: nothing of it is shown while the agent
+    /// issues a new one.
+    expired: bool,
     task: Option<Task<()>>,
 }
 
@@ -22,11 +26,18 @@ impl PairingQrView {
         self.task = None;
         self.image = None;
         self.error = None;
+        self.expired = false;
         self.info = info.clone();
         let Some(info) = info else {
             cx.notify();
             return;
         };
+        if DateTime::parse_from_rfc3339(&info.expires_at).is_ok_and(|at| at.to_utc() <= Utc::now())
+        {
+            self.expired = true;
+            cx.notify();
+            return;
+        }
         let job = cx.background_executor().spawn(async move {
             let raster = PairingQrImage::render(&info, Utc::now())?;
             let expiry = DateTime::parse_from_rfc3339(&info.expires_at)
@@ -51,7 +62,7 @@ impl PairingQrView {
                             Some(expiry)
                         }
                         Ok(_) => {
-                            view.error = Some("This pairing code has expired. Refresh the code.");
+                            view.expired = true;
                             None
                         }
                         Err(error) => {
@@ -69,8 +80,10 @@ impl PairingQrView {
             cx.background_executor().timer(delay).await;
             let _ = weak.update(cx, |view, cx| {
                 view.image = None;
-                view.error = Some("This pairing code has expired. Refresh the code.");
+                view.expired = true;
                 cx.notify();
+                // The settings page around the QR drops the expired details too.
+                cx.refresh_windows();
             });
         }));
         cx.notify();
@@ -88,11 +101,22 @@ impl Render for PairingQrView {
                         .h(px(self.width as f32))
                         .flex_shrink_0(),
                 )
-                .child("On your iPhone, tap Pair, then Scan QR Code. Keep this code private.");
+                .child(l(
+                    "settings.remote.pairing.instructions",
+                    "In the iPhone app, scan this QR code to pair. The code lasts 10 minutes and stops working once it has paired a phone. Keep it private.",
+                ));
+        } else if self.expired {
+            body = body.child(l(
+                "settings.remote.pairing.expired",
+                "This pairing code has expired. A new one is being generated.",
+            ));
         } else if let Some(error) = self.error {
-            body = body.child(error);
+            body = body.child(crate::l10n::tr(error));
         } else if self.info.is_some() {
-            body = body.child("Preparing secure pairing QR…");
+            body = body.child(l(
+                "settings.remote.pairing.preparing",
+                "Preparing the pairing QR code…",
+            ));
         }
         body
     }
@@ -157,7 +181,37 @@ mod tests {
         cx.run_until_parked();
         cx.update(|cx| {
             assert!(view.read(cx).image.is_none());
-            assert!(view.read(cx).error.unwrap().contains("expired"));
+            assert!(view.read(cx).expired, "the expired code is withdrawn");
+            assert!(view.read(cx).error.is_none());
+        });
+        // The agent's next code replaces the expired notice.
+        cx.update(|cx| view.update(cx, |view, cx| view.set_info(Some(info("777777")), cx)));
+        cx.run_until_parked();
+        cx.update(|cx| {
+            assert!(view.read(cx).image.is_some());
+            assert!(!view.read(cx).expired);
+        });
+    }
+
+    #[gpui::test]
+    fn a_code_that_is_already_expired_is_never_drawn(harness: &mut TestAppContext) {
+        let mut fixture = harness.new_app();
+        let cx = &mut fixture;
+        let (_window, view) = cx.update(|cx| {
+            gpui_kit::init(cx);
+            gpui_kit::open_window(WindowOptions::default(), cx, |_, cx| {
+                cx.new(|_| PairingQrView::default())
+            })
+            .unwrap()
+        });
+        let mut stale = info("123456");
+        stale.expires_at = (Utc::now() - chrono::Duration::seconds(1)).to_rfc3339();
+        cx.update(|cx| view.update(cx, |view, cx| view.set_info(Some(stale), cx)));
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let view = view.read(cx);
+            assert!(view.expired && view.image.is_none() && view.error.is_none());
+            assert!(view.task.is_none(), "no QR is encoded for an expired code");
         });
     }
 

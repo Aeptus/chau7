@@ -8,6 +8,28 @@ pub(super) const OUTPUT_BATCH: Duration = Duration::from_millis(33);
 pub(super) const REFRESH_EVERY: Duration = Duration::from_millis(150);
 const AGENT_HEALTH: Duration = Duration::from_secs(1);
 
+/// The first restart of an exited agent waits this long; each further exit
+/// in a row doubles the wait, up to [`RESTART_CAP`].
+pub(super) const RESTART_BASE: Duration = Duration::from_secs(1);
+pub(super) const RESTART_CAP: Duration = Duration::from_secs(60);
+/// An agent that ran this long was healthy: its exit starts over at
+/// [`RESTART_BASE`].
+pub(super) const RESTART_STABLE_AFTER: Duration = Duration::from_secs(60);
+
+/// The agent ended (or failed to start, `uptime` zero) after `failures`
+/// earlier failures in a row. Returns the failures to remember and how long
+/// to wait before starting it again.
+pub(super) fn restart_backoff(failures: u32, uptime: Duration) -> (u32, Duration) {
+    let failures = if uptime >= RESTART_STABLE_AFTER {
+        0
+    } else {
+        failures
+    };
+    let factor = 1u32.checked_shl(failures).unwrap_or(u32::MAX);
+    let delay = RESTART_BASE.saturating_mul(factor).min(RESTART_CAP);
+    (failures.saturating_add(1), delay)
+}
+
 pub(super) fn refresh_every(live_terminal: bool) -> Duration {
     if live_terminal {
         REFRESH_EVERY
@@ -41,7 +63,8 @@ pub(super) fn output_due(now: Instant, last_flush: Option<Instant>) -> Instant {
 
 /// Disabled remote control has no timer. An enabled agent retains supervision;
 /// idle helpers retain one-second metadata refresh. Terminal consumers retain
-/// 150ms refresh and only pending output needs 33ms.
+/// 150ms refresh and only pending output needs 33ms. A scheduled restart is
+/// never slept through.
 pub(super) fn next_delay(
     now: Instant,
     enabled: bool,
@@ -49,6 +72,7 @@ pub(super) fn next_delay(
     live_terminal: bool,
     last_refresh: Instant,
     output_due: Option<Instant>,
+    restart_due: Option<Instant>,
 ) -> Option<Duration> {
     if !enabled {
         return None;
@@ -58,7 +82,7 @@ pub(super) fn next_delay(
         delay =
             delay.min((last_refresh + refresh_every(live_terminal)).saturating_duration_since(now));
     }
-    if let Some(due) = output_due {
+    for due in [output_due, restart_due].into_iter().flatten() {
         delay = delay.min(due.saturating_duration_since(now));
     }
     Some(delay)
@@ -70,38 +94,92 @@ mod tests {
     #[test]
     fn idle_has_no_batch_poll_but_live_deadlines_remain() {
         let now = Instant::now();
-        assert_eq!(next_delay(now, false, false, false, now, None), None);
+        assert_eq!(next_delay(now, false, false, false, now, None, None), None);
         assert_eq!(
-            next_delay(now, true, true, false, now, None),
+            next_delay(now, true, true, false, now, None, None),
             Some(AGENT_HEALTH)
         );
         assert_eq!(
-            next_delay(now, true, true, false, now, Some(now + OUTPUT_BATCH)),
+            next_delay(now, true, true, false, now, Some(now + OUTPUT_BATCH), None),
             Some(OUTPUT_BATCH)
         );
         assert_eq!(
-            next_delay(now, true, true, false, now - AGENT_HEALTH, None),
+            next_delay(now, true, true, false, now - AGENT_HEALTH, None, None),
             Some(Duration::ZERO)
         );
         assert_eq!(
-            next_delay(now, true, false, false, now, None),
+            next_delay(now, true, false, false, now, None, None),
             Some(AGENT_HEALTH)
         );
         assert_eq!(
-            next_delay(now, true, true, true, now, None),
+            next_delay(now, true, true, true, now, None, None),
             Some(REFRESH_EVERY)
         );
         assert_eq!(
-            next_delay(now, true, true, true, now, Some(now + OUTPUT_BATCH)),
+            next_delay(now, true, true, true, now, Some(now + OUTPUT_BATCH), None),
             Some(OUTPUT_BATCH)
         );
         assert_eq!(
-            next_delay(now, true, true, true, now - REFRESH_EVERY, None),
+            next_delay(now, true, true, true, now - REFRESH_EVERY, None, None),
             Some(Duration::ZERO)
         );
         assert_eq!(
-            next_delay(now, true, false, false, now, Some(now - OUTPUT_BATCH)),
+            next_delay(now, true, false, false, now, Some(now - OUTPUT_BATCH), None),
             Some(Duration::ZERO)
+        );
+    }
+
+    #[test]
+    fn restart_wait_doubles_to_a_cap_and_starts_over_after_a_stable_run() {
+        let crash = Duration::from_secs(2);
+        let mut failures = 0;
+        let mut waits = Vec::new();
+        for _ in 0..9 {
+            let (next, wait) = restart_backoff(failures, crash);
+            failures = next;
+            waits.push(wait.as_secs());
+        }
+        assert_eq!(waits, [1, 2, 4, 8, 16, 32, 60, 60, 60]);
+        assert_eq!(failures, 9);
+        // It then stayed up: the next exit is a first failure again.
+        assert_eq!(
+            restart_backoff(failures, RESTART_STABLE_AFTER),
+            (1, RESTART_BASE)
+        );
+        // Just short of stable keeps backing off.
+        assert_eq!(
+            restart_backoff(3, RESTART_STABLE_AFTER - Duration::from_millis(1)),
+            (4, Duration::from_secs(8))
+        );
+        // A failed start (no uptime) counts like a crash, and nothing overflows.
+        assert_eq!(restart_backoff(0, Duration::ZERO), (1, RESTART_BASE));
+        assert_eq!(
+            restart_backoff(u32::MAX, Duration::ZERO),
+            (u32::MAX, RESTART_CAP)
+        );
+        assert_eq!(restart_backoff(40, Duration::ZERO), (41, RESTART_CAP));
+    }
+
+    #[test]
+    fn a_scheduled_restart_is_not_slept_through() {
+        let now = Instant::now();
+        let soon = now + Duration::from_millis(250);
+        assert_eq!(
+            next_delay(now, true, false, false, now, None, Some(soon)),
+            Some(Duration::from_millis(250))
+        );
+        assert_eq!(
+            next_delay(now, true, false, false, now, None, Some(now - RESTART_BASE)),
+            Some(Duration::ZERO)
+        );
+        // A restart far away keeps the one-second health check.
+        assert_eq!(
+            next_delay(now, true, false, false, now, None, Some(now + RESTART_CAP)),
+            Some(AGENT_HEALTH)
+        );
+        assert_eq!(
+            next_delay(now, false, false, false, now, None, Some(soon)),
+            None
         );
     }
 
@@ -121,7 +199,7 @@ mod tests {
             let mut now = start;
             let mut callbacks = 0;
             while now < start + Duration::from_secs(60) {
-                now += next_delay(now, true, true, live, now, None).unwrap();
+                now += next_delay(now, true, true, live, now, None, None).unwrap();
                 callbacks += 1;
             }
             assert_eq!(callbacks, expected);
