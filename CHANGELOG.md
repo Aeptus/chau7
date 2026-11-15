@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Give each iPhone its own relay credential, so removing a phone on the Mac now cuts it off at the relay as well: the Mac tells the relay which phones it trusts (the relay keeps a short hash of each phone's key until the Mac replaces the list), a removed phone is disconnected and refused, and after the first removal the credential all phones used to share stops working for that Mac. The pairing QR carries a credential that only works until the code expires. Needs the updated relay; with an older relay everything behaves as before. A phone still on an older app must update and scan a new QR once a phone has been removed.
+
+- Make the relay's protection against a slow phone work: the iPhone now reports how much terminal data it has taken in, and the relay drops replaceable full-screen frames, then disconnects, for a phone that is megabytes behind. Before, the relay measured a value its platform never provides, so the protection never engaged.
+
 - Remove the six-digit pairing code from the Mac's Remote settings; pairing is by scanning the QR code.
 
 - Let commands sent from the iPhone get past the Mac's dangerous-command guard: a held command now appears on the phone as an approval, approving it runs it and denying it drops it, instead of the phone being refused until someone answered on the Mac. Commands on the block list are refused with the reason, and no longer leave a notice that swallowed the phone's next input.

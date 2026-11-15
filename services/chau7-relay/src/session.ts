@@ -31,8 +31,13 @@ import {
 } from './apns.js';
 import { RateLimiter } from './ratelimit.js';
 import { parseToken, TOKEN_TTL_SECONDS } from './token.js';
-import { relayBackpressureAction } from './backpressure.js';
-import { isCredentialAdmissionAllowed, resolveAuthMode } from './auth.js';
+import { ReceiveWindow, relayAckTotal, relayBackpressureAction } from './backpressure.js';
+import {
+  isCredentialAdmissionAllowed,
+  isPhoneAdmitted,
+  nextPhonePolicy,
+  resolveAuthMode
+} from './auth.js';
 import { ViewerRouter, shareRegistryName } from './viewer.js';
 
 interface PushRegistration {
@@ -76,6 +81,13 @@ interface Env {
 const REGISTRATIONS_KEY = 'push_registrations';
 const PENDING_STATE_KEY = 'pending_state';
 const SEEN_NONCES_KEY = 'seen_nonces';
+/** Phones the Mac trusts, and whether the shared iOS credential is refused. */
+const PHONE_POLICY_KEY = 'phone_policy';
+
+interface PhonePolicy {
+  phones: string[];
+  locked: boolean;
+}
 /** Share code the Mac registered for read-only viewers (Chau7 Next). */
 const VIEWER_SHARE_KEY = 'viewer_share_code';
 /** In a `share:<code>` registry DO: the device id sharing the code. */
@@ -104,6 +116,8 @@ interface SocketAttachment {
   deviceId?: string;
   keyId?: string;
   role?: string;
+  /** Present when the phone connected with a per-phone (v4) credential. */
+  phoneId?: string;
   viewer?: ViewerEntry;
 }
 
@@ -111,6 +125,8 @@ export class SessionDO {
   private readonly state: DurableObjectState;
   private readonly env: Env;
   private readonly rateLimiter = new RateLimiter();
+  /** Unacknowledged bytes per phone socket; rebuilt after hibernation. */
+  private readonly receiveWindows = new WeakMap<WebSocket, ReceiveWindow>();
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
@@ -156,8 +172,13 @@ export class SessionDO {
         return this.handlePushNotify(request);
       }
     }
+    if (route === 'phones' && parts.length === 2) {
+      return this.handlePhonePolicy(request);
+    }
     if (route === 'pending' && parts.length === 2) {
       if (request.method === 'GET') {
+        const refused = await this.refusePhone(request);
+        if (refused) return refused;
         return this.handlePendingState(request);
       }
       if (request.method === 'POST') {
@@ -184,6 +205,10 @@ export class SessionDO {
     if (role !== 'mac' && role !== 'ios') {
       return new Response('Missing role', { status: 400 });
     }
+    if (role === 'ios') {
+      const refused = await this.refusePhone(request);
+      if (refused) return refused;
+    }
     const nonceFailure = await this.consumeNonce(request);
     if (nonceFailure) {
       return nonceFailure;
@@ -205,8 +230,9 @@ export class SessionDO {
     // hibernates and is re-instantiated with no in-memory socket references.
     const deviceId = url.pathname.split('/').filter(Boolean)[1];
     const bearer = request.headers.get('Authorization')?.replace(/^Bearer /, '');
-    const keyId = bearer ? parseToken(bearer)?.keyId : 'development';
-    server.serializeAttachment({ deviceId, role, keyId });
+    const parsedBearer = bearer ? parseToken(bearer) : null;
+    const keyId = bearer ? parsedBearer?.keyId : 'development';
+    server.serializeAttachment({ deviceId, role, keyId, phoneId: parsedBearer?.phoneId });
     this.state.acceptWebSocket(server, [role]);
 
     return new Response(null, { status: 101, webSocket: client });
@@ -281,11 +307,21 @@ export class SessionDO {
       }
     }
 
+    if (role === 'ios') {
+      // The phone's report of how much it has taken in is for the relay only.
+      const ackTotal = relayAckTotal(message);
+      if (ackTotal !== null) {
+        this.receiveWindow(ws).recordAck(ackTotal);
+        return;
+      }
+    }
+
     const peerRole: Role = role === 'mac' ? 'ios' : 'mac';
     for (const peer of this.state.getWebSockets(peerRole)) {
       if (!this.socketIsAuthorized(peer)) continue;
-      const buffered = (peer as { bufferedAmount?: number }).bufferedAmount ?? 0;
-      const backpressureAction = relayBackpressureAction(buffered, message);
+      // Only a phone is measured, and only once it has acknowledged.
+      const window = peerRole === 'ios' ? this.receiveWindow(peer) : null;
+      const backpressureAction = relayBackpressureAction(window?.outstanding ?? 0, message);
       if (backpressureAction === 'close') {
         // Receiver is hopelessly behind; shed it rather than grow memory.
         try {
@@ -302,10 +338,76 @@ export class SessionDO {
       }
       try {
         peer.send(message);
+        window?.recordSend(size);
       } catch {
         // Ignore send errors; the close/error handler will clean up.
       }
     }
+  }
+
+  private receiveWindow(ws: WebSocket): ReceiveWindow {
+    let window = this.receiveWindows.get(ws);
+    if (!window) {
+      window = new ReceiveWindow();
+      this.receiveWindows.set(ws, window);
+    }
+    return window;
+  }
+
+  // --- Per-phone admission ---------------------------------------------------
+
+  /**
+   * The Worker has verified the token's signature. This decides whether that
+   * credential may still use this Mac's namespace: a per-phone credential must
+   * be on the Mac's list, and the credential all phones share is refused once
+   * the Mac has removed a phone.
+   */
+  private async refusePhone(request: Request): Promise<Response | null> {
+    const header = request.headers.get('Authorization') ?? '';
+    const parsed = header.startsWith('Bearer ')
+      ? parseToken(header.slice('Bearer '.length).trim())
+      : null;
+    if (!parsed) return null; // Only reachable in explicitly configured open mode.
+    const policy = await this.state.storage.get<PhonePolicy>(PHONE_POLICY_KEY);
+    if (isPhoneAdmitted(policy, parsed.phoneId)) return null;
+    return new Response('Phone not admitted', { status: 403 });
+  }
+
+  /** PUT /phones/<deviceId>: the Mac's full list of phones it trusts. */
+  private async handlePhonePolicy(request: Request): Promise<Response> {
+    if (request.method !== 'PUT') {
+      return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'PUT' } });
+    }
+    const nonceFailure = await this.consumeNonce(request);
+    if (nonceFailure) return nonceFailure;
+    const body = await readJsonBody(request);
+    if (!body.ok) return new Response(body.message, { status: body.status });
+    const phones = (body.value as { phones?: unknown } | null)?.phones;
+    const { policy, removed } = await this.state.storage.transaction(async (storage) => {
+      const stored = await storage.get<PhonePolicy>(PHONE_POLICY_KEY);
+      const next = nextPhonePolicy(stored, phones);
+      if (next) await storage.put(PHONE_POLICY_KEY, next);
+      return {
+        policy: next,
+        removed: Boolean(next && stored?.phones.some((id) => !next.phones.includes(id)))
+      };
+    });
+    if (!policy) return new Response('Invalid phone list', { status: 400 });
+    // A phone that is connected right now and no longer admitted is cut off.
+    // When a phone was just removed, a socket opened with a pairing-window
+    // credential may be that phone's, so only listed phones stay connected.
+    for (const ws of this.state.getWebSockets('ios')) {
+      const phoneId = (ws.deserializeAttachment() as SocketAttachment | null)?.phoneId;
+      const listed = phoneId !== undefined && policy.phones.includes(phoneId);
+      if (removed ? !listed : !isPhoneAdmitted(policy, phoneId)) {
+        try {
+          ws.close(1008, 'Phone no longer admitted');
+        } catch {
+          // Already closed.
+        }
+      }
+    }
+    return Response.json({ locked: policy.locked, phones: policy.phones.length });
   }
 
   async webSocketClose(

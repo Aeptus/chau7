@@ -137,6 +137,8 @@ mod tests {
             relay_key_id: Some("fixture-key".into()),
             relay_secret: Some("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE".into()),
             pairing_key: Some("KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio=".into()),
+            relay_pair_id: None,
+            relay_pair_secret: None,
         }
     }
 
