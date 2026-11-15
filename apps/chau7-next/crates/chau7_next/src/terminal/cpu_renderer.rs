@@ -501,6 +501,29 @@ impl<'a> GridCanvas<'a> {
             surface.rect(Bounds::new(origin, dimensions), quad.border_color);
         }
     }
+    /// What GPU text painting depends on besides its arguments. `None` on the
+    /// software surface, which draws its own pixels and records nothing.
+    pub fn paint_context(&self) -> Option<gpui::PaintContext> {
+        self.surface.is_none().then(|| self.window.paint_context())
+    }
+    pub fn paint_mark(&self) -> Option<usize> {
+        self.surface.is_none().then(|| self.window.paint_mark())
+    }
+    pub fn record_since(&self, mark: usize) -> Option<gpui::PaintRecording> {
+        self.window.record_since(mark)
+    }
+    /// Re-emit a row's recorded text instead of painting it glyph by glyph.
+    pub fn replay_text(&mut self, primitives: &gpui::PaintRecording) {
+        let mut replay = work_profiler::begin(Key::work(
+            "gpu_text_replay",
+            "draw",
+            self.visibility,
+            "terminal_painter",
+            Queue::Main,
+        ));
+        replay.items(primitives.len());
+        self.window.replay_recording(primitives);
+    }
     pub fn paint_line(
         &mut self,
         line: &ShapedLine,

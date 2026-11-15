@@ -3129,6 +3129,7 @@
 "urlHandler.system" = "ברירת מחדל של המערכת";
 
 // MARK: - Active Polling Rate Cap
+"activePollingRateCap.adaptive" = "מסתגל";
 "activePollingRateCap.displayNative" = "מקורי לצג";
 "activePollingRateCap.hz60" = "60 הרץ";
 "activePollingRateCap.hz30" = "30 הרץ";

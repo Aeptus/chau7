@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Cap terminal refresh by how busy the computer is: 120 Hz normally, 60 Hz above 50% CPU and 30 Hz above 90%, with typed input still shown immediately. Background tabs refresh at 30 Hz. The fixed caps remain available in Settings.
+
+- Repaint unchanged terminal rows from their recorded text instead of glyph by glyph, cutting terminal paint time by about half when only part of the screen changes.
+
+- Add a scrolling-output mode (`--scroll-lines`) to the performance lab's terminal workload.
+
 - Give each iPhone its own relay credential, so removing a phone on the Mac now cuts it off at the relay as well: the Mac tells the relay which phones it trusts (the relay keeps a short hash of each phone's key until the Mac replaces the list), a removed phone is disconnected and refused, and after the first removal the credential all phones used to share stops working for that Mac. The pairing QR carries a credential that only works until the code expires. Needs the updated relay; with an older relay everything behaves as before. A phone still on an older app must update and scan a new QR once a phone has been removed.
 
 - Make the relay's protection against a slow phone work: the iPhone now reports how much terminal data it has taken in, and the relay drops replaceable full-screen frames, then disconnects, for a phone that is megabytes behind. Before, the relay measured a value its platform never provides, so the protection never engaged.

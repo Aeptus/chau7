@@ -643,7 +643,7 @@ mod tests {
                 s.appearance.rendering.active_polling_rate_cap,
                 defaults.appearance.rendering.active_polling_rate_cap
             );
-            assert_eq!(s.appearance.rendering.inactive_view_max_fps, 42);
+            assert_eq!(s.appearance.rendering.inactive_view_max_fps, 30);
             assert_eq!(s.general.default_directory, None);
             assert_eq!(
                 s.general.usage_monitoring,

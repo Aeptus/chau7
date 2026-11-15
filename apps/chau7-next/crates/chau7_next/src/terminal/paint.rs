@@ -21,7 +21,7 @@ pub use cpu_renderer::init as init_cpu_text_system;
 use cpu_renderer::{FrameCache, GridCanvas};
 pub(crate) use cpu_renderer::{glyph_cache_bytes, glyph_cache_entries, release_glyph_cache};
 use parking_lot::Mutex;
-use row_cache::{PreparedRow, RowCache, RowStyle};
+use row_cache::{PreparedRow, RecordedText, RowCache, RowStyle};
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -791,6 +791,8 @@ fn paint_grid_content(
     let mut rows_cache = rows_cache.lock();
     rows_cache.begin_frame(&style, state.rows as usize);
     let clusters_by_row = row_cache::clusters_by_row(&state.clusters, cols, state.rows as usize);
+    // Fixed for the whole row pass: nothing below pushes a mask or opacity.
+    let paint_context = window.paint_context();
     let pass_started = Instant::now();
     let mut prepared = 0;
     let mut preparation = Duration::ZERO;
@@ -807,7 +809,7 @@ fn paint_grid_content(
             preparation += began.elapsed();
             prepared += 1;
         }
-        let Some(row_paint) = rows_cache.get(row) else {
+        let Some(row_paint) = rows_cache.get_mut(row) else {
             continue;
         };
 
@@ -850,14 +852,39 @@ fn paint_grid_content(
             window.paint_quad(fill(rect, color));
         }
 
-        for (col, line, runs) in &row_paint.lines {
-            let _ = window.paint_line(
-                line,
-                point(bounds.left() + m.cell_width * *col as f32, y),
-                m.line_height,
-                runs,
-                cx,
-            );
+        let origin = point(bounds.left(), y);
+        let recorded = paint_context.as_ref().and_then(|context| {
+            row_paint
+                .text
+                .as_ref()
+                .and_then(|text| text.valid_for(origin, m.line_height, context))
+        });
+        if let Some(primitives) = recorded {
+            window.replay_text(primitives);
+        } else {
+            let mark = window.paint_mark();
+            let mut complete = true;
+            for (col, line, runs) in &row_paint.lines {
+                complete &= window
+                    .paint_line(
+                        line,
+                        point(bounds.left() + m.cell_width * *col as f32, y),
+                        m.line_height,
+                        runs,
+                        cx,
+                    )
+                    .is_ok();
+            }
+            // A failed line left a partial row; never replay that.
+            // The software surface records nothing and keeps what is there.
+            if let Some((context, mark)) = paint_context.clone().zip(mark) {
+                row_paint.text = window
+                    .record_since(mark)
+                    .filter(|_| complete)
+                    .map(|primitives| {
+                        RecordedText::new(origin, m.line_height, context, primitives)
+                    });
+            }
         }
         for d in &row_paint.decorations {
             paint_decoration(d, bounds.left(), y, m, window);

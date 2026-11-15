@@ -2920,7 +2920,7 @@
 "settings.terminal.metalRenderer" = "Metal Renderer";
 "settings.terminal.metalRenderer.info" = "New tabs will use Metal GPU rendering for display.";
 "settings.terminal.activePollingRateCap" = "Active Tab Refresh Cap";
-"settings.terminal.activePollingRateCap.help" = "Maximum refresh rate for the focused tab. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life.";
+"settings.terminal.activePollingRateCap.help" = "Maximum refresh rate for the focused tab. Adaptive uses 120 Hz and drops to 60 Hz, then 30 Hz, as the computer gets busy. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life.";
 "settings.terminal.inactiveViewMaxFPS" = "Background View Refresh Cap";
 "settings.terminal.inactiveViewMaxFPS.help" = "Max refresh rate for a visible tab that isn't focused — e.g. a tab on a second screen showing streaming output. It stays live and responsive but redraws at this slower rate to cut GPU and sync cost. The focused tab uses Active Tab Refresh Cap. Default 42 fps.";
 "settings.terminal.rendering" = "Rendering";
@@ -3161,6 +3161,7 @@
 "urlHandler.system" = "System Default";
 
 // MARK: - Active Polling Rate Cap
+"activePollingRateCap.adaptive" = "Adaptive";
 "activePollingRateCap.displayNative" = "Display Native";
 "activePollingRateCap.hz60" = "60 Hz";
 "activePollingRateCap.hz30" = "30 Hz";
