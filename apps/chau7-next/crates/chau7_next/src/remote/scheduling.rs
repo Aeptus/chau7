@@ -32,6 +32,13 @@ impl Wake {
     }
 }
 
+/// When pending output is due. The first bytes after a pause (a keystroke's
+/// echo, a prompt) go at once; a stream is still batched, one send per
+/// [`OUTPUT_BATCH`].
+pub(super) fn output_due(now: Instant, last_flush: Option<Instant>) -> Instant {
+    last_flush.map_or(now, |at| (at + OUTPUT_BATCH).max(now))
+}
+
 /// Disabled remote control has no timer. An enabled agent retains supervision;
 /// idle helpers retain one-second metadata refresh. Terminal consumers retain
 /// 150ms refresh and only pending output needs 33ms.
@@ -96,6 +103,15 @@ mod tests {
             next_delay(now, true, false, false, now, Some(now - OUTPUT_BATCH)),
             Some(Duration::ZERO)
         );
+    }
+
+    #[test]
+    fn first_output_after_a_pause_is_due_at_once_and_a_stream_is_batched() {
+        let now = Instant::now();
+        assert_eq!(output_due(now, None), now);
+        assert_eq!(output_due(now, Some(now - OUTPUT_BATCH * 2)), now);
+        let recent = now - Duration::from_millis(10);
+        assert_eq!(output_due(now, Some(recent)), recent + OUTPUT_BATCH);
     }
 
     #[test]

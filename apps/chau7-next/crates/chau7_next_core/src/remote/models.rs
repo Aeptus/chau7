@@ -184,11 +184,52 @@ pub enum RemotePushEnvironment {
     Production,
 }
 
+/// How the phone draws a terminal (`terminal_presentation`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteTerminalPresentation {
+    /// Output bytes shown as text.
+    Text,
+    /// Output bytes replayed through the phone's own terminal emulator.
+    Replay,
+    /// Host-rendered grids only.
+    Grid,
+    /// A value from a newer client; treated like a missing one.
+    #[serde(other)]
+    Unknown,
+}
+
+impl RemoteTerminalPresentation {
+    /// Whether a client uses host grids (`RemoteTerminalStreamingPolicy`).
+    /// A client that does not say gets the legacy text-and-grid stream. A
+    /// replay client needs them only for a full-screen program, which cannot
+    /// be reflowed to phone width.
+    pub fn uses_grids(presentation: Option<Self>, alternate_screen_active: bool) -> bool {
+        match presentation {
+            None | Some(Self::Unknown | Self::Grid) => true,
+            Some(Self::Replay) => alternate_screen_active,
+            Some(Self::Text) => false,
+        }
+    }
+}
+
+/// `TERMINAL_SIZE` (0x28): a tab's live PTY grid, so the phone knows when a
+/// full-screen program is on the alternate screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteTerminalSizePayload {
+    pub cols: u32,
+    pub rows: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alternate_screen_active: Option<bool>,
+}
+
 /// `CLIENT_STATE` (0x43), from the phone.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteClientStatePayload {
     pub app_state: RemoteClientAppState,
     pub stream_mode: RemoteClientStreamMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_presentation: Option<RemoteTerminalPresentation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
