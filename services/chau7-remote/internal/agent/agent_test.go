@@ -150,14 +150,19 @@ func TestPairRequestWithValidProofIsAuthorized(t *testing.T) {
 func TestPairingProofMatchesTheSharedFixtures(t *testing.T) {
 	var info PairingInfoPayload
 	var request PairRequestPayload
-	for name, target := range map[string]any{"pairing_info.json": &info, "pair_request.json": &request} {
-		data, err := os.ReadFile("../../docs/fixtures/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal(data, target); err != nil {
-			t.Fatal(err)
-		}
+	infoJSON, err := os.ReadFile("../../docs/fixtures/pairing_info.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestJSON, err := os.ReadFile("../../docs/fixtures/pair_request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(infoJSON, &info); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(requestJSON, &request); err != nil {
+		t.Fatal(err)
 	}
 	key, err := base64.StdEncoding.DecodeString(info.PairingKey)
 	if err != nil || len(key) != 32 {
