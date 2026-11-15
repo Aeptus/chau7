@@ -87,12 +87,35 @@ final class RemoteClient {
 
     // MARK: - Pairing (persisted in Keychain)
 
+    /// Progress of a pairing the user just scanned, for the pairing sheet.
+    enum PairingAttempt: Equatable {
+        case idle
+        case waitingForMac
+        case accepted
+        case failed(String)
+    }
+
+    private(set) var pairingAttempt: PairingAttempt = .idle
+    /// True from a scan until the Mac accepts it. Until then the scanned
+    /// pairing lives only in memory, so a rejected or unanswered code cannot
+    /// replace a working pairing in the Keychain.
+    @ObservationIgnored private var isPairingUnconfirmed = false
+    @ObservationIgnored private var pairingBeforeScan: PairingInfo?
+    /// Set by an explicit Disconnect; only a manual Connect or a new pairing
+    /// clears it. Foregrounding, a push or a deep link must not undo the
+    /// user's choice.
+    @ObservationIgnored private var userDisconnected = UserDefaults.standard.bool(forKey: "remote_user_disconnected") {
+        didSet { UserDefaults.standard.set(userDisconnected, forKey: "remote_user_disconnected") }
+    }
+
     var pairingInfo: PairingInfo? {
         didSet {
             if oldValue != pairingInfo {
                 // Every connect attempt reassigns the same pairing; only a
                 // real change is worth a Keychain write.
-                RemotePairingStore.savePairing(pairingInfo)
+                if !isPairingUnconfirmed {
+                    RemotePairingStore.savePairing(pairingInfo)
+                }
                 // Pending approvals and notification decisions belong to a
                 // specific paired Mac. Drop them before the new pairing can
                 // open a socket or fetch /pending.
@@ -298,8 +321,57 @@ final class RemoteClient {
 
     // MARK: - Connection
 
+    /// Tries a freshly scanned pairing. The previous pairing stays stored until
+    /// the Mac accepts this one; `pairingAttempt` reports the outcome.
+    func beginPairing(_ info: PairingInfo) {
+        if !isPairingUnconfirmed {
+            pairingBeforeScan = pairingInfo
+        }
+        isPairingUnconfirmed = true
+        pairingAttempt = .waitingForMac
+        pairingInfo = info
+        connect()
+    }
+
+    private func confirmPairingIfUnconfirmed() {
+        guard isPairingUnconfirmed else { return }
+        isPairingUnconfirmed = false
+        pairingBeforeScan = nil
+        RemotePairingStore.savePairing(pairingInfo)
+        pairingAttempt = .accepted
+    }
+
+    /// Puts the previous pairing back after the Mac refused or ignored a scan.
+    /// Returns false when no scan was awaiting an answer.
+    private func abandonUnconfirmedPairing(message: String) -> Bool {
+        guard isPairingUnconfirmed else { return false }
+        isPairingUnconfirmed = false
+        let previous = pairingBeforeScan
+        pairingBeforeScan = nil
+        pairingInfo = previous
+        pairingAttempt = .failed(message)
+        if previous != nil {
+            connectIfNeeded(trigger: .reconnect)
+        }
+        return true
+    }
+
+    /// Forgets the paired Mac: closes the session and removes its pairing,
+    /// relay credential and trusted keys from the Keychain.
+    func forgetPairedMac() {
+        isPairingUnconfirmed = false
+        pairingBeforeScan = nil
+        pairingAttempt = .idle
+        disconnectAndDiscardPendingDecisions()
+        pairingInfo = nil
+        RemotePairingStore.savePairing(nil)
+        RemotePairingStore.deleteMacPublicKey()
+        userDisconnected = false
+    }
+
     func connect() {
         guard let pairing = pairingInfo else { return }
+        userDisconnected = false
         startConnection(
             pairing: pairing,
             trigger: .manual,
@@ -350,6 +422,14 @@ final class RemoteClient {
         trigger: RemoteConnectionTrigger,
         forceRestart: Bool
     ) {
+        guard RemoteConnectionStartPolicy.allowsStart(
+            userDisconnected: userDisconnected, isManual: trigger == .manual
+        ) else {
+            DiagnosticsLog.shared.info(.connection, "Connection request ignored after user disconnect", [
+                "trigger": trigger.rawValue
+            ])
+            return
+        }
         guard RemoteConnectionStartPolicy.shouldStartConnection(
             transportIsOpen: transport.isOpen,
             forceRestart: forceRestart
@@ -652,6 +732,7 @@ final class RemoteClient {
         )
         deferredDecisions.reset()
         backgroundKeepalive.end()
+        userDisconnected = true
     }
 
     // MARK: - Input
@@ -1002,6 +1083,11 @@ final class RemoteClient {
             hasRemainingAttempts: reconnectBackoff.hasRemainingAttempts
         ) else {
             if !reconnectBackoff.hasRemainingAttempts {
+                if abandonUnconfirmedPairing(
+                    message: "Could not reach the relay in the QR code. Check your connection, then scan a fresh QR code."
+                ) {
+                    return
+                }
                 reportConnectionFailure(
                     .reconnectLimitReached(attempts: Self.maxReconnectAttempts),
                     status: .connectionFailed
@@ -1088,6 +1174,11 @@ final class RemoteClient {
             transport.close()
             isConnected = false
             session.invalidateSession(clearHandshakeMaterial: false)
+            if abandonUnconfirmedPairing(
+                message: "Your Mac did not answer. Make sure Chau7 is open with Remote enabled, then scan a fresh QR code."
+            ) {
+                return
+            }
             reportConnectionFailure(.handshakeTimedOut)
             emitTelemetry(
                 type: .errorReceived,
@@ -1242,6 +1333,7 @@ final class RemoteClient {
                 )
             }
             isConnected = true
+            confirmPairingIfUnconfirmed()
             status = .sessionReady
             if tabInventoryState != .ready {
                 tabInventoryState = .syncing
@@ -1369,6 +1461,11 @@ private func handlePairAccept(_ data: Data) {
             log.error("handlePairAccept: Mac public key does not match pairing identity")
             DiagnosticsLog.shared.error(.connection, "Pair accept identity mismatch")
             endHandshakeForBrokenPairing()
+            if abandonUnconfirmedPairing(
+                message: "The Mac that answered is not the one in the QR code. Scan a fresh QR code from your Mac."
+            ) {
+                return
+            }
             reportConnectionFailure(.macIdentityChanged, status: .error)
             return
         }
@@ -1394,7 +1491,11 @@ private func handlePairAccept(_ data: Data) {
     private func handlePairReject(_ data: Data) {
         let reason = (try? RemoteJSON.decoder.decode(PairRejectPayload.self, from: data))?.reason
         endHandshakeForBrokenPairing()
-        reportConnectionFailure(.pairingRejected(reason: reason), status: .pairingRejected)
+        let failure = RemoteConnectionFailure.pairingRejected(reason: reason)
+        if abandonUnconfirmedPairing(message: failure.message) {
+            return
+        }
+        reportConnectionFailure(failure, status: .pairingRejected)
     }
 
     /// A rejected pairing or a changed Mac identity cannot be fixed by
@@ -2056,10 +2157,12 @@ private func handlePairAccept(_ data: Data) {
 
     private func shouldSendPairRequest(for pairing: PairingInfo, attempt: Int) -> Bool {
         guard !session.hasReceivedPairAccept else { return false }
-        if !hasStoredTrust(for: pairing) {
-            return true
-        }
-        return attempt >= Self.repairFallbackAttempt
+        return RemoteConnectionStartPolicy.shouldSendPairRequest(
+            hasStoredTrust: hasStoredTrust(for: pairing),
+            isFreshScan: isPairingUnconfirmed,
+            attempt: attempt,
+            fallbackAttempt: Self.repairFallbackAttempt
+        )
     }
 
     private func hasStoredTrust(for pairing: PairingInfo) -> Bool {

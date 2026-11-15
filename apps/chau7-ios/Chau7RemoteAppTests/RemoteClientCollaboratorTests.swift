@@ -644,6 +644,28 @@ final class RemoteTerminalScrollPolicyTests: XCTestCase {
 }
 
 final class RemoteConnectionStartPolicyTests: XCTestCase {
+    func testExplicitDisconnectHoldsUntilAManualConnect() {
+        XCTAssertTrue(RemoteConnectionStartPolicy.allowsStart(userDisconnected: false, isManual: false))
+        XCTAssertFalse(RemoteConnectionStartPolicy.allowsStart(userDisconnected: true, isManual: false))
+        XCTAssertTrue(RemoteConnectionStartPolicy.allowsStart(userDisconnected: true, isManual: true))
+    }
+
+    func testFreshScanSendsPairRequestAtOnce() {
+        // A trusted phone reconnects with HELLO alone until the fallback attempt.
+        XCTAssertFalse(RemoteConnectionStartPolicy.shouldSendPairRequest(
+            hasStoredTrust: true, isFreshScan: false, attempt: 0, fallbackAttempt: 3
+        ))
+        XCTAssertTrue(RemoteConnectionStartPolicy.shouldSendPairRequest(
+            hasStoredTrust: true, isFreshScan: false, attempt: 3, fallbackAttempt: 3
+        ))
+        XCTAssertTrue(RemoteConnectionStartPolicy.shouldSendPairRequest(
+            hasStoredTrust: true, isFreshScan: true, attempt: 0, fallbackAttempt: 3
+        ))
+        XCTAssertTrue(RemoteConnectionStartPolicy.shouldSendPairRequest(
+            hasStoredTrust: false, isFreshScan: false, attempt: 0, fallbackAttempt: 3
+        ))
+    }
+
     func testPushWakeKeepsForegroundStreamingWhenAppIsActive() {
         XCTAssertFalse(RemoteConnectionStartPolicy.pushWakeEntersBackground(applicationIsActive: true))
         XCTAssertTrue(RemoteConnectionStartPolicy.pushWakeEntersBackground(applicationIsActive: false))

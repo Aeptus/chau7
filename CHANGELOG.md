@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Stop Remote Control from starting, or showing a pairing QR code, while the relay URL is empty or still the example placeholder; the Remote settings now say to set your own relay URL first.
 
+- Make the iPhone app quicker to use and pairing honest: Send is a tap by default (hold-to-send is a setting), the launch splash leaves as soon as the first screen is ready, and full-screen programs no longer repaint for output that changes nothing visible. Pairing is by QR code only and reports success once the Mac accepts; a refused or unanswered code no longer replaces a working pairing. Disconnect now holds until you tap Connect, Settings gains Forget this Mac, and re-pairing after the Mac forgot the phone no longer waits three seconds.
+
+- Fix the iPhone terminal: it no longer stays in the plain-text view after reconnecting, it keeps the newest output and the cursor on screen when wide lines are folded to the phone's width, and it keeps blank lines between folded lines. The app may now draw at up to 120 Hz on ProMotion displays.
+
 - Make terminal text reach the iPhone sooner and with far less data: the Mac sends the first output after a pause immediately, stops sending full-screen grids the phone does not use or already has, tells the phone the terminal size and when a full-screen program is running, and answers the phone's request to resend a tab.
 
 - Fix pairing a second iPhone, or re-pairing with a new key, which timed out while another phone had been connected. A pairing code now stops working once it has paired a phone.
