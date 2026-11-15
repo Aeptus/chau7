@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Cap terminal refresh by how busy the computer is: 120 Hz normally, 60 Hz above 50% CPU and 30 Hz above 90%, with typed input still shown immediately. Background tabs refresh at 30 Hz. The fixed caps remain available in Settings.
+
 - Repaint unchanged terminal rows from their recorded text instead of glyph by glyph, cutting terminal paint time by about half when only part of the screen changes.
 
 - Add a scrolling-output mode (`--scroll-lines`) to the performance lab's terminal workload.

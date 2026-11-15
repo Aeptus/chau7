@@ -48,6 +48,7 @@ use parking_lot::{Mutex, RwLock};
 
 mod maintenance;
 
+use super::adaptive_refresh;
 use super::pty_writer::{CloseMode, PtyWriter, Signal, signal_group};
 use crate::monitoring::session::{SessionMonitor, shell_ai_event};
 use crate::platform::process as procinfo;
@@ -119,6 +120,35 @@ fn refresh_interval(
     fps.map_or(Duration::ZERO, |fps| {
         Duration::from_secs_f64(1.0 / f64::from(fps))
     })
+}
+
+/// What a session stores as its refresh cap: a fixed interval, or the
+/// adaptive marker for a focused view that follows host load.
+fn refresh_cap_ns(interactive: bool, active: ActivePollingRateCap, inactive_fps: u32) -> u64 {
+    if interactive && active == ActivePollingRateCap::Adaptive {
+        return adaptive_refresh::ADAPTIVE_NS;
+    }
+    let interval = refresh_interval(interactive, active, inactive_fps);
+    // The marker is never a real interval.
+    (interval.as_nanos().min(u128::from(u64::MAX)) as u64).min(adaptive_refresh::ADAPTIVE_NS - 1)
+}
+
+/// The interval a stored cap means right now. Under the adaptive cap, output
+/// that follows a keystroke is its echo and is never held back.
+fn current_refresh_interval(cap_ns: u64, since_input: Option<Duration>) -> Duration {
+    if cap_ns != adaptive_refresh::ADAPTIVE_NS {
+        return Duration::from_nanos(cap_ns);
+    }
+    if since_input.is_some_and(|elapsed| elapsed < adaptive_refresh::ECHO_WINDOW) {
+        return Duration::ZERO;
+    }
+    adaptive_refresh::interval()
+}
+
+/// Seconds on the latency clock as an atomic; zero means "never".
+fn since(at: &AtomicU64) -> Option<Duration> {
+    let then = f64::from_bits(at.load(Ordering::Relaxed));
+    (then > 0.0).then(|| Duration::from_secs_f64((clock(Instant::now()) - then).max(0.0)))
 }
 
 fn refresh_wait(interval: Duration, suspended: bool, elapsed: Duration) -> Duration {
@@ -322,6 +352,8 @@ pub struct TerminalSession {
     /// 500 ms (Swift `startBackgroundDrain`).
     render_suspended: Arc<AtomicBool>,
     refresh_interval_ns: Arc<AtomicU64>,
+    /// Latency-clock time of the last typed input, as `f64` bits.
+    last_input_at: Arc<AtomicU64>,
     refresh_wake: mpsc::UnboundedSender<RefreshWake>,
     /// Shell state machine (status, typed lines, AI tool, command blocks).
     tracker: ShellSession,
@@ -742,6 +774,8 @@ impl TerminalSession {
         let suspended = render_suspended.clone();
         let refresh_interval_ns = Arc::new(AtomicU64::new(0));
         let pacing = refresh_interval_ns.clone();
+        let last_input_at = Arc::new(AtomicU64::new(0));
+        let typed = last_input_at.clone();
         let pump = cx.spawn(async move |this, cx| {
             let mut last_refresh: Option<Instant> = None;
             'pump: while let Some(first) = rx.next().await {
@@ -755,7 +789,7 @@ impl TerminalSession {
                 let mut held = Duration::ZERO;
                 loop {
                     let wait = last_refresh.map_or(Duration::ZERO, |at| refresh_wait(
-                        Duration::from_nanos(pacing.load(Ordering::Relaxed)),
+                        current_refresh_interval(pacing.load(Ordering::Relaxed), since(&typed)),
                         suspended.load(Ordering::Relaxed), at.elapsed()));
                     if wait.is_zero() { break; }
                     let delay = cx.background_executor().timer(wait).fuse();
@@ -877,6 +911,7 @@ impl TerminalSession {
             started_at: now,
             render_suspended,
             refresh_interval_ns,
+            last_input_at,
             refresh_wake,
             input_history: Default::default(),
             native_prompt_history: false,
@@ -959,8 +994,9 @@ impl TerminalSession {
             "pending_output_age_basis":"time since the first buffered PTY output was captured; includes deliberate pacing",
             "pending_input_capacity_bytes":pending_input, "restoration_preview_capacity_bytes":preview,
             "known_session_capacity_bytes":grid_cells.saturating_add(clusters).saturating_add(output_capacity).saturating_add(pending_input).saturating_add(preview),
-            "refresh_cap_interval_ms":self.refresh_interval_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0,
+            "refresh_cap_interval_ms":current_refresh_interval(self.refresh_interval_ns.load(Ordering::Relaxed), None).as_secs_f64() * 1000.0,
             "display_native_refresh":self.refresh_interval_ns.load(Ordering::Relaxed) == 0,
+            "adaptive_refresh":(self.refresh_interval_ns.load(Ordering::Relaxed) == adaptive_refresh::ADAPTIVE_NS).then(adaptive_refresh::diagnostics),
             "refresh_interactive":self.poll_interactive.load(Ordering::Relaxed),
             "pty_readiness_max_wait_ms":serde_json::Value::Null,
             "pty_readiness_wait":"event_driven",
@@ -2384,6 +2420,8 @@ impl TerminalSession {
         }
         self.restore_input_generation
             .set(self.restore_input_generation.get().wrapping_add(1));
+        self.last_input_at
+            .store(clock(Instant::now()).to_bits(), Ordering::Relaxed);
         // Password prompts only: Swift checks ECHO alone, which line editors
         // (readline, ZLE) also clear, so every typed command looked secret.
         let echo_disabled = Chau7Terminal::password_input_on_fd(self.echo_fd);
@@ -2675,8 +2713,7 @@ impl TerminalSession {
         active: ActivePollingRateCap,
         inactive_fps: u32,
     ) {
-        let interval = refresh_interval(interactive, active, inactive_fps);
-        let ns = interval.as_nanos().min(u128::from(u64::MAX)) as u64;
+        let ns = refresh_cap_ns(interactive, active, inactive_fps);
         let focus_changed =
             self.poll_interactive.swap(interactive, Ordering::Relaxed) != interactive;
         if self.refresh_interval_ns.swap(ns, Ordering::Relaxed) != ns || focus_changed {
@@ -3554,6 +3591,41 @@ mod refresh_pacing_tests {
         assert_eq!(
             refresh_interval(false, ActivePollingRateCap::Hz60, u32::MAX),
             Duration::from_secs_f64(1.0 / 120.0)
+        );
+    }
+    #[test]
+    fn adaptive_cap_applies_to_the_focused_view_only_and_lets_echo_through() {
+        let adaptive = ActivePollingRateCap::Adaptive;
+        assert_eq!(
+            refresh_cap_ns(true, adaptive, 30),
+            adaptive_refresh::ADAPTIVE_NS
+        );
+        // Hidden and unfocused views keep their own fixed cap.
+        assert_eq!(
+            Duration::from_nanos(refresh_cap_ns(false, adaptive, 30)),
+            Duration::from_secs_f64(1.0 / 30.0)
+        );
+        let paced = current_refresh_interval(adaptive_refresh::ADAPTIVE_NS, None);
+        assert!(
+            [120.0, 60.0, 30.0]
+                .iter()
+                .any(|hz| paced == Duration::from_secs_f64(1.0 / hz))
+        );
+        assert_eq!(
+            current_refresh_interval(
+                adaptive_refresh::ADAPTIVE_NS,
+                Some(Duration::from_millis(20))
+            ),
+            Duration::ZERO
+        );
+        assert_eq!(
+            current_refresh_interval(adaptive_refresh::ADAPTIVE_NS, Some(Duration::from_secs(1))),
+            paced
+        );
+        // A fixed cap ignores typing.
+        assert_eq!(
+            current_refresh_interval(5_000_000, Some(Duration::ZERO)),
+            Duration::from_millis(5)
         );
     }
     #[test]

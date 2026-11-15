@@ -3197,6 +3197,7 @@
 "urlHandler.system" = "Predeterminado del sistema";
 
 // MARK: - Active Polling Rate Cap
+"activePollingRateCap.adaptive" = "Adaptativo";
 "activePollingRateCap.displayNative" = "Nativa de pantalla";
 "activePollingRateCap.hz60" = "60 Hz";
 "activePollingRateCap.hz30" = "30 Hz";

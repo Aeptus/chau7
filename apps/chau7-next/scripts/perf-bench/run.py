@@ -346,6 +346,9 @@ def run(args, result, home, log):
     phase_file = prepare_home(home, args, port)
     env = {k: v for k, v in os.environ.items() if not k.startswith(("CHAU7_", "ANTHROPIC_", "OPENAI_"))}
     env.update(CHAU7_NEXT_HOME_ROOT=str(home), CHAU7_NEXT_ISOLATED_TEST_MODE="1")
+    if args.refresh_hz:
+        # Pins the adaptive refresh tier; builds without it ignore the variable.
+        env["CHAU7_NEXT_REFRESH_HZ"] = str(args.refresh_hz)
     app = subprocess.Popen([str(args.binary)], env=env, stdout=log, stderr=log, start_new_session=True)
     mcp = None
     try:
@@ -409,6 +412,13 @@ def main():
     parser.add_argument("--tabs", type=int, default=0, help="additional hidden tabs; start with one total tab")
     parser.add_argument("--hz", type=float, default=3)
     parser.add_argument("--input-hz", type=float, default=0, help="opt-in synthetic MCP input rate, at most 1 Hz")
+    parser.add_argument(
+        "--refresh-hz",
+        type=int,
+        choices=(0, 30, 60, 120),
+        default=0,
+        help="pin the app's adaptive refresh tier; 0 leaves it to host load",
+    )
     parser.add_argument(
         "--scroll-lines",
         type=int,

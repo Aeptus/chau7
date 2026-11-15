@@ -135,6 +135,11 @@ the bottom panel and adds three transcript lines every two seconds, like an
 agent thinking. Compare a renderer change under both: rows that stay in place
 and rows that move exercise different caches.
 
+`--refresh-hz 30|60|120` pins the app's adaptive refresh tier, which otherwise
+follows host CPU load (60 Hz from 50% busy, 30 Hz from 90%). The lab cannot
+load the host to reach a tier, and its safety limits stop a capture above 75%.
+The app honours the pin only in isolated test mode.
+
 ## Measurement contract
 
 `native.py` calls macOS `proc_pid_rusage` v4 directly once per second for each
