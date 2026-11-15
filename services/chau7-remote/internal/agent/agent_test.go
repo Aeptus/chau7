@@ -288,6 +288,9 @@ func TestConfirmPendingPairPersistsOnlyTheProvenIdentity(t *testing.T) {
 	if a.currentPeerID != device.ID {
 		t.Fatal("expected the trusted peer to become current after proof")
 	}
+	if a.pairingCode == "424242" {
+		t.Fatal("a pairing code that admitted a new phone must not stay valid")
+	}
 }
 
 func TestConfirmPendingPairRefusesIdentityNotProvenByHandshake(t *testing.T) {
@@ -393,6 +396,52 @@ func TestHandleHelloCannotDisplaceTrustedPeerWithUnknownIdentity(t *testing.T) {
 
 	if a.crypto != originalCrypto || !bytes.Equal(a.iosNonce, iosNonce) {
 		t.Fatal("an unknown identity must not invalidate the trusted peer epoch")
+	}
+}
+
+// A second phone (or a phone with a regenerated key) pairs while another
+// identity is still current on this relay connection. Its HELLO is not yet
+// persisted, but it is the identity the pairing code just admitted.
+func TestNewPhoneCanPairWhileAnotherIdentityIsCurrent(t *testing.T) {
+	a, _, _ := makeHandshakeTestAgent(t)
+	a.pairingCode = "123456"
+	a.pairingExpires = time.Now().Add(time.Minute)
+	newPrivate := bytes.Repeat([]byte{0x53}, 32)
+	newPublic, err := curve25519.X25519(newPrivate, curve25519.Basepoint)
+	if err != nil {
+		t.Fatalf("derive new iOS public key: %v", err)
+	}
+	newPub := base64.StdEncoding.EncodeToString(newPublic)
+	newNonce := bytes.Repeat([]byte{0xD4}, 16)
+	hello, err := json.Marshal(HelloPayload{
+		DeviceID: "mac-device",
+		Role:     "ios",
+		Nonce:    base64.StdEncoding.EncodeToString(newNonce),
+		PubKeyFP: fingerprintBytes(newPublic),
+	})
+	if err != nil {
+		t.Fatalf("marshal hello: %v", err)
+	}
+	request, err := json.Marshal(PairRequestPayload{
+		DeviceID:    "mac-device",
+		PairingCode: "123456",
+		IOSPub:      newPub,
+		IOSName:     "New Phone",
+	})
+	if err != nil {
+		t.Fatalf("marshal pair request: %v", err)
+	}
+
+	// iOS sends HELLO then PAIR_REQUEST, and repeats both every second.
+	a.handleHello(context.Background(), hello)
+	a.handlePairRequest(context.Background(), request)
+	a.handleHello(context.Background(), hello)
+
+	if !bytes.Equal(a.iosNonce, newNonce) {
+		t.Fatal("the HELLO of the identity being paired must be accepted")
+	}
+	if a.crypto == nil {
+		t.Fatal("the new phone's handshake must reach a crypto session")
 	}
 }
 

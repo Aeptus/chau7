@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Make terminal text reach the iPhone sooner and with far less data: the Mac sends the first output after a pause immediately, stops sending full-screen grids the phone does not use or already has, tells the phone the terminal size and when a full-screen program is running, and answers the phone's request to resend a tab.
+
+- Fix pairing a second iPhone, or re-pairing with a new key, which timed out while another phone had been connected. A pairing code now stops working once it has paired a phone.
+
+- Keep terminal output and input flowing to the iPhone while the relay is slow to answer notification and approval requests; deliver input rejections and terminal size to the phone; stop large pastes and oversized frames from dropping the relay connection.
+
 - Make the performance lab's synthetic input reach the app by sending it to a tab the lab created.
 
 - Let the performance comparison gate target the time terminal output waits before processing, measured over the whole trial phase.

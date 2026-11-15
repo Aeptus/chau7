@@ -269,6 +269,21 @@ impl HostEnv for GpuiEnv<'_> {
         let entity = self.main_session(key)?;
         Some(entity.read(self.cx).id)
     }
+    fn terminal_size(
+        &mut self,
+        key: TabKey,
+    ) -> Option<chau7_next_core::remote::models::RemoteTerminalSizePayload> {
+        let entity = self.main_session(key)?;
+        let session = entity.read(self.cx);
+        let (cols, rows) = (u32::from(session.grid.cols), u32::from(session.grid.rows));
+        (cols > 0 && rows > 0).then(
+            || chau7_next_core::remote::models::RemoteTerminalSizePayload {
+                cols,
+                rows,
+                alternate_screen_active: Some(session.is_alternate_screen_active()),
+            },
+        )
+    }
 
     fn pane_text(&mut self, key: TabKey, pane_id: u64) -> Option<String> {
         let session = self
