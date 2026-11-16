@@ -106,6 +106,7 @@ fn main() {
         std::process::exit(code);
     }
     clean_inherited_environment();
+    platform::process::raise_open_file_limit();
     let root = DataRoot::from_env();
     if let Some(code) = migration::swift_restore::run_cli_if_requested(&root) {
         std::process::exit(code);
