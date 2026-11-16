@@ -850,7 +850,8 @@ pub(crate) fn status(tab_id: &str, ctx: &ToolContext) -> String {
                     "pid": p.pid,
                     "name": p.name,
                     "cpu_percent": p.cpu_percent,
-                    "rss_bytes": p.rss_bytes
+                    "rss_bytes": p.rss_bytes,
+                    "footprint_bytes": p.footprint_bytes
                 })
             })
             .collect();

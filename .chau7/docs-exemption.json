@@ -1,6 +1,6 @@
 {
-  "reason": "Formatting only: a test helper's struct field is moved onto its own line after a merge. No behaviour changes; the user-visible changes of this branch are documented in the preceding commits.",
+  "reason": "Dead code removal only: drops ProcessSnapshot::total_rss, which nothing calls now that the hover card uses total_memory. No behaviour changes; the user-visible change of this branch is documented in the preceding commit's CHANGELOG entry.",
   "paths": [
-    "apps/chau7-next/crates/chau7_next/src/settings_window/remote.rs"
+    "apps/chau7-next/crates/chau7_next/src/monitoring/processes.rs"
   ]
 }
