@@ -2227,6 +2227,18 @@ pub struct DispatchEventResult {
     pub default_prevented: bool,
 }
 
+/// The window state text and quad painting reads besides its own arguments.
+/// See [`Window::paint_context`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PaintContext {
+    scale_factor: f32,
+    opacity: f32,
+    content_mask: ContentMask<ScaledPixels>,
+    opaque: bool,
+    subpixel_supported: bool,
+    rendering_mode: TextRenderingMode,
+}
+
 /// Indicates which region of the window is visible. Content falling outside of this mask will not be
 /// rendered. Currently, only rectangular content masks are supported, but we give the mask its own type
 /// to leave room to support more complex shapes in the future.
@@ -4917,6 +4929,40 @@ impl Window {
         };
 
         mode == TextRenderingMode::Subpixel
+    }
+
+    /// Everything outside a primitive's own inputs that decides what painting
+    /// emits. Recorded primitives may be replayed only under an equal context.
+    pub fn paint_context(&self) -> PaintContext {
+        PaintContext {
+            scale_factor: self.scale_factor(),
+            opacity: self.element_opacity(),
+            content_mask: self.snapped_content_mask(),
+            opaque: self.platform_window.background_appearance()
+                == WindowBackgroundAppearance::Opaque,
+            subpixel_supported: self.platform_window.is_subpixel_rendering_supported(),
+            rendering_mode: self.text_rendering_mode.get(),
+        }
+    }
+
+    /// A position in this frame's paint list, for [`Window::record_since`].
+    pub fn paint_mark(&self) -> usize {
+        self.invalidator.debug_assert_paint();
+        self.next_frame.scene.len()
+    }
+
+    /// What was painted since `mark`, layers included; `None` if `mark` is
+    /// past the end of this frame's paint list.
+    pub fn record_since(&self, mark: usize) -> Option<crate::PaintRecording> {
+        self.next_frame.scene.record_since(mark)
+    }
+
+    /// Paint a recording made by [`Window::record_since`] at the current
+    /// z-index. The caller guarantees the [`PaintContext`] and every input of
+    /// the original paint calls are unchanged.
+    pub fn replay_recording(&mut self, recording: &crate::PaintRecording) {
+        self.invalidator.debug_assert_paint();
+        self.next_frame.scene.replay_recording(recording);
     }
 
     /// Paints an emoji glyph into the scene for the next frame at the current z-index.

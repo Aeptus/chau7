@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // Shared wire payloads for the remote-control protocol.
@@ -25,6 +26,14 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
     /// but cannot connect until replaced by a provisioned v3 pairing.
     public var relaySecret: String?
     public var relayKeyID: String?
+    /// Base64 secret from the QR that a pair request proves without sending.
+    /// Absent in a QR from a Mac older than the pairing proof.
+    public var pairingKey: String?
+    /// A relay credential that works only until `expiresAt`, used to reach the
+    /// Mac for pairing. The Mac then sends this phone a credential of its own.
+    /// Absent when the relay has no per-phone credentials.
+    public var relayPairID: String?
+    public var relayPairSecret: String?
 
     public init(
         relayURL: String,
@@ -33,7 +42,10 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
         pairingCode: String,
         expiresAt: String,
         relaySecret: String? = nil,
-        relayKeyID: String? = nil
+        relayKeyID: String? = nil,
+        pairingKey: String? = nil,
+        relayPairID: String? = nil,
+        relayPairSecret: String? = nil
     ) {
         self.relayURL = relayURL
         self.deviceID = deviceID
@@ -42,6 +54,9 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
         self.expiresAt = expiresAt
         self.relaySecret = relaySecret
         self.relayKeyID = relayKeyID
+        self.pairingKey = pairingKey
+        self.relayPairID = relayPairID
+        self.relayPairSecret = relayPairSecret
     }
 
     enum CodingKeys: String, CodingKey {
@@ -52,6 +67,47 @@ public struct RemotePairingPayload: Codable, Equatable, Sendable {
         case expiresAt = "expires_at"
         case relaySecret = "relay_secret"
         case relayKeyID = "relay_key_id"
+        case pairingKey = "pairing_key"
+        case relayPairID = "relay_pair_id"
+        case relayPairSecret = "relay_pair_secret"
+    }
+}
+
+/// `RELAY_CREDENTIAL` (0x45): the relay credential the Mac made for this phone
+/// alone. Removing the phone on the Mac makes the relay refuse it.
+public struct RemoteRelayCredentialPayload: Codable, Equatable, Sendable {
+    public let phoneID: String
+    public let relaySecret: String
+    public let relayKeyID: String
+
+    public init(phoneID: String, relaySecret: String, relayKeyID: String) {
+        self.phoneID = phoneID
+        self.relaySecret = relaySecret
+        self.relayKeyID = relayKeyID
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case phoneID = "phone_id"
+        case relaySecret = "relay_secret"
+        case relayKeyID = "relay_key_id"
+    }
+
+    public var isWellFormed: Bool {
+        RelayToken.isValidIdentifier(phoneID, maximum: 32)
+            && RelayToken.isValidIdentifier(relayKeyID, maximum: 32)
+            && RelayToken.isStrongCredential(relaySecret)
+    }
+}
+
+/// A phone's own relay credential as kept in the Keychain, tied to the Mac
+/// that issued it.
+public struct RemotePhoneRelayCredential: Codable, Equatable, Sendable {
+    public let deviceID: String
+    public let credential: RemoteRelayCredentialPayload
+
+    public init(deviceID: String, credential: RemoteRelayCredentialPayload) {
+        self.deviceID = deviceID
+        self.credential = credential
     }
 }
 
@@ -82,20 +138,53 @@ public struct RemoteHelloPayload: Codable, Equatable, Sendable {
 
 public struct RemotePairRequestPayload: Codable, Equatable, Sendable {
     public let deviceID: String
-    public let pairingCode: String
+    /// Sent only to a Mac older than the pairing proof. This frame crosses
+    /// the relay in cleartext, so a current Mac is never sent the code.
+    public let pairingCode: String?
+    /// Proof that this phone scanned the QR; see `proof(...)`.
+    public let pairingProof: String?
     public let iosPub: String
     public let iosName: String
 
-    public init(deviceID: String, pairingCode: String, iosPub: String, iosName: String) {
+    public init(
+        deviceID: String, pairingCode: String?, pairingProof: String? = nil, iosPub: String, iosName: String
+    ) {
         self.deviceID = deviceID
         self.pairingCode = pairingCode
+        self.pairingProof = pairingProof
         self.iosPub = iosPub
         self.iosName = iosName
+    }
+
+    /// The request for a scanned pairing: a proof when the QR carried a
+    /// pairing key, otherwise the legacy code for an older Mac.
+    public init(pairing: RemotePairingPayload, iosPub: String, iosName: String) {
+        let proof = Self.proof(pairing: pairing, iosPub: iosPub)
+        self.init(
+            deviceID: pairing.deviceID,
+            pairingCode: proof == nil ? pairing.pairingCode : nil,
+            pairingProof: proof,
+            iosPub: iosPub,
+            iosName: iosName
+        )
+    }
+
+    /// base64(HMAC-SHA256(pairing_key, "chau7-pair-v2" 0x00 device_id 0x00
+    /// ios_pub 0x00 pairing_code)). It covers the iOS key, so whoever forwards
+    /// the request cannot substitute its own. `nil` without a 32-byte key.
+    public static func proof(pairing: RemotePairingPayload, iosPub: String) -> String? {
+        guard let encoded = pairing.pairingKey, let key = Data(base64Encoded: encoded), key.count == 32 else {
+            return nil
+        }
+        let message = ["chau7-pair-v2", pairing.deviceID, iosPub, pairing.pairingCode].joined(separator: "\u{0}")
+        let code = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: SymmetricKey(data: key))
+        return Data(code).base64EncodedString()
     }
 
     enum CodingKeys: String, CodingKey {
         case deviceID = "device_id"
         case pairingCode = "pairing_code"
+        case pairingProof = "pairing_proof"
         case iosPub = "ios_pub"
         case iosName = "ios_name"
     }

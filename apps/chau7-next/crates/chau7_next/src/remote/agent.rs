@@ -223,6 +223,42 @@ pub fn binary_path(root: &DataRoot) -> Result<PathBuf, String> {
     Err(build_error.unwrap_or_else(|| "Remote agent binary not found.".into()))
 }
 
+/// How the agent process ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentExit {
+    /// It exited with this status.
+    Code(i32),
+    /// This signal ended it.
+    Signal(i32),
+    /// The system did not say.
+    Unknown,
+}
+
+impl AgentExit {
+    fn from_parts(code: Option<i32>, signal: Option<i32>) -> Self {
+        match (code, signal) {
+            (Some(code), _) => Self::Code(code),
+            (None, Some(signal)) => Self::Signal(signal),
+            (None, None) => Self::Unknown,
+        }
+    }
+
+    /// A clean exit (status 0) is not reported as an error.
+    pub fn is_failure(self) -> bool {
+        self != Self::Code(0)
+    }
+}
+
+impl std::fmt::Display for AgentExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Code(code) => write!(f, "exited with status {code}"),
+            Self::Signal(signal) => write!(f, "was ended by signal {signal}"),
+            Self::Unknown => write!(f, "ended for an unknown reason"),
+        }
+    }
+}
+
 /// A running agent.
 pub struct AgentProcess {
     child: Option<Child>,
@@ -265,23 +301,23 @@ impl AgentProcess {
         Ok(Self { child: Some(child) })
     }
 
-    /// `Some(status)` once the agent exited: its exit code, or the signal
-    /// that ended it (Swift `terminationStatus`).
-    pub fn try_exit(&mut self) -> Option<i32> {
+    /// `Some` once the agent exited: its exit status, or the signal that
+    /// ended it.
+    pub fn try_exit(&mut self) -> Option<AgentExit> {
         match self.child.as_mut()?.try_wait() {
             Ok(Some(status)) => {
                 #[cfg(unix)]
                 {
                     use std::os::unix::process::ExitStatusExt;
-                    Some(status.code().or(status.signal()).unwrap_or(-1))
+                    Some(AgentExit::from_parts(status.code(), status.signal()))
                 }
                 #[cfg(not(unix))]
                 {
-                    Some(status.code().unwrap_or(-1))
+                    Some(AgentExit::from_parts(status.code(), None))
                 }
             }
             Ok(None) => None,
-            Err(_) => Some(-1),
+            Err(_) => Some(AgentExit::Unknown),
         }
     }
 
@@ -495,6 +531,41 @@ mod tests {
         assert!(!error.contains(credentials["mac_secret"].as_str().unwrap()));
         assert!(error.contains(&root.remote_state_file().display().to_string()));
         std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn exit_reason_keeps_status_and_signal_apart() {
+        assert_eq!(AgentExit::from_parts(Some(0), None), AgentExit::Code(0));
+        assert_eq!(AgentExit::from_parts(Some(2), Some(9)), AgentExit::Code(2));
+        assert_eq!(AgentExit::from_parts(None, Some(9)), AgentExit::Signal(9));
+        assert_eq!(AgentExit::from_parts(None, None), AgentExit::Unknown);
+        assert!(!AgentExit::Code(0).is_failure());
+        assert!(AgentExit::Code(1).is_failure());
+        assert!(AgentExit::Signal(15).is_failure());
+        assert_eq!(AgentExit::Code(1).to_string(), "exited with status 1");
+        assert_eq!(AgentExit::Signal(9).to_string(), "was ended by signal 9");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_exited_agent_reports_how_it_ended() {
+        let child = |script: &str| AgentProcess {
+            child: Some(
+                Command::new("/bin/sh")
+                    .args(["-c", script])
+                    .stdin(Stdio::null())
+                    .spawn()
+                    .unwrap(),
+            ),
+        };
+        let wait = |mut agent: AgentProcess| loop {
+            if let Some(exit) = agent.try_exit() {
+                return exit;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        assert_eq!(wait(child("exit 3")), AgentExit::Code(3));
+        assert_eq!(wait(child("kill -TERM $$")), AgentExit::Signal(15));
     }
 
     #[test]
