@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Stop Chau7 (Next) from starting two `aethyme` processes every 30 seconds for each open repository whose Aethyme broker has had no activity. Before polling, Chau7 now checks whether the repository's broker database has changed, without starting a process. If the database has not been written for over five minutes, no PR watch is due and the last check found nothing, it skips the round, with one real check at least every five minutes. Repositories with broker activity are still checked every 30 seconds, so new deliveries arrive as quickly as before.
+
 - Fix new tabs failing with "could not start shell" once about 35 tabs were open. Each tab holds four terminal handles and Chau7 kept the macOS default of 256 open files; it now raises its own limit at startup. Shells started by Chau7 inherit the higher limit (`ulimit -n`).
 
 - Cap terminal refresh by how busy the computer is: 120 Hz normally, 60 Hz above 50% CPU and 30 Hz above 90%, with typed input still shown immediately. Background tabs refresh at 30 Hz. The fixed caps remain available in Settings.

@@ -7,6 +7,7 @@ use crate::mcp::{MainThread, windows};
 use chau7_next_core::{
     aethyme_delivery::{
         self as delivery, ClaimReport, Envelope, Readiness, TabSnapshot, Target, Watch,
+        quiet::{self, Decision, QuietRound, RoundOutcome},
     },
     session_restore::transaction::ContextRef,
     subprocess,
@@ -14,13 +15,13 @@ use chau7_next_core::{
 use gpui::{App, AppContext, Global, Task};
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 struct Monitor {
@@ -61,6 +62,7 @@ pub fn start(cx: &mut App) {
                 repos.sort();
                 repos.dedup();
                 runner.repositories.retain(&repos);
+                runner.quiet.retain(&repos);
                 let mut accepted = HashSet::new();
                 for root in repos {
                     if cancel.load(Ordering::Acquire) {
@@ -70,7 +72,15 @@ pub fn start(cx: &mut App) {
                     if runner.backing_off() {
                         continue;
                     }
-                    runner.run_root(&root, |target, prompt| {
+                    // Stamp before the first command: a write racing this
+                    // round then changes what the next round compares.
+                    let stamp_taken_at = SystemTime::now();
+                    let stamp = runner.idle_stamp(&root);
+                    if runner.skip_idle_round(&root, stamp.as_ref()) {
+                        continue;
+                    }
+                    let polled_at = Instant::now();
+                    let outcome = runner.run_root(&root, |target, prompt| {
                         if accepted.contains(&(target.tab_id, target.ai_session_id.clone())) {
                             return Readiness::Retry("target_tab_busy");
                         }
@@ -112,6 +122,10 @@ pub fn start(cx: &mut App) {
                         }
                         readiness
                     });
+                    runner.quiet.observe(
+                        &root,
+                        QuietRound::arm(stamp, stamp_taken_at, polled_at, outcome),
+                    );
                 }
             } else {
                 runner.log_unavailable("Aethyme Next delivery inactive: executable unavailable");
@@ -349,6 +363,7 @@ struct Runner {
     stopped: Arc<AtomicBool>,
     retry: delivery::RetryState,
     repositories: delivery::RepositoryRetries,
+    quiet: quiet::QuietRoots,
     logged_unavailable: bool,
     accepted: AcceptanceLedger,
 }
@@ -360,6 +375,7 @@ impl Runner {
             stopped,
             retry: delivery::RetryState::default(),
             repositories: delivery::RepositoryRetries::default(),
+            quiet: quiet::QuietRoots::default(),
             logged_unavailable: false,
             accepted: AcceptanceLedger::default(),
         }
@@ -368,6 +384,47 @@ impl Runner {
         self.retry
             .backoff
             .is_some_and(|until| until > Instant::now())
+    }
+    /// Stat the root's broker database (no process spawn), timed and counted
+    /// beside the subprocess captures so the stat cost stays visible.
+    fn idle_stamp(&self, root: &str) -> Option<quiet::StoreStamp> {
+        let mut work =
+            chau7_next_core::work_profiler::begin(chau7_next_core::work_profiler::Key::work(
+                "aethyme.delivery",
+                "idle_stamp_stat",
+                "application",
+                "monitor.aethyme_delivery.stamp",
+                chau7_next_core::work_profiler::Queue::Background,
+            ));
+        work.items(1);
+        work.idle(false);
+        quiet::broker_db_path(Path::new(root)).and_then(|path| quiet::store_stamp(&path))
+    }
+    /// An idle root costs no spawn. Skipped rounds are counted under the same
+    /// operation as the captures they replace.
+    fn skip_idle_round(&self, root: &str, stamp: Option<&quiet::StoreStamp>) -> bool {
+        let decision = self.quiet.decide(
+            root,
+            stamp,
+            Instant::now(),
+            chrono::Utc::now().timestamp_millis(),
+        );
+        if decision == Decision::Skip {
+            chau7_next_core::work_profiler::record(
+                chau7_next_core::work_profiler::Key::work(
+                    "aethyme.delivery",
+                    "idle_round_skipped",
+                    "application",
+                    "monitor.aethyme_delivery.skip",
+                    chau7_next_core::work_profiler::Queue::Background,
+                ),
+                0.0,
+                0,
+                1,
+                true,
+            );
+        }
+        decision == Decision::Skip
     }
     fn log_unavailable(&mut self, message: &str) {
         if !self.logged_unavailable {
@@ -479,32 +536,48 @@ impl Runner {
         self.retry.backoff = None;
         Some(result)
     }
-    fn run_root(&mut self, root: &str, mut deliver: impl FnMut(&Target, &str) -> Readiness) {
+    /// Returns `Quiet` only when the list was read, no watch was due and the
+    /// first validated claim held no delivery; every other path is `Active`.
+    fn run_root(
+        &mut self,
+        root: &str,
+        mut deliver: impl FnMut(&Target, &str) -> Readiness,
+    ) -> RoundOutcome {
         let Some(watches) = self
             .run(root, delivery::list_watches(), CaptureKind::List)
             .and_then(|r| serde_json::from_slice::<Vec<Watch>>(&r.stdout).ok())
         else {
-            return;
+            return RoundOutcome::Active;
         };
         let now = chrono::Utc::now().timestamp_millis();
-        for watch in watches
+        let active: Vec<_> = watches
             .into_iter()
-            .filter(|w| w.id > 0 && w.status == "active" && w.next_poll_at.unwrap_or(0) <= now)
+            .filter(|w| w.id > 0 && w.status == "active")
+            .collect();
+        let next_watch_due_ms = active.iter().filter_map(|w| w.next_poll_at).min();
+        let mut quiet = true;
+        for watch in active
+            .iter()
+            .filter(|w| w.next_poll_at.unwrap_or(0) <= now)
             .take(4)
         {
+            quiet = false;
             let _ = self.run(root, delivery::poll_watch(watch.id), CaptureKind::Poll);
         }
         for _ in 0..4 {
             let Some(result) = self.run(root, delivery::claim(&self.worker), CaptureKind::Claim)
             else {
-                return;
+                return RoundOutcome::Active;
             };
             let envelope = serde_json::from_slice::<ClaimReport>(&result.stdout)
                 .ok()
                 .and_then(|report| report.validated(&self.worker).ok());
-            let Some(Some(envelope)) = envelope else {
-                return;
+            let envelope = match envelope {
+                Some(Some(envelope)) => envelope,
+                Some(None) if quiet => return RoundOutcome::Quiet { next_watch_due_ms },
+                _ => return RoundOutcome::Active,
             };
+            quiet = false;
             let target = Target::parse(&envelope.subscription.target);
             let key = target
                 .as_ref()
@@ -554,9 +627,10 @@ impl Runner {
                 self.accepted.confirmed(key);
             }
             if matches!(readiness, Readiness::Retry(_)) {
-                return;
+                return RoundOutcome::Active;
             }
         }
+        RoundOutcome::Active
     }
     fn complete(&mut self, root: &str, envelope: &Envelope, readiness: &Readiness) -> bool {
         let completed = self
@@ -717,6 +791,42 @@ esac
                 .iter()
                 .any(|c| c.contains("deliveries complete --id 7")
                     && c.contains("--generation 11 --outcome delivered"))
+        );
+    }
+    #[test]
+    fn only_a_listed_undue_and_empty_round_is_quiet() {
+        let mut f = Fixture::new("chau7-next:", None, false);
+        // Due watches and a claimed delivery make the round active.
+        assert_eq!(
+            f.runner
+                .run_root(f.root.to_str().unwrap(), |_, _| Readiness::Ready),
+            RoundOutcome::Active
+        );
+        let due = chrono::Utc::now().timestamp_millis() + 600_000;
+        std::fs::write(
+            f.root.join("watches.json"),
+            json!([{"id":1,"status":"active","next_poll_at":due},{"id":2,"status":"paused","next_poll_at":null}]).to_string(),
+        )
+        .unwrap();
+        // `claimed` exists now, so the fake claim returns no delivery.
+        assert_eq!(
+            f.runner
+                .run_root(f.root.to_str().unwrap(), |_, _| panic!("empty claim")),
+            RoundOutcome::Quiet {
+                next_watch_due_ms: Some(due)
+            }
+        );
+        let polls = f
+            .calls()
+            .iter()
+            .filter(|c| c.starts_with("broker advanced watch pr poll"))
+            .count();
+        assert_eq!(polls, 4, "the quiet round polled no watch");
+        std::fs::write(f.root.join("empty.json"), b"{\"adapter\":").unwrap();
+        assert_eq!(
+            f.runner
+                .run_root(f.root.to_str().unwrap(), |_, _| panic!("partial claim")),
+            RoundOutcome::Active
         );
     }
     #[test]
