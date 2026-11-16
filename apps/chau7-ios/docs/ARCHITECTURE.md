@@ -57,7 +57,7 @@ Disconnected → Connecting → Handshake → Encrypted → Active
             Reconnect (backoff)       Foreground Resume
 ```
 
-1. User pastes pairing JSON (relay URL, device ID, Mac public key, pairing code)
+1. User scans the Mac's pairing QR (relay URL, device ID, Mac public key, pairing code, expiry, relay credential)
 2. Connect WebSocket to `relay/{deviceID}?role=ios`
 3. Exchange Hello payloads (nonces) → derive shared secret
 4. Send PairRequest → receive PairAccept → session ready
@@ -137,9 +137,8 @@ change ends it. Activities auto-dismiss after completion (8s) or failure (20s).
 
 - `OnboardingView` runs once on first launch (gated by the `has_completed_onboarding`
   AppStorage flag) and routes the user into pairing.
-- `PairingSheetView` accepts the pairing payload three ways: scanning the Mac's QR
-  code via `QRScannerView` (AVFoundation), a one-tap "Paste & Pair" from the
-  clipboard, or manual entry. `PairingPayloadValidator` reports specific errors
+- `PairingSheetView` accepts the pairing payload by scanning the Mac's QR code
+  via `QRScannerView` (AVFoundation). `PairingPayloadValidator` reports specific errors
   (missing field, expired code, unreadable text).
 - When unpaired, the Terminal tab shows a `ContentUnavailableView` with a pairing
   call-to-action instead of an empty black surface.

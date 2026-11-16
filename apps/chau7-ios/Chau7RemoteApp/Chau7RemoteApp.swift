@@ -246,7 +246,9 @@ struct RemoteRootView: View {
         }
         .task {
             guard showsLaunchSplash else { return }
-            try? await Task.sleep(for: .milliseconds(1400))
+            // This task starts once the first screen is on screen behind the
+            // splash, so there is nothing left to wait for.
+            await Task.yield()
             withAnimation(.easeOut(duration: 0.25)) {
                 showsLaunchSplash = false
             }

@@ -11,11 +11,11 @@ use chau7_next_core::telemetry::remote_client_event::RemoteClientTelemetryEvent;
 use chrono::{DateTime, Utc};
 use gpui::{AnyWindowHandle, App, Entity};
 
-use super::host::{HostEnv, LastCommandInfo, PaneInfo, TabInfo, TabKey};
+use super::host::{HoldResolution, HostEnv, InputHold, LastCommandInfo, PaneInfo, TabInfo, TabKey};
 use super::snapshot;
 use crate::pane::PaneTree;
 use crate::terminal::session::TerminalSession;
-use crate::terminal::view::TerminalView;
+use crate::terminal::view::{GuardResolution, TerminalView};
 use crate::workspace::{AppData, Workspace};
 use chau7_next_core::remote::key_input::{InputStep, RemoteKey, key_steps, text_steps};
 
@@ -269,6 +269,21 @@ impl HostEnv for GpuiEnv<'_> {
         let entity = self.main_session(key)?;
         Some(entity.read(self.cx).id)
     }
+    fn terminal_size(
+        &mut self,
+        key: TabKey,
+    ) -> Option<chau7_next_core::remote::models::RemoteTerminalSizePayload> {
+        let entity = self.main_session(key)?;
+        let session = entity.read(self.cx);
+        let (cols, rows) = (u32::from(session.grid.cols), u32::from(session.grid.rows));
+        (cols > 0 && rows > 0).then(
+            || chau7_next_core::remote::models::RemoteTerminalSizePayload {
+                cols,
+                rows,
+                alternate_screen_active: Some(session.is_alternate_screen_active()),
+            },
+        )
+    }
 
     fn pane_text(&mut self, key: TabKey, pane_id: u64) -> Option<String> {
         let session = self
@@ -297,6 +312,42 @@ impl HostEnv for GpuiEnv<'_> {
         };
         let app_cursor = view.read(self.cx).session.read(self.cx).is_app_cursor();
         self.dispatch_steps(view, key_steps(keys, app_cursor))
+    }
+
+    fn input_hold(&mut self, key: TabKey, pane: Option<u64>) -> Option<InputHold> {
+        let hold = self.input_view(key, pane)?.read(self.cx).held_input()?;
+        let note = match (&hold.reason, &hold.pattern) {
+            (Some(reason), _) => reason.clone(),
+            (None, Some(pattern)) => format!("Matches the risky pattern `{pattern}`"),
+            (None, None) => "On the Mac's block list".to_string(),
+        };
+        Some(InputHold {
+            id: hold.id,
+            command: hold.command,
+            note,
+            blocked: hold.blocked,
+        })
+    }
+    fn resolve_input_hold(
+        &mut self,
+        key: TabKey,
+        pane: Option<u64>,
+        id: &str,
+        approved: bool,
+    ) -> HoldResolution {
+        let Some(view) = self.input_view(key, pane) else {
+            return HoldResolution::Gone;
+        };
+        let outcome = view.update(self.cx, |view, cx| {
+            view.resolve_guard_hold(id, approved, cx)
+        });
+        self.cache = None;
+        match outcome {
+            GuardResolution::Delivered => HoldResolution::Delivered,
+            GuardResolution::Dropped => HoldResolution::Dropped,
+            GuardResolution::Stale => HoldResolution::Stale,
+            GuardResolution::Gone => HoldResolution::Gone,
+        }
     }
 
     fn clear_persistent_style(&mut self, key: TabKey) {
