@@ -27,6 +27,256 @@ impl RepositoryRetries {
     }
 }
 
+/// Idle-repository round skipping.
+///
+/// Every input that can make `watch pr list` or `deliveries claim` return
+/// something new is either a write to the repository's broker database
+/// (`<main checkout>/.aethyme/broker.db` in WAL mode) or one of three
+/// time-driven transitions: a watch's `next_poll_at` coming due, a retried
+/// delivery's backoff elapsing (capped at 300 s), or a claim lease expiring
+/// (Chau7 claims for 120 s). A round may therefore be skipped while the
+/// database is byte-for-byte untouched, as long as no time-driven transition
+/// can be pending. Anything uncertain polls.
+pub mod quiet {
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant, SystemTime};
+
+    /// Hard upper bound between real rounds for a root, whatever the stamp
+    /// says. It bounds the delay of any transition this model misses, such as
+    /// a lease longer than [`SETTLED_AGE`] taken by a non-Chau7 worker.
+    pub const QUIET_MAX: Duration = Duration::from_secs(300);
+    /// A quiet round arms skipping only when the database was last written at
+    /// least this long before the round's stamp. Aethyme's retry backoff caps
+    /// at 300 s and Chau7's claim lease is 120 s, so after 300 s without a
+    /// write no backed-off or leased item can still be waiting on the clock:
+    /// an empty claim then proves only a write can produce a delivery. Ten
+    /// seconds of slack absorbs clock and round-timing skew.
+    pub const SETTLED_AGE: Duration = Duration::from_secs(310);
+    /// Environment that redirects which database or Git directory the CLI
+    /// child opens. When present, the file Chau7 would stat may not be the
+    /// one the child reads, so skipping is disabled.
+    const REDIRECTING_ENV: [&str; 4] = [
+        "AETHYME_BROKER_DB",
+        "AETHYME_GATE_BROKER_DATABASES",
+        "GIT_DIR",
+        "GIT_COMMON_DIR",
+    ];
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct FileStamp {
+        pub size: u64,
+        pub modified_ns: i128,
+        pub device: u64,
+        pub inode: u64,
+    }
+    impl FileStamp {
+        fn of(metadata: &std::fs::Metadata) -> Option<Self> {
+            let modified = metadata.modified().ok()?;
+            let modified_ns = modified
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .ok()?
+                .as_nanos()
+                .try_into()
+                .ok()?;
+            #[cfg(unix)]
+            let (device, inode) = {
+                use std::os::unix::fs::MetadataExt;
+                (metadata.dev(), metadata.ino())
+            };
+            #[cfg(not(unix))]
+            let (device, inode) = (0, 0);
+            Some(Self {
+                size: metadata.len(),
+                modified_ns,
+                device,
+                inode,
+            })
+        }
+    }
+
+    /// Change stamp of a WAL-mode SQLite database. An absent or empty `-wal`
+    /// holds no frames, so both are recorded as `None`: committed data is then
+    /// entirely in the main file, and a checkpoint that empties the WAL
+    /// rewrites the main file first. Read-only CLI commands create and remove
+    /// an empty `-wal` without writing, which must not look like a change.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct StoreStamp {
+        pub database: FileStamp,
+        pub wal: Option<FileStamp>,
+    }
+    impl StoreStamp {
+        pub fn newest_modified_ns(&self) -> i128 {
+            self.wal.map_or(self.database.modified_ns, |wal| {
+                wal.modified_ns.max(self.database.modified_ns)
+            })
+        }
+    }
+
+    /// The broker database the CLI opens for a canonical repository root, or
+    /// `None` when that cannot be established without running Git.
+    pub fn broker_db_path(repository_root: &Path) -> Option<PathBuf> {
+        if REDIRECTING_ENV
+            .iter()
+            .any(|name| std::env::var_os(name).is_some())
+        {
+            return None;
+        }
+        main_checkout(repository_root).map(|main| main.join(".aethyme/broker.db"))
+    }
+
+    /// Aethyme keeps broker state in the parent of the Git common directory.
+    /// Only the standard layouts (`<root>/.git` directory, or a linked
+    /// worktree whose `.git` file names a gitdir with a `commondir`) whose
+    /// common directory is named `.git` are recognised.
+    fn main_checkout(root: &Path) -> Option<PathBuf> {
+        let dot_git = root.join(".git");
+        let metadata = std::fs::symlink_metadata(&dot_git).ok()?;
+        let common = if metadata.is_dir() {
+            dot_git
+        } else if metadata.is_file() {
+            let text = std::fs::read_to_string(&dot_git).ok()?;
+            let gitdir = root.join(text.strip_prefix("gitdir:")?.trim());
+            let commondir = std::fs::read_to_string(gitdir.join("commondir")).ok()?;
+            gitdir.join(commondir.trim())
+        } else {
+            return None;
+        };
+        let common = std::fs::canonicalize(common).ok()?;
+        if common.file_name()? != ".git" {
+            return None;
+        }
+        common.parent().map(Path::to_path_buf)
+    }
+
+    /// Stat the database and its `-wal` sibling; no process is spawned. Any
+    /// error other than an absent `-wal` yields `None`, which means poll.
+    pub fn store_stamp(database: &Path) -> Option<StoreStamp> {
+        let main = FileStamp::of(&std::fs::metadata(database).ok()?)?;
+        let mut wal_path = database.as_os_str().to_owned();
+        wal_path.push("-wal");
+        let wal = match std::fs::metadata(PathBuf::from(wal_path)) {
+            Ok(metadata) if metadata.len() == 0 => None,
+            Ok(metadata) => Some(FileStamp::of(&metadata)?),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => return None,
+        };
+        Some(StoreStamp {
+            database: main,
+            wal,
+        })
+    }
+
+    /// What a completed round established about its root.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum RoundOutcome {
+        /// The watch list was read, no watch was due, and a validated claim
+        /// returned no delivery. `next_watch_due_ms` is the earliest
+        /// `next_poll_at` among active watches.
+        Quiet { next_watch_due_ms: Option<i64> },
+        /// Anything else: a failure, a timeout, a due watch, a delivery.
+        Active,
+    }
+
+    /// Evidence from the last real round that may justify skipping.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct QuietRound {
+        pub stamp: StoreStamp,
+        pub polled_at: Instant,
+        pub next_watch_due_ms: Option<i64>,
+    }
+    impl QuietRound {
+        /// `stamp` must be taken before the round's first command, so a write
+        /// racing the round changes the stamp the next round compares.
+        pub fn arm(
+            stamp: Option<StoreStamp>,
+            stamp_taken_at: SystemTime,
+            polled_at: Instant,
+            outcome: RoundOutcome,
+        ) -> Option<Self> {
+            let RoundOutcome::Quiet { next_watch_due_ms } = outcome else {
+                return None;
+            };
+            let stamp = stamp?;
+            let taken_ns: i128 = stamp_taken_at
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .ok()?
+                .as_nanos()
+                .try_into()
+                .ok()?;
+            let settled = taken_ns
+                .checked_sub(stamp.newest_modified_ns())
+                .is_some_and(|age| age >= SETTLED_AGE.as_nanos() as i128);
+            settled.then_some(Self {
+                stamp,
+                polled_at,
+                next_watch_due_ms,
+            })
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Decision {
+        Skip,
+        Poll(&'static str),
+    }
+
+    /// Pure skip decision. `previous` is `None` for a root never polled or
+    /// whose last round was not an armed quiet round.
+    pub fn decide(
+        previous: Option<&QuietRound>,
+        current: Option<&StoreStamp>,
+        now: Instant,
+        now_ms: i64,
+    ) -> Decision {
+        let Some(previous) = previous else {
+            return Decision::Poll("no_quiet_round");
+        };
+        let Some(current) = current else {
+            return Decision::Poll("stamp_unavailable");
+        };
+        if *current != previous.stamp {
+            return Decision::Poll("store_changed");
+        }
+        if previous.next_watch_due_ms.is_some_and(|due| due <= now_ms) {
+            return Decision::Poll("watch_due");
+        }
+        match now.checked_duration_since(previous.polled_at) {
+            Some(elapsed) if elapsed < QUIET_MAX => Decision::Skip,
+            _ => Decision::Poll("quiet_period_elapsed"),
+        }
+    }
+
+    /// Per-root quiet evidence, kept beside the retry state.
+    #[derive(Default)]
+    pub struct QuietRoots {
+        rounds: std::collections::HashMap<String, QuietRound>,
+    }
+    impl QuietRoots {
+        pub fn decide(
+            &self,
+            root: &str,
+            current: Option<&StoreStamp>,
+            now: Instant,
+            now_ms: i64,
+        ) -> Decision {
+            decide(self.rounds.get(root), current, now, now_ms)
+        }
+        pub fn observe(&mut self, root: &str, armed: Option<QuietRound>) {
+            match armed {
+                Some(round) => {
+                    self.rounds.insert(root.into(), round);
+                }
+                None => {
+                    self.rounds.remove(root);
+                }
+            }
+        }
+        pub fn retain(&mut self, live: &[String]) {
+            self.rounds.retain(|root, _| live.contains(root));
+        }
+    }
+}
+
 /// Export only a static hint, never CLI stderr (which may contain user data).
 pub fn capture_stderr_hint(stderr: &[u8]) -> &'static str {
     let text = String::from_utf8_lossy(&stderr[..stderr.len().min(8192)]).to_ascii_lowercase();
@@ -327,6 +577,221 @@ mod tests {
         roots.retain(&["/fixture/b".into()]);
         roots.select("/fixture/a", &mut active);
         assert!(active.backoff.is_none());
+    }
+    mod quiet_rounds {
+        use super::super::quiet::*;
+        use std::time::{Duration, Instant, SystemTime};
+
+        const NOW_MS: i64 = 1_800_000_000_000;
+        fn stamp() -> StoreStamp {
+            StoreStamp {
+                database: FileStamp {
+                    size: 4096,
+                    modified_ns: 1_000_000_000_000_000_000,
+                    device: 1,
+                    inode: 2,
+                },
+                wal: None,
+            }
+        }
+        fn settled_at(stamp: &StoreStamp) -> SystemTime {
+            SystemTime::UNIX_EPOCH
+                + Duration::from_nanos(stamp.newest_modified_ns() as u64)
+                + SETTLED_AGE
+        }
+        fn armed(polled_at: Instant, next_watch_due_ms: Option<i64>) -> QuietRound {
+            let s = stamp();
+            QuietRound::arm(
+                Some(s),
+                settled_at(&s),
+                polled_at,
+                RoundOutcome::Quiet { next_watch_due_ms },
+            )
+            .expect("settled quiet round arms")
+        }
+
+        #[test]
+        fn unchanged_stamp_skips() {
+            let polled = Instant::now();
+            let round = armed(polled, Some(NOW_MS + 60_000));
+            assert_eq!(
+                decide(
+                    Some(&round),
+                    Some(&stamp()),
+                    polled + Duration::from_secs(30),
+                    NOW_MS
+                ),
+                Decision::Skip
+            );
+        }
+
+        #[test]
+        fn changed_size_mtime_inode_or_wal_polls() {
+            let polled = Instant::now();
+            let round = armed(polled, None);
+            let later = polled + Duration::from_secs(30);
+            let mut changes = Vec::new();
+            let mut s = stamp();
+            s.database.size += 1;
+            changes.push(s);
+            let mut s = stamp();
+            s.database.modified_ns += 1;
+            changes.push(s);
+            let mut s = stamp();
+            s.database.inode += 1;
+            changes.push(s);
+            let mut s = stamp();
+            s.wal = Some(FileStamp {
+                size: 32,
+                ..s.database
+            });
+            changes.push(s);
+            for changed in changes {
+                assert_eq!(
+                    decide(Some(&round), Some(&changed), later, NOW_MS),
+                    Decision::Poll("store_changed")
+                );
+            }
+        }
+
+        #[test]
+        fn due_watch_polls() {
+            let polled = Instant::now();
+            let round = armed(polled, Some(NOW_MS));
+            assert_eq!(
+                decide(
+                    Some(&round),
+                    Some(&stamp()),
+                    polled + Duration::from_secs(30),
+                    NOW_MS
+                ),
+                Decision::Poll("watch_due")
+            );
+        }
+
+        #[test]
+        fn quiet_period_exceeded_polls() {
+            let polled = Instant::now();
+            let round = armed(polled, None);
+            assert_eq!(
+                decide(Some(&round), Some(&stamp()), polled + QUIET_MAX, NOW_MS),
+                Decision::Poll("quiet_period_elapsed")
+            );
+            assert_eq!(
+                decide(
+                    Some(&round),
+                    Some(&stamp()),
+                    polled + QUIET_MAX - Duration::from_secs(1),
+                    NOW_MS
+                ),
+                Decision::Skip
+            );
+        }
+
+        #[test]
+        fn stat_failure_polls() {
+            let polled = Instant::now();
+            let round = armed(polled, None);
+            assert_eq!(
+                decide(Some(&round), None, polled + Duration::from_secs(30), NOW_MS),
+                Decision::Poll("stamp_unavailable")
+            );
+            assert!(
+                store_stamp(&std::env::temp_dir().join(format!(
+                    "chau7-next-missing-{}/broker.db",
+                    uuid::Uuid::new_v4()
+                )))
+                .is_none()
+            );
+        }
+
+        #[test]
+        fn previous_round_failed_or_first_round_polls() {
+            let s = stamp();
+            let polled = Instant::now();
+            assert_eq!(
+                QuietRound::arm(Some(s), settled_at(&s), polled, RoundOutcome::Active),
+                None
+            );
+            let mut roots = QuietRoots::default();
+            assert_eq!(
+                roots.decide("/repo", Some(&s), polled, NOW_MS),
+                Decision::Poll("no_quiet_round")
+            );
+            roots.observe("/repo", Some(armed(polled, None)));
+            let later = polled + Duration::from_secs(30);
+            assert_eq!(
+                roots.decide("/repo", Some(&s), later, NOW_MS),
+                Decision::Skip
+            );
+            roots.observe("/repo", None);
+            assert_eq!(
+                roots.decide("/repo", Some(&s), later, NOW_MS),
+                Decision::Poll("no_quiet_round")
+            );
+            roots.observe("/repo", Some(armed(polled, None)));
+            roots.retain(&[]);
+            assert_eq!(
+                roots.decide("/repo", Some(&s), later, NOW_MS),
+                Decision::Poll("no_quiet_round")
+            );
+        }
+
+        #[test]
+        fn recently_written_or_unstatted_store_does_not_arm() {
+            let s = stamp();
+            let polled = Instant::now();
+            let quiet = RoundOutcome::Quiet {
+                next_watch_due_ms: None,
+            };
+            let recent = settled_at(&s) - Duration::from_secs(1);
+            assert_eq!(QuietRound::arm(Some(s), recent, polled, quiet), None);
+            assert_eq!(QuietRound::arm(None, settled_at(&s), polled, quiet), None);
+            // A future modification time (clock skew) is never settled.
+            assert_eq!(
+                QuietRound::arm(Some(s), SystemTime::UNIX_EPOCH, polled, quiet),
+                None
+            );
+        }
+
+        #[test]
+        fn stamp_ignores_empty_wal_and_resolves_worktree_main_checkout() {
+            let base = std::env::temp_dir()
+                .join(format!("chau7-next-quiet-fixture-{}", uuid::Uuid::new_v4()));
+            let main = base.join("main");
+            let linked = base.join("linked");
+            let gitdir = main.join(".git/worktrees/linked");
+            std::fs::create_dir_all(&gitdir).unwrap();
+            std::fs::create_dir_all(main.join(".aethyme")).unwrap();
+            std::fs::create_dir_all(&linked).unwrap();
+            std::fs::write(gitdir.join("commondir"), "../..\n").unwrap();
+            std::fs::write(
+                linked.join(".git"),
+                format!("gitdir: {}\n", gitdir.display()),
+            )
+            .unwrap();
+            let main = std::fs::canonicalize(&main).unwrap();
+            let database = main.join(".aethyme/broker.db");
+            std::fs::write(&database, b"db").unwrap();
+            if std::env::var_os("AETHYME_BROKER_DB").is_none()
+                && std::env::var_os("AETHYME_GATE_BROKER_DATABASES").is_none()
+                && std::env::var_os("GIT_DIR").is_none()
+                && std::env::var_os("GIT_COMMON_DIR").is_none()
+            {
+                assert_eq!(broker_db_path(&linked), Some(database.clone()));
+                assert_eq!(broker_db_path(&main), Some(database.clone()));
+            }
+            let without_wal = store_stamp(&database).unwrap();
+            assert_eq!(without_wal.wal, None);
+            let wal = main.join(".aethyme/broker.db-wal");
+            std::fs::write(&wal, b"").unwrap();
+            assert_eq!(store_stamp(&database), Some(without_wal));
+            std::fs::write(&wal, b"frame").unwrap();
+            let with_frames = store_stamp(&database).unwrap();
+            assert_ne!(with_frames, without_wal);
+            assert_eq!(with_frames.wal.unwrap().size, 5);
+            std::fs::remove_dir_all(&base).unwrap();
+        }
     }
     #[test]
     fn stderr_hints_are_bounded_and_do_not_export_cli_text() {
