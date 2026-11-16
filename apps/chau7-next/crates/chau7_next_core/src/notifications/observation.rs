@@ -225,11 +225,18 @@ impl Observation {
     pub fn lifecycle(event: &AiEvent, now: DateTime<Utc>) -> Option<Self> {
         match canonical::normalize(event.raw_type.as_deref().unwrap_or(&event.event_type)).as_str()
         {
-            "session_start" | "sessionstart" | "user_prompt" | "userprompt" | "tool_start"
-            | "toolstart" | "process_started" | "processstarted" | "command_started"
-            | "commandstarted" => Some(Self::new(event, State::Running, now)),
+            "session_start" | "sessionstart" | "user_prompt" | "userprompt" | "turn_started"
+            | "turnstarted" | "tool_start" | "toolstart" | "process_started" | "processstarted"
+            | "command_started" | "commandstarted" => Some(Self::new(event, State::Running, now)),
             _ => None,
         }
+    }
+    /// The event opens a turn: the user sent a message or the provider began one.
+    pub fn starts_turn(event: &AiEvent) -> bool {
+        matches!(
+            canonical::normalize(event.raw_type.as_deref().unwrap_or(&event.event_type)).as_str(),
+            "user_prompt" | "userprompt" | "turn_started" | "turnstarted"
+        )
     }
     pub fn notification(event: &AiEvent, kind: Kind, now: DateTime<Utc>) -> Option<Self> {
         let state = match kind {
