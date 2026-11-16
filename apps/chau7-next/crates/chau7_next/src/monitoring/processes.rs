@@ -47,10 +47,6 @@ impl ProcessSnapshot {
         self.children.iter().map(|c| c.cpu_percent).sum()
     }
 
-    pub fn total_rss(&self) -> u64 {
-        self.children.iter().map(|c| c.rss_bytes).sum()
-    }
-
     /// Sum of [`ProcessRow::memory_bytes`] over the snapshot.
     pub fn total_memory(&self) -> u64 {
         self.children.iter().map(ProcessRow::memory_bytes).sum()
@@ -136,12 +132,10 @@ mod tests {
             }],
         };
         assert_eq!(s.after_poll(&busy), Duration::from_millis(750));
-        assert_eq!(busy.total_rss(), 2);
         // Without a footprint the resident size stands in; with one it wins.
         assert_eq!(busy.total_memory(), 2);
         let mut paged = busy.clone();
         paged.children[0].footprint_bytes = Some(40);
         assert_eq!(paged.total_memory(), 40);
-        assert_eq!(paged.total_rss(), 2);
     }
 }
