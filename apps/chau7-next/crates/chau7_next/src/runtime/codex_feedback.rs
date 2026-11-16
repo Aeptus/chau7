@@ -198,6 +198,12 @@ pub fn start(cx: &mut App) {
                         }) => {
                             manager().resolve_codex_input(&binding.tab, has_other_pending);
                             if !has_other_pending {
+                                // Answered: the tab no longer waits for the user.
+                                if let Some(found) = find_tab(&binding.tab, cx) {
+                                    found.window.workspace.update(cx, |workspace, cx| {
+                                        workspace.clear_persistent_style(found.tab, cx)
+                                    });
+                                }
                                 publish(
                                     &binding,
                                     "user_input_resolved",
@@ -274,8 +280,14 @@ fn poll(
                 Ok(records) => {
                     watch.tracker.lines_observed = reader.lines_observed;
                     for (record, catch_up) in records {
+                        if matches!(record, Record::Started(_)) {
+                            watch.tracker.start_turn();
+                        }
                         match record {
-                            Record::Prompt(_) | Record::Completed(_) => {
+                            Record::Prompt(_)
+                            | Record::Completed(_)
+                            | Record::Accepted(_)
+                            | Record::Replied(_) => {
                                 for action in watch.tracker.consume(record, now) {
                                     deliveries.push((binding.clone(), Delivery::Feedback(action)));
                                 }

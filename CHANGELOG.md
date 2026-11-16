@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fix Codex notifications and tab highlights going missing. Codex's hook names the shell it ran in, not the tab, so Chau7 took its events for another Chau7's and dropped them; they are now routed to the tab that owns that shell. Codex's newer questions (`request_user_input_async`) are now detected and stay pending until answered. A persistent "waiting" tab style is now cleared when the session starts working again (a new prompt or turn, tool activity after a wait for the next message, or an answered Codex question) instead of staying until the app restarts.
+
 - Fix new tabs failing with "could not start shell" once about 35 tabs were open. Each tab holds four terminal handles and Chau7 kept the macOS default of 256 open files; it now raises its own limit at startup. Shells started by Chau7 inherit the higher limit (`ulimit -n`).
 
 - Cap terminal refresh by how busy the computer is: 120 Hz normally, 60 Hz above 50% CPU and 30 Hz above 90%, with typed input still shown immediately. Background tabs refresh at 30 Hz. The fixed caps remain available in Settings.

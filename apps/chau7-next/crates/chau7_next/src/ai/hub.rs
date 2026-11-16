@@ -55,6 +55,9 @@ pub struct AiHub {
     pub claude: ClaudeSessionTracker,
     codex_candidates: Vec<Candidate>,
     claude_fallbacks: HashMap<String, Task<()>>,
+    /// The tab each AI session last reported from, by session id. Events
+    /// that carry no tab (idle, waiting fallback) are routed with it.
+    session_tabs: SessionTabs,
     pending_claude_starts: VecDeque<PendingClaudeStart>,
     seen_claude_starts: VecDeque<ClaudeStartKey>,
     conflicts: ConflictDetector<TabId>,
@@ -399,7 +402,15 @@ fn apply(batch: Batch, cx: &mut App) {
     }
     for line in batch.events {
         match parse_line(&line) {
-            Ok(event) => {
+            Ok(mut event) => {
+                // Hooks name the shell they ran in (`CHAU7_NEXT_TAB_ID`), which
+                // is not the tab's id. Unowned ids stay as they are, so events
+                // of another Chau7 instance are still dropped at delivery.
+                let owner = event.tab_id.and_then(|reported| {
+                    crate::terminal::session::reported_event_tab(reported, cx)
+                });
+                event.tab_id = routed_tab(event.tab_id, |_| owner);
+                remember_session_tab(event.session_id.as_deref(), owner, cx);
                 // Our own start/finish lines only feed the timeline.
                 let notify = event.source.raw_value() != AiEventSource::TERMINAL_SESSION;
                 events_out::publish(event, notify, cx);
@@ -428,6 +439,7 @@ fn apply(batch: Batch, cx: &mut App) {
         );
         event.directory = Some(session.cwd.clone()).filter(|d| !d.is_empty());
         event.session_id = Some(session.id.clone());
+        event.tab_id = session_tab(&session.id, cx);
         event.producer = Some("claude_code_idle".into());
         event.reliability = AiEventReliability::Authoritative;
         events_out::publish(event, true, cx);
@@ -535,6 +547,7 @@ fn handle_claude_event(
         .and_then(|tab| crate::terminal::session::reported_event_tab(tab, cx))
         .or(owned_tab)
         .or_else(|| crate::runtime::notification_tab_for_claude_session(&event.session_id, cx));
+    remember_session_tab(ai.session_id.as_deref(), ai.tab_id, cx);
     crate::remote::ingest_claude_event(&event, ai.tab_id.and_then(events_out::tab_from_uuid), cx);
     ai.producer = Some("claude_code_monitor".into());
     ai.reliability = AiEventReliability::Authoritative;
@@ -658,7 +671,8 @@ fn schedule_claude_fallback(event: ClaudeCodeEvent, cx: &mut App) {
             ai.notification_type = Some("idle_prompt".into());
             ai.directory = Some(event.cwd.clone()).filter(|d| !d.is_empty());
             ai.session_id = Some(session.clone());
-            ai.tab_id = crate::runtime::notification_tab_for_claude_session(&session, cx);
+            ai.tab_id = crate::runtime::notification_tab_for_claude_session(&session, cx)
+                .or_else(|| session_tab(&session, cx));
             ai.producer = Some("claude_response_complete_fallback".into());
             ai.reliability = AiEventReliability::Fallback;
             events_out::publish(ai, true, cx);
@@ -708,7 +722,11 @@ fn publish_history_notice(notice: HistoryNotice, cx: &mut App) {
         .directory
         .clone()
         .or_else(|| history_directory(&notice.tool, &notice.session_id, cx));
-    let event = history_notice_event(notice, directory);
+    let mut event = history_notice_event(notice, directory);
+    event.tab_id = event
+        .session_id
+        .as_deref()
+        .and_then(|session| session_tab(session, cx));
     events_out::publish(event, true, cx);
 }
 
@@ -989,5 +1007,109 @@ mod tests {
             io.poll(1, &home, history, vec![]).codex_candidates[0].session_id,
             "s1"
         );
+    }
+}
+
+/// Session id to the tab its events were last reported from.
+#[derive(Default)]
+struct SessionTabs(HashMap<String, Uuid>);
+
+impl SessionTabs {
+    const LIMIT: usize = 512;
+
+    fn remember(&mut self, session: &str, tab: Uuid, is_open: impl Fn(Uuid) -> bool) {
+        let session = session.trim();
+        if session.is_empty() {
+            return;
+        }
+        if self.0.len() >= Self::LIMIT && !self.0.contains_key(session) {
+            self.0.retain(|_, tab| is_open(*tab));
+            if self.0.len() >= Self::LIMIT {
+                self.0.clear();
+            }
+        }
+        self.0.insert(session.to_string(), tab);
+    }
+
+    /// The session's tab, unless that tab has been closed.
+    fn tab(&self, session: &str, is_open: impl Fn(Uuid) -> bool) -> Option<Uuid> {
+        self.0
+            .get(session.trim())
+            .copied()
+            .filter(|tab| is_open(*tab))
+    }
+}
+
+fn tab_is_open(tab: Uuid, cx: &App) -> bool {
+    events_out::tab_from_uuid(tab).is_some_and(|id| {
+        AppData::live(cx)
+            .iter()
+            .any(|(_, workspace)| workspace.read(cx).has_tab(id))
+    })
+}
+
+fn remember_session_tab(session: Option<&str>, tab: Option<Uuid>, cx: &mut App) {
+    let (Some(session), Some(tab)) = (session, tab) else {
+        return;
+    };
+    if !tab_is_open(tab, cx) {
+        return;
+    }
+    let open: std::collections::HashSet<Uuid> = cx
+        .global::<AiHub>()
+        .session_tabs
+        .0
+        .values()
+        .copied()
+        .filter(|tab| tab_is_open(*tab, cx))
+        .collect();
+    cx.global_mut::<AiHub>()
+        .session_tabs
+        .remember(session, tab, |tab| open.contains(&tab));
+}
+
+fn session_tab(session: &str, cx: &App) -> Option<Uuid> {
+    cx.global::<AiHub>()
+        .session_tabs
+        .tab(session, |tab| tab_is_open(tab, cx))
+}
+
+/// The tab an event is routed to: the tab owning the id a hook reported, or
+/// the reported id itself when no tab here owns it.
+fn routed_tab(
+    reported: Option<uuid::Uuid>,
+    owner: impl FnOnce(uuid::Uuid) -> Option<uuid::Uuid>,
+) -> Option<uuid::Uuid> {
+    reported.map(|reported| owner(reported).unwrap_or(reported))
+}
+
+#[cfg(test)]
+mod routed_tab_tests {
+    use super::{SessionTabs, routed_tab};
+    use uuid::Uuid;
+
+    #[test]
+    fn tabless_events_follow_the_tab_their_session_reported_from() {
+        let (first, second) = (Uuid::new_v4(), Uuid::new_v4());
+        let mut tabs = SessionTabs::default();
+        tabs.remember("session", first, |_| true);
+        assert_eq!(tabs.tab(" session ", |_| true), Some(first));
+        // A resumed session reports from its new tab.
+        tabs.remember("session", second, |_| true);
+        assert_eq!(tabs.tab("session", |_| true), Some(second));
+        // A closed tab is never named: the event would be dropped as foreign.
+        assert_eq!(tabs.tab("session", |tab| tab != second), None);
+        assert_eq!(tabs.tab("other", |_| true), None);
+        tabs.remember("  ", first, |_| true);
+        assert_eq!(tabs.0.len(), 1);
+    }
+
+    #[test]
+    fn hook_reported_shell_id_routes_to_its_tab_and_foreign_ids_are_kept() {
+        let (shell, tab, foreign) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let owner = |id| (id == shell).then_some(tab);
+        assert_eq!(routed_tab(Some(shell), owner), Some(tab));
+        assert_eq!(routed_tab(Some(foreign), owner), Some(foreign));
+        assert_eq!(routed_tab(None, owner), None);
     }
 }

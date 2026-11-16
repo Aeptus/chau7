@@ -181,6 +181,8 @@ fn record(event: AiEvent, notify: bool, log_it: bool, cx: &mut App) {
         }
         let mut event = event;
         event.message = sanitize_for_logging(&event.message, DEFAULT_LOG_MAX_LENGTH);
+        // A guessed tab may be the wrong one; only a named tab is cleared.
+        let named_tab = event.tab_id;
         if event.tab_id.is_none() {
             event.tab_id = routing::resolve(&event.tab_target(), cx);
         }
@@ -204,6 +206,14 @@ fn record(event: AiEvent, notify: bool, log_it: bool, cx: &mut App) {
             );
         }
         let observed_at = Utc::now();
+        // The session works again: a persistent "waiting" style is stale.
+        if center(cx)
+            .reconciler
+            .raw_event_ends_wait(&event, observed_at)
+            && let Some(tab) = named_tab
+        {
+            routing::clear_stale_waiting_style(tab, cx);
+        }
         let raw_note = center(cx).reconciler.observe_raw(&event, observed_at);
         if raw_note.is_some() {
             center(cx).suppression.reopen(&event);

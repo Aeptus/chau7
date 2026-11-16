@@ -65,6 +65,43 @@ impl Reconciler {
             event.normalized_type()
         ))
     }
+    /// Whether a raw event proves its session stopped waiting for the user,
+    /// so a persistent waiting style on its tab is stale. Call before
+    /// [`Self::observe_raw`], which records the session as running.
+    ///
+    /// A new prompt or turn always ends a wait. Tool activity ends one only
+    /// when the session was waiting for the next message: a tool can start
+    /// while another still waits for a permission answer.
+    pub fn raw_event_ends_wait(&self, event: &AiEvent, now: DateTime<Utc>) -> bool {
+        if event.reliability != AiEventReliability::Authoritative {
+            return false;
+        }
+        let Some(observation) = Observation::lifecycle(event, now) else {
+            return false;
+        };
+        if self.ambiguous(&observation) {
+            return false;
+        }
+        if Observation::starts_turn(event) {
+            return true;
+        }
+        let keys: BTreeSet<_> = observation
+            .aliases
+            .iter()
+            .filter_map(|alias| self.by_alias.get(&alias.key()))
+            .flatten()
+            .filter(|key| {
+                self.records
+                    .get(*key)
+                    .is_some_and(|record| Self::compatible(&observation, record))
+            })
+            .collect();
+        keys.len() == 1
+            && matches!(
+                self.records[*keys.first().unwrap()].state,
+                State::WaitingForInput | State::Idle
+            )
+    }
     pub fn reconcile(&mut self, accepted: &AcceptedEvent, now: DateTime<Utc>) -> Decision {
         let Some(mut o) =
             Observation::notification(&accepted.shared_event, accepted.canonical_event.kind, now)
@@ -347,6 +384,30 @@ mod tests {
     }
     fn emits(r: &mut Reconciler, e: &AiEvent, seconds: i64) -> bool {
         r.reconcile(&accepted(e), base() + Duration::seconds(seconds)) == Decision::Emit
+    }
+    fn raw(kind: &str, reliability: AiEventReliability) -> AiEvent {
+        let mut e = event(kind, reliability);
+        e.raw_type = Some(kind.into());
+        e
+    }
+    #[test]
+    fn new_turn_ends_any_wait_and_tool_activity_only_a_wait_for_the_next_message() {
+        let mut r = Reconciler::default();
+        let authoritative = AiEventReliability::Authoritative;
+        assert!(emits(&mut r, &event("waiting_input", authoritative), 0));
+        let now = base() + Duration::seconds(1);
+        assert!(r.raw_event_ends_wait(&raw("tool_start", authoritative), now));
+        assert!(r.raw_event_ends_wait(&raw("user_prompt", authoritative), now));
+        assert!(r.raw_event_ends_wait(&raw("turn_started", authoritative), now));
+        // Weak evidence and events that are not activity never clear a tab.
+        assert!(!r.raw_event_ends_wait(&raw("tool_start", AiEventReliability::Fallback), now));
+        assert!(!r.raw_event_ends_wait(&raw("tool_complete", authoritative), now));
+
+        let mut r = Reconciler::default();
+        assert!(emits(&mut r, &event("permission", authoritative), 0));
+        // Another tool may start while the permission prompt is still open.
+        assert!(!r.raw_event_ends_wait(&raw("tool_start", authoritative), now));
+        assert!(r.raw_event_ends_wait(&raw("user_prompt", authoritative), now));
     }
     #[test]
     fn duplicate_terminal_and_later_provider_turn_completion() {

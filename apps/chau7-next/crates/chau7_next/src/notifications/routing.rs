@@ -106,6 +106,15 @@ pub fn insert_snippet(tab: Uuid, snippet_id: &str, auto_execute: bool, cx: &mut 
         .unwrap_or(false)
 }
 
+/// The tab's session works again: drop a persistent style left by a prompt.
+/// Quiet for ids no tab has; raw events can name another instance's tab.
+pub fn clear_stale_waiting_style(tab: Uuid, cx: &mut App) -> bool {
+    let Some((_, ws, id)) = find(tab, cx) else {
+        return false;
+    };
+    ws.update(cx, |ws, cx| ws.clear_persistent_style(id, cx))
+}
+
 /// `clearPersistentNotificationStyleAcrossWindows`: the permission prompt
 /// was answered. For the AI event monitor (permission resolved).
 #[allow(dead_code)]
