@@ -17,6 +17,10 @@ pub struct Prompt {
 pub enum Record {
     Prompt(Prompt),
     Completed(String),
+    /// Codex showed an asynchronous question and now waits for its answer.
+    Accepted(String),
+    /// The user answered these asynchronous questions.
+    Replied(Vec<String>),
     Started(String),
     TurnCompleted(Option<String>),
     Usage {
@@ -36,7 +40,7 @@ pub fn prompt(questions: &Value, call_id: String) -> Option<Prompt> {
     let questions = questions.as_array()?;
     let messages: Vec<_> = questions
         .iter()
-        .filter_map(|q| text(&q["question"]))
+        .filter_map(|q| text(&q["question"]).or_else(|| text(&q["title"])))
         .collect();
     if messages.is_empty() {
         return None;
@@ -44,7 +48,7 @@ pub fn prompt(questions: &Value, call_id: String) -> Option<Prompt> {
     let options = questions
         .iter()
         .flat_map(|q| q["options"].as_array().into_iter().flatten())
-        .filter_map(|o| text(&o["label"]))
+        .filter_map(|o| text(&o["label"]).or_else(|| text(o)))
         .collect();
     Some(Prompt {
         call_id,
@@ -52,15 +56,75 @@ pub fn prompt(questions: &Value, call_id: String) -> Option<Prompt> {
         options,
     })
 }
+/// The question tool that returns before the user answers.
+const ASYNC_QUESTION_TOOL: &str = "request_user_input_async";
+const REPLY_OPEN: &str = "<send_user_message_question_reply>";
+const REPLY_CLOSE: &str = "</send_user_message_question_reply>";
+
+/// Call ids of the asynchronous questions a user message answers. Each answer
+/// names its question as `["request_user_input_async","<call id>",<index>]`.
+fn answered_questions(text: &str) -> Vec<String> {
+    let Some(body) = text
+        .split_once(REPLY_OPEN)
+        .and_then(|(_, rest)| rest.split_once(REPLY_CLOSE))
+        .map(|(body, _)| body)
+    else {
+        return Vec::new();
+    };
+    let Ok(Value::Array(answers)) = serde_json::from_str::<Value>(body.trim()) else {
+        return Vec::new();
+    };
+    let mut calls = Vec::new();
+    for answer in &answers {
+        let Some(item) = answer["questionItemId"]
+            .as_str()
+            .and_then(|id| serde_json::from_str::<Value>(id).ok())
+        else {
+            continue;
+        };
+        if item[0] == ASYNC_QUESTION_TOOL
+            && let Some(call) = self::text(&item[1])
+            && !calls.contains(&call)
+        {
+            calls.push(call);
+        }
+    }
+    calls
+}
+
 pub fn parse(line: &str) -> Option<Record> {
     let value: Value = serde_json::from_str(line).ok()?;
     let p = &value["payload"];
     match (value["type"].as_str()?, p["type"].as_str()?) {
-        ("response_item", "function_call") if p["name"] == "request_user_input" => {
+        ("response_item", "function_call")
+            if p["name"] == "request_user_input" || p["name"] == ASYNC_QUESTION_TOOL =>
+        {
             let args: Value = serde_json::from_str(p["arguments"].as_str()?).ok()?;
             prompt(&args["questions"], text(&p["call_id"])?).map(Record::Prompt)
         }
-        ("response_item", "function_call_output") => Some(Record::Completed(text(&p["call_id"])?)),
+        ("response_item", "function_call_output") => {
+            let call_id = text(&p["call_id"])?;
+            // An asynchronous question returns at once: this output only says
+            // it is on screen. Its answer arrives later as a user message.
+            let accepted = p["output"]
+                .as_str()
+                .and_then(|output| serde_json::from_str::<Value>(output).ok())
+                .is_some_and(|output| output["accepted"] == true);
+            Some(if accepted {
+                Record::Accepted(call_id)
+            } else {
+                Record::Completed(call_id)
+            })
+        }
+        ("response_item", "message") if p["role"] == "user" => {
+            let answered: Vec<_> = p["content"]
+                .as_array()?
+                .iter()
+                .filter_map(|part| part["text"].as_str())
+                .flat_map(answered_questions)
+                .collect();
+            (!answered.is_empty()).then_some(Record::Replied(answered))
+        }
         ("event_msg", "task_started") => Some(Record::Started(String::new())),
         ("event_msg", "task_complete") => {
             Some(Record::TurnCompleted(text(&p["last_agent_message"])))
@@ -123,18 +187,18 @@ impl Tracker {
                     Call::Pending(prompt, now_ms.saturating_add(250)),
                 );
             }
-            Record::Completed(id) if !matches!(self.calls.get(&id), Some(Call::Completed)) => {
+            // The question is on screen: announce it now. Only its reply ends it.
+            Record::Accepted(id) if matches!(self.calls.get(&id), Some(Call::Pending(..))) => {
                 self.structured_records_observed += 1;
-                let announced = matches!(self.calls.get(&id), Some(Call::Announced));
-                if !self.calls.contains_key(&id) {
-                    self.order.push_back(id.clone());
+                if let Some(Call::Pending(prompt, _)) = self.calls.insert(id, Call::Announced) {
+                    actions.push(Action::Prompt(prompt));
                 }
-                self.calls.insert(id.clone(), Call::Completed);
-                if announced {
-                    actions.push(Action::Resolved {
-                        call_id: id,
-                        has_other_pending: self.pending_count() > 0,
-                    });
+            }
+            Record::Accepted(id) if matches!(self.calls.get(&id), Some(Call::Announced)) => {}
+            Record::Completed(id) | Record::Accepted(id) => actions.extend(self.complete(id)),
+            Record::Replied(ids) => {
+                for id in ids {
+                    actions.extend(self.complete(id));
                 }
             }
             _ => (),
@@ -152,6 +216,28 @@ impl Tracker {
             }
         }
         actions
+    }
+    fn complete(&mut self, id: String) -> Option<Action> {
+        if matches!(self.calls.get(&id), Some(Call::Completed)) {
+            return None;
+        }
+        self.structured_records_observed += 1;
+        let announced = matches!(self.calls.get(&id), Some(Call::Announced));
+        if !self.calls.contains_key(&id) {
+            self.order.push_back(id.clone());
+        }
+        self.calls.insert(id.clone(), Call::Completed);
+        announced.then(|| Action::Resolved {
+            call_id: id,
+            has_other_pending: self.pending_count() > 0,
+        })
+    }
+    /// A new turn began: questions of earlier turns can no longer be answered
+    /// (the user typed a message instead), so they stop counting as pending.
+    pub fn start_turn(&mut self) {
+        for call in self.calls.values_mut() {
+            *call = Call::Completed;
+        }
     }
     pub fn announce(&mut self, now_ms: u64) -> Vec<Action> {
         let mut actions = Vec::new();
@@ -393,6 +479,75 @@ mod tests {
             }]
         );
     }
+    const ASYNC_QUESTION: &str = r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input_async","call_id":"call_1","arguments":"{\"questions\":[{\"title\":\"May I merge?\",\"options\":[\"Approve\",\"Keep\"]}]}"}}"#;
+    const ASYNC_ACCEPTED: &str = r#"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_1","output":"{\"accepted\":true}"}}"#;
+    const ASYNC_REPLY: &str = r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<send_user_message_question_reply>\n[{\"answer\":\"Approve\",\"question\":\"May I merge?\",\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call_1\\\",0]\"}]\n</send_user_message_question_reply>"}]}}"#;
+
+    #[test]
+    fn asynchronous_question_stays_pending_until_the_user_replies() {
+        let prompt = Prompt {
+            call_id: "call_1".into(),
+            message: "May I merge?".into(),
+            options: vec!["Approve".into(), "Keep".into()],
+        };
+        assert_eq!(parse(ASYNC_QUESTION), Some(Record::Prompt(prompt.clone())));
+        assert_eq!(
+            parse(ASYNC_ACCEPTED),
+            Some(Record::Accepted("call_1".into()))
+        );
+        assert_eq!(
+            parse(ASYNC_REPLY),
+            Some(Record::Replied(vec!["call_1".into()]))
+        );
+
+        let mut tracker = Tracker::default();
+        assert!(
+            tracker
+                .consume(parse(ASYNC_QUESTION).unwrap(), 0)
+                .is_empty()
+        );
+        // The immediate output announces the question instead of ending it.
+        assert_eq!(
+            tracker.consume(parse(ASYNC_ACCEPTED).unwrap(), 10),
+            vec![Action::Prompt(prompt)]
+        );
+        assert!(tracker.announce(10_000).is_empty());
+        assert_eq!(tracker.pending_count(), 1);
+        assert_eq!(
+            tracker.consume(parse(ASYNC_REPLY).unwrap(), 20_000),
+            vec![Action::Resolved {
+                call_id: "call_1".into(),
+                has_other_pending: false
+            }]
+        );
+        assert_eq!(tracker.pending_count(), 0);
+    }
+
+    #[test]
+    fn new_turn_abandons_an_unanswered_question() {
+        let mut tracker = Tracker::default();
+        tracker.consume(parse(ASYNC_QUESTION).unwrap(), 0);
+        tracker.consume(parse(ASYNC_ACCEPTED).unwrap(), 10);
+        tracker.start_turn();
+        assert_eq!(tracker.pending_count(), 0);
+        assert!(tracker.consume(parse(ASYNC_REPLY).unwrap(), 20).is_empty());
+    }
+
+    #[test]
+    fn rejected_asynchronous_question_and_ordinary_user_messages_announce_nothing() {
+        let rejected = r#"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_1","output":"failed to parse function arguments: unknown field `question`"}}"#;
+        let mut tracker = Tracker::default();
+        assert!(
+            tracker
+                .consume(parse(ASYNC_QUESTION).unwrap(), 0)
+                .is_empty()
+        );
+        assert!(tracker.consume(parse(rejected).unwrap(), 10).is_empty());
+        assert!(tracker.announce(10_000).is_empty());
+        let plain = r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"carry on"}]}}"#;
+        assert_eq!(parse(plain), None);
+    }
+
     #[test]
     fn parser_requires_structured_questions_and_ids() {
         let line = r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input","call_id":"c","arguments":"{\"questions\":[{\"question\":\"Choose\",\"options\":[{\"label\":\"A\"}]}]}"}}"#;
