@@ -1,6 +1,6 @@
 {
   "device_id": "device-123",
-  "pairing_code": "123456",
+  "pairing_proof": "TOKzNW3iUi25zlK3En9R6Tj3P4sVIXa964IL8uswz0c=",
   "ios_pub": "aW9zLXB1Yg==",
   "ios_name": "Christophe's iPhone"
 }

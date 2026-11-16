@@ -2696,6 +2696,18 @@
 "settings.search.promptInjection.title" = "AI Context";
 "settings.remote.access" = "Remote Access";
 "settings.remote.agent" = "Remote Agent";
+"settings.remote.pairing.expired" = "This pairing code has expired. A new one is being generated.";
+"settings.remote.pairing.instructions" = "In the iPhone app, scan this QR code to pair. The code lasts 10 minutes and stops working once it has paired a phone. Keep it private.";
+"settings.remote.pairing.waiting" = "The pairing QR code appears once the remote agent is running and connected.";
+"settings.remote.pairing.preparing" = "Preparing the pairing QR code…";
+"settings.remote.pairing.refresh" = "Refresh QR Code";
+"settings.remote.agent.restarting" = "Restarting in %d s";
+"settings.remote.agent.lastExit.status" = "Last exit: status %d";
+"settings.remote.agent.lastExit.signal" = "Last exit: signal %d";
+"settings.remote.agent.lastExit.unknown" = "Last exit: unknown reason";
+"settings.remote.agent.needsRelay" = "Not started: no relay URL set";
+"settings.remote.pairing.needsRelay" = "Set your relay URL above to pair an iPhone. No pairing QR code is shown until then.";
+"settings.remote.relayUrl.unset" = "Enter the WebSocket URL of your own relay. Relay URLs are specific to you, so there is no default.";
 "settings.remote.connectedDevice" = "Connected device: %@";
 "settings.remote.deviceFingerprint" = "Fingerprint: %@";
 "settings.remote.deviceLastConnectedAt" = "Last connected: %@";
@@ -2908,7 +2920,7 @@
 "settings.terminal.metalRenderer" = "Metal Renderer";
 "settings.terminal.metalRenderer.info" = "New tabs will use Metal GPU rendering for display.";
 "settings.terminal.activePollingRateCap" = "Active Tab Refresh Cap";
-"settings.terminal.activePollingRateCap.help" = "Maximum refresh rate for the focused tab. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life.";
+"settings.terminal.activePollingRateCap.help" = "Maximum refresh rate for the focused tab. Adaptive uses 120 Hz and drops to 60 Hz, then 30 Hz, as the computer gets busy. Display Native follows your screen (up to 120 Hz on ProMotion). Lower caps trade a bit of scroll smoothness for battery life.";
 "settings.terminal.inactiveViewMaxFPS" = "Background View Refresh Cap";
 "settings.terminal.inactiveViewMaxFPS.help" = "Max refresh rate for a visible tab that isn't focused — e.g. a tab on a second screen showing streaming output. It stays live and responsive but redraws at this slower rate to cut GPU and sync cost. The focused tab uses Active Tab Refresh Cap. Default 42 fps.";
 "settings.terminal.rendering" = "Rendering";
@@ -3149,6 +3161,7 @@
 "urlHandler.system" = "System Default";
 
 // MARK: - Active Polling Rate Cap
+"activePollingRateCap.adaptive" = "Adaptive";
 "activePollingRateCap.displayNative" = "Display Native";
 "activePollingRateCap.hz60" = "60 Hz";
 "activePollingRateCap.hz30" = "30 Hz";

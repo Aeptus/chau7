@@ -35,14 +35,17 @@ const (
 	// TypeTerminalSize announces a tab's live PTY dimensions so the client can
 	// size its own emulator to the source width. A rendering concern, so it is
 	// its own tab-scoped frame rather than a field on the tab inventory.
-	TypeTerminalSize      = 0x28
-	TypePing              = 0x30
-	TypePong              = 0x31
-	TypePairingInfo       = 0x40
-	TypeSessionStatus     = 0x41
-	TypeRemoteTelemetry   = 0x42
-	TypeClientState       = 0x43
-	TypeRelayStatus       = 0x44
+	TypeTerminalSize    = 0x28
+	TypePing            = 0x30
+	TypePong            = 0x31
+	TypePairingInfo     = 0x40
+	TypeSessionStatus   = 0x41
+	TypeRemoteTelemetry = 0x42
+	TypeClientState     = 0x43
+	TypeRelayStatus     = 0x44
+	// TypeRelayCredential gives a phone its own relay credential (encrypted,
+	// Mac to iOS only).
+	TypeRelayCredential   = 0x45
 	TypeApprovalRequest   = 0x50
 	TypeApprovalResponse  = 0x51
 	TypeNotificationEvent = 0x52
@@ -53,7 +56,9 @@ const (
 	TypeViewerDecision = 0x62
 	TypeViewerLeave    = 0x63
 	TypeViewerOutput   = 0x64
-	TypeError          = 0x7F
+	// TypeRelayAck is sent by the phone to the relay, which consumes it.
+	TypeRelayAck = 0x65
+	TypeError    = 0x7F
 )
 
 var (

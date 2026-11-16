@@ -9,7 +9,7 @@
 //! the cursor, images and timestamps are painted on top and never cached.
 
 use chau7_terminal::OwnedCell;
-use gpui::{Font, Hsla, Pixels, ShapedLine, TextRun};
+use gpui::{Font, Hsla, PaintContext, PaintRecording, Pixels, Point, ShapedLine, TextRun};
 
 use super::Decoration;
 
@@ -33,6 +33,46 @@ pub(super) struct PreparedRow {
     /// (first column, line, runs) of each text chunk with visible content.
     pub lines: Vec<(usize, ShapedLine, Vec<TextRun>)>,
     pub decorations: Vec<Decoration>,
+    /// The primitives `lines` painted last time, while they are still valid.
+    pub text: Option<RecordedText>,
+}
+
+/// What painting a row's text emitted, and everything besides the row's own
+/// cells and style that it depended on. GPUI rebuilds its scene every frame;
+/// replaying these skips the per-glyph atlas and raster lookups for a row
+/// that neither changed nor moved.
+pub(super) struct RecordedText {
+    origin: Point<Pixels>,
+    line_height: Pixels,
+    context: PaintContext,
+    primitives: PaintRecording,
+}
+
+impl RecordedText {
+    pub(super) fn new(
+        origin: Point<Pixels>,
+        line_height: Pixels,
+        context: PaintContext,
+        primitives: PaintRecording,
+    ) -> Self {
+        Self {
+            origin,
+            line_height,
+            context,
+            primitives,
+        }
+    }
+
+    /// The recording, only if painting now would emit exactly the same.
+    pub(super) fn valid_for(
+        &self,
+        origin: Point<Pixels>,
+        line_height: Pixels,
+        context: &PaintContext,
+    ) -> Option<&PaintRecording> {
+        (self.origin == origin && self.line_height == line_height && &self.context == context)
+            .then_some(&self.primitives)
+    }
 }
 
 impl PreparedRow {
@@ -46,6 +86,7 @@ impl PreparedRow {
             backgrounds: Vec::new(),
             lines: Vec::new(),
             decorations: Vec::new(),
+            text: None,
         }
     }
 
@@ -71,6 +112,9 @@ impl PreparedRow {
                 .iter()
                 .map(|(_, line, runs)| line.len() + runs.len() * std::mem::size_of::<TextRun>())
                 .sum::<usize>()
+            + self.text.as_ref().map_or(0, |text| {
+                text.primitives.len() * std::mem::size_of::<gpui::Primitive>()
+            })
     }
 }
 
@@ -118,8 +162,8 @@ impl RowCache {
         }
     }
 
-    pub(super) fn get(&self, row: usize) -> Option<&PreparedRow> {
-        self.rows.get(row).and_then(Option::as_ref)
+    pub(super) fn get_mut(&mut self, row: usize) -> Option<&mut PreparedRow> {
+        self.rows.get_mut(row).and_then(Option::as_mut)
     }
 
     pub(crate) fn bytes(&self) -> u64 {
@@ -219,11 +263,40 @@ mod tests {
         cache.store(2, PreparedRow::new(&row, &[]));
         cache.begin_frame(&style(), 1);
         assert!(cache.reuse(0, &row, &[]));
-        assert!(cache.get(2).is_none());
+        assert!(cache.get_mut(2).is_none());
         let mut bigger = style();
         bigger.font_size = gpui::px(14.0);
         cache.begin_frame(&bigger, 1);
         assert!(!cache.reuse(0, &row, &[]));
+    }
+
+    #[test]
+    fn recorded_text_replays_only_where_it_was_painted() {
+        let origin = gpui::point(gpui::px(4.0), gpui::px(32.0));
+        let height = gpui::px(16.0);
+        let context = PaintContext::default();
+        let text = RecordedText::new(origin, height, context.clone(), PaintRecording::default());
+        assert!(text.valid_for(origin, height, &context).is_some());
+        // A row that moved (scroll, resize) or changed height is painted again.
+        let moved = gpui::point(gpui::px(4.0), gpui::px(48.0));
+        assert!(text.valid_for(moved, height, &context).is_none());
+        assert!(text.valid_for(origin, gpui::px(18.0), &context).is_none());
+    }
+
+    #[test]
+    fn a_prepared_again_row_drops_its_recorded_text() {
+        let mut cache = RowCache::default();
+        cache.begin_frame(&style(), 1);
+        let row = [cell('a')];
+        cache.store(0, PreparedRow::new(&row, &[]));
+        cache.get_mut(0).unwrap().text = Some(RecordedText::new(
+            gpui::Point::default(),
+            gpui::px(16.0),
+            PaintContext::default(),
+            PaintRecording::default(),
+        ));
+        cache.store(0, PreparedRow::new(&[cell('b')], &[]));
+        assert!(cache.get_mut(0).unwrap().text.is_none());
     }
 
     #[test]

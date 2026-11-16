@@ -2744,6 +2744,18 @@
 "settings.search.promptInjection.title" = "Contexto de IA";
 "settings.remote.access" = "Acceso remoto";
 "settings.remote.agent" = "Agente remoto";
+"settings.remote.pairing.expired" = "Este código de emparejamiento ha caducado. Se está generando uno nuevo.";
+"settings.remote.pairing.instructions" = "En la app del iPhone, escanea este código QR para emparejar. El código dura 10 minutos y deja de funcionar en cuanto ha emparejado un teléfono. Mantenlo en privado.";
+"settings.remote.pairing.waiting" = "El código QR de emparejamiento aparece cuando el agente remoto está en ejecución y conectado.";
+"settings.remote.pairing.preparing" = "Preparando el código QR de emparejamiento…";
+"settings.remote.pairing.refresh" = "Actualizar el código QR";
+"settings.remote.agent.restarting" = "Reiniciando en %d s";
+"settings.remote.agent.lastExit.status" = "Última salida: código %d";
+"settings.remote.agent.lastExit.signal" = "Última salida: señal %d";
+"settings.remote.agent.lastExit.unknown" = "Última salida: motivo desconocido";
+"settings.remote.agent.needsRelay" = "No iniciado: no hay URL del relay definida";
+"settings.remote.pairing.needsRelay" = "Define arriba la URL de tu relay para emparejar un iPhone. Hasta entonces no se muestra ningún código QR de emparejamiento.";
+"settings.remote.relayUrl.unset" = "Introduce la URL WebSocket de tu propio relay. Las URL de relay son específicas de cada usuario, por lo que no hay valor predeterminado.";
 "settings.remote.connectedDevice" = "Dispositivo conectado: %@";
 "settings.remote.deviceFingerprint" = "Huella digital: %@";
 "settings.remote.deviceLastConnectedAt" = "Última conexión: %@";
@@ -3197,6 +3209,7 @@
 "urlHandler.system" = "Predeterminado del sistema";
 
 // MARK: - Active Polling Rate Cap
+"activePollingRateCap.adaptive" = "Adaptativo";
 "activePollingRateCap.displayNative" = "Nativa de pantalla";
 "activePollingRateCap.hz60" = "60 Hz";
 "activePollingRateCap.hz30" = "30 Hz";
