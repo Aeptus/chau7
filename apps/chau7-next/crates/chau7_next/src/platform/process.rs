@@ -330,6 +330,11 @@ pub struct ProcessUsage {
     pub cpu_time: Duration,
     /// Resident memory in bytes.
     pub resident_bytes: u64,
+    /// Physical footprint in bytes: the process's private memory whether
+    /// resident, compressed or swapped out (what Activity Monitor shows).
+    /// Under memory pressure resident memory shrinks as pages are compressed
+    /// and this does not. `None` where the OS has no such figure.
+    pub footprint_bytes: Option<u64>,
 }
 
 impl std::ops::Add for ProcessUsage {
@@ -339,6 +344,11 @@ impl std::ops::Add for ProcessUsage {
         Self {
             cpu_time: self.cpu_time + other.cpu_time,
             resident_bytes: self.resident_bytes + other.resident_bytes,
+            // A sum with an unknown part is unknown, not a smaller number.
+            footprint_bytes: self
+                .footprint_bytes
+                .zip(other.footprint_bytes)
+                .map(|(a, b)| a + b),
         }
     }
 }
@@ -356,7 +366,7 @@ pub fn tree_usage(pid: u32) -> Option<ProcessUsage> {
     let mut total: Option<ProcessUsage> = None;
     for p in process_tree(pid) {
         if let Some(usage) = process_usage(p) {
-            total = Some(total.unwrap_or_default() + usage);
+            total = Some(total.map_or(usage, |sum| sum + usage));
         }
     }
     total
@@ -403,6 +413,7 @@ fn platform_usage(pid: u32) -> Option<ProcessUsage> {
     Some(ProcessUsage {
         cpu_time: Duration::from_millis(stat.cpu_ticks * 1000 / TICKS_PER_SECOND),
         resident_bytes: stat.rss_pages * PAGE_SIZE,
+        footprint_bytes: None,
     })
 }
 
@@ -449,7 +460,28 @@ fn platform_usage(pid: u32) -> Option<ProcessUsage> {
     Some(ProcessUsage {
         cpu_time: Duration::from_nanos(u64::try_from(nanos).unwrap_or(u64::MAX)),
         resident_bytes: info.pti_resident_size,
+        footprint_bytes: physical_footprint(pid),
     })
+}
+
+/// The kernel ledger's physical footprint of one process.
+#[cfg(target_os = "macos")]
+fn physical_footprint(pid: u32) -> Option<u64> {
+    let mut info = std::mem::MaybeUninit::<libc::rusage_info_v2>::zeroed();
+    // SAFETY: `info` is a writable `rusage_info_v2`, the layout the kernel
+    // fills for `RUSAGE_INFO_V2`; the call writes nothing else.
+    let status = unsafe {
+        libc::proc_pid_rusage(
+            pid as libc::c_int,
+            libc::RUSAGE_INFO_V2,
+            info.as_mut_ptr().cast::<libc::rusage_info_t>(),
+        )
+    };
+    if status != 0 {
+        return None;
+    }
+    // SAFETY: fully initialized by the successful call above.
+    Some(unsafe { info.assume_init() }.ri_phys_footprint)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -664,14 +696,31 @@ mod tests {
         let a = ProcessUsage {
             cpu_time: Duration::from_millis(5),
             resident_bytes: 10,
+            footprint_bytes: Some(30),
         };
         assert_eq!(
             a + a,
             ProcessUsage {
                 cpu_time: Duration::from_millis(10),
-                resident_bytes: 20
+                resident_bytes: 20,
+                footprint_bytes: Some(60),
             }
         );
+        let unknown = ProcessUsage {
+            footprint_bytes: None,
+            ..a
+        };
+        assert_eq!((a + unknown).footprint_bytes, None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn own_footprint_is_reported_and_carried_into_the_tree_total() {
+        let pid = std::process::id();
+        assert!(
+            process_usage(pid).is_some_and(|usage| usage.footprint_bytes.is_some_and(|b| b > 0))
+        );
+        assert!(tree_usage(pid).is_some_and(|usage| usage.footprint_bytes.is_some_and(|b| b > 0)));
     }
 
     #[cfg(target_os = "linux")]

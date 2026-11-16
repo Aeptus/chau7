@@ -131,7 +131,7 @@ Chau7 runs an MCP server on a Unix socket so AI agents (Claude Code, Codex, Curs
   unchanged for `min(wait, 500)` ms; the fingerprint is (byte count, SHA-256 of
   the last 4 KB). `pty_log` reads the tail (1,024,000 bytes) of the tab's last AI PTY log.
 - `tab_set_cto`: `{ok, cto_active, cto_override}`; `tab_rename`: `{ok, title}`.
-- `tab_status` extras: `processes[{pid,name,cpu_percent,rss_bytes}]`,
+- `tab_status` extras: `processes[{pid,name,cpu_percent,rss_bytes,footprint_bytes}]`,
   `active_run{run_id, provider, started_at, session_id, duration_so_far_ms}`.
 - Telemetry tools return the `TelemetryRun`/turn/tool-call Codable structs
   (ISO 8601 dates); current projected telemetry state and evidence are described in Telemetry.md.

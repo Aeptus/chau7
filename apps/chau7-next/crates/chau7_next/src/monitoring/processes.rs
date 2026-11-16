@@ -28,6 +28,18 @@ pub struct ProcessRow {
     pub name: String,
     pub cpu_percent: f64,
     pub rss_bytes: u64,
+    /// Physical footprint (resident, compressed and swapped private memory),
+    /// where the OS reports it.
+    pub footprint_bytes: Option<u64>,
+}
+
+impl ProcessRow {
+    /// The memory this process holds: its footprint when known, else its
+    /// resident size. On a host that is paging, resident size alone can be a
+    /// small fraction of what the process holds.
+    pub fn memory_bytes(&self) -> u64 {
+        self.footprint_bytes.unwrap_or(self.rss_bytes)
+    }
 }
 
 impl ProcessSnapshot {
@@ -37,6 +49,11 @@ impl ProcessSnapshot {
 
     pub fn total_rss(&self) -> u64 {
         self.children.iter().map(|c| c.rss_bytes).sum()
+    }
+
+    /// Sum of [`ProcessRow::memory_bytes`] over the snapshot.
+    pub fn total_memory(&self) -> u64 {
+        self.children.iter().map(ProcessRow::memory_bytes).sum()
     }
 }
 
@@ -69,6 +86,7 @@ pub fn sample(shell_pid: u32, previous: &mut CpuSamples) -> ProcessSnapshot {
             name: procinfo::process_name(pid).unwrap_or_else(|| pid.to_string()),
             cpu_percent,
             rss_bytes: usage.resident_bytes,
+            footprint_bytes: usage.footprint_bytes,
         });
     }
     *previous = next;
@@ -114,9 +132,16 @@ mod tests {
                 name: "x".into(),
                 cpu_percent: 1.0,
                 rss_bytes: 2,
+                footprint_bytes: None,
             }],
         };
         assert_eq!(s.after_poll(&busy), Duration::from_millis(750));
         assert_eq!(busy.total_rss(), 2);
+        // Without a footprint the resident size stands in; with one it wins.
+        assert_eq!(busy.total_memory(), 2);
+        let mut paged = busy.clone();
+        paged.children[0].footprint_bytes = Some(40);
+        assert_eq!(paged.total_memory(), 40);
+        assert_eq!(paged.total_rss(), 2);
     }
 }

@@ -460,7 +460,7 @@ impl Workspace {
                             muted
                         },
                     ))
-                    .child(value(format_rss(snapshot.total_rss()).into(), muted))
+                    .child(value(format_rss(snapshot.total_memory()).into(), muted))
                     .into_any_element(),
             );
             for child in snapshot.children.iter().take(5) {
@@ -476,7 +476,7 @@ impl Workspace {
                                 muted
                             },
                         ))
-                        .child(value(format_rss(child.rss_bytes).into(), muted))
+                        .child(value(format_rss(child.memory_bytes()).into(), muted))
                         .into_any_element(),
                 );
             }
