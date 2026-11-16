@@ -1,6 +1,6 @@
 {
-  "reason": "Test-only editor fixtures inject the production file-event channel instead of waking GPUI\u2019s deterministic scheduler from an OS notification thread. Production and native acceptance builds retain real file monitoring; user-visible editor changes are documented in the preceding commits.",
+  "reason": "Formatting only: a test helper's struct field is moved onto its own line after a merge. No behaviour changes; the user-visible changes of this branch are documented in the preceding commits.",
   "paths": [
-    "apps/chau7-next/crates/chau7_next/src/panes/editor.rs"
+    "apps/chau7-next/crates/chau7_next/src/settings_window/remote.rs"
   ]
 }

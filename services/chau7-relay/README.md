@@ -51,7 +51,7 @@ prove live deployment configuration.
 
 The relay additionally enforces per-device, per-route rate limits, caps request
 bodies (64 KB) and relayed frames (1 MB), bounds persisted pending-state, and
-applies WebSocket backpressure (dropping/closing slow receivers).
+applies WebSocket backpressure (dropping/closing slow receivers, measured from the phone's `RELAY_ACK` frames).
 
 ## Routes
 
@@ -65,6 +65,7 @@ applies WebSocket backpressure (dropping/closing slow receivers).
 | GET | `/pending/:deviceId` | ios | pending |
 | POST | `/pending/:deviceId` | mac | pending |
 | DELETE | `/pending/:deviceId` | mac | pending |
+| PUT | `/phones/:deviceId` | mac | phones |
 | WS | `/view/:shareCode` | viewer | none (see below) |
 
 `/view/:shareCode` is the read-only viewer of a terminal shared by Chau7 Next
@@ -135,6 +136,7 @@ and notification titles/bodies are also visible to the relay and Apple for deliv
 |---|---|
 | Pending snapshot | Four hours after the latest accepted POST. GET deletes expired state and returns empty arrays with the epoch timestamp; it never returns an expired snapshot. Authenticated mac-role DELETE removes it immediately. |
 | Push registration | Thirty days after the latest registration. Re-registering refreshes that lifetime; an explicit `notifications_authorized: false` registration revokes it immediately, as does an APNs invalid-token response. Expired registrations are not notified. |
+| Trusted phone list | Kept until the Mac replaces it; it does not expire. It holds, per phone, a 16-byte hash of the phone's public key, and one flag saying whether the shared iOS credential is refused. Without it a removed phone could reconnect, so it is not cleaned up on a timer. |
 | Replay nonce | Through the end of the token's final accepted second (120-second TTL, plus up to 30 seconds of future clock skew). Cleanup never drops a nonce while that token can still authenticate. A full live nonce budget rejects new admission. |
 
 One Durable Object alarm tracks the earliest retained deadline. Alarm cleanup,

@@ -56,7 +56,7 @@ pub use notifications::NotificationsSettings;
 #[allow(unused_imports)]
 pub use productivity::{ProductivitySettings, SnippetInsertMode, UrlHandler};
 pub use proxy::ProxySettings;
-pub use remote::RemoteSettings;
+pub use remote::{RemoteSettings, is_placeholder_relay_url};
 pub use tabs::{LastTabClose, RepoGroupingMode, TabsSettings};
 pub use terminal::{BellSound, TerminalSettings};
 pub use token_optimization::TokenOptimizationSettings;
@@ -643,7 +643,7 @@ mod tests {
                 s.appearance.rendering.active_polling_rate_cap,
                 defaults.appearance.rendering.active_polling_rate_cap
             );
-            assert_eq!(s.appearance.rendering.inactive_view_max_fps, 42);
+            assert_eq!(s.appearance.rendering.inactive_view_max_fps, 30);
             assert_eq!(s.general.default_directory, None);
             assert_eq!(
                 s.general.usage_monitoring,

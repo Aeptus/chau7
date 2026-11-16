@@ -119,13 +119,26 @@ Proxy exercises the local SQLite stats endpoint at 1 request/s by default; this 
 analytics/control workload, not a measurement of upstream model streaming.
 The synthetic loop makes no external API or paid model calls.
 
-An optional `--input-hz 1` sends synthetic single-byte MCP input to the selected
-isolated terminal during the terminal phase, while all fixture tabs produce
-output. The TUI confirms receipt; a mismatch fails the capture. The recorded
+An optional `--input-hz 1` sends synthetic single-byte MCP input to the first
+tab the harness created during the terminal phase, while all fixture tabs
+produce output. It therefore needs `--tabs 1` or more: the app only lets an MCP
+client drive a tab that client created, and the initial tab would need an
+interactive approval. The target tab is not necessarily the visible one. The TUI confirms receipt; a mismatch fails the capture. The recorded
 latency is MCP request round-trip time, not physical key-to-display latency or
 a guarantee that an input was displayed. This workload is opt-in, retains all
 resource guards, and should only run after the small fixture and capacity checks
 above succeed. `--input-hz` defaults to zero and is capped at 1 Hz.
+
+`--scroll-lines N` (0 to 8, default 0) appends N transcript lines on every
+frame, so the whole body scrolls like a build log. The default repaints only
+the bottom panel and adds three transcript lines every two seconds, like an
+agent thinking. Compare a renderer change under both: rows that stay in place
+and rows that move exercise different caches.
+
+`--refresh-hz 30|60|120` pins the app's adaptive refresh tier, which otherwise
+follows host CPU load (60 Hz from 50% busy, 30 Hz from 90%). The lab cannot
+load the host to reach a tier, and its safety limits stop a capture above 75%.
+The app honours the pin only in isolated test mode.
 
 ## Measurement contract
 

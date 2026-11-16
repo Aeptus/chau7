@@ -81,9 +81,15 @@
           "before_sha256": "3addca59aab12ca0e00acb1e39d652863a8904146db2e28192275660aa5b8880",
           "description": "Rebase the existing Software/AppKit fork onto verified registry 0.3.9; adapt typed CoreVideo APIs; retain the complete prior 0.3.8 chain in vendor/history/0.3.8/gpui-modifications.json",
           "kind": "semantic"
+        },
+        {
+          "after_sha256": "79ec18828528b3380f007b7c66960cfe2ead7c8a0185813c3aca1194701f1df6",
+          "before_sha256": "b305f94023b0a587fd84ae22f158a683fed69041fced724bf6751c12eae19dfb",
+          "description": "Record and replay a span of paint operations (Window::paint_context, paint_mark, record_since, replay_recording; Scene::record_since, replay_recording) so an unchanged terminal row re-emits its text without per-glyph atlas and raster lookups",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "b305f94023b0a587fd84ae22f158a683fed69041fced724bf6751c12eae19dfb",
+      "current_sha256": "79ec18828528b3380f007b7c66960cfe2ead7c8a0185813c3aca1194701f1df6",
       "original_sha256": "3addca59aab12ca0e00acb1e39d652863a8904146db2e28192275660aa5b8880",
       "package": "gpui-pre",
       "path": "src/scene.rs"
@@ -523,9 +529,15 @@
           "before_sha256": "ea8cf009099856a56571b10c7585f767ffcee06fb56287a30f193ab89c5b10c8",
           "description": "Request Metal vsync only while frame demand remains; coalesce native wakeups with weak window ownership and preserve high-rate presentation on demand-driven backends",
           "kind": "semantic"
+        },
+        {
+          "after_sha256": "322a1761a086a625d7bb7b8627a30e0c987d427708d3e15487723ab76993f94a",
+          "before_sha256": "fa546e605b6d562a9c4def57b18ae8ca39cc3326abb3c3b82028b18110eeebb8",
+          "description": "Record and replay a span of paint operations (Window::paint_context, paint_mark, record_since, replay_recording; Scene::record_since, replay_recording) so an unchanged terminal row re-emits its text without per-glyph atlas and raster lookups",
+          "kind": "semantic"
         }
       ],
-      "current_sha256": "fa546e605b6d562a9c4def57b18ae8ca39cc3326abb3c3b82028b18110eeebb8",
+      "current_sha256": "322a1761a086a625d7bb7b8627a30e0c987d427708d3e15487723ab76993f94a",
       "original_sha256": "44f32319b9385fa6dbc15c36b3edea00a26208309b37283ae4f9bd4bead674f8",
       "package": "gpui-pre",
       "path": "src/window.rs"
