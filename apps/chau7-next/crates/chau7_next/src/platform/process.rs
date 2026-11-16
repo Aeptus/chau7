@@ -506,9 +506,121 @@ pub fn display_path(path: &Path, home: &Path) -> String {
     }
 }
 
+/// Open files this process may want: every terminal tab holds four PTY
+/// handles, and macOS starts GUI apps with room for only 256.
+const WANTED_OPEN_FILES: u64 = 10_240;
+
+/// The soft limit to request, or `None` when the current one is enough or
+/// cannot be raised. Separate from the system calls so it can be tested.
+fn raised_open_file_limit(soft: u64, hard: u64, per_process_max: Option<u64>) -> Option<u64> {
+    let target = WANTED_OPEN_FILES
+        .min(hard)
+        .min(per_process_max.unwrap_or(u64::MAX));
+    (target > soft).then_some(target)
+}
+
+/// Raise this process's open-file limit so many tabs cannot exhaust it.
+/// Shells started afterwards inherit the raised limit. A failure leaves the
+/// old limit in place.
+#[cfg(unix)]
+pub fn raise_open_file_limit() {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: `limit` is a valid rlimit for getrlimit to fill.
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut limit) } != 0 {
+        log::warn!(
+            "open-file limit not read: {}",
+            std::io::Error::last_os_error()
+        );
+        return;
+    }
+    let Some(target) =
+        raised_open_file_limit(limit.rlim_cur, limit.rlim_max, per_process_open_file_max())
+    else {
+        return;
+    };
+    let previous = limit.rlim_cur;
+    limit.rlim_cur = target;
+    // SAFETY: `limit` is a valid rlimit with the soft limit at or below the hard one.
+    if unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &raw const limit) } != 0 {
+        log::warn!(
+            "open-file limit stays at {previous}: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+}
+
+#[cfg(not(unix))]
+pub fn raise_open_file_limit() {}
+
+/// The kernel's per-process ceiling; macOS rejects a soft limit above it even
+/// when the hard limit is unlimited.
+#[cfg(target_os = "macos")]
+fn per_process_open_file_max() -> Option<u64> {
+    let mut value: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    // SAFETY: the name is NUL terminated and `value`/`size` describe one c_int.
+    let result = unsafe {
+        libc::sysctlbyname(
+            c"kern.maxfilesperproc".as_ptr(),
+            (&raw mut value).cast(),
+            &raw mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (result == 0 && value > 0).then_some(value as u64)
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn per_process_open_file_max() -> Option<u64> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn open_file_limit_is_raised_only_within_what_the_system_allows() {
+        assert_eq!(
+            raised_open_file_limit(256, u64::MAX, Some(61_440)),
+            Some(10_240)
+        );
+        assert_eq!(
+            raised_open_file_limit(256, 4_096, Some(61_440)),
+            Some(4_096)
+        );
+        assert_eq!(
+            raised_open_file_limit(256, u64::MAX, Some(1_024)),
+            Some(1_024)
+        );
+        assert_eq!(raised_open_file_limit(256, u64::MAX, None), Some(10_240));
+        // Already enough, or nothing higher allowed: leave it alone.
+        assert_eq!(raised_open_file_limit(20_000, u64::MAX, None), None);
+        assert_eq!(raised_open_file_limit(256, 256, None), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn raising_leaves_room_for_many_tabs() {
+        raise_open_file_limit();
+        let mut limit = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        // SAFETY: `limit` is a valid rlimit for getrlimit to fill.
+        assert_eq!(
+            unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut limit) },
+            0
+        );
+        let allowed = WANTED_OPEN_FILES
+            .min(limit.rlim_max)
+            .min(per_process_open_file_max().unwrap_or(u64::MAX));
+        assert!(limit.rlim_cur >= allowed);
+    }
 
     #[test]
     fn display_path_abbreviates_home() {

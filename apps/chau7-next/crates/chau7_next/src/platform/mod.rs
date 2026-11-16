@@ -28,7 +28,7 @@
 //! | [`login_item`] | Launch at login, SMAppService (`LoginItem`) |
 //! | [`status_item`] | NSStatusItem menu bar item with a menu (`StatusItem`) |
 //! | [`power`] | Opt out of App Nap while the app runs (NSProcessInfo activity) |
-//! | [`process`] | libproc: cwd, children, CPU time and memory of processes |
+//! | [`process`] | libproc: cwd, children, CPU time and memory of processes; open-file limit |
 //! | [`system`] | Host name, hardware UUID, accessibility flags, screen lock |
 //! | [`cert_trust`] | Login keychain certificate trust (local TLS proxy) |
 //! | [`input_method`] | NSTextInputContext: discard a pending composition |
