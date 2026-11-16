@@ -629,14 +629,25 @@ private final class RemoteTerminalCanvasView: UIView {
         // width, joining soft-wrapped rows, so painting is a blit — no
         // source-to-display index remap and no per-cell fold decision.
         if let displayState, displayState.displayCols == displayCols, displayState.displayRows > 0 {
+            // Folded rows can outnumber the rows that fit. Shift the surplus
+            // above the canvas so the newest output and the cursor stay visible.
+            let firstRow = RemoteTerminalScrollPolicy.firstFoldedRow(
+                displayRows: displayState.displayRows,
+                viewportRows: Int((bounds.height / cellH).rounded(.down)),
+                cursorRow: displayState.visibleCursor?.row
+            )
+            let shift = CGFloat(firstRow) * cellH
+            context.saveGState()
+            context.translateBy(x: 0, y: -shift)
             drawFolded(
                 displayState,
                 context: context,
                 cellW: cellW,
                 cellH: cellH,
                 backgroundColorKey: backgroundColorKey,
-                visibleRect: visibleRect
+                visibleRect: visibleRect.offsetBy(dx: 0, dy: shift)
             )
+            context.restoreGState()
             if showsDiagnostics {
                 drawFoldedDiagnostics(context: context, display: displayState, cellW: cellW, cellH: cellH)
             }

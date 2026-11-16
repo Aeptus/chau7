@@ -2,6 +2,7 @@ import copy
 import json
 import os
 import pty
+import signal
 import subprocess
 import sys
 import tempfile
@@ -63,6 +64,30 @@ class WorkloadAcceptance(unittest.TestCase):
                 child.terminate()
                 child.wait(timeout=5)
 
+    def test_scroll_mode_appends_transcript_lines_on_every_frame(self):
+        def transcript_lines(extra):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                control = root / "phase"
+                control.write_text("active")
+                child = subprocess.Popen(
+                    [sys.executable, str(HERE / "tui.py"), "20", "1", "60", str(control), str(root), *extra],
+                    stdout=subprocess.PIPE,
+                )
+                try:
+                    time.sleep(1.5)
+                finally:
+                    child.send_signal(signal.SIGINT)
+                    output, _ = child.communicate(timeout=10)
+                frames = json.loads((root / f"{child.pid}.json").read_text())["frames"]
+                return output.decode().count("●"), frames
+
+        # Without scrolling, one three-line message appears per message interval.
+        self.assertEqual(transcript_lines([])[0], 3)
+        lines, frames = transcript_lines(["--scroll", "2"])
+        self.assertGreater(frames, 5)
+        self.assertGreaterEqual(lines, 2 * frames)
+
     def test_input_wakeup_stops_polling_when_grace_period_starts(self):
         self.assertEqual(next_input_wakeup(8, 10, 7, True), 8)
         self.assertEqual(next_input_wakeup(8, 10, 9, True), 10)
@@ -113,6 +138,35 @@ class WorkloadAcceptance(unittest.TestCase):
                 child.wait(timeout=5)
                 child.stderr.close()
                 os.close(master)
+
+    def test_input_probe_targets_the_harness_created_tab(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "progress").mkdir()
+            for worker in ("1", "2"):
+                (root / "progress" / f"{worker}.json").write_text('{"frames":0,"bytes":0}')
+            snapshot = {
+                # The snapshot's own id is not a tab id and must not be used.
+                "terminals": [{"selected": True, "tab_id": "1"}, {"selected": False, "tab_id": "2"}],
+                "hang_watchdog": {"stall_count": 1, "render_circuit_breaker_open": False},
+            }
+            sampler = Mock()
+            sampler.sample.return_value = {"pid": 1}
+            mcp = Mock()
+            mcp.tool.side_effect = lambda name, **_: {"ok": True} if name == "tab_send_input" else snapshot
+            args = SimpleNamespace(settle=0, tabs=1, threads=False, measure=2.2, interval=1, input_hz=1)
+            with self.assertRaisesRegex(RuntimeError, "harness-created tab"):
+                measure_phase("terminal", args, {"app": 1}, mcp, root / "phase", 0, sampler, {})
+            args.input_tab = "owned-uuid"
+            with (
+                patch("run.summarize", return_value={"cpu_percent": 0}),
+                # The stalled snapshot ends the phase after the probe was sent.
+                self.assertRaisesRegex(RuntimeError, "app stalled"),
+            ):
+                measure_phase("terminal", args, {"app": 1}, mcp, root / "phase", 0, sampler, {})
+            sent = [call.kwargs for call in mcp.tool.call_args_list if call.args[0] == "tab_send_input"]
+            self.assertTrue(sent)
+            self.assertEqual({row["tab_id"] for row in sent}, {"owned-uuid"})
 
     def test_rejected_phase_keeps_raw_capture(self):
         with tempfile.TemporaryDirectory() as directory:

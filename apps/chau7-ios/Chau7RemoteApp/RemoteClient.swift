@@ -87,12 +87,61 @@ final class RemoteClient {
 
     // MARK: - Pairing (persisted in Keychain)
 
+    /// Progress of a pairing the user just scanned, for the pairing sheet.
+    enum PairingAttempt: Equatable {
+        case idle
+        case waitingForMac
+        case accepted
+        case failed(String)
+    }
+
+    private(set) var pairingAttempt: PairingAttempt = .idle
+    /// True from a scan until the Mac accepts it. Until then the scanned
+    /// pairing lives only in memory, so a rejected or unanswered code cannot
+    /// replace a working pairing in the Keychain.
+    @ObservationIgnored private var isPairingUnconfirmed = false
+    @ObservationIgnored private var pairingBeforeScan: PairingInfo?
+    /// Set by an explicit Disconnect; only a manual Connect or a new pairing
+    /// clears it. Foregrounding, a push or a deep link must not undo the
+    /// user's choice.
+    @ObservationIgnored private var userDisconnected = UserDefaults.standard.bool(forKey: "remote_user_disconnected") {
+        didSet { UserDefaults.standard.set(userDisconnected, forKey: "remote_user_disconnected") }
+    }
+
+    /// The relay credential the paired Mac made for this phone alone. Kept
+    /// apart from `pairingInfo`: receiving it must not restart the connection.
+    @ObservationIgnored private var phoneRelayCredential = RemotePairingStore.loadPhoneRelayCredential()
+
+    /// What signs relay tokens. A freshly scanned QR is tried with its own
+    /// credentials: a stored one may be what stopped working.
+    private var relayCredentialForTokens: RemotePhoneRelayCredential? {
+        isPairingUnconfirmed ? nil : phoneRelayCredential
+    }
+
+    private func setPhoneRelayCredential(_ credential: RemotePhoneRelayCredential?) {
+        guard credential != phoneRelayCredential else { return }
+        phoneRelayCredential = credential
+        RemotePairingStore.savePhoneRelayCredential(credential)
+    }
+
+    private func handleRelayCredential(_ data: Data) {
+        guard let pairing = pairingInfo,
+              let payload = try? RemoteJSON.decoder.decode(RemoteRelayCredentialPayload.self, from: data),
+              payload.isWellFormed else {
+            log.warning("Ignoring a malformed relay credential from the Mac")
+            return
+        }
+        setPhoneRelayCredential(RemotePhoneRelayCredential(deviceID: pairing.deviceID, credential: payload))
+    }
+
     var pairingInfo: PairingInfo? {
         didSet {
             if oldValue != pairingInfo {
                 // Every connect attempt reassigns the same pairing; only a
                 // real change is worth a Keychain write.
-                RemotePairingStore.savePairing(pairingInfo)
+                if !isPairingUnconfirmed {
+                    RemotePairingStore.savePairing(pairingInfo)
+                }
                 // Pending approvals and notification decisions belong to a
                 // specific paired Mac. Drop them before the new pairing can
                 // open a socket or fetch /pending.
@@ -298,8 +347,60 @@ final class RemoteClient {
 
     // MARK: - Connection
 
+    /// Tries a freshly scanned pairing. The previous pairing stays stored until
+    /// the Mac accepts this one; `pairingAttempt` reports the outcome.
+    func beginPairing(_ info: PairingInfo) {
+        if !isPairingUnconfirmed {
+            pairingBeforeScan = pairingInfo
+        }
+        isPairingUnconfirmed = true
+        pairingAttempt = .waitingForMac
+        pairingInfo = info
+        connect()
+    }
+
+    private func confirmPairingIfUnconfirmed() {
+        guard isPairingUnconfirmed else { return }
+        isPairingUnconfirmed = false
+        pairingBeforeScan = nil
+        RemotePairingStore.savePairing(pairingInfo)
+        // The Mac sends this phone's credential for the new pairing next.
+        setPhoneRelayCredential(nil)
+        pairingAttempt = .accepted
+    }
+
+    /// Puts the previous pairing back after the Mac refused or ignored a scan.
+    /// Returns false when no scan was awaiting an answer.
+    private func abandonUnconfirmedPairing(message: String) -> Bool {
+        guard isPairingUnconfirmed else { return false }
+        isPairingUnconfirmed = false
+        let previous = pairingBeforeScan
+        pairingBeforeScan = nil
+        pairingInfo = previous
+        pairingAttempt = .failed(message)
+        if previous != nil {
+            connectIfNeeded(trigger: .reconnect)
+        }
+        return true
+    }
+
+    /// Forgets the paired Mac: closes the session and removes its pairing,
+    /// relay credential and trusted keys from the Keychain.
+    func forgetPairedMac() {
+        isPairingUnconfirmed = false
+        pairingBeforeScan = nil
+        pairingAttempt = .idle
+        disconnectAndDiscardPendingDecisions()
+        pairingInfo = nil
+        RemotePairingStore.savePairing(nil)
+        setPhoneRelayCredential(nil)
+        RemotePairingStore.deleteMacPublicKey()
+        userDisconnected = false
+    }
+
     func connect() {
         guard let pairing = pairingInfo else { return }
+        userDisconnected = false
         startConnection(
             pairing: pairing,
             trigger: .manual,
@@ -350,6 +451,14 @@ final class RemoteClient {
         trigger: RemoteConnectionTrigger,
         forceRestart: Bool
     ) {
+        guard RemoteConnectionStartPolicy.allowsStart(
+            userDisconnected: userDisconnected, isManual: trigger == .manual
+        ) else {
+            DiagnosticsLog.shared.info(.connection, "Connection request ignored after user disconnect", [
+                "trigger": trigger.rawValue
+            ])
+            return
+        }
         guard RemoteConnectionStartPolicy.shouldStartConnection(
             transportIsOpen: transport.isOpen,
             forceRestart: forceRestart
@@ -362,7 +471,12 @@ final class RemoteClient {
             return
         }
 
-        guard let token = RelayToken.make(pairing: pairing, role: "ios", scope: "connect") else {
+        guard let token = RelayToken.make(
+            pairing: pairing,
+            phoneCredential: relayCredentialForTokens,
+            role: "ios",
+            scope: "connect"
+        ) else {
             disconnect(autoReconnect: false, trigger: .connectionRestart)
             reportConnectionFailure(.staleRelayCredential, status: .error)
             return
@@ -652,6 +766,7 @@ final class RemoteClient {
         )
         deferredDecisions.reset()
         backgroundKeepalive.end()
+        userDisconnected = true
     }
 
     // MARK: - Input
@@ -1002,6 +1117,11 @@ final class RemoteClient {
             hasRemainingAttempts: reconnectBackoff.hasRemainingAttempts
         ) else {
             if !reconnectBackoff.hasRemainingAttempts {
+                if abandonUnconfirmedPairing(
+                    message: "Could not reach the relay in the QR code. Check your connection, then scan a fresh QR code."
+                ) {
+                    return
+                }
                 reportConnectionFailure(
                     .reconnectLimitReached(attempts: Self.maxReconnectAttempts),
                     status: .connectionFailed
@@ -1088,6 +1208,11 @@ final class RemoteClient {
             transport.close()
             isConnected = false
             session.invalidateSession(clearHandshakeMaterial: false)
+            if abandonUnconfirmedPairing(
+                message: "Your Mac did not answer. Make sure Chau7 is open with Remote enabled, then scan a fresh QR code."
+            ) {
+                return
+            }
             reportConnectionFailure(.handshakeTimedOut)
             emitTelemetry(
                 type: .errorReceived,
@@ -1242,6 +1367,7 @@ final class RemoteClient {
                 )
             }
             isConnected = true
+            confirmPairingIfUnconfirmed()
             status = .sessionReady
             if tabInventoryState != .ready {
                 tabInventoryState = .syncing
@@ -1279,6 +1405,7 @@ final class RemoteClient {
             )
         case .snapshot: storeSnapshot(payload, tabID: frame.tabID)
         case .terminalSize: handleTerminalSize(payload, tabID: frame.tabID)
+        case .relayCredential: handleRelayCredential(payload)
         case .terminalGridSnapshot:
             // Grid clients always consume host frames. Replay clients also use
             // them while a host full-screen TUI is active because folding an
@@ -1369,6 +1496,11 @@ private func handlePairAccept(_ data: Data) {
             log.error("handlePairAccept: Mac public key does not match pairing identity")
             DiagnosticsLog.shared.error(.connection, "Pair accept identity mismatch")
             endHandshakeForBrokenPairing()
+            if abandonUnconfirmedPairing(
+                message: "The Mac that answered is not the one in the QR code. Scan a fresh QR code from your Mac."
+            ) {
+                return
+            }
             reportConnectionFailure(.macIdentityChanged, status: .error)
             return
         }
@@ -1394,7 +1526,11 @@ private func handlePairAccept(_ data: Data) {
     private func handlePairReject(_ data: Data) {
         let reason = (try? RemoteJSON.decoder.decode(PairRejectPayload.self, from: data))?.reason
         endHandshakeForBrokenPairing()
-        reportConnectionFailure(.pairingRejected(reason: reason), status: .pairingRejected)
+        let failure = RemoteConnectionFailure.pairingRejected(reason: reason)
+        if abandonUnconfirmedPairing(message: failure.message) {
+            return
+        }
+        reportConnectionFailure(failure, status: .pairingRejected)
     }
 
     /// A rejected pairing or a changed Mac identity cannot be fixed by
@@ -1437,7 +1573,11 @@ private func handlePairAccept(_ data: Data) {
         }
         lastError = errorText
         emitTelemetry(type: .errorReceived, status: code, message: errorText)
-        status = .error
+        // The Mac refusing one input says nothing about the connection, which
+        // is still up: show the message and leave the status alone.
+        if !RemoteConnectionStartPolicy.isInputRefusal(code: code) {
+            status = .error
+        }
     }
 
     private func handleTabList(_ data: Data) {
@@ -1740,7 +1880,7 @@ private func handlePairAccept(_ data: Data) {
     private func sendPairRequest(recordTelemetry: Bool = true) {
         guard let pairing = pairingInfo else { return }
         sendJSON(PairRequestPayload(
-            deviceID: pairing.deviceID, pairingCode: pairing.pairingCode,
+            pairing: pairing,
             iosPub: session.iosKey.publicKey.rawRepresentation.base64EncodedString(),
             iosName: deviceName
         ), type: .pairRequest, encrypt: false)
@@ -2056,10 +2196,12 @@ private func handlePairAccept(_ data: Data) {
 
     private func shouldSendPairRequest(for pairing: PairingInfo, attempt: Int) -> Bool {
         guard !session.hasReceivedPairAccept else { return false }
-        if !hasStoredTrust(for: pairing) {
-            return true
-        }
-        return attempt >= Self.repairFallbackAttempt
+        return RemoteConnectionStartPolicy.shouldSendPairRequest(
+            hasStoredTrust: hasStoredTrust(for: pairing),
+            isFreshScan: isPairingUnconfirmed,
+            attempt: attempt,
+            fallbackAttempt: Self.repairFallbackAttempt
+        )
     }
 
     private func hasStoredTrust(for pairing: PairingInfo) -> Bool {
@@ -2273,7 +2415,12 @@ private func handlePairAccept(_ data: Data) {
         request.httpMethod = "GET"
         request.timeoutInterval = 10
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        guard let token = RelayToken.make(pairing: pairing, role: "ios", scope: "pending") else { return nil }
+        guard let token = RelayToken.make(
+            pairing: pairing,
+            phoneCredential: relayCredentialForTokens,
+            role: "ios",
+            scope: "pending"
+        ) else { return nil }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         return request
     }

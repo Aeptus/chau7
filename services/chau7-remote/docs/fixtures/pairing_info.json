@@ -3,7 +3,10 @@
   "device_id": "device-123",
   "mac_pub": "bWFjLXB1Yg==",
   "pairing_code": "123456",
+  "pairing_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio=",
   "expires_at": "2026-07-01T12:30:00Z",
   "relay_secret": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
-  "relay_key_id": "fixture-key"
+  "relay_key_id": "fixture-key",
+  "relay_pair_id": "p1782909000",
+  "relay_pair_secret": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI"
 }

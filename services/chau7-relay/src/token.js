@@ -5,6 +5,13 @@
  * Wire format:  `v3.{key_id}.{ts}.{nonce}.{scope}.{base64url_signature}`
  * Signed message: `v3:{key_id}:{deviceId}:{role}:{scope}:{ts}:{nonce}`
  *
+ * v4 is the per-phone form, signed with a credential the Mac minted for one
+ * phone (or for one pairing window) rather than the role credential every
+ * phone of that Mac shares:
+ *
+ * Wire format:  `v4.{key_id}.{phone_id}.{ts}.{nonce}.{scope}.{base64url_signature}`
+ * Signed message: `v4:{key_id}:{deviceId}:{role}:{phone_id}:{scope}:{ts}:{nonce}`
+ *
  * The signed message binds the token to a single device, role, and scope, so a
  * token minted for one endpoint cannot be replayed against another. `nonce` is
  * 16 random bytes (base64url, unpadded) and is enforced single-use by the
@@ -24,7 +31,7 @@ export const TOKEN_VERSION = 'v2';
 export const ROLES = Object.freeze(['mac', 'ios']);
 
 /** Endpoint scopes. A token is valid only for the scope it was signed for. */
-export const SCOPES = Object.freeze(['connect', 'push', 'pending', 'issues']);
+export const SCOPES = Object.freeze(['connect', 'push', 'pending', 'issues', 'phones']);
 
 /** Tokens are valid for this many seconds after `iat`. */
 export const TOKEN_TTL_SECONDS = 120;
@@ -72,7 +79,10 @@ async function importHmacKey(secret, usage) {
   );
 }
 
-function buildMessage(deviceId, role, scope, ts, nonce, keyId) {
+function buildMessage(deviceId, role, scope, ts, nonce, keyId, phoneId) {
+  if (phoneId !== undefined) {
+    return `v4:${keyId}:${deviceId}:${role}:${phoneId}:${scope}:${ts}:${nonce}`;
+  }
   const prefix = keyId === undefined ? TOKEN_VERSION : `v3:${keyId}`;
   return `${prefix}:${deviceId}:${role}:${scope}:${ts}:${nonce}`;
 }
@@ -87,12 +97,15 @@ export function parseToken(token) {
     return null;
   }
   const parts = token.split('.');
-  const isCredentialToken = parts.length === 6 && parts[0] === 'v3';
+  const isPhoneToken = parts.length === 7 && parts[0] === 'v4';
+  const isCredentialToken = isPhoneToken || (parts.length === 6 && parts[0] === 'v3');
   if (!isCredentialToken && (parts.length !== 5 || parts[0] !== TOKEN_VERSION)) return null;
   const keyId = isCredentialToken ? parts[1] : undefined;
   if (isCredentialToken && !/^[A-Za-z0-9_-]{1,32}$/.test(keyId)) return null;
-  const [version, tsRaw, nonce, scope, signature] = isCredentialToken
-    ? [parts[0], ...parts.slice(2)]
+  const phoneId = isPhoneToken ? parts[2] : undefined;
+  if (isPhoneToken && !/^[A-Za-z0-9_-]{1,32}$/.test(phoneId)) return null;
+  const [, tsRaw, nonce, scope, signature] = isCredentialToken
+    ? [parts[0], ...parts.slice(isPhoneToken ? 3 : 2)]
     : parts;
   if (!/^\d{1,15}$/.test(tsRaw)) {
     return null;
@@ -106,7 +119,14 @@ export function parseToken(token) {
   if (!signature || !/^[A-Za-z0-9_-]+$/.test(signature)) {
     return null;
   }
-  return { ts: Number(tsRaw), nonce, scope, signature, ...(keyId === undefined ? {} : { keyId }) };
+  return {
+    ts: Number(tsRaw),
+    nonce,
+    scope,
+    signature,
+    ...(keyId === undefined ? {} : { keyId }),
+    ...(phoneId === undefined ? {} : { phoneId })
+  };
 }
 
 /**
@@ -116,11 +136,14 @@ export function parseToken(token) {
  * discriminated result so the caller can both authorize and (on success)
  * extract the nonce/expiry for single-use enforcement.
  *
+ * @param {string} token
+ * @param {{deviceId: string, role: string, scope: string, secret: string, keyId?: string, phoneId?: string}} expected
+ * @param {number} [nowSeconds]
  * @returns {Promise<{ok: true, nonce: string, expiresAt: number} | {ok: false, reason: string}>}
  */
 export async function verifyToken(
   token,
-  { deviceId, role, scope, secret, keyId },
+  { deviceId, role, scope, secret, keyId, phoneId },
   nowSeconds = Date.now() / 1000
 ) {
   if (!ROLES.includes(role) || !SCOPES.includes(scope)) {
@@ -131,6 +154,7 @@ export async function verifyToken(
     return { ok: false, reason: 'malformed' };
   }
   if (parsed.keyId !== keyId) return { ok: false, reason: 'key_mismatch' };
+  if (parsed.phoneId !== phoneId) return { ok: false, reason: 'phone_mismatch' };
   if (parsed.scope !== scope) {
     return { ok: false, reason: 'scope_mismatch' };
   }
@@ -149,7 +173,7 @@ export async function verifyToken(
   }
 
   const key = await importHmacKey(secret, 'verify');
-  const message = buildMessage(deviceId, role, scope, parsed.ts, parsed.nonce, keyId);
+  const message = buildMessage(deviceId, role, scope, parsed.ts, parsed.nonce, keyId, phoneId);
   // crypto.subtle.verify is constant-time over the raw HMAC bytes.
   const valid = await crypto.subtle.verify('HMAC', key, signatureBytes, encoder.encode(message));
   if (!valid) {
@@ -165,17 +189,25 @@ export async function verifyToken(
 /**
  * Mint a token. The relay never calls this in production (clients mint), but it
  * keeps the wire format in one place and lets tests exercise verify() honestly.
+ *
+ * @param {{deviceId: string, role: string, scope: string, secret: string, keyId?: string, phoneId?: string}} params
+ * @param {number} [nowSeconds]
  */
 export async function mintToken(
-  { deviceId, role, scope, secret, keyId },
+  { deviceId, role, scope, secret, keyId, phoneId },
   nowSeconds = Date.now() / 1000
 ) {
   const ts = Math.floor(nowSeconds);
   const nonceBytes = crypto.getRandomValues(new Uint8Array(16));
   const nonce = bytesToBase64url(nonceBytes);
   const key = await importHmacKey(secret, 'sign');
-  const message = buildMessage(deviceId, role, scope, ts, nonce, keyId);
+  const message = buildMessage(deviceId, role, scope, ts, nonce, keyId, phoneId);
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
-  const prefix = keyId === undefined ? TOKEN_VERSION : `v3.${keyId}`;
+  const prefix =
+    phoneId !== undefined
+      ? `v4.${keyId}.${phoneId}`
+      : keyId === undefined
+        ? TOKEN_VERSION
+        : `v3.${keyId}`;
   return `${prefix}.${ts}.${nonce}.${scope}.${bytesToBase64url(signature)}`;
 }

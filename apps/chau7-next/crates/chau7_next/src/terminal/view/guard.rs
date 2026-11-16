@@ -18,6 +18,9 @@ use chau7_next_core::remote::key_input::InputStep;
 
 /// Exactly one complete input plan waiting for a decision.
 pub(super) struct GuardPrompt {
+    /// Names this decision to a remote approver, so an answer for an earlier
+    /// hold can never release a later one.
+    id: String,
     command: String,
     pattern: Option<String>,
     pending: Vec<InputStep>,
@@ -26,6 +29,32 @@ pub(super) struct GuardPrompt {
     dont_warn: bool,
     reason: Option<String>,
     focus_pending: bool,
+}
+
+/// A held input as a remote approver sees it (the phone, through the remote
+/// host's approval flow).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GuardHold {
+    pub id: String,
+    pub command: String,
+    /// The matched pattern, or why Chau7 protects the target.
+    pub pattern: Option<String>,
+    pub reason: Option<String>,
+    /// On the block list or protected outright: no approval can run it.
+    pub blocked: bool,
+}
+
+/// What answering a hold from outside the window did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GuardResolution {
+    /// Approved and written to the terminal.
+    Delivered,
+    /// Denied, or blocked: nothing was written.
+    Dropped,
+    /// Approved, but the terminal changed since the hold: nothing was written.
+    Stale,
+    /// No hold with this id is waiting (already answered in the window).
+    Gone,
 }
 
 /// Lines and bytes of a held command shown in the confirmation. A paste can be
@@ -95,11 +124,56 @@ impl TerminalView {
     }
 
     pub(super) fn focus_guard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(prompt) = self.guard_prompt.as_mut()
-            && std::mem::take(&mut prompt.focus_pending)
-        {
-            window.focus(&self.guard_focus, cx);
+        match self.guard_prompt.as_mut() {
+            Some(prompt) => {
+                if std::mem::take(&mut prompt.focus_pending) {
+                    window.focus(&self.guard_focus, cx);
+                }
+            }
+            // The hold was answered without this window (from the phone):
+            // typing goes back to the terminal.
+            None if self.guard_focus.is_focused(window) => {
+                window.focus(&self.focus_handle, cx);
+            }
+            None => {}
         }
+    }
+
+    /// The input waiting for a decision, for an approver outside the window.
+    pub(crate) fn held_input(&self) -> Option<GuardHold> {
+        self.guard_prompt.as_ref().map(|prompt| GuardHold {
+            id: prompt.id.clone(),
+            command: prompt.command.clone(),
+            pattern: prompt.pattern.clone(),
+            reason: prompt.reason.clone(),
+            blocked: prompt.pattern.is_none(),
+        })
+    }
+
+    /// Answer the hold named `id` without the window: the same decision as
+    /// Execute or Cancel, with the same checks. A blocked command never runs
+    /// and a hold whose terminal changed delivers nothing.
+    pub(crate) fn resolve_guard_hold(
+        &mut self,
+        id: &str,
+        run: bool,
+        cx: &mut Context<Self>,
+    ) -> GuardResolution {
+        if self.guard_prompt.as_ref().map(|prompt| prompt.id.as_str()) != Some(id) {
+            return GuardResolution::Gone;
+        }
+        let Some(prompt) = self.guard_prompt.take() else {
+            return GuardResolution::Gone;
+        };
+        cx.notify();
+        if !run || prompt.pattern.is_none() {
+            return GuardResolution::Dropped;
+        }
+        if !prompt.context.accepts(self.approval_context(cx).as_ref()) {
+            return GuardResolution::Stale;
+        }
+        self.deliver_steps(prompt.pending, prompt.broadcast, cx);
+        GuardResolution::Delivered
     }
 
     /// Remote body and delayed Enter form one admission. A held or blocked plan
@@ -234,6 +308,7 @@ impl TerminalView {
             pending.iter().map(|step| step.bytes.len()).sum::<usize>(),
         );
         self.guard_prompt = Some(GuardPrompt {
+            id: uuid::Uuid::new_v4().to_string().to_uppercase(),
             command,
             pattern,
             pending,
@@ -654,6 +729,121 @@ mod tests {
             .unwrap();
         let _ = std::fs::remove_dir_all(home);
     }
+    /// A hold can be answered without the window (the phone's approval):
+    /// only the named hold, a blocked command never runs, and an approval
+    /// delivers the held plan exactly once.
+    #[gpui::test]
+    fn a_hold_is_answered_remotely_by_id(cx: &mut TestAppContext) {
+        let home =
+            std::env::temp_dir().join(format!("chau7-next-admission-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).unwrap();
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            cx.set_global(Settings::default());
+            cx.set_global(AppData::new(DataRoot::with_home(home.clone(), true)));
+            command_guard::init(cx);
+        });
+        let (handle, view) = cx.update(|cx| {
+            gpui_kit::open_window(gpui::WindowOptions::default(), cx, |window, cx| {
+                let term = Chau7Terminal::new_with_args_env_in_dir(
+                    80,
+                    24,
+                    "/bin/cat",
+                    &[],
+                    &[("TERM", "xterm-256color")],
+                    None,
+                )
+                .unwrap();
+                let session =
+                    cx.new(|cx| TerminalSession::from_terminal_manually_driven(term, None, cx));
+                cx.new(|cx| TerminalView::new(session, window, cx))
+            })
+            .unwrap()
+        });
+        let session = cx.update(|cx| view.read(cx).session.clone());
+        let pid = cx.update(|cx| session.read(cx).shell_pid());
+        let plan = |command: String| {
+            vec![
+                InputStep {
+                    bytes: command.into_bytes(),
+                    delay_ms: 0,
+                },
+                InputStep {
+                    bytes: vec![13],
+                    delay_ms: 0,
+                },
+            ]
+        };
+        cx.update(|cx| {
+            view.update(cx, |view, cx| {
+                assert!(view.held_input().is_none());
+                // Blocked outright: the hold says so and approving runs nothing.
+                assert!(!view.send_guarded_steps(plan(format!("kill {pid}")), cx));
+                let blocked = view.held_input().expect("held");
+                assert!(blocked.blocked && blocked.reason.is_some());
+                let revision = view.session.read(cx).input_revision();
+                assert_eq!(
+                    view.resolve_guard_hold(&blocked.id, true, cx),
+                    GuardResolution::Dropped
+                );
+                assert!(view.held_input().is_none());
+                assert_eq!(view.session.read(cx).input_revision(), revision);
+                assert_eq!(
+                    view.resolve_guard_hold(&blocked.id, true, cx),
+                    GuardResolution::Gone
+                );
+            });
+            cx.global_mut::<Settings>()
+                .dangerous_commands
+                .protect_chau7_level = ProtectionLevel::Warning;
+            view.update(cx, |view, cx| {
+                let revision = view.session.read(cx).input_revision();
+                assert!(!view.send_guarded_steps(plan(format!("kill {pid}")), cx));
+                let hold = view.held_input().expect("held");
+                assert!(!hold.blocked);
+                assert_eq!(hold.command, format!("kill {pid}"));
+                // An answer for another hold leaves this one waiting.
+                assert_eq!(
+                    view.resolve_guard_hold("OTHER", true, cx),
+                    GuardResolution::Gone
+                );
+                assert_eq!(view.held_input().as_ref(), Some(&hold));
+                assert_eq!(view.session.read(cx).input_revision(), revision);
+                assert_eq!(
+                    view.resolve_guard_hold(&hold.id, true, cx),
+                    GuardResolution::Delivered
+                );
+                assert_eq!(view.session.read(cx).input_revision(), revision + 2);
+                assert!(view.held_input().is_none());
+
+                // Denied: dropped, and the terminal takes input again.
+                assert!(!view.send_guarded_steps(plan(format!("kill {pid}")), cx));
+                let denied = view.held_input().expect("held again");
+                assert_ne!(denied.id, hold.id);
+                assert_eq!(
+                    view.resolve_guard_hold(&denied.id, false, cx),
+                    GuardResolution::Dropped
+                );
+                assert_eq!(view.session.read(cx).input_revision(), revision + 2);
+
+                // Approved after the terminal changed: nothing is written.
+                assert!(!view.send_guarded_steps(plan(format!("kill {pid}")), cx));
+                let stale = view.held_input().expect("held a third time");
+                view.session.read(cx).write_input(b"x");
+                let revision = view.session.read(cx).input_revision();
+                assert_eq!(
+                    view.resolve_guard_hold(&stale.id, true, cx),
+                    GuardResolution::Stale
+                );
+                assert_eq!(view.session.read(cx).input_revision(), revision);
+                view.session.update(cx, |session, _| session.close());
+            });
+        });
+        cx.update_window(handle, |_, window, _| window.remove_window())
+            .unwrap();
+        let _ = std::fs::remove_dir_all(home);
+    }
+
     #[gpui::test]
     fn recalled_grid_command_is_guarded_but_running_program_owns_enter(cx: &mut TestAppContext) {
         let home =
@@ -788,6 +978,7 @@ mod fit_tests {
             view.update(cx, |view, cx| {
                 let context = view.approval_context(cx).unwrap();
                 view.guard_prompt = Some(GuardPrompt {
+                    id: "fit".into(),
                     command: (0..300)
                         .map(|i| format!("rm -rf /tmp/chau7-{i}\n"))
                         .collect(),
