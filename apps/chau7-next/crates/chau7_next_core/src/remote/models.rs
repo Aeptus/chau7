@@ -21,6 +21,17 @@ pub struct RemotePairingInfo {
     /// Ordinary serialization and diagnostics must never disclose it.
     #[serde(default, skip_serializing)]
     pub relay_secret: Option<String>,
+    /// Secret the phone proves it scanned, without sending it. Like the relay
+    /// credential it belongs in the QR only and is never serialized elsewhere.
+    #[serde(default, skip_serializing)]
+    pub pairing_key: Option<String>,
+    /// A relay credential good only until this code expires, so a phone can
+    /// reach the Mac to pair and then be given a credential of its own. QR
+    /// only. Absent when the relay has no per-phone credentials.
+    #[serde(default, skip_serializing)]
+    pub relay_pair_id: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub relay_pair_secret: Option<String>,
 }
 
 /// Explicit secure QR serialization; ordinary device details omit admission credentials.
@@ -35,6 +46,12 @@ pub struct RemoteQrPayload {
     pub relay_key_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relay_secret: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pairing_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relay_pair_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relay_pair_secret: Option<String>,
 }
 
 impl std::fmt::Debug for RemotePairingInfo {
@@ -63,6 +80,9 @@ impl RemotePairingInfo {
             expires_at: self.expires_at.clone(),
             relay_key_id: self.relay_key_id.clone(),
             relay_secret: None,
+            pairing_key: None,
+            relay_pair_id: None,
+            relay_pair_secret: None,
         };
         serde_json::to_string(&payload).unwrap_or_default()
     }
@@ -102,6 +122,12 @@ impl RemotePairingInfo {
                 "Pairing information is incomplete. Check Remote settings and refresh the code.",
             );
         }
+        // Both halves or neither: one without the other is not a credential.
+        let pair = self
+            .relay_pair_id
+            .as_deref()
+            .zip(self.relay_pair_secret.as_deref())
+            .filter(|(id, secret)| valid_identifier(id, 32) && valid_role_secret(secret));
         let payload = RemoteQrPayload {
             relay_url: self.relay_url.clone(),
             device_id: self.device_id.clone(),
@@ -110,6 +136,9 @@ impl RemotePairingInfo {
             expires_at: self.expires_at.clone(),
             relay_key_id: Some(key_id.to_owned()),
             relay_secret: Some(secret.to_owned()),
+            pairing_key: self.pairing_key.clone().filter(|key| !key.is_empty()),
+            relay_pair_id: pair.map(|(id, _)| id.to_owned()),
+            relay_pair_secret: pair.map(|(_, secret)| secret.to_owned()),
         };
         serde_json::to_string(&payload)
             .map_err(|_| "Cannot prepare the pairing code. Refresh the code.")
@@ -311,6 +340,9 @@ mod tests {
             relay_url: "wss://relay.example.com/connect".into(),
             relay_key_id: None,
             relay_secret: None,
+            pairing_key: None,
+            relay_pair_id: None,
+            relay_pair_secret: None,
         };
         assert_eq!(
             info.qr_payload_string(),
@@ -337,13 +369,20 @@ mod tests {
         let decoded: RemotePairingInfo = serde_json::from_str(&qr).unwrap();
         assert_eq!(decoded, info);
         let secret = info.relay_secret.as_deref().unwrap();
+        let pairing_key = info.pairing_key.as_deref().unwrap();
+        let pair_secret = info.relay_pair_secret.as_deref().unwrap();
+        assert!(qr.contains(pair_secret));
+        assert!(qr.contains(info.relay_pair_id.as_deref().unwrap()));
         assert!(qr.contains(secret));
+        assert!(qr.contains(pairing_key));
         for public in [
             info.qr_payload_string(),
             serde_json::to_string(&info).unwrap(),
             format!("{info:?}"),
         ] {
             assert!(!public.contains(secret));
+            assert!(!public.contains(pairing_key));
+            assert!(!public.contains(pair_secret));
         }
     }
 

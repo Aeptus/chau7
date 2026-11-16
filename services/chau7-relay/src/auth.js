@@ -96,6 +96,80 @@ export async function deriveRoleCredential(rootSecret, keyId, deviceId, role) {
   return bytesToBase64url(derived);
 }
 
+/** A pairing-window label: `p` + the unix second the window closes. */
+const PAIR_LABEL = /^p(\d{1,12})$/;
+/** The Mac shows a pairing QR for ten minutes; allow for its clock running ahead. */
+export const MAX_PAIR_WINDOW_SECONDS = 20 * 60;
+export const MAX_PHONES = 64;
+
+/**
+ * The credential the Mac mints for one phone, or for one pairing window. It is
+ * keyed by the Mac role credential, which no phone holds, so one phone cannot
+ * derive another's and a revoked phone cannot mint itself a new one.
+ */
+export async function derivePhoneCredential(macSecret, phoneId) {
+  if (!isStrongRelayCredential(macSecret) || !KEY_ID.test(phoneId ?? '')) {
+    throw new Error('Invalid phone credential parameters');
+  }
+  const key = await crypto.subtle.importKey(
+    'raw',
+    base64urlToBytes(macSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const derived = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(`chau7-v4:phone:${phoneId}`)
+  );
+  return bytesToBase64url(derived);
+}
+
+/** Seconds a pairing-window label is still good for; 0 when closed or not a label. */
+export function pairWindowRemaining(phoneId, nowSeconds) {
+  const match = PAIR_LABEL.exec(phoneId ?? '');
+  if (!match) return 0;
+  const remaining = Number(match[1]) - nowSeconds;
+  return remaining > 0 && remaining <= MAX_PAIR_WINDOW_SECONDS ? remaining : 0;
+}
+
+export function isPairLabel(phoneId) {
+  return PAIR_LABEL.test(phoneId ?? '');
+}
+
+/**
+ * The Mac's list of phones it trusts. `locked` turns on once a phone has been
+ * removed from it; from then on the credential all phones share is refused,
+ * because the removed phone still holds it.
+ * @typedef {{ phones: string[], locked: boolean }} PhonePolicy
+ */
+
+/** @returns {PhonePolicy | null} null when the list is malformed. */
+export function nextPhonePolicy(stored, phones) {
+  if (
+    !Array.isArray(phones) ||
+    phones.length > MAX_PHONES ||
+    phones.some((id) => typeof id !== 'string' || !KEY_ID.test(id) || isPairLabel(id))
+  ) {
+    return null;
+  }
+  const next = [...new Set(phones)];
+  const removed = (stored?.phones ?? []).some((id) => !next.includes(id));
+  return { phones: next, locked: Boolean(stored?.locked) || removed };
+}
+
+/**
+ * Whether an iOS credential may use this Mac's namespace. `phoneId` is
+ * undefined for the shared (v3) credential. Signature and pairing-window
+ * expiry are checked before this, where the token is verified.
+ */
+export function isPhoneAdmitted(policy, phoneId) {
+  if (phoneId === undefined) return !policy?.locked;
+  if (isPairLabel(phoneId)) return true;
+  return Boolean(policy?.phones.includes(phoneId));
+}
+
 export function isCredentialAdmissionAllowed(
   policy,
   deviceId,
@@ -136,6 +210,24 @@ export async function verifyCredentialToken(
     return { ok: false, reason: 'credential_denied' };
   }
   const root = parsed.keyId === policy.current.id ? policy.current : policy.previous;
+  if (parsed.phoneId !== undefined) {
+    if (expected.role !== 'ios') return { ok: false, reason: 'credential_denied' };
+    if (isPairLabel(parsed.phoneId) && pairWindowRemaining(parsed.phoneId, nowSeconds) === 0) {
+      return { ok: false, reason: 'pair_window_closed' };
+    }
+    const macSecret = await deriveRoleCredential(
+      root.secret,
+      parsed.keyId,
+      expected.deviceId,
+      'mac'
+    );
+    const secret = await derivePhoneCredential(macSecret, parsed.phoneId);
+    return verifyToken(
+      token,
+      { ...expected, keyId: parsed.keyId, phoneId: parsed.phoneId, secret },
+      nowSeconds
+    );
+  }
   const secret = await deriveRoleCredential(
     root.secret,
     parsed.keyId,

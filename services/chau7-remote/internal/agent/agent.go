@@ -69,6 +69,10 @@ type Agent struct {
 
 	pairingCode    string
 	pairingExpires time.Time
+	// pairingKey is a 32-byte secret shown only in the QR. A pair request
+	// proves knowledge of it without sending it, so the relay never sees a
+	// value that would let it pair a key of its own.
+	pairingKey []byte
 
 	// A pair request names an iOS identity but does not yet prove the sender
 	// holds the private key for it. Trust is only persisted once the peer
@@ -79,7 +83,10 @@ type Agent struct {
 	// relay never holds up terminal output or input.
 	relayWorkOnce sync.Once
 	relayWorkCh   chan func()
-	pendingPair   *pendingPair
+	// Whether the relay enforces the list of phones this Mac trusts; see
+	// relay_phones.go.
+	phoneCredentialsSupported atomic.Bool
+	pendingPair               *pendingPair
 
 	ipcMu   sync.Mutex
 	ipcConn *net.UnixConn
@@ -150,10 +157,15 @@ type HelloPayload struct {
 }
 
 type PairRequestPayload struct {
-	DeviceID    string `json:"device_id"`
-	PairingCode string `json:"pairing_code"`
-	IOSPub      string `json:"ios_pub"`
-	IOSName     string `json:"ios_name"`
+	DeviceID string `json:"device_id"`
+	// PairingCode is sent only by phones older than the pairing proof. It
+	// crosses the relay in cleartext and no longer authorises anything.
+	PairingCode string `json:"pairing_code,omitempty"`
+	// PairingProof is base64 HMAC-SHA256 over the request, keyed by the
+	// pairing key from the QR. See pairingProof.
+	PairingProof string `json:"pairing_proof,omitempty"`
+	IOSPub       string `json:"ios_pub"`
+	IOSName      string `json:"ios_name"`
 }
 
 type PairAcceptPayload struct {
@@ -322,11 +334,19 @@ type PairingInfoPayload struct {
 	DeviceID    string `json:"device_id"`
 	MacPub      string `json:"mac_pub"`
 	PairingCode string `json:"pairing_code"`
-	ExpiresAt   string `json:"expires_at"`
+	// PairingKey is the base64 pairing key. It belongs in the QR only.
+	PairingKey string `json:"pairing_key"`
+	ExpiresAt  string `json:"expires_at"`
 	// RelaySecret carries only the derived iOS role credential for this Mac.
 	// Neither the server root nor the Mac role credential is paired.
 	RelaySecret string `json:"relay_secret"`
 	RelayKeyID  string `json:"relay_key_id"`
+	// RelayPairID and RelayPairSecret are a relay credential good only until
+	// the pairing code expires. A phone uses it to reach the Mac for pairing
+	// and is then given a credential of its own. Absent on a relay that does
+	// not support per-phone credentials.
+	RelayPairID     string `json:"relay_pair_id,omitempty"`
+	RelayPairSecret string `json:"relay_pair_secret,omitempty"`
 }
 
 type cryptoSession struct {
@@ -558,6 +578,8 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		a.wsMu.Unlock()
 		a.updateRelayStatus("connected", 0)
 		a.resetSession()
+		// A phone removed while the agent was stopped is cut off from here.
+		a.relayWork(func() { a.syncRelayPhones(ctx) })
 		a.stateMu.Lock()
 		hasPaired := a.state.HasPairedDevices()
 		a.stateMu.Unlock()
@@ -676,8 +698,10 @@ func (a *Agent) handleIPCFrame(ctx context.Context, frame *protocol.Frame) {
 			a.sendEncryptedToRelay(ctx, frame)
 		}
 	case protocol.TypeCachedTabList:
+		// Tab titles and directories are session content: encrypted like the
+		// live tab list, never in cleartext through the relay.
 		if a.shouldForwardLiveFrames() {
-			a.sendToRelay(ctx, frame)
+			a.sendEncryptedToRelay(ctx, frame)
 		}
 	case protocol.TypePing:
 		if a.isSessionReady() {
@@ -743,6 +767,7 @@ func (a *Agent) handleRelayFrame(ctx context.Context, frame *protocol.Frame) {
 			Payload: frame.Payload,
 		})
 		a.sendSessionStatus("ready")
+		a.relayWork(func() { a.issuePhoneCredential(ctx) })
 	case protocol.TypeClientState:
 		if requiresEncryptedRelayFrame(frame.Type) && !wasEncrypted {
 			return
@@ -770,6 +795,8 @@ func (a *Agent) handleRelayFrame(ctx context.Context, frame *protocol.Frame) {
 			TabID:   frame.TabID,
 			Payload: frame.Payload,
 		})
+	case protocol.TypeRelayAck:
+		// Meant for the relay; one that predates acknowledgements forwards it.
 	default:
 		log.Printf("relay: unhandled frame type 0x%02x (encrypted=%v)", frame.Type, wasEncrypted)
 	}
@@ -914,7 +941,7 @@ func (a *Agent) handlePairRequest(ctx context.Context, payload []byte) {
 	}
 	a.pairingMu.Unlock()
 
-	if !a.isPairRequestAuthorized(request, time.Now()) {
+	if reason := a.pairRequestRejection(request, time.Now()); reason != "" {
 		a.pairingMu.Lock()
 		a.pairingAttempts++
 		if a.pairingAttempts >= 5 {
@@ -923,7 +950,7 @@ func (a *Agent) handlePairRequest(ctx context.Context, payload []byte) {
 			log.Printf("pair request: too many failures, locked out for 60s")
 		}
 		a.pairingMu.Unlock()
-		a.sendPairReject(ctx, "invalid_code")
+		a.sendPairReject(ctx, reason)
 		return
 	}
 
@@ -1001,17 +1028,47 @@ func (a *Agent) handlePairRequest(ctx context.Context, payload []byte) {
 	}
 }
 
-func (a *Agent) isPairRequestAuthorized(request PairRequestPayload, now time.Time) bool {
-	a.pairingMu.Lock()
-	codeMatch := request.PairingCode == a.pairingCode && now.Before(a.pairingExpires)
-	a.pairingMu.Unlock()
-	if codeMatch {
-		return true
-	}
+// pairingProof binds a pair request to the QR that was scanned. The key never
+// leaves the QR and the Mac, so a relay that forwards the request can neither
+// read a reusable secret from it nor swap in a key of its own: the proof covers
+// the iOS public key it would have to replace.
+func pairingProof(key []byte, deviceID, iosPub, code string) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte("chau7-pair-v2\x00" + deviceID + "\x00" + iosPub + "\x00" + code))
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// pairRequestRejection returns "" when the request may proceed, otherwise the
+// PAIR_REJECT reason. A phone the Mac already trusts needs no proof: it still
+// has to complete the handshake with its private key.
+func (a *Agent) pairRequestRejection(request PairRequestPayload, now time.Time) string {
 	a.stateMu.Lock()
-	found := a.state.FindPairedDeviceByPublicKey(request.IOSPub) != nil
+	known := a.state.FindPairedDeviceByPublicKey(request.IOSPub) != nil
 	a.stateMu.Unlock()
-	return found
+	if known {
+		return ""
+	}
+	if request.PairingProof == "" {
+		if request.PairingCode != "" {
+			// A phone from before the proof. Its code crossed the relay in
+			// cleartext, so it cannot be honoured.
+			return "update_required"
+		}
+		return "invalid_code"
+	}
+	a.pairingMu.Lock()
+	key := a.pairingKey
+	code := a.pairingCode
+	live := now.Before(a.pairingExpires)
+	a.pairingMu.Unlock()
+	if len(key) == 0 || !live {
+		return "expired_code"
+	}
+	want := pairingProof(key, a.state.DeviceID, request.IOSPub, code)
+	if !hmac.Equal([]byte(want), []byte(request.PairingProof)) {
+		return "invalid_code"
+	}
+	return ""
 }
 
 func (a *Agent) setPendingPair(name, pub string) {
@@ -1604,15 +1661,16 @@ func (a *Agent) sendCredentialError(err error) {
 	a.sendToIPC(&protocol.Frame{Version: 1, Type: protocol.TypeError, Seq: a.nextSeq(), Payload: payload})
 }
 
-func (a *Agent) sendPairingInfo() {
+// buildPairingInfo is what the pairing QR code is made from.
+func (a *Agent) buildPairingInfo() (PairingInfoPayload, error) {
 	credentials, err := a.currentRelayCredentials()
 	if err != nil {
-		a.sendCredentialError(err)
-		return
+		return PairingInfoPayload{}, err
 	}
 	a.pairingMu.Lock()
 	code := a.pairingCode
 	expires := a.pairingExpires
+	key := a.pairingKey
 	a.pairingMu.Unlock()
 
 	info := PairingInfoPayload{
@@ -1620,9 +1678,25 @@ func (a *Agent) sendPairingInfo() {
 		DeviceID:    a.state.DeviceID,
 		MacPub:      a.state.MacPublicKey,
 		PairingCode: code,
+		PairingKey:  base64.StdEncoding.EncodeToString(key),
 		ExpiresAt:   expires.UTC().Format(time.RFC3339),
 		RelaySecret: credentials.IOSSecret,
 		RelayKeyID:  credentials.KeyID,
+	}
+	if a.phoneCredentialsSupported.Load() {
+		pairID := pairWindowRelayID(expires.Unix())
+		if secret, err := derivePhoneRelaySecret(credentials.MacSecret, pairID); err == nil {
+			info.RelayPairID, info.RelayPairSecret = pairID, secret
+		}
+	}
+	return info, nil
+}
+
+func (a *Agent) sendPairingInfo() {
+	info, err := a.buildPairingInfo()
+	if err != nil {
+		a.sendCredentialError(err)
+		return
 	}
 	data, err := json.Marshal(info)
 	if err != nil {
@@ -2084,9 +2158,14 @@ func (a *Agent) relayDialOptions() (*websocket.DialOptions, error) {
 
 func (a *Agent) refreshPairingCode() {
 	code := newPairingCode()
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		log.Fatalf("crypto/rand failed: %v", err)
+	}
 	expires := time.Now().Add(pairingTTL)
 	a.pairingMu.Lock()
 	a.pairingCode = code
+	a.pairingKey = key
 	a.pairingExpires = expires
 	a.pairingMu.Unlock()
 }

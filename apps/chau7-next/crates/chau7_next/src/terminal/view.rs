@@ -125,6 +125,7 @@ pub struct TerminalView {
 mod danger;
 mod guard;
 use super::links;
+pub(crate) use guard::GuardResolution;
 
 impl EventEmitter<TerminalViewEvent> for TerminalView {}
 

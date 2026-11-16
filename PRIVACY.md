@@ -65,7 +65,7 @@ until the token's final accepted second ends (120-second TTL plus permitted
 future clock skew). Alarms clean idle storage; expired reads and push delivery
 also enforce expiry. Legacy records are cleaned on activation, and no immediate
 cleanup of a dormant pre-upgrade object is claimed. These remote-control records
-are separate from the bug-report sub-processor table above.
+are separate from the bug-report sub-processor table above. The relay also keeps, for each Mac, the list of phones that Mac trusts (a short hash of each phone's public key) so that a phone you remove can no longer connect; it is kept until your Mac replaces it.
 
 Source: [`services/chau7-relay/`](services/chau7-relay/) and [`services/chau7-remote/`](services/chau7-remote/)
 

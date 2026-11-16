@@ -117,15 +117,18 @@ impl Default for GraphicsOptions {
 /// display cadence uncapped; explicit caps apply to UI refresh only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ActivePollingRateCap {
+    /// 120 Hz, dropping to 60 and 30 Hz as host CPU load rises.
     #[default]
+    Adaptive,
     DisplayNative,
     Hz60,
     Hz30,
 }
 impl ActivePollingRateCap {
-    pub const ALL: [Self; 3] = [Self::DisplayNative, Self::Hz60, Self::Hz30];
+    pub const ALL: [Self; 4] = [Self::Adaptive, Self::DisplayNative, Self::Hz60, Self::Hz30];
     pub fn raw(self) -> &'static str {
         match self {
+            Self::Adaptive => "adaptive",
             Self::DisplayNative => "displayNative",
             Self::Hz60 => "hz60",
             Self::Hz30 => "hz30",
@@ -136,6 +139,8 @@ impl ActivePollingRateCap {
     }
     pub fn cap_hz(self) -> Option<u32> {
         match self {
+            // The ceiling; the live rate comes from the host load sampler.
+            Self::Adaptive => Some(120),
             Self::DisplayNative => None,
             Self::Hz60 => Some(60),
             Self::Hz30 => Some(30),
@@ -143,6 +148,7 @@ impl ActivePollingRateCap {
     }
     pub fn label(self) -> String {
         match self {
+            Self::Adaptive => crate::l10n::l("activePollingRateCap.adaptive", "Adaptive"),
             Self::DisplayNative => {
                 crate::l10n::l("activePollingRateCap.displayNative", "Display Native")
             }
@@ -164,7 +170,7 @@ pub struct RenderingOptions {
     /// `suspendRenderDelaySeconds` (5): time a tab stays live after it is hidden.
     pub suspend_delay_secs: f32,
     pub active_polling_rate_cap: ActivePollingRateCap,
-    /// Visible unfocused terminal views; 1 to 120 fps, current default 42.
+    /// Visible unfocused terminal views; 1 to 120 fps, current default 30.
     pub inactive_view_max_fps: u32,
 }
 
@@ -174,8 +180,8 @@ impl Default for RenderingOptions {
             gpu_renderer: true,
             suspend_background: false,
             suspend_delay_secs: 5.0,
-            active_polling_rate_cap: ActivePollingRateCap::DisplayNative,
-            inactive_view_max_fps: 42,
+            active_polling_rate_cap: ActivePollingRateCap::Adaptive,
+            inactive_view_max_fps: 30,
         }
     }
 }
@@ -554,12 +560,18 @@ mod tests {
     }
 
     #[test]
-    fn refresh_caps_default_parse_and_bounds_match_current_swift() {
+    fn refresh_caps_default_parse_and_bounds() {
         assert_eq!(
-            RenderingOptions::default().active_polling_rate_cap.cap_hz(),
-            None
+            RenderingOptions::default().active_polling_rate_cap,
+            ActivePollingRateCap::Adaptive
         );
-        assert_eq!(RenderingOptions::default().inactive_view_max_fps, 42);
+        assert_eq!(ActivePollingRateCap::Adaptive.cap_hz(), Some(120));
+        assert_eq!(ActivePollingRateCap::DisplayNative.cap_hz(), None);
+        assert_eq!(
+            ActivePollingRateCap::from_raw("adaptive"),
+            Some(ActivePollingRateCap::Adaptive)
+        );
+        assert_eq!(RenderingOptions::default().inactive_view_max_fps, 30);
         assert_eq!(ActivePollingRateCap::Hz60.cap_hz(), Some(60));
         assert_eq!(ActivePollingRateCap::Hz30.cap_hz(), Some(30));
         assert_eq!(ActivePollingRateCap::from_raw("invalid"), None);
@@ -575,7 +587,7 @@ mod tests {
         );
         assert_eq!(
             high.rendering.active_polling_rate_cap,
-            ActivePollingRateCap::DisplayNative
+            ActivePollingRateCap::Adaptive
         );
         assert_eq!(high.rendering.inactive_view_max_fps, 120);
     }
