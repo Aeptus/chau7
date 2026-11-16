@@ -155,6 +155,22 @@ impl Scene {
         }
     }
 
+    /// What was painted since `mark`, layers included, for [`Scene::replay_recording`].
+    pub fn record_since(&self, mark: usize) -> Option<PaintRecording> {
+        Some(PaintRecording(self.paint_operations.get(mark..)?.to_vec()))
+    }
+
+    /// Paint a recording again, in the current layer.
+    pub fn replay_recording(&mut self, recording: &PaintRecording) {
+        for operation in &recording.0 {
+            match operation {
+                PaintOperation::Primitive(primitive) => self.insert_primitive(primitive.clone()),
+                PaintOperation::StartLayer(bounds) => self.push_layer(*bounds),
+                PaintOperation::EndLayer => self.pop_layer(),
+            }
+        }
+    }
+
     pub fn finish(&mut self) {
         self.shadows.sort_by_key(|shadow| shadow.order);
         self.quads.sort_by_key(|quad| quad.order);
@@ -218,6 +234,23 @@ pub(crate) enum PrimitiveKind {
     Surface,
 }
 
+/// A span of paint operations captured by [`Scene::record_since`].
+#[derive(Clone, Default)]
+pub struct PaintRecording(Vec<PaintOperation>);
+
+impl PaintRecording {
+    /// Number of recorded operations.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether nothing was painted.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+#[derive(Clone)]
 pub(crate) enum PaintOperation {
     Primitive(Primitive),
     StartLayer(Bounds<ScaledPixels>),

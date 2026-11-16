@@ -4,9 +4,9 @@ This directory hosts the native iOS companion app for Chau7.
 
 ## Scope (v1)
 - Live terminal output streaming (view-only by default).
-- Simple input with Send button (hold-to-send default).
+- Simple input with Send button (tap to send; hold-to-send is a setting).
 - Tab switcher for active macOS tabs.
-- Pairing via QR scan, one-tap "Paste & Pair", or manual JSON entry.
+- Pairing by scanning the QR code shown on the Mac.
 - Live Activity / Dynamic Island status for the most relevant remote AI task.
 
 ## Docs

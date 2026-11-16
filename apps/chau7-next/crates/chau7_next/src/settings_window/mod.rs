@@ -904,6 +904,7 @@ impl Render for SettingsView {
         let remote = crate::remote::status(cx);
         let pairing_info = if self.navigation.selection == SettingsSection::RemoteControl
             && settings.remote.enabled
+            && !crate::settings::is_placeholder_relay_url(&settings.remote.relay_url)
         {
             remote
                 .as_ref()

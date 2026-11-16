@@ -132,6 +132,8 @@ pub enum RemoteFrameType {
     SessionStatus = 0x41,
     RemoteTelemetry = 0x42,
     ClientState = 0x43,
+    /// The agent's relay connection state, for Settings.
+    RelayStatus = 0x44,
     TabList = 0x10,
     TabSwitch = 0x11,
     ActivityState = 0x12,
@@ -143,8 +145,10 @@ pub enum RemoteFrameType {
     Snapshot = 0x22,
     TerminalGridSnapshot = 0x23,
     KeyInput = 0x24,
+    CheckpointRequest = 0x25,
     InteractivePromptResponse = 0x26,
     PaneInput = 0x27,
+    TerminalSize = 0x28,
     ApprovalRequest = 0x50,
     ApprovalResponse = 0x51,
     /// Read-only viewers (RMT-027, `docs/remote-control/VIEWER-PROTOCOL.md`);
@@ -161,7 +165,7 @@ pub enum RemoteFrameType {
 
 impl RemoteFrameType {
     /// Every case, in Swift declaration order.
-    pub const ALL: [RemoteFrameType; 32] = [
+    pub const ALL: [RemoteFrameType; 35] = [
         Self::Hello,
         Self::PairRequest,
         Self::PairAccept,
@@ -171,6 +175,7 @@ impl RemoteFrameType {
         Self::SessionStatus,
         Self::RemoteTelemetry,
         Self::ClientState,
+        Self::RelayStatus,
         Self::TabList,
         Self::TabSwitch,
         Self::ActivityState,
@@ -182,8 +187,10 @@ impl RemoteFrameType {
         Self::Snapshot,
         Self::TerminalGridSnapshot,
         Self::KeyInput,
+        Self::CheckpointRequest,
         Self::InteractivePromptResponse,
         Self::PaneInput,
+        Self::TerminalSize,
         Self::ApprovalRequest,
         Self::ApprovalResponse,
         Self::ViewerShare,

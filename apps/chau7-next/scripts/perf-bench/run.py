@@ -132,6 +132,8 @@ def prepare_home(home, args, port):
     command = " ".join(shlex.quote(str(p)) for p in (args.python, HERE / "tui.py"))
     controls = " ".join(shlex.quote(str(p)) for p in (phase_file, home / "progress"))
     probe = " --input-probe" if getattr(args, "input_hz", 0) else ""
+    scroll = getattr(args, "scroll_lines", 0)
+    probe += f" --scroll {scroll}" if scroll else ""
     shell.write_text(f"#!/bin/sh\nexec {command} {args.hz} 1 2 {controls}{probe}\n")
     shell.chmod(0o700)
     seed_channel_configs(
@@ -217,11 +219,11 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
     latencies = []
     input_latencies = []
     input_hz = getattr(args, "input_hz", 0) if name == "terminal" else 0
-    selected = (
-        [t for t in before["terminals"] if t.get("selected") and not t.get("render_suspended")] if input_hz else []
-    )
-    if input_hz and (len(selected) != 1 or not selected[0].get("tab_id")):
-        raise RuntimeError("input probe requires exactly one selected live terminal")
+    # MCP may only send input to a tab this connection created; the initial
+    # tab would need an interactive approval, and snapshot ids are not tab ids.
+    input_tab = getattr(args, "input_tab", None) if input_hz else None
+    if input_hz and not input_tab:
+        raise RuntimeError("input probe requires a harness-created tab; use --tabs 1 or more")
     thread_sampler = ThreadSampler() if args.threads else None
     thread_samples = []
     host_samples = []
@@ -262,7 +264,7 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
             next_request = started + 1 / (args.mcp_hz if name == "mcp" else args.request_hz)
         if input_hz and now >= next_input and now < deadline - 1:
             started = time.monotonic()
-            response = mcp.tool("tab_send_input", tab_id=selected[0]["tab_id"], input="x")
+            response = mcp.tool("tab_send_input", tab_id=input_tab, input="x")
             if not isinstance(response, dict) or response.get("ok") is not True:
                 raise RuntimeError(f"input probe delivery failed: {response}")
             input_latencies.append((time.monotonic() - started) * 1000)
@@ -299,7 +301,8 @@ def measure_phase(name, args, pids, mcp, phase_file, port, sampler, phases, guar
             "rpc_latency_p50_ms": percentile(input_latencies, 0.5),
             "rpc_latency_p95_ms": percentile(input_latencies, 0.95),
             "rpc_latency_max_ms": max(input_latencies, default=None),
-            "measurement_basis": "MCP request round trip; not physical keyboard or display latency",
+            "measurement_basis": "MCP request round trip to a harness-created tab, which need not be"
+            " the visible one; not physical keyboard or display latency",
         }
         if input_hz
         else None,
@@ -343,6 +346,9 @@ def run(args, result, home, log):
     phase_file = prepare_home(home, args, port)
     env = {k: v for k, v in os.environ.items() if not k.startswith(("CHAU7_", "ANTHROPIC_", "OPENAI_"))}
     env.update(CHAU7_NEXT_HOME_ROOT=str(home), CHAU7_NEXT_ISOLATED_TEST_MODE="1")
+    if args.refresh_hz:
+        # Pins the adaptive refresh tier; builds without it ignore the variable.
+        env["CHAU7_NEXT_REFRESH_HZ"] = str(args.refresh_hz)
     app = subprocess.Popen([str(args.binary)], env=env, stdout=log, stderr=log, start_new_session=True)
     mcp = None
     try:
@@ -364,6 +370,8 @@ def run(args, result, home, log):
             created = mcp.tool("tab_create", directory=str(home))
             if not isinstance(created, dict) or not created.get("tab_id"):
                 raise RuntimeError(f"tab_create failed: {created}")
+            if not getattr(args, "input_tab", None):
+                args.input_tab = created["tab_id"]
         result["pids"] = {
             "app": app.pid,
             "mcp_bridge": mcp.process.pid,
@@ -405,6 +413,19 @@ def main():
     parser.add_argument("--hz", type=float, default=3)
     parser.add_argument("--input-hz", type=float, default=0, help="opt-in synthetic MCP input rate, at most 1 Hz")
     parser.add_argument(
+        "--refresh-hz",
+        type=int,
+        choices=(0, 30, 60, 120),
+        default=0,
+        help="pin the app's adaptive refresh tier; 0 leaves it to host load",
+    )
+    parser.add_argument(
+        "--scroll-lines",
+        type=int,
+        default=0,
+        help="transcript lines appended per frame; 0 repaints only the bottom panel, 1+ scrolls the body",
+    )
+    parser.add_argument(
         "--threads", action="store_true", help="diagnostic thread attribution; keep off for final trials"
     )
     parser.add_argument("--font", type=float, default=12)
@@ -431,10 +452,13 @@ def main():
         or min(args.interval, args.request_hz, args.mcp_hz, args.hz) <= 0
         or args.mcp_hz > 2
         or not 0 <= args.input_hz <= 1
+        or not 0 <= args.scroll_lines <= 8
         or (args.input_hz and args.measure < 3)
         or not 0 <= args.tabs < 40
     ):
-        parser.error("positive rates and duration >= interval required; tabs must be 0..39")
+        parser.error("positive rates and duration >= interval required; tabs must be 0..39, scroll lines 0..8")
+    if args.input_hz and not args.tabs:
+        parser.error("--input-hz needs --tabs 1 or more: input can only go to a tab the harness created")
     if Path(args.label).name != args.label:
         parser.error("label must be a filename")
     args.binary = args.binary.resolve(strict=True)

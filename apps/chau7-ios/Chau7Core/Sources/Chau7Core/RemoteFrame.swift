@@ -125,6 +125,10 @@ public enum RemoteFrameType: UInt8, CaseIterable, Sendable {
     case remoteTelemetry = 0x42
     case clientState = 0x43
     case relayStatus = 0x44
+    /// Mac to phone, encrypted: this phone's own relay credential.
+    case relayCredential = 0x45
+    /// Phone to relay, cleartext: bytes taken in so far. The relay consumes it.
+    case relayAck = 0x65
     case tabList = 0x10
     case tabSwitch = 0x11
     case activityState = 0x12

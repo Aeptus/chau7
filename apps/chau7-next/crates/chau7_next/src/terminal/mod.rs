@@ -1,3 +1,4 @@
+mod adaptive_refresh;
 pub mod command_guard;
 pub mod images;
 pub mod links;

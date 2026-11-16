@@ -105,6 +105,23 @@ final class RemoteWirePayloadFixtureTests: XCTestCase {
         try assertRoundTrip(RemotePairRequestPayload.self, fixture: "pair_request.json")
     }
 
+    /// The fixtures are the vector shared with the Go agent: the same QR and
+    /// iOS key must give the same proof on both sides.
+    func testPairRequestProofMatchesTheSharedFixtures() throws {
+        let pairing = try JSONDecoder().decode(RemotePairingPayload.self, from: fixtureData("pairing_info.json"))
+        let expected = try JSONDecoder().decode(RemotePairRequestPayload.self, from: fixtureData("pair_request.json"))
+        let request = RemotePairRequestPayload(pairing: pairing, iosPub: expected.iosPub, iosName: expected.iosName)
+        XCTAssertEqual(request, expected)
+        XCTAssertNil(request.pairingCode, "the code must not cross the relay when a proof is available")
+    }
+
+    func testPairRequestFallsBackToTheCodeForAMacWithoutAPairingKey() {
+        let pairing = RemotePairingPayload(relayURL: "wss://r", deviceID: "d", macPub: "m", pairingCode: "123456", expiresAt: "e")
+        let request = RemotePairRequestPayload(pairing: pairing, iosPub: "p", iosName: "n")
+        XCTAssertEqual(request.pairingCode, "123456")
+        XCTAssertNil(request.pairingProof)
+    }
+
     func testPairAcceptFixture() throws {
         try assertRoundTrip(RemotePairAcceptPayload.self, fixture: "pair_accept.json")
     }

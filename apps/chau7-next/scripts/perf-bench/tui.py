@@ -21,7 +21,10 @@ message_every = float(sys.argv[3]) if len(sys.argv) > 3 else 2.0
 rng = random.Random(seed)
 phase_file = Path(sys.argv[4]) if len(sys.argv) > 4 else None
 progress_dir = Path(sys.argv[5]) if len(sys.argv) > 5 else None
-input_probe = len(sys.argv) > 6 and sys.argv[6] == "--input-probe"
+input_probe = "--input-probe" in sys.argv[6:]
+# Transcript lines appended on every frame: 0 repaints only the bottom panel
+# (an agent thinking), 1 or more scrolls the whole body (a build log).
+scroll_lines = int(sys.argv[sys.argv.index("--scroll") + 1]) if "--scroll" in sys.argv[6:] else 0
 # Keep only the external load generator at a known QoS; app/helper QoS is unchanged.
 if sys.platform == "darwin":
     libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
@@ -123,10 +126,10 @@ try:
         # Scrolling transcript region above the panel.
         w(f"\x1b[1;{body_bottom}r")
         now = time.monotonic()
-        if now >= next_message:
+        if scroll_lines or now >= next_message:
             next_message = now + message_every
             w(f"\x1b[{body_bottom};1H")
-            for _ in range(3):
+            for _ in range(scroll_lines or 3):
                 line = " ".join(rng.choice(words) for _ in range(cols // 7))
                 color = 31 + rng.randrange(6)
                 w(f"\n\x1b[{color}m●\x1b[0m {line[: cols - 3]}")
