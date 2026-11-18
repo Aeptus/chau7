@@ -468,33 +468,42 @@ fn prepare_profile(
         // share a cwd, and provider history may belong to another application.
         // Keep a provider-only pane unresolved until its own session is known.
         let mut resume_issue = None;
+        // A conversation Codex archived keeps its place: the pane holds the
+        // identity and its resume command, but nothing runs until Codex has
+        // the live history again.
+        let mut held = false;
         let identity = resume_candidates.into_iter().find_map(|m| {
-            let Some(valid) = validate(
+            let valid = match validate(
                 root.home(),
                 &m,
                 &directory,
                 reference,
                 synthetic,
                 &mut codex,
-            ) else {
-                let archived =
-                    m.provider == "codex" && codex.is_archived(root.home(), &m.session_id);
-                resume_issue = Some(if archived {
-                    ResumeIssue::ArchivedHistory
-                } else {
-                    ResumeIssue::UnavailableHistory
-                });
-                return None;
+            ) {
+                Some(valid) => valid,
+                None if m.provider == "codex" && codex.is_archived(root.home(), &m.session_id) => {
+                    held = true;
+                    m.clone()
+                }
+                None => {
+                    resume_issue = Some(ResumeIssue::UnavailableHistory);
+                    return None;
+                }
             };
             if identity_available(root, owner, pane.id, &valid, false)
                 && claims.insert((valid.provider.clone(), valid.session_id.clone()))
             {
                 Some(valid)
             } else {
+                held = false;
                 resume_issue = Some(ResumeIssue::IdentityInUse);
                 None
             }
         });
+        if held {
+            resume_issue = Some(ResumeIssue::ArchivedHistory);
+        }
         if identity.is_none() && resume_issue.is_none() {
             resume_issue = if pane.ai_session_id.is_some() || pane.ai_resume_command.is_some() {
                 Some(ResumeIssue::InvalidMetadata)
@@ -533,14 +542,28 @@ fn prepare_profile(
         };
         if identity.is_none() {
             archive_resume_metadata(pane);
-            if let Some(archived) = &mut pane.archived_ai_resume {
-                match resume_issue {
-                    Some(ResumeIssue::ArchivedHistory) => archived.provider_archived = true,
-                    Some(ResumeIssue::UnavailableHistory) => archived.provider_archived = false,
-                    _ => {}
-                }
+            if let Some(archived) = &mut pane.archived_ai_resume
+                && resume_issue == Some(ResumeIssue::UnavailableHistory)
+            {
+                archived.provider_archived = false;
             }
-        } else if from_archive {
+        } else if held {
+            // A second copy that survives the live session forgetting it.
+            pane.archived_ai_resume = identity.as_ref().map(|m| {
+                crate::session_restore::models::ArchivedAIResumeMetadata {
+                    provider: Some(m.provider.clone()),
+                    session_id: Some(m.session_id.clone()),
+                    session_id_source: pane.ai_session_id_source.clone(),
+                    resume_command: command.clone(),
+                    provider_archived: true,
+                }
+            });
+        } else if from_archive
+            || pane
+                .archived_ai_resume
+                .as_ref()
+                .is_some_and(|archived| archived.provider_archived)
+        {
             // Resumed: the pane's own fields carry the identity again.
             pane.archived_ai_resume = None;
         }
@@ -558,7 +581,7 @@ fn prepare_profile(
                 directory,
                 context,
                 identity,
-                command,
+                command: command.filter(|_| !held),
                 discovered_identity: false,
                 resume_issue,
             },
@@ -861,9 +884,23 @@ mod tests {
             first.panes[&1].command.is_none(),
             "nothing runs while archived"
         );
-        let held = first.saved.panes[0].archived_ai_resume.as_ref().unwrap();
+        // The tab keeps its conversation: identity and resume command.
+        assert_eq!(first.panes[&1].identity.as_ref().unwrap().session_id, id);
+        let pane = &first.saved.panes[0];
+        assert_eq!(pane.ai_session_id.as_deref(), Some(id.as_str()));
+        let resume = build_ai_resume_command(Some("codex"), Some(&id));
+        assert!(resume.as_ref().unwrap().contains(&id));
+        assert_eq!(pane.ai_resume_command, resume);
+        let held = pane.archived_ai_resume.as_ref().unwrap();
         assert!(held.provider_archived);
-        assert_eq!(held.session_id.as_deref(), Some(id.as_str()));
+        assert_eq!(held.resume_command, resume);
+
+        // The live session can forget the identity; the copy brings it back.
+        let mut forgotten = first.saved.clone();
+        forgotten.panes[0].ai_session_id = None;
+        forgotten.panes[0].ai_resume_command = None;
+        let recovered = prepare(&f.root, forgotten, None);
+        assert_eq!(recovered.saved.panes[0].ai_resume_command, resume);
 
         // Still archived on the next restore: the same answer, nothing lost.
         let again = prepare(&f.root, first.saved, None);
