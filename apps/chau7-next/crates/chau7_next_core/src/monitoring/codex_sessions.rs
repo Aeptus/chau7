@@ -104,11 +104,50 @@ fn rollout_files(dir: &Path) -> Vec<String> {
 #[derive(Debug, Default, Clone)]
 pub struct CodexSessionResolver {
     cache: HashMap<(PathBuf, String), Candidate>,
+    archived: HashMap<PathBuf, std::collections::HashSet<String>>,
+}
+
+/// `~/.codex/archived_sessions` under `home`: where Codex moves the rollout
+/// of a session it archives (`codex archive`), often compressed.
+pub fn archived_sessions_dir(home: &Path) -> PathBuf {
+    home.join(".codex").join("archived_sessions")
+}
+
+/// The session id in an archived rollout's file name,
+/// `rollout-<time>-<id>.jsonl` with an optional compression suffix.
+fn archived_rollout_session_id(name: &str) -> Option<&str> {
+    let stem = [".jsonl", ".jsonl.zst", ".jsonl.gz"]
+        .iter()
+        .find_map(|suffix| name.strip_suffix(suffix))?;
+    let id = stem.get(stem.len().checked_sub(36)?..)?;
+    (name.starts_with("rollout-") && uuid::Uuid::parse_str(id).is_ok()).then_some(id)
 }
 
 impl CodexSessionResolver {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether Codex holds this session in its archive. Only file names are
+    /// read, once per home: the archive is one flat folder of many files.
+    pub fn is_archived(&mut self, home: &Path, session_id: &str) -> bool {
+        let Ok(id) = uuid::Uuid::parse_str(session_id.trim()) else {
+            return false;
+        };
+        let folder = archived_sessions_dir(home);
+        if !self.archived.contains_key(&folder) {
+            let ids = std::fs::read_dir(&folder)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter_map(|entry| {
+                    let name = entry.file_name();
+                    archived_rollout_session_id(name.to_str()?).map(str::to_lowercase)
+                })
+                .collect();
+            self.archived.insert(folder.clone(), ids);
+        }
+        self.archived[&folder].contains(&id.to_string())
     }
 
     /// `metadata(forSessionID:referenceDate:)`.

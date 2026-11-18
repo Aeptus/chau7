@@ -612,6 +612,7 @@ mod tests {
             preview_snapshot_png_data: Some("cG5n".into()),
         });
         tab.panes[0].archived_ai_resume = Some(ArchivedAIResumeMetadata {
+            provider_archived: false,
             provider: Some("codex".into()),
             session_id: Some("synth:fixture".into()),
             session_id_source: Some("synthetic".into()),
@@ -678,6 +679,7 @@ mod tests {
                                 ai_session_id: session_id.map(str::to_owned),
                                 ai_resume_command: command.map(str::to_owned),
                                 archived_ai_resume: Some(ArchivedAIResumeMetadata {
+                                    provider_archived: false,
                                     session_id: Some("synth:fixture".into()),
                                     ..Default::default()
                                 }),

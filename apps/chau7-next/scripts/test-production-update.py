@@ -91,6 +91,25 @@ class ProductionUpdaterTests(unittest.TestCase):
         with self.assertRaisesRegex(CORE.UpdateError, "No quit was requested"):
             CORE.require_codex_resume_histories(self.native_resume_state(session_id), self.root)
 
+    def test_native_resume_audit_accepts_a_conversation_codex_archived(self):
+        session_id, lost_id = str(uuid.uuid4()), str(uuid.uuid4())
+        archive = self.root / ".codex/archived_sessions"
+        archive.mkdir(parents=True)
+        (archive / f"rollout-2026-11-08T13-20-22-{session_id}.jsonl.zst").write_bytes(b"compressed")
+        result = CORE.require_codex_resume_histories(self.native_resume_state(session_id), self.root)
+        self.assertEqual([entry["status"] for entry in result], ["provider_archived"])
+        # A session in neither store still blocks, even next to an archived one.
+        state = {
+            "identity": {
+                "panes": {
+                    1: {"ai_provider": "codex", "ai_session_id": session_id},
+                    2: {"ai_provider": "codex", "ai_session_id": lost_id},
+                }
+            }
+        }
+        with self.assertRaisesRegex(CORE.UpdateError, "1 active saved Codex"):
+            CORE.require_codex_resume_histories(state, self.root)
+
     def test_update_native_history_failure_never_requests_quit_and_marks_safe_retry(self):
         session_id = str(uuid.uuid4())
         tab = self.saved_tab("00000000-0000-0000-0000-000000000199", 199, session_id)

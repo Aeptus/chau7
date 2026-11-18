@@ -283,6 +283,7 @@ mod tests {
     #[test]
     fn active_capture_keeps_archival_ai_metadata_inert() {
         let archived = chau7_next_core::session_restore::models::ArchivedAIResumeMetadata {
+            provider_archived: false,
             provider: Some("codex".into()),
             session_id: Some("synth:fixture".into()),
             session_id_source: Some("synthetic".into()),

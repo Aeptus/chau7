@@ -850,6 +850,7 @@ impl Converter {
                 provider.is_some() || session_id.is_some() || resume_command.is_some();
             let archived_ai_resume = if has_ai_payload || source.is_some() {
                 Some(ArchivedAIResumeMetadata {
+                    provider_archived: false,
                     provider: provider.map(str::to_owned),
                     session_id: session_id.map(str::to_owned),
                     session_id_source: source.clone(),
