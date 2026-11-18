@@ -950,6 +950,7 @@ mod tests {
                         id: 8,
                         archived_ai_resume: Some(
                             chau7_next_core::session_restore::models::ArchivedAIResumeMetadata {
+provider_archived: false,
                                 provider: Some("codex".into()),
                                 session_id: Some("synth:fixture".into()),
                                 session_id_source: Some("synthetic".into()),

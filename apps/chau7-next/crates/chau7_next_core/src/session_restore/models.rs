@@ -16,6 +16,11 @@ pub struct ArchivedAIResumeMetadata {
     pub session_id_source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume_command: Option<String>,
+    /// The provider itself archived this conversation: its history still
+    /// exists and the provider can bring it back. Restore tries such an
+    /// identity again, and resumes it once its live history is found.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub provider_archived: bool,
 }
 
 /// Swift tab context that Chau7 Next does not yet render. Command blocks and
@@ -321,6 +326,7 @@ mod tests {
         let pane = SavedPane {
             id: 9,
             archived_ai_resume: Some(ArchivedAIResumeMetadata {
+                provider_archived: false,
                 provider: Some("codex".into()),
                 session_id: Some("synth:fixture".into()),
                 session_id_source: Some("synthetic".into()),

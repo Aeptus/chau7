@@ -2796,6 +2796,7 @@ mod tests {
         let root = chau7_next_core::data_root::DataRoot::with_home(home.clone(), true);
         let owner = uuid::Uuid::new_v4();
         let archived_ai = chau7_next_core::session_restore::models::ArchivedAIResumeMetadata {
+            provider_archived: false,
             provider: Some("codex".into()),
             session_id: Some("synth:fixture".into()),
             session_id_source: Some("synthetic".into()),

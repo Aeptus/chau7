@@ -15,6 +15,9 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResumeIssue {
     UnavailableHistory,
+    /// The provider archived the conversation. It is kept and resumes once
+    /// the provider has its live history again.
+    ArchivedHistory,
     IdentityInUse,
     InvalidMetadata,
     MissingIdentity,
@@ -23,6 +26,7 @@ impl ResumeIssue {
     pub fn code(self) -> &'static str {
         match self {
             Self::UnavailableHistory => "unavailable_history",
+            Self::ArchivedHistory => "archived_history",
             Self::IdentityInUse => "identity_in_use",
             Self::InvalidMetadata => "invalid_metadata",
             Self::MissingIdentity => "missing_identity",
@@ -75,7 +79,7 @@ fn insert_hints(hints: &mut IdentityHints, owner: uuid::Uuid, saved: &SavedTab) 
         {
             hints.owners.entry(id.to_owned()).or_default().insert(owner);
         }
-        for identity in candidates(pane) {
+        for identity in candidates(pane).0 {
             hints
                 .owners
                 .entry(identity.session_id)
@@ -274,8 +278,10 @@ fn archive_resume_metadata(pane: &mut SavedPane) {
         && (pane.ai_session_id.is_some() || pane.ai_resume_command.is_some())
     {
         // Failed validation/admission removes execution authority, not recovery data.
-        // This archive is inert and never participates in candidates().
+        // This archive is inert: candidates() only reads it back when the
+        // provider itself archived the conversation.
         pane.archived_ai_resume = Some(crate::session_restore::models::ArchivedAIResumeMetadata {
+            provider_archived: false,
             provider: pane.ai_provider.clone(),
             session_id: pane.ai_session_id.clone(),
             session_id_source: pane.ai_session_id_source.clone(),
@@ -283,7 +289,9 @@ fn archive_resume_metadata(pane: &mut SavedPane) {
         });
     }
 }
-fn candidates(pane: &SavedPane) -> Vec<ResumeIdentity> {
+/// The identities to try, and whether they come from a conversation the
+/// provider archived earlier rather than from the pane's own fields.
+fn candidates(pane: &SavedPane) -> (Vec<ResumeIdentity>, bool) {
     // One authoritative identity: explicit fields first, then agreeing legacy
     // commands. A failed exact artifact check must not switch to another ID.
     let metadata = crate::session_restore::resolve_resume_metadata_from_saved(
@@ -298,13 +306,32 @@ fn candidates(pane: &SavedPane) -> Vec<ResumeIdentity> {
             pane.agent_launch_command.as_deref(),
         )
     });
-    metadata
+    let own = pane.ai_session_id.is_some()
+        || pane.ai_resume_command.is_some()
+        || pane.agent_launch_command.is_some();
+    // Any other archived identity stays inert. One the provider archived is
+    // still that pane's conversation, so it is tried again on every restore.
+    let held = (!own)
+        .then_some(pane.archived_ai_resume.as_ref())
+        .flatten()
+        .filter(|archived| archived.provider_archived)
+        .and_then(|archived| {
+            crate::session_restore::resolve_resume_metadata_from_saved(
+                archived.provider.as_deref(),
+                archived.session_id.as_deref(),
+                archived.resume_command.as_deref(),
+            )
+        });
+    let from_archive = metadata.is_none() && held.is_some();
+    let identities = metadata
+        .or(held)
         .into_iter()
         .map(|m| ResumeIdentity {
             provider: m.provider,
             session_id: m.session_id,
         })
-        .collect()
+        .collect();
+    (identities, from_archive)
 }
 fn validate(
     home: &Path,
@@ -420,7 +447,7 @@ fn prepare_profile(
         .filter(|v| v.is_finite() && *v > 0.0)
         .max_by(f64::total_cmp);
         let synthetic = pane.ai_session_id_source.as_deref() == Some("synthetic");
-        let resume_candidates = candidates(pane);
+        let (resume_candidates, from_archive) = candidates(pane);
         let had_no_complete_identity = resume_candidates.is_empty()
             && pane
                 .ai_session_id
@@ -441,27 +468,42 @@ fn prepare_profile(
         // share a cwd, and provider history may belong to another application.
         // Keep a provider-only pane unresolved until its own session is known.
         let mut resume_issue = None;
+        // A conversation Codex archived keeps its place: the pane holds the
+        // identity and its resume command, but nothing runs until Codex has
+        // the live history again.
+        let mut held = false;
         let identity = resume_candidates.into_iter().find_map(|m| {
-            let Some(valid) = validate(
+            let valid = match validate(
                 root.home(),
                 &m,
                 &directory,
                 reference,
                 synthetic,
                 &mut codex,
-            ) else {
-                resume_issue = Some(ResumeIssue::UnavailableHistory);
-                return None;
+            ) {
+                Some(valid) => valid,
+                None if m.provider == "codex" && codex.is_archived(root.home(), &m.session_id) => {
+                    held = true;
+                    m.clone()
+                }
+                None => {
+                    resume_issue = Some(ResumeIssue::UnavailableHistory);
+                    return None;
+                }
             };
             if identity_available(root, owner, pane.id, &valid, false)
                 && claims.insert((valid.provider.clone(), valid.session_id.clone()))
             {
                 Some(valid)
             } else {
+                held = false;
                 resume_issue = Some(ResumeIssue::IdentityInUse);
                 None
             }
         });
+        if held {
+            resume_issue = Some(ResumeIssue::ArchivedHistory);
+        }
         if identity.is_none() && resume_issue.is_none() {
             resume_issue = if pane.ai_session_id.is_some() || pane.ai_resume_command.is_some() {
                 Some(ResumeIssue::InvalidMetadata)
@@ -500,6 +542,30 @@ fn prepare_profile(
         };
         if identity.is_none() {
             archive_resume_metadata(pane);
+            if let Some(archived) = &mut pane.archived_ai_resume
+                && resume_issue == Some(ResumeIssue::UnavailableHistory)
+            {
+                archived.provider_archived = false;
+            }
+        } else if held {
+            // A second copy that survives the live session forgetting it.
+            pane.archived_ai_resume = identity.as_ref().map(|m| {
+                crate::session_restore::models::ArchivedAIResumeMetadata {
+                    provider: Some(m.provider.clone()),
+                    session_id: Some(m.session_id.clone()),
+                    session_id_source: pane.ai_session_id_source.clone(),
+                    resume_command: command.clone(),
+                    provider_archived: true,
+                }
+            });
+        } else if from_archive
+            || pane
+                .archived_ai_resume
+                .as_ref()
+                .is_some_and(|archived| archived.provider_archived)
+        {
+            // Resumed: the pane's own fields carry the identity again.
+            pane.archived_ai_resume = None;
         }
         pane.directory = Some(directory.to_string_lossy().into_owned());
         pane.ai_provider = identity
@@ -515,7 +581,7 @@ fn prepare_profile(
                 directory,
                 context,
                 identity,
-                command,
+                command: command.filter(|_| !held),
                 discovered_identity: false,
                 resume_issue,
             },
@@ -801,6 +867,72 @@ mod tests {
     }
 
     #[test]
+    fn conversation_archived_by_codex_is_kept_and_resumes_once_unarchived() {
+        let f = Fixture::new();
+        let id = uuid::Uuid::new_v4().to_string();
+        let archive = f.root.home().join(".codex/archived_sessions");
+        std::fs::create_dir_all(&archive).unwrap();
+        let file = archive.join(format!("rollout-2026-11-08T13-20-22-{id}.jsonl.zst"));
+        std::fs::write(&file, b"compressed").unwrap();
+
+        let first = prepare(&f.root, f.tab(vec![f.pane(1, "codex", &id)]), None);
+        assert_eq!(
+            first.panes[&1].resume_issue,
+            Some(ResumeIssue::ArchivedHistory)
+        );
+        assert!(
+            first.panes[&1].command.is_none(),
+            "nothing runs while archived"
+        );
+        // The tab keeps its conversation: identity and resume command.
+        assert_eq!(first.panes[&1].identity.as_ref().unwrap().session_id, id);
+        let pane = &first.saved.panes[0];
+        assert_eq!(pane.ai_session_id.as_deref(), Some(id.as_str()));
+        let resume = build_ai_resume_command(Some("codex"), Some(&id));
+        assert!(resume.as_ref().unwrap().contains(&id));
+        assert_eq!(pane.ai_resume_command, resume);
+        let held = pane.archived_ai_resume.as_ref().unwrap();
+        assert!(held.provider_archived);
+        assert_eq!(held.resume_command, resume);
+
+        // The live session can forget the identity; the copy brings it back.
+        let mut forgotten = first.saved.clone();
+        forgotten.panes[0].ai_session_id = None;
+        forgotten.panes[0].ai_resume_command = None;
+        let recovered = prepare(&f.root, forgotten, None);
+        assert_eq!(recovered.saved.panes[0].ai_resume_command, resume);
+
+        // Still archived on the next restore: the same answer, nothing lost.
+        let again = prepare(&f.root, first.saved, None);
+        assert_eq!(
+            again.panes[&1].resume_issue,
+            Some(ResumeIssue::ArchivedHistory)
+        );
+
+        // `codex unarchive` puts the history back in the live store.
+        std::fs::remove_file(&file).unwrap();
+        f.codex(&id);
+        let resumed = prepare(&f.root, again.saved, None);
+        assert_eq!(resumed.panes[&1].resume_issue, None);
+        assert_eq!(resumed.panes[&1].identity.as_ref().unwrap().session_id, id);
+        assert!(resumed.panes[&1].command.is_some());
+        assert!(resumed.saved.panes[0].archived_ai_resume.is_none());
+    }
+    #[test]
+    fn identity_archived_for_another_reason_stays_inert_when_history_reappears() {
+        let f = Fixture::new();
+        let id = uuid::Uuid::new_v4().to_string();
+        let first = prepare(&f.root, f.tab(vec![f.pane(1, "codex", &id)]), None);
+        assert_eq!(
+            first.panes[&1].resume_issue,
+            Some(ResumeIssue::UnavailableHistory)
+        );
+        f.codex(&id);
+        let again = prepare(&f.root, first.saved, None);
+        assert!(again.panes[&1].identity.is_none());
+        assert!(again.panes[&1].command.is_none());
+    }
+    #[test]
     fn provider_without_identity_reports_the_gap_without_guessing_history() {
         let f = Fixture::new();
         let prepared = prepare(
@@ -877,6 +1009,7 @@ mod tests {
         let f = Fixture::new();
         let mut pane = f.pane(2, "codex", "current-thread");
         pane.archived_ai_resume = Some(crate::session_restore::models::ArchivedAIResumeMetadata {
+            provider_archived: false,
             provider: Some("codex".into()),
             session_id: Some("older-thread".into()),
             ..Default::default()

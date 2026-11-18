@@ -1015,6 +1015,25 @@ def audit_codex_resume_histories(state, home):
                     pending.remove(matched)
                 if not pending:
                     break
+    if pending:
+        # Codex moves the rollout of a session it archives to a flat folder,
+        # often compressed. That history is not lost: `codex unarchive` puts
+        # it back and Chau7 resumes the pane on a later restore. Only file
+        # names are read here.
+        archive = plain_path(home / ".codex/archived_sessions", "Codex archive", must_exist=False)
+        if archive.is_dir():
+            suffixes = tuple(f"-{sid}{ext}" for sid in pending
+                             for ext in (".jsonl", ".jsonl.zst", ".jsonl.gz"))
+            with os.scandir(archive) as listing:
+                for item in listing:
+                    if not (item.name.startswith("rollout-") and item.name.endswith(suffixes)
+                            and item.is_file(follow_symlinks=False)):
+                        continue
+                    for entry in entries:
+                        if (entry["session_id"] in pending and entry["status"] == "unavailable"
+                                and any(item.name.endswith(f"-{entry['session_id']}{ext}")
+                                        for ext in (".jsonl", ".jsonl.zst", ".jsonl.gz"))):
+                            entry["status"] = "provider_archived"
     return entries
 
 
@@ -1026,10 +1045,18 @@ def require_codex_resume_histories(state, home, report_path=None):
                        sort_keys=True, indent=2).encode("utf-8") + b"\n",
             report_path, "native resume history audit",
         )
-    missing = sum(entry["active"] and entry["status"] != "available" for entry in entries)
+    resumable = ("available", "provider_archived")
+    missing = sum(entry["active"] and entry["status"] not in resumable for entry in entries)
+    held = [entry for entry in entries if entry["active"] and entry["status"] == "provider_archived"]
     archived = sum(not entry["active"] for entry in entries)
-    print(f"Native Codex resume check: {len(entries) - archived - missing} verified, "
-          f"{missing} unavailable active, {archived} archived recovery identities.", flush=True)
+    print(f"Native Codex resume check: {len(entries) - archived - missing - len(held)} verified, "
+          f"{len(held)} archived by Codex, {missing} unavailable active, "
+          f"{archived} archived recovery identities.", flush=True)
+    if held:
+        print("  Archived by Codex: these panes reopen without their conversation and resume "
+              "after `codex unarchive <id>`:", flush=True)
+        for entry in held:
+            print(f"    pane {entry['pane_id']}: {entry['session_id']}", flush=True)
     require(missing == 0,
             f"{missing} active saved Codex conversation(s) have no verified local history. "
             "No quit was requested. Restore the exact provider histories or deliberately "
