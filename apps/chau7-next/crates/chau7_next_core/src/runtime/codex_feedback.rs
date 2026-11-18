@@ -584,7 +584,7 @@ mod tests {
         assert!(!call("request_user_input_async", two));
         let ten = format!(
             r#"[{{"title":"Pick","options":[{}]}}]"#,
-            vec![r#""x""#; 10].join(",")
+            [r#""x""#; 10].join(",")
         );
         assert!(!call("request_user_input_async", &ten));
     }
