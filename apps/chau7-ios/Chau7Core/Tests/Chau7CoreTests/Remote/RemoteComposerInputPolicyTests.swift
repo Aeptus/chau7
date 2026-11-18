@@ -18,4 +18,11 @@ final class RemoteComposerInputPolicyTests: XCTestCase {
             XCTAssertFalse(RemoteComposerInputPolicy.shouldSubmit(insertedText: text, isPasting: false, holdToSend: false))
         }
     }
+
+    func testFocusChangeMakesTheTextViewMatchTheRequest() {
+        XCTAssertEqual(RemoteComposerInputPolicy.focusChange(requested: true, isFirstResponder: false), .takeKeyboard)
+        XCTAssertEqual(RemoteComposerInputPolicy.focusChange(requested: false, isFirstResponder: true), .releaseKeyboard)
+        XCTAssertNil(RemoteComposerInputPolicy.focusChange(requested: true, isFirstResponder: true))
+        XCTAssertNil(RemoteComposerInputPolicy.focusChange(requested: false, isFirstResponder: false))
+    }
 }

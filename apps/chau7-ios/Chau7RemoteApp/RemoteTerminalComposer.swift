@@ -5,7 +5,9 @@ import UIKit
 /// Native input events distinguish Return from paste, including a single pasted newline.
 struct RemoteTerminalComposer: UIViewRepresentable {
     @Binding var text: String
-    let focused: FocusState<Bool>.Binding
+    /// Plain state, not `FocusState`: SwiftUI only honours a `FocusState` value
+    /// for a view carrying `.focused(_:)`, which a UIKit text view cannot.
+    @Binding var isFocused: Bool
     let holdToSend: Bool
     let onSubmit: () -> Void
 
@@ -25,26 +27,29 @@ struct RemoteTerminalComposer: UIViewRepresentable {
         if view.text != text {
             view.text = text
             view.selectedRange = NSRange(location: text.utf16.count, length: 0)
+            view.revealCaret()
         }
-        if focused.wrappedValue, !view.isFirstResponder { view.becomeFirstResponder() }
-        if !focused.wrappedValue, view.isFirstResponder { view.resignFirstResponder() }
+        view.syncFocus(requested: isFocused)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: RemoteTerminalComposerTextView,
                      context: Context) -> CGSize? {
         guard let width = proposal.width, width > 0 else { return nil }
-        let lineHeight = uiView.font?.lineHeight ?? 20
-        let inset = uiView.textContainerInset.top + uiView.textContainerInset.bottom
-        let natural = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
-        return CGSize(width: width, height: max(lineHeight + inset, min(natural.height, lineHeight * 4 + inset)))
+        return CGSize(width: width, height: uiView.composerHeight(fittingWidth: width))
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: RemoteTerminalComposer
         init(_ parent: RemoteTerminalComposer) { self.parent = parent }
         func textViewDidChange(_ textView: UITextView) { parent.text = textView.text }
-        func textViewDidBeginEditing(_ textView: UITextView) { parent.focused.wrappedValue = true }
-        func textViewDidEndEditing(_ textView: UITextView) { parent.focused.wrappedValue = false }
+        func textViewDidBeginEditing(_ textView: UITextView) { publishFocus(true) }
+        func textViewDidEndEditing(_ textView: UITextView) { publishFocus(false) }
+
+        /// `syncFocus` reaches these callbacks during a SwiftUI update, where the
+        /// state already holds the value; writing it again there is an error.
+        private func publishFocus(_ focused: Bool) {
+            if parent.isFocused != focused { parent.isFocused = focused }
+        }
     }
 }
 
@@ -52,6 +57,8 @@ final class RemoteTerminalComposerTextView: UITextView, UITextPasteDelegate {
     var holdToSend = false
     var onSubmit: (() -> Void)?
     private var isPasting = false
+    private var laidOutSize = CGSize.zero
+    static let maxVisibleLines = 4
 
     init() {
         super.init(frame: .zero, textContainer: nil)
@@ -74,6 +81,48 @@ final class RemoteTerminalComposerTextView: UITextView, UITextPasteDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// Height for `width`: the text's own height, between one line and
+    /// `maxVisibleLines`. Scrolling is on only when the text is taller than
+    /// that. A scrolling text view moves its content up a line as soon as the
+    /// caret wraps, before the view has grown, which hides the first line of a
+    /// draft that still fits.
+    func composerHeight(fittingWidth width: CGFloat) -> CGFloat {
+        let lineHeight = font?.lineHeight ?? 20
+        let inset = textContainerInset.top + textContainerInset.bottom
+        let natural = sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        let tallest = lineHeight * CGFloat(Self.maxVisibleLines) + inset
+        let overflows = natural > tallest + 0.5
+        if isScrollEnabled != overflows { isScrollEnabled = overflows }
+        return max(lineHeight + inset, min(natural, tallest))
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.size != laidOutSize else { return }
+        laidOutSize = bounds.size
+        revealCaret()
+    }
+
+    /// Text set from outside (Paste button, restored draft) and a resize do not
+    /// scroll on their own; without this the end of a long draft stays hidden.
+    func revealCaret() {
+        if isScrollEnabled {
+            scrollRangeToVisible(selectedRange)
+        } else if contentOffset != .zero {
+            contentOffset = .zero
+        }
+    }
+
+    /// Make first-responder status match what the screen asked for. A request
+    /// made before the view is in a window is retried on the next update.
+    func syncFocus(requested: Bool) {
+        switch RemoteComposerInputPolicy.focusChange(requested: requested, isFirstResponder: isFirstResponder) {
+        case .takeKeyboard: becomeFirstResponder()
+        case .releaseKeyboard: resignFirstResponder()
+        case nil: break
+        }
+    }
 
     override func insertText(_ text: String) {
         if RemoteComposerInputPolicy.shouldSubmit(insertedText: text, isPasting: isPasting,

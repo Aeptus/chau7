@@ -34,7 +34,8 @@ struct TerminalView: View {
     @State private var scrollToBottomToken = 0
     @State private var isErrorExpanded = false
     @State private var isKeyboardVisible = false
-    @FocusState private var inputFocused: Bool
+    /// Whether the composer should hold the keyboard. See `RemoteTerminalComposer.isFocused`.
+    @State private var inputFocused = false
 
     var body: some View {
         NavigationStack {
@@ -540,7 +541,7 @@ struct TerminalView: View {
             .disabled(!client.canSendInput)
             .accessibilityLabel(controlKeyRowRequested ? "Hide terminal shortcut keys" : "Show terminal shortcut keys")
 
-            RemoteTerminalComposer(text: $inputText, focused: $inputFocused,
+            RemoteTerminalComposer(text: $inputText, isFocused: $inputFocused,
                                    holdToSend: holdToSend, onSubmit: { submitInput(trigger: "return_key") })
                 .disabled(inputSubmission.isPending)
                 .background(Color(UIColor.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
