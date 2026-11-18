@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fix typing in the iPhone app's terminal input. The keyboard button did nothing, and a keyboard opened by tapping the field closed again as soon as the screen refreshed, which with a live terminal is almost at once. The field also scrolled its own text out of view when a draft wrapped onto a second line, and did not show the end of text added with the Paste button. The field now keeps the keyboard until you dismiss it, shows the whole draft up to four lines, and scrolls to the caret beyond that.
+
 - Show how much memory a tab's processes really hold. On macOS the tab hover card's process list and its total now show each process's memory footprint, the figure Activity Monitor shows, which counts memory the system has compressed or swapped out. They used to show only the part currently in RAM, which under memory pressure can be about a tenth of the real figure (measured: 27 agent tabs held 40.6 GB, of which 36.7 GB was compressed or swapped). The `tab_status` MCP tool adds `footprint_bytes` beside `rss_bytes` for each process.
 
 - Stop Chau7 (Next) from starting two `aethyme` processes every 30 seconds for each open repository whose Aethyme broker has had no activity. Before polling, Chau7 now checks whether the repository's broker database has changed, without starting a process. If the database has not been written for over five minutes, no PR watch is due and the last check found nothing, it skips the round, with one real check at least every five minutes. Repositories with broker activity are still checked every 30 seconds, so new deliveries arrive as quickly as before.
