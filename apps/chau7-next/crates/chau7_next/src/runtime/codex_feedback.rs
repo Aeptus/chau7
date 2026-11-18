@@ -174,6 +174,14 @@ pub fn start(cx: &mut App) {
                                 &Record::Prompt(prompt.clone()),
                                 &mut AppHost { cx },
                             );
+                            if let Some(found) = find_tab(&binding.tab, cx) {
+                                crate::remote::ingest_codex_question(
+                                    found.tab,
+                                    &binding.native,
+                                    &prompt,
+                                    cx,
+                                );
+                            }
                             let message = if prompt.options.is_empty() {
                                 prompt.message
                             } else {
@@ -197,6 +205,7 @@ pub fn start(cx: &mut App) {
                             has_other_pending,
                         }) => {
                             manager().resolve_codex_input(&binding.tab, has_other_pending);
+                            crate::remote::resolve_codex_question(&binding.native, &call_id, cx);
                             if !has_other_pending {
                                 // Answered: the tab no longer waits for the user.
                                 if let Some(found) = find_tab(&binding.tab, cx) {

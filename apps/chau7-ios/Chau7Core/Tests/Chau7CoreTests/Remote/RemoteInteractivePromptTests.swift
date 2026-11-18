@@ -93,4 +93,22 @@ final class RemoteInteractivePromptTests: XCTestCase {
         let decoded = try JSONDecoder().decode(RemoteInteractivePrompt.self, from: Data(json.utf8))
         XCTAssertNil(decoded.isMultiSelect)
     }
+
+    func testCardCopyTreatsAPromptWithoutOptionsAsAQuestionToAnswer() {
+        func prompt(_ options: [RemoteInteractivePromptOption]) -> RemoteInteractivePrompt {
+            RemoteInteractivePrompt(
+                id: "p", tabID: 1, tabTitle: "t", toolName: "Codex", prompt: "Which branch?",
+                options: options, detectedAt: Date(timeIntervalSince1970: 0)
+            )
+        }
+        let freeText = prompt([]).cardCopy
+        XCTAssertEqual(freeText.subtitle, "Codex is waiting on your answer.")
+        XCTAssertEqual(freeText.replyLabel, "Your answer")
+        XCTAssertEqual(freeText.replyPlaceholder, "Type your answer")
+
+        let choice = prompt([RemoteInteractivePromptOption(id: "1", label: "main", response: "1")]).cardCopy
+        XCTAssertEqual(choice.subtitle, "Codex is waiting on your choice.")
+        XCTAssertEqual(choice.replyLabel, "Custom reply")
+        XCTAssertNotEqual(choice.replyPlaceholder, freeText.replyPlaceholder)
+    }
 }

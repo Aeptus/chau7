@@ -923,6 +923,7 @@ mod tests {
             call_id: "call".into(),
             message: "Choose".into(),
             options: vec!["A".into()],
+            single_question: false,
         };
         manager.handle_codex_record("codex", "thread", "/c", &Record::Prompt(prompt), &mut host);
         assert_eq!(session.state(), State::WaitingInput);
