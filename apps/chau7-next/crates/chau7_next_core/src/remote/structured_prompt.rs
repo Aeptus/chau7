@@ -1,6 +1,7 @@
-//! Bounded structured Claude questions, with authoritative tool/session clears.
+//! Bounded structured Claude and Codex questions, with authoritative clears.
 use super::interactive_prompt::RemoteInteractivePromptOption;
 use crate::monitoring::claude_code::ClaudeCodeEvent;
+use crate::runtime::codex_feedback::Prompt as CodexQuestion;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Duration, Utc};
 use sha2::{Digest, Sha256};
@@ -16,6 +17,10 @@ pub struct StructuredPromptEntry {
     pub detail: Option<String>,
     pub options: Vec<RemoteInteractivePromptOption>,
     pub is_multi_select: bool,
+    /// A typed reply answers the question on its own, so the prompt is worth
+    /// showing without options, and the reply is sent without a leading
+    /// Escape. True for a single Codex question.
+    pub accepts_reply: bool,
     pub created_at: DateTime<Utc>,
     pub signature: String,
 }
@@ -36,15 +41,7 @@ impl StructuredPromptStore {
                     let key = (tab, event.session_id.clone());
                     changed |= self.entries.get(&key) != Some(&entry);
                     self.entries.insert(key, entry);
-                    if self.entries.len() > 128
-                        && let Some(key) = self
-                            .entries
-                            .iter()
-                            .min_by_key(|(_, entry)| entry.created_at)
-                            .map(|(key, _)| key.clone())
-                    {
-                        self.entries.remove(&key);
-                    }
+                    self.evict_oldest_over_limit();
                 }
             }
             "tool_complete" | "tool_failed" => {
@@ -65,6 +62,98 @@ impl StructuredPromptStore {
             _ => {}
         }
         changed
+    }
+    /// A question Codex put on screen, read from the session's rollout. A
+    /// single question carries its options and accepts a typed reply; a set
+    /// of questions only marks the session as waiting.
+    pub fn apply_codex_question(
+        &mut self,
+        tab: u64,
+        session: &str,
+        question: &CodexQuestion,
+        now: DateTime<Utc>,
+    ) -> bool {
+        self.purge(now);
+        if session.is_empty() || question.message.trim().is_empty() {
+            return false;
+        }
+        let options: Vec<_> = if question.single_question {
+            question
+                .options
+                .iter()
+                .enumerate()
+                .map(|(index, label)| {
+                    let id = (index + 1).to_string();
+                    // No Return: the digit already submits, and a Return
+                    // would land on whatever Codex shows next.
+                    RemoteInteractivePromptOption::new(&id, label, &id, is_destructive(label))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let mut basis = vec![
+            session,
+            question.call_id.as_str(),
+            question.message.as_str(),
+        ];
+        basis.extend(question.options.iter().map(String::as_str));
+        let entry = StructuredPromptEntry {
+            tab,
+            session_id: session.into(),
+            tool_use_id: question.call_id.clone(),
+            tool_name: CODEX_QUESTION_TOOL.into(),
+            prompt: question.message.trim().into(),
+            detail: None,
+            options,
+            is_multi_select: false,
+            accepts_reply: question.single_question,
+            created_at: now,
+            signature: signature(&basis.join("\n")),
+        };
+        let key = (tab, session.to_string());
+        if self.entries.get(&key).is_some_and(|current| {
+            current.tool_use_id == entry.tool_use_id && current.signature == entry.signature
+        }) {
+            return false;
+        }
+        self.entries.insert(key, entry);
+        self.evict_oldest_over_limit();
+        true
+    }
+    /// The user answered, or Codex withdrew, the question of this call.
+    pub fn resolve_codex_question(&mut self, session: &str, call_id: &str) -> bool {
+        let count = self.entries.len();
+        self.entries.retain(|_, entry| {
+            !(entry.session_id == session
+                && entry.tool_name == CODEX_QUESTION_TOOL
+                && entry.tool_use_id == call_id)
+        });
+        count != self.entries.len()
+    }
+    /// The keys for a typed reply to the prompt `prompt_id`. A reply normally
+    /// starts with Escape to leave a menu first. A Codex question takes the
+    /// text as its free-text answer, and Escape there would end up inside
+    /// the pasted answer.
+    pub fn reply_keys(&self, prompt_id: &str, escaped_reply: String) -> String {
+        let plain = self.entries.values().any(|entry| {
+            entry.accepts_reply && prompt_id.ends_with(&format!("-{}", entry.signature))
+        });
+        match escaped_reply.strip_prefix('\x1b') {
+            Some(reply) if plain => reply.to_string(),
+            _ => escaped_reply,
+        }
+    }
+    fn evict_oldest_over_limit(&mut self) {
+        if self.entries.len() > 128
+            && let Some(key) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.created_at)
+                .map(|(key, _)| key.clone())
+        {
+            self.entries.remove(&key);
+        }
     }
     pub fn entry(
         &self,
@@ -121,9 +210,7 @@ fn parse(event: &ClaudeCodeEvent, tab: u64, now: DateTime<Utc>) -> Option<Struct
                         &id,
                         *label,
                         if multi { format!("{id}\r") } else { id.clone() },
-                        ["deny", "reject", "cancel", "abort", "stop", "no"]
-                            .iter()
-                            .any(|word| label.to_lowercase().contains(word)),
+                        is_destructive(label),
                     )
                 })
                 .collect();
@@ -185,9 +272,20 @@ fn parse(event: &ClaudeCodeEvent, tab: u64, now: DateTime<Utc>) -> Option<Struct
         detail,
         options,
         is_multi_select: multi,
+        accepts_reply: false,
         created_at: now,
-        signature: STANDARD.encode(&Sha256::digest(basis.as_bytes())[..12]),
+        signature: signature(&basis),
     })
+}
+const CODEX_QUESTION_TOOL: &str = "request_user_input_async";
+fn signature(basis: &str) -> String {
+    STANDARD.encode(&Sha256::digest(basis.as_bytes())[..12])
+}
+fn is_destructive(label: &str) -> bool {
+    let label = label.to_lowercase();
+    ["deny", "reject", "cancel", "abort", "stop", "no"]
+        .iter()
+        .any(|word| label.contains(word))
 }
 
 #[cfg(test)]
@@ -288,5 +386,57 @@ mod tests {
         let entry = parse(&ev, 10, now).unwrap();
         assert_eq!(entry.detail.unwrap().chars().count(), 501);
         assert!(entry.options.is_empty());
+    }
+
+    fn codex_question(call: &str, options: &[&str], single_question: bool) -> CodexQuestion {
+        CodexQuestion {
+            call_id: call.into(),
+            message: "May I merge?".into(),
+            options: options.iter().map(|o| o.to_string()).collect(),
+            single_question,
+        }
+    }
+    #[test]
+    fn codex_question_offers_digit_answers_until_its_call_is_resolved() {
+        let now = Utc::now();
+        let mut store = StructuredPromptStore::default();
+        let question = codex_question("call_1", &["Approve", "Do not merge"], true);
+        assert!(store.apply_codex_question(10, "thread", &question, now));
+        assert!(!store.apply_codex_question(10, "thread", &question, now));
+        let entry = store.entry(10, "thread", now).unwrap();
+        assert_eq!(entry.prompt, "May I merge?");
+        let sent: Vec<_> = entry.options.iter().map(|o| o.response.as_str()).collect();
+        assert_eq!(
+            sent,
+            ["1", "2"],
+            "a digit submits; a Return would hit the next screen"
+        );
+        assert!(!entry.options[0].is_destructive);
+        assert!(entry.options[1].is_destructive);
+        assert!(!store.resolve_codex_question("thread", "another_call"));
+        let id = format!(
+            "tab-1-pane-x-{}",
+            store.entry(10, "thread", now).unwrap().signature
+        );
+        assert_eq!(store.reply_keys(&id, "\x1bnot yet\r".into()), "not yet\r");
+        assert_eq!(
+            store.reply_keys("tab-1-pane-x-other", "\x1bhi\r".into()),
+            "\x1bhi\r"
+        );
+        assert!(store.resolve_codex_question("thread", "call_1"));
+        assert!(store.entry(10, "thread", now).is_none());
+    }
+    #[test]
+    fn codex_free_text_question_accepts_a_reply_and_a_question_set_does_not() {
+        let now = Utc::now();
+        let mut store = StructuredPromptStore::default();
+        assert!(store.apply_codex_question(10, "free", &codex_question("call_2", &[], true), now));
+        let free = store.entry(10, "free", now).unwrap();
+        assert!(free.options.is_empty() && free.accepts_reply);
+        let set = codex_question("call_3", &["A", "B", "C"], false);
+        assert!(store.apply_codex_question(10, "set", &set, now));
+        let set = store.entry(10, "set", now).unwrap();
+        assert!(set.options.is_empty() && !set.accepts_reply);
+        assert!(!store.apply_codex_question(10, "", &codex_question("call_4", &[], true), now));
     }
 }

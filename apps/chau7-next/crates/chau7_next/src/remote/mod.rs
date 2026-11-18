@@ -293,6 +293,30 @@ pub fn ingest_claude_event(
     });
 }
 
+/// A Codex question is on screen in `tab`: offer it to the phone.
+pub fn ingest_codex_question(
+    tab: u64,
+    session: &str,
+    question: &chau7_next_core::runtime::codex_feedback::Prompt,
+    cx: &mut App,
+) {
+    let Some(entity) = handle(cx) else {
+        return;
+    };
+    entity.update(cx, |rc, _| {
+        rc.host
+            .ingest_codex_question(tab, session, question, chrono::Utc::now())
+    });
+}
+
+/// The Codex question of `call_id` was answered or withdrawn.
+pub fn resolve_codex_question(session: &str, call_id: &str, cx: &mut App) {
+    let Some(entity) = handle(cx) else {
+        return;
+    };
+    entity.update(cx, |rc, _| rc.host.resolve_codex_question(session, call_id));
+}
+
 pub fn record_output(session: u64, data: &[u8], cx: &mut App) {
     let Some(entity) = handle(cx) else { return };
     let batching = output_batching_enabled();

@@ -760,7 +760,7 @@ struct FullScreenPromptCard: View {
             DecisionHeader(
                 icon: "text.bubble.fill",
                 title: "Interactive prompt",
-                subtitle: "\(prompt.toolName) is waiting on your choice.",
+                subtitle: prompt.cardCopy.subtitle,
                 tint: .accentColor,
                 background: Color.accentColor.opacity(0.12),
                 onDismiss: onDismiss
@@ -786,7 +786,7 @@ struct FullScreenPromptCard: View {
                             onToggle: onToggleOption,
                             onSubmit: onSubmitMultiSelect
                         )
-                    } else {
+                    } else if !prompt.options.isEmpty {
                         VStack(spacing: 9) {
                             ForEach(prompt.options) { option in
                                 PromptOptionButton(option: option) { onRespond(option) }
@@ -795,9 +795,9 @@ struct FullScreenPromptCard: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Custom reply").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(prompt.cardCopy.replyLabel).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         HStack(spacing: 8) {
-                            TextField("Escape prompt and send text", text: $customText, axis: .vertical)
+                            TextField(prompt.cardCopy.replyPlaceholder, text: $customText, axis: .vertical)
                                 .font(.system(.callout, design: .monospaced))
                                 .lineLimit(1 ... 4)
                                 .padding(.horizontal, 12).padding(.vertical, 10)

@@ -920,6 +920,21 @@ impl RemoteHost {
         self.structured.apply(event, tab, now);
     }
 
+    pub fn ingest_codex_question(
+        &mut self,
+        tab: TabKey,
+        session: &str,
+        question: &chau7_next_core::runtime::codex_feedback::Prompt,
+        now: DateTime<Utc>,
+    ) {
+        self.structured
+            .apply_codex_question(tab, session, question, now);
+    }
+
+    pub fn resolve_codex_question(&mut self, session: &str, call_id: &str) {
+        self.structured.resolve_codex_question(session, call_id);
+    }
+
     fn handle_keys(&mut self, frame: RemoteFrame, env: &mut dyn HostEnv, sink: &mut dyn FrameSink) {
         let Ok(input) = serde_json::from_slice::<RemoteKeyInput>(&frame.payload) else {
             return;
@@ -1048,6 +1063,11 @@ impl RemoteHost {
             );
             self.send_activity(env, sink, true);
             return;
+        };
+        let text = if response.action == Action::Custom {
+            self.structured.reply_keys(&prompt.id, text)
+        } else {
+            text
         };
         let pane = response.pane_id.as_u64_pair().1;
         let written = if let Some(flagged) = protection::flagged_termination_action(&text) {
@@ -1744,7 +1764,7 @@ impl RemoteHost {
                         } else {
                             entry.options.clone()
                         };
-                        if options.is_empty() {
+                        if options.is_empty() && !entry.accepts_reply {
                             continue;
                         }
                         (
@@ -3176,5 +3196,78 @@ pub(crate) mod tests {
             &mut out,
         );
         assert_eq!(env.pane_typed.len(), 1);
+    }
+
+    #[test]
+    fn codex_question_reaches_the_phone_and_a_tap_types_its_digit() {
+        let mut env = FakeEnv::new();
+        let mut host = RemoteHost::new();
+        let mut out = Vec::new();
+        env.tabs[0].panes[0].ai_session_id = Some("thread".into());
+        host.handle_frame(
+            frame(RemoteFrameType::SessionReady, 0, ""),
+            &mut env,
+            &mut out,
+        );
+        let question = chau7_next_core::runtime::codex_feedback::Prompt {
+            call_id: "call_1".into(),
+            message: "May I merge the branch?".into(),
+            options: vec!["Merge".into(), "Leave it".into()],
+            single_question: true,
+        };
+        host.ingest_codex_question(10, "thread", &question, env.now);
+        host.refresh(&mut env, &mut out, true);
+        let prompt = host.prompts[0].clone();
+        assert_eq!(prompt.prompt, "May I merge the branch?");
+        let labels: Vec<_> = prompt.options.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(labels, ["Merge", "Leave it"]);
+        let payload = serde_json::json!({"prompt_id":prompt.id,"pane_id":prompt.pane_id,"action":"select","option_id":"2"}).to_string();
+        host.handle_frame(
+            frame(
+                RemoteFrameType::InteractivePromptResponse,
+                prompt.tab_id,
+                &payload,
+            ),
+            &mut env,
+            &mut out,
+        );
+        assert_eq!(env.pane_typed.len(), 1);
+        assert_eq!(env.pane_typed[0].2, "2");
+
+        let free_text = chau7_next_core::runtime::codex_feedback::Prompt {
+            call_id: "call_2".into(),
+            message: "Which branch?".into(),
+            options: Vec::new(),
+            single_question: true,
+        };
+        host.ingest_codex_question(10, "thread", &free_text, env.now);
+        host.refresh(&mut env, &mut out, true);
+        let prompt = host.prompts[0].clone();
+        assert!(
+            prompt.options.is_empty(),
+            "a free-text question still gets a card"
+        );
+        let payload = serde_json::json!({"prompt_id":prompt.id,"pane_id":prompt.pane_id,"action":"custom","custom_text":"main"}).to_string();
+        host.handle_frame(
+            frame(
+                RemoteFrameType::InteractivePromptResponse,
+                prompt.tab_id,
+                &payload,
+            ),
+            &mut env,
+            &mut out,
+        );
+        assert_eq!(
+            env.pane_typed[1].2, "main\r",
+            "no Escape inside a Codex answer"
+        );
+
+        host.ingest_codex_question(10, "thread", &question, env.now);
+        host.resolve_codex_question("thread", "call_1");
+        host.refresh(&mut env, &mut out, true);
+        assert!(
+            host.prompts.is_empty(),
+            "an answered question leaves the phone"
+        );
     }
 }

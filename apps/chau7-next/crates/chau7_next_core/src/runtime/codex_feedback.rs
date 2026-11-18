@@ -12,6 +12,12 @@ pub struct Prompt {
     pub call_id: String,
     pub message: String,
     pub options: Vec<String>,
+    /// One asynchronous question with at most nine options: the only form
+    /// that can be answered from outside. Codex lists the options as `1.` to
+    /// `9.`, a digit key selects and submits one, and pasted text becomes a
+    /// free-text answer. With several questions Codex shows one at a time and
+    /// the rollout does not say which.
+    pub single_question: bool,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Record {
@@ -36,7 +42,7 @@ fn text(v: &Value) -> Option<String> {
         .filter(|s| !s.is_empty())
         .map(str::to_string)
 }
-pub fn prompt(questions: &Value, call_id: String) -> Option<Prompt> {
+pub fn prompt(questions: &Value, call_id: String, asynchronous: bool) -> Option<Prompt> {
     let questions = questions.as_array()?;
     let messages: Vec<_> = questions
         .iter()
@@ -45,15 +51,17 @@ pub fn prompt(questions: &Value, call_id: String) -> Option<Prompt> {
     if messages.is_empty() {
         return None;
     }
-    let options = questions
+    let options: Vec<String> = questions
         .iter()
         .flat_map(|q| q["options"].as_array().into_iter().flatten())
         .filter_map(|o| text(&o["label"]).or_else(|| text(o)))
         .collect();
+    let single_question = asynchronous && questions.len() == 1 && options.len() <= 9;
     Some(Prompt {
         call_id,
         message: messages.join("\n"),
         options,
+        single_question,
     })
 }
 /// The question tool that returns before the user answers.
@@ -100,7 +108,12 @@ pub fn parse(line: &str) -> Option<Record> {
             if p["name"] == "request_user_input" || p["name"] == ASYNC_QUESTION_TOOL =>
         {
             let args: Value = serde_json::from_str(p["arguments"].as_str()?).ok()?;
-            prompt(&args["questions"], text(&p["call_id"])?).map(Record::Prompt)
+            prompt(
+                &args["questions"],
+                text(&p["call_id"])?,
+                p["name"] == ASYNC_QUESTION_TOOL,
+            )
+            .map(Record::Prompt)
         }
         ("response_item", "function_call_output") => {
             let call_id = text(&p["call_id"])?;
@@ -405,7 +418,7 @@ pub fn parse_app_server(line: &str) -> Option<Interaction> {
     };
     let request = request?;
     let prompt = if kind == Some(InteractionKind::UserInput) {
-        Some(prompt(&p["questions"], request.clone())?)
+        Some(prompt(&p["questions"], request.clone(), false)?)
     } else {
         None
     };
@@ -457,6 +470,7 @@ mod tests {
             call_id: "c".into(),
             message: "Choose?".into(),
             options: vec!["One".into()],
+            single_question: false,
         };
         assert!(tracker.consume(Record::Prompt(p.clone()), 0).is_empty());
         assert!(
@@ -489,6 +503,7 @@ mod tests {
             call_id: "call_1".into(),
             message: "May I merge?".into(),
             options: vec!["Approve".into(), "Keep".into()],
+            single_question: true,
         };
         assert_eq!(parse(ASYNC_QUESTION), Some(Record::Prompt(prompt.clone())));
         assert_eq!(
@@ -546,6 +561,32 @@ mod tests {
         assert!(tracker.announce(10_000).is_empty());
         let plain = r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"carry on"}]}}"#;
         assert_eq!(parse(plain), None);
+    }
+
+    #[test]
+    fn only_a_single_asynchronous_question_can_be_answered_from_outside() {
+        let call = |name: &str, questions: &str| {
+            let args = serde_json::json!({ "questions": serde_json::from_str::<Value>(questions).unwrap() });
+            let line = serde_json::json!({"type":"response_item","payload":{"type":"function_call","name":name,"call_id":"c","arguments":args.to_string()}});
+            match parse(&line.to_string()) {
+                Some(Record::Prompt(prompt)) => prompt.single_question,
+                other => panic!("expected a prompt, got {other:?}"),
+            }
+        };
+        let one = r#"[{"title":"Merge?","options":["Yes","No"]}]"#;
+        assert!(call("request_user_input_async", one));
+        assert!(!call("request_user_input", one));
+        assert!(call(
+            "request_user_input_async",
+            r#"[{"title":"Say more"}]"#
+        ));
+        let two = r#"[{"title":"A?","options":["1","2"]},{"title":"B?","options":["3"]}]"#;
+        assert!(!call("request_user_input_async", two));
+        let ten = format!(
+            r#"[{{"title":"Pick","options":[{}]}}]"#,
+            [r#""x""#; 10].join(",")
+        );
+        assert!(!call("request_user_input_async", &ten));
     }
 
     #[test]

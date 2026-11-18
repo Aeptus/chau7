@@ -136,3 +136,30 @@ public struct RemoteInteractivePromptListPayload: Codable, Equatable, Sendable, 
         case spineSeq = "spine_seq"
     }
 }
+
+/// The words the prompt card shows around a prompt's own text.
+public struct RemoteInteractivePromptCardCopy: Equatable, Sendable {
+    public let subtitle: String
+    public let replyLabel: String
+    public let replyPlaceholder: String
+}
+
+public extension RemoteInteractivePrompt {
+    /// A prompt can arrive without options: a question that only takes a
+    /// typed answer, such as a Codex question with no suggested answers. Its
+    /// reply field is then the answer itself, not an alternative to a choice.
+    var cardCopy: RemoteInteractivePromptCardCopy {
+        if options.isEmpty {
+            return RemoteInteractivePromptCardCopy(
+                subtitle: "\(toolName) is waiting on your answer.",
+                replyLabel: "Your answer",
+                replyPlaceholder: "Type your answer"
+            )
+        }
+        return RemoteInteractivePromptCardCopy(
+            subtitle: "\(toolName) is waiting on your choice.",
+            replyLabel: "Custom reply",
+            replyPlaceholder: "Type a reply instead of choosing"
+        )
+    }
+}
