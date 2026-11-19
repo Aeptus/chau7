@@ -414,7 +414,10 @@ pub fn parse_app_server(line: &str) -> Option<Interaction> {
     let method = value["method"].as_str()?;
     let p = &value["params"];
     let id = |v: &Value| text(v).or_else(|| v.as_i64().map(|i| i.to_string()));
-    let (request, kind) = if method == "tool/requestUserInput" {
+    let (request, kind) = if matches!(
+        method,
+        "item/tool/requestUserInput" | "tool/requestUserInput"
+    ) {
         (id(&value["id"]), Some(InteractionKind::UserInput))
     } else if method.to_lowercase().contains("requestapproval") {
         (id(&value["id"]), Some(InteractionKind::Approval))
@@ -654,6 +657,24 @@ mod tests {
         );
         std::fs::remove_file(&path).unwrap();
     }
+    #[test]
+    fn app_server_accepts_the_generated_user_input_request_method() {
+        for method in ["item/tool/requestUserInput", "tool/requestUserInput"] {
+            let line = serde_json::json!({
+                "id": 12,
+                "method": method,
+                "params": {
+                    "threadId": "thread",
+                    "questions": [{"id": "choice", "header": "Choice", "question": "Choose an option", "options": []}]
+                }
+            });
+            let request = parse_app_server(&line.to_string()).unwrap();
+            assert_eq!(request.kind, Some(InteractionKind::UserInput));
+            assert_eq!(request.thread_id.as_deref(), Some("thread"));
+            assert_eq!(request.prompt.unwrap().message, "Choose an option");
+        }
+    }
+
     #[test]
     fn app_server_pending_approval_precedence_and_resolution() {
         let requested=parse_app_server(r#"{"id":7,"method":"item/commandExecution/requestApproval","params":{"threadId":"thread"}}"#).unwrap();

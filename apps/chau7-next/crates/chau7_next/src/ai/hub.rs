@@ -54,7 +54,7 @@ pub struct AiHub {
     pub claude: ClaudeSessionTracker,
     codex_candidates: Vec<Candidate>,
     /// The tab each AI session last reported from, by session id. Events
-    /// that carry no tab (idle, waiting fallback) are routed with it.
+    /// that carry no tab are routed with it.
     session_tabs: SessionTabs,
     pending_claude_starts: VecDeque<PendingClaudeStart>,
     seen_claude_starts: VecDeque<ClaudeStartKey>,
@@ -523,7 +523,7 @@ fn handle_claude_event(
     }
     let mut ai = AiEvent::new(
         AiEventSource::claude_code(),
-        event.event_type.as_str(),
+        event.raw_type.as_str(),
         "Claude",
         event.message.clone(),
         iso8601::format_iso8601(
@@ -531,7 +531,7 @@ fn handle_claude_event(
                 .unwrap_or_else(chrono::Utc::now),
         ),
     );
-    ai.raw_type = Some(event.event_type.as_str().to_string());
+    ai.raw_type = Some(event.raw_type.clone());
     ai.title = event.title.clone();
     ai.notification_type = event.notification_type.clone();
     ai.directory = Some(event.cwd.clone()).filter(|d| !d.is_empty());

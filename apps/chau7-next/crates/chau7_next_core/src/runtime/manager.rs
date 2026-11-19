@@ -503,6 +503,12 @@ impl RuntimeSessionManager {
             self.move_to_stopped(&session, Utc::now());
             return;
         }
+        if event.raw_type == "response_failed" {
+            if session.current_turn_id().is_some() {
+                session.fail_turn(&event.message);
+            }
+            return;
+        }
         let start_turn_if_idle = |s: &RuntimeSession| {
             if s.current_turn_id().is_none() && s.can_accept_turn() {
                 s.start_turn(&event.message);
@@ -1134,6 +1140,25 @@ mod tests {
         let notes = of_type(&session, "notification");
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].data["message"], "Heads up");
+    }
+
+    #[test]
+    fn claude_stop_failure_releases_the_active_turn() {
+        let manager = RuntimeSessionManager::new(None);
+        let mut host = FakeHost::default();
+        let session = manager.adopt_session("T", Box::new(ClaudeCodeBackend), "/p");
+        manager.handle_claude_event(
+            &event(EventType::UserPrompt, "ct", "", "Please continue", "/p"),
+            &mut host,
+        );
+        let failure = crate::monitoring::claude_code::parse_event_line(
+            r#"{"type":"response_failed","hook":"StopFailure","sessionId":"ct","cwd":"/p","message":"API Error: Rate limit reached"}"#,
+            0.0,
+        )
+        .unwrap();
+        manager.handle_claude_event(&failure, &mut host);
+        assert_eq!(session.state(), State::Ready);
+        assert!(session.current_turn_id().is_none());
     }
 
     #[test]

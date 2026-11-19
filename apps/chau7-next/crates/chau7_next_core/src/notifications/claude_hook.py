@@ -48,10 +48,19 @@ def main():
             return
     hook = payload.get("hook_event_name", "")
     kind = HOOK_TYPES.get(hook, "unknown")
-    if hook == "Notification":
-        message = str(payload.get("message") or "").lower()
-        if "permission" in message or "approval" in message:
-            kind = "permission_request"
+    message = payload.get("message") or payload.get("prompt") or ""
+    notification_type = payload.get("notification_type")
+    if hook == "Notification" and (
+        notification_type == "permission_prompt"
+        or (not notification_type and any(word in str(message).lower() for word in ("permission", "approval")))
+    ):
+        kind = "permission_request"
+    if hook == "StopFailure":
+        message = (
+            payload.get("last_assistant_message") or payload.get("error") or "Claude Code could not complete the turn."
+        )
+    elif hook == "PostToolUseFailure":
+        message = payload.get("error") or message
     event = {
         "type": kind,
         "hook": hook,
@@ -59,7 +68,9 @@ def main():
         "transcriptPath": transcript,
         "toolName": payload.get("tool_name", ""),
         "toolUseID": payload.get("tool_use_id", ""),
-        "message": payload.get("message") or payload.get("prompt") or "",
+        "message": message,
+        "title": payload.get("title"),
+        "notificationType": notification_type,
         "cwd": payload.get("cwd") or os.environ.get("CHAU7_NEXT_PROJECT", ""),
         "tabID": tab,
         "timestamp": datetime.datetime.now(datetime.timezone.utc)  # noqa: UP017 - Python 3.9 macOS compatibility

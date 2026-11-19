@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Show Claude Code API failures with their reason and keep the completed turn green when Claude later sends its idle reminder.
+
 - Show green for a finished AI turn, orange for a question or approval, and red for a failed turn. Claude Code's normal turn completion now triggers a notification. Chau7 reads terminal Codex errors from the session log and removes the waiting highlight when the question is answered.
 
 - Keep tabs whose Codex conversation was archived by Codex. Codex moves an archived conversation out of its live session folder; Chau7 then treated the tab's conversation as lost, and the production updater refused to run while any such tab was open. Now the tab reopens as a plain shell with a notice that Codex archived its conversation, the tab keeps its conversation id and its `codex resume <id>` command, and it resumes on the next restore after `codex unarchive <id>`. The updater lists these tabs with their conversation ids and no longer stops for them. A conversation that is in neither Codex folder is still reported as unavailable and still stops the updater.
