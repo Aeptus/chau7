@@ -13,10 +13,8 @@ pub struct Prompt {
     pub message: String,
     pub options: Vec<String>,
     /// One asynchronous question with at most nine options: the only form
-    /// that can be answered from outside. Codex lists the options as `1.` to
-    /// `9.`, a digit key selects and submits one, and pasted text becomes a
-    /// free-text answer. With several questions Codex shows one at a time and
-    /// the rollout does not say which.
+    /// that can be answered from outside. With several questions Codex shows
+    /// one at a time and the rollout does not say which.
     pub single_question: bool,
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -252,12 +250,19 @@ impl Tracker {
             has_other_pending: self.pending_count() > 0,
         })
     }
-    /// A new turn began: questions of earlier turns can no longer be answered
-    /// (the user typed a message instead), so they stop counting as pending.
-    pub fn start_turn(&mut self) {
-        for call in self.calls.values_mut() {
-            *call = Call::Completed;
-        }
+    /// The TUI dismisses its editor when the turn ends. Also clear questions
+    /// from an earlier turn if the watcher missed its terminal record.
+    pub fn finish_turn(&mut self) -> Vec<Action> {
+        let pending: Vec<_> = self
+            .calls
+            .iter()
+            .filter(|(_, call)| !matches!(call, Call::Completed))
+            .map(|(id, _)| id.clone())
+            .collect();
+        pending
+            .into_iter()
+            .filter_map(|id| self.complete(id))
+            .collect()
     }
     pub fn announce(&mut self, now_ms: u64) -> Vec<Action> {
         let mut actions = Vec::new();
@@ -571,11 +576,17 @@ mod tests {
     }
 
     #[test]
-    fn new_turn_abandons_an_unanswered_question() {
+    fn turn_end_withdraws_an_unanswered_question() {
         let mut tracker = Tracker::default();
         tracker.consume(parse(ASYNC_QUESTION).unwrap(), 0);
         tracker.consume(parse(ASYNC_ACCEPTED).unwrap(), 10);
-        tracker.start_turn();
+        assert_eq!(
+            tracker.finish_turn(),
+            [Action::Resolved {
+                call_id: "call_1".into(),
+                has_other_pending: false,
+            }]
+        );
         assert_eq!(tracker.pending_count(), 0);
         assert!(tracker.consume(parse(ASYNC_REPLY).unwrap(), 20).is_empty());
     }

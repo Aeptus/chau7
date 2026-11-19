@@ -128,9 +128,9 @@ final class NotificationContentFormatterTests: XCTestCase {
     }
 
     func testInteractivePromptTitle() {
-        XCTAssertEqual(NotificationContentFormatter.interactivePromptTitle(toolName: "Claude"), "Claude is waiting")
-        XCTAssertEqual(NotificationContentFormatter.interactivePromptTitle(toolName: nil), "Interactive prompt")
-        XCTAssertEqual(NotificationContentFormatter.interactivePromptTitle(toolName: " "), "Interactive prompt")
+        XCTAssertEqual(NotificationContentFormatter.interactivePromptTitle(toolName: "Claude"), "Claude needs input")
+        XCTAssertEqual(NotificationContentFormatter.interactivePromptTitle(toolName: nil), "Input needed")
+        XCTAssertEqual(NotificationContentFormatter.interactivePromptTitle(toolName: " "), "Input needed")
     }
 
     // MARK: - Location summary (parity with Go locationSummary + iOS subtitle)
@@ -141,7 +141,7 @@ final class NotificationContentFormatterTests: XCTestCase {
                 tabTitle: "build", projectName: "Mockup", branchName: "main",
                 currentDirectory: "/srv/app"
             ),
-            "build · Mockup (main) · /srv/app"
+            "Mockup · build"
         )
         XCTAssertEqual(
             NotificationContentFormatter.locationSummary(
@@ -162,30 +162,25 @@ final class NotificationContentFormatterTests: XCTestCase {
         )
     }
 
-    func testLocationSummaryHomeAbbreviationOnlyWhenRequested() {
-        let home = NSHomeDirectory()
-        // Wire/Go semantics: no home abbreviation.
+    func testLocationSummaryDeduplicatesAndDoesNotExposeFullPaths() {
         XCTAssertEqual(
             NotificationContentFormatter.locationSummary(
-                tabTitle: nil, projectName: nil, branchName: nil,
-                currentDirectory: "\(home)/code"
+                tabTitle: "mockup", projectName: "Mockup", branchName: "feature",
+                currentDirectory: "/srv/app"
             ),
-            "\(home)/code"
-        )
-        // iOS local-notification semantics: abbreviate under home.
-        XCTAssertEqual(
-            NotificationContentFormatter.locationSummary(
-                tabTitle: nil, projectName: nil, branchName: nil,
-                currentDirectory: "\(home)/code", homeDirectory: home
-            ),
-            "~/code"
+            "Mockup · feature"
         )
         XCTAssertEqual(
             NotificationContentFormatter.locationSummary(
-                tabTitle: nil, projectName: nil, branchName: nil,
-                currentDirectory: home, homeDirectory: home
+                tabTitle: "Mockup", projectName: "Mockup", branchName: nil, currentDirectory: nil
             ),
-            "~"
+            "Mockup"
+        )
+        XCTAssertEqual(
+            NotificationContentFormatter.locationSummary(
+                tabTitle: nil, projectName: nil, branchName: nil, currentDirectory: " /srv/app/ "
+            ),
+            "app"
         )
     }
 

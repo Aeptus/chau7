@@ -17,7 +17,9 @@ use crate::pane::PaneTree;
 use crate::terminal::session::TerminalSession;
 use crate::terminal::view::{GuardResolution, TerminalView};
 use crate::workspace::{AppData, Workspace};
-use chau7_next_core::remote::key_input::{InputStep, RemoteKey, key_steps, text_steps};
+use chau7_next_core::remote::key_input::{
+    CodexQuestionEditor, InputStep, RemoteKey, codex_question_editor, key_steps, text_steps,
+};
 
 /// Lines of a pane given to the prompt detector (it reads the last 80).
 const PROMPT_LINES: i32 = 80;
@@ -103,6 +105,29 @@ impl<'a> GpuiEnv<'a> {
             .is_some_and(|provider| provider.eq_ignore_ascii_case("codex"));
         let steps = text_steps(text, codex, session.is_bracketed_paste());
         self.dispatch_steps(view, steps)
+    }
+
+    fn current_codex_editor(
+        session: &TerminalSession,
+        native_id: &str,
+        title: &str,
+    ) -> Option<CodexQuestionEditor> {
+        let shell = session.shell();
+        if session.exited.is_some()
+            || !session.is_bracketed_paste()
+            || !shell
+                .effective_provider()
+                .is_some_and(|provider| provider.eq_ignore_ascii_case("codex"))
+            || shell.ai_session_id() != Some(native_id)
+        {
+            return None;
+        }
+        let rows = i32::from(session.grid.rows);
+        let screen = (0..rows)
+            .filter_map(|line| session.line_text(line))
+            .collect::<Vec<_>>()
+            .join("\n");
+        codex_question_editor(&screen, title)
     }
 
     fn date_of(&self, instant: Instant) -> DateTime<Utc> {
@@ -305,6 +330,66 @@ impl HostEnv for GpuiEnv<'_> {
     }
     fn write_pane_input(&mut self, key: TabKey, pane: u64, text: &str) -> bool {
         self.send_text(key, Some(pane), text)
+    }
+    fn write_codex_answer(
+        &mut self,
+        key: TabKey,
+        pane: u64,
+        native_id: &str,
+        title: &str,
+        answer: &str,
+    ) -> bool {
+        let Some(view) = self.input_view(key, Some(pane)) else {
+            return false;
+        };
+        let session = view.read(self.cx).session.read(self.cx);
+        let steps = text_steps(&format!("{answer}\r"), true, true);
+        match Self::current_codex_editor(session, native_id, title) {
+            Some(CodexQuestionEditor::Ready) => self.dispatch_steps(view, steps),
+            Some(CodexQuestionEditor::Collapsed) => {
+                let open = key_steps(
+                    &[RemoteKey {
+                        key: "left".into(),
+                        modifiers: Some(vec!["shift".into()]),
+                    }],
+                    session.is_app_cursor(),
+                );
+                let (native_id, title) = (native_id.to_owned(), title.to_owned());
+                view.update(self.cx, |view, cx| {
+                    if !view.send_guarded_steps(open, cx) {
+                        return false;
+                    }
+                    cx.spawn(async move |view, cx| {
+                        // Opening the editor requires a PTY redraw. Check the
+                        // new screen before sending any reply bytes.
+                        for _ in 0..10 {
+                            cx.background_executor()
+                                .timer(std::time::Duration::from_millis(100))
+                                .await;
+                            let Ok(waiting) = view.update(cx, |view, cx| {
+                                let session = view.session.read(cx);
+                                match Self::current_codex_editor(session, &native_id, &title) {
+                                    Some(CodexQuestionEditor::Ready) => {
+                                        view.send_guarded_steps(steps.clone(), cx);
+                                        false
+                                    }
+                                    Some(CodexQuestionEditor::Collapsed) => true,
+                                    None => false,
+                                }
+                            }) else {
+                                break;
+                            };
+                            if !waiting {
+                                break;
+                            }
+                        }
+                    })
+                    .detach();
+                    true
+                })
+            }
+            None => false,
+        }
     }
     fn write_keys(&mut self, key: TabKey, pane: Option<u64>, keys: &[RemoteKey]) -> bool {
         let Some(view) = self.input_view(key, pane) else {

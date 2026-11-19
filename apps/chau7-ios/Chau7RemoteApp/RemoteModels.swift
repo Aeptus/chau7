@@ -243,6 +243,10 @@ enum RemoteDisconnectTrigger: String, Equatable {
     case backgroundExpiration = "background_expiration"
 }
 
+extension RemoteInteractivePrompt {
+    var awaitsCodexReply: Bool { toolName.caseInsensitiveCompare("Codex") == .orderedSame }
+}
+
 /// Pure ownership rules for connection attempts. Automatic callers coalesce
 /// behind any open transport, while an explicit manual retry may replace a
 /// wedged handshake. Only one delayed reconnect may exist at a time.
@@ -254,7 +258,10 @@ enum RemoteConnectionStartPolicy {
     /// ERROR codes the Mac sends when it refuses a single input or approval.
     /// The session is healthy; only that input did not go through.
     static func isInputRefusal(code: String) -> Bool {
-        ["tab_unavailable", "stale_prompt", "input_held", "command_blocked", "approval_stale"].contains(code)
+        [
+            "tab_unavailable", "stale_prompt", "input_held", "command_blocked", "approval_stale",
+            "codex_question_unavailable", "prompt_reply_pending",
+        ].contains(code)
     }
 
     /// An explicit Disconnect holds until the user connects by hand.

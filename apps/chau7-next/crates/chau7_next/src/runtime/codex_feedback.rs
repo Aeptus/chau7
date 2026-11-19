@@ -296,8 +296,13 @@ fn poll(
                 Ok(records) => {
                     watch.tracker.lines_observed = reader.lines_observed;
                     for (record, catch_up) in records {
-                        if matches!(record, Record::Started(_)) {
-                            watch.tracker.start_turn();
+                        if matches!(
+                            record,
+                            Record::Started(_) | Record::TurnCompleted(_) | Record::TurnFailed(_)
+                        ) {
+                            for action in watch.tracker.finish_turn() {
+                                deliveries.push((binding.clone(), Delivery::Feedback(action)));
+                            }
                         }
                         match record {
                             Record::Prompt(_)
@@ -343,7 +348,6 @@ fn poll(
                                     }
                                 }
                             }
-                            Record::TurnCompleted(_) if watch.tracker.pending_count() > 0 => {}
                             record if !catch_up => {
                                 deliveries.push((binding.clone(), Delivery::Lifecycle(record)))
                             }

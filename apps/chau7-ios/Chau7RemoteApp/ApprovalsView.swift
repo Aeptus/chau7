@@ -37,6 +37,16 @@ struct ApprovalsView: View {
                 }
             }
             .background(Color(.systemGroupedBackground))
+            .safeAreaInset(edge: .bottom) {
+                if let error = client.codexReplyError, !decisions.isEmpty {
+                    Text(error)
+                        .font(.footnote)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.bar)
+                }
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -74,6 +84,8 @@ struct ApprovalsView: View {
         .onAppear { normalizeSelection() }
         .onDisappear { pendingFocusID = nil }
         .onChange(of: decisions.map(\.id)) { _, _ in
+            let promptIDs = Set(client.pendingInteractivePrompts.map(\.id))
+            customPromptDrafts = customPromptDrafts.filter { promptIDs.contains($0.key) }
             applyPendingFocus()
             normalizeSelection()
         }
@@ -219,7 +231,8 @@ struct ApprovalsView: View {
                 tabTitle: prompt.tabTitle,
                 option: option
             )
-        } else if client.respondToInteractivePrompt(promptID: prompt.id, optionID: option.id) {
+        } else if client.respondToInteractivePrompt(promptID: prompt.id, optionID: option.id),
+                  !prompt.awaitsCodexReply {
             let next = nextSelection(after: decisionID)
             resetCustomPromptState(for: prompt.id)
             hapticTrigger.toggle()
@@ -229,7 +242,8 @@ struct ApprovalsView: View {
 
     private func sendCustomReply(for prompt: RemoteInteractivePrompt, decisionID: String) {
         let text = customText(for: prompt.id)
-        if client.respondToInteractivePrompt(promptID: prompt.id, customText: text) {
+        if client.respondToInteractivePrompt(promptID: prompt.id, customText: text),
+           !prompt.awaitsCodexReply {
             let next = nextSelection(after: decisionID)
             resetCustomPromptState(for: prompt.id)
             hapticTrigger.toggle()
@@ -240,7 +254,9 @@ struct ApprovalsView: View {
     private func confirmPendingPrompt() {
         guard let confirmation = pendingPromptConfirmation else { return }
         let next = nextSelection(after: confirmation.decisionID)
-        if client.respondToInteractivePrompt(promptID: confirmation.promptID, optionID: confirmation.option.id) {
+        let awaitsCodexReply = client.pendingInteractivePrompts.first { $0.id == confirmation.promptID }?.awaitsCodexReply
+        if client.respondToInteractivePrompt(promptID: confirmation.promptID, optionID: confirmation.option.id),
+           awaitsCodexReply != true {
             resetCustomPromptState(for: confirmation.promptID)
             hapticTrigger.toggle()
             selection = next

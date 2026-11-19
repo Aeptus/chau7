@@ -838,6 +838,22 @@ func TestUpdatePendingApprovalSyncsRelayState(t *testing.T) {
 	}
 }
 
+func TestLegacyPushLocationUsesRepositoryAndOneContext(t *testing.T) {
+	for _, tt := range []struct {
+		tab, repository, branch, directory, want string
+	}{
+		{"Build", "Chau7", "main", "/srv/chau7", "Chau7 · Build"},
+		{"chau7", "Chau7", "feature", "/srv/chau7", "Chau7 · feature"},
+		{"Chau7", "Chau7", "", "", "Chau7"},
+		{"", "", "", " /srv/chau7/ ", "chau7"},
+		{"", "", "", "/", ""},
+	} {
+		if got := locationSummary(tt.tab, tt.repository, tt.branch, tt.directory); got != tt.want {
+			t.Errorf("locationSummary(%q, %q, %q, %q) = %q, want %q", tt.tab, tt.repository, tt.branch, tt.directory, got, tt.want)
+		}
+	}
+}
+
 func TestFailedPushStaysEligibleForRetry(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

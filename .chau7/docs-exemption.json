@@ -1,6 +1,6 @@
 {
-  "reason": "Lint-only change to a test fixture (array instead of vec!) in the Codex question tests. No behaviour changes; the user-visible change of this branch is documented in the preceding commit's CHANGELOG entry.",
+  "reason": "The Codex reply regression test now compares borrowed slices to satisfy Clippy. The assertion and product behavior stay the same.",
   "paths": [
-    "apps/chau7-next/crates/chau7_next_core/src/runtime/codex_feedback.rs"
+    "apps/chau7-next/crates/chau7_next/src/remote/host.rs"
   ]
 }

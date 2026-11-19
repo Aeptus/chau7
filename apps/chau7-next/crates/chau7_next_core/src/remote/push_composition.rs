@@ -12,19 +12,21 @@ pub fn location_summary(
     branch: Option<&str>,
     directory: Option<&str>,
 ) -> Option<String> {
-    let mut parts = Vec::new();
-    if let Some(tab) = clean(tab) {
-        parts.push(tab.to_string());
+    let tab = clean(tab);
+    let branch = clean(branch);
+    if let Some(project) = clean(project) {
+        let context = [tab, branch]
+            .into_iter()
+            .flatten()
+            .find(|part| !part.eq_ignore_ascii_case(project));
+        return Some(match context {
+            Some(context) => format!("{project} · {context}"),
+            None => project.to_owned(),
+        });
     }
-    match (clean(project), clean(branch)) {
-        (Some(project), Some(branch)) => parts.push(format!("{project} ({branch})")),
-        (Some(part), None) | (None, Some(part)) => parts.push(part.to_string()),
-        (None, None) => {}
-    }
-    if let Some(directory) = clean(directory) {
-        parts.push(directory.to_string());
-    }
-    (!parts.is_empty()).then(|| parts.join(" · "))
+    tab.or(branch)
+        .or_else(|| clean(directory)?.rsplit('/').find(|part| !part.is_empty()))
+        .map(str::to_owned)
 }
 
 pub fn approval_severity(command: &str, flagged: &str, reason: Option<&str>) -> &'static str {
@@ -63,7 +65,8 @@ fn destructive(command: &str) -> bool {
 }
 pub fn compose_approval(payload: &ApprovalRequestPayload, spine_seq: Option<u64>) -> Value {
     let mut wire = json!(payload);
-    let protected = payload.command != payload.flagged_command;
+    let protected =
+        !payload.flagged_command.trim().is_empty() && payload.command != payload.flagged_command;
     wire["push_title"] = json!(if protected {
         "Protected action needs approval".into()
     } else {
@@ -103,8 +106,8 @@ pub fn compose_prompt_list(payload: &RemoteInteractivePromptListPayload) -> Valu
     {
         value["push_title"] = json!(
             clean(Some(&prompt.tool_name))
-                .map(|tool| format!("{tool} is waiting"))
-                .unwrap_or_else(|| "Interactive prompt".into())
+                .map(|tool| format!("{tool} needs input"))
+                .unwrap_or_else(|| "Input needed".into())
         );
         if let Some(subtitle) = location_summary(
             Some(&prompt.tab_title),
@@ -129,7 +132,7 @@ mod tests {
         p.branch_name = Some("main".into());
         let wire = compose_approval(&p, Some(42));
         assert_eq!(wire["push_title"], "Codex needs approval");
-        assert_eq!(wire["push_subtitle"], "Terminal · Chau7 (main)");
+        assert_eq!(wire["push_subtitle"], "Chau7 · Terminal");
         assert_eq!(wire["severity"], "standard");
         assert_eq!(wire["spine_seq"], 42);
         assert_eq!(wire["request_id"], "id");
@@ -181,11 +184,21 @@ mod tests {
         );
     }
     #[test]
-    fn empty_context_is_omitted_and_directory_remains_verbatim() {
+    fn location_deduplicates_names_and_uses_only_the_last_directory_component() {
         assert!(location_summary(Some(" "), None, None, None).is_none());
         assert_eq!(
-            location_summary(None, None, None, Some("/Users/person/Repo")).as_deref(),
-            Some("/Users/person/Repo")
+            location_summary(None, None, None, Some("/workspaces/Repo/")).as_deref(),
+            Some("Repo")
+        );
+        assert_eq!(
+            location_summary(
+                Some("chau7"),
+                Some("Chau7"),
+                Some("feature"),
+                Some("/ignored")
+            )
+            .as_deref(),
+            Some("Chau7 · feature")
         );
     }
     #[test]
@@ -194,7 +207,7 @@ mod tests {
         let payload: RemoteInteractivePromptListPayload =
             serde_json::from_value(original.clone()).unwrap();
         let wire = compose_prompt_list(&payload);
-        assert_eq!(wire["prompts"][0]["push_title"], "Claude is waiting");
+        assert_eq!(wire["prompts"][0]["push_title"], "Claude needs input");
         for (key, value) in original["prompts"][0].as_object().unwrap() {
             assert_eq!(&wire["prompts"][0][key], value, "{key}");
         }

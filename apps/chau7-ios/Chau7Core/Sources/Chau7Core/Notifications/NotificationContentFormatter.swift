@@ -102,34 +102,30 @@ public enum NotificationContentFormatter {
     /// Push/local title for an interactive prompt.
     public static func interactivePromptTitle(toolName: String?) -> String {
         if let tool = cleanPart(toolName) {
-            return "\(tool) is waiting"
+            return "\(tool) needs input"
         }
-        return "Interactive prompt"
+        return "Input needed"
     }
 
-    /// One-line "where" context shown as a push/local subtitle:
-    /// `tab · project (branch) · dir`. The tool name leads the title, so it is
-    /// deliberately omitted here. Pass `homeDirectory` to abbreviate paths
-    /// under it to `~` (iOS local notifications do; wire text does not).
+    /// Short location for iPhone alerts. Lead with the repository and use
+    /// the tab or branch to identify the session. Use the directory name
+    /// only when there is no repository, tab, or branch.
     public static func locationSummary(
         tabTitle: String?,
         projectName: String?,
         branchName: String?,
-        currentDirectory: String?,
-        homeDirectory: String? = nil
+        currentDirectory: String?
     ) -> String? {
-        var parts: [String] = []
-        if let tab = cleanPart(tabTitle) { parts.append(tab) }
-        switch (cleanPart(projectName), cleanPart(branchName)) {
-        case let (project?, branch?): parts.append("\(project) (\(branch))")
-        case let (project?, nil): parts.append(project)
-        case let (nil, branch?): parts.append(branch)
-        case (nil, nil): break
+        let tab = cleanPart(tabTitle)
+        let branch = cleanPart(branchName)
+        if let project = cleanPart(projectName) {
+            if let context = [tab, branch].compactMap({ $0 }).first(where: { !matches($0, project) }) {
+                return "\(project) · \(context)"
+            }
+            return project
         }
-        if let directory = cleanPart(currentDirectory) {
-            parts.append(abbreviate(path: directory, homeDirectory: homeDirectory))
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        let directoryName = cleanPart(currentDirectory)?.split(separator: "/").last.map(String.init)
+        return tab ?? branch ?? directoryName
     }
 
     // MARK: - Live Activity headline
@@ -154,15 +150,6 @@ public enum NotificationContentFormatter {
     }
 
     // MARK: - Helpers
-
-    private static func abbreviate(path: String, homeDirectory: String?) -> String {
-        guard let home = homeDirectory, !home.isEmpty else { return path }
-        if path == home { return "~" }
-        if path.hasPrefix(home + "/") {
-            return "~" + String(path.dropFirst(home.count))
-        }
-        return path
-    }
 
     private static func firstNonEmpty(_ candidates: String?...) -> String? {
         for candidate in candidates {

@@ -8,7 +8,7 @@ import XCTest
 final class RemoteTabPickerViewTests: XCTestCase {
     func testOpeningCentersSelectedTabAndRefreshPreservesUserScroll() async throws {
         let tabs = (1...60).map { id in
-            RemoteTabDescriptor(tabID: UInt32(id), title: "Session \(id)", projectName: "Chau7",
+            RemoteTabDescriptor(tabID: UInt32(id), title: "Session \(id)", projectName: id <= 10 ? "Aeptus" : "Chau7",
                                 branchName: "main", aiProvider: "Codex", isActive: false,
                                 isMCPControlled: false)
         }
@@ -22,14 +22,16 @@ final class RemoteTabPickerViewTests: XCTestCase {
         let scroll = try XCTUnwrap(scrollViews(in: host.view).first {
             $0.contentSize.height > 2000 && $0.bounds.height > 300
         })
-        XCTAssertGreaterThan(scroll.contentOffset.y, 2000, "picker should open around session 45")
-
+        let contentHeight = scroll.contentSize.height
+        XCTAssertLessThanOrEqual(contentHeight, 60 * 48 + 60, "standard-sized rows and headings should stay compact")
+        let initialOffset = scroll.contentOffset.y
+        XCTAssertGreaterThan(initialOffset, contentHeight / 2, "picker should open around session 45")
         // Browse away from the selected tab, then update metadata. It must
         // update the row without re-focusing the selection or recreating scroll.
         scroll.setContentOffset(CGPoint(x: 0, y: 600), animated: false)
         let browsedOffset = scroll.contentOffset.y
         var changed = tabs
-        changed[0] = RemoteTabDescriptor(tabID: 1, title: "Renamed session", projectName: "Chau7",
+        changed[0] = RemoteTabDescriptor(tabID: 1, title: "Renamed session", projectName: "Aeptus",
                                          branchName: "feature", isActive: true, isMCPControlled: false)
         host.rootView = picker(RemoteTabPickerSnapshot(orderedTabs: changed), activeTabID: 45)
         try await settleLayout(host)
@@ -48,8 +50,7 @@ final class RemoteTabPickerViewTests: XCTestCase {
         // A real selection change should bring the newly open tab into view.
         host.rootView = picker(snapshot, activeTabID: 55)
         try await settleLayout(host)
-        XCTAssertGreaterThan(scroll.contentOffset.y, 3000)
-
+        XCTAssertGreaterThan(scroll.contentOffset.y, initialOffset + 220)
     }
 
     private func picker(

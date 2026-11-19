@@ -77,6 +77,7 @@ final class RemoteClient {
 
     /// Recovery that drives the error banner's primary action.
     private(set) var lastErrorRecovery: RemoteConnectionRecovery = .none
+    private(set) var codexReplyError: String?
     var pendingApprovals: [ApprovalRequest] = []
     var pendingInteractivePrompts: [RemoteInteractivePrompt] = []
     var approvalHistory: [ApprovalHistoryEntry] = []
@@ -937,7 +938,10 @@ final class RemoteClient {
             return false
         }
 
-        completeInteractivePrompt(at: promptIndex, id: prompt.id)
+        // The host keeps Codex questions pending until the rollout confirms the reply.
+        if !prompt.awaitsCodexReply {
+            completeInteractivePrompt(at: promptIndex, id: prompt.id)
+        }
         return true
     }
 
@@ -983,7 +987,10 @@ final class RemoteClient {
             return false
         }
 
-        completeInteractivePrompt(at: promptIndex, id: prompt.id)
+        // The host keeps Codex questions pending until the rollout confirms the reply.
+        if !prompt.awaitsCodexReply {
+            completeInteractivePrompt(at: promptIndex, id: prompt.id)
+        }
         return true
     }
 
@@ -1565,6 +1572,9 @@ private func handlePairAccept(_ data: Data) {
         let (errorText, code): (String, String)
         if let msg = try? RemoteJSON.decoder.decode(RemoteErrorPayload.self, from: data) {
             (errorText, code) = ("\(msg.code): \(msg.message)", msg.code)
+            if msg.code == "codex_question_unavailable" || msg.code == "prompt_reply_pending" {
+                codexReplyError = msg.message
+            }
         } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
             (errorText, code) = (text, "error")
         } else {
@@ -2111,6 +2121,7 @@ private func handlePairAccept(_ data: Data) {
             reportBlockedInput("Prompt response was not sent. Refresh the prompt and try again.", reason: "prompt_send_failed", tabID: prompt.tabID)
             return false
         }
+        codexReplyError = nil
         lastError = nil
         return true
     }
@@ -2531,6 +2542,7 @@ private func handlePairAccept(_ data: Data) {
         pendingInteractivePrompts = visiblePrompts
 
         let removedPromptIDs = previousPromptIDs.subtracting(visiblePromptIDs)
+        if !removedPromptIDs.isEmpty { codexReplyError = nil }
         RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: Array(removedPromptIDs))
 
         for prompt in visiblePrompts where !previousPromptIDs.contains(prompt.id) {

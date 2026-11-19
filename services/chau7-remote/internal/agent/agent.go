@@ -1711,28 +1711,27 @@ func (a *Agent) sendPairingInfo() {
 	})
 }
 
-// locationSummary is the one-line "where" context shown as the push subtitle:
-// `tab · project (branch) · dir`. The tool name leads the title instead, so it
-// is deliberately omitted here (mirrors the iOS local-notification layout).
+// locationSummary mirrors the compact location used by iOS and newer Macs.
 func locationSummary(tabTitle, projectName, branchName, currentDirectory string) string {
-	parts := make([]string, 0, 3)
-	if t := strings.TrimSpace(tabTitle); t != "" {
-		parts = append(parts, t)
-	}
+	tab := strings.TrimSpace(tabTitle)
 	project := strings.TrimSpace(projectName)
 	branch := strings.TrimSpace(branchName)
-	switch {
-	case project != "" && branch != "":
-		parts = append(parts, project+" ("+branch+")")
-	case project != "":
-		parts = append(parts, project)
-	case branch != "":
-		parts = append(parts, branch)
+	if project != "" {
+		for _, part := range []string{tab, branch} {
+			if part != "" && !strings.EqualFold(part, project) {
+				return project + " · " + part
+			}
+		}
+		return project
 	}
-	if d := strings.TrimSpace(currentDirectory); d != "" {
-		parts = append(parts, d)
+	if tab != "" {
+		return tab
 	}
-	return strings.Join(parts, " · ")
+	if branch != "" {
+		return branch
+	}
+	directory := strings.TrimRight(strings.TrimSpace(currentDirectory), "/")
+	return directory[strings.LastIndexByte(directory, '/')+1:]
 }
 
 // pushApprovalTitle leads with the tool name so the lock-screen banner reads
@@ -1970,7 +1969,10 @@ func (a *Agent) emitApprovalPush(ctx context.Context, approval ApprovalNotificat
 	}
 	body := strings.TrimSpace(approval.PushBody)
 	if body == "" {
-		body = headline
+		body = strings.TrimSpace(headline)
+	}
+	if body == "" {
+		body = "Open Chau7 to review."
 	}
 	if !a.notifyPush(ctx, PushNotifyPayload{
 		Kind:          "approval",
@@ -2023,20 +2025,24 @@ func (a *Agent) emitInteractivePromptPush(ctx context.Context, prompt RemoteInte
 	}
 	title := strings.TrimSpace(prompt.PushTitle)
 	if title == "" {
-		title = "Interactive prompt"
+		title = "Input needed"
 		if tool := strings.TrimSpace(prompt.ToolName); tool != "" {
-			title = tool + " is waiting"
+			title = tool + " needs input"
 		}
 	}
 	subtitle := strings.TrimSpace(prompt.PushSubtitle)
 	if subtitle == "" {
 		subtitle = locationSummary(prompt.TabTitle, prompt.ProjectName, prompt.BranchName, prompt.CurrentDirectory)
 	}
+	body := strings.TrimSpace(prompt.Prompt)
+	if body == "" {
+		body = "Open Chau7 to reply."
+	}
 	if !a.notifyPush(ctx, PushNotifyPayload{
 		Kind:          "interactive_prompt",
 		Title:         title,
 		Subtitle:      subtitle,
-		Body:          strings.TrimSpace(prompt.Prompt),
+		Body:          body,
 		PromptID:      prompt.ID,
 		ThreadID:      strings.TrimSpace(prompt.TabTitle),
 		OpenApprovals: true,
