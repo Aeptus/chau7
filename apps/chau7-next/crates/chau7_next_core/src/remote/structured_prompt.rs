@@ -17,13 +17,17 @@ pub struct StructuredPromptEntry {
     pub detail: Option<String>,
     pub options: Vec<RemoteInteractivePromptOption>,
     pub is_multi_select: bool,
-    /// A typed reply answers the question on its own, so the prompt is worth
-    /// showing without options, and the reply is sent without a leading
-    /// Escape. True for a single Codex question.
+    /// A single Codex question can be shown and answered without options.
     pub accepts_reply: bool,
     pub created_at: DateTime<Utc>,
     pub signature: String,
 }
+impl StructuredPromptEntry {
+    pub fn is_codex_question(&self) -> bool {
+        self.tool_name == CODEX_QUESTION_TOOL
+    }
+}
+
 #[derive(Default)]
 pub struct StructuredPromptStore {
     entries: HashMap<(u64, String), StructuredPromptEntry>,
@@ -84,8 +88,8 @@ impl StructuredPromptStore {
                 .enumerate()
                 .map(|(index, label)| {
                     let id = (index + 1).to_string();
-                    // No Return: the digit already submits, and a Return
-                    // would land on whatever Codex shows next.
+                    // Keep the option ID and legacy wire response stable.
+                    // The host submits the label through the Codex editor.
                     RemoteInteractivePromptOption::new(&id, label, &id, is_destructive(label))
                 })
                 .collect()
@@ -130,19 +134,6 @@ impl StructuredPromptStore {
                 && entry.tool_use_id == call_id)
         });
         count != self.entries.len()
-    }
-    /// The keys for a typed reply to the prompt `prompt_id`. A reply normally
-    /// starts with Escape to leave a menu first. A Codex question takes the
-    /// text as its free-text answer, and Escape there would end up inside
-    /// the pasted answer.
-    pub fn reply_keys(&self, prompt_id: &str, escaped_reply: String) -> String {
-        let plain = self.entries.values().any(|entry| {
-            entry.accepts_reply && prompt_id.ends_with(&format!("-{}", entry.signature))
-        });
-        match escaped_reply.strip_prefix('\x1b') {
-            Some(reply) if plain => reply.to_string(),
-            _ => escaped_reply,
-        }
     }
     fn evict_oldest_over_limit(&mut self) {
         if self.entries.len() > 128
@@ -414,15 +405,6 @@ mod tests {
         assert!(!entry.options[0].is_destructive);
         assert!(entry.options[1].is_destructive);
         assert!(!store.resolve_codex_question("thread", "another_call"));
-        let id = format!(
-            "tab-1-pane-x-{}",
-            store.entry(10, "thread", now).unwrap().signature
-        );
-        assert_eq!(store.reply_keys(&id, "\x1bnot yet\r".into()), "not yet\r");
-        assert_eq!(
-            store.reply_keys("tab-1-pane-x-other", "\x1bhi\r".into()),
-            "\x1bhi\r"
-        );
         assert!(store.resolve_codex_question("thread", "call_1"));
         assert!(store.entry(10, "thread", now).is_none());
     }

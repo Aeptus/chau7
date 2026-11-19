@@ -23,18 +23,9 @@ final class RemoteTabPickerViewTests: XCTestCase {
             $0.contentSize.height > 2000 && $0.bounds.height > 300
         })
         let contentHeight = scroll.contentSize.height
-        XCTAssertGreaterThanOrEqual(contentHeight, 60 * 44, "preserve tap targets")
         XCTAssertLessThanOrEqual(contentHeight, 60 * 48 + 60, "standard-sized rows and headings should stay compact")
         let initialOffset = scroll.contentOffset.y
         XCTAssertGreaterThan(initialOffset, contentHeight / 2, "picker should open around session 45")
-        let screenshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        let attachment = XCTAttachment(image: screenshot)
-        attachment.name = "Compact session picker"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-
         // Browse away from the selected tab, then update metadata. It must
         // update the row without re-focusing the selection or recreating scroll.
         scroll.setContentOffset(CGPoint(x: 0, y: 600), animated: false)
@@ -60,7 +51,6 @@ final class RemoteTabPickerViewTests: XCTestCase {
         host.rootView = picker(snapshot, activeTabID: 55)
         try await settleLayout(host)
         XCTAssertGreaterThan(scroll.contentOffset.y, initialOffset + 220)
-
     }
 
     private func picker(

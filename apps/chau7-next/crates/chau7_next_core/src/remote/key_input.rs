@@ -79,6 +79,44 @@ pub fn text_steps(text: &str, codex: bool, bracketed_paste: bool) -> Vec<InputSt
     steps
 }
 
+/// Codex shows its async question editor in the follow-up input stack. A
+/// digit or paste goes to the main composer until the question is expanded.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CodexQuestionEditor {
+    Collapsed,
+    Ready,
+}
+
+pub fn codex_question_editor(screen: &str, title: &str) -> Option<CodexQuestionEditor> {
+    let (_, stack) = screen.rsplit_once("Queued follow-up inputs")?;
+    let mut lines = stack.lines().map(str::trim).filter(|line| !line.is_empty());
+    let first = lines.next()?;
+    if first == "? 1 question" && lines.next() == Some("⇧← to answer") {
+        return Some(CodexQuestionEditor::Collapsed);
+    }
+
+    // The navigation footer belongs to the active editor. A title from the
+    // transcript or an editor with multiple pending questions is insufficient.
+    let footer = lines.next_back()?;
+    if !footer.contains(" skip ")
+        || !footer.ends_with(" main prompt")
+        || footer.contains("next question")
+        || footer.contains("prev question")
+    {
+        return None;
+    }
+    let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut rendered_title = first.split_whitespace().collect::<Vec<_>>().join(" ");
+    for line in lines {
+        if rendered_title.len() >= title.len() {
+            break;
+        }
+        rendered_title.push(' ');
+        rendered_title.push_str(&line.split_whitespace().collect::<Vec<_>>().join(" "));
+    }
+    (rendered_title == title).then_some(CodexQuestionEditor::Ready)
+}
+
 /// Only terminal navigation sequences can be converted into semantic keys.
 pub fn navigation_keys(mut text: &str) -> Option<Vec<RemoteKey>> {
     let mut keys = Vec::new();
@@ -125,6 +163,38 @@ mod tests {
         assert_eq!(steps[2].delay_ms, 120);
         assert_eq!(text_steps("hello\n", false, true)[2].delay_ms, 60);
     }
+    #[test]
+    fn codex_question_requires_the_live_editor_and_matching_title() {
+        let collapsed =
+            "• Queued follow-up inputs\n  ? 1 question\n    ⇧← to answer\n\n› Main draft";
+        let expanded = "• Queued follow-up inputs\n  Which environment\n  should I use?\n  › 1. Staging\n    2. Production\n\n  enter submit   ⌃] skip   ⇧→ main prompt\n ";
+        let title = "Which environment should I use?";
+        assert_eq!(
+            codex_question_editor(collapsed, title),
+            Some(CodexQuestionEditor::Collapsed)
+        );
+        assert_eq!(
+            codex_question_editor(expanded, title),
+            Some(CodexQuestionEditor::Ready)
+        );
+        assert_eq!(codex_question_editor(expanded, "Other question?"), None);
+        assert_eq!(
+            codex_question_editor(&collapsed.replace("1 question", "2 questions"), title),
+            None
+        );
+        assert_eq!(
+            codex_question_editor(
+                &expanded.replace("main prompt", "main prompt   ⇧← next question"),
+                title
+            ),
+            None
+        );
+        assert_eq!(
+            codex_question_editor("Which environment should I use?\n› Main draft", title),
+            None
+        );
+    }
+
     #[test]
     fn navigation_bounded_and_submit_delayed() {
         let keys = navigation_keys("\x1b[B\r").unwrap();

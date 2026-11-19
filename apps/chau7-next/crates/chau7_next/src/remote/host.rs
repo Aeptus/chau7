@@ -172,6 +172,16 @@ pub trait HostEnv {
     fn write_pane_input(&mut self, _key: TabKey, _pane_id: u64, _text: &str) -> bool {
         false
     }
+    fn write_codex_answer(
+        &mut self,
+        _key: TabKey,
+        _pane: u64,
+        _session: &str,
+        _title: &str,
+        _answer: &str,
+    ) -> bool {
+        false
+    }
     fn write_keys(&mut self, _key: TabKey, _pane_id: Option<u64>, _keys: &[RemoteKey]) -> bool {
         false
     }
@@ -318,6 +328,18 @@ fn capitalized(text: &str) -> String {
         .join(" ")
 }
 
+struct PromptSubmission {
+    sent_at: DateTime<Utc>,
+    awaiting_codex: bool,
+}
+
+impl PromptSubmission {
+    fn still_current(&self, now: DateTime<Utc>) -> bool {
+        let seconds = if self.awaiting_codex { 4 } else { 3600 };
+        self.sent_at > now - chrono::Duration::seconds(seconds)
+    }
+}
+
 fn tool_name(pane: &PaneInfo, tab: &TabInfo) -> String {
     if let Some(name) = trimmed(pane.ai_app.as_deref()) {
         return name;
@@ -431,7 +453,7 @@ pub struct RemoteHost {
     pub activity: Option<RemoteActivityState>,
     pub prompts: Vec<RemoteInteractivePrompt>,
     structured: StructuredPromptStore,
-    answered_prompts: HashMap<String, DateTime<Utc>>,
+    answered_prompts: HashMap<String, PromptSubmission>,
     last_tab_list: Option<Vec<RemoteTabDescriptor>>,
     selected_tab_id: Option<u32>,
     /// Output of the selected tab not sent yet, with its tab ID.
@@ -1019,13 +1041,21 @@ impl RemoteHost {
         let Ok(response) = serde_json::from_slice::<RemotePromptResponse>(&frame.payload) else {
             return;
         };
-        if self.answered_prompts.contains_key(&response.prompt_id) {
-            self.send_error(
-                sink,
-                "stale_prompt",
-                "That prompt has already been answered. Refresh before answering.",
-                frame.tab_id,
-            );
+        if let Some(submission) = self.answered_prompts.get(&response.prompt_id)
+            && submission.still_current(env.now())
+        {
+            let (code, message) = if submission.awaiting_codex {
+                (
+                    "prompt_reply_pending",
+                    "Chau7 is still waiting for Codex to confirm the answer.",
+                )
+            } else {
+                (
+                    "stale_prompt",
+                    "That prompt has already been answered. Refresh before answering.",
+                )
+            };
+            self.send_error(sink, code, message, frame.tab_id);
             self.send_activity(env, sink, true);
             return;
         }
@@ -1064,13 +1094,51 @@ impl RemoteHost {
             self.send_activity(env, sink, true);
             return;
         };
-        let text = if response.action == Action::Custom {
-            self.structured.reply_keys(&prompt.id, text)
-        } else {
-            text
-        };
         let pane = response.pane_id.as_u64_pair().1;
-        let written = if let Some(flagged) = protection::flagged_termination_action(&text) {
+        let codex = tabs
+            .iter()
+            .find(|tab| tab.key == key)
+            .and_then(|tab| tab.panes.iter().find(|candidate| candidate.pane_id == pane))
+            .and_then(|candidate| candidate.ai_session_id.as_deref())
+            .and_then(|session| self.structured.entry(key, session, now))
+            .filter(|entry| {
+                entry.accepts_reply
+                    && entry.is_codex_question()
+                    && prompt.id.ends_with(&format!("-{}", entry.signature))
+            })
+            .map(|entry| entry.session_id.clone());
+        let written = if let Some(session) = &codex {
+            let answer = match response.action {
+                Action::Select => prompt
+                    .options
+                    .iter()
+                    .find(|option| Some(&option.id) == response.option_id.as_ref())
+                    .map(|option| option.label.as_str()),
+                Action::Custom => text
+                    .strip_prefix('\x1b')
+                    .and_then(|body| body.strip_suffix('\r')),
+                _ => None,
+            };
+            let Some(answer) = answer.filter(|answer| !answer.chars().any(char::is_control)) else {
+                return;
+            };
+            let delivery = self.write_guarded(
+                env,
+                sink,
+                (key, resolved, Some(pane)),
+                frame.tab_id,
+                &mut |env| env.write_codex_answer(key, pane, session, &prompt.prompt, answer),
+            );
+            if delivery == Delivery::Failed {
+                self.send_error(
+                    sink,
+                    "codex_question_unavailable",
+                    "Open this question in the Codex terminal and try again.",
+                    frame.tab_id,
+                );
+            }
+            delivery == Delivery::Written
+        } else if let Some(flagged) = protection::flagged_termination_action(&text) {
             self.queue_protected_input(
                 env,
                 sink,
@@ -1098,12 +1166,18 @@ impl RemoteHost {
                 && let Some(oldest) = self
                     .answered_prompts
                     .iter()
-                    .min_by_key(|(_, at)| *at)
+                    .min_by_key(|(_, submission)| submission.sent_at)
                     .map(|(id, _)| id.clone())
             {
                 self.answered_prompts.remove(&oldest);
             }
-            self.answered_prompts.insert(response.prompt_id, env.now());
+            self.answered_prompts.insert(
+                response.prompt_id,
+                PromptSubmission {
+                    sent_at: env.now(),
+                    awaiting_codex: codex.is_some(),
+                },
+            );
         }
         self.send_activity(env, sink, true);
     }
@@ -1759,10 +1833,10 @@ impl RemoteHost {
                     .and_then(|text| interactive_prompt_detector::detect(&text, &tool));
                 let (signature, prompt, detail, options, detected_at, multi) =
                     if let Some(entry) = structured {
-                        let options = if entry.options.is_empty() {
-                            detected.map(|value| value.options).unwrap_or_default()
-                        } else {
+                        let options = if entry.is_codex_question() || !entry.options.is_empty() {
                             entry.options.clone()
+                        } else {
+                            detected.map(|value| value.options).unwrap_or_default()
                         };
                         if options.is_empty() && !entry.accepts_reply {
                             continue;
@@ -1795,7 +1869,11 @@ impl RemoteHost {
                     ),
                     tab_id,
                     tab_title: tab.activity_title(),
-                    tool_name: tool,
+                    tool_name: if structured.is_some_and(|entry| entry.is_codex_question()) {
+                        "Codex".into()
+                    } else {
+                        tool
+                    },
                     project_name: project_name(pane),
                     branch_name: trimmed(pane.git_branch.as_deref()),
                     current_directory: trimmed(pane.cwd.as_deref()),
@@ -1847,11 +1925,14 @@ impl RemoteHost {
     ) {
         let now = env.now();
         let mut next = self.current_prompts(env, tabs, now);
-        self.answered_prompts.retain(|id, answered| {
-            *answered > now - chrono::Duration::hours(1)
-                && next.iter().any(|prompt| &prompt.id == id)
+        self.answered_prompts.retain(|id, submission| {
+            submission.still_current(now) && next.iter().any(|prompt| &prompt.id == id)
         });
-        next.retain(|prompt| !self.answered_prompts.contains_key(&prompt.id));
+        next.retain(|prompt| {
+            self.answered_prompts
+                .get(&prompt.id)
+                .is_none_or(|submission| submission.awaiting_codex)
+        });
         if !force && next == self.prompts {
             return;
         }
@@ -2102,6 +2183,16 @@ pub(crate) mod tests {
             }
             self.pane_typed.push((key, pane, text.into()));
             true
+        }
+        fn write_codex_answer(
+            &mut self,
+            key: TabKey,
+            pane: u64,
+            _: &str,
+            _: &str,
+            answer: &str,
+        ) -> bool {
+            self.write_pane_input(key, pane, answer)
         }
         fn input_hold(&mut self, key: TabKey, pane: Option<u64>) -> Option<InputHold> {
             let pane = self.pane_or_main(key, pane)?;
@@ -3056,7 +3147,7 @@ pub(crate) mod tests {
             serde_json::from_slice(&list.payload).unwrap();
         assert_eq!(payload.prompts.len(), 1);
         let wire: serde_json::Value = serde_json::from_slice(&list.payload).unwrap();
-        assert_eq!(wire["prompts"][0]["push_title"], "Claude is waiting");
+        assert_eq!(wire["prompts"][0]["push_title"], "Claude needs input");
         assert!(
             wire["prompts"][0]["push_subtitle"]
                 .as_str()
@@ -3199,7 +3290,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn codex_question_reaches_the_phone_and_a_tap_types_its_digit() {
+    fn codex_replies_send_the_selected_label_and_wait_for_confirmation() {
         let mut env = FakeEnv::new();
         let mut host = RemoteHost::new();
         let mut out = Vec::new();
@@ -3232,7 +3323,11 @@ pub(crate) mod tests {
             &mut out,
         );
         assert_eq!(env.pane_typed.len(), 1);
-        assert_eq!(env.pane_typed[0].2, "2");
+        assert_eq!(env.pane_typed[0].2, "Leave it");
+        assert_eq!(host.prompts, [prompt]);
+        host.resolve_codex_question("thread", "call_1");
+        host.refresh(&mut env, &mut out, true);
+        assert!(host.prompts.is_empty());
 
         let free_text = chau7_next_core::runtime::codex_feedback::Prompt {
             call_id: "call_2".into(),
@@ -3258,16 +3353,38 @@ pub(crate) mod tests {
             &mut out,
         );
         assert_eq!(
-            env.pane_typed[1].2, "main\r",
-            "no Escape inside a Codex answer"
+            env.pane_typed[1].2, "main",
+            "submit only the validated answer to the Codex editor"
         );
 
-        host.ingest_codex_question(10, "thread", &question, env.now);
-        host.resolve_codex_question("thread", "call_1");
-        host.refresh(&mut env, &mut out, true);
-        assert!(
-            host.prompts.is_empty(),
-            "an answered question leaves the phone"
+        assert_eq!(host.prompts, [prompt.clone()]);
+        host.handle_frame(
+            frame(
+                RemoteFrameType::InteractivePromptResponse,
+                prompt.tab_id,
+                &payload,
+            ),
+            &mut env,
+            &mut out,
         );
+        assert_eq!(env.pane_typed.len(), 2, "deduplicate an in-flight reply");
+        env.now += chrono::Duration::seconds(5);
+        host.handle_frame(
+            frame(
+                RemoteFrameType::InteractivePromptResponse,
+                prompt.tab_id,
+                &payload,
+            ),
+            &mut env,
+            &mut out,
+        );
+        assert_eq!(
+            env.pane_typed.len(),
+            3,
+            "an unconfirmed answer can be retried"
+        );
+        host.resolve_codex_question("thread", "call_2");
+        host.refresh(&mut env, &mut out, true);
+        assert!(host.prompts.is_empty(), "Codex's reply clears the phone");
     }
 }

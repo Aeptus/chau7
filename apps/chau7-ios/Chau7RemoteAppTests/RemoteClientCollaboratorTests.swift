@@ -645,7 +645,10 @@ final class RemoteTerminalScrollPolicyTests: XCTestCase {
 
 final class RemoteConnectionStartPolicyTests: XCTestCase {
     func testARefusedInputIsNotAConnectionError() {
-        for code in ["tab_unavailable", "stale_prompt", "input_held", "command_blocked", "approval_stale"] {
+        for code in [
+            "tab_unavailable", "stale_prompt", "input_held", "command_blocked", "approval_stale",
+            "codex_question_unavailable", "prompt_reply_pending",
+        ] {
             XCTAssertTrue(RemoteConnectionStartPolicy.isInputRefusal(code: code), code)
         }
         for code in ["error", "decrypt_failed", ""] {
