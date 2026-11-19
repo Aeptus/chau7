@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F1A4001531F2A00100A1B001 /* WidgetAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F1A4001431F2A00100A1B001 /* WidgetAssets.xcassets */; };
 		C7A215000000000000000001 /* RemoteTerminalOutputStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78F31F2A00100A1B001 /* RemoteTerminalOutputStore.swift */; };
 		C7A196000000000000000002 /* RemoteTerminalCellMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A196000000000000000001 /* RemoteTerminalCellMetrics.swift */; };
 		C7A196000000000000000003 /* RemoteTerminalCellMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A196000000000000000001 /* RemoteTerminalCellMetrics.swift */; };
@@ -99,6 +100,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F1A4001431F2A00100A1B001 /* WidgetAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WidgetAssets.xcassets; sourceTree = "<group>"; };
 		C7A196000000000000000001 /* RemoteTerminalCellMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalCellMetrics.swift; sourceTree = "<group>"; };
 		C7A196000000000000000004 /* RemoteTerminalCellMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalCellMetricsTests.swift; sourceTree = "<group>"; };
 		30230377986B3F86FE2AB97E /* RemoteTerminalComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalComposer.swift; sourceTree = "<group>"; };
@@ -273,6 +275,7 @@
 			isa = PBXGroup;
 			children = (
 				4A94D78531F2A00100A1B001 /* Chau7RemoteWidget.swift */,
+				F1A4001431F2A00100A1B001 /* WidgetAssets.xcassets */,
 				4A94D78831F2A00100A1B001 /* Info.plist */,
 				D1A6D1A6D1A6D1A6D1A62005 /* PrivacyInfo.xcprivacy */,
 			);
@@ -412,6 +415,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D1A6D1A6D1A6D1A6D1A62006 /* PrivacyInfo.xcprivacy in Resources */,
+				F1A4001531F2A00100A1B001 /* WidgetAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

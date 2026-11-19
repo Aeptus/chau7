@@ -12,6 +12,7 @@ struct RemoteTabPickerView: View, Equatable {
     let onSelect: (UInt32) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var query = ""
     @State private var focus = RemoteTabPickerFocus()
 
@@ -28,33 +29,27 @@ struct RemoteTabPickerView: View, Equatable {
         NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                         if groups.isEmpty {
                             emptyState
                         }
                         ForEach(groups) { group in
-                            if snapshot.groups.count > 1 {
-                                HStack {
-                                    Text(group.title)
-                                        .font(.subheadline.weight(.semibold))
-                                    Spacer()
-                                    Text(String(group.rows.count))
-                                        .font(.caption.monospacedDigit())
+                            Section {
+                                ForEach(group.rows) { row in
+                                    sessionRow(row)
+                                        .id(row.id)
                                 }
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 20)
-                                .padding(.top, 20)
-                                .padding(.bottom, 8)
-                            }
-                            ForEach(group.rows) { row in
-                                sessionRow(row)
-                                    .id(row.id)
+                            } header: {
+                                if snapshot.groups.count > 1 {
+                                    repositoryHeader(group)
+                                }
                             }
                         }
                     }
-                    .padding(.vertical, 8)
+                    .padding(.bottom, 4)
                 }
-                .background(Color(UIColor.systemGroupedBackground))
+                .background(Color(uiColor: .systemBackground))
+                .scrollDismissesKeyboard(.interactively)
                 .task {
                     // onAppear precedes the first navigation/scroll layout.
                     // Yield so the selected row has an anchor before scrolling.
@@ -85,18 +80,42 @@ struct RemoteTabPickerView: View, Equatable {
             }
             .navigationTitle("Sessions")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "Session, project, or branch")
+            .searchable(
+                text: $query,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: "Session, repository, or branch"
+            )
             .safeAreaInset(edge: .bottom) {
                 if !isConnected {
                     Label("Reconnect to switch sessions", systemImage: "wifi.slash")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
-                        .padding()
+                        .padding(.vertical, 8)
                         .background(.bar)
                 }
             }
         }
+    }
+
+    private func repositoryHeader(_ group: RemoteTabPickerSnapshot.Group) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: group.rows.first?.projectName == nil ? "terminal" : "folder")
+                .accessibilityHidden(true)
+            Text(group.title)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+            Spacer(minLength: 8)
+            Text(group.rows.count, format: .number)
+                .monospacedDigit()
+                .accessibilityLabel("\(group.rows.count) sessions")
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
+        .background(Color(uiColor: .secondarySystemBackground))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     private func focusSelection(using proxy: ScrollViewProxy) {
@@ -112,54 +131,59 @@ struct RemoteTabPickerView: View, Equatable {
         return Button {
             onSelect(row.id)
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Image(systemName: row.aiProvider == nil ? "terminal" : "sparkles")
-                    .font(.body)
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-                    .frame(width: 28)
+                    .frame(width: 20)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(row.title)
-                        .font(.body.weight(selected ? .semibold : .medium))
+                        .font(.subheadline.weight(selected ? .semibold : .medium))
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                         .multilineTextAlignment(.leading)
-                    HStack(spacing: 8) {
-                        Text("#\(row.id)")
-                            .monospacedDigit()
+                    HStack(spacing: 6) {
                         if let provider = row.aiProvider {
                             Text(provider)
+                                .layoutPriority(1)
                         }
                         if let branch = row.branchName {
-                            Label(branch, systemImage: "arrow.triangle.branch")
+                            Text(branch)
+                                .truncationMode(.middle)
                         }
                         if row.isMCPControlled {
                             Image(systemName: "face.dashed.fill")
                                 .accessibilityLabel("MCP controlled")
                         }
                     }
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                Text("#\(row.id)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Session \(row.id)")
                 if selected {
-                    Image(systemName: "checkmark.circle.fill")
+                    Image(systemName: "checkmark")
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(Color.accentColor)
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .frame(minHeight: 64)
-            .background(selected ? Color.accentColor.opacity(0.10) : Color(UIColor.secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 4)
+            .frame(minHeight: 44)
+            .background(selected ? Color.accentColor.opacity(0.10) : .clear)
+            .overlay(alignment: .bottom) {
+                Divider().padding(.leading, 42)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!isConnected)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 3)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .accessibilityIdentifier("session.\(row.id)")
     }

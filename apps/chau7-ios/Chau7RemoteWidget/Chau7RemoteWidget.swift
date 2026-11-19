@@ -17,78 +17,79 @@ struct Chau7RemoteWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: Chau7RemoteActivityAttributes.self) { context in
             LockScreenActivityView(state: context.state)
-                .activityBackgroundTint(backgroundTint(for: context.state.status))
+                .activityBackgroundTint(Color(red: 0.10, green: 0.09, blue: 0.08))
                 .activitySystemActionForegroundColor(.white)
+                .widgetURL(activityURL(host: "open", tabID: context.state.tabID))
         } dynamicIsland: { context in
-            DynamicIsland {
+            let style = context.state.status.widgetStyle
+            return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label(context.state.toolName, systemImage: iconName(for: context.state.status))
-                        .font(.headline)
+                    ActivityLogo(size: 24)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(context.state.projectName ?? context.state.tabTitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Label(style.label, systemImage: style.icon)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(style.tint)
+                        .lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    ExpandedActivityActions(state: context.state)
+                    VStack(alignment: .leading, spacing: 5) {
+                        ActivityHeading(state: context.state)
+                        ActivityDetail(state: context.state)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } compactLeading: {
-                Image(systemName: iconName(for: context.state.status))
+                ActivityLogo(size: 18)
             } compactTrailing: {
-                Text(shortStatusLabel(for: context.state.status))
+                Image(systemName: style.icon)
+                    .foregroundStyle(style.tint)
+                    .accessibilityLabel(Text(style.label))
             } minimal: {
-                Image(systemName: iconName(for: context.state.status))
+                Image(systemName: style.icon)
+                    .foregroundStyle(style.tint)
+                    .accessibilityLabel(Text(style.label))
             }
             .widgetURL(activityURL(host: "open", tabID: context.state.tabID))
-            .keylineTint(tint(for: context.state.status))
+            .keylineTint(style.tint)
         }
-    }
-
-    private func backgroundTint(for status: RemoteActivityStatus) -> Color {
-        status.widgetStyle.backgroundTint
-    }
-
-    private func tint(for status: RemoteActivityStatus) -> Color {
-        status.widgetStyle.tint
-    }
-
-    private func iconName(for status: RemoteActivityStatus) -> String {
-        status.widgetStyle.iconName
-    }
-
-    private func shortStatusLabel(for status: RemoteActivityStatus) -> String {
-        status.widgetStyle.shortLabel
     }
 }
 
-/// Presentation attributes for an activity status, mapped in one place so adding
-/// a status touches a single switch instead of four parallel ones.
 private struct ActivityStatusStyle {
     let tint: Color
-    let backgroundOpacity: Double
-    let iconName: String
-    let shortLabel: String
-
-    var backgroundTint: Color { tint.opacity(backgroundOpacity) }
+    let icon: String
+    let label: LocalizedStringKey
 }
 
 private extension RemoteActivityStatus {
     var widgetStyle: ActivityStatusStyle {
         switch self {
         case .approvalRequired:
-            return ActivityStatusStyle(tint: .orange, backgroundOpacity: 0.22, iconName: "lock.shield.fill", shortLabel: "Lock")
+            ActivityStatusStyle(tint: .orange, icon: "lock.shield.fill", label: "Approval")
         case .waitingInput:
-            return ActivityStatusStyle(tint: .orange, backgroundOpacity: 0.18, iconName: "exclamationmark.bubble.fill", shortLabel: "Ask")
+            ActivityStatusStyle(tint: .orange, icon: "bubble.left.fill", label: "Needs input")
         case .failed:
-            return ActivityStatusStyle(tint: .red, backgroundOpacity: 0.18, iconName: "xmark.octagon.fill", shortLabel: "Fail")
+            ActivityStatusStyle(tint: Color(red: 1, green: 0.42, blue: 0.38), icon: "exclamationmark.circle.fill", label: "Failed")
         case .completed:
-            return ActivityStatusStyle(tint: .green, backgroundOpacity: 0.18, iconName: "checkmark.circle.fill", shortLabel: "Done")
+            ActivityStatusStyle(tint: .green, icon: "checkmark.circle.fill", label: "Finished")
         case .running:
-            return ActivityStatusStyle(tint: .blue, backgroundOpacity: 0.16, iconName: "sparkles", shortLabel: "Run")
+            ActivityStatusStyle(tint: .cyan, icon: "ellipsis", label: "Running")
         case .idle:
-            return ActivityStatusStyle(tint: .blue, backgroundOpacity: 0.16, iconName: "terminal", shortLabel: "Idle")
+            ActivityStatusStyle(tint: .gray, icon: "terminal", label: "Idle")
         }
+    }
+}
+
+private struct ActivityLogo: View {
+    let size: CGFloat
+
+    var body: some View {
+        Image(.activityLogo)
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 
@@ -96,66 +97,71 @@ private struct LockScreenActivityView: View {
     let state: Chau7RemoteActivityAttributes.ContentState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(state.headline)
-                        .font(.headline)
-                    Text(state.projectName ?? state.tabTitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text(state.toolName)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.white.opacity(0.12), in: Capsule())
+        let style = state.status.widgetStyle
+
+        HStack(alignment: .top, spacing: 10) {
+            ActivityLogo(size: 28)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 5) {
+                ActivityHeading(state: state)
+                ActivityDetail(state: state)
             }
-            ExpandedActivityActions(state: state)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Image(systemName: style.icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(style.tint)
+                .frame(width: 26, height: 26)
+                .background(style.tint.opacity(0.13), in: Circle())
+                .accessibilityHidden(true)
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
     }
 }
 
-private struct ExpandedActivityActions: View {
+private struct ActivityHeading: View {
     let state: Chau7RemoteActivityAttributes.ContentState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let detail = state.detail, !detail.isEmpty {
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+        VStack(alignment: .leading, spacing: 2) {
+            Text(state.headline)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+            Text(state.projectName ?? state.tabTitle)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.72))
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
 
-            HStack(spacing: 8) {
-                Link(destination: activityURL(host: "open", tabID: state.tabID)) {
-                    actionLabel("Open", systemImage: "iphone")
-                }
+private struct ActivityDetail: View {
+    let state: Chau7RemoteActivityAttributes.ContentState
 
-                Link(destination: activityURL(host: "switch", tabID: state.tabID)) {
-                    actionLabel("Tab", systemImage: "rectangle.on.rectangle")
-                }
+    var body: some View {
+        if let detail = state.detail, !detail.isEmpty {
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.84))
+                .lineLimit(2)
+        }
 
-                // Opens the approval card; the decision is made in the app so
-                // destructive commands keep their hold-to-confirm gate.
-                if let requestID = state.approvalRequestID {
-                    Link(destination: activityURL(host: "review", tabID: nil, requestID: requestID)) {
-                        actionLabel("Review", systemImage: "lock.shield")
-                    }
-                }
+        // Review opens the approval card so protected commands retain their
+        // in-app confirmation step.
+        if let requestID = state.approvalRequestID {
+            Link(destination: activityURL(host: "review", tabID: nil, requestID: requestID)) {
+                Label("Review", systemImage: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.white.opacity(0.13), in: Capsule())
             }
         }
-    }
-
-    private func actionLabel(_ title: String, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.white.opacity(0.12), in: Capsule())
     }
 }
 

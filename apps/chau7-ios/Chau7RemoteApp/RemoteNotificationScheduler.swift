@@ -16,23 +16,22 @@ enum RemoteNotificationScheduler {
     // MARK: - Scheduling
 
     static func scheduleApproval(for payload: ApprovalRequestPayload, redactDetails: Bool) {
-        let isProtectedRemoteAction = payload.flaggedCommand != payload.command
+        let flagged = trimmed(payload.flaggedCommand)
+        let isProtectedRemoteAction = flagged != nil && payload.flaggedCommand != payload.command
         let content = makeContent(
-            // Wire-provided text wins: the Mac composes it with the same
-            // shared formatter, so push and local render identical words.
-            title: payload.pushTitle ?? NotificationContentFormatter.approvalTitle(
+            title: trimmed(payload.pushTitle) ?? NotificationContentFormatter.approvalTitle(
                 toolName: payload.toolName,
                 isProtectedAction: isProtectedRemoteAction
             ),
-            subtitle: redactDetails ? nil : (payload.pushSubtitle ?? locationSubtitle(
+            subtitle: redactDetails ? nil : NotificationContentFormatter.locationSummary(
                 tabTitle: payload.tabTitle,
                 projectName: payload.projectName,
                 branchName: payload.branchName,
                 currentDirectory: payload.currentDirectory
-            )),
+            ),
             body: redactDetails
                 ? "Open Chau7 to review."
-                : approvalBody(for: payload),
+                : (trimmed(payload.pushBody) ?? flagged ?? trimmed(payload.command) ?? "Open Chau7 to review."),
             threadIdentifier: payload.sessionID ?? payload.tabTitle,
             categoryIdentifier: RemoteNotificationID.approvalCategory,
             userInfo: [
@@ -45,16 +44,16 @@ enum RemoteNotificationScheduler {
 
     static func scheduleInteractivePrompt(for prompt: RemoteInteractivePrompt, redactDetails: Bool) {
         let content = makeContent(
-            title: prompt.pushTitle ?? NotificationContentFormatter.interactivePromptTitle(toolName: prompt.toolName),
-            subtitle: redactDetails ? nil : (prompt.pushSubtitle ?? locationSubtitle(
+            title: NotificationContentFormatter.interactivePromptTitle(toolName: prompt.toolName),
+            subtitle: redactDetails ? nil : NotificationContentFormatter.locationSummary(
                 tabTitle: prompt.tabTitle,
                 projectName: prompt.projectName,
                 branchName: prompt.branchName,
                 currentDirectory: prompt.currentDirectory
-            )),
+            ),
             body: redactDetails
                 ? "Open Chau7 to reply."
-                : interactivePromptBody(for: prompt),
+                : (trimmed(prompt.prompt) ?? "Open Chau7 to reply."),
             threadIdentifier: "tab-\(prompt.tabID)",
             categoryIdentifier: RemoteNotificationID.interactivePromptCategory,
             userInfo: [
@@ -160,46 +159,6 @@ enum RemoteNotificationScheduler {
             trigger: nil
         )
         UNUserNotificationCenter.current().add(request)
-    }
-
-    // MARK: - Body formatting
-
-    private static func approvalBody(for request: ApprovalRequestPayload) -> String {
-        // Location (tab/project/dir) is now the subtitle; the body leads with the
-        // command so the thing being approved is what the user reads first.
-        let headline = request.flaggedCommand != request.command ? request.flaggedCommand : request.command
-        let detail = trimmed(request.contextNote) ?? trimmed(request.recentCommand)
-        return bodyLines([detail, headline])
-    }
-
-    private static func interactivePromptBody(for prompt: RemoteInteractivePrompt) -> String {
-        let promptText = prompt.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let options = prompt.options.prefix(3).map(\.label).joined(separator: " / ")
-        return options.isEmpty ? promptText : "\(promptText)\n\(options)"
-    }
-
-    /// One-line "where" summary shown as the notification subtitle:
-    /// `tab · project (branch) · ~/dir`. The tool name already leads the title.
-    /// Delegates to the shared formatter so push and local text stay identical.
-    private static func locationSubtitle(
-        tabTitle: String?,
-        projectName: String?,
-        branchName: String?,
-        currentDirectory: String?
-    ) -> String? {
-        NotificationContentFormatter.locationSummary(
-            tabTitle: tabTitle,
-            projectName: projectName,
-            branchName: branchName,
-            currentDirectory: currentDirectory,
-            homeDirectory: NSHomeDirectory()
-        )
-    }
-
-    private static func bodyLines(_ values: [String?]) -> String {
-        values
-            .compactMap(trimmed)
-            .joined(separator: "\n")
     }
 
     private static func trimmed(_ value: String?) -> String? {

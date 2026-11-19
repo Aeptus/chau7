@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Make iPhone approval and input alerts easier to scan, use the Chau7 logo on Live Activities, and fit more repository sessions in the picker with compact rows and pinned group headings.
+
 - Show Claude Code API failures with their reason and keep the completed turn green when Claude later sends its idle reminder.
 
 - Show green for a finished AI turn, orange for a question or approval, and red for a failed turn. Claude Code's normal turn completion now triggers a notification. Chau7 reads terminal Codex errors from the session log and removes the waiting highlight when the question is answered.
