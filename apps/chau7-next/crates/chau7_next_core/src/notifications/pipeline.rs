@@ -242,6 +242,90 @@ impl RateLimiter {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn provider_events_deliver_the_three_default_tab_colors() {
+        use crate::ai::event::AiEventSource;
+        use crate::notifications::{adapters, settings::NotificationSettings};
+        use crate::tab_style::{StyleColor, build_notification_style};
+
+        let rules = NotificationSettings::default();
+        for (source, raw, tool, message, color) in [
+            (
+                AiEventSource::claude_code(),
+                "response_complete",
+                "Claude",
+                "Done",
+                StyleColor::Green,
+            ),
+            (
+                AiEventSource::codex(),
+                "agent-turn-complete",
+                "Codex",
+                "Done",
+                StyleColor::Green,
+            ),
+            (
+                AiEventSource::codex(),
+                "user_input_requested",
+                "Codex",
+                "Choose an option",
+                StyleColor::Orange,
+            ),
+            (
+                AiEventSource::claude_code(),
+                "permission_request",
+                "Claude",
+                "Permission required",
+                StyleColor::Orange,
+            ),
+            (
+                AiEventSource::codex(),
+                "response_failed",
+                "Codex",
+                "Context exhausted",
+                StyleColor::Red,
+            ),
+            (
+                AiEventSource::claude_code(),
+                "response_failed",
+                "Claude",
+                "Turn failed",
+                StyleColor::Red,
+            ),
+        ] {
+            let mut event = AiEvent::new(source, raw, tool, message, "2026-11-19T01:00:00Z");
+            event.tab_id = Some(uuid::Uuid::new_v4());
+            let adapters::IngressDecision::Accept(accepted) = adapters::ingest(&event) else {
+                panic!("{tool} {raw} did not reach the notification pipeline");
+            };
+            let Decision::FireActions { actions, .. } = evaluate(&PipelineInput {
+                event: &accepted.shared_event,
+                trigger_state: &rules.trigger_state,
+                trigger_conditions: &rules.trigger_conditions,
+                action_bindings: &rules.trigger_action_bindings,
+                group_conditions: &rules.group_conditions,
+                group_action_bindings: &rules.group_action_bindings,
+                is_focus_mode_active: false,
+                is_app_active: false,
+                is_tool_tab_active: false,
+            }) else {
+                panic!("{tool} {raw} did not resolve configured actions");
+            };
+            assert!(actions.iter().any(|action| action.enabled
+                && action.action_type == NotificationActionType::ShowNotification));
+            let style = actions
+                .iter()
+                .find(|action| {
+                    action.enabled && action.action_type == NotificationActionType::StyleTab
+                })
+                .unwrap();
+            let config = style.config.clone().into_iter().collect();
+            let tab =
+                build_notification_style(style.config_value("style").unwrap(), &config).unwrap();
+            assert_eq!(tab.border_color, Some(color), "{tool} {raw}");
+        }
+    }
+
     use super::*;
     use crate::ai::event::AiEventSource;
 

@@ -119,7 +119,7 @@ impl RuntimeSessionStateMachine {
             (S::Ready, T::TurnSubmitted) => Some(S::Busy),
             (S::Ready, T::TabClosed) => Some(S::Stopped),
             // busy
-            (S::Busy, T::TurnCompleted) => Some(S::Ready),
+            (S::Busy | S::AwaitingApproval | S::WaitingInput, T::TurnCompleted) => Some(S::Ready),
             (S::Busy, T::ApprovalNeeded) => Some(S::AwaitingApproval),
             (S::Busy, T::InputRequested) => Some(S::WaitingInput),
             (S::Busy, T::Interrupted) => Some(S::Interrupted),
@@ -278,6 +278,16 @@ mod tests {
         let mut sm = make_busy();
         assert!(sm.handle(&Trigger::TabClosed));
         assert_eq!(sm.state(), State::Stopped);
+    }
+
+    #[test]
+    fn provider_can_end_a_turn_while_waiting() {
+        for waiting in [Trigger::ApprovalNeeded, Trigger::InputRequested] {
+            let mut sm = make_busy();
+            assert!(sm.handle(&waiting));
+            assert!(sm.handle(&Trigger::TurnCompleted));
+            assert_eq!(sm.state(), State::Ready);
+        }
     }
 
     // MARK: AwaitingApproval transitions

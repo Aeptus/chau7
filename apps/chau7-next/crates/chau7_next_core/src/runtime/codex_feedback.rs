@@ -29,6 +29,7 @@ pub enum Record {
     Replied(Vec<String>),
     Started(String),
     TurnCompleted(Option<String>),
+    TurnFailed(String),
     Usage {
         input: i64,
         output: i64,
@@ -140,7 +141,13 @@ pub fn parse(line: &str) -> Option<Record> {
         }
         ("event_msg", "task_started") => Some(Record::Started(String::new())),
         ("event_msg", "task_complete") => {
-            Some(Record::TurnCompleted(text(&p["last_agent_message"])))
+            if p["error"].is_object() {
+                let message =
+                    text(&p["error"]["message"]).unwrap_or_else(|| "Codex turn failed.".into());
+                Some(Record::TurnFailed(message))
+            } else {
+                Some(Record::TurnCompleted(text(&p["last_agent_message"])))
+            }
         }
         ("event_msg", "token_count") => {
             let usage = &p["info"]["total_token_usage"];
@@ -407,7 +414,10 @@ pub fn parse_app_server(line: &str) -> Option<Interaction> {
     let method = value["method"].as_str()?;
     let p = &value["params"];
     let id = |v: &Value| text(v).or_else(|| v.as_i64().map(|i| i.to_string()));
-    let (request, kind) = if method == "tool/requestUserInput" {
+    let (request, kind) = if matches!(
+        method,
+        "item/tool/requestUserInput" | "tool/requestUserInput"
+    ) {
         (id(&value["id"]), Some(InteractionKind::UserInput))
     } else if method.to_lowercase().contains("requestapproval") {
         (id(&value["id"]), Some(InteractionKind::Approval))
@@ -450,6 +460,28 @@ impl InteractionTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn terminal_rollout_error_excludes_success_and_interruptions() {
+        assert_eq!(
+            parse(
+                r#"{"type":"event_msg","payload":{"type":"task_complete","error":{"message":"Context window exhausted","codex_error_info":"context_window_exceeded"},"last_agent_message":null}}"#
+            ),
+            Some(Record::TurnFailed("Context window exhausted".into()))
+        );
+        assert_eq!(
+            parse(
+                r#"{"type":"event_msg","payload":{"type":"task_complete","error":null,"last_agent_message":"Done"}}"#
+            ),
+            Some(Record::TurnCompleted(Some("Done".into())))
+        );
+        assert_eq!(
+            parse(
+                r#"{"type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}"#
+            ),
+            None
+        );
+    }
+
     #[test]
     fn codex_usage_retains_reported_reasoning() {
         let line = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":8,"cached_input_tokens":3,"reasoning_output_tokens":2}}}}"#;
@@ -625,6 +657,24 @@ mod tests {
         );
         std::fs::remove_file(&path).unwrap();
     }
+    #[test]
+    fn app_server_accepts_the_generated_user_input_request_method() {
+        for method in ["item/tool/requestUserInput", "tool/requestUserInput"] {
+            let line = serde_json::json!({
+                "id": 12,
+                "method": method,
+                "params": {
+                    "threadId": "thread",
+                    "questions": [{"id": "choice", "header": "Choice", "question": "Choose an option", "options": []}]
+                }
+            });
+            let request = parse_app_server(&line.to_string()).unwrap();
+            assert_eq!(request.kind, Some(InteractionKind::UserInput));
+            assert_eq!(request.thread_id.as_deref(), Some("thread"));
+            assert_eq!(request.prompt.unwrap().message, "Choose an option");
+        }
+    }
+
     #[test]
     fn app_server_pending_approval_precedence_and_resolution() {
         let requested=parse_app_server(r#"{"id":7,"method":"item/commandExecution/requestApproval","params":{"threadId":"thread"}}"#).unwrap();

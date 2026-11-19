@@ -303,6 +303,18 @@ impl NotificationProviderAdapter for ClaudeCodeNotificationAdapter {
                     .notification_type
                     .clone()
                     .or_else(|| infer_notification_type(event).map(str::to_string));
+                let subtype = inferred.as_deref().map(canonical::normalize);
+                if matches!(subtype.as_deref(), Some("idle_prompt" | "idleprompt")) {
+                    return R::Drop {
+                        reason: "Claude idle prompt is a reminder after the turn ended".into(),
+                    };
+                }
+                if matches!(
+                    subtype.as_deref(),
+                    Some("elicitation_url_dialog" | "agent_needs_input")
+                ) {
+                    return authoritative(NotificationSemanticKind::AttentionRequired);
+                }
                 let kind = canonical::kind(None, inferred.as_deref());
                 if kind == NotificationSemanticKind::Unknown {
                     return R::Drop {
@@ -314,22 +326,32 @@ impl NotificationProviderAdapter for ClaudeCodeNotificationAdapter {
             "permission_request" | "permissionrequest" => {
                 authoritative(NotificationSemanticKind::PermissionRequired)
             }
-            "response_failed" | "responsefailed" => authoritative(NotificationSemanticKind::TaskFailed),
+            "response_failed" | "responsefailed" => {
+                authoritative(NotificationSemanticKind::TaskFailed)
+            }
             "tool_failed" | "toolfailed" => authoritative(NotificationSemanticKind::ToolFailed),
             "elicitation" => authoritative(NotificationSemanticKind::AttentionRequired),
             "idle" => {
-                let kind = if canonical::is_input_prompt_like(event.title.as_deref(), &event.message, event.notification_type.as_deref()) {
+                let kind = if canonical::is_input_prompt_like(
+                    event.title.as_deref(),
+                    &event.message,
+                    event.notification_type.as_deref(),
+                ) {
                     NotificationSemanticKind::WaitingForInput
-                } else { NotificationSemanticKind::Idle };
+                } else {
+                    NotificationSemanticKind::Idle
+                };
                 R::Emit(event.canonical_event(kind, self.reliability))
             }
-            "response_complete" | "responsecomplete" => R::Drop {
-                reason: "Claude response_complete is state-only; Notification hook owns user-facing delivery".into(),
-            },
-            "user_prompt" | "userprompt" | "session_start" | "sessionstart" | "tool_start" | "toolstart" | "tool_complete"
-            | "toolcomplete" | "session_end" | "sessionend" => R::Drop {
-                reason: format!("Claude raw event {raw_type} is not user-facing"),
-            },
+            "response_complete" | "responsecomplete" => {
+                authoritative(NotificationSemanticKind::TaskFinished)
+            }
+            "user_prompt" | "userprompt" | "session_start" | "sessionstart" | "tool_start"
+            | "toolstart" | "tool_complete" | "toolcomplete" | "session_end" | "sessionend" => {
+                R::Drop {
+                    reason: format!("Claude raw event {raw_type} is not user-facing"),
+                }
+            }
             _ => {
                 let kind = canonical::kind(Some(&raw_type), None);
                 if kind == NotificationSemanticKind::Unknown {
@@ -592,10 +614,11 @@ mod tests {
     }
 
     #[test]
-    fn claude_failure_elicitation_and_state_only_aliases_match_current_swift() {
+    fn claude_hook_aliases_map_to_the_correct_trigger() {
         for (raw, kind, shared) in [
             ("response_failed", K::TaskFailed, "failed"),
             ("responsefailed", K::TaskFailed, "failed"),
+            ("response-complete", K::TaskFinished, "finished"),
             ("elicitation", K::AttentionRequired, "attention_required"),
         ] {
             let e = event(AiEventSource::claude_code(), raw, "Claude");
@@ -609,7 +632,6 @@ mod tests {
             "session_start",
             "sessionstart",
             "session-start",
-            "response-complete",
             "user-prompt",
             "tool-start",
             "tool-complete",
@@ -651,44 +673,39 @@ mod tests {
     // NotificationProviderAdapterRegistryTests
 
     #[test]
-    fn claude_notification_event_maps_to_waiting_input() {
+    fn claude_idle_reminder_does_not_request_input() {
         let mut e = claude_notification(
             "Claude needs your input",
             "Claude is waiting for your input",
             "idle_prompt",
         );
-        e.id = Uuid::parse_str("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA").unwrap();
-        let (adapted, canonical) = emit(adapt(&e));
-        assert_eq!(canonical.kind, K::WaitingForInput);
-        assert_eq!(adapted.event_type, "waiting_input");
-        assert_eq!(adapted.raw_type.as_deref(), Some("notification"));
-        assert_eq!(adapted.notification_type.as_deref(), Some("idle_prompt"));
-        assert_eq!(adapted.tool, "Claude");
-        assert_eq!(adapted.id, e.id);
-        assert_eq!(adapted.producer.as_deref(), Some("claude_code_monitor"));
+        for subtype in [Some("idle_prompt".into()), None] {
+            e.notification_type = subtype;
+            assert!(dropped(adapt(&e)).contains("reminder after the turn ended"));
+        }
     }
 
     #[test]
-    fn claude_response_complete_is_dropped_as_state_only() {
-        let mut e = event(AiEventSource::claude_code(), "response_complete", "Claude");
-        e.raw_type = Some("response_complete".into());
-        assert!(dropped(adapt(&e)).contains("state-only"));
+    fn claude_stop_is_a_finished_turn() {
+        let e = event(AiEventSource::claude_code(), "response_complete", "Claude");
+        let (adapted, canonical) = emit(adapt(&e));
+        assert_eq!(canonical.kind, K::TaskFinished);
+        assert_eq!(adapted.event_type, "finished");
     }
 
     #[test]
     fn claude_notification_event_maps_to_attention_required() {
-        let e = claude_notification(
-            "Claude needs your attention",
-            "Claude Code needs your attention",
+        for subtype in [
             "elicitation_dialog",
-        );
-        let (adapted, canonical) = emit(adapt(&e));
-        assert_eq!(canonical.kind, K::AttentionRequired);
-        assert_eq!(adapted.event_type, "attention_required");
-        assert_eq!(
-            adapted.notification_type.as_deref(),
-            Some("elicitation_dialog")
-        );
+            "elicitation_url_dialog",
+            "agent_needs_input",
+        ] {
+            let e = claude_notification("Claude Code", "", subtype);
+            let (adapted, canonical) = emit(adapt(&e));
+            assert_eq!(canonical.kind, K::AttentionRequired);
+            assert_eq!(adapted.event_type, "attention_required");
+            assert_eq!(adapted.notification_type.as_deref(), Some(subtype));
+        }
     }
 
     #[test]
@@ -829,13 +846,13 @@ mod tests {
     #[test]
     fn ingress_accepts_canonical_claude_notification() {
         let e = claude_notification(
-            "Claude needs your input",
-            "Claude is waiting for your input",
-            "idle_prompt",
+            "Claude needs permission",
+            "Allow Claude to use this tool?",
+            "permission_prompt",
         );
         let a = accepted(ingest(&e));
-        assert_eq!(a.shared_event.event_type, "waiting_input");
-        assert_eq!(a.canonical_event.kind, K::WaitingForInput);
+        assert_eq!(a.shared_event.event_type, "permission");
+        assert_eq!(a.canonical_event.kind, K::PermissionRequired);
     }
 
     #[test]

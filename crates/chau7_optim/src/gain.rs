@@ -173,7 +173,7 @@ pub fn run(
                 println!("{}", styled("Recent Commands", true)); // added: styled header
                 println!("──────────────────────────────────────────────────────────");
                 for rec in recent {
-                    let time = rec.timestamp.format("%m-%d %H:%M");
+                    let time = rec.timestamp.strftime("%m-%d %H:%M");
                     let cmd_short = if rec.rtk_cmd.len() > 25 {
                         format!("{}...", &rec.rtk_cmd[..22])
                     } else {

@@ -171,6 +171,28 @@ class Hooks(unittest.TestCase):
             self.assertEqual(self.events()[-1]["hook"], hook)
             self.assertEqual(self.events()[-1]["tabID"], TAB)
 
+    def test_claude_forwards_documented_notification_and_failure_fields(self):
+        for payload in [
+            {
+                "hook_event_name": "Notification",
+                "notification_type": "idle_prompt",
+                "title": "Claude Code",
+                "message": "Claude is waiting for your input",
+            },
+            {
+                "hook_event_name": "StopFailure",
+                "error": "rate_limit",
+                "last_assistant_message": "API Error: Rate limit reached",
+            },
+        ]:
+            result = self.run_py(self.claude, input=json.dumps(payload))
+            self.assertEqual(result.returncode, 0, result.stderr)
+        reminder, failure = self.events()
+        self.assertEqual(reminder["notificationType"], "idle_prompt")
+        self.assertEqual(reminder["title"], "Claude Code")
+        self.assertEqual(failure["type"], "response_failed")
+        self.assertEqual(failure["message"], "API Error: Rate limit reached")
+
     def test_claude_non_next_and_invalid_identity_are_noops(self):
         for changes in [
             {"TERM_PROGRAM": "iTerm.app"},

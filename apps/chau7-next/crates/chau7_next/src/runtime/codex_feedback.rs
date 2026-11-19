@@ -157,6 +157,9 @@ pub fn start(cx: &mut App) {
                 );
                 callback.items(deliveries.len());
                 cx.default_global::<MonitorHealth>().0 = health;
+                if deliveries.is_empty() {
+                    return;
+                }
                 let alive: HashSet<_> = bindings(cx)
                     .into_iter()
                     .map(|b| (b.tab, b.native))
@@ -207,12 +210,6 @@ pub fn start(cx: &mut App) {
                             manager().resolve_codex_input(&binding.tab, has_other_pending);
                             crate::remote::resolve_codex_question(&binding.native, &call_id, cx);
                             if !has_other_pending {
-                                // Answered: the tab no longer waits for the user.
-                                if let Some(found) = find_tab(&binding.tab, cx) {
-                                    found.window.workspace.update(cx, |workspace, cx| {
-                                        workspace.clear_persistent_style(found.tab, cx)
-                                    });
-                                }
                                 publish(
                                     &binding,
                                     "user_input_resolved",
@@ -238,6 +235,16 @@ pub fn start(cx: &mut App) {
                                     "Codex turn started",
                                     "codex_rollout_feedback",
                                     false,
+                                    cx,
+                                );
+                            }
+                            if let Record::TurnFailed(message) = &record {
+                                publish(
+                                    &binding,
+                                    "response_failed",
+                                    message,
+                                    "codex_rollout_feedback",
+                                    true,
                                     cx,
                                 );
                             }
@@ -336,6 +343,7 @@ fn poll(
                                     }
                                 }
                             }
+                            Record::TurnCompleted(_) if watch.tracker.pending_count() > 0 => {}
                             record if !catch_up => {
                                 deliveries.push((binding.clone(), Delivery::Lifecycle(record)))
                             }

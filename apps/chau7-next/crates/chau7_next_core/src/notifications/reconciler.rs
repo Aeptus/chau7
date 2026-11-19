@@ -53,6 +53,26 @@ impl Reconciler {
         if self.ambiguous(&o) {
             return None;
         }
+        let previous = self.matching_record(&o);
+        if Observation::resolves_input(event) {
+            if event.reliability != AiEventReliability::Authoritative
+                || !previous.is_some_and(|record| record.state == State::InputRequested)
+            {
+                return None;
+            }
+        } else if !Observation::starts_turn(event)
+            && previous.is_some_and(|record| {
+                record.state.terminal()
+                    || matches!(
+                        record.state,
+                        State::InputRequested
+                            | State::PermissionRequired
+                            | State::AttentionRequired
+                    )
+            })
+        {
+            return None;
+        }
         let key = self.merge(&mut o);
         let mut r = self.records.remove(&key).unwrap_or_else(|| Self::blank(&o));
         r.aliases.extend(o.aliases.clone());
@@ -69,9 +89,8 @@ impl Reconciler {
     /// so a persistent waiting style on its tab is stale. Call before
     /// [`Self::observe_raw`], which records the session as running.
     ///
-    /// A new prompt or turn always ends a wait. Tool activity ends one only
-    /// when the session was waiting for the next message: a tool can start
-    /// while another still waits for a permission answer.
+    /// A new turn ends the previous wait. A structured question remains
+    /// outstanding until a matching answer arrives, even during tool activity.
     pub fn raw_event_ends_wait(&self, event: &AiEvent, now: DateTime<Utc>) -> bool {
         if event.reliability != AiEventReliability::Authoritative {
             return false;
@@ -85,22 +104,15 @@ impl Reconciler {
         if Observation::starts_turn(event) {
             return true;
         }
-        let keys: BTreeSet<_> = observation
-            .aliases
-            .iter()
-            .filter_map(|alias| self.by_alias.get(&alias.key()))
-            .flatten()
-            .filter(|key| {
-                self.records
-                    .get(*key)
-                    .is_some_and(|record| Self::compatible(&observation, record))
+        self.matching_record(&observation)
+            .filter(|record| now - record.updated <= self.retention)
+            .is_some_and(|record| {
+                if Observation::resolves_input(event) {
+                    record.state == State::InputRequested
+                } else {
+                    matches!(record.state, State::WaitingForInput | State::Idle)
+                }
             })
-            .collect();
-        keys.len() == 1
-            && matches!(
-                self.records[*keys.first().unwrap()].state,
-                State::WaitingForInput | State::Idle
-            )
     }
     pub fn reconcile(&mut self, accepted: &AcceptedEvent, now: DateTime<Utc>) -> Decision {
         let Some(mut o) =
@@ -140,6 +152,13 @@ impl Reconciler {
         let Some(observation) = Observation::notification(event, kind, now) else {
             return true;
         };
+        !self.ambiguous(&observation)
+            && self.matching_record(&observation).is_none_or(|record| {
+                now - record.updated > self.retention || record.state == observation.state
+            })
+    }
+
+    fn matching_record(&self, observation: &Observation) -> Option<&Record> {
         let keys: BTreeSet<_> = observation
             .aliases
             .iter()
@@ -148,17 +167,13 @@ impl Reconciler {
             .filter(|key| {
                 self.records
                     .get(*key)
-                    .is_some_and(|record| Self::compatible(&observation, record))
+                    .is_some_and(|record| Self::compatible(observation, record))
             })
             .collect();
-        if self.ambiguous(&observation) {
-            return false;
-        }
         if keys.len() != 1 {
-            return true;
+            return None;
         }
-        let record = &self.records[*keys.first().unwrap()];
-        now - record.updated > self.retention || record.state == observation.state
+        self.records.get(*keys.first()?)
     }
 
     fn blank(o: &Observation) -> Record {
@@ -188,7 +203,10 @@ impl Reconciler {
                 if o.state == r.state {
                     return self.same(o, r, "duplicate terminal session state");
                 }
-                if o.strength() > r.strength {
+                if o.state == State::Failed && o.strength() >= r.strength {
+                    return (true, true, "failure supersedes reported completion");
+                }
+                if o.state == State::Finished && o.strength() > r.strength {
                     return (true, true, "stronger terminal session state");
                 }
                 return (false, false, "stale weaker terminal session state");
@@ -197,6 +215,9 @@ impl Reconciler {
         }
         if o.state == r.state {
             return self.same(o, r, "duplicate session state");
+        }
+        if r.state == State::InputRequested && o.state == State::Finished {
+            return (false, false, "structured question still awaits an answer");
         }
         if r.state.interactive()
             && o.state.interactive()
@@ -410,6 +431,51 @@ mod tests {
         assert!(r.raw_event_ends_wait(&raw("user_prompt", authoritative), now));
     }
     #[test]
+    fn structured_question_survives_background_work_and_completion_until_answered() {
+        let mut r = Reconciler::default();
+        let authoritative = AiEventReliability::Authoritative;
+        let question = raw("user_input_requested", authoritative);
+        let queued = accepted(&question);
+        assert!(emits(&mut r, &question, 0));
+        let now = base() + Duration::seconds(1);
+        let tool = raw("tool_start", authoritative);
+        assert!(!r.raw_event_ends_wait(&tool, now));
+        assert!(r.observe_raw(&tool, now).is_none());
+        assert!(!emits(&mut r, &event("finished", authoritative), 2));
+        assert!(r.is_relevant(&queued.shared_event, now));
+
+        let answer = raw("user_input_resolved", authoritative);
+        let now = base() + Duration::seconds(3);
+        assert!(r.raw_event_ends_wait(&answer, now));
+        assert!(r.observe_raw(&answer, now).is_some());
+        assert!(!r.is_relevant(&queued.shared_event, now));
+        assert!(!r.raw_event_ends_wait(&answer, now));
+        assert!(emits(&mut r, &event("finished", authoritative), 4));
+    }
+
+    #[test]
+    fn equal_authority_failure_wins_in_either_terminal_event_order() {
+        let authoritative = AiEventReliability::Authoritative;
+        let finished = event("finished", authoritative);
+        let failed = event("response_failed", authoritative);
+        for (first, second, second_emits) in
+            [(&finished, &failed, true), (&failed, &finished, false)]
+        {
+            let mut r = Reconciler::default();
+            assert!(emits(&mut r, first, 0));
+            assert_eq!(emits(&mut r, second, 1), second_emits);
+            let now = base() + Duration::seconds(2);
+            assert!(r.is_relevant(&accepted(&failed).shared_event, now));
+            assert!(!r.is_relevant(&accepted(&finished).shared_event, now));
+            assert!(
+                r.observe_raw(&raw("turn_started", authoritative), now)
+                    .is_some()
+            );
+            assert!(emits(&mut r, &finished, 3));
+        }
+    }
+
+    #[test]
     fn duplicate_terminal_and_later_provider_turn_completion() {
         let mut r = Reconciler::default();
         let e = event("finished", AiEventReliability::Authoritative);
@@ -610,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn recorded_current_swift_attention_scenarios_replay_deterministically() {
+    fn provider_attention_scenarios_replay_deterministically() {
         let replays: serde_json::Value =
             serde_json::from_str(include_str!("attention_replays.json")).unwrap();
         assert!(replays.as_array().unwrap().len() >= 12);

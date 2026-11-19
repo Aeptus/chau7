@@ -469,6 +469,7 @@ pub(super) fn import(settings: &mut Settings, map: &Map<String, Value>) {
     rule_field!("triggerConditions", trigger_conditions);
     rule_field!("groupActionBindings", group_action_bindings);
     rule_field!("groupConditions", group_conditions);
+    rules.migrate_waiting_colors();
 }
 
 #[cfg(test)]

@@ -30,7 +30,7 @@
 //! See [docs/tracking.md](../docs/tracking.md) for full documentation.
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use jiff::{tz::Offset, SignedDuration, Timestamp};
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::ffi::OsString;
@@ -39,6 +39,11 @@ use std::time::Instant;
 
 /// Number of days to retain tracking history before automatic cleanup.
 const HISTORY_DAYS: i64 = 90;
+
+fn format_history_timestamp(timestamp: Timestamp) -> String {
+    // SQLite sorts these strings alongside existing UTC timestamps.
+    timestamp.display_with_offset(Offset::UTC).to_string()
+}
 
 /// Per-command stats: (command_name, count, saved_tokens, avg_savings_pct, avg_exec_time_ms).
 type CommandStats = Vec<(String, usize, usize, f64, u64)>;
@@ -78,7 +83,7 @@ pub struct Tracker {
 #[derive(Debug)]
 pub struct CommandRecord {
     /// UTC timestamp when command was executed
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// RTK command that was executed (e.g., "rtk ls")
     pub rtk_cmd: String,
     /// Number of tokens saved (input - output)
@@ -314,7 +319,7 @@ impl Tracker {
             "INSERT INTO commands (timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct, exec_time_ms, session_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
-                Utc::now().to_rfc3339(),
+                format_history_timestamp(Timestamp::now()),
                 original_cmd,
                 rtk_cmd,
                 input_tokens as i64,
@@ -334,7 +339,8 @@ impl Tracker {
         // A Tracker is created per command, so record() used to run a full
         // DELETE scan on every invocation. Gate it to at most once per day via a
         // marker row (no row yet -> default "" -> runs once).
-        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let now = Timestamp::now();
+        let today = Offset::UTC.to_datetime(now).date().to_string();
         let last: String = self
             .conn
             .query_row(
@@ -347,10 +353,10 @@ impl Tracker {
             return Ok(());
         }
 
-        let cutoff = Utc::now() - chrono::Duration::days(HISTORY_DAYS);
+        let cutoff = now.checked_sub(SignedDuration::from_hours(HISTORY_DAYS * 24))?;
         self.conn.execute(
             "DELETE FROM commands WHERE timestamp < ?1",
-            params![cutoff.to_rfc3339()],
+            params![format_history_timestamp(cutoff)],
         )?;
         self.conn.execute(
             "INSERT INTO tracker_meta (key, value) VALUES ('last_cleanup', ?1)
@@ -760,9 +766,10 @@ impl Tracker {
 
         let rows = stmt.query_map(params![limit as i64], |row| {
             Ok(CommandRecord {
-                timestamp: DateTime::parse_from_rfc3339(&row.get::<_, String>(0)?)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
+                timestamp: row
+                    .get::<_, String>(0)?
+                    .parse()
+                    .unwrap_or_else(|_| Timestamp::now()),
                 rtk_cmd: row.get(1)?,
                 saved_tokens: row.get::<_, i64>(2)? as usize,
                 savings_pct: row.get(3)?,
@@ -999,6 +1006,31 @@ mod tests {
 
         assert_eq!(test_record.saved_tokens, 80);
         assert_eq!(test_record.savings_pct, 80.0);
+    }
+
+    #[test]
+    fn history_timestamps_sort_with_existing_rows() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            "CREATE TABLE commands (timestamp TEXT, rtk_cmd TEXT, saved_tokens INTEGER, savings_pct REAL);
+             INSERT INTO commands VALUES ('2026-01-02T03:04:05+00:00', 'old', 80, 80.0);",
+        )?;
+        let new: Timestamp = "2026-01-02T03:04:05.001Z".parse()?;
+        let stored = format_history_timestamp(new);
+        assert_eq!(stored, "2026-01-02T03:04:05.001+00:00");
+        conn.execute(
+            "INSERT INTO commands VALUES (?1, 'new', 80, 80.0)",
+            params![stored],
+        )?;
+
+        let recent = Tracker { conn }.get_recent(2)?;
+        assert_eq!(recent[0].timestamp, new);
+        assert_eq!(
+            recent[1].timestamp.strftime("%m-%d %H:%M").to_string(),
+            "01-02 03:04"
+        );
+        assert_eq!(recent[1].rtk_cmd, "old");
+        Ok(())
     }
 
     // 4. track_passthrough doesn't dilute stats (input=0, output=0)

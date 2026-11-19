@@ -3152,6 +3152,7 @@ fn feedback_kind(event: &AiEvent) -> Option<&str> {
         | "tool_start"
         | "tool_complete"
         | "tool_failed"
+        | "response_failed"
         | "approval_requested"
         | "permission"
         | "user_input_requested"

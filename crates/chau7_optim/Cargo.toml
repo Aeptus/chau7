@@ -21,5 +21,5 @@ colored = "3.1.1"
 dirs = "7"
 rusqlite = { version = "0.41", features = ["bundled"] }
 toml = "1.1.8"
-chrono = "0.4"
+jiff = { version = "0.2", default-features = false, features = ["std"] }
 tempfile = "3"

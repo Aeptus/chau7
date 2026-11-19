@@ -152,6 +152,9 @@ impl TabNotificationStyle {
         {
             return ("Success", Some(StyleColor::Green));
         }
+        if self.icon == Some(icons::WAITING) || self.italic || is(StyleColor::Orange) {
+            return ("Waiting", Some(StyleColor::Orange));
+        }
         if self.icon == Some(icons::BELL)
             || self.persistent
             || self.badge_text.is_some()
@@ -160,9 +163,6 @@ impl TabNotificationStyle {
             || self.icon_color == Some(StyleColor::Yellow)
         {
             return ("Attention", Some(StyleColor::Yellow));
-        }
-        if self.icon == Some(icons::WAITING) || self.italic {
-            return ("Waiting", Some(StyleColor::Orange));
         }
         ("Active", self.title_color)
     }
@@ -298,8 +298,10 @@ mod tests {
         assert_eq!(TabNotificationStyle::error().summary().0, "Error");
         assert_eq!(TabNotificationStyle::success().summary().0, "Success");
         assert_eq!(TabNotificationStyle::attention().summary().0, "Attention");
-        // Waiting has an orange border, which counts as "Attention" first.
-        assert_eq!(TabNotificationStyle::waiting().summary().0, "Attention");
+        assert_eq!(
+            TabNotificationStyle::waiting().summary(),
+            ("Waiting", Some(StyleColor::Orange))
+        );
         let italic = TabNotificationStyle {
             italic: true,
             ..Default::default()

@@ -962,12 +962,16 @@ impl ShellSession {
             "user_input_requested" | "waiting_input" => self.pending_feedback_input = true,
             "approval_resolved" | "permission_resolved" => self.pending_feedback_approval = false,
             "user_input_resolved" => self.pending_feedback_input = false,
-            "turn_completed" | "finished" => {
+            "response_failed" | "turn_completed" | "finished" => {
                 self.pending_feedback_approval = false;
                 self.pending_feedback_input = false;
                 self.provider_has_authoritative_notifications = true;
                 self.last_feedback_at = Some(observed_at);
-                self.set_status(CommandStatus::Done);
+                self.set_status(if kind == "response_failed" {
+                    CommandStatus::Idle
+                } else {
+                    CommandStatus::Done
+                });
                 return true;
             }
             _ => return false,
@@ -1918,6 +1922,18 @@ mod tests {
         assert!(r.active_app().is_some());
         assert!(!r.is_ai_running());
         assert_eq!(display_name_from_provider(None), None);
+    }
+
+    #[test]
+    fn provider_failure_clears_the_pending_input_status() {
+        let mut s = session();
+        s.restore_ai_metadata(Some("codex"), Some("thread-1"));
+        s.update_live_agent(Some("Codex"));
+        assert!(s.apply_agent_feedback("user_input_requested", "codex", Some("thread-1"), 1.0));
+        assert_eq!(s.status(), CommandStatus::WaitingForInput);
+        assert!(s.apply_agent_feedback("response_failed", "codex", Some("thread-1"), 2.0));
+        assert_eq!(s.status(), CommandStatus::Idle);
+        assert!(s.is_ai_running());
     }
 
     #[test]

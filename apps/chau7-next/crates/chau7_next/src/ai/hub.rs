@@ -28,14 +28,13 @@ use chau7_next_core::file_tailer::{FileTailer, TailerConfig};
 use chau7_next_core::history_events::resolve_directory;
 use chau7_next_core::iso8601;
 use chau7_next_core::monitoring::claude_code::{
-    ClaudeCodeEvent, ClaudeSessionTracker, WAITING_INPUT_FALLBACK_DELAY, parse_event_line,
-    waiting_input_message,
+    ClaudeCodeEvent, ClaudeSessionTracker, parse_event_line,
 };
 use chau7_next_core::monitoring::codex_sessions::{Candidate, CodexSessionResolver};
 use chau7_next_core::monitoring::conflicts::{
     ConflictDetector, FinishedBlock as ConflictFinishedBlock, conflict_message,
 };
-use gpui::{App, Global, Task};
+use gpui::{App, Global};
 use uuid::Uuid;
 
 use super::events_out::{self, tab_uuid};
@@ -54,9 +53,8 @@ const CLAUDE_START_RETRY_TTL: Duration = Duration::from_secs(5);
 pub struct AiHub {
     pub claude: ClaudeSessionTracker,
     codex_candidates: Vec<Candidate>,
-    claude_fallbacks: HashMap<String, Task<()>>,
     /// The tab each AI session last reported from, by session id. Events
-    /// that carry no tab (idle, waiting fallback) are routed with it.
+    /// that carry no tab are routed with it.
     session_tabs: SessionTabs,
     pending_claude_starts: VecDeque<PendingClaudeStart>,
     seen_claude_starts: VecDeque<ClaudeStartKey>,
@@ -429,19 +427,18 @@ fn apply(batch: Batch, cx: &mut App) {
             session.project_name,
             session.id.chars().take(8).collect::<String>()
         );
-        cancel_claude_fallback(&session.id, cx);
         let mut event = AiEvent::new(
             AiEventSource::claude_code(),
             "idle",
             "Claude",
-            format!("Waiting for input in {}", session.project_name),
+            format!("Session idle in {}", session.project_name),
             iso8601::now_iso8601(),
         );
         event.directory = Some(session.cwd.clone()).filter(|d| !d.is_empty());
         event.session_id = Some(session.id.clone());
         event.tab_id = session_tab(&session.id, cx);
         event.producer = Some("claude_code_idle".into());
-        event.reliability = AiEventReliability::Authoritative;
+        event.reliability = AiEventReliability::Fallback;
         events_out::publish(event, true, cx);
     }
     // History idle monitor notices (`HistoryIdleMonitor` callbacks).
@@ -470,7 +467,6 @@ fn handle_claude_event(
         event.short_session_id(),
         event.tool_name
     );
-    cancel_claude_fallback(&event.session_id, cx);
     cx.global_mut::<AiHub>().claude.handle_event(&event);
     let retry_target = next_tab_identifier.filter(|_| {
         transcript_owned
@@ -527,7 +523,7 @@ fn handle_claude_event(
     }
     let mut ai = AiEvent::new(
         AiEventSource::claude_code(),
-        event.event_type.as_str(),
+        event.raw_type.as_str(),
         "Claude",
         event.message.clone(),
         iso8601::format_iso8601(
@@ -535,7 +531,7 @@ fn handle_claude_event(
                 .unwrap_or_else(chrono::Utc::now),
         ),
     );
-    ai.raw_type = Some(event.event_type.as_str().to_string());
+    ai.raw_type = Some(event.raw_type.clone());
     ai.title = event.title.clone();
     ai.notification_type = event.notification_type.clone();
     ai.directory = Some(event.cwd.clone()).filter(|d| !d.is_empty());
@@ -554,7 +550,6 @@ fn handle_claude_event(
     events_out::publish(ai, true, cx);
     if event.event_type == EventType::ResponseComplete {
         log::info!("Claude Code response complete: {}", event.project_name());
-        schedule_claude_fallback(event, cx);
     }
 }
 
@@ -644,48 +639,6 @@ fn retry_pending_claude_starts(cx: &mut App) {
         }
     }
     cx.global_mut::<AiHub>().pending_claude_starts = remaining;
-}
-
-/// `scheduleClaudeWaitingInputFallback`: "waiting for input" 0.75 s after a
-/// response completes, unless another event of the session arrives first.
-fn schedule_claude_fallback(event: ClaudeCodeEvent, cx: &mut App) {
-    let session = event.session_id.trim().to_string();
-    if session.is_empty() {
-        return;
-    }
-    let key = session.clone();
-    let task = cx.spawn(async move |cx| {
-        cx.background_executor()
-            .timer(Duration::from_secs_f64(WAITING_INPUT_FALLBACK_DELAY))
-            .await;
-        cx.update(|cx| {
-            cx.global_mut::<AiHub>().claude_fallbacks.remove(&session);
-            let mut ai = AiEvent::new(
-                AiEventSource::claude_code(),
-                "waiting_input",
-                "Claude",
-                waiting_input_message(&event),
-                iso8601::now_iso8601(),
-            );
-            ai.title = event.title.clone();
-            ai.notification_type = Some("idle_prompt".into());
-            ai.directory = Some(event.cwd.clone()).filter(|d| !d.is_empty());
-            ai.session_id = Some(session.clone());
-            ai.tab_id = crate::runtime::notification_tab_for_claude_session(&session, cx)
-                .or_else(|| session_tab(&session, cx));
-            ai.producer = Some("claude_response_complete_fallback".into());
-            ai.reliability = AiEventReliability::Fallback;
-            events_out::publish(ai, true, cx);
-        });
-    });
-    cx.global_mut::<AiHub>().claude_fallbacks.insert(key, task);
-}
-
-fn cancel_claude_fallback(session: &str, cx: &mut App) {
-    let session = session.trim();
-    if !session.is_empty() {
-        cx.global_mut::<AiHub>().claude_fallbacks.remove(session);
-    }
 }
 
 // ----- history idle ----------------------------------------------------------
