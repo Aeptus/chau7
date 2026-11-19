@@ -3328,7 +3328,7 @@ pub(crate) mod tests {
         pane.status = CommandStatus::WaitingForInput;
         env.pane_texts.insert(
             (10, 1),
-            "Which branch?\n1. Main\n2. Release\n\n› Continue the task".into(),
+            "Which option should I choose?\n1. Main\n2. Release\n\n› Continue the task".into(),
         );
         host.handle_frame(
             frame(RemoteFrameType::SessionReady, 0, ""),

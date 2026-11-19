@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Send iPhone answers to the active Codex question editor. The phone waits for confirmation and blocks replies to older Mac hosts that could type a choice number into the main prompt.
+- Send iPhone answers to the active Codex question editor. The phone waits for confirmation. Older Mac hosts and unverified Codex screens cannot receive a choice as raw keyboard input.
 
 - Make iPhone approval and input alerts easier to scan, use the Chau7 logo on Live Activities, and fit more repository sessions in the picker with compact rows and pinned group headings.
 
