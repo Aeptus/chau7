@@ -117,6 +117,15 @@ pub fn codex_question_editor(screen: &str, title: &str) -> Option<CodexQuestionE
     (rendered_title == title).then_some(CodexQuestionEditor::Ready)
 }
 
+/// Queue the answer and its submit in one PTY write. Codex handles bracketed
+/// paste as a single event, independently of normal typing and paste detection.
+pub fn codex_answer_step(answer: &str) -> InputStep {
+    InputStep {
+        bytes: format!("\x15\x1b[200~{answer}\x1b[201~\r").into_bytes(),
+        delay_ms: 0,
+    }
+}
+
 /// Only terminal navigation sequences can be converted into semantic keys.
 pub fn navigation_keys(mut text: &str) -> Option<Vec<RemoteKey>> {
     let mut keys = Vec::new();
@@ -163,6 +172,13 @@ mod tests {
         assert_eq!(steps[2].delay_ms, 120);
         assert_eq!(text_steps("hello\n", false, true)[2].delay_ms, 60);
     }
+    #[test]
+    fn codex_answer_and_submit_are_one_bracketed_write() {
+        let step = codex_answer_step("Leave it");
+        assert_eq!(step.bytes, b"\x15\x1b[200~Leave it\x1b[201~\r");
+        assert_eq!(step.delay_ms, 0);
+    }
+
     #[test]
     fn codex_question_requires_the_live_editor_and_matching_title() {
         let collapsed =

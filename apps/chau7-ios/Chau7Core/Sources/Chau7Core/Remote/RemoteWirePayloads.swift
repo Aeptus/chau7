@@ -404,6 +404,7 @@ public struct RemoteTabListPayload: Codable, Equatable, Sendable {
     public static let keyInputCapability = "key_input"
     public static let checkpointRequestCapability = "checkpoint_request"
     public static let scopedPromptResponseCapability = "scoped_prompt_response"
+    public static let codexQuestionReplyCapability = "codex_question_reply"
     public static let paneInputCapability = "pane_input"
 
     public let tabs: [RemoteTabDescriptor]

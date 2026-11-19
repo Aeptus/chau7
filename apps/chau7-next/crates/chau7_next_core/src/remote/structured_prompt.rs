@@ -88,9 +88,8 @@ impl StructuredPromptStore {
                 .enumerate()
                 .map(|(index, label)| {
                     let id = (index + 1).to_string();
-                    // Keep the option ID and legacy wire response stable.
-                    // The host submits the label through the Codex editor.
-                    RemoteInteractivePromptOption::new(&id, label, &id, is_destructive(label))
+                    // Codex options identify a reply, not a terminal keystroke.
+                    RemoteInteractivePromptOption::new(id, label, "", is_destructive(label))
                 })
                 .collect()
         } else {
@@ -388,7 +387,7 @@ mod tests {
         }
     }
     #[test]
-    fn codex_question_offers_digit_answers_until_its_call_is_resolved() {
+    fn codex_question_offers_semantic_answers_until_its_call_is_resolved() {
         let now = Utc::now();
         let mut store = StructuredPromptStore::default();
         let question = codex_question("call_1", &["Approve", "Do not merge"], true);
@@ -397,11 +396,7 @@ mod tests {
         let entry = store.entry(10, "thread", now).unwrap();
         assert_eq!(entry.prompt, "May I merge?");
         let sent: Vec<_> = entry.options.iter().map(|o| o.response.as_str()).collect();
-        assert_eq!(
-            sent,
-            ["1", "2"],
-            "a digit submits; a Return would hit the next screen"
-        );
+        assert_eq!(sent, ["", ""], "a Codex option is not a keystroke");
         assert!(!entry.options[0].is_destructive);
         assert!(entry.options[1].is_destructive);
         assert!(!store.resolve_codex_question("thread", "another_call"));

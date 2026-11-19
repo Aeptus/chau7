@@ -244,7 +244,16 @@ enum RemoteDisconnectTrigger: String, Equatable {
 }
 
 extension RemoteInteractivePrompt {
-    var awaitsCodexReply: Bool { toolName.caseInsensitiveCompare("Codex") == .orderedSame }
+    var awaitsCodexReply: Bool { toolName.localizedCaseInsensitiveContains("Codex") }
+
+    func replyAction(_ action: RemotePromptResponse.Action, capabilities: Set<String>) -> RemotePromptResponse.Action? {
+        guard !awaitsCodexReply else {
+            guard capabilities.contains(RemoteTabListPayload.codexQuestionReplyCapability),
+                  action == .select || action == .custom else { return nil }
+            return .codexAnswer
+        }
+        return action
+    }
 }
 
 /// Pure ownership rules for connection attempts. Automatic callers coalesce

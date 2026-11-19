@@ -1084,7 +1084,10 @@ impl RemoteHost {
             .flat_map(|tab| &tab.panes)
             .map(|pane| uuid::Uuid::from_u64_pair(0, pane.pane_id))
             .collect();
-        let Some(text) = response.response_text(prompt, resolved, &panes) else {
+        if prompt.tab_id != resolved
+            || prompt.pane_id != Some(response.pane_id)
+            || !panes.contains(&response.pane_id)
+        {
             self.send_error(
                 sink,
                 "stale_prompt",
@@ -1093,33 +1096,42 @@ impl RemoteHost {
             );
             self.send_activity(env, sink, true);
             return;
-        };
+        }
         let pane = response.pane_id.as_u64_pair().1;
-        let codex = tabs
+        let target = tabs
             .iter()
             .find(|tab| tab.key == key)
-            .and_then(|tab| tab.panes.iter().find(|candidate| candidate.pane_id == pane))
-            .and_then(|candidate| candidate.ai_session_id.as_deref())
-            .and_then(|session| self.structured.entry(key, session, now))
-            .filter(|entry| {
-                entry.accepts_reply
-                    && entry.is_codex_question()
-                    && prompt.id.ends_with(&format!("-{}", entry.signature))
-            })
-            .map(|entry| entry.session_id.clone());
-        let written = if let Some(session) = &codex {
-            let answer = match response.action {
-                Action::Select => prompt
-                    .options
-                    .iter()
-                    .find(|option| Some(&option.id) == response.option_id.as_ref())
-                    .map(|option| option.label.as_str()),
-                Action::Custom => text
-                    .strip_prefix('\x1b')
-                    .and_then(|body| body.strip_suffix('\r')),
-                _ => None,
-            };
-            let Some(answer) = answer.filter(|answer| !answer.chars().any(char::is_control)) else {
+            .and_then(|tab| tab.panes.iter().find(|candidate| candidate.pane_id == pane));
+        let codex = response.action == Action::CodexAnswer
+            || prompt.tool_name.to_ascii_lowercase().contains("codex")
+            || target
+                .and_then(|pane| pane.ai_provider.as_deref())
+                .is_some_and(|provider| provider.eq_ignore_ascii_case("codex"));
+        let written = if codex {
+            let entry = target
+                .and_then(|pane| pane.ai_session_id.as_deref())
+                .and_then(|session| self.structured.entry(key, session, now))
+                .filter(|entry| {
+                    entry.accepts_reply
+                        && entry.is_codex_question()
+                        && prompt.id
+                            == format!(
+                                "tab-{resolved}-pane-{}-{}",
+                                pane_uuid(pane),
+                                entry.signature
+                            )
+                })
+                .map(|entry| entry.session_id.clone());
+            let Some((session, answer)) =
+                entry.zip(response.codex_answer(prompt, resolved, &panes))
+            else {
+                self.send_error(
+                    sink,
+                    "codex_question_unavailable",
+                    "This Codex question could not be verified. Open the terminal to answer it.",
+                    frame.tab_id,
+                );
+                self.send_activity(env, sink, true);
                 return;
             };
             let delivery = self.write_guarded(
@@ -1127,7 +1139,7 @@ impl RemoteHost {
                 sink,
                 (key, resolved, Some(pane)),
                 frame.tab_id,
-                &mut |env| env.write_codex_answer(key, pane, session, &prompt.prompt, answer),
+                &mut |env| env.write_codex_answer(key, pane, &session, &prompt.prompt, answer),
             );
             if delivery == Delivery::Failed {
                 self.send_error(
@@ -1138,17 +1150,28 @@ impl RemoteHost {
                 );
             }
             delivery == Delivery::Written
-        } else if let Some(flagged) = protection::flagged_termination_action(&text) {
-            self.queue_protected_input(
-                env,
-                sink,
-                uuid::Uuid::new_v4().to_string(),
-                text,
-                (resolved, Some(pane)),
-                flagged,
-            );
-            return;
         } else {
+            let Some(text) = response.response_text(prompt, resolved, &panes) else {
+                self.send_error(
+                    sink,
+                    "stale_prompt",
+                    "That prompt or terminal pane is no longer available. Refresh before answering.",
+                    frame.tab_id,
+                );
+                self.send_activity(env, sink, true);
+                return;
+            };
+            if let Some(flagged) = protection::flagged_termination_action(&text) {
+                self.queue_protected_input(
+                    env,
+                    sink,
+                    uuid::Uuid::new_v4().to_string(),
+                    text,
+                    (resolved, Some(pane)),
+                    flagged,
+                );
+                return;
+            }
             let keys = navigation_keys(&text);
             self.write_guarded(
                 env,
@@ -1175,7 +1198,7 @@ impl RemoteHost {
                 response.prompt_id,
                 PromptSubmission {
                     sent_at: env.now(),
-                    awaiting_codex: codex.is_some(),
+                    awaiting_codex: codex,
                 },
             );
         }
@@ -1537,9 +1560,14 @@ impl RemoteHost {
             return false;
         }
         let payload = RemoteTabListPayload {
-            capabilities: ["key_input", "scoped_prompt_response", "pane_input"]
-                .map(str::to_string)
-                .to_vec(),
+            capabilities: [
+                "key_input",
+                "scoped_prompt_response",
+                "pane_input",
+                "codex_question_reply",
+            ]
+            .map(str::to_string)
+            .to_vec(),
             tabs: descriptors.clone(),
         };
         self.last_tab_list = Some(descriptors);
@@ -3290,6 +3318,50 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn unverified_codex_prompts_do_not_fall_back_to_typing() {
+        let mut env = FakeEnv::new();
+        let mut host = RemoteHost::new();
+        let mut out = Vec::new();
+        let pane = &mut env.tabs[0].panes[0];
+        pane.ai_provider = Some("codex".into());
+        pane.ai_session_id = Some("thread".into());
+        pane.status = CommandStatus::WaitingForInput;
+        env.pane_texts.insert(
+            (10, 1),
+            "Which option should I choose?\n1. Main\n2. Release\n\n› Continue the task".into(),
+        );
+        host.handle_frame(
+            frame(RemoteFrameType::SessionReady, 0, ""),
+            &mut env,
+            &mut out,
+        );
+        let prompt = host.prompts[0].clone();
+        for action in ["select", "codex_answer"] {
+            let payload = serde_json::json!({
+                "prompt_id": prompt.id, "pane_id": prompt.pane_id,
+                "action": action, "option_id": "1"
+            })
+            .to_string();
+            host.handle_frame(
+                frame(
+                    RemoteFrameType::InteractivePromptResponse,
+                    prompt.tab_id,
+                    &payload,
+                ),
+                &mut env,
+                &mut out,
+            );
+        }
+        assert!(env.pane_typed.is_empty());
+        assert!(env.typed.is_empty());
+        assert_eq!(host.prompts, [prompt]);
+        assert!(out.iter().any(|frame| {
+            frame.type_ == RemoteFrameType::Error as u8
+                && String::from_utf8_lossy(&frame.payload).contains("codex_question_unavailable")
+        }));
+    }
+
+    #[test]
     fn codex_replies_send_the_selected_label_and_wait_for_confirmation() {
         let mut env = FakeEnv::new();
         let mut host = RemoteHost::new();
@@ -3312,7 +3384,7 @@ pub(crate) mod tests {
         assert_eq!(prompt.prompt, "May I merge the branch?");
         let labels: Vec<_> = prompt.options.iter().map(|o| o.label.as_str()).collect();
         assert_eq!(labels, ["Merge", "Leave it"]);
-        let payload = serde_json::json!({"prompt_id":prompt.id,"pane_id":prompt.pane_id,"action":"select","option_id":"2"}).to_string();
+        let payload = serde_json::json!({"prompt_id":prompt.id,"pane_id":prompt.pane_id,"action":"codex_answer","option_id":"2"}).to_string();
         host.handle_frame(
             frame(
                 RemoteFrameType::InteractivePromptResponse,

@@ -10,6 +10,7 @@ pub enum Action {
     Toggle,
     Submit,
     Custom,
+    CodexAnswer,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -22,17 +23,45 @@ pub struct RemotePromptResponse {
     pub custom_text: Option<String>,
 }
 impl RemotePromptResponse {
+    fn matches_prompt(
+        &self,
+        prompt: &RemoteInteractivePrompt,
+        tab_id: u32,
+        available: &[Uuid],
+    ) -> bool {
+        self.prompt_id == prompt.id
+            && tab_id == prompt.tab_id
+            && prompt.pane_id == Some(self.pane_id)
+            && available.contains(&self.pane_id)
+    }
+
+    /// Validate a semantic Codex answer without interpreting terminal keystrokes.
+    pub fn codex_answer<'a>(
+        &'a self,
+        prompt: &'a RemoteInteractivePrompt,
+        tab_id: u32,
+        available: &[Uuid],
+    ) -> Option<&'a str> {
+        if !self.matches_prompt(prompt, tab_id, available) {
+            return None;
+        }
+        let answer = match (self.action, &self.option_id, &self.custom_text) {
+            (Action::CodexAnswer | Action::Select, Some(id), None) => {
+                &prompt.options.iter().find(|option| &option.id == id)?.label
+            }
+            (Action::CodexAnswer | Action::Custom, None, Some(text)) => text.trim(),
+            _ => return None,
+        };
+        valid_answer_text(answer).then_some(answer)
+    }
+
     pub fn response_text(
         &self,
         prompt: &RemoteInteractivePrompt,
         tab_id: u32,
         available: &[Uuid],
     ) -> Option<String> {
-        if self.prompt_id != prompt.id
-            || tab_id != prompt.tab_id
-            || prompt.pane_id != Some(self.pane_id)
-            || !available.contains(&self.pane_id)
-        {
+        if !self.matches_prompt(prompt, tab_id, available) {
             return None;
         }
         match self.action {
@@ -62,13 +91,15 @@ impl RemotePromptResponse {
                     return None;
                 }
                 let text = self.custom_text.as_ref()?.trim();
-                if text.is_empty() || text.len() > 16384 || text.chars().any(char::is_control) {
-                    return None;
-                }
-                Some(format!("\u{1b}{text}\r"))
+                valid_answer_text(text).then(|| format!("\u{1b}{text}\r"))
             }
+            Action::CodexAnswer => None,
         }
     }
+}
+
+fn valid_answer_text(text: &str) -> bool {
+    !text.is_empty() && text.len() <= 16384 && !text.chars().any(char::is_control)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -122,6 +153,26 @@ mod tests {
         response.prompt_id = "stale".into();
         assert!(response.response_text(&prompt, 1, &[pane]).is_none());
     }
+    #[test]
+    fn codex_answer_is_literal_and_cannot_be_encoded_as_generic_input() {
+        let prompt = prompt();
+        let pane = prompt.pane_id.unwrap();
+        let mut response: RemotePromptResponse = serde_json::from_value(serde_json::json!({
+            "prompt_id": "q", "pane_id": pane, "action": "codex_answer", "option_id": "1",
+        }))
+        .unwrap();
+        assert_eq!(response.codex_answer(&prompt, 1, &[pane]), Some("Keep"));
+        assert!(response.response_text(&prompt, 1, &[pane]).is_none());
+        assert!(response.codex_answer(&prompt, 2, &[pane]).is_none());
+        response.custom_text = Some("different".into());
+        assert!(response.codex_answer(&prompt, 1, &[pane]).is_none());
+        response.option_id = None;
+        assert_eq!(
+            response.codex_answer(&prompt, 1, &[pane]),
+            Some("different")
+        );
+    }
+
     #[test]
     fn toggles_do_not_submit_and_custom_rejects_control_input() {
         let prompt = prompt();
