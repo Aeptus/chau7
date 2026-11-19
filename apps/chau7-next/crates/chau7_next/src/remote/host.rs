@@ -3357,7 +3357,7 @@ pub(crate) mod tests {
             "submit only the validated answer to the Codex editor"
         );
 
-        assert_eq!(host.prompts, [prompt.clone()]);
+        assert_eq!(host.prompts.as_slice(), std::slice::from_ref(&prompt));
         host.handle_frame(
             frame(
                 RemoteFrameType::InteractivePromptResponse,
