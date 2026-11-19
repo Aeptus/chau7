@@ -61,6 +61,7 @@ impl SettingsDomain for NotificationsSettings {
     fn load(&mut self, src: &ConfigSource) {
         if let Some(mut rules) = json_value::<NotificationSettings>(src, "notification_rules") {
             rules.trigger_state.normalize();
+            rules.migrate_waiting_colors();
             self.rules = rules;
         }
         if let Some(v) = json_value(src, "notification_shell_events") {
@@ -138,6 +139,26 @@ mod tests {
         s.monitor_ai_events = false;
         s.ai_events_log_path = "/tmp/events.log".into();
         assert_eq!(crate::settings::round_trip(&s), s);
+    }
+
+    #[test]
+    fn saved_builtin_waiting_rules_load_as_orange() {
+        let mut rules = NotificationSettings::default();
+        rules
+            .group_action_bindings
+            .get_mut("ai_coding.waiting_input")
+            .unwrap()[1]
+            .config
+            .insert("customColor".into(), "red".into());
+        let loaded: NotificationsSettings = crate::settings::load_text(&format!(
+            "[next]\nnotification_rules = {}\n",
+            to_config_json(&rules)
+        ));
+        assert_eq!(
+            loaded.rules.group_action_bindings["ai_coding.waiting_input"][1]
+                .config_value("customColor"),
+            Some("orange")
+        );
     }
 
     #[test]

@@ -52,18 +52,41 @@ impl Default for NotificationSettings {
     }
 }
 
+impl NotificationSettings {
+    /// Upgrade the old built-in waiting colors in saved or imported rules.
+    pub fn migrate_waiting_colors(&mut self) {
+        let legacy = waiting_actions("red");
+        for trigger in [
+            "ai_coding.permission",
+            "ai_coding.waiting_input",
+            "ai_coding.attention_required",
+        ] {
+            if let Some(actions) = self.group_action_bindings.get_mut(trigger) {
+                for action in actions {
+                    if action.id == default_action_id(trigger, 1)
+                        && action.action_type == legacy[1].action_type
+                        && action.config == legacy[1].config
+                    {
+                        action.config.insert("customColor".into(), "orange".into());
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn action(t: NotificationActionType, config: &[(&str, &str)]) -> NotificationActionConfig {
     NotificationActionConfig::new(t).with_config(config.iter().copied())
 }
 
-fn red_persistent_border() -> Vec<NotificationActionConfig> {
+fn waiting_actions(color: &str) -> Vec<NotificationActionConfig> {
     vec![
         action(NotificationActionType::ShowNotification, &[]),
         action(
             NotificationActionType::StyleTab,
             &[
                 ("style", "custom"),
-                ("customColor", "red"),
+                ("customColor", color),
                 ("borderWidth", "2"),
                 ("borderStyle", "solid"),
                 ("persistent", "true"),
@@ -78,14 +101,18 @@ fn red_persistent_border() -> Vec<NotificationActionConfig> {
 pub fn default_group_action_bindings() -> BTreeMap<String, Vec<NotificationActionConfig>> {
     let mut map = default_group_action_bindings_unstamped();
     for (trigger, actions) in map.iter_mut() {
-        let hash = trigger.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
-            (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3)
-        });
         for (i, action) in actions.iter_mut().enumerate() {
-            action.id = Uuid::from_u64_pair(hash, i as u64);
+            action.id = default_action_id(trigger, i);
         }
     }
     map
+}
+
+fn default_action_id(trigger: &str, index: usize) -> Uuid {
+    let hash = trigger.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3)
+    });
+    Uuid::from_u64_pair(hash, index as u64)
 }
 
 fn default_group_action_bindings_unstamped() -> BTreeMap<String, Vec<NotificationActionConfig>> {
@@ -118,14 +145,17 @@ fn default_group_action_bindings_unstamped() -> BTreeMap<String, Vec<Notificatio
                 ),
             ],
         ),
-        ("ai_coding.permission".to_string(), red_persistent_border()),
+        (
+            "ai_coding.permission".to_string(),
+            waiting_actions("orange"),
+        ),
         (
             "ai_coding.waiting_input".to_string(),
-            red_persistent_border(),
+            waiting_actions("orange"),
         ),
         (
             "ai_coding.attention_required".to_string(),
-            red_persistent_border(),
+            waiting_actions("orange"),
         ),
         (
             "ai_coding.idle".to_string(),
@@ -321,13 +351,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_match_swift() {
+    fn defaults_cover_finished_waiting_and_failed() {
         let s = NotificationSettings::default();
         assert_eq!(s.group_action_bindings.len(), 6);
         let failed = &s.group_action_bindings["ai_coding.failed"];
         assert_eq!(failed.len(), 4);
         assert_eq!(failed[1].config_value("sound"), Some("Basso"));
         assert_eq!(failed[3].config_value("autoClearSeconds"), Some("60"));
+        use crate::tab_style::{StyleColor, build_notification_style};
+        for (rule, color, persistent) in [
+            ("finished", StyleColor::Green, false),
+            ("waiting_input", StyleColor::Orange, true),
+            ("permission", StyleColor::Orange, true),
+            ("attention_required", StyleColor::Orange, true),
+            ("failed", StyleColor::Red, false),
+        ] {
+            let action = s.group_action_bindings[&format!("ai_coding.{rule}")]
+                .iter()
+                .find(|action| action.action_type == NotificationActionType::StyleTab)
+                .unwrap();
+            let config = action.config.clone().into_iter().collect();
+            let style =
+                build_notification_style(action.config_value("style").unwrap(), &config).unwrap();
+            assert_eq!(style.border_color, Some(color), "{rule}");
+            assert_eq!(style.persistent, persistent, "{rule}");
+        }
         assert!(s.trigger_action_bindings.is_empty());
         assert_eq!(s.rate_limit_config, RateLimitConfig::default());
         let shell = ShellEventConfig::default();
@@ -337,6 +385,30 @@ mod tests {
         assert_eq!(app.memory_hysteresis_mb, 50);
         assert_eq!(ShellOutputPattern::defaults().len(), 5);
         assert!(ShellOutputPattern::defaults().iter().all(|p| !p.is_enabled));
+    }
+
+    #[test]
+    fn migration_recolors_saved_defaults_and_preserves_custom_waiting_rules() {
+        let mut settings = NotificationSettings::default();
+        let actions = settings
+            .group_action_bindings
+            .get_mut("ai_coding.waiting_input")
+            .unwrap();
+        actions[1].config.insert("customColor".into(), "red".into());
+        actions[1].enabled = false;
+        actions.push(waiting_actions("red").remove(1));
+        let customized = actions[2].clone();
+
+        let mut loaded: NotificationSettings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        loaded.migrate_waiting_colors();
+        let actions = &loaded.group_action_bindings["ai_coding.waiting_input"];
+        assert_eq!(actions[1].config_value("customColor"), Some("orange"));
+        assert!(!actions[1].enabled);
+        assert_eq!(actions[2], customized);
+        let migrated = loaded.clone();
+        loaded.migrate_waiting_colors();
+        assert_eq!(loaded, migrated);
     }
 
     #[test]

@@ -76,7 +76,7 @@ pub const ENTRIES: [Entry; 20] = [
             "aiEvent.body.permission",
             "Needs your permission to continue.",
         )),
-        style: Some("attention"),
+        style: Some("waiting"),
     },
     Entry {
         event_type: "waiting_input",
@@ -88,9 +88,9 @@ pub const ENTRIES: [Entry; 20] = [
     Entry {
         event_type: "idle",
         semantic_kind: Some(Kind::Idle),
-        title: Some(("aiEvent.title.waitingInput", "Waiting for input")),
+        title: Some(("aiEvent.title.idle", "Session idle")),
         body: Some(("aiEvent.body.idle", "No new history entries for a while.")),
-        style: Some("waiting"),
+        style: None,
     },
     Entry {
         event_type: "attention_required",
@@ -104,7 +104,7 @@ pub const ENTRIES: [Entry; 20] = [
         semantic_kind: Some(Kind::AttentionRequired),
         title: None,
         body: None,
-        style: Some("attention"),
+        style: Some("waiting"),
     },
     Entry {
         event_type: "needs_validation",
@@ -207,10 +207,9 @@ mod tests {
         assert_eq!(entry("script_succeeded").unwrap().style, Some("success"));
         assert_eq!(entry("dev-server-started").unwrap().style, Some("success"));
         assert_eq!(entry("tool_failed").unwrap().style, Some("error"));
-        assert_eq!(
-            entry("idle").unwrap().title,
-            entry("waiting_input").unwrap().title
-        );
+        let idle = entry("idle").unwrap();
+        assert_eq!(idle.title, Some(("aiEvent.title.idle", "Session idle")));
+        assert_eq!(idle.style, None);
         assert_eq!(semantic_trigger(Kind::Informational), None);
     }
 }

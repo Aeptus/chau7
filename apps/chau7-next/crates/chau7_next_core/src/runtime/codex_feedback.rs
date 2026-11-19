@@ -29,6 +29,7 @@ pub enum Record {
     Replied(Vec<String>),
     Started(String),
     TurnCompleted(Option<String>),
+    TurnFailed(String),
     Usage {
         input: i64,
         output: i64,
@@ -140,7 +141,13 @@ pub fn parse(line: &str) -> Option<Record> {
         }
         ("event_msg", "task_started") => Some(Record::Started(String::new())),
         ("event_msg", "task_complete") => {
-            Some(Record::TurnCompleted(text(&p["last_agent_message"])))
+            if p["error"].is_object() {
+                let message =
+                    text(&p["error"]["message"]).unwrap_or_else(|| "Codex turn failed.".into());
+                Some(Record::TurnFailed(message))
+            } else {
+                Some(Record::TurnCompleted(text(&p["last_agent_message"])))
+            }
         }
         ("event_msg", "token_count") => {
             let usage = &p["info"]["total_token_usage"];
@@ -450,6 +457,28 @@ impl InteractionTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn terminal_rollout_error_excludes_success_and_interruptions() {
+        assert_eq!(
+            parse(
+                r#"{"type":"event_msg","payload":{"type":"task_complete","error":{"message":"Context window exhausted","codex_error_info":"context_window_exceeded"},"last_agent_message":null}}"#
+            ),
+            Some(Record::TurnFailed("Context window exhausted".into()))
+        );
+        assert_eq!(
+            parse(
+                r#"{"type":"event_msg","payload":{"type":"task_complete","error":null,"last_agent_message":"Done"}}"#
+            ),
+            Some(Record::TurnCompleted(Some("Done".into())))
+        );
+        assert_eq!(
+            parse(
+                r#"{"type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}"#
+            ),
+            None
+        );
+    }
+
     #[test]
     fn codex_usage_retains_reported_reasoning() {
         let line = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":8,"cached_input_tokens":3,"reasoning_output_tokens":2}}}}"#;

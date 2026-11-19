@@ -279,9 +279,18 @@ pub fn should_clear_persistent_attention_style(
 /// Current vocabulary style with a semantic fallback for normalized aliases.
 /// Defaults have no timer: acknowledgement clears non-persistent styles.
 pub fn default_style_action(event: &AiEvent) -> Option<NotificationActionConfig> {
-    use super::vocabulary;
-    let direct = vocabulary::entry(&event.event_type).and_then(|e| e.style);
+    use super::{canonical::NotificationSemanticKind as K, vocabulary};
     let semantic = semantic_kind(event);
+    let waiting = matches!(semantic, K::PermissionRequired | K::WaitingForInput)
+        || (semantic == K::AttentionRequired
+            && event.source.raw_value() != crate::ai::event::AiEventSource::APP);
+    if waiting {
+        return Some(
+            NotificationActionConfig::new(NotificationActionType::StyleTab)
+                .with_config([("style", "waiting"), ("persistent", "true")]),
+        );
+    }
+    let direct = vocabulary::entry(&event.event_type).and_then(|e| e.style);
     let preset = direct.or_else(|| {
         vocabulary::semantic_trigger(semantic)
             .and_then(vocabulary::entry)
@@ -652,7 +661,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fallback.action_type, NotificationActionType::StyleTab);
-        assert_eq!(fallback.config_value("style"), Some("attention"));
+        assert_eq!(fallback.config_value("style"), Some("waiting"));
+        assert_eq!(fallback.config_value("persistent"), Some("true"));
         let explicit =
             NotificationActionConfig::new(NotificationActionType::StyleTab).with_enabled(false);
         assert!(supplemental_style_action(&e, &[explicit]).is_none());
@@ -730,8 +740,8 @@ mod tests {
         };
         assert_eq!(preset("ERROR").as_deref(), Some("error"));
         assert_eq!(preset("context_limit").as_deref(), Some("error"));
-        assert_eq!(preset("attention_required").as_deref(), Some("attention"));
-        assert_eq!(preset("idle").as_deref(), Some("waiting"));
+        assert_eq!(preset("attention_required").as_deref(), Some("waiting"));
+        assert_eq!(preset("idle"), None);
         assert_eq!(preset("waiting_input").as_deref(), Some("waiting"));
         assert_eq!(preset("finished").as_deref(), Some("success"));
         assert_eq!(preset("agent-turn-complete").as_deref(), Some("success"));

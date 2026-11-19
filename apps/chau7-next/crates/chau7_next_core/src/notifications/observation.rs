@@ -16,6 +16,7 @@ pub enum State {
     Running,
     Idle,
     WaitingForInput,
+    InputRequested,
     AttentionRequired,
     PermissionRequired,
     Finished,
@@ -31,7 +32,7 @@ impl State {
     pub fn specificity(self) -> u8 {
         match self {
             Self::PermissionRequired => 3,
-            Self::AttentionRequired => 2,
+            Self::AttentionRequired | Self::InputRequested => 2,
             Self::WaitingForInput => 1,
             _ => 0,
         }
@@ -42,6 +43,7 @@ impl State {
             Self::Running => "running",
             Self::Idle => "idle",
             Self::WaitingForInput => "waitingForInput",
+            Self::InputRequested => "inputRequested",
             Self::AttentionRequired => "attentionRequired",
             Self::PermissionRequired => "permissionRequired",
             Self::Finished => "finished",
@@ -225,11 +227,20 @@ impl Observation {
     pub fn lifecycle(event: &AiEvent, now: DateTime<Utc>) -> Option<Self> {
         match canonical::normalize(event.raw_type.as_deref().unwrap_or(&event.event_type)).as_str()
         {
+            "user_input_resolved" | "userinputresolved" => {
+                Some(Self::new(event, State::Running, now))
+            }
             "session_start" | "sessionstart" | "user_prompt" | "userprompt" | "turn_started"
             | "turnstarted" | "tool_start" | "toolstart" | "process_started" | "processstarted"
             | "command_started" | "commandstarted" => Some(Self::new(event, State::Running, now)),
             _ => None,
         }
+    }
+    pub fn resolves_input(event: &AiEvent) -> bool {
+        matches!(
+            canonical::normalize(event.raw_type.as_deref().unwrap_or(&event.event_type)).as_str(),
+            "user_input_resolved" | "userinputresolved"
+        )
     }
     /// The event opens a turn: the user sent a message or the provider began one.
     pub fn starts_turn(event: &AiEvent) -> bool {
@@ -243,6 +254,18 @@ impl Observation {
             Kind::TaskFinished => State::Finished,
             Kind::TaskFailed => State::Failed,
             Kind::PermissionRequired => State::PermissionRequired,
+            Kind::WaitingForInput
+                if event.reliability == AiEventReliability::Authoritative
+                    && matches!(
+                        canonical::normalize(
+                            event.raw_type.as_deref().unwrap_or(&event.event_type)
+                        )
+                        .as_str(),
+                        "user_input_requested" | "userinputrequested"
+                    ) =>
+            {
+                State::InputRequested
+            }
             Kind::WaitingForInput => State::WaitingForInput,
             Kind::AttentionRequired => State::AttentionRequired,
             Kind::Idle => State::Idle,

@@ -314,22 +314,32 @@ impl NotificationProviderAdapter for ClaudeCodeNotificationAdapter {
             "permission_request" | "permissionrequest" => {
                 authoritative(NotificationSemanticKind::PermissionRequired)
             }
-            "response_failed" | "responsefailed" => authoritative(NotificationSemanticKind::TaskFailed),
+            "response_failed" | "responsefailed" => {
+                authoritative(NotificationSemanticKind::TaskFailed)
+            }
             "tool_failed" | "toolfailed" => authoritative(NotificationSemanticKind::ToolFailed),
             "elicitation" => authoritative(NotificationSemanticKind::AttentionRequired),
             "idle" => {
-                let kind = if canonical::is_input_prompt_like(event.title.as_deref(), &event.message, event.notification_type.as_deref()) {
+                let kind = if canonical::is_input_prompt_like(
+                    event.title.as_deref(),
+                    &event.message,
+                    event.notification_type.as_deref(),
+                ) {
                     NotificationSemanticKind::WaitingForInput
-                } else { NotificationSemanticKind::Idle };
+                } else {
+                    NotificationSemanticKind::Idle
+                };
                 R::Emit(event.canonical_event(kind, self.reliability))
             }
-            "response_complete" | "responsecomplete" => R::Drop {
-                reason: "Claude response_complete is state-only; Notification hook owns user-facing delivery".into(),
-            },
-            "user_prompt" | "userprompt" | "session_start" | "sessionstart" | "tool_start" | "toolstart" | "tool_complete"
-            | "toolcomplete" | "session_end" | "sessionend" => R::Drop {
-                reason: format!("Claude raw event {raw_type} is not user-facing"),
-            },
+            "response_complete" | "responsecomplete" => {
+                authoritative(NotificationSemanticKind::TaskFinished)
+            }
+            "user_prompt" | "userprompt" | "session_start" | "sessionstart" | "tool_start"
+            | "toolstart" | "tool_complete" | "toolcomplete" | "session_end" | "sessionend" => {
+                R::Drop {
+                    reason: format!("Claude raw event {raw_type} is not user-facing"),
+                }
+            }
             _ => {
                 let kind = canonical::kind(Some(&raw_type), None);
                 if kind == NotificationSemanticKind::Unknown {
@@ -592,10 +602,11 @@ mod tests {
     }
 
     #[test]
-    fn claude_failure_elicitation_and_state_only_aliases_match_current_swift() {
+    fn claude_hook_aliases_map_to_the_correct_trigger() {
         for (raw, kind, shared) in [
             ("response_failed", K::TaskFailed, "failed"),
             ("responsefailed", K::TaskFailed, "failed"),
+            ("response-complete", K::TaskFinished, "finished"),
             ("elicitation", K::AttentionRequired, "attention_required"),
         ] {
             let e = event(AiEventSource::claude_code(), raw, "Claude");
@@ -609,7 +620,6 @@ mod tests {
             "session_start",
             "sessionstart",
             "session-start",
-            "response-complete",
             "user-prompt",
             "tool-start",
             "tool-complete",
@@ -669,10 +679,11 @@ mod tests {
     }
 
     #[test]
-    fn claude_response_complete_is_dropped_as_state_only() {
-        let mut e = event(AiEventSource::claude_code(), "response_complete", "Claude");
-        e.raw_type = Some("response_complete".into());
-        assert!(dropped(adapt(&e)).contains("state-only"));
+    fn claude_stop_is_a_finished_turn() {
+        let e = event(AiEventSource::claude_code(), "response_complete", "Claude");
+        let (adapted, canonical) = emit(adapt(&e));
+        assert_eq!(canonical.kind, K::TaskFinished);
+        assert_eq!(adapted.event_type, "finished");
     }
 
     #[test]

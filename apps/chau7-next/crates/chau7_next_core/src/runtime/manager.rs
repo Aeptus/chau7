@@ -459,6 +459,9 @@ impl RuntimeSessionManager {
                     Some(*reasoning),
                 ));
             }
+            Record::TurnFailed(message) if session.current_turn_id().is_some() => {
+                session.fail_turn(message);
+            }
             Record::TurnCompleted(summary)
                 if session.current_turn_id().is_some() && session.state() == State::Busy =>
             {

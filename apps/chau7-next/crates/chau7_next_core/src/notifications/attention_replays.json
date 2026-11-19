@@ -110,7 +110,7 @@
         "offset": 0,
         "expected_kind": "permission_required",
         "expected_stage": "deliver",
-        "expected_style": "attention"
+        "expected_style": "waiting"
       }
     ]
   },
@@ -153,7 +153,7 @@
         "offset": 0,
         "expected_kind": "permission_required",
         "expected_stage": "deliver",
-        "expected_style": "attention"
+        "expected_style": "waiting"
       }
     ]
   },
@@ -172,14 +172,16 @@
     ]
   },
   {
-    "name": "claude state-only completion is not delivered",
+    "name": "claude stop finishes the turn",
     "events": [
       {
         "source": "claude_code",
         "raw_type": "response_complete",
         "message": "Done",
         "offset": 0,
-        "expected_stage": "ingress_drop"
+        "expected_kind": "task_finished",
+        "expected_stage": "deliver",
+        "expected_style": "success"
       }
     ]
   }
