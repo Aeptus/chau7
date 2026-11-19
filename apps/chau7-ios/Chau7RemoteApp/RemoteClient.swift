@@ -78,6 +78,7 @@ final class RemoteClient {
     /// Recovery that drives the error banner's primary action.
     private(set) var lastErrorRecovery: RemoteConnectionRecovery = .none
     private(set) var codexReplyError: String?
+    private(set) var pendingCodexReplyID: String?
     var pendingApprovals: [ApprovalRequest] = []
     var pendingInteractivePrompts: [RemoteInteractivePrompt] = []
     var approvalHistory: [ApprovalHistoryEntry] = []
@@ -243,6 +244,7 @@ final class RemoteClient {
     /// underlying state changed — so a genuinely new occurrence still surfaces.
     private var suppressedPromptIDs: Set<String> = []
     private var pendingStateFetchTask: Task<Void, Never>?
+    private var codexReplyTimeout: Task<Void, Never>?
     private var pendingStateFetchFence: PendingStateFetchFence?
     private var lastPendingStateFetchAt: Date?
     /// Approval decisions taken from a notification before the request was
@@ -719,6 +721,7 @@ final class RemoteClient {
         // The next session may be a different (older) Mac: never carry a
         // capability advertisement across connections.
         macCapabilities = []
+        finishCodexReply()
         outputText = ""
         strippedOutputText = ""
         if clearIntent {
@@ -1423,7 +1426,7 @@ final class RemoteClient {
             storeGridSnapshot(payload, tabID: frame.tabID)
         case .approvalRequest: handleApprovalRequest(payload)
         case .ping: sendEncrypted(type: .pong, tabID: frame.tabID, payload: payload)
-        case .error: handleError(payload)
+        case .error: handleError(payload, tabID: frame.tabID)
         default:
             log.warning("Unhandled frame type: 0x\(String(frame.type, radix: 16))")
         }
@@ -1568,12 +1571,15 @@ private func handlePairAccept(_ data: Data) {
         }
     }
 
-    private func handleError(_ data: Data) {
+    private func handleError(_ data: Data, tabID: UInt32) {
         let (errorText, code): (String, String)
         if let msg = try? RemoteJSON.decoder.decode(RemoteErrorPayload.self, from: data) {
             (errorText, code) = ("\(msg.code): \(msg.message)", msg.code)
-            if msg.code == "codex_question_unavailable" || msg.code == "prompt_reply_pending" {
-                codexReplyError = msg.message
+            let pendingPrompt = pendingInteractivePrompts.first { $0.id == pendingCodexReplyID }
+            if let pendingPrompt, pendingPrompt.tabID == tabID,
+               RemoteConnectionStartPolicy.isInputRefusal(code: code),
+               code != "prompt_reply_pending" {
+                finishCodexReply(error: msg.message)
             }
         } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
             (errorText, code) = (text, "error")
@@ -2113,17 +2119,49 @@ private func handlePairAccept(_ data: Data) {
             reportBlockedInput("Update Chau7 on the Mac to answer prompts with verified pane routing.", reason: "scoped_prompt_required", tabID: prompt.tabID)
             return false
         }
-        let request = RemotePromptResponse(promptID: prompt.id, paneID: paneID, action: action, optionID: optionID, customText: customText)
-        guard canSendInput(to: prompt.tabID, allowUnlistedTab: true),
-              request.responseText(for: prompt, tabID: prompt.tabID, availablePaneIDs: [paneID]) != nil,
-              let data = try? RemoteJSON.encoder.encode(request),
-              sendEncrypted(type: .interactivePromptResponse, tabID: prompt.tabID, payload: data) else {
-            reportBlockedInput("Prompt response was not sent. Refresh the prompt and try again.", reason: "prompt_send_failed", tabID: prompt.tabID)
+        guard let wireAction = prompt.replyAction(action, capabilities: macCapabilities) else {
+            let message = "Update Chau7 on the Mac to answer Codex from your phone."
+            codexReplyError = message
+            reportBlockedInput(message, reason: "codex_reply_required", tabID: prompt.tabID)
             return false
         }
-        codexReplyError = nil
+        if wireAction == .codexAnswer, pendingCodexReplyID != nil { return false }
+
+        let validation = RemotePromptResponse(
+            promptID: prompt.id, paneID: paneID, action: action, optionID: optionID, customText: customText
+        )
+        let request = RemotePromptResponse(
+            promptID: prompt.id, paneID: paneID, action: wireAction, optionID: optionID, customText: customText
+        )
+        guard canSendInput(to: prompt.tabID, allowUnlistedTab: true),
+              validation.responseText(for: prompt, tabID: prompt.tabID, availablePaneIDs: [paneID]) != nil,
+              let data = try? RemoteJSON.encoder.encode(request),
+              sendEncrypted(type: .interactivePromptResponse, tabID: prompt.tabID, payload: data) else {
+            let message = "Prompt response was not sent. Refresh the prompt and try again."
+            if prompt.awaitsCodexReply { codexReplyError = message }
+            reportBlockedInput(message, reason: "prompt_send_failed", tabID: prompt.tabID)
+            return false
+        }
+        if wireAction == .codexAnswer { startCodexReply(promptID: prompt.id) }
         lastError = nil
         return true
+    }
+
+    private func startCodexReply(promptID: String) {
+        codexReplyError = nil
+        pendingCodexReplyID = promptID
+        codexReplyTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, let self, pendingCodexReplyID == promptID else { return }
+            finishCodexReply(error: "Codex didn’t confirm the reply. Try again or open the terminal.")
+        }
+    }
+
+    private func finishCodexReply(error: String? = nil) {
+        codexReplyTimeout?.cancel()
+        codexReplyTimeout = nil
+        pendingCodexReplyID = nil
+        codexReplyError = error
     }
 
     private func inputPaneID(for tabID: UInt32) -> UUID? {
@@ -2542,7 +2580,11 @@ private func handlePairAccept(_ data: Data) {
         pendingInteractivePrompts = visiblePrompts
 
         let removedPromptIDs = previousPromptIDs.subtracting(visiblePromptIDs)
-        if !removedPromptIDs.isEmpty { codexReplyError = nil }
+        if let pendingCodexReplyID, !visiblePromptIDs.contains(pendingCodexReplyID) {
+            finishCodexReply()
+        } else if !removedPromptIDs.isEmpty, pendingCodexReplyID == nil {
+            codexReplyError = nil
+        }
         RemoteNotificationScheduler.removeInteractivePromptNotifications(promptIDs: Array(removedPromptIDs))
 
         for prompt in visiblePrompts where !previousPromptIDs.contains(prompt.id) {

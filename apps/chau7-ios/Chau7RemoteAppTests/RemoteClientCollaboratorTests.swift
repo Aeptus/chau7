@@ -643,6 +643,24 @@ final class RemoteTerminalScrollPolicyTests: XCTestCase {
     }
 }
 
+final class CodexReplyRoutingTests: XCTestCase {
+    func testOldMacCannotReceiveACodexChoiceOrTypedReplyAsKeyboardInput() {
+        let prompt = RemoteInteractivePrompt(
+            id: "question", tabID: 3, tabTitle: "Build", toolName: "Codex CLI",
+            prompt: "Choose a branch", detail: nil, options: [], detectedAt: Date()
+        )
+        let oldMac = Set([RemoteTabListPayload.scopedPromptResponseCapability])
+        XCTAssertNil(prompt.replyAction(.select, capabilities: oldMac))
+        XCTAssertNil(prompt.replyAction(.custom, capabilities: oldMac))
+
+        let updatedMac = oldMac.union([RemoteTabListPayload.codexQuestionReplyCapability])
+        XCTAssertEqual(prompt.replyAction(.select, capabilities: updatedMac), .codexAnswer)
+        XCTAssertEqual(prompt.replyAction(.custom, capabilities: updatedMac), .codexAnswer)
+        XCTAssertNil(prompt.replyAction(.submit, capabilities: updatedMac))
+        XCTAssertEqual(RemotePromptResponse.Action.codexAnswer.rawValue, "codex_answer")
+    }
+}
+
 final class RemoteConnectionStartPolicyTests: XCTestCase {
     func testARefusedInputIsNotAConnectionError() {
         for code in [

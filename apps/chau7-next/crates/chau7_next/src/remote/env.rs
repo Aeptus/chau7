@@ -18,7 +18,8 @@ use crate::terminal::session::TerminalSession;
 use crate::terminal::view::{GuardResolution, TerminalView};
 use crate::workspace::{AppData, Workspace};
 use chau7_next_core::remote::key_input::{
-    CodexQuestionEditor, InputStep, RemoteKey, codex_question_editor, key_steps, text_steps,
+    CodexQuestionEditor, InputStep, RemoteKey, codex_answer_step, codex_question_editor, key_steps,
+    text_steps,
 };
 
 /// Lines of a pane given to the prompt detector (it reads the last 80).
@@ -343,9 +344,9 @@ impl HostEnv for GpuiEnv<'_> {
             return false;
         };
         let session = view.read(self.cx).session.read(self.cx);
-        let steps = text_steps(&format!("{answer}\r"), true, true);
+        let answer = codex_answer_step(answer);
         match Self::current_codex_editor(session, native_id, title) {
-            Some(CodexQuestionEditor::Ready) => self.dispatch_steps(view, steps),
+            Some(CodexQuestionEditor::Ready) => self.dispatch_steps(view, vec![answer]),
             Some(CodexQuestionEditor::Collapsed) => {
                 let open = key_steps(
                     &[RemoteKey {
@@ -359,6 +360,7 @@ impl HostEnv for GpuiEnv<'_> {
                     if !view.send_guarded_steps(open, cx) {
                         return false;
                     }
+                    let input_revision = view.session.read(cx).input_revision();
                     cx.spawn(async move |view, cx| {
                         // Opening the editor requires a PTY redraw. Check the
                         // new screen before sending any reply bytes.
@@ -368,14 +370,17 @@ impl HostEnv for GpuiEnv<'_> {
                                 .await;
                             let Ok(waiting) = view.update(cx, |view, cx| {
                                 let session = view.session.read(cx);
-                                match Self::current_codex_editor(session, &native_id, &title) {
-                                    Some(CodexQuestionEditor::Ready) => {
-                                        view.send_guarded_steps(steps.clone(), cx);
-                                        false
-                                    }
-                                    Some(CodexQuestionEditor::Collapsed) => true,
-                                    None => false,
+                                if session.input_revision() != input_revision {
+                                    return false;
                                 }
+                                if Self::current_codex_editor(session, &native_id, &title)
+                                    == Some(CodexQuestionEditor::Ready)
+                                {
+                                    view.send_guarded_steps(vec![answer.clone()], cx);
+                                    return false;
+                                }
+                                // A redraw can be incomplete when this poll runs.
+                                true
                             }) else {
                                 break;
                             };

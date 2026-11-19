@@ -124,6 +124,8 @@ struct ApprovalsView: View {
             FullScreenPromptCard(
                 prompt: prompt,
                 customText: binding(for: prompt.id),
+                replyPending: prompt.awaitsCodexReply && client.pendingCodexReplyID != nil,
+                awaitingConfirmation: client.pendingCodexReplyID == prompt.id,
                 onRespond: { option in respondToPrompt(prompt, option: option, decisionID: decision.id) },
                 onSendCustom: { sendCustomReply(for: prompt, decisionID: decision.id) },
                 onDismiss: {
@@ -762,6 +764,8 @@ struct FullScreenApprovalCard: View {
 struct FullScreenPromptCard: View {
     let prompt: RemoteInteractivePrompt
     @Binding var customText: String
+    var replyPending = false
+    var awaitingConfirmation = false
     let onRespond: (RemoteInteractivePromptOption) -> Void
     let onSendCustom: () -> Void
     let onDismiss: () -> Void
@@ -796,33 +800,41 @@ struct FullScreenPromptCard: View {
 
                     ContextList(rows: contextRows)
 
-                    if prompt.isMultiSelect == true {
-                        MultiSelectPromptOptions(
-                            options: prompt.options,
-                            onToggle: onToggleOption,
-                            onSubmit: onSubmitMultiSelect
-                        )
-                    } else if !prompt.options.isEmpty {
-                        VStack(spacing: 9) {
-                            ForEach(prompt.options) { option in
-                                PromptOptionButton(option: option) { onRespond(option) }
+                    Group {
+                        if prompt.isMultiSelect == true {
+                            MultiSelectPromptOptions(
+                                options: prompt.options,
+                                onToggle: onToggleOption,
+                                onSubmit: onSubmitMultiSelect
+                            )
+                        } else if !prompt.options.isEmpty {
+                            VStack(spacing: 9) {
+                                ForEach(prompt.options) { option in
+                                    PromptOptionButton(option: option) { onRespond(option) }
+                                }
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(prompt.cardCopy.replyLabel).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            HStack(spacing: 8) {
+                                TextField(prompt.cardCopy.replyPlaceholder, text: $customText, axis: .vertical)
+                                    .font(.system(.callout, design: .monospaced))
+                                    .lineLimit(1 ... 4)
+                                    .padding(.horizontal, 12).padding(.vertical, 10)
+                                    .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                                Button("Send", action: onSendCustom)
+                                    .font(.callout.weight(.semibold))
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
                         }
                     }
+                    .disabled(replyPending)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(prompt.cardCopy.replyLabel).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        HStack(spacing: 8) {
-                            TextField(prompt.cardCopy.replyPlaceholder, text: $customText, axis: .vertical)
-                                .font(.system(.callout, design: .monospaced))
-                                .lineLimit(1 ... 4)
-                                .padding(.horizontal, 12).padding(.vertical, 10)
-                                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                            Button("Send", action: onSendCustom)
-                                .font(.callout.weight(.semibold))
-                                .buttonStyle(.borderedProminent)
-                                .disabled(customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
+                    if awaitingConfirmation {
+                        ProgressView("Waiting for Codex to confirm")
+                            .font(.footnote)
                     }
 
                     GoToTabButton(action: onGoToTab)

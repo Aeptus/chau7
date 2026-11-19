@@ -20,7 +20,11 @@ public struct RemotePaneInput: Codable, Equatable, Sendable {
 /// The Mac derives keystrokes from its current prompt, not client-supplied text
 /// pretending to be an option. Unknown/stale identities fail closed.
 public struct RemotePromptResponse: Codable, Equatable, Sendable {
-    public enum Action: String, Codable, Sendable { case select, toggle, submit, custom }
+    public enum Action: String, Codable, Sendable {
+        case select, toggle, submit, custom
+        case codexAnswer = "codex_answer"
+    }
+
     public let promptID: String
     public let paneID: UUID
     public let action: Action
@@ -74,6 +78,8 @@ public struct RemotePromptResponse: Codable, Equatable, Sendable {
                   !text.isEmpty, text.utf8.count <= 16384,
                   !text.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }
             return "\u{1B}" + text + "\r"
+        case .codexAnswer:
+            return nil
         }
     }
 }
