@@ -41,4 +41,4 @@ windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Stora
 
 [dev-dependencies]
 parking_lot.workspace = true
-resvg = "=0.49.0"
+resvg = "=0.50.0"
