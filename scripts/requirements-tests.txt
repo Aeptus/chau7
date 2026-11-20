@@ -16,11 +16,11 @@ jsonschema-specifications==2025.9.1
 mcp==2.3.0
 pycparser==3.12
 pydantic==2.14.3
-pydantic-settings==2.16.2
+pydantic-settings==2.16.3
 pydantic_core==2.50.4
 PyJWT==2.15.1
 python-dotenv==1.2.4
-python-multipart==0.0.33
+python-multipart==0.0.34
 referencing==0.37.0
 rpds-py==2026.9.1
 sse-starlette==3.7.0
@@ -29,8 +29,8 @@ typing-inspection==0.4.5
 typing_extensions==4.16.0
 uvicorn==0.54.0
 
-httpcore2==2.16.0
-httpx2==2.16.0
+httpcore2==2.16.2
+httpx2==2.16.2
 mcp-types==2.3.0
 opentelemetry-api==1.45.2
 truststore==0.10.5
