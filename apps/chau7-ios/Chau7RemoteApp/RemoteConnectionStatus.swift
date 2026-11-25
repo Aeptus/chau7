@@ -98,7 +98,7 @@ struct RemoteConnectionFailure: Equatable {
 
     /// The Mac did not answer the handshake in time.
     static let handshakeTimedOut = RemoteConnectionFailure(
-        message: "No response from your Mac. Make sure Chau7 is open, Remote is enabled, and the pairing payload is still current.",
+        message: "Your Mac did not respond in time. It may be asleep, offline, or busy, or the connection may be interrupted. Chau7 will retry.",
         recovery: .retryable
     )
 
@@ -113,9 +113,11 @@ struct RemoteConnectionFailure: Equatable {
     }
 
     /// The reconnect budget ran out, typically because the relay or Mac is unreachable.
-    static func reconnectLimitReached(attempts: Int) -> RemoteConnectionFailure {
+    static func reconnectLimitReached(attempts: Int, waitingForMac: Bool = false) -> RemoteConnectionFailure {
         RemoteConnectionFailure(
-            message: "Could not reach your Mac after \(attempts) attempts. Check your network and that Chau7 is open on your Mac, then retry.",
+            message: waitingForMac
+                ? "Your Mac did not respond after \(attempts) retries. Check that your Mac is awake, online, and running Chau7 with Remote enabled, then retry."
+                : "Could not connect after \(attempts) attempts. Check your phone and Mac internet connections and that Chau7 is open, then retry.",
             recovery: .retryable
         )
     }

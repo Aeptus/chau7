@@ -84,6 +84,13 @@ final class RemoteConnectionFailureRecoveryTests: XCTestCase {
         XCTAssertTrue(failure.message.contains("5 attempts"))
     }
 
+    func testReconnectLimitExplainsMacHandshakeTimeout() {
+        let failure = RemoteConnectionFailure.reconnectLimitReached(attempts: 5, waitingForMac: true)
+        XCTAssertEqual(failure.recovery, .retryable)
+        XCTAssertTrue(failure.message.contains("Mac did not respond"))
+        XCTAssertTrue(failure.message.contains("awake"))
+    }
+
     func testBannerOffersRepairForBrokenPairing() {
         XCTAssertEqual(RemoteErrorBannerAction.primary(for: .repairRequired, isConnected: false), .repair)
         XCTAssertEqual(RemoteErrorBannerAction.primary(for: .repairRequired, isConnected: true), .repair)
