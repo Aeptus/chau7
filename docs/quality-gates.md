@@ -13,7 +13,7 @@ registry selects policy, and the runner executes gates.
   -> scripts/quality/registry.mjs
 
 .husky/pre-push
-  -> pnpm quality:prepush
+  -> pnpm quality:prepush --include=prepush-dirty-worktree,release-tag-trigger
   -> scripts/git/run-prepush-checks.mjs
   -> scripts/quality/runner.mjs
   -> scripts/quality/registry.mjs
@@ -23,6 +23,8 @@ registry selects policy, and the runner executes gates.
   -> pnpm quality:prepush
   -> pnpm quality:staged
 ```
+
+Local pre-push runs only the worktree and release-tag integrity checks. The full affected-surface and high-impact gates remain available through `pnpm quality:prepush` and run in GitHub CI. The pre-commit staged checks still run locally.
 
 `scripts/git/` files are compatibility shims. Real quality policy belongs in
 `scripts/quality/registry.mjs`; execution, caching, logging, and filtering
@@ -42,7 +44,7 @@ This sets `core.hooksPath` to `.husky`. The legacy `scripts/install-hooks` and
 | Command | Purpose |
 |---|---|
 | `pnpm quality:staged` | Staged-file pre-commit firewall. |
-| `pnpm quality:prepush` | Affected-surface pre-push firewall. |
+| `pnpm quality:prepush` | Full affected-surface checks (also run in GitHub CI). |
 | `pnpm quality:prepush:full` | Conservative full-suite pre-push. |
 | `pnpm quality:local` | Local broad validation using registry gates. |
 | `pnpm quality:cloud-parity` | Checks required pull request and release workflow policy. |
