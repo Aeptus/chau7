@@ -1748,3 +1748,18 @@ final class PairingPayloadValidatorTests: XCTestCase {
         XCTAssertTrue(message.contains("expiry couldn't be read"))
     }
 }
+
+final class RemoteTerminalDraftsTests: XCTestCase {
+    func testDraftsRemainBoundToTheirTerminalWhenAnotherSendCompletes() {
+        var drafts = RemoteTerminalDrafts()
+        drafts[1] = "first"
+        drafts[2] = "second"
+        var send = RemoteInputSubmissionState()
+        let id = UUID()
+        XCTAssertTrue(send.begin(id: id, text: drafts[1]))
+        let result = send.resolve(id: id, outcome: .transportCompleted, currentDraft: drafts[1])
+        drafts[1] = result?.draft ?? "unexpected"
+        XCTAssertEqual(drafts[1], "")
+        XCTAssertEqual(drafts[2], "second")
+    }
+}

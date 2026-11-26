@@ -54,7 +54,13 @@ struct RemoteTerminalComposer: UIViewRepresentable {
 }
 
 final class RemoteTerminalComposerTextView: UITextView, UITextPasteDelegate {
-    var holdToSend = false
+    var holdToSend = false {
+        didSet {
+            guard holdToSend != oldValue else { return }
+            returnKeyType = holdToSend ? .default : .send
+            if isFirstResponder { reloadInputViews() }
+        }
+    }
     var onSubmit: (() -> Void)?
     private var isPasting = false
     private var laidOutSize = CGSize.zero

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep iPhone terminal drafts with their tabs, enlarge input controls, and improve hold-to-send accessibility and keyboard labeling.
+
 - Give slow iPhone connections more time to establish a session with the Mac, and explain when the Mac did not respond after retries.
 
 - Send iPhone answers to the active Codex question editor. The phone waits for confirmation. Older Mac hosts and unverified Codex screens cannot receive a choice as raw keyboard input.
