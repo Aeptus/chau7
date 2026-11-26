@@ -40,6 +40,17 @@ struct PendingStateFetchFence: Equatable {
     }
 }
 
+/// Drafts stay with the terminal they were written for, including when a
+/// send completes after the user has switched tabs.
+struct RemoteTerminalDrafts {
+    private var drafts: [UInt32: String] = [:]
+
+    subscript(tabID: UInt32) -> String {
+        get { drafts[tabID, default: ""] }
+        set { drafts[tabID] = newValue.isEmpty ? nil : newValue }
+    }
+}
+
 /// UI-side lifecycle for one composer submission. A terminal command is
 /// never retried automatically: after an asynchronous error or socket change,
 /// delivery may be ambiguous and the draft stays available for inspection.
