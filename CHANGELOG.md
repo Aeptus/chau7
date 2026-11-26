@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the Markdown editor visible while a tab hover card is waiting to appear, avoiding a needless switch to its fallback renderer.
+
 - Open new side panes at one quarter of the space of the focused pane, and preserve indentation in Markdown code blocks.
 
 - Keep iPhone terminal drafts with their tabs, enlarge input controls, and improve hold-to-send accessibility and keyboard labeling.
