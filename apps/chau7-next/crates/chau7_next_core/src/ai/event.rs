@@ -175,6 +175,12 @@ pub struct AiEvent {
 }
 
 impl AiEvent {
+    /// Metadata-only summary for operational logs. Event contents may contain
+    /// private prompts or responses and must stay out of these logs.
+    pub fn log_summary(&self) -> String {
+        format!("type={} tool={}", self.event_type, self.tool)
+    }
+
     /// Creates an event with a fresh id and the source's default reliability.
     /// Optional fields start as `None`; set them on the result.
     pub fn new(
@@ -779,5 +785,23 @@ mod tests {
         let ts = now_iso8601();
         assert!(ts.ends_with('Z'));
         assert_eq!(ts.len(), 24);
+    }
+}
+
+#[cfg(test)]
+mod log_privacy_tests {
+    use super::*;
+
+    #[test]
+    fn operational_summary_excludes_event_content() {
+        let event = AiEvent::new(
+            AiEventSource::app(),
+            "completed",
+            "codex",
+            "private prompt and response",
+            "now",
+        );
+        assert_eq!(event.log_summary(), "type=completed tool=codex");
+        assert!(!event.log_summary().contains(&event.message));
     }
 }
