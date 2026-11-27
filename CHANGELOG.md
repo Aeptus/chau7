@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the tab bar steady when switching to a visible tab, and scroll only as far as needed to reveal an off-screen tab.
+
 - Keep the Markdown editor visible while a tab hover card is waiting to appear, avoiding a needless switch to its fallback renderer.
 
 - Open new side panes at one quarter of the space of the focused pane, and preserve indentation in Markdown code blocks.
