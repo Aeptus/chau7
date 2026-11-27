@@ -84,19 +84,9 @@ pub(crate) fn project(mut event: AiEvent, notify: bool, cx: &mut App) {
         event.event_type.as_str(),
         "process_started" | "process_ended"
     ) {
-        log::trace!(
-            "Recorded event: type={} tool={} message=\"{}\"",
-            event.event_type,
-            event.tool,
-            event.message
-        );
+        log::trace!("Recorded event: {}", event.log_summary());
     } else {
-        log::info!(
-            "Recorded event: type={} tool={} message=\"{}\"",
-            event.event_type,
-            event.tool,
-            event.message
-        );
+        log::info!("Recorded event: {}", event.log_summary());
     }
     {
         let recent = &mut cx.default_global::<RecentEvents>().0;
