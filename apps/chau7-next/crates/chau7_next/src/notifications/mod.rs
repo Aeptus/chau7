@@ -192,18 +192,9 @@ fn record(event: AiEvent, notify: bool, log_it: bool, cx: &mut App) {
             "process_started" | "process_ended"
         );
         if log_it && quiet {
-            log::trace!(
-                "Recorded event: type={} tool={}",
-                event.event_type,
-                event.tool
-            );
+            log::trace!("Recorded event: {}", event.log_summary());
         } else if log_it {
-            log::info!(
-                "Recorded event: type={} tool={} message=\"{}\"",
-                event.event_type,
-                event.tool,
-                event.message
-            );
+            log::info!("Recorded event: {}", event.log_summary());
         }
         let observed_at = Utc::now();
         // The session works again: a persistent "waiting" style is stale.
