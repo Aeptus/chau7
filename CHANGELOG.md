@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Record the type and duration of remote relay disconnects to make connection problems easier to diagnose.
+
 - Keep AI notification messages out of the application log while retaining event type and tool for diagnostics.
 
 - Keep the tab bar steady when switching to a visible tab, and scroll only as far as needed to reveal an off-screen tab.
