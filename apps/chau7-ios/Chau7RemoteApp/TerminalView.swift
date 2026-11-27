@@ -18,7 +18,11 @@ struct TerminalView: View {
     @AppStorage(AppSettings.showKeyboardBarKey) private var showKeyboardBar = AppSettings.showKeyboardBarDefault
     @AppStorage(AppSettings.terminalFontSizeKey) private var terminalFontSize = AppSettings.terminalFontSizeDefault
 
-    @State private var inputText = ""
+    @State private var drafts = RemoteTerminalDrafts()
+    private var inputText: String {
+        get { drafts[client.activeTabID] }
+        nonmutating set { drafts[client.activeTabID] = newValue }
+    }
     @State private var inputSubmission = RemoteInputSubmissionState()
     @State private var inputDeliveryWarning: String?
     @State private var terminalSelection: RemoteTerminalSelectionSnapshot?
@@ -70,7 +74,7 @@ struct TerminalView: View {
         .alert("Protected Remote Action", isPresented: protectedSendBinding) {
             Button("Cancel", role: .cancel) {
                 if let pendingProtectedSend {
-                    inputText = pendingProtectedSend.text
+                    drafts[pendingProtectedSend.tabID] = pendingProtectedSend.text
                 }
                 pendingProtectedSend = nil
             }
@@ -85,7 +89,7 @@ struct TerminalView: View {
                         "action": pendingProtectedSend.flaggedAction
                     ])
                     client.lastError = "That terminal is no longer available, so the command was not sent."
-                    inputText = pendingProtectedSend.text
+                    drafts[pendingProtectedSend.tabID] = pendingProtectedSend.text
                     self.pendingProtectedSend = nil
                     return
                 }
@@ -113,7 +117,7 @@ struct TerminalView: View {
             guard oldPairing != newPairing else { return }
             // Drafts and protected confirmations are scoped to the terminal
             // the user was viewing. Never carry them into a newly paired Mac.
-            inputText = ""
+            drafts = RemoteTerminalDrafts()
             inputSubmission = RemoteInputSubmissionState()
             inputDeliveryWarning = nil
             pendingProtectedSend = nil
@@ -522,11 +526,12 @@ struct TerminalView: View {
     }
 
     private var inputBar: some View {
-        HStack(spacing: 8) {
+        let tabID = client.activeTabID
+        return HStack(spacing: 8) {
             Button(action: toggleSoftwareKeyboard) {
                 Image(systemName: isKeyboardVisible ? "keyboard.chevron.compact.down" : "keyboard")
                     .font(.title3)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 44, height: 44)
             }
             .accessibilityLabel(isKeyboardVisible ? "Hide keyboard" : "Show keyboard")
             .accessibilityHint(isKeyboardVisible ? "Dismiss the software keyboard." : "Show the software keyboard.")
@@ -536,12 +541,12 @@ struct TerminalView: View {
             } label: {
                 Image(systemName: "command")
                     .font(.title3)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 44, height: 44)
             }
             .disabled(!client.canSendInput)
             .accessibilityLabel(controlKeyRowRequested ? "Hide terminal shortcut keys" : "Show terminal shortcut keys")
 
-            RemoteTerminalComposer(text: $inputText, isFocused: $inputFocused,
+            RemoteTerminalComposer(text: Binding(get: { drafts[tabID] }, set: { drafts[tabID] = $0 }), isFocused: $inputFocused,
                                    holdToSend: holdToSend, onSubmit: { submitInput(trigger: "return_key") })
                 .disabled(inputSubmission.isPending)
                 .background(Color(UIColor.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
@@ -713,10 +718,10 @@ struct TerminalView: View {
             guard let resolution = self.inputSubmission.resolve(
                 id: sendID,
                 outcome: outcome,
-                currentDraft: self.inputText
+                currentDraft: self.drafts[targetTabID]
             ) else { return }
 
-            self.inputText = resolution.draft
+            self.drafts[targetTabID] = resolution.draft
             if resolution.transportCompleted {
                 self.inputDeliveryWarning = nil
                 DiagnosticsLog.shared.info(.input, "Input send completed by transport", [
@@ -842,7 +847,7 @@ struct TerminalView: View {
                 if !isPresented {
                     // Restore input text when dismissed via swipe (not via Cancel/Submit)
                     if let pending = pendingProtectedSend {
-                        inputText = pending.text
+                        drafts[pending.tabID] = pending.text
                     }
                     pendingProtectedSend = nil
                 }
@@ -916,8 +921,10 @@ struct HoldToSendButton: View {
             if !newValue { progress = 0 }
         }
         .accessibilityLabel("Hold to send")
-        .accessibilityHint("Press and hold to send your input")
+        .accessibilityHint("Touch and hold to send. With VoiceOver, double-tap to send.")
         .accessibilityAddTraits(.isButton)
+        .accessibilityValue(isEnabled ? "" : "Unavailable")
+        .accessibilityAction { if isEnabled { onFire() } }
     }
 }
 

@@ -35,6 +35,19 @@ test("include filter runs only the requested gate", async () => {
   assert.deepEqual(summary.selected, ["quality-registry-schema"]);
 });
 
+test("local push hook selects only lightweight integrity checks even for high-impact changes", async () => {
+  const hook = fs.readFileSync(".husky/pre-push", "utf8");
+  const include = hook.match(/--include=([^\s]+)/)?.[1];
+  assert.equal(include, "prepush-dirty-worktree,release-tag-trigger");
+  const summary = await withDirtyWorktreeOverride("1", () => runQuality(
+    ["--mode=prepush", "--full", `--include=${include}`], "",
+  ));
+  assert.equal(summary.ok, true);
+  assert.deepEqual(summary.selected, ["prepush-dirty-worktree"]);
+  const workflow = fs.readFileSync(".github/workflows/ci.yml", "utf8");
+  assert.match(workflow, /^        run: pnpm quality:prepush$/m);
+});
+
 test("skip filter removes a gate", async () => {
   const summary = await runQuality(
     ["--mode=staged", "--include=quality-registry-schema", "--skip=quality-registry-schema"],

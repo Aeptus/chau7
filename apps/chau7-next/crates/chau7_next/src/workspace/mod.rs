@@ -858,7 +858,7 @@ impl Workspace {
     /// AppKit editors must never cover GPUI overlays or modal interactions.
     #[cfg(target_os = "macos")]
     pub(crate) fn native_editor_allowed(&self, cx: &App) -> bool {
-        self.hover.is_none()
+        hover_card::visible_hover(self.hover.as_ref()).is_none()
             && !self.idle_open
             && self.rename.is_none()
             && self.search.is_none()

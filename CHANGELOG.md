@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the tab bar steady when switching to a visible tab, and scroll only as far as needed to reveal an off-screen tab.
+
+- Keep the Markdown editor visible while a tab hover card is waiting to appear, avoiding a needless switch to its fallback renderer.
+
+- Open new side panes at one quarter of the space of the focused pane, and preserve indentation in Markdown code blocks.
+
+- Keep iPhone terminal drafts with their tabs, enlarge input controls, and improve hold-to-send accessibility and keyboard labeling.
+
+- Give slow iPhone connections more time to establish a session with the Mac, and explain when the Mac did not respond after retries.
+
 - Send iPhone answers to the active Codex question editor. The phone waits for confirmation. Older Mac hosts and unverified Codex screens cannot receive a choice as raw keyboard input.
 
 - Make iPhone approval and input alerts easier to scan, use the Chau7 logo on Live Activities, and fit more repository sessions in the picker with compact rows and pinned group headings.

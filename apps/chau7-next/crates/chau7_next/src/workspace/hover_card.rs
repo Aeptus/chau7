@@ -58,6 +58,11 @@ pub(super) struct HoverState {
     was_render_suspended_before_prewarm: bool,
 }
 
+/// A pending hover has no card to obscure the native editor.
+pub(super) fn visible_hover(hover: Option<&HoverState>) -> Option<&HoverState> {
+    hover.filter(|state| state.shown)
+}
+
 /// Global token optimization mode (`tokenOptimizationMode`); off hides the
 /// hover card row.
 pub(crate) fn token_optimization_mode(cx: &App) -> TokenOptimizationMode {
@@ -262,7 +267,7 @@ impl Workspace {
         chrome: Chrome,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
-        let hover = self.hover.as_ref().filter(|h| h.shown)?;
+        let hover = visible_hover(self.hover.as_ref())?;
         let id = hover.tab;
         let entry = self.entries.get(&id)?;
         let meta = self.state.get(id)?;
@@ -855,7 +860,26 @@ impl Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::should_show_render_suspension_row;
+    use super::{HoverState, should_show_render_suspension_row, visible_hover};
+    use gpui::px;
+
+    #[test]
+    fn pending_hover_does_not_obscure_the_editor() {
+        let mut hover = HoverState {
+            tab: 1,
+            shown: false,
+            anchor_x: px(0.),
+            over_card: false,
+            _timer: None,
+            _monitor: None,
+            processes: None,
+            was_render_suspended_before_prewarm: false,
+        };
+        assert!(visible_hover(None).is_none());
+        assert!(visible_hover(Some(&hover)).is_none());
+        hover.shown = true;
+        assert!(visible_hover(Some(&hover)).is_some());
+    }
 
     #[test]
     fn suspension_row_shows_live_or_pre_prewarm_state() {
