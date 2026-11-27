@@ -510,7 +510,7 @@ struct TabScrollFrame {
     content_width: f32,
 }
 
-/// Scroll animation of the tab row (first viewport or later leading edge).
+/// Scroll animation that reveals the selected tab.
 pub(super) struct TabScroll {
     pub(super) handle: ScrollHandle,
     /// Tab to bring into view once its frame is known.
@@ -562,7 +562,7 @@ mod tab_scroll_tests {
 
     #[cfg(unix)]
     #[gpui::test]
-    fn selected_tab_uses_first_view_or_clamped_leading_edge_in_the_real_row(
+    fn selected_tab_is_revealed_with_minimal_scrolling_in_the_real_row(
         harness: &mut gpui::TestAppContext,
     ) {
         use super::super::selection_tests::{headless_tab, init};
@@ -586,8 +586,23 @@ mod tab_scroll_tests {
                     });
                     // Advance animation timestamps directly; GPUI's simulated
                     // executor clock does not advance std::time::Instant.
+                    let mut expected = None;
                     for _ in 0..5 {
                         window.render_frame(cx);
+                        if expected.is_none() {
+                            let workspace = workspace.read(cx);
+                            let frame = workspace.scroll.frame.get();
+                            let tab = workspace.frames.borrow().tabs[&id];
+                            let movement = if tab.left() < frame.viewport.left() {
+                                f32::from(frame.viewport.left() - tab.left())
+                            } else if tab.right() > frame.viewport.right() {
+                                f32::from(frame.viewport.right() - tab.right())
+                            } else {
+                                0.0
+                            };
+                            let max = f32::from(workspace.scroll.handle.max_offset().x);
+                            expected = Some((frame.offset + movement).clamp(-max, 0.0));
+                        }
                         workspace.update(cx, |workspace, _| {
                             if let Some((_, _, start)) = workspace.scroll.anim.as_mut() {
                                 *start = Instant::now() - Duration::from_secs(1);
@@ -605,19 +620,11 @@ mod tab_scroll_tests {
                     assert!((max - natural_max).abs() < 1.0, "no scroll room beyond the final control");
                     assert!(frame.content_width + offset >= f32::from(viewport.size.width) - 1.0,
                         "the content end must not scroll inside the viewport");
-                    let fits_first_view = f32::from(tab.right()) - offset
-                        <= f32::from(viewport.right()) + 0.5;
-                    if fits_first_view {
-                        assert!(offset.abs() < 1.0, "first-view tab {index} must keep the strip at zero");
-                    } else {
-                        let unscrolled_start = f32::from(tab.left() - viewport.left()) - offset;
-                        let expected = (-unscrolled_start).max(-max);
-                        assert!((offset - expected).abs() < 1.0,
-                            "later tab {index} must align left within the content limit: tab={tab:?}, viewport={viewport:?}");
-                        assert!(tab.left() >= viewport.left() - px(1.0));
-                        if tab.size.width <= viewport.size.width {
-                            assert!(tab.right() <= viewport.right() + px(1.0));
-                        }
+                    assert!((offset - expected.unwrap()).abs() < 1.0,
+                        "tab {index} should move only enough to be visible: tab={tab:?}, viewport={viewport:?}");
+                    assert!(tab.left() >= viewport.left() - px(1.0));
+                    if tab.size.width <= viewport.size.width {
+                        assert!(tab.right() <= viewport.right() + px(1.0));
                     }
                     assert!(workspace.scroll.pending.is_none());
                     assert!(workspace.scroll.anim.is_none());

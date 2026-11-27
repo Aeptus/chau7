@@ -93,7 +93,7 @@ impl Rect {
 
 // MARK: - TabBarLayout
 
-/// Keep the first viewport anchored at zero; align later selections left,
+/// Keep visible tabs in place; scroll only enough to reveal clipped tabs,
 /// clamped to the natural content end so the strip never scrolls into blank space.
 /// Both ranges must come from the same layout and use window coordinates.
 /// Scroll offsets are non-positive, as in GPUI.
@@ -108,10 +108,22 @@ pub fn scroll_offset_to_reveal_tab(
     if tab.is_empty() || viewport.is_empty() {
         return current_offset;
     }
-    if tab.end - current_offset <= viewport.end + 0.5 {
-        return 0.0;
-    }
-    (current_offset - (tab.start - viewport.start)).clamp(-max_offset, 0.0)
+    let delta = if tab.start <= viewport.start && tab.end >= viewport.end {
+        0.0
+    } else if tab.end - tab.start > viewport.end - viewport.start {
+        if tab.start > viewport.start {
+            viewport.start - tab.start
+        } else {
+            viewport.end - tab.end
+        }
+    } else if tab.start < viewport.start {
+        viewport.start - tab.start
+    } else if tab.end > viewport.end {
+        viewport.end - tab.end
+    } else {
+        0.0
+    };
+    (current_offset + delta).clamp(-max_offset, 0.0)
 }
 
 /// A tab as seen by the tab bar layout.
@@ -385,27 +397,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn later_tabs_align_left_even_when_currently_visible() {
-        for (tab, expected) in [
-            (100.0..180.0, -450.0),
-            (310.0..490.0, -660.0),
-            (520.0..600.0, -870.0),
-            (100.0..600.0, -450.0),
-        ] {
+    fn visible_tabs_keep_the_current_offset() {
+        for tab in [100.0..180.0, 310.0..490.0, 520.0..600.0, 100.0..600.0] {
             assert_eq!(
                 scroll_offset_to_reveal_tab(-450.0, 1200.0, tab, 100.0..600.0),
-                expected
+                -450.0
             );
         }
     }
 
     #[test]
-    fn clipped_tabs_align_the_leading_edge() {
+    fn clipped_tabs_scroll_only_to_the_nearest_edge() {
         for (tab, expected) in [
             (60.0..240.0, -410.0),
-            (460.0..640.0, -810.0),
-            (-200.0..-20.0, 0.0),
-            (720.0..900.0, -1070.0),
+            (460.0..640.0, -490.0),
+            (-200.0..-20.0, -150.0),
+            (720.0..900.0, -750.0),
         ] {
             assert_eq!(
                 scroll_offset_to_reveal_tab(-450.0, 1200.0, tab, 100.0..600.0),
@@ -415,17 +422,15 @@ mod tests {
     }
 
     #[test]
-    fn switching_back_to_the_first_view_resets_the_strip() {
+    fn switching_directions_preserves_visible_tabs() {
         let viewport = 100.0..600.0;
         let mut offset = -450.0;
-        // Content positions stay fixed while selection changes. Measure each
-        // tab at the current scroll offset, as the rendered bar does.
         for (content, expected) in [
-            (620.0..720.0, -520.0),
-            (1000.0..1120.0, -900.0),
-            (760.0..880.0, -660.0),
-            (400.0..520.0, 0.0),
-            (760.0..880.0, -660.0),
+            (620.0..720.0, -450.0),
+            (1000.0..1120.0, -520.0),
+            (760.0..880.0, -520.0),
+            (400.0..520.0, -300.0),
+            (760.0..880.0, -300.0),
         ] {
             offset = scroll_offset_to_reveal_tab(
                 offset,
@@ -438,33 +443,11 @@ mod tests {
     }
 
     #[test]
-    fn first_view_tabs_stay_at_zero_or_return_there_after_scrolling() {
-        for current in [0.0, -200.0, -900.0] {
-            for tab in [100.0..280.0, 310.0..490.0, 420.0..600.0] {
-                assert_eq!(
-                    scroll_offset_to_reveal_tab(
-                        current,
-                        1200.0,
-                        tab.start + current..tab.end + current,
-                        100.0..600.0,
-                    ),
-                    0.0,
-                );
-            }
-        }
-        // A tab clipped by the first viewport is a later selection.
-        assert_eq!(
-            scroll_offset_to_reveal_tab(0.0, 1200.0, 421.0..601.0, 100.0..600.0),
-            -321.0
-        );
-    }
-
-    #[test]
-    fn oversized_tabs_align_left_and_do_not_oscillate() {
+    fn oversized_tabs_do_not_oscillate() {
         for (tab, expected) in [
-            (80.0..640.0, -430.0),
+            (80.0..640.0, -450.0),
             (120.0..680.0, -470.0),
-            (20.0..580.0, -370.0),
+            (20.0..580.0, -430.0),
         ] {
             let offset = scroll_offset_to_reveal_tab(-450.0, 1200.0, tab.clone(), 100.0..600.0);
             assert_eq!(offset, expected);
@@ -474,39 +457,10 @@ mod tests {
                     offset,
                     1200.0,
                     tab.start + movement..tab.end + movement,
-                    100.0..600.0,
+                    100.0..600.0
                 ),
                 offset
             );
-        }
-    }
-
-    #[test]
-    fn last_tab_alignment_stops_at_the_natural_content_end() {
-        for width in [24.0_f32, 180.0, 700.0] {
-            for viewport_width in [80.0, 500.0, 1100.0] {
-                let content_start = 1200.0;
-                let current = -100.0;
-                let content_end = content_start + width + 40.0; // trailing new-tab button/gap
-                let max = (content_end - viewport_width).max(0.0);
-                let target = scroll_offset_to_reveal_tab(
-                    current,
-                    max,
-                    100.0 + content_start + current..100.0 + content_start + current + width,
-                    100.0..100.0 + viewport_width,
-                );
-                assert_eq!(target, (-content_start).max(-max));
-                assert!(content_end + target >= viewport_width);
-                assert_eq!(
-                    scroll_offset_to_reveal_tab(
-                        target,
-                        max,
-                        100.0 + content_start + target..100.0 + content_start + target + width,
-                        100.0..100.0 + viewport_width,
-                    ),
-                    target,
-                );
-            }
         }
     }
 
