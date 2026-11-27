@@ -594,7 +594,8 @@ func (a *Agent) relayLoop(ctx context.Context) {
 			share.Seq = a.nextSeq()
 			a.sendToRelay(ctx, share)
 		}
-		a.readRelay(ctx, conn)
+		connectedAt := time.Now()
+		readErr := a.readRelay(ctx, conn)
 		a.wsMu.Lock()
 		a.wsConn = nil
 		a.wsMu.Unlock()
@@ -602,7 +603,7 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		a.resetSession()
 		a.dispatchViewerFrames(ctx, a.viewerHub().relayLost())
 		a.sendSessionStatus("disconnected")
-		log.Printf("relay disconnected, reconnecting in %v", 2*time.Second)
+		log.Printf("relay disconnected: kind=%s close_code=%d connected_for=%v; reconnecting in %v", relayDisconnectKind(readErr), websocket.CloseStatus(readErr), time.Since(connectedAt).Round(time.Second), 2*time.Second)
 		select {
 		case <-time.After(2 * time.Second):
 		case <-ctx.Done():
@@ -611,11 +612,31 @@ func (a *Agent) relayLoop(ctx context.Context) {
 	}
 }
 
-func (a *Agent) readRelay(ctx context.Context, conn *websocket.Conn) {
+// Do not log the remote close reason: it is peer-controlled and may contain
+// sensitive data. A bounded classification and close code are enough to
+// distinguish cancellation, timeouts, protocol closes and transport failures.
+func relayDisconnectKind(err error) string {
+	if errors.Is(err, context.Canceled) {
+		return "cancelled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if websocket.CloseStatus(err) != -1 {
+		return "websocket_close"
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) && networkError.Timeout() {
+		return "timeout"
+	}
+	return "transport_error"
+}
+
+func (a *Agent) readRelay(ctx context.Context, conn *websocket.Conn) error {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
-			return
+			return err
 		}
 		frame, err := protocol.DecodeFrame(data)
 		if err != nil {

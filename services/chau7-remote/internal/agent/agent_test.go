@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/chau7/chau7-remote/internal/protocol"
+	"github.com/coder/websocket"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -1049,5 +1050,21 @@ func TestKnownPeerRepairDoesNotRequireWritableState(t *testing.T) {
 	}
 	if a.currentPeerID == "" {
 		t.Fatal("repair did not recover the trusted peer")
+	}
+}
+
+func TestRelayDisconnectKind(t *testing.T) {
+	for _, tt := range []struct {
+		err  error
+		want string
+	}{
+		{context.Canceled, "cancelled"},
+		{context.DeadlineExceeded, "timeout"},
+		{websocket.CloseError{Code: websocket.StatusGoingAway, Reason: "private peer text"}, "websocket_close"},
+		{io.EOF, "transport_error"},
+	} {
+		if got := relayDisconnectKind(tt.err); got != tt.want {
+			t.Errorf("relayDisconnectKind(%T) = %q, want %q", tt.err, got, tt.want)
+		}
 	}
 }
