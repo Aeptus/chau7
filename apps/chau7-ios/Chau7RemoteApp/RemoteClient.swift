@@ -257,7 +257,7 @@ final class RemoteClient {
     private static let maxReconnectAttempts = RemoteReconnectBackoff.maxAttempts
     private static let maxBufferedTelemetryEvents = 100
     private static let handshakeRetryIntervalSeconds = 1.0
-    private static let handshakeTimeoutSeconds = 12.0
+    private static let handshakeTimeoutSeconds = 30.0
     private static let repairFallbackAttempt = 3
     private static let pendingStateFetchMinimumInterval: TimeInterval = 1
     static let appVersion =
@@ -1133,7 +1133,7 @@ final class RemoteClient {
                     return
                 }
                 reportConnectionFailure(
-                    .reconnectLimitReached(attempts: Self.maxReconnectAttempts),
+                    .reconnectLimitReached(attempts: Self.maxReconnectAttempts, waitingForMac: trigger == .handshakeTimeout),
                     status: .connectionFailed
                 )
                 // The session is over rather than merely restarting, so retire

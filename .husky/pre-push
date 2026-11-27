@@ -1,5 +1,5 @@
 #!/bin/sh
 set -e
 
-pnpm quality:prepush
+pnpm quality:prepush --include=prepush-dirty-worktree,release-tag-trigger
 

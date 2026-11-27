@@ -84,6 +84,13 @@ final class RemoteConnectionFailureRecoveryTests: XCTestCase {
         XCTAssertTrue(failure.message.contains("5 attempts"))
     }
 
+    func testReconnectLimitExplainsMacHandshakeTimeout() {
+        let failure = RemoteConnectionFailure.reconnectLimitReached(attempts: 5, waitingForMac: true)
+        XCTAssertEqual(failure.recovery, .retryable)
+        XCTAssertTrue(failure.message.contains("Mac did not respond"))
+        XCTAssertTrue(failure.message.contains("awake"))
+    }
+
     func testBannerOffersRepairForBrokenPairing() {
         XCTAssertEqual(RemoteErrorBannerAction.primary(for: .repairRequired, isConnected: false), .repair)
         XCTAssertEqual(RemoteErrorBannerAction.primary(for: .repairRequired, isConnected: true), .repair)
@@ -1739,5 +1746,20 @@ final class PairingPayloadValidatorTests: XCTestCase {
             return XCTFail("an unparseable expiry must not validate")
         }
         XCTAssertTrue(message.contains("expiry couldn't be read"))
+    }
+}
+
+final class RemoteTerminalDraftsTests: XCTestCase {
+    func testDraftsRemainBoundToTheirTerminalWhenAnotherSendCompletes() {
+        var drafts = RemoteTerminalDrafts()
+        drafts[1] = "first"
+        drafts[2] = "second"
+        var send = RemoteInputSubmissionState()
+        let id = UUID()
+        XCTAssertTrue(send.begin(id: id, text: drafts[1]))
+        let result = send.resolve(id: id, outcome: .transportCompleted, currentDraft: drafts[1])
+        drafts[1] = result?.draft ?? "unexpected"
+        XCTAssertEqual(drafts[1], "")
+        XCTAssertEqual(drafts[2], "second")
     }
 }

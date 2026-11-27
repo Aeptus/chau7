@@ -1324,7 +1324,7 @@ impl PaneTree {
         }
     }
 
-    /// Put `item` next to the focused pane (half of its space) and focus it
+    /// Put `item` next to the focused pane and focus it
     /// (`splitNode`).
     fn insert_leaf(
         &mut self,
@@ -1334,11 +1334,23 @@ impl PaneTree {
         cx: &mut Context<Self>,
     ) {
         let new_id = item.entity_id();
+        let new_fraction = if matches!(&item, PaneItem::Terminal(_)) {
+            0.5
+        } else {
+            0.25
+        };
         let split_id = self.next_split_id;
         self.next_split_id += 1;
         let target = self.focused_item().map(|f| f.entity_id());
         self.root = match (self.root.take(), target) {
-            (Some(root), Some(target)) => Some(insert_split(root, target, axis, item, split_id)),
+            (Some(root), Some(target)) => Some(insert_split(
+                root,
+                target,
+                axis,
+                item,
+                split_id,
+                new_fraction,
+            )),
             (Some(root), None) => Some(root),
             (None, _) => Some(Node::Leaf(item)),
         };
@@ -2194,12 +2206,13 @@ fn insert_split<L: LeafKey>(
     axis: Axis,
     new_leaf: L,
     split_id: u64,
+    new_fraction: f32,
 ) -> Node<L> {
     match node {
         Node::Leaf(leaf) if leaf.key() == target => Node::Split {
             axis,
             children: vec![Node::Leaf(leaf), Node::Leaf(new_leaf)],
-            ratios: vec![0.5, 0.5],
+            ratios: vec![1.0 - new_fraction, new_fraction],
             id: split_id,
         },
         Node::Leaf(leaf) => Node::Leaf(leaf),
@@ -2218,9 +2231,9 @@ fn insert_split<L: LeafKey>(
                 // Same direction: add a sibling and share the target's space.
                 let mut children = children;
                 let mut ratios = ratios;
-                let half = ratios[index] / 2.0;
-                ratios[index] = half;
-                ratios.insert(index + 1, half);
+                let new_size = ratios[index] * new_fraction;
+                ratios[index] -= new_size;
+                ratios.insert(index + 1, new_size);
                 children.insert(index + 1, Node::Leaf(new_leaf));
                 return Node::Split {
                     axis: split_axis,
@@ -2234,7 +2247,14 @@ fn insert_split<L: LeafKey>(
                 .into_iter()
                 .map(|child| {
                     if contains(&child, target) {
-                        insert_split(child, target, axis, new_leaf.take().unwrap(), split_id)
+                        insert_split(
+                            child,
+                            target,
+                            axis,
+                            new_leaf.take().unwrap(),
+                            split_id,
+                            new_fraction,
+                        )
                     } else {
                         child
                     }
@@ -2960,22 +2980,36 @@ mod tests {
     #[test]
     fn split_inserts_after_the_target_and_shares_its_space() {
         let root = Node::Leaf(T(1));
-        let root = insert_split(root, key(1), Axis::Horizontal, T(2), 10);
-        let root = insert_split(root, key(2), Axis::Horizontal, T(3), 11);
+        let root = insert_split(root, key(1), Axis::Horizontal, T(2), 10, 0.5);
+        let root = insert_split(root, key(2), Axis::Horizontal, T(3), 11, 0.5);
         assert_eq!(leaves(&root), vec![1, 2, 3]);
         let Node::Split { ratios, .. } = &root else {
             panic!("split expected");
         };
         assert_eq!(ratios, &vec![0.5, 0.25, 0.25]);
         // Another direction nests a split.
-        let root = insert_split(root, key(1), Axis::Vertical, T(4), 12);
+        let root = insert_split(root, key(1), Axis::Vertical, T(4), 12, 0.5);
         assert_eq!(leaves(&root), vec![1, 4, 2, 3]);
     }
 
     #[test]
+    fn side_pane_uses_a_quarter_of_the_target_pane() {
+        let root = insert_split(Node::Leaf(T(1)), key(1), Axis::Horizontal, T(2), 10, 0.25);
+        let Node::Split { ratios, .. } = &root else {
+            panic!("split expected")
+        };
+        assert_eq!(ratios, &[0.75, 0.25]);
+        let root = insert_split(root, key(1), Axis::Horizontal, T(3), 11, 0.25);
+        let Node::Split { ratios, .. } = &root else {
+            panic!("split expected")
+        };
+        assert_eq!(ratios, &[0.5625, 0.1875, 0.25]);
+    }
+
+    #[test]
     fn removing_collapses_splits_and_focuses_the_sibling() {
-        let root = insert_split(Node::Leaf(T(1)), key(1), Axis::Horizontal, T(2), 1);
-        let root = insert_split(root, key(2), Axis::Vertical, T(3), 2);
+        let root = insert_split(Node::Leaf(T(1)), key(1), Axis::Horizontal, T(2), 1, 0.5);
+        let root = insert_split(root, key(2), Axis::Vertical, T(3), 2, 0.5);
         assert_eq!(sibling_focus(&root, key(3)), Some(key(2)));
         assert_eq!(sibling_focus(&root, key(1)), Some(key(2)));
         let root = remove_leaf(root, key(3)).unwrap();
@@ -2987,7 +3021,7 @@ mod tests {
 
     #[test]
     fn ratios_stay_between_10_and_90_percent() {
-        let mut root = insert_split(Node::Leaf(T(1)), key(1), Axis::Horizontal, T(2), 7);
+        let mut root = insert_split(Node::Leaf(T(1)), key(1), Axis::Horizontal, T(2), 7, 0.5);
         assert!(set_ratio(&mut root, 7, 0, 0.95));
         let Node::Split { ratios, .. } = &root else {
             panic!("split expected");

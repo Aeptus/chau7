@@ -64,6 +64,7 @@ final class RemoteTerminalComposerTests: XCTestCase {
     func testHoldToSendAllowsReturnInsideTheComposer() {
         let view = RemoteTerminalComposerTextView()
         view.holdToSend = true
+        XCTAssertEqual(view.returnKeyType, .default)
         var submissions = 0
         view.onSubmit = { submissions += 1 }
         view.insertText("\n")

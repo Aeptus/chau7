@@ -106,8 +106,8 @@ pub fn parse_markdown(input: &str) -> Vec<MarkdownSection> {
                 code.push(lines[i]);
                 i += 1;
             }
-            let code = code.join("\n").trim().to_string();
-            if !code.is_empty() {
+            let code = code.join("\n");
+            if !code.trim().is_empty() {
                 sections.push(MarkdownSection::CodeBlock {
                     language: (!lang.is_empty()).then(|| lang.to_string()),
                     code,
@@ -279,6 +279,12 @@ pub fn completed_command(
 #[cfg(test)]
 mod current_runbook_tests {
     use super::*;
+    #[test]
+    fn fenced_code_preserves_leading_indentation_and_blank_lines() {
+        let source = "```python\n    first()\n\n    second()\n```";
+        assert_eq!(code_blocks(source), vec!["    first()\n\n    second()"]);
+    }
+
     #[test]
     fn tasks_toggle_source_and_ignore_fenced_examples() {
         let text = "- [ ] work\n* [X] done\n```\n- [x] sample\n```\n";
